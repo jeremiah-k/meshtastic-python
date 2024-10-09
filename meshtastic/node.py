@@ -765,7 +765,7 @@ class Node:
 
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
-                print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
+                logging.warning(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
                 self.iface._acknowledgment.receivedNak = True
         else:
             self.iface._acknowledgment.receivedAck = True
@@ -785,8 +785,9 @@ class Node:
             c = p["decoded"]["admin"]["raw"].get_device_metadata_response
             self._timeout.reset()  # We made forward progress
             logging.debug(f"Received metadata {stripnl(c)}")
-            print(f"\nfirmware_version: {c.firmware_version}")
-            print(f"device_state_version: {c.device_state_version}")
+            logging.info(f"firmware_version: {c.firmware_version}")
+            logging.info(f"device_state_version: {c.device_state_version}")
+
 
     def onResponseRequestChannel(self, p):
         """Handle the response packet for requesting a channel _requestChannel()"""
