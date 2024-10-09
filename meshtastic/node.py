@@ -621,14 +621,14 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def getMetadata(self):
+    def getMetadata(self, verbose=True):
         """Get the node's metadata."""
         p = admin_pb2.AdminMessage()
         p.get_device_metadata_request = True
         logging.info(f"Requesting device metadata")
 
         self._sendAdmin(
-            p, wantResponse=True, onResponse=self.onRequestGetMetadata
+            p, wantResponse=True, onResponse=lambda p: self.onRequestGetMetadata(p, verbose)
         )
         self.iface.waitForAckNak()
 
@@ -759,13 +759,14 @@ class Node:
             self.channels.append(ch)
             index += 1
 
-    def onRequestGetMetadata(self, p):
+    def onRequestGetMetadata(self, p, verbose=True):
         """Handle the response packet for requesting device metadata getMetadata()"""
         logging.debug(f"onRequestGetMetadata() p:{p}")
 
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
-                print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
+                if verbose:
+                    print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
                 self.iface._acknowledgment.receivedNak = True
         else:
             self.iface._acknowledgment.receivedAck = True
@@ -785,8 +786,9 @@ class Node:
             c = p["decoded"]["admin"]["raw"].get_device_metadata_response
             self._timeout.reset()  # We made forward progress
             logging.debug(f"Received metadata {stripnl(c)}")
-            print(f"\nfirmware_version: {c.firmware_version}")
-            print(f"device_state_version: {c.device_state_version}")
+            if verbose:
+                print(f"\nfirmware_version: {c.firmware_version}")
+                print(f"device_state_version: {c.device_state_version}")
 
     def onResponseRequestChannel(self, p):
         """Handle the response packet for requesting a channel _requestChannel()"""
