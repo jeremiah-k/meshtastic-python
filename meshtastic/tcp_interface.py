@@ -36,6 +36,7 @@ class TCPInterface(StreamInterface):
             logging.debug(f"Connecting to {hostname}") # type: ignore[str-bytes-safe]
             server_address = (hostname, portNumber)
             sock = socket.create_connection(server_address)
+            sock.settimeout(5)
             self.socket: Optional[socket.socket] = sock
         else:
             self.socket = None
@@ -54,6 +55,7 @@ class TCPInterface(StreamInterface):
         """Connect to socket"""
         server_address = (self.hostname, self.portNumber)
         sock = socket.create_connection(server_address)
+        sock.settimeout(5)
         self.socket = sock
 
     def close(self):
@@ -76,4 +78,12 @@ class TCPInterface(StreamInterface):
 
     def _readBytes(self, length):
         """Read an array of bytes from our stream"""
-        return self.socket.recv(length)
+        try:
+            data = self.socket.recv(length)
+            if not data:
+                raise EOFError("Socket connection closed")
+            return data
+        except socket.timeout:
+            raise EOFError("Socket read timed out")
+        except socket.error as e:
+            raise EOFError(f"Socket error: {e}")
