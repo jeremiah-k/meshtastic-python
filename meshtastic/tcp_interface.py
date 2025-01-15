@@ -72,6 +72,22 @@ class TCPInterface(StreamInterface):
             except:
                 pass  # Ignore errors in shutdown, because we might have a race with the server
             self.socket.close()
+        # Send connection lost event
+        pub.sendMessage("meshtastic.connection.lost", interface=self)
+
+    def _check_connection(self) -> bool:
+        """Check if the TCP connection is still alive"""
+        if self.socket is None:
+            return False
+
+        try:
+            # Try to send a zero-length packet to check connection
+            self.socket.send(b'')
+            return True
+        except (socket.error, OSError):
+            # Connection is dead
+            self.close()
+            return False
 
     def _writeBytes(self, b: bytes) -> None:
         """Write an array of bytes to our stream and flush"""
