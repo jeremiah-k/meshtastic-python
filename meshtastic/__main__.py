@@ -249,7 +249,18 @@ def setPref(config, comp_name, raw_val) -> bool:
             return False
 
         # Convert the value to the appropriate type
-        if isinstance(raw_val, str):
+        # Handle base64 encoded values specially
+        if isinstance(raw_val, str) and raw_val.startswith("base64:"):
+            try:
+                # Remove the base64: prefix and decode
+                base64_str = raw_val[7:]  # Skip "base64:"
+                val = base64.b64decode(base64_str)
+                logging.debug(f"Decoded base64 value for {snake_name}")
+            except Exception as e:
+                logging.error(f"Error decoding base64 value for {snake_name}: {e}")
+                print(f"Warning: Could not decode base64 value for {snake_name}")
+                return False
+        elif isinstance(raw_val, str):
             val = meshtastic.util.fromStr(raw_val)
         else:
             val = raw_val
