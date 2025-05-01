@@ -180,108 +180,162 @@ def splitCompoundName(comp_name: str) -> List[str]:
 def traverseConfig(config_root, config, interface_config) -> bool:
     """Iterate through current config level preferences and either traverse deeper if preference is a dict or set preference"""
     snake_name = meshtastic.util.camel_to_snake(config_root)
-    for pref in config:
-        pref_name = f"{snake_name}.{pref}"
-        if isinstance(config[pref], dict):
-            traverseConfig(pref_name, config[pref], interface_config)
-        else:
-            setPref(interface_config, pref_name, config[pref])
+    success = True
 
-    return True
+    for pref in config:
+        try:
+            pref_name = f"{snake_name}.{pref}"
+            logging.debug(f"Processing config item: {pref_name}")
+
+            if isinstance(config[pref], dict):
+                # If it's a nested dictionary, traverse deeper
+                if not traverseConfig(pref_name, config[pref], interface_config):
+                    success = False
+            else:
+                # Otherwise set the preference directly
+                if not setPref(interface_config, pref_name, config[pref]):
+                    logging.warning(f"Failed to set preference: {pref_name}")
+                    success = False
+
+        except Exception as e:
+            logging.error(f"Error processing config item {pref} in {snake_name}: {e}")
+            print(f"Warning: Failed to process config item {pref} in {snake_name}: {e}")
+            success = False
+            # Continue with other preferences even if one fails
+
+    return success
 
 
 def setPref(config, comp_name, raw_val) -> bool:
     """Set a channel or preferences value"""
+    try:
+        name = splitCompoundName(comp_name)
 
-    name = splitCompoundName(comp_name)
+        snake_name = meshtastic.util.camel_to_snake(name[-1])
+        camel_name = meshtastic.util.snake_to_camel(name[-1])
+        uni_name = camel_name if mt_config.camel_case else snake_name
+        logging.debug(f"Setting preference: {comp_name}")
+        logging.debug(f"snake_name:{snake_name}")
+        logging.debug(f"camel_name:{camel_name}")
 
-    snake_name = meshtastic.util.camel_to_snake(name[-1])
-    camel_name = meshtastic.util.snake_to_camel(name[-1])
-    uni_name = camel_name if mt_config.camel_case else snake_name
-    logging.debug(f"snake_name:{snake_name}")
-    logging.debug(f"camel_name:{camel_name}")
-
-    objDesc = config.DESCRIPTOR
-    config_part = config
-    config_type = objDesc.fields_by_name.get(name[0])
-    if config_type and config_type.message_type is not None:
-        for name_part in name[1:-1]:
-            part_snake_name = meshtastic.util.camel_to_snake((name_part))
-            config_part = getattr(config, config_type.name)
-            config_type = config_type.message_type.fields_by_name.get(part_snake_name)
-    pref = None
-    if config_type and config_type.message_type is not None:
-        pref = config_type.message_type.fields_by_name.get(snake_name)
-    # Others like ChannelSettings are standalone
-    elif config_type:
-        pref = config_type
-
-    if (not pref) or (not config_type):
-        return False
-
-    if isinstance(raw_val, str):
-        val = meshtastic.util.fromStr(raw_val)
-    else:
-        val = raw_val
-    logging.debug(f"valStr:{raw_val} val:{val}")
-
-    if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
-        print("Warning: network.wifi_psk must be 8 or more characters.")
-        return False
-
-    enumType = pref.enum_type
-    # pylint: disable=C0123
-    if enumType and type(val) == str:
-        # We've failed so far to convert this string into an enum, try to find it by reflection
-        e = enumType.values_by_name.get(val)
-        if e:
-            val = e.number
-        else:
-            print(
-                f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
-            )
-            print(f"Choices in sorted order are:")
-            names = []
-            for f in enumType.values:
-                # Note: We must use the value of the enum (regardless if camel or snake case)
-                names.append(f"{f.name}")
-            for temp_name in sorted(names):
-                print(f"    {temp_name}")
+        # Find the configuration field
+        objDesc = config.DESCRIPTOR
+        config_part = config
+        config_type = objDesc.fields_by_name.get(name[0])
+        if not config_type:
+            logging.error(f"Config type not found for {name[0]}")
             return False
 
-    # repeating fields need to be handled with append, not setattr
-    if pref.label != pref.LABEL_REPEATED:
-        try:
-            if config_type.message_type is not None:
-                config_values = getattr(config_part, config_type.name)
-                setattr(config_values, pref.name, val)
-            else:
-                setattr(config_part, snake_name, val)
-        except TypeError:
-            # The setter didn't like our arg type guess try again as a string
-            config_values = getattr(config_part, config_type.name)
-            setattr(config_values, pref.name, str(val))
-    elif type(val) == list:
-        new_vals = [meshtastic.util.fromStr(x) for x in val]
-        config_values = getattr(config, config_type.name)
-        getattr(config_values, pref.name)[:] = new_vals
-    else:
-        config_values = getattr(config, config_type.name)
-        if val == 0:
-            # clear values
-            print(f"Clearing {pref.name} list")
-            del getattr(config_values, pref.name)[:]
+        # Navigate through nested configuration
+        if config_type and config_type.message_type is not None:
+            for name_part in name[1:-1]:
+                part_snake_name = meshtastic.util.camel_to_snake((name_part))
+                config_part = getattr(config, config_type.name)
+                config_type = config_type.message_type.fields_by_name.get(part_snake_name)
+                if not config_type:
+                    logging.error(f"Config type not found for {part_snake_name} in {name_part}")
+                    return False
+
+        # Get the preference field
+        pref = None
+        if config_type and config_type.message_type is not None:
+            pref = config_type.message_type.fields_by_name.get(snake_name)
+        # Others like ChannelSettings are standalone
+        elif config_type:
+            pref = config_type
+
+        if (not pref) or (not config_type):
+            logging.error(f"Preference not found: {snake_name}")
+            return False
+
+        # Convert the value to the appropriate type
+        if isinstance(raw_val, str):
+            val = meshtastic.util.fromStr(raw_val)
         else:
-            print(f"Adding '{raw_val}' to the {pref.name} list")
-            cur_vals = [x for x in getattr(config_values, pref.name) if x not in [0, "", b""]]
-            cur_vals.append(val)
-            getattr(config_values, pref.name)[:] = cur_vals
+            val = raw_val
+        logging.debug(f"valStr:{raw_val} val:{val}")
+
+        # Special validation for WiFi PSK
+        if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
+            print("Warning: network.wifi_psk must be 8 or more characters.")
+            return False
+
+        # Handle enum values
+        enumType = pref.enum_type
+        # pylint: disable=C0123
+        if enumType and type(val) == str:
+            # We've failed so far to convert this string into an enum, try to find it by reflection
+            e = enumType.values_by_name.get(val)
+            if e:
+                val = e.number
+            else:
+                print(
+                    f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
+                )
+                print(f"Choices in sorted order are:")
+                names = []
+                for f in enumType.values:
+                    # Note: We must use the value of the enum (regardless if camel or snake case)
+                    names.append(f"{f.name}")
+                for temp_name in sorted(names):
+                    print(f"    {temp_name}")
+                return False
+
+        # Set the preference value
+        # repeating fields need to be handled with append, not setattr
+        if pref.label != pref.LABEL_REPEATED:
+            try:
+                if config_type.message_type is not None:
+                    config_values = getattr(config_part, config_type.name)
+                    setattr(config_values, pref.name, val)
+                else:
+                    setattr(config_part, snake_name, val)
+            except TypeError as e:
+                logging.warning(f"Type error setting {pref.name}, trying as string: {e}")
+                # The setter didn't like our arg type guess try again as a string
+                try:
+                    config_values = getattr(config_part, config_type.name)
+                    setattr(config_values, pref.name, str(val))
+                except Exception as e2:
+                    logging.error(f"Failed to set {pref.name} as string: {e2}")
+                    return False
+            except Exception as e:
+                logging.error(f"Error setting {pref.name}: {e}")
+                return False
+        elif type(val) == list:
+            try:
+                new_vals = [meshtastic.util.fromStr(x) for x in val]
+                config_values = getattr(config, config_type.name)
+                getattr(config_values, pref.name)[:] = new_vals
+            except Exception as e:
+                logging.error(f"Error setting list value {pref.name}: {e}")
+                return False
+        else:
+            try:
+                config_values = getattr(config, config_type.name)
+                if val == 0:
+                    # clear values
+                    print(f"Clearing {pref.name} list")
+                    del getattr(config_values, pref.name)[:]
+                else:
+                    print(f"Adding '{raw_val}' to the {pref.name} list")
+                    cur_vals = [x for x in getattr(config_values, pref.name) if x not in [0, "", b""]]
+                    cur_vals.append(val)
+                    getattr(config_values, pref.name)[:] = cur_vals
+            except Exception as e:
+                logging.error(f"Error modifying list {pref.name}: {e}")
+                return False
+            return True
+
+        # Print success message
+        prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
+        print(f"Set {prefix}{uni_name} to {raw_val}")
         return True
 
-    prefix = f"{'.'.join(name[0:-1])}." if config_type.message_type is not None else ""
-    print(f"Set {prefix}{uni_name} to {raw_val}")
-
-    return True
+    except Exception as e:
+        logging.error(f"Unexpected error setting preference {comp_name}: {e}")
+        print(f"Error setting preference {comp_name}: {e}")
+        return False
 
 
 def onConnected(interface):
@@ -637,85 +691,139 @@ def onConnected(interface):
                 printConfig(node.moduleConfig)
 
         if args.configure:
-            with open(args.configure[0], encoding="utf8") as file:
-                configuration = yaml.safe_load(file)
-                closeNow = True
+            try:
+                with open(args.configure[0], encoding="utf8") as file:
+                    configuration = yaml.safe_load(file)
+                    closeNow = True
 
-                interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
+                    # Get a reference to the node we're configuring
+                    node = interface.getNode(args.dest, False, **getNode_kwargs)
 
-                if "owner" in configuration:
-                    print(f"Setting device owner to {configuration['owner']}")
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(configuration["owner"])
+                    # Begin the settings transaction
+                    print("Starting configuration transaction")
+                    node.beginSettingsTransaction()
 
-                if "owner_short" in configuration:
-                    print(
-                        f"Setting device owner short to {configuration['owner_short']}"
-                    )
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        long_name=None, short_name=configuration["owner_short"]
-                    )
+                    try:
+                        # Process owner settings first
+                        if "owner" in configuration:
+                            print(f"Setting device owner to {configuration['owner']}")
+                            waitForAckNak = True
+                            node.setOwner(configuration["owner"])
 
-                if "ownerShort" in configuration:
-                    print(
-                        f"Setting device owner short to {configuration['ownerShort']}"
-                    )
-                    waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                        long_name=None, short_name=configuration["ownerShort"]
-                    )
+                        if "owner_short" in configuration:
+                            print(
+                                f"Setting device owner short to {configuration['owner_short']}"
+                            )
+                            waitForAckNak = True
+                            node.setOwner(
+                                long_name=None, short_name=configuration["owner_short"]
+                            )
 
-                if "channel_url" in configuration:
-                    print("Setting channel url to", configuration["channel_url"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(configuration["channel_url"])
+                        if "ownerShort" in configuration:
+                            print(
+                                f"Setting device owner short to {configuration['ownerShort']}"
+                            )
+                            waitForAckNak = True
+                            node.setOwner(
+                                long_name=None, short_name=configuration["ownerShort"]
+                            )
 
-                if "channelUrl" in configuration:
-                    print("Setting channel url to", configuration["channelUrl"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(configuration["channelUrl"])
+                        # Process location settings
+                        if "location" in configuration:
+                            alt = 0
+                            lat = 0.0
+                            lon = 0.0
 
-                if "location" in configuration:
-                    alt = 0
-                    lat = 0.0
-                    lon = 0.0
-                    localConfig = interface.localNode.localConfig
+                            if "alt" in configuration["location"]:
+                                alt = int(configuration["location"]["alt"] or 0)
+                                print(f"Fixing altitude at {alt} meters")
+                            if "lat" in configuration["location"]:
+                                lat = float(configuration["location"]["lat"] or 0)
+                                print(f"Fixing latitude at {lat} degrees")
+                            if "lon" in configuration["location"]:
+                                lon = float(configuration["location"]["lon"] or 0)
+                                print(f"Fixing longitude at {lon} degrees")
+                            print("Setting device position")
+                            interface.localNode.setFixedPosition(lat, lon, alt)
 
-                    if "alt" in configuration["location"]:
-                        alt = int(configuration["location"]["alt"] or 0)
-                        print(f"Fixing altitude at {alt} meters")
-                    if "lat" in configuration["location"]:
-                        lat = float(configuration["location"]["lat"] or 0)
-                        print(f"Fixing latitude at {lat} degrees")
-                    if "lon" in configuration["location"]:
-                        lon = float(configuration["location"]["lon"] or 0)
-                        print(f"Fixing longitude at {lon} degrees")
-                    print("Setting device position")
-                    interface.localNode.setFixedPosition(lat, lon, alt)
+                        # Process channel URL settings
+                        # We do this after owner and location but before other config
+                        if "channel_url" in configuration:
+                            try:
+                                print("Setting channel url to", configuration["channel_url"])
+                                node.setURL(configuration["channel_url"])
+                            except Exception as e:
+                                logging.error(f"Error setting channel URL: {e}")
+                                print(f"Warning: Failed to set channel URL: {e}")
+                                # Continue with other settings even if URL fails
 
-                if "config" in configuration:
-                    localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
-                    for section in configuration["config"]:
-                        traverseConfig(
-                            section, configuration["config"][section], localConfig
-                        )
-                        interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                            meshtastic.util.camel_to_snake(section)
-                        )
+                        if "channelUrl" in configuration:
+                            try:
+                                print("Setting channel url to", configuration["channelUrl"])
+                                node.setURL(configuration["channelUrl"])
+                            except Exception as e:
+                                logging.error(f"Error setting channel URL: {e}")
+                                print(f"Warning: Failed to set channel URL: {e}")
+                                # Continue with other settings even if URL fails
 
-                if "module_config" in configuration:
-                    moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
-                    for section in configuration["module_config"]:
-                        traverseConfig(
-                            section,
-                            configuration["module_config"][section],
-                            moduleConfig,
-                        )
-                        interface.getNode(args.dest, **getNode_kwargs).writeConfig(
-                            meshtastic.util.camel_to_snake(section)
-                        )
+                        # Process main config settings
+                        if "config" in configuration:
+                            localConfig = node.localConfig
+                            for section in configuration["config"]:
+                                try:
+                                    print(f"Configuring {section} settings")
+                                    traverseConfig(
+                                        section, configuration["config"][section], localConfig
+                                    )
+                                    node.writeConfig(
+                                        meshtastic.util.camel_to_snake(section)
+                                    )
+                                except Exception as e:
+                                    logging.error(f"Error configuring {section}: {e}")
+                                    print(f"Warning: Failed to configure {section}: {e}")
+                                    # Continue with other settings
 
-                interface.getNode(args.dest, False, **getNode_kwargs).commitSettingsTransaction()
-                print("Writing modified configuration to device")
+                        # Process module config settings
+                        if "module_config" in configuration:
+                            moduleConfig = node.moduleConfig
+                            for section in configuration["module_config"]:
+                                try:
+                                    print(f"Configuring module {section} settings")
+                                    traverseConfig(
+                                        section,
+                                        configuration["module_config"][section],
+                                        moduleConfig,
+                                    )
+                                    node.writeConfig(
+                                        meshtastic.util.camel_to_snake(section)
+                                    )
+                                except Exception as e:
+                                    logging.error(f"Error configuring module {section}: {e}")
+                                    print(f"Warning: Failed to configure module {section}: {e}")
+                                    # Continue with other settings
+
+                        # Commit the transaction
+                        print("Committing configuration transaction")
+                        node.commitSettingsTransaction()
+                        print("Successfully wrote modified configuration to device")
+
+                    except Exception as e:
+                        # If any error occurs during configuration, try to abort the transaction
+                        logging.error(f"Error during configuration: {e}")
+                        print(f"Error during configuration: {e}")
+                        try:
+                            # Try to commit what we have so far
+                            print("Attempting to commit partial configuration changes")
+                            node.commitSettingsTransaction()
+                        except Exception as commit_error:
+                            logging.error(f"Error committing transaction: {commit_error}")
+                            print(f"Error committing transaction: {commit_error}")
+                        raise
+
+            except Exception as e:
+                logging.error(f"Configuration failed: {e}")
+                print(f"Configuration failed: {e}")
+                # Don't re-raise, let the outer exception handler in onConnected handle it
 
         if args.export_config:
             if args.dest != BROADCAST_ADDR:

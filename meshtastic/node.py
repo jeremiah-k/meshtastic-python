@@ -342,65 +342,90 @@ class Node:
         if self.localConfig is None or self.channels is None:
             our_exit("Warning: config or channels not loaded")
 
-        # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
-        # Split on '/#' to find the base64 encoded channel settings
-        if addOnly:
-            splitURL = url.split("/?add=true#")
-        else:
-            splitURL = url.split("/#")
-        if len(splitURL) == 1:
-            our_exit(f"Warning: Invalid URL '{url}'")
-        b64 = splitURL[-1]
+        try:
+            # URLs can be of various forms:
+            # https://meshtastic.org/d/#{base64_channel_set}
+            # https://meshtastic.org/e/#{base64_channel_set}
+            # Try different splitting strategies
+            b64 = None
 
-        # We normally strip padding to make for a shorter URL, but the python parser doesn't like
-        # that.  So add back any missing padding
-        # per https://stackoverflow.com/a/9807138
-        missing_padding = len(b64) % 4
-        if missing_padding:
-            b64 += "=" * (4 - missing_padding)
+            # First try the standard format with /#
+            if "/#" in url:
+                b64 = url.split("/#")[-1]
+            # Then try the format with just #
+            elif "#" in url:
+                b64 = url.split("#")[-1]
+            # Then try the add format
+            elif "/?add=true#" in url:
+                b64 = url.split("/?add=true#")[-1]
 
-        decodedURL = base64.urlsafe_b64decode(b64)
-        channelSet = apponly_pb2.ChannelSet()
-        channelSet.ParseFromString(decodedURL)
+            if not b64:
+                our_exit(f"Warning: Could not parse URL '{url}'. Expected format: https://meshtastic.org/e/#{{'base64'}}")
 
-        if len(channelSet.settings) == 0:
-            our_exit("Warning: There were no settings.")
+            # Clean up the base64 string - remove any URL-unsafe characters
+            b64 = b64.replace("-", "+").replace("_", "/")
 
-        if addOnly:
-            # Add new channels with names not already present
-            # Don't change existing channels
-            for chs in channelSet.settings:
-                channelExists = self.getChannelByName(chs.name)
-                if channelExists or chs.name == "":
-                    print(f"Ignoring existing or empty channel \"{chs.name}\" from add URL")
-                    continue
-                ch = self.getDisabledChannel()
-                if not ch:
-                    our_exit("Warning: No free channels were found")
-                ch.settings.CopyFrom(chs)
-                ch.role = channel_pb2.Channel.Role.SECONDARY
-                print(f"Adding new channel '{chs.name}' to device")
-                self.writeChannel(ch.index)
-        else:
-            i = 0
-            for chs in channelSet.settings:
-                ch = channel_pb2.Channel()
-                ch.role = (
-                    channel_pb2.Channel.Role.PRIMARY
-                    if i == 0
-                    else channel_pb2.Channel.Role.SECONDARY
-                )
-                ch.index = i
-                ch.settings.CopyFrom(chs)
-                self.channels[ch.index] = ch
-                logging.debug(f"Channel i:{i} ch:{ch}")
-                self.writeChannel(ch.index)
-                i = i + 1
+            # We normally strip padding to make for a shorter URL, but the python parser doesn't like
+            # that. So add back any missing padding
+            # per https://stackoverflow.com/a/9807138
+            missing_padding = len(b64) % 4
+            if missing_padding:
+                b64 += "=" * (4 - missing_padding)
 
-        p = admin_pb2.AdminMessage()
-        p.set_config.lora.CopyFrom(channelSet.lora_config)
-        self.ensureSessionKey()
-        self._sendAdmin(p)
+            try:
+                decodedURL = base64.urlsafe_b64decode(b64)
+                channelSet = apponly_pb2.ChannelSet()
+                channelSet.ParseFromString(decodedURL)
+            except Exception as e:
+                logging.error(f"Error decoding URL: {e}")
+                our_exit(f"Warning: Could not decode URL. Error: {e}")
+
+            if len(channelSet.settings) == 0:
+                our_exit("Warning: There were no settings in the URL.")
+
+            if addOnly:
+                # Add new channels with names not already present
+                # Don't change existing channels
+                for chs in channelSet.settings:
+                    channelExists = self.getChannelByName(chs.name)
+                    if channelExists or chs.name == "":
+                        print(f"Ignoring existing or empty channel \"{chs.name}\" from add URL")
+                        continue
+                    ch = self.getDisabledChannel()
+                    if not ch:
+                        our_exit("Warning: No free channels were found")
+                    ch.settings.CopyFrom(chs)
+                    ch.role = channel_pb2.Channel.Role.SECONDARY
+                    print(f"Adding new channel '{chs.name}' to device")
+                    self.writeChannel(ch.index)
+            else:
+                i = 0
+                for chs in channelSet.settings:
+                    ch = channel_pb2.Channel()
+                    ch.role = (
+                        channel_pb2.Channel.Role.PRIMARY
+                        if i == 0
+                        else channel_pb2.Channel.Role.SECONDARY
+                    )
+                    ch.index = i
+                    ch.settings.CopyFrom(chs)
+                    self.channels[ch.index] = ch
+                    logging.debug(f"Channel i:{i} ch:{ch}")
+                    self.writeChannel(ch.index)
+                    i = i + 1
+
+            # Only apply lora config if it exists in the channelSet
+            if channelSet.HasField("lora_config"):
+                p = admin_pb2.AdminMessage()
+                p.set_config.lora.CopyFrom(channelSet.lora_config)
+                self.ensureSessionKey()
+                self._sendAdmin(p)
+            else:
+                logging.debug("No lora_config in channelSet, skipping lora config update")
+
+        except Exception as e:
+            logging.error(f"Error setting URL: {e}")
+            raise Exception(f"Failed to set URL: {e}")
 
     def onResponseRequestRingtone(self, p):
         """Handle the response packet for requesting ringtone part 1"""
