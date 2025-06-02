@@ -103,6 +103,7 @@ from .protobuf import (
 )
 from . import (
     util,
+    proxy,
 )
 
 # Note: To follow PEP224, comments should be after the module variable.

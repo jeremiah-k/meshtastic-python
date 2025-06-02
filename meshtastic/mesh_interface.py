@@ -1104,6 +1104,64 @@ class MeshInterface:  # pylint: disable=R0902
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
         self._sendToRadio(p)
 
+    def sendMqttClientProxyMessage(self, topic: str, data: bytes = None, text: str = None, retained: bool = False):
+        """Send an MQTT client proxy message to the device.
+
+        Args:
+            topic: MQTT topic to publish to
+            data: Binary data payload (mutually exclusive with text)
+            text: Text payload (mutually exclusive with data)
+            retained: Whether the message should be retained
+        """
+        if data is not None and text is not None:
+            raise ValueError("Cannot specify both data and text")
+        if data is None and text is None:
+            raise ValueError("Must specify either data or text")
+
+        proxy_msg = mesh_pb2.MqttClientProxyMessage()
+        proxy_msg.topic = topic
+        proxy_msg.retained = retained
+
+        if data is not None:
+            proxy_msg.data = data
+        else:
+            proxy_msg.text = text
+
+        to_radio = mesh_pb2.ToRadio()
+        to_radio.mqttClientProxyMessage.CopyFrom(proxy_msg)
+        self._sendToRadio(to_radio)
+
+    def sendUdpClientProxyMessage(self, host: str, port: int, data: bytes = None, text: str = None):
+        """Send a UDP client proxy message to the device.
+
+        Args:
+            host: UDP destination host
+            port: UDP destination port
+            data: Binary data payload (mutually exclusive with text)
+            text: Text payload (mutually exclusive with data)
+        """
+        if data is not None and text is not None:
+            raise ValueError("Cannot specify both data and text")
+        if data is None and text is None:
+            raise ValueError("Must specify either data or text")
+
+        # Use the MQTT proxy message format with UDP convention
+        # Topic format: "udp:host:port"
+        topic = f"udp:{host}:{port}"
+
+        proxy_msg = mesh_pb2.MqttClientProxyMessage()
+        proxy_msg.topic = topic
+        proxy_msg.retained = False  # Not applicable for UDP
+
+        if data is not None:
+            proxy_msg.data = data
+        else:
+            proxy_msg.text = text
+
+        to_radio = mesh_pb2.ToRadio()
+        to_radio.mqttClientProxyMessage.CopyFrom(proxy_msg)
+        self._sendToRadio(to_radio)
+
     def _startHeartbeat(self):
         """We need to send a heartbeat message to the device every X seconds"""
 
@@ -1313,13 +1371,27 @@ class MeshInterface:  # pylint: disable=R0902
             self._handleQueueStatusFromRadio(fromRadio.queueStatus)
 
         elif fromRadio.HasField("mqttClientProxyMessage"):
-            publishingThread.queueWork(
-                lambda: pub.sendMessage(
-                    "meshtastic.mqttclientproxymessage",
-                    proxymessage=fromRadio.mqttClientProxyMessage,
-                    interface=self,
+            # Handle both MQTT and UDP proxy messages using the same protobuf message
+            # Distinguish by topic prefix: "mqtt:" for MQTT, "udp:" for UDP
+            proxy_msg = fromRadio.mqttClientProxyMessage
+            if proxy_msg.topic.startswith("udp:"):
+                # UDP proxy message - publish to UDP-specific topic
+                publishingThread.queueWork(
+                    lambda: pub.sendMessage(
+                        "meshtastic.udpclientproxymessage",
+                        proxymessage=proxy_msg,
+                        interface=self,
+                    )
                 )
-            )
+            else:
+                # MQTT proxy message (default behavior for backward compatibility)
+                publishingThread.queueWork(
+                    lambda: pub.sendMessage(
+                        "meshtastic.mqttclientproxymessage",
+                        proxymessage=proxy_msg,
+                        interface=self,
+                    )
+                )
 
         elif fromRadio.HasField("xmodemPacket"):
             publishingThread.queueWork(
