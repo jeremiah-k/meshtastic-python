@@ -72,8 +72,8 @@ class TCPInterface(StreamInterface):
         try:
             self.socket = socket.create_connection(server_address)
         except (OSError, ConnectionError, socket.timeout) as ex:
-            logging.warning(f"TCP connection failed to {self.hostname}:{self.portNumber} - {ex}")
             self.socket = None
+            logging.exception(f"TCP connection failed to {self.hostname}:{self.portNumber}")
             raise
 
     def close(self) -> None:

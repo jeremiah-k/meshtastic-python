@@ -288,8 +288,12 @@ def setPref(config, comp_name, raw_val) -> bool:
 def signal_handler(sig, frame):
     """Handle shutdown signals gracefully"""
     logging.info("Received shutdown signal, exiting gracefully...")
-    # Raise a KeyboardInterrupt to allow the main loop to exit gracefully
-    raise KeyboardInterrupt()
+    try:
+        # Raise a KeyboardInterrupt to allow the main loop to exit gracefully
+        raise KeyboardInterrupt()
+    finally:
+        # Perform any necessary cleanup here
+        pass
 
 def onConnected(interface):
     """Callback invoked when we connect to a radio"""

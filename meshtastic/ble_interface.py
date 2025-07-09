@@ -191,6 +191,12 @@ class BLEInterface(MeshInterface):
         except Exception as e:
             logging.error(f"Error in BLE disconnect callback: {e}")
 
+    def _handle_disconnection(self):
+        """Handle disconnection safely, avoiding duplicate events."""
+        if not (self._shutdown_flag or self._disconnection_sent):
+            self._disconnection_sent = True
+            self._disconnected()
+
     def _receiveFromRadioImpl(self) -> None:
         while self._want_receive:
             if self.should_read:
@@ -200,9 +206,7 @@ class BLEInterface(MeshInterface):
                     if self.client is None:
                         logging.debug(f"BLE client is None, shutting down")
                         self._want_receive = False
-                        if not self._shutdown_flag and not self._disconnection_sent:
-                            self._disconnection_sent = True
-                            self._disconnected()
+                        self._handle_disconnection()
                         continue
                     try:
                         b = bytes(self.client.read_gatt_char(FROMRADIO_UUID))
@@ -210,17 +214,13 @@ class BLEInterface(MeshInterface):
                         # Device disconnected probably, so end our read loop immediately
                         logging.debug(f"Device disconnected, shutting down {e}")
                         self._want_receive = False
-                        if not self._shutdown_flag and not self._disconnection_sent:
-                            self._disconnection_sent = True
-                            self._disconnected()
+                        self._handle_disconnection()
                     except BleakError as e:
                         # We were definitely disconnected
                         if "Not connected" in str(e):
                             logging.debug(f"Device disconnected, shutting down {e}")
                             self._want_receive = False
-                            if not self._shutdown_flag and not self._disconnection_sent:
-                                self._disconnection_sent = True
-                                self._disconnected()
+                            self._handle_disconnection()
                         else:
                             raise BLEInterface.BLEError("Error reading BLE") from e
                     if not b:
@@ -292,20 +292,18 @@ class BLEInterface(MeshInterface):
                         # Use async_await with shorter timeout during shutdown
                         self.client.async_await(self.client.bleak_client.disconnect(), timeout=5.0)
                     except Exception as e:
-                        logging.debug(f"Error during Bleak client disconnect: {e}")
+                        logging.error(f"Error during Bleak client disconnect: {e}")
 
                 # Disconnect the wrapper client
                 self.client.disconnect()
-            except Exception as e:
-                logging.error(f"Error disconnecting BLE client: {e}")
-            finally:
+
                 # Ensure the client is closed and resources are released
-                try:
-                    self.client.close()
-                except Exception as e:
-                    logging.debug(f"Error closing BLE client: {e}")
-                finally:
-                    self.client = None
+                self.client.close()
+
+            except Exception as e:
+                logging.error(f"Error disconnecting/closing BLE client: {e}")
+            finally:
+                self.client = None
         # Send disconnection event only if not already sent
         if not self._disconnection_sent:
             self._disconnection_sent = True
@@ -419,7 +417,7 @@ class BLEClient:
             if not future.done():
                 future.cancel()
             # Don't re-raise shutdown-related exceptions during shutdown
-            if self._shutdown_flag and "shutting down" in str(e):
+            if self._shutdown_flag:
                 logging.debug(f"Ignoring expected shutdown error: {e}")
                 return None
             raise
