@@ -45,6 +45,7 @@ class BLEInterface(MeshInterface):
 
         self.should_read = False
         self._shutdown_flag = False  # Prevent race conditions during shutdown
+        self._connection_established = False  # Track if connection was ever successfully established
         self._disconnection_sent = False  # Track if disconnection event was already sent
 
         logging.debug("Threads starting")
@@ -59,6 +60,7 @@ class BLEInterface(MeshInterface):
         try:
             logging.debug(f"BLE connecting to: {address if address else 'any'}")
             self.client = self.connect(address)
+            self._connection_established = True  # Mark connection as successfully established
             logging.debug("BLE connected")
         except BLEInterface.BLEError as e:
             self.close()
@@ -193,7 +195,7 @@ class BLEInterface(MeshInterface):
 
     def _handle_disconnection(self):
         """Handle disconnection safely, avoiding duplicate events."""
-        if not (self._shutdown_flag or self._disconnection_sent):
+        if self._connection_established and not (self._shutdown_flag or self._disconnection_sent):
             self._disconnection_sent = True
             self._disconnected()
 
@@ -306,8 +308,8 @@ class BLEInterface(MeshInterface):
                 logging.error(f"Error disconnecting/closing BLE client: {e}")
             finally:
                 self.client = None
-        # Send disconnection event only if not already sent
-        if not self._disconnection_sent:
+        # Send disconnection event only if connection was established and not already sent
+        if self._connection_established and not self._disconnection_sent:
             self._disconnection_sent = True
             self._disconnected() # send the disconnected indicator up to clients
 
