@@ -39,6 +39,18 @@ class BLEInterface(MeshInterface):
         debugOut: Optional[io.TextIOWrapper]=None,
         noNodes: bool = False,
     ) -> None:
+        """
+        Initializes the BLE mesh network interface, starts the receive thread, connects to the BLE device, registers notification handlers, and sets up automatic cleanup on exit.
+        
+        Parameters:
+            address (Optional[str]): The BLE address of the device to connect to, or None to connect to any available device.
+            noProto (bool): If True, disables protocol initialization and configuration.
+            debugOut (Optional[io.TextIOWrapper]): Optional output stream for debug messages.
+            noNodes (bool): If True, disables node discovery and management.
+        
+        Raises:
+            BLEInterface.BLEError: If connection to the BLE device fails.
+        """
         MeshInterface.__init__(
             self, debugOut=debugOut, noProto=noProto, noNodes=noNodes
         )
@@ -182,6 +194,11 @@ class BLEInterface(MeshInterface):
         return client
 
     def _receiveFromRadioImpl(self) -> None:
+        """
+        Continuously reads data from the BLE radio characteristic in a dedicated thread and processes incoming messages.
+        
+        The method waits for a trigger flag before attempting to read from the BLE device. It handles device disconnection and read errors by terminating the receive loop, and retries reads on empty responses up to a limit. Received data is passed to the message handler for further processing.
+        """
         while self._want_receive:
             if self.should_read:
                 self.should_read = False
@@ -217,6 +234,11 @@ class BLEInterface(MeshInterface):
 
     def _sendToRadioImpl(self, toRadio) -> None:
         # Don't send data if we're shutting down
+        """
+        Serializes and sends a protobuf message to the mesh device over BLE.
+        
+        If the interface is shutting down, the operation is skipped. Errors during transmission are raised as BLEInterface.BLEError unless shutdown is in progress, in which case they are suppressed. After sending, triggers a read from the radio.
+        """
         if self._shutdown_flag:
             logging.debug("Ignoring TORADIO write during shutdown")
             return
@@ -242,6 +264,11 @@ class BLEInterface(MeshInterface):
 
     def close(self) -> None:
         # Prevent multiple close attempts
+        """
+        Closes the BLE interface, ensuring all resources and threads are cleaned up safely.
+        
+        This method is idempotent and prevents further operations during shutdown. It stops the receive thread, unregisters exit handlers, disconnects and closes the BLE client, and notifies clients of disconnection. Errors during shutdown are logged but do not interrupt the cleanup process.
+        """
         if self._shutdown_flag:
             return
         self._shutdown_flag = True
@@ -281,6 +308,11 @@ class BLEClient:
     """Client for managing connection to a BLE device"""
 
     def __init__(self, address=None, **kwargs) -> None:
+        """
+        Initializes a BLEClient with a dedicated asyncio event loop running in a separate thread.
+        
+        If an address is provided, prepares a BleakClient for BLE operations; otherwise, only device discovery is available.
+        """
         self._eventLoop = asyncio.new_event_loop()
         self._eventThread = Thread(
             target=self._run_event_loop, name="BLEClient", daemon=True
@@ -319,9 +351,19 @@ class BLEClient:
         return bool(self.bleak_client.services.get_characteristic(specifier))
 
     def start_notify(self, *args, **kwargs):  # pylint: disable=C0116
+        """
+        Starts BLE notifications on a specified characteristic.
+        
+        This method enables notifications for a given GATT characteristic, allowing the client to receive asynchronous updates from the BLE device.
+        """
         self.async_await(self.bleak_client.start_notify(*args, **kwargs))
 
     def close(self):  # pylint: disable=C0116
+        """
+        Shuts down the BLE client, cancelling all pending asynchronous tasks and stopping the event loop and event thread.
+        
+        Ensures that shutdown is performed only once, cancels all tracked asyncio futures, stops the event loop, and waits for the event thread to terminate. Logs warnings or errors if shutdown does not complete cleanly.
+        """
         if self._shutdown_flag:
             return
         self._shutdown_flag = True
@@ -348,13 +390,32 @@ class BLEClient:
             logging.error(f"Error during BLE client shutdown: {e}")
 
     def __enter__(self):
+        """
+        Enter the runtime context for the BLEClient, enabling use with the `with` statement.
+        """
         return self
 
     def __exit__(self, _type, _value, _traceback):
+        """
+        Ensures the BLE client is properly closed when exiting a context manager block.
+        """
         self.close()
 
     def async_await(self, coro, timeout=30.0):  # pylint: disable=C0116
-        """Execute async coroutine with default 30 second timeout"""
+        """
+        Runs an asynchronous coroutine on the BLE client's event loop and waits for its result, enforcing a timeout and tracking the task for proper shutdown.
+        
+        Parameters:
+            coro: The coroutine to execute.
+            timeout (float): Maximum time in seconds to wait for the coroutine to complete (default: 30.0).
+        
+        Returns:
+            The result of the coroutine.
+        
+        Raises:
+            RuntimeError: If called while the BLE client is shutting down.
+            Exception: Propagates any exception raised by the coroutine or if the timeout is exceeded.
+        """
         if self._shutdown_flag:
             raise RuntimeError("BLE client is shutting down")
 
@@ -380,9 +441,18 @@ class BLEClient:
                 self._pending_tasks.discard(future)
 
     def async_run(self, coro):  # pylint: disable=C0116
+        """
+        Schedules a coroutine to run on the BLE client's event loop thread-safe.
+        
+        Returns:
+        	A concurrent.futures.Future representing the execution of the coroutine.
+        """
         return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
 
     def _run_event_loop(self):
+        """
+        Runs the asyncio event loop for BLE operations in a dedicated thread, ensuring all pending tasks are cancelled and the event loop is closed on shutdown.
+        """
         try:
             asyncio.set_event_loop(self._eventLoop)
             self._eventLoop.run_forever()

@@ -192,7 +192,18 @@ def traverseConfig(config_root, config, interface_config) -> bool:
 
 
 def setPref(config, comp_name, raw_val) -> bool:
-    """Set a channel or preferences value"""
+    """
+    Set a configuration or channel preference value on a protobuf config object.
+    
+    Attempts to set the specified field, handling nested fields, enum conversion, repeated fields, and basic validation (e.g., minimum length for Wi-Fi PSK). Prints confirmation or error messages as appropriate.
+    
+    Parameters:
+    	comp_name (str): Dot-separated name of the preference or channel field to set (e.g., "network.wifi_psk").
+    	raw_val: The value to assign to the field. Can be a string, number, or list, depending on the field type.
+    
+    Returns:
+    	bool: True if the value was set successfully, False otherwise.
+    """
 
     name = splitCompoundName(comp_name)
 
@@ -286,13 +297,22 @@ def setPref(config, comp_name, raw_val) -> bool:
 
 
 def signal_handler(sig, frame):
-    """Handle shutdown signals gracefully"""
+    """
+    Handles shutdown signals by logging the event and raising KeyboardInterrupt to enable graceful application exit.
+    
+    Parameters:
+        sig: The signal number received.
+        frame: The current stack frame when the signal was received.
+    """
     logging.info("Received shutdown signal, exiting gracefully...")
     # Raise a KeyboardInterrupt to allow the main loop to exit gracefully
     raise KeyboardInterrupt()
 
 def onConnected(interface):
-    """Callback invoked when we connect to a radio"""
+    """
+    Handles all CLI-driven actions after connecting to a Meshtastic radio interface.
+    
+    This callback is invoked upon successful connection to a device and processes the full range of command-line arguments, performing configuration, messaging, administrative, and diagnostic operations on the connected node. Supported actions include setting device time, position, owner names, canned messages, ringtones, Ham ID, and preferences; managing channels; sending messages and requests; performing node database modifications; exporting/importing configuration; displaying device and node information; managing GPIO; and initiating advanced features like tunnels and power stress tests. The function manages connection closure and acknowledgment waiting as needed, and handles errors by printing messages, closing the interface, and exiting.
     closeNow = False  # Should we drop the connection after we finish?
     waitForAckNak = (
         False  # Should we wait for an acknowledgment if we send to a remote node?
@@ -1207,7 +1227,11 @@ def create_power_meter():
 
 
 def common():
-    """Shared code for all of our command line wrappers."""
+    """
+    Executes the main logic for the Meshtastic CLI, handling argument validation, device connection, configuration, and command execution.
+    
+    This function configures logging, validates user input, manages device connections (serial, BLE, or TCP), and processes CLI commands such as configuration, messaging, and administrative actions. It also sets up signal handlers for graceful shutdown and manages serial output logging. If requested, it performs BLE scanning, runs tests, or exports support information. The function enters a persistent loop for certain modes (e.g., listen, tunnel) and ensures proper error handling and user feedback for connection issues.
+    """
     logfile = None
     args = mt_config.args
     parser = mt_config.parser
