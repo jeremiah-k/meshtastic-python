@@ -1,14 +1,26 @@
-## Simplified Summary: Making Meshtastic Bluetooth More Reliable
+## Summary: Strengthening Our Bluetooth (and Core Connection) Handling
 
-This update fixes some tricky problems with how Meshtastic devices talk to your computer or server over Bluetooth (BLE). Sometimes, if a Meshtastic node restarted or the Bluetooth connection dropped, things wouldn't reconnect properly, causing outages.
+We've made some important under-the-hood improvements to how our software handles Bluetooth (BLE) connections and some of the core utilities that manage these connections. This work was initially focused on fixing issues where Bluetooth devices, after restarting or disconnecting, wouldn't reliably reconnect, especially for setups needing constant uptime (like `meshtastic-matrix-relay`).
 
-**What We Fixed:**
+**What We Did:**
 
-1.  **Smoother Shutdowns:** We've improved how the Bluetooth connection closes down. Before, it could sometimes get stuck, especially if it was trying to close itself from a weird place in the code. This caused errors and prevented new connections. Now, it shuts down more cleanly.
-2.  **Better Error Handling:** If the Bluetooth connection drops unexpectedly, the software is now better at noticing this and cleaning things up properly. This helps it get ready to try connecting again.
-3.  **No More Self-Tripping:** Fixed a specific bug where a part of the Bluetooth code would try to shut itself down in a way that wasn't allowed, like trying to pull the rug out from under its own feet.
-4.  **Ready for Reconnection:** By making sure everything shuts down neatly, the system is much more likely to successfully reconnect to your Meshtastic node if it reboots or the connection is temporarily lost.
+1.  **Made `BLEClient` More Robust (A Key Helper Tool):**
+    *   We have a helper component called `BLEClient` that does the low-level work of talking to Bluetooth devices. We've significantly toughened this up.
+    *   It now shuts itself down more gracefully, avoiding errors where it might try to stop itself in a problematic way (this fixed a "cannot join current thread" bug).
+    *   It's also better at cleaning up any ongoing tasks before it stops, preventing leftover bits that could cause issues later.
 
-**Why This Matters:**
+2.  **Improved `BLEInterface` (How We Use Bluetooth Specifically):**
+    *   The main Bluetooth interface now uses the improved `BLEClient` and also has a better-defined shutdown process. This means when you're done with a Bluetooth connection, or if it drops, things get closed out in the right order.
+    *   It's now more skilled at detecting and reacting to unexpected disconnections, making sure it signals that the connection is lost without causing further errors.
 
-If you're using Meshtastic with something like a relay that needs to stay connected all the time (e.g., for a mountaintop node), these fixes will make the Bluetooth connection much more stable and less likely to fail permanently after a glitch. This means fewer interruptions and more reliable communication.Tool output for `create_file_with_block`:
+3.  **Why This is Broader Than Just One Part:**
+    *   While our main goal was to fix specific Bluetooth stability problems, the improvements to the `BLEClient` helper mean that any part of our system that uses it (or might use it in the future for Bluetooth tasks) gets these benefits too. Think of it as strengthening a foundational building block.
+
+**The Goal:**
+
+Our aim was to make connections, especially Bluetooth ones, more reliable and less prone to getting stuck in a failed state. This should lead to:
+*   Fewer permanent disconnections after a temporary glitch or device reboot.
+*   More stable long-running operations.
+*   Easier troubleshooting if problems do arise, thanks to better internal logging.
+
+We've tried to be thorough in making sure these components clean up after themselves properly, which is key to being able to start fresh when a new connection is needed.Tool output for `overwrite_file_with_block`:
