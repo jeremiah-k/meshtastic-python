@@ -299,9 +299,6 @@ class BLEInterface(MeshInterface):
                     except Exception as e:
                         logging.error(f"Error during Bleak client disconnect: {e}")
 
-                # Disconnect the wrapper client
-                self.client.disconnect()
-
                 # Ensure the client is closed and resources are released
                 self.client.close()
 
