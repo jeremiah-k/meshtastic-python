@@ -41,6 +41,7 @@ class StreamInterface(MeshInterface):
         self.stream: Optional[serial.Serial] # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
+        self._disconnection_sent = False  # Track if disconnection event was already sent
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
@@ -103,8 +104,9 @@ class StreamInterface(MeshInterface):
                     # we sleep here to give the TBeam a chance to work
                     time.sleep(0.1)
             except (OSError, serial.SerialException) as ex:
-                if not self._wantExit:
+                if not self._wantExit and not self._disconnection_sent:
                     logging.warning(f"Stream write failed, connection lost... {ex}")
+                    self._disconnection_sent = True
                     self._disconnected()
                 self.stream = None
 
@@ -226,4 +228,6 @@ class StreamInterface(MeshInterface):
             )
         finally:
             logging.debug("reader is exiting")
-            self._disconnected()
+            if not self._disconnection_sent:
+                self._disconnection_sent = True
+                self._disconnected()

@@ -33,6 +33,7 @@ class TCPInterface(StreamInterface):
 
         self.hostname: str = hostname
         self.portNumber: int = portNumber
+        self._disconnection_sent = False  # Track if disconnection event was already sent
 
         self.socket: Optional[socket.socket] = None
 
@@ -71,6 +72,7 @@ class TCPInterface(StreamInterface):
         server_address = (self.hostname, self.portNumber)
         try:
             self.socket = socket.create_connection(server_address)
+            self._disconnection_sent = False  # Reset flag on successful connection
         except (OSError, ConnectionError, socket.timeout) as ex:
             logging.warning(f"TCP connection failed to {self.hostname}:{self.portNumber} - {ex}")
             self.socket = None
@@ -96,8 +98,9 @@ class TCPInterface(StreamInterface):
             try:
                 self.socket.send(b)
             except (OSError, ConnectionError, BrokenPipeError) as ex:
-                if not self._wantExit:
+                if not self._wantExit and not self._disconnection_sent:
                     logging.warning(f"TCP connection lost during write, disconnecting... {ex}")
+                    self._disconnection_sent = True
                     self._disconnected()
                 self.socket = None
 
@@ -120,15 +123,17 @@ class TCPInterface(StreamInterface):
                         self.myConnect()
                         self._startConfig()
                     except Exception as ex:
-                        if not self._wantExit:
+                        if not self._wantExit and not self._disconnection_sent:
                             logging.warning(f"TCP reconnection failed, disconnecting... {ex}")
+                            self._disconnection_sent = True
                             self._disconnected()
                         return None
                     return None
                 return data
             except (OSError, ConnectionError, BrokenPipeError) as ex:
-                if not self._wantExit:
+                if not self._wantExit and not self._disconnection_sent:
                     logging.warning(f"TCP connection lost during read, disconnecting... {ex}")
+                    self._disconnection_sent = True
                     self._disconnected()
                 self.socket = None
                 return None
