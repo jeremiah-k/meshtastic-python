@@ -206,18 +206,12 @@ class BLEInterface(MeshInterface):
                     if self.client is None:
                         logging.debug(f"BLE client is None, shutting down")
                         self._want_receive = False
-                        self._handle_disconnection()
                         continue
                     try:
                         b = bytes(self.client.read_gatt_char(FROMRADIO_UUID))
-                    except BleakDBusError as e:
+                    except (BleakDBusError, BleakError) as e:
                         # Device disconnected probably, so end our read loop immediately
-                        logging.debug(f"Device disconnected, shutting down {e}")
-                        self._want_receive = False
-                        self._handle_disconnection()
-                    except BleakError as e:
-                        # We were definitely disconnected
-                        if "Not connected" in str(e):
+                        if isinstance(e, BleakDBusError) or "Not connected" in str(e):
                             logging.debug(f"Device disconnected, shutting down {e}")
                             self._want_receive = False
                             self._handle_disconnection()
@@ -265,6 +259,14 @@ class BLEInterface(MeshInterface):
             return
         self._shutdown_flag = True
 
+        if self._want_receive:
+            self._want_receive = False  # Tell the thread we want it to stop
+            if self._receiveThread:
+                self._receiveThread.join(
+                    timeout=2
+                )  # If bleak is hung, don't wait for the thread to exit (it is critical we disconnect)
+                self._receiveThread = None
+
         try:
             MeshInterface.close(self)
         except Exception as e:
@@ -290,7 +292,9 @@ class BLEInterface(MeshInterface):
                 if hasattr(self.client, 'bleak_client') and self.client.bleak_client:
                     try:
                         # Use async_await with shorter timeout during shutdown
-                        self.client.async_await(self.client.bleak_client.disconnect(), timeout=5.0)
+                        awaitable = self.client.bleak_client.disconnect()
+                        if awaitable:
+                            self.client.async_await(awaitable, timeout=5.0)
                     except Exception as e:
                         logging.error(f"Error during Bleak client disconnect: {e}")
 

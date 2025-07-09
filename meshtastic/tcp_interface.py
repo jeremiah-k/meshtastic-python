@@ -43,6 +43,13 @@ class TCPInterface(StreamInterface):
 
         super().__init__(debugOut=debugOut, noProto=noProto, connectNow=connectNow, noNodes=noNodes)
 
+    def _handle_tcp_disconnection(self, reason: str, ex: Exception):
+        """Handle TCP disconnection safely."""
+        if not self._wantExit:
+            logging.warning(f"TCP connection lost during {reason}, disconnecting... {ex}")
+            self._disconnected()
+        self.socket = None
+
     def __repr__(self):
         rep = f"TCPInterface({self.hostname!r}"
         if self.debugOut is not None:
@@ -96,10 +103,7 @@ class TCPInterface(StreamInterface):
             try:
                 self.socket.send(b)
             except (OSError, ConnectionError, BrokenPipeError) as ex:
-                if not self._wantExit:
-                    logging.warning(f"TCP connection lost during write, disconnecting... {ex}")
-                    self._disconnected()
-                self.socket = None
+                self._handle_tcp_disconnection("write", ex)
 
     def _readBytes(self, length) -> Optional[bytes]:
         """Read an array of bytes from our stream"""
@@ -127,10 +131,7 @@ class TCPInterface(StreamInterface):
                     return None
                 return data
             except (OSError, ConnectionError, BrokenPipeError) as ex:
-                if not self._wantExit:
-                    logging.warning(f"TCP connection lost during read, disconnecting... {ex}")
-                    self._disconnected()
-                self.socket = None
+                self._handle_tcp_disconnection("read", ex)
                 return None
 
         # no socket, break reader thread
