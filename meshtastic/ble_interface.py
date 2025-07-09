@@ -371,16 +371,28 @@ class BLEClient:
                 if not future.done():
                     future.cancel()
 
-            # Schedule the event loop shutdown
+            # Schedule the event loop shutdown more aggressively
             if self._eventLoop and not self._eventLoop.is_closed():
-                self._eventLoop.call_soon_threadsafe(self._eventLoop.stop)
+                try:
+                    self._eventLoop.call_soon_threadsafe(self._eventLoop.stop)
+                except RuntimeError as e:
+                    # Event loop might already be stopped
+                    logging.debug(f"Event loop already stopped: {e}")
 
             # Check if we're in the event thread to avoid self-join
             if threading.current_thread() != self._eventThread:
-                # Wait for event thread to finish with timeout
-                self._eventThread.join(timeout=5.0)
+                # Wait for event thread to finish with shorter timeout
+                self._eventThread.join(timeout=3.0)
                 if self._eventThread.is_alive():
-                    logging.warning("BLE event thread did not shut down cleanly")
+                    logging.warning("BLE event thread did not shut down cleanly within timeout")
+                    # Force stop the event loop if thread is still alive
+                    if self._eventLoop and not self._eventLoop.is_closed():
+                        try:
+                            # Try to force stop the event loop
+                            for task in asyncio.all_tasks(self._eventLoop):
+                                task.cancel()
+                        except Exception as e:
+                            logging.debug(f"Error force-cancelling tasks: {e}")
             else:
                 # We're in the event thread, can't join ourselves
                 # The event loop stop was already scheduled above
@@ -439,25 +451,30 @@ class BLEClient:
             logging.error(f"Error in BLE event loop: {e}")
         finally:
             try:
-                # Cancel all pending tasks with proper error handling
-                pending = asyncio.all_tasks(self._eventLoop)
-                if pending:
-                    for task in pending:
-                        if not task.done():
-                            task.cancel()
+                # Only try to cancel tasks if the event loop is still running
+                if not self._eventLoop.is_closed() and not self._eventLoop.is_running():
+                    # Cancel all pending tasks with proper error handling
+                    pending = asyncio.all_tasks(self._eventLoop)
+                    if pending:
+                        for task in pending:
+                            if not task.done():
+                                task.cancel()
 
-                    # Wait for tasks to complete cancellation with timeout
-                    try:
-                        self._eventLoop.run_until_complete(
-                            asyncio.wait_for(
-                                asyncio.gather(*pending, return_exceptions=True),
-                                timeout=3.0
+                        # Wait for tasks to complete cancellation with timeout
+                        # Only if we have pending tasks and the loop can still run
+                        try:
+                            self._eventLoop.run_until_complete(
+                                asyncio.wait_for(
+                                    asyncio.gather(*pending, return_exceptions=True),
+                                    timeout=2.0  # Reduced timeout to prevent hanging
+                                )
                             )
-                        )
-                    except asyncio.TimeoutError:
-                        logging.warning("Timeout waiting for BLE tasks to cancel")
-                    except Exception as e:
-                        logging.debug(f"Expected error during task cancellation: {e}")
+                        except asyncio.TimeoutError:
+                            logging.warning("Timeout waiting for BLE tasks to cancel")
+                        except Exception as e:
+                            logging.debug(f"Expected error during task cancellation: {e}")
+                else:
+                    logging.debug("Event loop already closed or running, skipping task cancellation")
             except Exception as e:
                 logging.error(f"Error cancelling tasks: {e}")
             finally:
