@@ -259,8 +259,8 @@ class BLEInterface(MeshInterface):
         # Prevent multiple close attempts
         if self._shutdown_flag:
             return
-        self._shutdown_flag = True
 
+        # First, stop the receive thread but don't set shutdown flag yet
         if self._want_receive:
             self._want_receive = False  # Tell the thread we want it to stop
             if self._receiveThread:
@@ -269,19 +269,7 @@ class BLEInterface(MeshInterface):
                 )  # If bleak is hung, don't wait for the thread to exit (it is critical we disconnect)
                 self._receiveThread = None
 
-        try:
-            MeshInterface.close(self)
-        except Exception as e:
-            logging.error(f"Error closing mesh interface: {e}")
-
-        if self._want_receive:
-            self._want_receive = False  # Tell the thread we want it to stop
-            if self._receiveThread:
-                self._receiveThread.join(
-                    timeout=2
-                )  # If bleak is hung, don't wait for the thread to exit (it is critical we disconnect)
-                self._receiveThread = None
-
+        # Disconnect the Bleak client BEFORE setting shutdown flag
         if self.client:
             try:
                 atexit.unregister(self._exit_handler)
@@ -290,22 +278,36 @@ class BLEInterface(MeshInterface):
                 pass
 
             try:
-                # Ensure Bleak client is properly disconnected before closing
+                # Ensure Bleak client is properly disconnected before setting shutdown flag
                 bleak_client = getattr(self.client, 'bleak_client', None)
                 if bleak_client:
                     try:
-                        # Use async_await with shorter timeout during shutdown
+                        # Disconnect while async_await can still work (shutdown flag not set yet)
                         awaitable = bleak_client.disconnect()
                         if awaitable:
                             self.client.async_await(awaitable, timeout=5.0)
+                        logging.debug("Bleak client disconnected successfully")
                     except Exception as e:
                         logging.error(f"Error during Bleak client disconnect: {e}")
 
+            except Exception as e:
+                logging.error(f"Error during BLE client disconnect phase: {e}")
+
+        # NOW set the shutdown flag after disconnect is complete
+        self._shutdown_flag = True
+
+        try:
+            MeshInterface.close(self)
+        except Exception as e:
+            logging.error(f"Error closing mesh interface: {e}")
+
+        # Close the BLE client after disconnect and shutdown flag are set
+        if self.client:
+            try:
                 # Ensure the client is closed and resources are released
                 self.client.close()
-
             except Exception as e:
-                logging.error(f"Error disconnecting/closing BLE client: {e}")
+                logging.error(f"Error closing BLE client: {e}")
             finally:
                 self.client = None
         # Send disconnection event only if connection was established and not already sent
