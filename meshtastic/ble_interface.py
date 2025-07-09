@@ -210,6 +210,9 @@ class BLEInterface(MeshInterface):
                         self._want_receive = False
                         continue
                     try:
+                        # Check shutdown flag before attempting read
+                        if not self._want_receive:
+                            break
                         b = bytes(self.client.read_gatt_char(FROMRADIO_UUID))
                     except (BleakDBusError, BleakError) as e:
                         # Device disconnected probably, so end our read loop immediately
@@ -219,6 +222,14 @@ class BLEInterface(MeshInterface):
                             self._handle_disconnection()
                         else:
                             raise BLEInterface.BLEError("Error reading BLE") from e
+                    except RuntimeError as e:
+                        # Handle shutdown-related RuntimeError from async_await
+                        if "shutting down" in str(e):
+                            logging.debug(f"BLE read cancelled due to shutdown: {e}")
+                            self._want_receive = False
+                            break
+                        else:
+                            raise
                     if not b:
                         if retries < 5:
                             time.sleep(0.1)
@@ -260,13 +271,28 @@ class BLEInterface(MeshInterface):
         if self._shutdown_flag:
             return
 
-        # First, stop the receive thread but don't set shutdown flag yet
+        # First, aggressively stop the receive thread and cancel any pending operations
         if self._want_receive:
             self._want_receive = False  # Tell the thread we want it to stop
+
+            # Cancel any pending BLE operations before joining the thread
+            if self.client:
+                try:
+                    # Cancel all pending futures to force receive thread to exit
+                    with self.client._pending_tasks_lock:
+                        for future in list(self.client._pending_tasks):
+                            if not future.done():
+                                future.cancel()
+                                logging.debug("Cancelled pending BLE operation during shutdown")
+                except Exception as e:
+                    logging.debug(f"Error cancelling pending BLE operations: {e}")
+
             if self._receiveThread:
                 self._receiveThread.join(
                     timeout=2
                 )  # If bleak is hung, don't wait for the thread to exit (it is critical we disconnect)
+                if self._receiveThread.is_alive():
+                    logging.warning("Receive thread did not exit cleanly, continuing with shutdown")
                 self._receiveThread = None
 
         # Disconnect the Bleak client BEFORE setting shutdown flag
