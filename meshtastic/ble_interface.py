@@ -302,6 +302,25 @@ class BLEInterface(MeshInterface):
         except Exception as e:
             logging.error(f"Error sending disconnect message: {e}")
 
+        # Stop all GATT notifications before disconnecting
+        if self.client:
+            try:
+                # Stop all active notifications to prevent hanging during disconnect
+                if self.client.has_characteristic(LEGACY_LOGRADIO_UUID):
+                    self.client.stop_notify(LEGACY_LOGRADIO_UUID)
+                    logging.debug("Stopped LEGACY_LOGRADIO notification")
+
+                if self.client.has_characteristic(LOGRADIO_UUID):
+                    self.client.stop_notify(LOGRADIO_UUID)
+                    logging.debug("Stopped LOGRADIO notification")
+
+                if self.client.has_characteristic(FROMNUM_UUID):
+                    self.client.stop_notify(FROMNUM_UUID)
+                    logging.debug("Stopped FROMNUM notification")
+
+            except Exception as e:
+                logging.error(f"Error stopping GATT notifications: {e}")
+
         # Disconnect the Bleak client BEFORE setting shutdown flag
         if self.client:
             try:
@@ -387,6 +406,9 @@ class BLEClient:
 
     def start_notify(self, *args, **kwargs):  # pylint: disable=C0116
         self.async_await(self.bleak_client.start_notify(*args, **kwargs))
+
+    def stop_notify(self, *args, **kwargs):  # pylint: disable=C0116
+        self.async_await(self.bleak_client.stop_notify(*args, **kwargs))
 
     def close(self):  # pylint: disable=C0116
         if self._shutdown_flag:
