@@ -295,6 +295,13 @@ class BLEInterface(MeshInterface):
                     logging.warning("Receive thread did not exit cleanly, continuing with shutdown")
                 self._receiveThread = None
 
+        # Send disconnect message to device BEFORE setting shutdown flag
+        try:
+            MeshInterface.close(self)
+            logging.debug("Sent disconnect message to device")
+        except Exception as e:
+            logging.error(f"Error sending disconnect message: {e}")
+
         # Disconnect the Bleak client BEFORE setting shutdown flag
         if self.client:
             try:
@@ -319,13 +326,8 @@ class BLEInterface(MeshInterface):
             except Exception as e:
                 logging.error(f"Error during BLE client disconnect phase: {e}")
 
-        # NOW set the shutdown flag after disconnect is complete
+        # NOW set the shutdown flag after disconnect message and Bleak disconnect are complete
         self._shutdown_flag = True
-
-        try:
-            MeshInterface.close(self)
-        except Exception as e:
-            logging.error(f"Error closing mesh interface: {e}")
 
         # Close the BLE client after disconnect and shutdown flag are set
         if self.client:
