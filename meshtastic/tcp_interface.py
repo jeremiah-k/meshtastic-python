@@ -127,6 +127,8 @@ class TCPInterface(StreamInterface):
                         if not self._wantExit:
                             logging.warning(f"TCP reconnection failed, disconnecting... {ex}")
                             self._disconnected()
+                        # Ensure socket is cleaned up after failed reconnection
+                        self.socket = None
                         return None
                     return None
                 return data

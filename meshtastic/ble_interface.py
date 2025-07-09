@@ -211,7 +211,7 @@ class BLEInterface(MeshInterface):
                         b = bytes(self.client.read_gatt_char(FROMRADIO_UUID))
                     except (BleakDBusError, BleakError) as e:
                         # Device disconnected probably, so end our read loop immediately
-                        if isinstance(e, BleakDBusError) or "Not connected" in str(e):
+                        if isinstance(e, BleakDBusError) or (isinstance(e, BleakError) and "Not connected" in str(e)):
                             logging.debug(f"Device disconnected, shutting down {e}")
                             self._want_receive = False
                             self._handle_disconnection()
@@ -289,10 +289,11 @@ class BLEInterface(MeshInterface):
 
             try:
                 # Ensure Bleak client is properly disconnected before closing
-                if hasattr(self.client, 'bleak_client') and self.client.bleak_client:
+                bleak_client = getattr(self.client, 'bleak_client', None)
+                if bleak_client:
                     try:
                         # Use async_await with shorter timeout during shutdown
-                        awaitable = self.client.bleak_client.disconnect()
+                        awaitable = bleak_client.disconnect()
                         if awaitable:
                             self.client.async_await(awaitable, timeout=5.0)
                     except Exception as e:
@@ -399,6 +400,7 @@ class BLEClient:
     def async_await(self, coro, timeout=30.0):  # pylint: disable=C0116
         """Execute async coroutine with default 30 second timeout"""
         if self._shutdown_flag:
+            logging.debug("BLE client is shutting down, raising RuntimeError")
             raise RuntimeError("BLE client is shutting down")
 
         future = self.async_run(coro)
