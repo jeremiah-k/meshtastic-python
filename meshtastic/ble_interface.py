@@ -564,10 +564,14 @@ class BLEClient:
                 logging.warning("BLEClient.close(): Event loop not found, already closed, or None.")
 
             logging.debug(f"BLEClient.close(): Joining event thread '{self._eventThread.name}' (timeout=5.0s)...")
+            print(f"BLEClient.close(): About to join event thread with 5s timeout")
             self._eventThread.join(timeout=5.0)
+            print(f"BLEClient.close(): Event thread join completed")
             if self._eventThread.is_alive():
+                print(f"BLEClient.close(): Event thread still alive after timeout")
                 logging.warning(f"BLEClient.close(): Event thread '{self._eventThread.name}' did not shut down cleanly after 5 seconds.")
             else:
+                print(f"BLEClient.close(): Event thread joined successfully")
                 logging.debug(f"BLEClient.close(): Event thread '{self._eventThread.name}' joined successfully.")
         except Exception as e:
             logging.error(f"Error during BLEClient.close() shutdown sequence: {e}", exc_info=True)
