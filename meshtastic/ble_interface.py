@@ -194,29 +194,51 @@ class BLEInterface(MeshInterface):
                         if not self._shutdown_flag and not self._disconnection_sent:
                             self._disconnection_sent = True
                             self._disconnected()
-                        continue
+                        continue # continue to top of while self._want_receive loop to check flag
+
+                    b = b"" # Ensure b is initialized
                     try:
-                        b = bytes(self.client.read_gatt_char(FROMRADIO_UUID))
+                        # Pass a shorter timeout directly to our wrapper's method
+                        b = bytes(self.client.read_gatt_char(FROMRADIO_UUID, timeout=1.0))
+                    except asyncio.TimeoutError: # read_gatt_char will raise this if async_await times out
+                        b = b"" # Treat timeout as no data received
+                        logging.debug("Timeout reading FROMRADIO_UUID")
+                        # This is not an error, just means no data in 1s, loop will check _want_receive
                     except BleakDBusError as e:
-                        # Device disconnected probably, so end our read loop immediately
-                        logging.debug(f"Device disconnected, shutting down {e}")
-                        self._want_receive = False
+                        logging.debug(f"Device disconnected (DBus) while reading, shutting down reader: {e}")
+                        self._want_receive = False # Signal reader thread to exit
                         if not self._shutdown_flag and not self._disconnection_sent:
                             self._disconnection_sent = True
                             self._disconnected()
+                        continue # continue to top of while self._want_receive loop
                     except BleakError as e:
-                        # We were definitely disconnected
-                        if "Not connected" in str(e):
-                            logging.debug(f"Device disconnected, shutting down {e}")
-                            self._want_receive = False
+                        # Handle cases like "Not connected" or other critical BLE errors
+                        # Using lower() for case-insensitive matching of "not connected"
+                        if "Not connected" in str(e) or "not connected" in str(e).lower():
+                            logging.debug(f"Device disconnected (BleakError) while reading, shutting down reader: {e}")
+                            self._want_receive = False # Signal reader thread to exit
                             if not self._shutdown_flag and not self._disconnection_sent:
                                 self._disconnection_sent = True
                                 self._disconnected()
+                            continue # continue to top of while self._want_receive loop
                         else:
-                            raise BLEInterface.BLEError("Error reading BLE") from e
-                    if not b:
-                        if retries < 5:
-                            time.sleep(0.1)
+                            # For other BleakErrors, log as error and potentially break or continue
+                            logging.error(f"Unhandled BleakError reading FROMRADIO_UUID: {e}")
+                            # Depending on severity, could set self._want_receive = False or just sleep and retry
+                            time.sleep(0.1) # Brief pause before retrying outer loop check
+                            continue # continue to top of while self._want_receive loop
+                    except Exception as e:
+                        # Catch any other unexpected errors during read_gatt_char
+                        logging.error(f"Unexpected error reading FROMRADIO_UUID: {e}")
+                        self._want_receive = False # Assume critical error, try to shutdown reader
+                        if not self._shutdown_flag and not self._disconnection_sent:
+                            self._disconnection_sent = True
+                            self._disconnected()
+                        continue # continue to top of while self._want_receive loop
+
+                    if not b: # No data received (either from timeout or actual empty read)
+                        if retries < 5 and self._want_receive: # Only retry if we still want to receive
+                            time.sleep(0.1) # Wait a bit before retrying the read_gatt_char
                             retries += 1
                             continue
                         break
@@ -264,9 +286,14 @@ class BLEInterface(MeshInterface):
         if self._want_receive:
             self._want_receive = False  # Tell the thread we want it to stop
             if self._receiveThread:
+                logging.debug("Joining BLEReceive thread...")
                 self._receiveThread.join(
-                    timeout=2
-                )  # If bleak is hung, don't wait for the thread to exit (it is critical we disconnect)
+                    timeout=5.0 # Increased timeout
+                )
+                if self._receiveThread.is_alive():
+                    logging.warning("BLEReceive thread did not exit cleanly after 5 seconds.")
+                else:
+                    logging.debug("BLEReceive thread joined successfully.")
                 self._receiveThread = None
 
         if self.client:
@@ -321,8 +348,9 @@ class BLEClient:
     def disconnect(self, **kwargs):  # pylint: disable=C0116
         self.async_await(self.bleak_client.disconnect(**kwargs))
 
-    def read_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
-        return self.async_await(self.bleak_client.read_gatt_char(*args, **kwargs))
+    def read_gatt_char(self, *args, timeout=30.0, **kwargs):  # pylint: disable=C0116
+        """Helper to wrap read_gatt_char with async_await and a custom timeout."""
+        return self.async_await(self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout)
 
     def write_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
         self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs))
