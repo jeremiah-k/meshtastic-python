@@ -366,12 +366,10 @@ class BLEInterface(MeshInterface):
         if hasattr(self, '_read_executor') and self._read_executor:
             logging.debug("Shutting down BLEGATTRead executor...")
             try:
-                # Attempt to cancel any pending read futures.
-                # Note: cancel_futures=True is Python 3.9+
-                # For broader compatibility, could manage futures manually if needed,
-                # but _receiveThread should no longer be submitting tasks.
-                self._read_executor.shutdown(wait=True, cancel_futures=True)
-                logging.debug("BLEGATTRead executor shutdown complete.")
+                # Don't wait for pending futures as they may be hanging on disconnected BLE operations
+                # The _receiveThread has already been stopped, so no new tasks will be submitted
+                self._read_executor.shutdown(wait=False, cancel_futures=True)
+                logging.debug("BLEGATTRead executor shutdown initiated (non-blocking).")
             except Exception as e:
                 logging.error(f"Error shutting down BLEGATTRead executor: {e}", exc_info=True)
             self._read_executor = None
