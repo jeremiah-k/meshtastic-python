@@ -244,8 +244,23 @@ class BLEInterface(MeshInterface):
                         break
                     logging.debug(f"FROMRADIO read: {b.hex()}")
                     self._handleFromRadio(b)
-            else:
+
+                # After potential read attempt and error handling, check if we should still be running
+                # or if the client has been shut down.
+                if not self._want_receive: # Primary check for this thread
+                    logging.debug("_want_receive is false, exiting _receiveFromRadioImpl inner loop.")
+                    break
+                if self.client is None or self.client._shutdown_flag:
+                    logging.debug("BLEClient is None or client is shutting down, exiting _receiveFromRadioImpl.")
+                    self._want_receive = False # Ensure outer loop also terminates
+                    break
+            else: # This 'else' corresponds to 'if self.should_read:'
                 time.sleep(0.01)
+
+            # Check before looping back in the main 'while self._want_receive:'
+            if self.client is None or self.client._shutdown_flag:
+                logging.debug("BLEClient is None or client is shutting down, stopping _receiveFromRadioImpl outer loop.")
+                self._want_receive = False # Ensure outer loop also terminates
 
     def _sendToRadioImpl(self, toRadio) -> None:
         # Don't send data if we're shutting down
@@ -398,9 +413,13 @@ class BLEClient:
         self.async_await(self.bleak_client.start_notify(*args, **kwargs))
 
     def close(self):  # pylint: disable=C0116
+        # Set shutdown_flag at the very beginning.
+        # If already shutting down (e.g. called re-entrantly), just return.
         if self._shutdown_flag:
+            logging.debug("BLEClient.close() called again, shutdown already in progress.")
             return
         self._shutdown_flag = True
+        logging.debug("BLEClient.close() started, _shutdown_flag set.")
 
         try:
             # Cancel all pending futures first
@@ -446,11 +465,23 @@ class BLEClient:
             self._pending_tasks.add(future)
         try:
             return future.result(timeout)
-        except Exception:
-            # Cancel the future if it's still running
+        except asyncio.CancelledError:
+            # This occurs if the task was cancelled externally (e.g., by BLEClient.close())
+            # or if the coroutine itself raised CancelledError.
+            logging.warning(f"Task was cancelled (coro: {coro}), possibly due to shutdown.")
+            raise # Re-raise to signal cancellation to the caller of async_await
+        except TimeoutError: # Specifically catch asyncio.TimeoutError from future.result(timeout)
+            logging.warning(f"Task timed out (coro: {coro}, timeout: {timeout}s).")
+            # It's important to try to cancel the underlying bleak task if our await timed out
             if not future.done():
                 future.cancel()
-            raise
+            raise # Re-raise TimeoutError
+        except Exception as e:
+            # For any other exception from future.result() or the coroutine itself
+            logging.error(f"Exception in awaited task (coro: {coro}): {e}")
+            if not future.done(): # Should be done if exception occurred, but good practice
+                future.cancel()
+            raise # Re-raise the original exception
         finally:
             with self._pending_tasks_lock:
                 self._pending_tasks.discard(future)
