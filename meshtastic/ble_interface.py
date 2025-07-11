@@ -301,15 +301,28 @@ class BLEInterface(MeshInterface):
                 atexit.unregister(self._exit_handler)
             except ValueError:
                 # Handler was already unregistered, ignore
+                logging.debug("atexit handler for BLE disconnect already unregistered or never registered.")
                 pass
+            except Exception as e: # Catch other potential errors from atexit.unregister
+                logging.error(f"Error unregistering atexit handler: {e}")
 
+
+            logging.debug("Attempting to disconnect BLE client with timeout...")
             try:
-                self.client.disconnect()
+                # Pass a shorter timeout for the disconnect operation
+                self.client.disconnect(timeout=5.0)
+                logging.debug("BLE client disconnect call completed.")
+            except asyncio.TimeoutError:
+                logging.warning("Timeout during BLE client disconnect operation.")
+            except RuntimeError as e: # Catch runtime errors from async_await if client is shutting down
+                logging.warning(f"RuntimeError during BLE client disconnect: {e}")
             except Exception as e:
-                logging.error(f"Error disconnecting BLE client: {e}")
+                logging.error(f"Error during BLE client disconnect: {e}")
             finally:
-                # Ensure the client is closed and resources are released
+                # Ensure the client's own close() method is called to stop its event loop etc.
+                logging.debug("Closing BLEClient (self.client.close())...")
                 self.client.close()
+                logging.debug("BLEClient (self.client.close()) completed.")
                 self.client = None
         # Send disconnection event only if not already sent
         if not self._disconnection_sent:
@@ -345,15 +358,22 @@ class BLEClient:
     def connect(self, **kwargs):  # pylint: disable=C0116
         return self.async_await(self.bleak_client.connect(**kwargs))
 
-    def disconnect(self, **kwargs):  # pylint: disable=C0116
-        self.async_await(self.bleak_client.disconnect(**kwargs))
+    def disconnect(self, timeout=30.0, **kwargs):  # pylint: disable=C0116
+        """Helper to wrap bleak_client.disconnect with async_await and a custom timeout."""
+        # Check if bleak_client exists and is connected before trying to disconnect
+        if hasattr(self, 'bleak_client') and self.bleak_client and self.bleak_client.is_connected:
+            return self.async_await(self.bleak_client.disconnect(**kwargs), timeout=timeout)
+        logging.debug("Skipped disconnect: bleak_client not connected or does not exist.")
+        return None # Or appropriate return indicating disconnect was not attempted/needed
+
 
     def read_gatt_char(self, *args, timeout=30.0, **kwargs):  # pylint: disable=C0116
         """Helper to wrap read_gatt_char with async_await and a custom timeout."""
         return self.async_await(self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout)
 
-    def write_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
-        self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs))
+    def write_gatt_char(self, *args, timeout=30.0, **kwargs):  # pylint: disable=C0116
+        """Helper to wrap write_gatt_char with async_await and a custom timeout."""
+        return self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout)
 
     def has_characteristic(self, specifier):
         """Check if the connected node supports a specified characteristic."""
