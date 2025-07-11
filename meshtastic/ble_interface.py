@@ -300,6 +300,11 @@ class BLEInterface(MeshInterface):
 
         b: bytes = toRadio.SerializeToString()
         if b and self.client:  # we silently ignore writes while we are shutting down
+            # Check if client is still connected before attempting write
+            if hasattr(self.client, '_shutdown_flag') and self.client._shutdown_flag:
+                logging.debug("Ignoring TORADIO write - BLE client is shutting down")
+                return
+
             logging.debug(f"TORADIO write: {b.hex()}")
             try:
                 self.client.write_gatt_char(
