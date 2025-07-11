@@ -318,6 +318,10 @@ class BLEInterface(MeshInterface):
             self.should_read = True
 
     def close(self) -> None:
+        # CRITICAL DEBUG: Add immediate logging to see if close() is called at all
+        print("BLEInterface.close() CALLED - immediate debug print")
+        logging.debug("BLEInterface.close() CALLED - immediate debug log")
+
         # Attempt to unregister atexit handler first to prevent conflicts
         # especially if this close() is part of a manual shutdown sequence.
         if hasattr(self, '_exit_handler') and self._exit_handler:
