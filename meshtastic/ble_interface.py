@@ -197,6 +197,12 @@ class BLEInterface(MeshInterface):
                         continue # continue to top of while self._want_receive loop to check flag
 
                     b = b"" # Ensure b is initialized
+                    # Pre-read check for client status
+                    if self.client is None or self.client._shutdown_flag:
+                        logging.debug("BLEClient is None or shutting down (pre-read check), exiting _receiveFromRadioImpl inner loop.")
+                        self._want_receive = False # Ensure outer loop also terminates
+                        break # Exit inner while self._want_receive loop
+
                     try:
                         # Pass a shorter timeout directly to our wrapper's method
                         b = bytes(self.client.read_gatt_char(FROMRADIO_UUID, timeout=1.0))
@@ -309,38 +315,19 @@ class BLEInterface(MeshInterface):
         logging.debug("BLEInterface.close() started, shutdown_flag set.")
 
         try:
+            logging.debug("Calling MeshInterface.close() (super().close())")
             MeshInterface.close(self)
+            logging.debug("MeshInterface.close() completed.")
         except Exception as e:
-            logging.error(f"Error closing mesh interface: {e}")
+            logging.error(f"Error closing mesh interface (super().close()): {e}")
 
-        if self._want_receive:
-            self._want_receive = False  # Tell the thread we want it to stop
-            if self._receiveThread:
-                logging.debug("Joining BLEReceive thread...")
-                self._receiveThread.join(
-                    timeout=5.0 # Increased timeout
-                )
-                if self._receiveThread.is_alive():
-                    logging.warning("BLEReceive thread did not exit cleanly after 5 seconds.")
-                else:
-                    logging.debug("BLEReceive thread joined successfully.")
-                self._receiveThread = None
+        logging.debug("Setting self._want_receive = False for BLEReceive thread.")
+        self._want_receive = False  # Signal the reader thread to stop
 
         if self.client:
+            logging.debug("Attempting to disconnect BLE client (self.client.disconnect(timeout=5.0))...")
             try:
-                atexit.unregister(self._exit_handler)
-            except ValueError:
-                # Handler was already unregistered, ignore
-                logging.debug("atexit handler for BLE disconnect already unregistered or never registered.")
-                pass
-            except Exception as e: # Catch other potential errors from atexit.unregister
-                logging.error(f"Error unregistering atexit handler: {e}")
-
-
-            logging.debug("Attempting to disconnect BLE client with timeout...")
-            try:
-                # Pass a shorter timeout for the disconnect operation
-                self.client.disconnect(timeout=5.0)
+                self.client.disconnect(timeout=5.0) # Disconnect before joining thread
                 logging.debug("BLE client disconnect call completed.")
             except asyncio.TimeoutError:
                 logging.warning("Timeout during BLE client disconnect operation.")
@@ -348,12 +335,45 @@ class BLEInterface(MeshInterface):
                 logging.warning(f"RuntimeError during BLE client disconnect: {e}")
             except Exception as e:
                 logging.error(f"Error during BLE client disconnect: {e}")
-            finally:
-                # Ensure the client's own close() method is called to stop its event loop etc.
-                logging.debug("Closing BLEClient (self.client.close())...")
+        else:
+            logging.debug("self.client is None, skipping client disconnect call.")
+
+        if self._receiveThread and self._receiveThread.is_alive():
+            logging.debug(f"Joining BLEReceive thread (timeout=5.0)...")
+            self._receiveThread.join(timeout=5.0)
+            if self._receiveThread.is_alive():
+                logging.warning("BLEReceive thread did not exit cleanly after 5 seconds.")
+            else:
+                logging.debug("BLEReceive thread joined successfully.")
+            self._receiveThread = None
+        elif self._receiveThread:
+            logging.debug("BLEReceive thread was not alive before join attempt.")
+            self._receiveThread = None # Clear it if it existed but wasn't alive
+        else:
+            logging.debug("No BLEReceive thread to join.")
+
+
+        if self.client:
+            # The atexit handler should have been unregistered at the start of this method.
+            # If it wasn't (e.g., _exit_handler was None), this is a secondary check,
+            # though the primary unregister is at the top.
+            if hasattr(self, '_exit_handler') and self._exit_handler:
+                try:
+                    logging.debug("Secondary check: Unregistering atexit handler...")
+                    atexit.unregister(self._exit_handler)
+                    self._exit_handler = None
+                    logging.debug("Secondary atexit unregistration successful.")
+                except Exception: # Broadly catch if it fails here, primary attempt was at start
+                    logging.debug("Secondary atexit unregistration failed or already done.")
+
+            logging.debug("Closing BLEClient (self.client.close())...")
+            try:
                 self.client.close()
                 logging.debug("BLEClient (self.client.close()) completed.")
-                self.client = None
+            except Exception as e:
+                logging.error(f"Error during self.client.close(): {e}")
+            finally:
+                self.client = None # Ensure client is set to None after close attempt
         # Send disconnection event only if not already sent
         if not self._disconnection_sent:
             self._disconnection_sent = True
@@ -422,25 +442,35 @@ class BLEClient:
         logging.debug("BLEClient.close() started, _shutdown_flag set.")
 
         try:
-            # Cancel all pending futures first
+            logging.debug(f"BLEClient.close(): Cancelling pending tasks. Found {len(self._pending_tasks)} tasks.")
             with self._pending_tasks_lock:
-                tasks_to_cancel = list(self._pending_tasks)
-                self._pending_tasks.clear()
+                tasks_to_cancel = list(self._pending_tasks) # Create a copy
+                # We don't clear self._pending_tasks here, async_await's finally block does it.
+                # Clearing here might cause issues if a task is finishing concurrently.
 
+            cancelled_count = 0
             for future in tasks_to_cancel:
                 if not future.done():
+                    logging.debug(f"BLEClient.close(): Cancelling future: {future}")
                     future.cancel()
+                    cancelled_count += 1
+            logging.debug(f"BLEClient.close(): Requested cancellation for {cancelled_count} tasks.")
 
-            # Schedule the event loop shutdown
             if self._eventLoop and not self._eventLoop.is_closed():
+                logging.debug("BLEClient.close(): Scheduling event loop stop.")
                 self._eventLoop.call_soon_threadsafe(self._eventLoop.stop)
+                logging.debug("BLEClient.close(): Event loop stop scheduled.")
+            else:
+                logging.warning("BLEClient.close(): Event loop not found, already closed, or None.")
 
-            # Wait for event thread to finish with timeout
+            logging.debug(f"BLEClient.close(): Joining event thread '{self._eventThread.name}' (timeout=5.0s)...")
             self._eventThread.join(timeout=5.0)
             if self._eventThread.is_alive():
-                logging.warning("BLE event thread did not shut down cleanly")
+                logging.warning(f"BLEClient.close(): Event thread '{self._eventThread.name}' did not shut down cleanly after 5 seconds.")
+            else:
+                logging.debug(f"BLEClient.close(): Event thread '{self._eventThread.name}' joined successfully.")
         except Exception as e:
-            logging.error(f"Error during BLE client shutdown: {e}")
+            logging.error(f"Error during BLEClient.close() shutdown sequence: {e}", exc_info=True)
 
     def __enter__(self):
         return self
