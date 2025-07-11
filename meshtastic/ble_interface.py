@@ -293,6 +293,10 @@ class BLEInterface(MeshInterface):
                 self._want_receive = False # Ensure outer loop also terminates
 
     def _sendToRadioImpl(self, toRadio) -> None:
+        # CRITICAL DEBUG: Add immediate logging
+        print(f"_sendToRadioImpl CALLED - shutdown_flag: {self._shutdown_flag}")
+        logging.debug(f"_sendToRadioImpl CALLED - shutdown_flag: {self._shutdown_flag}")
+
         # Don't send data if we're shutting down
         if self._shutdown_flag:
             logging.debug("Ignoring TORADIO write during shutdown")
@@ -300,9 +304,19 @@ class BLEInterface(MeshInterface):
 
         b: bytes = toRadio.SerializeToString()
         if b and self.client:  # we silently ignore writes while we are shutting down
-            # Check if client is still connected before attempting write
+            # Multiple checks to prevent hanging on disconnected client
             if hasattr(self.client, '_shutdown_flag') and self.client._shutdown_flag:
                 logging.debug("Ignoring TORADIO write - BLE client is shutting down")
+                return
+
+            # Check if the underlying bleak client is still connected
+            try:
+                if hasattr(self.client, 'bleak_client') and self.client.bleak_client:
+                    if not self.client.bleak_client.is_connected:
+                        logging.debug("Ignoring TORADIO write - BLE device is not connected")
+                        return
+            except Exception as e:
+                logging.debug(f"Error checking BLE connection status: {e}")
                 return
 
             logging.debug(f"TORADIO write: {b.hex()}")
