@@ -139,10 +139,17 @@ class MeshInterface:  # pylint: disable=R0902
 
     def close(self):
         """Shutdown this interface"""
+        print("MeshInterface.close() CALLED")
+        logging.debug("MeshInterface.close() CALLED")
+
         if self.heartbeatTimer:
             self.heartbeatTimer.cancel()
 
+        print("MeshInterface.close() calling _sendDisconnect")
+        logging.debug("MeshInterface.close() calling _sendDisconnect")
         self._sendDisconnect()
+        print("MeshInterface.close() _sendDisconnect completed")
+        logging.debug("MeshInterface.close() _sendDisconnect completed")
 
     def __enter__(self):
         return self
@@ -1162,9 +1169,15 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _sendDisconnect(self):
         """Tell device we are done using it"""
+        print("_sendDisconnect CALLED - creating disconnect message")
+        logging.debug("_sendDisconnect CALLED - creating disconnect message")
         m = mesh_pb2.ToRadio()
         m.disconnect = True
+        print("_sendDisconnect calling _sendToRadio")
+        logging.debug("_sendDisconnect calling _sendToRadio")
         self._sendToRadio(m)
+        print("_sendDisconnect _sendToRadio completed")
+        logging.debug("_sendDisconnect _sendToRadio completed")
 
     def _queueHasFreeSpace(self) -> bool:
         # We never got queueStatus, maybe the firmware is old
