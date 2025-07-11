@@ -378,10 +378,12 @@ class BLEInterface(MeshInterface):
         # especially if this close() is part of a manual shutdown sequence.
         if hasattr(self, '_exit_handler') and self._exit_handler:
             try:
+                print("BLEInterface.close() unregistering atexit handler")
                 logging.debug("Unregistering atexit handler in BLEInterface.close()...")
                 atexit.unregister(self._exit_handler)
                 logging.debug("atexit handler unregistered successfully.")
                 self._exit_handler = None # Clear it so we don't try again
+                print("BLEInterface.close() atexit handler unregistered")
             except ValueError: # Can happen if already unregistered or never properly registered
                 logging.debug("atexit handler was already unregistered or not found.")
             except Exception as e:
@@ -389,16 +391,21 @@ class BLEInterface(MeshInterface):
 
         # Prevent multiple close attempts
         if self._shutdown_flag:
+            print("BLEInterface.close() already called, returning")
+            logging.debug("BLEInterface.close() already called, returning")
             logging.debug("BLEInterface.close() called again, but shutdown already in progress.")
             return
         self._shutdown_flag = True
         logging.debug("BLEInterface.close() started, shutdown_flag set.")
 
         try:
+            print("BLEInterface.close() about to call MeshInterface.close()")
             logging.debug("Calling MeshInterface.close() (super().close())")
             MeshInterface.close(self)
+            print("BLEInterface.close() MeshInterface.close() completed")
             logging.debug("MeshInterface.close() completed.")
         except Exception as e:
+            print(f"BLEInterface.close() error in MeshInterface.close(): {e}")
             logging.error(f"Error closing mesh interface (super().close()): {e}")
 
         logging.debug("Setting self._want_receive = False for BLEReceive thread.")
