@@ -7,6 +7,7 @@ import struct
 import threading
 import time
 import io
+import concurrent.futures # Added
 from threading import Thread
 from typing import List, Optional
 
@@ -46,6 +47,9 @@ class BLEInterface(MeshInterface):
         self.should_read = False
         self._shutdown_flag = False  # Prevent race conditions during shutdown
         self._disconnection_sent = False  # Track if disconnection event was already sent
+        self._read_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='BLEGATTRead'
+        ) # Added
 
         logging.debug("Threads starting")
         self._want_receive = True
@@ -204,47 +208,53 @@ class BLEInterface(MeshInterface):
                         break # Exit inner while self._want_receive loop
 
                     try:
-                        # Pass a shorter timeout directly to our wrapper's method
-                        b = bytes(self.client.read_gatt_char(FROMRADIO_UUID, timeout=1.0))
-                    except asyncio.TimeoutError: # read_gatt_char will raise this if async_await times out
-                        b = b"" # Treat timeout as no data received
-                        logging.debug("Timeout reading FROMRADIO_UUID")
-                        # This is not an error, just means no data in 1s, loop will check _want_receive
+                        # Execute read_gatt_char in a separate thread to make it truly non-blocking
+                        # for the _receiveThread's control flow.
+                        # The timeout for read_gatt_char itself is 1.0s (passed to async_await).
+                        # The future.result() timeout is slightly longer.
+                        read_future = self._read_executor.submit(
+                            self.client.read_gatt_char, FROMRADIO_UUID, timeout=1.0
+                        )
+                        b = bytes(read_future.result(timeout=1.1)) # Timeout for future.result()
+                    except concurrent.futures.TimeoutError:
+                        b = b"" # Treat timeout from future.result() as no data
+                        logging.debug("ThreadPoolExecutor: Timeout waiting for read_gatt_char result.")
+                        # The task in the executor will continue running until its own timeout (1.0s for read_gatt_char)
+                        # We don't explicitly cancel read_future here as it's complex to manage with bleak's async nature.
+                        # The goal is to unblock _receiveThread.
+                    except asyncio.TimeoutError: # Should ideally be caught by the ThreadPoolExecutor's timeout
+                        b = b""
+                        logging.debug("Asyncio TimeoutError somehow propagated from read_gatt_char through executor.")
                     except BleakDBusError as e:
-                        logging.debug(f"Device disconnected (DBus) while reading, shutting down reader: {e}")
-                        self._want_receive = False # Signal reader thread to exit
+                        logging.debug(f"Device disconnected (DBus) during read_gatt_char via executor: {e}")
+                        self._want_receive = False
                         if not self._shutdown_flag and not self._disconnection_sent:
                             self._disconnection_sent = True
                             self._disconnected()
-                        continue # continue to top of while self._want_receive loop
+                        continue
                     except BleakError as e:
-                        # Handle cases like "Not connected" or other critical BLE errors
-                        # Using lower() for case-insensitive matching of "not connected"
                         if "Not connected" in str(e) or "not connected" in str(e).lower():
-                            logging.debug(f"Device disconnected (BleakError) while reading, shutting down reader: {e}")
-                            self._want_receive = False # Signal reader thread to exit
+                            logging.debug(f"Device disconnected (BleakError) during read_gatt_char via executor: {e}")
+                            self._want_receive = False
                             if not self._shutdown_flag and not self._disconnection_sent:
                                 self._disconnection_sent = True
                                 self._disconnected()
-                            continue # continue to top of while self._want_receive loop
+                            continue
                         else:
-                            # For other BleakErrors, log as error and potentially break or continue
-                            logging.error(f"Unhandled BleakError reading FROMRADIO_UUID: {e}")
-                            # Depending on severity, could set self._want_receive = False or just sleep and retry
-                            time.sleep(0.1) # Brief pause before retrying outer loop check
-                            continue # continue to top of while self._want_receive loop
+                            logging.error(f"Unhandled BleakError from read_gatt_char via executor: {e}")
+                            time.sleep(0.1)
+                            continue
                     except Exception as e:
-                        # Catch any other unexpected errors during read_gatt_char
-                        logging.error(f"Unexpected error reading FROMRADIO_UUID: {e}")
-                        self._want_receive = False # Assume critical error, try to shutdown reader
+                        logging.error(f"Unexpected error from read_gatt_char via executor: {e}", exc_info=True)
+                        self._want_receive = False
                         if not self._shutdown_flag and not self._disconnection_sent:
                             self._disconnection_sent = True
                             self._disconnected()
-                        continue # continue to top of while self._want_receive loop
+                        continue
 
-                    if not b: # No data received (either from timeout or actual empty read)
-                        if retries < 5 and self._want_receive: # Only retry if we still want to receive
-                            time.sleep(0.1) # Wait a bit before retrying the read_gatt_char
+                    if not b: # No data received
+                        if retries < 5 and self._want_receive:
+                            time.sleep(0.1)
                             retries += 1
                             continue
                         break
@@ -351,6 +361,20 @@ class BLEInterface(MeshInterface):
             self._receiveThread = None # Clear it if it existed but wasn't alive
         else:
             logging.debug("No BLEReceive thread to join.")
+
+        # Shutdown the ThreadPoolExecutor
+        if hasattr(self, '_read_executor') and self._read_executor:
+            logging.debug("Shutting down BLEGATTRead executor...")
+            try:
+                # Attempt to cancel any pending read futures.
+                # Note: cancel_futures=True is Python 3.9+
+                # For broader compatibility, could manage futures manually if needed,
+                # but _receiveThread should no longer be submitting tasks.
+                self._read_executor.shutdown(wait=True, cancel_futures=True)
+                logging.debug("BLEGATTRead executor shutdown complete.")
+            except Exception as e:
+                logging.error(f"Error shutting down BLEGATTRead executor: {e}", exc_info=True)
+            self._read_executor = None
 
 
         if self.client:
