@@ -181,10 +181,24 @@ class BLEInterface(MeshInterface):
 
         # Bleak docs recommend always doing a scan before connecting (even if we know addr)
         device = self.find_device(address)
-        client = BLEClient(device.address, disconnected_callback=lambda _: self.close())
+        client = BLEClient(device.address, disconnected_callback=self._on_disconnected)
         client.connect()
         client.discover()
         return client
+
+    def _on_disconnected(self, client):
+        """
+        Handle BLE disconnection callback safely by scheduling close() in a separate thread.
+        This prevents deadlocks when the callback is triggered from within Bleak's async context.
+        """
+        try:
+            logging.debug("BLE disconnected callback triggered, scheduling close() in separate thread")
+            # Schedule close() in a separate thread to avoid blocking the callback
+            import threading
+            close_thread = threading.Thread(target=self.close, name="BLEDisconnectClose", daemon=True)
+            close_thread.start()
+        except Exception as e:
+            logging.error(f"Error in BLE disconnect callback: {e}")
 
     def _receiveFromRadioImpl(self) -> None:
         while self._want_receive:
