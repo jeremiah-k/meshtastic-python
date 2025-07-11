@@ -273,10 +273,25 @@ class BLEInterface(MeshInterface):
             self.should_read = True
 
     def close(self) -> None:
+        # Attempt to unregister atexit handler first to prevent conflicts
+        # especially if this close() is part of a manual shutdown sequence.
+        if hasattr(self, '_exit_handler') and self._exit_handler:
+            try:
+                logging.debug("Unregistering atexit handler in BLEInterface.close()...")
+                atexit.unregister(self._exit_handler)
+                logging.debug("atexit handler unregistered successfully.")
+                self._exit_handler = None # Clear it so we don't try again
+            except ValueError: # Can happen if already unregistered or never properly registered
+                logging.debug("atexit handler was already unregistered or not found.")
+            except Exception as e:
+                logging.error(f"Error unregistering atexit handler: {e}")
+
         # Prevent multiple close attempts
         if self._shutdown_flag:
+            logging.debug("BLEInterface.close() called again, but shutdown already in progress.")
             return
         self._shutdown_flag = True
+        logging.debug("BLEInterface.close() started, shutdown_flag set.")
 
         try:
             MeshInterface.close(self)
