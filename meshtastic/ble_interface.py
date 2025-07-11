@@ -338,10 +338,26 @@ class BLEInterface(MeshInterface):
 
             logging.debug(f"TORADIO write: {b.hex()}")
             try:
-                self.client.write_gatt_char(
-                    TORADIO_UUID, b, response=True
-                )  # FIXME: or False?
-                # search Bleak src for org.bluez.Error.InProgress
+                # Use ThreadPoolExecutor with timeout to prevent hanging on disconnected BLE
+                import concurrent.futures
+                import threading
+
+                def _write_with_timeout():
+                    thread_name = threading.current_thread().name
+                    logging.debug(f"[{thread_name}] Starting BLE write_gatt_char")
+                    result = self.client.write_gatt_char(TORADIO_UUID, b, response=True)
+                    logging.debug(f"[{thread_name}] BLE write_gatt_char completed")
+                    return result
+
+                # Use a separate executor for write operations with aggressive timeout
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="BLEWrite") as executor:
+                    future = executor.submit(_write_with_timeout)
+                    future.result(timeout=2.0)  # 2-second timeout for write operations
+
+            except concurrent.futures.TimeoutError:
+                logging.warning("BLE write operation timed out - device likely disconnected")
+                if not self._shutdown_flag:
+                    raise BLEInterface.BLEError("BLE write timed out - device disconnected")
             except Exception as e:
                 if not self._shutdown_flag:  # Only raise error if not shutting down
                     raise BLEInterface.BLEError(
