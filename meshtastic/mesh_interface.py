@@ -1192,6 +1192,9 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _sendToRadio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Send a ToRadio protobuf to the device"""
+        print("_sendToRadio CALLED")
+        logging.debug("_sendToRadio CALLED")
+
         if self.noProto:
             logging.warning(
                 "Not sending packet because protocol use is disabled by noProto"
@@ -1200,18 +1203,29 @@ class MeshInterface:  # pylint: disable=R0902
             # logging.debug(f"Sending toRadio: {stripnl(toRadio)}")
 
             if not toRadio.HasField("packet"):
+                print("_sendToRadio: Sending non-packet message immediately")
+                logging.debug("_sendToRadio: Sending non-packet message immediately")
                 # not a meshpacket -- send immediately, give queue a chance,
                 # this makes heartbeat trigger queue
                 self._sendToRadioImpl(toRadio)
+                print("_sendToRadio: _sendToRadioImpl completed")
+                logging.debug("_sendToRadio: _sendToRadioImpl completed")
             else:
+                print("_sendToRadio: Queueing packet message")
+                logging.debug("_sendToRadio: Queueing packet message")
                 # meshpacket -- queue
                 self.queue[toRadio.packet.id] = toRadio
 
+            print("_sendToRadio: Starting queue processing")
+            logging.debug("_sendToRadio: Starting queue processing")
             resentQueue = collections.OrderedDict()
 
             while self.queue:
+                print(f"_sendToRadio: Processing queue with {len(self.queue)} items")
+                logging.debug(f"_sendToRadio: Processing queue with {len(self.queue)} items")
                 # logging.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
                 while not self._queueHasFreeSpace():
+                    print("_sendToRadio: Waiting for free space in TX Queue")
                     logging.debug("Waiting for free space in TX Queue")
                     time.sleep(0.5)
                 try:
