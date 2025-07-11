@@ -134,8 +134,14 @@ class StreamInterface(MeshInterface):
         # pyserial cancel_read doesn't seem to work, therefore we ask the
         # reader thread to close things for us
         self._wantExit = True
+        # Ensure the reader thread knows it should exit.
+        # This was originally in mesh_interface.stop()
+        # but moved here to consolidate stream specific logic.
+        self._rx_thread_should_run = False # ADDED
         if self._rxThread != threading.current_thread():
-            self._rxThread.join()  # wait for it to exit
+            self._rxThread.join(timeout=5.0)  # wait for it to exit
+            if self._rxThread.is_alive():
+                logging.warning("Reader thread did not exit cleanly.")
 
     def _handleLogByte(self, b):
         """Handle a byte that is part of a log message from the device."""

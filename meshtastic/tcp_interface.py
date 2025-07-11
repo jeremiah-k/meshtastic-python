@@ -71,7 +71,10 @@ class TCPInterface(StreamInterface):
         logging.debug(f"Connecting to {self.hostname}") # type: ignore[str-bytes-safe]
         server_address = (self.hostname, self.portNumber)
         try:
-            self.socket = socket.create_connection(server_address)
+            # Set a timeout for the connection attempt
+            self.socket = socket.create_connection(server_address, timeout=15)
+            # Set a timeout for read operations, so _readBytes doesn't block indefinitely
+            self.socket.settimeout(1.0)  # 1 second timeout for recv
             self._disconnection_sent = False  # Reset flag on successful connection
         except (OSError, ConnectionError, socket.timeout) as ex:
             logging.warning(f"TCP connection failed to {self.hostname}:{self.portNumber} - {ex}")
