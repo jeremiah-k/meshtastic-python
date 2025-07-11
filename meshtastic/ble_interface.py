@@ -554,11 +554,17 @@ class BLEClient:
                 for task in pending:
                     task.cancel()
 
-                # Wait for tasks to complete cancellation
+                # Wait for tasks to complete cancellation with timeout
                 if pending:
-                    self._eventLoop.run_until_complete(
-                        asyncio.gather(*pending, return_exceptions=True)
-                    )
+                    try:
+                        self._eventLoop.run_until_complete(
+                            asyncio.wait_for(
+                                asyncio.gather(*pending, return_exceptions=True),
+                                timeout=2.0
+                            )
+                        )
+                    except asyncio.TimeoutError:
+                        logging.warning(f"Timeout waiting for {len(pending)} tasks to cancel during BLE event loop shutdown")
             except Exception as e:
                 logging.error(f"Error cancelling tasks: {e}")
             finally:
