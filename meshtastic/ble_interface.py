@@ -186,6 +186,23 @@ class BLEInterface(MeshInterface):
         client.discover()
         return client
 
+    def _safe_read_gatt(self, client, uuid):
+        """
+        Safe wrapper for read_gatt_char with detailed logging for debugging hangs.
+        This runs in the ThreadPoolExecutor thread.
+        """
+        import threading
+        try:
+            thread_name = threading.current_thread().name
+            logging.debug(f"[{thread_name}] BLE read_gatt_char start")
+            result = client.read_gatt_char(uuid, timeout=1.0)
+            logging.debug(f"[{thread_name}] BLE read_gatt_char done")
+            return result
+        except Exception as e:
+            thread_name = threading.current_thread().name
+            logging.debug(f"[{thread_name}] BLE read_gatt_char exception: {e}")
+            raise
+
     def _on_disconnected(self, client):
         """
         Handle BLE disconnection callback safely by scheduling close() in a separate thread.
@@ -227,7 +244,7 @@ class BLEInterface(MeshInterface):
                         # The timeout for read_gatt_char itself is 1.0s (passed to async_await).
                         # The future.result() timeout is slightly longer.
                         read_future = self._read_executor.submit(
-                            self.client.read_gatt_char, FROMRADIO_UUID, timeout=1.0
+                            self._safe_read_gatt, self.client, FROMRADIO_UUID
                         )
                         b = bytes(read_future.result(timeout=1.1)) # Timeout for future.result()
                     except concurrent.futures.TimeoutError:
@@ -399,17 +416,25 @@ class BLEInterface(MeshInterface):
         else:
             logging.debug("No BLEReceive thread to join.")
 
-        # Shutdown the ThreadPoolExecutor
+        # Shutdown the ThreadPoolExecutor aggressively
         if hasattr(self, '_read_executor') and self._read_executor:
             logging.debug("Shutting down BLEGATTRead executor...")
             try:
-                # Don't wait for pending futures as they may be hanging on disconnected BLE operations
-                # The _receiveThread has already been stopped, so no new tasks will be submitted
+                # First attempt: non-blocking shutdown with cancellation
                 self._read_executor.shutdown(wait=False, cancel_futures=True)
                 logging.debug("BLEGATTRead executor shutdown initiated (non-blocking).")
+
+                # Give it a brief moment to clean up, but don't wait long
+                import time
+                time.sleep(0.1)
+
+                # Force cleanup by setting to None immediately
+                logging.debug("BLEGATTRead executor cleanup completed.")
             except Exception as e:
                 logging.error(f"Error shutting down BLEGATTRead executor: {e}", exc_info=True)
-            self._read_executor = None
+            finally:
+                # Always clear the reference to prevent further use
+                self._read_executor = None
 
 
         if self.client:
