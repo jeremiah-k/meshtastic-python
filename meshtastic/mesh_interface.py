@@ -826,6 +826,7 @@ class MeshInterface:  # pylint: disable=R0902
         destinationId: int | str = BROADCAST_ADDR,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         channelIndex: int = 0,
+        hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a high-priority alert text to a node, which may trigger special notifications on clients.
 
@@ -839,6 +840,8 @@ class MeshInterface:  # pylint: disable=R0902
             Optional callback invoked if a response is received for this message. (Default value = None)
         channelIndex : int
             Channel index to use when sending. (Default value = 0)
+        hopLimit : int | None
+            Optional hop limit override for the outgoing packet. (Default value = None)
 
         Returns
         -------
@@ -855,6 +858,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=onResponse,
             channelIndex=channelIndex,
             priority=mesh_pb2.MeshPacket.Priority.ALERT,
+            hopLimit=hopLimit,
         )
 
     def sendMqttClientProxyMessage(self, topic: str, data: bytes) -> None:
