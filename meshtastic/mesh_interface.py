@@ -1540,6 +1540,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantAck: bool = True,
         wantResponse: bool = False,
         channelIndex: int = 0,
+        hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Delete a waypoint by sending a Waypoint message with expire=0 to a destination.
 
@@ -1555,6 +1556,8 @@ class MeshInterface:  # pylint: disable=R0902
             If True, wait for and process a waypoint response before returning. (Default value = False)
         channelIndex : int
             Channel index to send the packet on. (Default value = 0)
+        hopLimit : int | None
+            Optional hop limit override for the outgoing packet. (Default value = None)
 
         Returns
         -------
@@ -1578,6 +1581,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse=wantResponse,
             onResponse=onResponse,
             channelIndex=channelIndex,
+            hopLimit=hopLimit,
         )
         if wantResponse:
             self.waitForWaypoint()
