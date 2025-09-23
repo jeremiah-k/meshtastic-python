@@ -996,6 +996,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantAck: bool = False,
         wantResponse: bool = False,
         channelIndex: int = 0,
+        hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send the device's position to a specific node or to broadcast.
 
@@ -1015,6 +1016,8 @@ class MeshInterface:  # pylint: disable=R0902
             If True, blocks until a position response is received. (Default value = False)
         channelIndex : int
             Channel index to send the packet on. (Default value = 0)
+        hopLimit : int | None
+            Optional hop limit override for the outgoing packet. (Default value = None)
 
         Returns
         -------
@@ -1047,6 +1050,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse=wantResponse,
             onResponse=onResponse,
             channelIndex=channelIndex,
+            hopLimit=hopLimit,
         )
         if wantResponse:
             self.waitForPosition()
