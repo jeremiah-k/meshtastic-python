@@ -776,6 +776,7 @@ class MeshInterface:  # pylint: disable=R0902
         channelIndex: int = 0,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.TEXT_MESSAGE_APP,
         replyId: int | None = None,
+        hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send UTF-8 text to a node (or broadcast) and return the transmitted MeshPacket.
 
@@ -798,6 +799,8 @@ class MeshInterface:  # pylint: disable=R0902
             Channel index to send on. (Default value = 0)
         portNum : portnums_pb2.PortNum.ValueType
             Application port number for the text message. (Default value = portnums_pb2.PortNum.TEXT_MESSAGE_APP)
+        hopLimit : int | None
+            Optional hop limit override for the outgoing packet. (Default value = None)
 
         Returns
         -------
@@ -814,6 +817,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse=onResponse,
             channelIndex=channelIndex,
             replyId=replyId,
+            hopLimit=hopLimit,
         )
 
     def sendAlert(
