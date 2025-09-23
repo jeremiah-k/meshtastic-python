@@ -1261,6 +1261,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantResponse: bool = False,
         channelIndex: int = 0,
         telemetryType: TelemetryType | str = DEFAULT_TELEMETRY_TYPE,
+        hopLimit: int | None = None,
     ) -> None:
         """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response.
 
@@ -1276,6 +1277,8 @@ class MeshInterface:  # pylint: disable=R0902
             Telemetry payload to send. Supported values: "environment_metrics", "air_quality_metrics",
             "power_metrics", "local_stats", and "device_metrics". When "device_metrics" is selected and local device
             metrics are available, the payload is populated from the local node's cached device metrics. (Default value = 'device_metrics')
+        hopLimit : int | None
+            Optional hop limit override for the outgoing packet. (Default value = None)
         """
         telemetry_type = telemetryType
         if telemetry_type not in VALID_TELEMETRY_TYPE_SET:
@@ -1289,7 +1292,6 @@ class MeshInterface:  # pylint: disable=R0902
                 stacklevel=2,
             )
             telemetry_type = DEFAULT_TELEMETRY_TYPE
-
         r = telemetry_pb2.Telemetry()
 
         if telemetry_type == "environment_metrics":
@@ -1338,6 +1340,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse=wantResponse,
             onResponse=onResponse,
             channelIndex=channelIndex,
+            hopLimit=hopLimit,
         )
         if wantResponse:
             self.waitForTelemetry()
