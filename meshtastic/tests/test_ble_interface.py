@@ -4,6 +4,7 @@ import pytest
 import asyncio
 import threading
 import time
+import concurrent.futures
 
 from meshtastic.ble_interface import BLEInterface
 from bleak.exc import BleakError
@@ -71,17 +72,20 @@ def test_send_to_radio():
 def test_from_num_handler_closed_interface():
     """Test that from_num_handler does nothing when interface is closed."""
     iface = BLEInterface()
-    iface._closed = True
-    iface._event_loop = MagicMock()
-    
-    # Should not create a task when interface is closed
-    iface.from_num_handler(None, b'\x01\x00\x00\x00')
-    iface._event_loop.create_task.assert_not_called()
-    iface.close()
+    try:
+        iface._closed = True
+        iface._event_loop = MagicMock()
+        
+        # Should not create a task when interface is closed
+        iface.from_num_handler(None, b'\x01\x00\x00\x00')
+        iface._event_loop.create_task.assert_not_called()
+    finally:
+        iface._closed = False
+        iface.close()
 
 
 @pytest.mark.ble
-def test_from_num_handler_with_lock(mocker):
+def test_from_num_handler_with_lock():
     """Test that from_num_handler always schedules read tasks."""
     iface = BLEInterface()
     iface._closed = False
@@ -105,12 +109,15 @@ def test_from_num_handler_with_lock(mocker):
 def test_run_coro_closed_interface():
     """Test that _run_coro returns None when interface is closed."""
     iface = BLEInterface()
-    iface._closed = True
-    iface._event_loop = MagicMock()
-    
-    result = iface._run_coro(asyncio.sleep(0))
-    assert result is None
-    iface.close()
+    try:
+        iface._closed = True
+        iface._event_loop = MagicMock()
+        
+        result = iface._run_coro(asyncio.sleep(0))
+        assert result is None
+    finally:
+        iface._closed = False
+        iface.close()
 
 
 @pytest.mark.ble
@@ -127,7 +134,7 @@ def test_run_coro_event_loop_not_running():
 
 
 @pytest.mark.ble
-def test_run_coro_timeout_error(mocker):
+def test_run_coro_timeout_error():
     """Test that _run_coro handles timeout errors properly."""
     iface = BLEInterface()
     iface._closed = False
@@ -145,7 +152,7 @@ def test_run_coro_timeout_error(mocker):
 
 
 @pytest.mark.ble
-def test_run_coro_cancelled_error(mocker):
+def test_run_coro_cancelled_error():
     """Test that _run_coro handles cancelled errors properly."""
     iface = BLEInterface()
     iface._closed = False
@@ -154,7 +161,7 @@ def test_run_coro_cancelled_error(mocker):
     
     # Mock future that raises CancelledError
     mock_future = MagicMock()
-    mock_future.result.side_effect = asyncio.CancelledError("Cancelled")
+    mock_future.result.side_effect = concurrent.futures.CancelledError("Cancelled")
     
     with patch('asyncio.run_coroutine_threadsafe', return_value=mock_future):
         result = iface._run_coro(asyncio.sleep(0), timeout=1.0)
@@ -163,7 +170,7 @@ def test_run_coro_cancelled_error(mocker):
 
 
 @pytest.mark.ble
-def test_run_coro_general_exception(mocker):
+def test_run_coro_general_exception():
     """Test that _run_coro handles general exceptions properly."""
     iface = BLEInterface()
     iface._closed = False
@@ -197,14 +204,17 @@ def test_handle_disconnected():
 def test_handle_disconnected_when_closed():
     """Test that _handle_disconnected doesn't log when interface is closed."""
     iface = BLEInterface()
-    iface._closed = True
-    iface._is_connected = True
-    
-    # Should not log anything when closed
-    iface._handle_disconnected()
-    
-    assert not iface._is_connected
-    iface.close()
+    try:
+        iface._closed = True
+        iface._is_connected = True
+        
+        # Should not log anything when closed
+        iface._handle_disconnected()
+        
+        assert not iface._is_connected
+    finally:
+        iface._closed = False
+        iface.close()
 
 
 @pytest.mark.ble
@@ -212,13 +222,16 @@ def test_receive_from_radio_impl_closed():
     """Test that _receiveFromRadioImpl returns early when interface is closed."""
     async def test_impl():
         iface = BLEInterface()
-        iface._closed = True
-        iface.client = MagicMock()
-        
-        # Should return immediately without doing anything
-        await iface._receiveFromRadioImpl()
-        iface.client.read_gatt_char.assert_not_called()
-        iface.close()
+        try:
+            iface._closed = True
+            iface.client = MagicMock()
+            
+            # Should return immediately without doing anything
+            await iface._receiveFromRadioImpl()
+            iface.client.read_gatt_char.assert_not_called()
+        finally:
+            iface._closed = False
+            iface.close()
     
     # Run the async test
     asyncio.run(test_impl())
@@ -241,7 +254,7 @@ def test_receive_from_radio_impl_no_client():
 
 
 @pytest.mark.ble
-def test_receive_from_radio_impl_successful_read(mocker):
+def test_receive_from_radio_impl_successful_read():
     """Test that _receiveFromRadioImpl handles successful reads."""
     async def test_impl():
         iface = BLEInterface()
@@ -261,7 +274,7 @@ def test_receive_from_radio_impl_successful_read(mocker):
 
 
 @pytest.mark.ble
-def test_receive_from_radio_impl_retry_logic(mocker):
+def test_receive_from_radio_impl_retry_logic():
     """Test that _receiveFromRadioImpl retries on empty reads."""
     async def test_impl():
         iface = BLEInterface()
@@ -285,19 +298,23 @@ def test_receive_from_radio_impl_retry_logic(mocker):
 
 
 @pytest.mark.ble
-def test_receive_from_radio_impl_bleak_error(mocker):
+def test_receive_from_radio_impl_bleak_error():
     """Test that _receiveFromRadioImpl handles BleakError properly."""
     async def test_impl():
         iface = BLEInterface()
         iface._closed = False
         iface.client = MagicMock()
         iface.client.read_gatt_char = AsyncMock(side_effect=BleakError("BLE error"))
-        iface.close = MagicMock()
-        
-        await iface._receiveFromRadioImpl()
-        
-        iface.close.assert_called_once()
-        iface.close()
+        iface.client.is_connected = True
+        original_handle_disconnected = iface._handle_disconnected
+        try:
+            with patch.object(iface, "_handle_disconnected", wraps=original_handle_disconnected) as disconnected_spy:
+                with patch.object(iface.client, "disconnect") as disconnect_spy:
+                    await iface._receiveFromRadioImpl()
+                    disconnected_spy.assert_called_once()
+                    disconnect_spy.assert_called_once()
+        finally:
+            iface.close()
     
     # Run the async test
     asyncio.run(test_impl())
@@ -316,7 +333,7 @@ def test_scan():
 
 
 @pytest.mark.ble
-def test_connect_already_connected(mocker):
+def test_connect_already_connected():
     """Test that connect does nothing when already connected."""
     iface = BLEInterface()
     iface._is_connected = True
@@ -330,11 +347,14 @@ def test_connect_already_connected(mocker):
 
 
 @pytest.mark.ble
-def test_connect_interface_closed(mocker):
+def test_connect_interface_closed():
     """Test that connect raises error when interface is closed."""
     iface = BLEInterface()
-    iface._closed = True
-    
-    with pytest.raises(BLEInterface.BLEError, match="Interface is closed"):
-        iface.connect(address="test")
-    iface.close()
+    try:
+        iface._closed = True
+        
+        with pytest.raises(BLEInterface.BLEError, match="Interface is closed"):
+            iface.connect(address="test")
+    finally:
+        iface._closed = False
+        iface.close()

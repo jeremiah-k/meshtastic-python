@@ -7,6 +7,7 @@ import struct
 import io
 import threading
 from typing import List, Optional, Callable
+from concurrent.futures import TimeoutError as FuturesTimeoutError, CancelledError as FuturesCancelledError
 
 import google.protobuf
 from bleak import BleakClient, BleakScanner, BLEDevice
@@ -44,7 +45,7 @@ class BLEInterface(MeshInterface):
         )
         self.client: Optional[BleakClient] = None
         self._exit_handler: Optional[Callable] = None
-        self._read_lock = asyncio.Lock()
+        self._read_lock: Optional[asyncio.Lock] = None
         self._read_pending = False
         self._event_loop = asyncio.new_event_loop()
         self._event_loop_ready = threading.Event()
@@ -100,16 +101,16 @@ class BLEInterface(MeshInterface):
         try:
             future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
             return future.result(timeout)
-        except asyncio.TimeoutError as e:
-            logger.error(f"Coroutine execution timed out: {e}")
+        except FuturesTimeoutError as e:
+            logger.exception("Coroutine execution timed out")
             raise BLEInterface.BLEError(f"Operation timed out: {e}") from e
-        except asyncio.CancelledError as e:
+        except FuturesCancelledError as e:
             logger.warning(f"Coroutine was cancelled: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error running coroutine: {e}")
+            logger.exception("Unexpected error running coroutine")
             raise BLEInterface.BLEError(
-                f"Failed to execute coroutine: {e}") from e
+                "Failed to execute coroutine") from e
 
     def __repr__(self):
         rep = f"BLEInterface(address={
@@ -129,6 +130,11 @@ class BLEInterface(MeshInterface):
             return
         from_num = struct.unpack("<I", bytes(b))[0]
         logger.debug(f"FROMNUM notify: {from_num}")
+
+        # Lazily init the lock on the loop thread
+        lock = self._read_lock
+        if lock is None:
+            self._read_lock = lock = asyncio.Lock()
 
         # Always schedule the read task - the lock inside _receiveFromRadioImpl
         # will handle race conditions properly
@@ -282,25 +288,33 @@ class BLEInterface(MeshInterface):
 
             # Start notifications
             try:
-                if self.client.services.get_characteristic(
-                        LEGACY_LOGRADIO_UUID):
+                services = await self.client.get_services()
+                if services.get_characteristic(LEGACY_LOGRADIO_UUID):
                     logger.debug("Subscribing to LEGACY_LOGRADIO_UUID")
                     await self.client.start_notify(
-                        LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler
+                        LEGACY_LOGRADIO_UUID,
+                        lambda s, b: self._event_loop.create_task(
+                            self.legacy_log_radio_handler(s, b)
+                        ),
                     )
-                if self.client.services.get_characteristic(LOGRADIO_UUID):
+                if services.get_characteristic(LOGRADIO_UUID):
                     logger.debug("Subscribing to LOGRADIO_UUID")
-                    await self.client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
-                if self.client.services.get_characteristic(FROMNUM_UUID):
+                    await self.client.start_notify(
+                        LOGRADIO_UUID,
+                        lambda s, b: self._event_loop.create_task(
+                            self.log_radio_handler(s, b)
+                        ),
+                    )
+                if services.get_characteristic(FROMNUM_UUID):
                     logger.debug("Subscribing to FROMNUM_UUID")
                     await self.client.start_notify(FROMNUM_UUID, self.from_num_handler)
             except Exception as e:
-                logger.error(f"Failed to start notifications: {e}")
+                logger.exception("Failed to start notifications")
                 await self.client.disconnect()
                 self.client = None
                 self._is_connected = False
                 raise BLEInterface.BLEError(
-                    f"Failed to start notifications: {e}") from e
+                    "Failed to start notifications") from e
 
         try:
             self._run_coro(_connect_async(), timeout=timeout + 10)
@@ -326,6 +340,8 @@ class BLEInterface(MeshInterface):
                 "BLE client is None or interface closed, shutting down")
             return
 
+        if self._read_lock is None:
+            self._read_lock = asyncio.Lock()
         async with self._read_lock:
             try:
                 self._read_pending = True
@@ -341,8 +357,13 @@ class BLEInterface(MeshInterface):
                             i + 1}, retrying...")
                     await asyncio.sleep(0.1)
             except BleakError as e:
-                logger.error(f"Error reading from BLE: {e}")
-                self.close()
+                logger.exception("Error reading from BLE")
+                try:
+                    if self.client and self.client.is_connected:
+                        await self.client.disconnect()
+                except Exception:
+                    pass
+                self._handle_disconnected()
             finally:
                 self._read_pending = False
 
@@ -374,6 +395,9 @@ class BLEInterface(MeshInterface):
             self._event_loop.call_soon_threadsafe(self._event_loop.stop)
 
         if self._event_thread and self._event_thread.is_alive():
+            if threading.current_thread() is self._event_thread:
+                logger.warning("Skipping join on event thread during stop")
+                return
             # Wait for the event thread to finish, but with a timeout
             self._event_thread.join(timeout=5.0)
             if self._event_thread.is_alive():
