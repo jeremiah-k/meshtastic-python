@@ -82,18 +82,19 @@ def test_from_num_handler_closed_interface():
 
 @pytest.mark.ble
 def test_from_num_handler_with_lock(mocker):
-    """Test that from_num_handler respects the read lock."""
+    """Test that from_num_handler always schedules read tasks."""
     iface = BLEInterface()
     iface._closed = False
     iface._event_loop = MagicMock()
     iface._read_lock = MagicMock()
     iface._read_lock.locked.return_value = True
     
-    # Should not create a task when lock is held
+    # Should always create a task regardless of lock state
     iface.from_num_handler(None, b'\x01\x00\x00\x00')
-    iface._event_loop.create_task.assert_not_called()
+    iface._event_loop.create_task.assert_called_once()
     
-    # Should create a task when lock is not held
+    # Reset mock and test again with lock not held
+    iface._event_loop.create_task.reset_mock()
     iface._read_lock.locked.return_value = False
     iface.from_num_handler(None, b'\x01\x00\x00\x00')
     iface._event_loop.create_task.assert_called_once()

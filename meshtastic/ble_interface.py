@@ -55,7 +55,8 @@ class BLEInterface(MeshInterface):
         )
         self._event_thread.start()
         # Wait for event loop to be ready
-        self._event_loop_ready.wait(timeout=5.0)
+        if not self._event_loop_ready.wait(timeout=5.0):
+            raise BLEInterface.BLEError("Event loop failed to start within timeout")
 
         if address:
             self.connect(address)
@@ -129,10 +130,9 @@ class BLEInterface(MeshInterface):
         from_num = struct.unpack("<I", bytes(b))[0]
         logger.debug(f"FROMNUM notify: {from_num}")
 
-        # Check if we can start a read operation using the lock to avoid race
-        # conditions
-        if not self._read_lock.locked():
-            self._event_loop.create_task(self._receiveFromRadioImpl())
+        # Always schedule the read task - the lock inside _receiveFromRadioImpl
+        # will handle race conditions properly
+        self._event_loop.create_task(self._receiveFromRadioImpl())
 
     async def log_radio_handler(self, _, b):  # pylint: disable=C0116
         log_record = mesh_pb2.LogRecord()
@@ -230,13 +230,13 @@ class BLEInterface(MeshInterface):
                     )
 
                     # Use a shorter timeout for individual connection attempts
-                    connection_timeout = min(timeout, 10)
+                    connection_timeout = min(timeout // max_retries, 10)
                     try:
                         await self.client.connect(timeout=connection_timeout)
                         logger.debug("BLE connected")
                         self._is_connected = True
                         break  # Success, exit retry loop
-                    except Exception as e:
+                    except BleakError as e:
                         logger.error(
                             f"Failed to connect to device {
                                 device.address} (attempt {
@@ -245,7 +245,7 @@ class BLEInterface(MeshInterface):
                         if self.client:
                             try:
                                 await self.client.disconnect()
-                            except Exception:
+                            except BleakError:
                                 pass  # Ignore disconnect errors during retry
                         self.client = None
                         self._is_connected = False
@@ -384,7 +384,7 @@ class BLEInterface(MeshInterface):
         logger.debug("BLE disconnected")
         self._is_connected = False
         if not self._closed:
-            # Only attempt to reconnect if we're not in the process of closing
+            # Log unexpected disconnection - reconnection is not implemented
             logger.info("Device disconnected unexpectedly")
 
     def close(self) -> None:
@@ -403,7 +403,7 @@ class BLEInterface(MeshInterface):
         if self.client and self.client.is_connected:
             try:
                 self._run_coro(self.client.disconnect())
-            except Exception as e:
+            except BLEInterface.BLEError as e:
                 logger.warning(f"Error during disconnect: {e}")
 
         self._stop_event_loop()
