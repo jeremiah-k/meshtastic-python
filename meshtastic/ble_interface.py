@@ -57,7 +57,7 @@ class BLEInterface(MeshInterface):
         self._event_thread.start()
         # Wait for event loop to be ready
         if not self._event_loop_ready.wait(timeout=5.0):
-            raise BLEInterface.BLEError("Event loop failed to start within timeout")
+            raise BLEInterface.BLEError("Event loop failed to start within 5s")
 
         if address:
             self.connect(address)
@@ -70,8 +70,8 @@ class BLEInterface(MeshInterface):
             self._event_loop.run_forever()
         except KeyboardInterrupt:
             logger.debug("Event loop interrupted by keyboard")
-        except Exception as e:
-            logger.error(f"Event loop error: {e}")
+        except Exception:
+            logger.exception("Event loop error")
         finally:
             # Cancel all pending tasks
             if self._event_loop and not self._event_loop.is_closed():
@@ -169,7 +169,17 @@ class BLEInterface(MeshInterface):
         """Scan for available BLE devices.
         This method is synchronous and should only be used by the CLI.
         """
-        return asyncio.run(BLEInterface._scan_async())
+        try:
+            return asyncio.run(BLEInterface._scan_async())
+        except RuntimeError:
+            # Fallback: create a temporary loop in a thread
+            res: List[BLEDevice] = []
+            def _work():
+                res.extend(asyncio.run(BLEInterface._scan_async()))
+            t = threading.Thread(target=_work, daemon=True)
+            t.start()
+            t.join()
+            return res
 
     def connect(
             self, address: Optional[str], timeout: int = 20, max_retries: int = 3) -> None:
@@ -198,26 +208,23 @@ class BLEInterface(MeshInterface):
 
                     # Find the specific device
                     if address:
+                        needle = address.strip().lower()
                         # Try to find by address first
-                        addressed_devices = list(
-                            filter(
-                                lambda x: address.lower() in x.address.lower(), devices)
-                        )
+                        addressed_devices = [
+                            d for d in devices if d.address and d.address.lower() == needle
+                        ]
                         if not addressed_devices:
                             # If not found by address, try by name
-                            addressed_devices = list(
-                                filter(
-                                    lambda x: x.name and address.lower() in x.name.lower(),
-                                    devices,
-                                )
-                            )
+                            addressed_devices = [
+                                d for d in devices if d.name and d.name.lower() == needle
+                            ]
                     else:
                         addressed_devices = devices
 
                     if not addressed_devices:
-                        raise BLEInterface.BLEError(
-                            f"No Meshtastic device found for address '{address}'"
-                        )
+                        msg = (f"No Meshtastic device found for identifier '{address}'"
+                               if address else "No Meshtastic devices advertising the service were found")
+                        raise BLEInterface.BLEError(msg)
 
                     if len(addressed_devices) > 1:
                         logger.warning(
@@ -243,10 +250,9 @@ class BLEInterface(MeshInterface):
                         self._is_connected = True
                         break  # Success, exit retry loop
                     except BleakError as e:
-                        logger.error(
-                            f"Failed to connect to device {
-                                device.address} (attempt {
-                                retry + 1}/{max_retries}): {e}")
+                        logger.exception(
+                            "Failed to connect to device %s (attempt %s/%s)",
+                            device.address, retry + 1, max_retries)
                         last_error = e
                         if self.client:
                             try:
@@ -264,9 +270,9 @@ class BLEInterface(MeshInterface):
                             raise BLEInterface.BLEError(
                                 f"Failed to connect after {max_retries} attempts: {last_error}") from last_error
 
-                except BLEInterface.BLEError as e:
+                except BLEInterface.BLEError:
                     # Re-raise BLEInterface errors immediately
-                    raise e
+                    raise
                 except Exception as e:
                     logger.error(
                         f"Unexpected error during connection (attempt {
@@ -381,10 +387,9 @@ class BLEInterface(MeshInterface):
                     # After writing, we must read from the device to get the
                     # response
                     await self._receiveFromRadioImpl()
-                except Exception as e:
-                    raise BLEInterface.BLEError(
-                        "Error writing BLE (are you in the 'bluetooth' user group? did you enter the pairing PIN on your computer?)"
-                    ) from e
+                except Exception as exc:
+                    logger.exception("Error writing BLE")
+                    raise BLEInterface.BLEError("Error writing BLE") from exc
 
             self._run_coro(_write_async())
 
@@ -427,8 +432,8 @@ class BLEInterface(MeshInterface):
         if self.client and self.client.is_connected:
             try:
                 self._run_coro(self.client.disconnect())
-            except BLEInterface.BLEError as e:
-                logger.warning(f"Error during disconnect: {e}")
+            except BLEInterface.BLEError:
+                logger.exception("Error during disconnect")
 
         self._stop_event_loop()
         self.client = None
