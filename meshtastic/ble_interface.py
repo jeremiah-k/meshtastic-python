@@ -12,9 +12,9 @@ from queue import Empty
 from threading import Event, Lock, Thread
 from typing import List, Optional
 
-import google.protobuf
 from bleak import BleakClient, BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
+from google.protobuf.message import DecodeError
 
 from meshtastic import publishingThread
 from meshtastic.mesh_interface import MeshInterface
@@ -238,7 +238,7 @@ class BLEInterface(MeshInterface):
                 else log_record.message
             )
             self._handleLogLine(message)
-        except google.protobuf.message.DecodeError:
+        except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
     async def legacy_log_radio_handler(self, _, b):  # pylint: disable=C0116
@@ -317,7 +317,7 @@ class BLEInterface(MeshInterface):
             services = getattr(client.bleak_client, "services", None)
             if not services or not getattr(services, "get_characteristic", None):
                 logger.debug(
-                    "BLE services not available immediately after connect; performing discover()"
+                    "BLE services not available immediately after connect; getting services"
                 )
                 client.get_services()
             # Ensure notifications are always active for this client (reconnect-safe)
@@ -415,14 +415,12 @@ class BLEInterface(MeshInterface):
                         logger.debug(f"FROMRADIO read: {b.hex()}")
                         try:
                             self._handleFromRadio(b)
-                        except Exception as e:
-                            # Only catch specific protobuf parsing errors
-                            # Let BLE connection errors (BleakError, BleakDBusError) bubble up to outer handlers
-                            if "ParseFromString" in str(type(e).__name__) or "DecodeError" in str(type(e).__name__):
-                                logger.warning("Failed to parse packet from radio, discarding.", exc_info=True)
-                            else:
-                                # Re-raise non-parsing exceptions so they can be handled by outer catch blocks
-                                raise
+                        except DecodeError:
+                            # Handle protobuf parsing errors gracefully - discard corrupted packet
+                            logger.warning(
+                                "Failed to parse packet from radio, discarding.",
+                                exc_info=True,
+                            )
                         retries = 0
                     except BleakDBusError as e:
                         if self._handle_read_loop_disconnect(str(e), client):
