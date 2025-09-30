@@ -413,7 +413,16 @@ class BLEInterface(MeshInterface):
                                 continue
                             break
                         logger.debug(f"FROMRADIO read: {b.hex()}")
-                        self._handleFromRadio(b)
+                        try:
+                            self._handleFromRadio(b)
+                        except Exception as e:
+                            # Only catch specific protobuf parsing errors
+                            # Let BLE connection errors (BleakError, BleakDBusError) bubble up to outer handlers
+                            if "ParseFromString" in str(type(e).__name__) or "DecodeError" in str(type(e).__name__):
+                                logger.warning("Failed to parse packet from radio, discarding.", exc_info=True)
+                            else:
+                                # Re-raise non-parsing exceptions so they can be handled by outer catch blocks
+                                raise
                         retries = 0
                     except BleakDBusError as e:
                         if self._handle_read_loop_disconnect(str(e), client):
