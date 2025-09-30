@@ -1299,6 +1299,9 @@ class MeshInterface:  # pylint: disable=R0902
 
         Called by subclasses."""
         fromRadio = mesh_pb2.FromRadio()
+        # Ensure we have bytes, not bytearray (BLE interface can return bytearray)
+        if isinstance(fromRadioBytes, bytearray):
+            fromRadioBytes = bytes(fromRadioBytes)
         logger.debug(
             f"in mesh_interface.py _handleFromRadio() fromRadioBytes: {fromRadioBytes}"
         )
