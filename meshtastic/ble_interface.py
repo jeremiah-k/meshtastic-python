@@ -30,6 +30,31 @@ LOGRADIO_UUID = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
 MALFORMED_NOTIFICATION_THRESHOLD = 10
 logger = logging.getLogger(__name__)
 
+"""
+Exception Handling Philosophy for BLE Interface
+
+This interface follows a structured approach to exception handling:
+
+1. **Expected, recoverable failures**: Caught, logged, and operation continues
+   - Corrupted protobuf packets (DecodeError) - discarded gracefully
+   - Optional notification failures (log notifications) - logged but non-critical
+   - Temporary BLE disconnections - handled by auto-reconnect logic
+
+2. **Expected, non-recoverable failures**: Caught, logged, and re-raised or handled gracefully
+   - Connection establishment failures - clear error messages to user
+   - Service discovery failures - retry with fallback mechanisms
+
+3. **Critical failures**: Let bubble up to notify developers
+   - FROMNUM_UUID notification setup failure - essential for packet reception
+   - Unexpected BLE errors during critical operations
+
+4. **Cleanup operations**: Failures are logged but don't raise exceptions
+   - Thread shutdown, client close operations - best-effort cleanup
+
+This approach ensures the library is resilient to expected wireless communication
+issues while making critical failures visible to developers.
+"""
+
 DISCONNECT_TIMEOUT_SECONDS = 5.0
 RECEIVE_THREAD_JOIN_TIMEOUT = 2.0
 EVENT_THREAD_JOIN_TIMEOUT = 2.0
@@ -218,14 +243,17 @@ class BLEInterface(MeshInterface):
 
     def _register_notifications(self, client: "BLEClient") -> None:
         """Register characteristic notifications for BLE client."""
+        # Optional log notifications - failures are not critical
         try:
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
                 client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
             if client.has_characteristic(LOGRADIO_UUID):
                 client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
-            client.start_notify(FROMNUM_UUID, self.from_num_handler)
         except BleakError:
-            logger.debug("Failed to start one or more notifications", exc_info=True)
+            logger.debug("Failed to start optional log notifications", exc_info=True)
+
+        # Critical notification for receiving packets - let failures bubble up
+        client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
     async def log_radio_handler(self, _, b):  # pylint: disable=C0116
         log_record = mesh_pb2.LogRecord()
