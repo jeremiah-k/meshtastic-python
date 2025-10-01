@@ -122,6 +122,7 @@ class BLEInterface(MeshInterface):
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False
         self._read_trigger: Event = Event()
+        self._reconnected_event: Event = Event()
         self._malformed_notification_count = 0
 
         MeshInterface.__init__(
@@ -215,6 +216,7 @@ class BLEInterface(MeshInterface):
             if notify:
                 self._disconnected()
             self._read_trigger.set()  # ensure receive loop wakes
+            self._reconnected_event.clear()  # clear reconnected event on disconnect
         else:
             Thread(target=self.close, name="BLEClose", daemon=True).start()
 
@@ -356,6 +358,8 @@ class BLEInterface(MeshInterface):
                 client.get_services()
             # Ensure notifications are always active for this client (reconnect-safe)
             self._register_notifications(client)
+            # Set reconnected event to signal successful connection
+            self._reconnected_event.set()
         except Exception:
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
             client.close()
@@ -384,9 +388,11 @@ class BLEInterface(MeshInterface):
                 if current is previous_client:
                     self.client = None
                     should_close = True
-                if not self._disconnect_notified:
-                    self._disconnect_notified = True
-                    notify_disconnect = True
+                    if not self._disconnect_notified:
+                        self._disconnect_notified = True
+                        notify_disconnect = True
+                else:
+                    logger.debug("Read-loop disconnect from a stale BLE client; ignoring.")
             if notify_disconnect:
                 self._disconnected()
             if should_close:
@@ -397,6 +403,7 @@ class BLEInterface(MeshInterface):
                     daemon=True,
                 ).start()
             self._read_trigger.clear()
+            self._reconnected_event.clear()
             return True
         # End our read loop immediately
         self._want_receive = False
@@ -422,7 +429,12 @@ class BLEInterface(MeshInterface):
     def _receiveFromRadioImpl(self) -> None:
         try:
             while self._want_receive:
+                # Wait for data to read, but also check periodically for reconnection
                 if not self._read_trigger.wait(timeout=RECEIVE_WAIT_TIMEOUT):
+                    # Timeout occurred, check if we were reconnected during this time
+                    if self._reconnected_event.is_set():
+                        self._reconnected_event.clear()
+                        logger.debug("Detected reconnection, resuming normal operation")
                     continue
                 self._read_trigger.clear()
                 retries: int = 0
@@ -434,7 +446,7 @@ class BLEInterface(MeshInterface):
                             logger.debug(
                                 "BLE client is None; waiting for application-managed reconnect"
                             )
-                            break
+                            break  # Go back to outer loop to wait for reconnection event
                         logger.debug("BLE client is None, shutting down")
                         self._want_receive = False
                         break
