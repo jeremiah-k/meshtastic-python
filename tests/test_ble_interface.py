@@ -178,6 +178,10 @@ class DummyClient:
         """Mock start_notify method."""
         return None
 
+    def is_connected(self) -> bool:
+        """Mock is_connected method, returning True by default for most test cases."""
+        return True
+
     def disconnect(self, *_args, **_kwargs):
         """Mock disconnect method that tracks calls and can raise exceptions."""
         self.disconnect_calls += 1
@@ -349,15 +353,16 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
     import logging
     import threading
 
-
+    from meshtastic.ble_interface import BleakError
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
 
-    # The exceptions that should be caught and handled
+    # The exceptions that should be caught and handled as fatal
     handled_exceptions = [
         RuntimeError,
         OSError,
+        BleakError,  # Should be fatal if not a disconnect
     ]
 
     for exc_type in handled_exceptions:
