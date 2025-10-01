@@ -271,9 +271,13 @@ class BLEInterface(MeshInterface):
 
     async def legacy_log_radio_handler(
         self, _, b: bytearray
-    ) -> None:  # pylint: disable=C0116
-        log_radio = b.decode("utf-8").replace("\n", "")
-        self._handleLogLine(log_radio)
+    ) -> None:
+        """Handle legacy log radio notifications with Unicode error handling."""
+        try:
+            log_radio = b.decode("utf-8").replace("\n", "")
+            self._handleLogLine(log_radio)
+        except UnicodeDecodeError:
+            logger.warning("Malformed legacy LogRecord received (not valid utf-8). Skipping.")
 
     @staticmethod
     def scan() -> List[BLEDevice]:
