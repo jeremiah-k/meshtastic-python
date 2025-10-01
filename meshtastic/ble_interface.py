@@ -144,9 +144,6 @@ class BLEInterface(MeshInterface):
             with self._client_lock:
                 self.client = client
             logger.debug("BLE connected")
-        except BLEInterface.BLEError as e:
-            self.close()
-            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
         except Exception as e:
             self.close()
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
@@ -296,11 +293,11 @@ class BLEInterface(MeshInterface):
 
             devices: List[BLEDevice] = []
             # With return_adv=True, BleakScanner.discover() returns a dict in bleak 1.1.1
-            for key, value in response.items():
+            for _, value in response.items():
                 if isinstance(value, tuple):
                     device, adv = value
                 else:
-                    device, adv = key, value
+                    assert False, "Unexpected return type from BleakScanner.discover with return_adv=True"
                 suuids = getattr(adv, "service_uuids", None)
                 if suuids and SERVICE_UUID in suuids:
                     devices.append(device)
