@@ -302,12 +302,12 @@ class BLEInterface(MeshInterface):
             if not isinstance(response, dict):
                 logger.warning(f"BleakScanner.discover returned unexpected type: {type(response)}")
                 return devices
-                
             for _, value in response.items():
                 if isinstance(value, tuple):
                     device, adv = value
                 else:
-                    assert False, "Unexpected return type from BleakScanner.discover with return_adv=True"
+                    logger.warning("Unexpected return type from BleakScanner.discover: %s", value)
+                    continue
                 suuids = getattr(adv, "service_uuids", None)
                 if suuids and SERVICE_UUID in suuids:
                     devices.append(device)
