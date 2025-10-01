@@ -101,7 +101,7 @@ class MeshInterface:  # pylint: disable=R0902
                        on startup, just other configuration information.
         """
         self.debugOut = debugOut
-        self.nodes: Optional[Dict[str, Dict]] = None  # FIXME
+        self.nodes: Dict[str, Dict] = {}  # Initialize as empty dict to prevent AttributeError
         self.isConnected: threading.Event = threading.Event()
         self.noProto: bool = noProto
         self.localNode: meshtastic.node.Node = meshtastic.node.Node(
@@ -124,7 +124,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.heartbeatTimer: Optional[threading.Timer] = None
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
         self.currentPacketId: int = random.randint(0, 0xFFFFFFFF)
-        self.nodesByNum: Optional[Dict[int, Dict]] = None
+        self.nodesByNum: Dict[int, Dict] = {}  # Initialize as empty dict to prevent AttributeError
         self.noNodes: bool = noNodes
         self.configId: Optional[int] = NODELESS_WANT_CONFIG_ID if noNodes else None
         self.gotResponse: bool = False  # used in gpio read
@@ -1110,7 +1110,7 @@ class MeshInterface:  # pylint: disable=R0902
                 )
 
         # If we failed while connecting, raise the connection to the client
-        if self.failure:
+        if self.failure is not None:
             raise self.failure
 
     def _generatePacketId(self) -> int:

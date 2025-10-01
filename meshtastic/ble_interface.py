@@ -296,6 +296,13 @@ class BLEInterface(MeshInterface):
 
             devices: List[BLEDevice] = []
             # With return_adv=True, BleakScanner.discover() returns a dict in bleak 1.1.1
+            if response is None:
+                logger.warning("BleakScanner.discover returned None")
+                return devices
+            if not isinstance(response, dict):
+                logger.warning(f"BleakScanner.discover returned unexpected type: {type(response)}")
+                return devices
+                
             for _, value in response.items():
                 if isinstance(value, tuple):
                     device, adv = value
