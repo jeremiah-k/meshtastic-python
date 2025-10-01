@@ -367,7 +367,7 @@ class BLEInterface(MeshInterface):
         return client
 
     def _handle_read_loop_disconnect(
-        self, error_message: str, previous_client: Optional["BLEClient"]
+        self, error_message: str, previous_client: "BLEClient"
     ) -> bool:
         """Handle disconnection in the read loop.
 
@@ -381,7 +381,7 @@ class BLEInterface(MeshInterface):
             should_close = False
             with self._client_lock:
                 current = self.client
-                if previous_client and current is previous_client:
+                if current is previous_client:
                     self.client = None
                     should_close = True
                 if not self._disconnect_notified:
@@ -389,7 +389,7 @@ class BLEInterface(MeshInterface):
                     notify_disconnect = True
             if notify_disconnect:
                 self._disconnected()
-            if should_close and previous_client:
+            if should_close:
                 Thread(
                     target=self._safe_close_client,
                     args=(previous_client,),
