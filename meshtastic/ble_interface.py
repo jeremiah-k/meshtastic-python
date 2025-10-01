@@ -147,6 +147,9 @@ class BLEInterface(MeshInterface):
         except BLEInterface.BLEError as e:
             self.close()
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
+        except Exception as e:
+            self.close()
+            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
         logger.debug("Mesh configure starting")
         self._startConfig()
