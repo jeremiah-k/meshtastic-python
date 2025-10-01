@@ -330,7 +330,7 @@ class BLEInterface(MeshInterface):
                 raise BLEInterface.BLEError(
                     ERROR_MULTIPLE_PERIPHERALS_FOUND.format(address)
                 )
-            logger.debug(
+            logger.warning(
                 "Multiple Meshtastic BLE peripherals detected; selecting the first match: %s",
                 addressed_devices[0].address,
             )
