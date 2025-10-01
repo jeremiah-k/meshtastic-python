@@ -133,7 +133,7 @@ def mock_bleak(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def mock_bleak_exc(monkeypatch, mock_bleak):
+def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-name
     """Mock the bleak.exc module."""
     bleak_exc_module = types.ModuleType("bleak.exc")
 
@@ -478,6 +478,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
 
 def test_auto_reconnect_behavior(monkeypatch, caplog):
     """Test auto_reconnect functionality when disconnection occurs."""
+    _ = caplog  # Mark as unused
     import time
 
     import meshtastic.mesh_interface as mesh_iface_module
@@ -631,6 +632,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
 def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     """Test that BLEClient.is_connected handles exceptions gracefully."""
+    _ = monkeypatch  # Mark as unused
     import logging
 
     from meshtastic.ble_interface import BLEClient
