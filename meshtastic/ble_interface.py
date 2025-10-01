@@ -225,8 +225,8 @@ class BLEInterface(MeshInterface):
         Note: this method does not need to be async because it is just setting an event.
         """
         try:
-            if len(b) < 4:
-                logger.debug("FROMNUM notify too short; ignoring")
+            if len(b) != 4:
+                logger.debug(f"FROMNUM notify has unexpected length {len(b)}; ignoring")
                 return
             from_num = struct.unpack("<I", b)[0]
             logger.debug(f"FROMNUM notify: {from_num}")
