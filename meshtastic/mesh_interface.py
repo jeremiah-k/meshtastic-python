@@ -92,13 +92,13 @@ class MeshInterface:  # pylint: disable=R0902
     def __init__(
         self, debugOut=None, noProto: bool = False, noNodes: bool = False
     ) -> None:
-        """Constructor
-
-        Keyword Arguments:
-            noProto -- If True, don't try to run our protocol on the
-                       link - just be a dumb serial client.
-            noNodes -- If True, instruct the node to not send its nodedb
-                       on startup, just other configuration information.
+        """
+        Initialize a MeshInterface instance and configure its internal state and defaults.
+        
+        Parameters:
+            debugOut (file-like | None): If provided, subscribe to log lines and forward formatted log output to this stream.
+            noProto (bool): When True, disable running the mesh protocol over the transport (act as a dumb serial client).
+            noNodes (bool): When True, instruct the device not to send its node database at startup; only other configuration will be requested. This sets an initial configId to request node-less configuration.
         """
         self.debugOut = debugOut
         self.nodes: Dict[str, Dict] = {}  # Initialize as empty dict to prevent AttributeError
@@ -1101,8 +1101,19 @@ class MeshInterface:  # pylint: disable=R0902
         return None
 
     def _waitConnected(self, timeout=30.0):
-        """Block until the initial node db download is complete, or timeout
-        and raise an exception"""
+        """
+        Waits until the interface is marked connected or the timeout elapses.
+        
+        If noProto is True, the method returns immediately. Otherwise it blocks up to
+        timeout seconds for the connection to complete.
+        
+        Parameters:
+            timeout (float): Maximum time in seconds to wait for connection completion.
+        
+        Raises:
+            MeshInterface.MeshInterfaceError: If waiting times out.
+            Exception: Re-raises any exception stored in self.failure if the connection failed.
+        """
         if not self.noProto:
             if not self.isConnected.wait(timeout):  # timeout after x seconds
                 raise MeshInterface.MeshInterfaceError(
@@ -1114,7 +1125,17 @@ class MeshInterface:  # pylint: disable=R0902
             raise self.failure
 
     def _generatePacketId(self) -> int:
-        """Get a new unique packet ID"""
+        """
+        Generate a new 32-bit packet identifier for outgoing mesh packets.
+        
+        Updates self.currentPacketId with a newly generated identifier and returns it.
+        
+        Returns:
+            int: The new packet ID.
+        
+        Raises:
+            MeshInterface.MeshInterfaceError: If the interface is not connected and currentPacketId is None.
+        """
         if self.currentPacketId is None:
             raise MeshInterface.MeshInterfaceError(
                 "Not connected yet, can not generate packet"
@@ -1137,7 +1158,9 @@ class MeshInterface:  # pylint: disable=R0902
         )
 
     def sendHeartbeat(self):
-        """Sends a heartbeat to the radio. Can be used to verify the connection is healthy."""
+        """
+        Send a heartbeat message to the radio to maintain or verify the connection.
+        """
         p = mesh_pb2.ToRadio()
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
         self._sendToRadio(p)
@@ -1175,7 +1198,11 @@ class MeshInterface:  # pylint: disable=R0902
             )
 
     def _startConfig(self):
-        """Start device packets flowing"""
+        """
+        Reset local node/config state and request the device to start sending configuration packets.
+        
+        This clears stored myInfo, node maps, and local channel list, ensures a valid configId (generating a new non-reserved 32-bit id when needed), and sends a ToRadio request asking the radio to provide its configuration.
+        """
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
@@ -1294,9 +1321,16 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _handleFromRadio(self, fromRadioBytes):
         """
-        Handle a packet that arrived from the radio(update model and publish events)
-
-        Called by subclasses."""
+        Process raw FromRadio protobuf bytes received from the radio, update interface state, and publish related events.
+        
+        Parses the given bytes into a FromRadio message, normalizes BLE bytearray inputs, updates internal state (myInfo, metadata, node records, local config/moduleConfig, queue status, etc.), and queues pubsub notifications for node updates, client notifications, MQTT proxy messages, xmodem packets, and other radio events. Subclasses call this to dispatch incoming radio data.
+        
+        Parameters:
+            fromRadioBytes (bytes | bytearray): Raw protobuf bytes received from the radio; bytearray inputs will be converted to bytes.
+        
+        Raises:
+            Exception: If parsing the FromRadio protobuf fails.
+        """
         fromRadio = mesh_pb2.FromRadio()
         # Ensure we have bytes, not bytearray (BLE interface can return bytearray)
         if isinstance(fromRadioBytes, bytearray):
