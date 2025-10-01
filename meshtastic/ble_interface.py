@@ -373,10 +373,13 @@ class BLEInterface(MeshInterface):
             self._register_notifications(client)
             # Set reconnected event to signal successful connection
             self._reconnected_event.set()
-        except Exception:
+        except Exception as e:
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
-            client.close()
-            raise
+            try:
+                client.close()
+            except Exception as close_exc:
+                logger.warning(f"Ignoring exception during client cleanup on connection failure: {close_exc!r}")
+            raise e
         else:
             # Reset disconnect notification flag on successful connection
             with self._client_lock:
