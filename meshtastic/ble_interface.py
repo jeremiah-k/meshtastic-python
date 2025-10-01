@@ -320,12 +320,13 @@ class BLEInterface(MeshInterface):
 
         if address:
             sanitized_address = BLEInterface._sanitize_address(address)
-            addressed_devices = list(
-                filter(
-                    lambda x: sanitized_address in (BLEInterface._sanitize_address(x.name), BLEInterface._sanitize_address(x.address)),
-                    addressed_devices,
-                )
-            )
+            filtered_devices = []
+            for device in addressed_devices:
+                sanitized_name = BLEInterface._sanitize_address(device.name)
+                sanitized_device_address = BLEInterface._sanitize_address(device.address)
+                if sanitized_address in (sanitized_name, sanitized_device_address):
+                    filtered_devices.append(device)
+            addressed_devices = filtered_devices
 
         if len(addressed_devices) == 0:
             if address:
