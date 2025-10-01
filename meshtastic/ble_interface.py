@@ -321,7 +321,10 @@ class BLEInterface(MeshInterface):
             )
 
         if len(addressed_devices) == 0:
-            raise BLEInterface.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
+            if address:
+                raise BLEInterface.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
+            else:
+                raise BLEInterface.BLEError("No Meshtastic BLE peripherals found. Try --ble-scan to find them.")
         if len(addressed_devices) > 1:
             if address:
                 raise BLEInterface.BLEError(
