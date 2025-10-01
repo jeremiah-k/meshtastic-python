@@ -313,8 +313,7 @@ class BLEInterface(MeshInterface):
             sanitized_address = BLEInterface._sanitize_address(address)
             addressed_devices = list(
                 filter(
-                    lambda x: address in (x.name, x.address)
-                    or BLEInterface._sanitize_address(x.address) == sanitized_address,
+                    lambda x: sanitized_address in (BLEInterface._sanitize_address(x.name), BLEInterface._sanitize_address(x.address)),
                     addressed_devices,
                 )
             )
