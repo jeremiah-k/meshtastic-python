@@ -852,18 +852,14 @@ class BLEClient:
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=timeout)
 
     def read_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
-        """
-        Read a GATT characteristic from the connected BLE device.
-        
-        Forwards all arguments to the underlying Bleak client's `read_gatt_char`"""
-        Read a GATT characteristic from the connected BLE device.
-        
+        """Read a GATT characteristic from the connected BLE device.
+
         Forwards all arguments to the underlying Bleak client's `read_gatt_char`.
-        
+
         Parameters:
             *args: Positional arguments forwarded to `read_gatt_char` (typically the characteristic UUID or handle).
             **kwargs: Keyword arguments forwarded to `read_gatt_char`.
-        
+
         Returns:
             bytes: The raw bytes read from the characteristic.
         """
