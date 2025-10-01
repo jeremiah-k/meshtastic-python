@@ -192,12 +192,13 @@ class DummyClient:
 @pytest.fixture(autouse=True)
 def stub_atexit(
     monkeypatch,
-    mock_serial,
-    mock_pubsub,
-    mock_tabulate,
-    mock_bleak,
-    mock_bleak_exc,
-    mock_publishing_thread,
+    *,
+    mock_serial,  # pylint: disable=redefined-outer-name
+    mock_pubsub,  # pylint: disable=redefined-outer-name
+    mock_tabulate,  # pylint: disable=redefined-outer-name
+    mock_bleak,  # pylint: disable=redefined-outer-name
+    mock_bleak_exc,  # pylint: disable=redefined-outer-name
+    mock_publishing_thread,  # pylint: disable=redefined-outer-name
 ):
     """Stub atexit to prevent actual registration during tests."""
     registered = []
@@ -348,7 +349,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
     import logging
     import threading
 
-    import google.protobuf.message
+
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -365,11 +366,15 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         # Create a mock client that raises the specific exception
         class ExceptionClient(DummyClient):
+            """Mock client that raises specific exceptions for testing."""
+
             def __init__(self, exception_type):
+                """Initialize exception client with specified exception type."""
                 super().__init__()
                 self.exception_type = exception_type
 
             def read_gatt_char(self, *_args, **_kwargs):
+                """Mock read_gatt_char that raises the configured exception."""
                 raise self.exception_type("Test exception")
 
         client = ExceptionClient(exc_type)
@@ -423,7 +428,10 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     caplog.set_level(logging.WARNING)
 
     class MockClient(DummyClient):
+        """Mock client that returns invalid protobuf data to trigger DecodeError."""
+
         def read_gatt_char(self, uuid):
+            """Mock read_gatt_char that returns invalid data for FROMRADIO_UUID."""
             if uuid == FROMRADIO_UUID:
                 # This data will cause a DecodeError
                 return b"invalid-protobuf-data"
@@ -506,8 +514,6 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     iface._on_ble_disconnect(disconnect_client)
 
     # Small delay to ensure events are published and captured
-    import time
-
     time.sleep(0.01)
 
     # Assertions
@@ -559,11 +565,15 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     caplog.set_level(logging.DEBUG)
 
     class ExceptionClient(DummyClient):
+        """Mock client that raises exceptions during write operations."""
+
         def __init__(self, exception_type):
+            """Initialize exception client with specified exception type."""
             super().__init__()
             self.exception_type = exception_type
 
         def write_gatt_char(self, *_args, **_kwargs):
+            """Mock write_gatt_char that raises the configured exception."""
             raise self.exception_type("Test write exception")
 
     # Test BleakError specifically
@@ -624,10 +634,14 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     caplog.set_level(logging.DEBUG)
 
     class ExceptionBleakClient:
+        """Mock bleak client that raises exceptions during connection checks."""
+
         def __init__(self, exception_type):
+            """Initialize exception client with specified exception type."""
             self.exception_type = exception_type
 
         def is_connected(self):
+            """Mock is_connected that raises the configured exception."""
             raise self.exception_type("Connection check failed")
 
     # Create BLEClient with a mock bleak client that raises exceptions
@@ -676,7 +690,10 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     import meshtastic.ble_interface as ble_mod
 
     class MockPublishingThread:
+        """Mock publishingThread that raises RuntimeError in queueWork."""
+
         def queueWork(self, callback):
+            """Mock queueWork that raises RuntimeError."""
             raise RuntimeError("Threading error in queueWork")
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
@@ -690,7 +707,10 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
     # Mock publishingThread to raise ValueError
     class MockPublishingThread2:
+        """Mock publishingThread that raises ValueError in queueWork."""
+
         def queueWork(self, callback):
+            """Mock queueWork that raises ValueError."""
             raise ValueError("Invalid event state")
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread2())
@@ -716,7 +736,10 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
 
     # Create a mock queue with a runnable that raises exceptions
     class ExceptionRunnable:
+        """Mock runnable that raises ValueError when called."""
+
         def __call__(self):
+            """Mock execution that raises ValueError."""
             raise ValueError("Callback execution failed")
 
     mock_queue = Queue()
@@ -726,11 +749,14 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
     import meshtastic.ble_interface as ble_mod
 
     class MockPublishingThread:
+        """Mock publishingThread with a predefined queue."""
+
         def __init__(self):
+            """Initialize mock with the provided queue."""
             self.queue = mock_queue
 
         def queueWork(self, callback):
-            pass  # Not used in this test but needed for teardown
+            """Mock queueWork - not used in this test but needed for teardown."""
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
 
