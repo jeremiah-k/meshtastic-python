@@ -30,7 +30,15 @@ disconnected_event = threading.Event()
 
 
 def on_connection_change(interface, connected):
-    """Callback for connection changes."""
+    """
+    Handle a BLE interface's connection status change and notify the main loop on disconnect.
+    
+    If `connected` is False, sets the module-level `disconnected_event` to signal the main loop to retry the connection.
+    
+    Parameters:
+        interface: The BLE interface object whose connection status changed.
+        connected (bool): `True` when the interface is connected, `False` when disconnected.
+    """
     iface_label = getattr(interface, "address", repr(interface))
     logger.info(
         "Connection changed for %s: %s",
@@ -43,7 +51,11 @@ def on_connection_change(interface, connected):
 
 
 def main():
-    """Main function."""
+    """
+    Run a reconnection loop that maintains a Meshtastic BLEInterface for a given device address.
+    
+    Parses a required BLE address from command-line arguments, subscribes to connection-status events, and repeatedly attempts to open a BLEInterface with auto-reconnect enabled. The function waits for a disconnection signal from the connection-status callback, handles KeyboardInterrupt to exit, logs BLE-related and unexpected errors, and sleeps a configured delay before retrying.
+    """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         description="Meshtastic BLE interface automatic reconnection example."
