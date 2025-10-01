@@ -165,17 +165,16 @@ class BLEInterface(MeshInterface):
         self._exit_handler = atexit.register(self.close)
 
     def __repr__(self):
-        rep = f"BLEInterface(address={self.address!r}"
+        parts = [f"address={self.address!r}"]
         if self.debugOut is not None:
-            rep += f", debugOut={self.debugOut!r}"
+            parts.append(f"debugOut={self.debugOut!r}")
         if self.noProto:
-            rep += ", noProto=True"
+            parts.append("noProto=True")
         if self.noNodes:
-            rep += ", noNodes=True"
+            parts.append("noNodes=True")
         if not self.auto_reconnect:
-            rep += ", auto_reconnect=False"
-        rep += ")"
-        return rep
+            parts.append("auto_reconnect=False")
+        return f"BLEInterface({', '.join(parts)})"
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Disconnected callback from Bleak."""
