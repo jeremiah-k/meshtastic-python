@@ -519,14 +519,9 @@ class BLEInterface(MeshInterface):
             c.close()
         except BleakError:
             logger.debug("BLE-specific error during client close", exc_info=True)
-        except RuntimeError:
+        except (RuntimeError, OSError):
             logger.debug(
-                "Runtime error during client close (possible threading issue)",
-                exc_info=True,
-            )
-        except OSError:
-            logger.debug(
-                "OS error during client close (possible resource or permission issue)",
+                "OS/Runtime error during client close (possible resource or threading issue)",
                 exc_info=True,
             )
 
@@ -733,15 +728,7 @@ class BLEInterface(MeshInterface):
                 exc_info=True,
             )
         finally:
-            try:
-                client.close()
-            except BleakError:  # pragma: no cover - defensive logging
-                logger.debug("BLE-specific error during client close", exc_info=True)
-            except (RuntimeError, OSError):  # pragma: no cover - defensive logging
-                logger.debug(
-                    "OS/Runtime error during client close (possible resource or threading issue)",
-                    exc_info=True,
-                )
+            self._safe_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """
