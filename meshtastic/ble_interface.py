@@ -78,6 +78,7 @@ ERROR_WRITING_BLE = (
     "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
 )
 ERROR_CONNECTION_FAILED = "Connection failed: {0}"
+ERROR_NO_PERIPHERALS_FOUND = "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
 ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
@@ -144,11 +145,10 @@ class BLEInterface(MeshInterface):
             with self._client_lock:
                 self.client = client
             logger.debug("BLE connected")
-        except BLEInterface.BLEError:
-            self.close()
-            raise
         except Exception as e:
             self.close()
+            if isinstance(e, BLEInterface.BLEError):
+                raise
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
         logger.debug("Mesh configure starting")
@@ -332,7 +332,7 @@ class BLEInterface(MeshInterface):
             if address:
                 raise BLEInterface.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
             else:
-                raise BLEInterface.BLEError("No Meshtastic BLE peripherals found. Try --ble-scan to find them.")
+                raise BLEInterface.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) > 1:
             if address:
                 raise BLEInterface.BLEError(
@@ -510,20 +510,9 @@ class BLEInterface(MeshInterface):
                 # Use write-with-response to ensure delivery is acknowledged by the peripheral.
                 client.write_gatt_char(TORADIO_UUID, b, response=True)
             except (BleakError, RuntimeError, OSError) as e:
-                if isinstance(e, BleakError):
-                    logger.debug(
-                        "BLE-specific error during write operation", exc_info=True
-                    )
-                elif isinstance(e, RuntimeError):
-                    logger.debug(
-                        "Runtime error during write operation (possible threading issue)",
-                        exc_info=True,
-                    )
-                else:  # OSError
-                    logger.debug(
-                        "OS error during write operation (possible resource or permission issue)",
-                        exc_info=True,
-                    )
+                logger.debug(
+                    "Error during write operation: %s", type(e).__name__, exc_info=True
+                )
                 raise BLEInterface.BLEError(ERROR_WRITING_BLE) from e
             # Allow to propagate and then prompt the reader
             time.sleep(SEND_PROPAGATION_DELAY)

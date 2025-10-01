@@ -598,7 +598,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
         iface._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
-    assert "BLE-specific error during write operation" in caplog.text
+    assert "Error during write operation: _StubBleakError" in caplog.text
 
     # Clear caplog for next test
     caplog.clear()
@@ -612,7 +612,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
         iface2._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
-    assert "Runtime error during write operation" in caplog.text
+    assert "Error during write operation: RuntimeError" in caplog.text
 
     # Clear caplog for next test
     caplog.clear()
@@ -626,7 +626,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
         iface3._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
-    assert "OS error during write operation" in caplog.text
+    assert "Error during write operation: OSError" in caplog.text
 
     iface3.close()
 
