@@ -262,7 +262,7 @@ class BLEInterface(MeshInterface):
     async def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         log_record = mesh_pb2.LogRecord()
         try:
-            log_record.ParseFromString(b)
+            log_record.ParseFromString(bytes(b))
 
             message = (
                 f"[{log_record.source}] {log_record.message}"
