@@ -33,7 +33,9 @@ def on_connection_change(interface, connected):
     """Callback for connection changes."""
     iface_label = getattr(interface, "address", repr(interface))
     logger.info(
-        "Connection changed for %s: %s", iface_label, "Connected" if connected else "Disconnected"
+        "Connection changed for %s: %s",
+        iface_label,
+        "Connected" if connected else "Disconnected",
     )
     if not connected:
         # Signal the main loop that we've been disconnected
@@ -54,22 +56,20 @@ def main():
     pub.subscribe(on_connection_change, "meshtastic.connection.status")
 
     while True:
-        iface = None
         try:
             disconnected_event.clear()
             logger.info("Attempting to connect to %s...", address)
             # Set auto_reconnect=True to prevent the interface from closing on disconnect.
             # This allows us to handle the reconnection here.
-            iface = meshtastic.ble_interface.BLEInterface(
+            with meshtastic.ble_interface.BLEInterface(
                 address,
                 noProto=True,  # Set to False in a real application
                 auto_reconnect=True,
-            )
-
-            logger.info("Connection successful. Waiting for disconnection event...")
-            # Wait until the on_connection_change callback signals a disconnect
-            disconnected_event.wait()
-            logger.info("Disconnected normally.")
+            ):
+                logger.info("Connection successful. Waiting for disconnection event...")
+                # Wait until the on_connection_change callback signals a disconnect
+                disconnected_event.wait()
+                logger.info("Disconnected normally.")
 
         except KeyboardInterrupt:
             logger.info("Exiting...")
@@ -78,10 +78,6 @@ def main():
             logger.exception("Connection failed")
         except Exception:
             logger.exception("An unexpected error occurred")
-        finally:
-            if iface:
-                iface.close()
-                logger.info("Interface closed.")
 
         logger.info("Retrying in %d seconds...", RETRY_DELAY_SECONDS)
         time.sleep(RETRY_DELAY_SECONDS)
