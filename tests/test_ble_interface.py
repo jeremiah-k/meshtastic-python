@@ -723,7 +723,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     time.sleep(0.5)
 
     # Assert that the graceful handling occurred
-    assert "Failed to parse packet from radio, discarding." in caplog.text
+    assert "Failed to parse FromRadio packet, discarding:" in caplog.text
     assert not close_called.is_set(), "close() should not be called for a DecodeError"
 
     # Clean up

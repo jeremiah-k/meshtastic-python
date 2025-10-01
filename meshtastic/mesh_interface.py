@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import google.protobuf.json_format
+from google.protobuf.message import DecodeError
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -1340,6 +1341,12 @@ class MeshInterface:  # pylint: disable=R0902
         )
         try:
             fromRadio.ParseFromString(fromRadioBytes)
+        except DecodeError:
+            # Handle protobuf parsing errors gracefully - discard corrupted packet
+            logger.warning(
+                f"Failed to parse FromRadio packet, discarding: {fromRadioBytes}"
+            )
+            return
         except Exception as ex:
             logger.error(
                     f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}"

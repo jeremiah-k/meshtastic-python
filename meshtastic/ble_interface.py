@@ -570,17 +570,7 @@ class BLEInterface(MeshInterface):
                                 continue
                             break
                         logger.debug(f"FROMRADIO read: {b.hex()}")
-                        try:
-                            self._handleFromRadio(b)
-                        except DecodeError:
-                            # Handle protobuf parsing errors gracefully - discard corrupted packet
-                            # TODO: This creates redundant logging with _handleFromRadio in mesh_interface.py
-                            # which also logs DecodeError as ERROR before re-raising. Consider consolidating
-                            # error handling in a future refactor to avoid confusing double log entries.
-                            logger.warning(
-                                "Failed to parse packet from radio, discarding.",
-                                exc_info=True,
-                            )
+                        self._handleFromRadio(b)
                         retries = 0
                     except BleakDBusError as e:
                         if self._handle_read_loop_disconnect(str(e), client):
