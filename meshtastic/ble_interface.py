@@ -144,6 +144,9 @@ class BLEInterface(MeshInterface):
             with self._client_lock:
                 self.client = client
             logger.debug("BLE connected")
+        except BLEInterface.BLEError:
+            self.close()
+            raise
         except Exception as e:
             self.close()
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
