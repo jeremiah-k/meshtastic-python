@@ -419,8 +419,9 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         iface._want_receive = False
         try:
             iface.close()
-        except Exception:
-            pass  # Ignore cleanup errors
+        except Exception as exc:
+            # Log for visibility; still allow test to proceed with cleanup.
+            print(f"Cleanup error in iface.close(): {exc!r}")
 
 
 def test_receive_loop_handles_decode_error(monkeypatch, caplog):

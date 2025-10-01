@@ -230,6 +230,8 @@ class BLEInterface(MeshInterface):
                 return
             from_num = struct.unpack("<I", b)[0]
             logger.debug(f"FROMNUM notify: {from_num}")
+            # Successful parse: reset malformed counter
+            self._malformed_notification_count = 0
         except (struct.error, ValueError):
             self._malformed_notification_count += 1
             logger.debug("Malformed FROMNUM notify; ignoring", exc_info=True)
@@ -260,7 +262,7 @@ class BLEInterface(MeshInterface):
     async def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         log_record = mesh_pb2.LogRecord()
         try:
-            log_record.ParseFromString(bytes(b))
+            log_record.ParseFromString(b)
 
             message = (
                 f"[{log_record.source}] {log_record.message}"
@@ -285,7 +287,7 @@ class BLEInterface(MeshInterface):
     def scan() -> List[BLEDevice]:
         """Scan for available BLE devices."""
         with BLEClient() as client:
-            logger.info(
+            logger.debug(
                 "Scanning for BLE devices (takes %.0f seconds)...", BLE_SCAN_TIMEOUT
             )
             response = client.discover(
@@ -321,8 +323,13 @@ class BLEInterface(MeshInterface):
         if len(addressed_devices) == 0:
             raise BLEInterface.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
         if len(addressed_devices) > 1:
-            raise BLEInterface.BLEError(
-                ERROR_MULTIPLE_PERIPHERALS_FOUND.format(address)
+            if address:
+                raise BLEInterface.BLEError(
+                    ERROR_MULTIPLE_PERIPHERALS_FOUND.format(address)
+                )
+            logger.debug(
+                "Multiple Meshtastic BLE peripherals detected; selecting the first match: %s",
+                addressed_devices[0].address,
             )
         return addressed_devices[0]
 
@@ -344,7 +351,7 @@ class BLEInterface(MeshInterface):
             device.address, disconnected_callback=self._on_ble_disconnect
         )
         try:
-            client.connect()
+            client.connect(timeout=CONNECTION_TIMEOUT)
             services = getattr(client.bleak_client, "services", None)
             if not services or not getattr(services, "get_characteristic", None):
                 logger.debug(
@@ -441,7 +448,9 @@ class BLEInterface(MeshInterface):
                             logger.debug(
                                 "BLE client is None; waiting for application-managed reconnect"
                             )
-                            break  # Go back to outer loop to wait for reconnection event
+                            # Wait briefly for reconnect or shutdown signal, then re-check
+                            self._reconnected_event.wait(timeout=RECEIVE_WAIT_TIMEOUT)
+                            break  # Return to outer loop to re-check state
                         logger.debug("BLE client is None, shutting down")
                         self._want_receive = False
                         break
@@ -526,6 +535,7 @@ class BLEInterface(MeshInterface):
         if self._want_receive:
             self._want_receive = False  # Tell the thread we want it to stop
             self._read_trigger.set()  # Wake up the receive thread if it's waiting
+            self._reconnected_event.set()  # Ensure any reconnection waits are released
             if self._receiveThread:
                 self._receiveThread.join(timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
                 if self._receiveThread.is_alive():
@@ -581,7 +591,7 @@ class BLEInterface(MeshInterface):
                 exc_info=True,
             )
 
-    def _disconnect_and_close_client(self, client):
+    def _disconnect_and_close_client(self, client: "BLEClient"):
         """Disconnect and close the BLE client with comprehensive error handling."""
         try:
             client.disconnect(timeout=DISCONNECT_TIMEOUT_SECONDS)
@@ -654,8 +664,8 @@ class BLEClient:
     def pair(self, **kwargs):  # pylint: disable=C0116
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(self, **kwargs):  # pylint: disable=C0116
-        return self.async_await(self.bleak_client.connect(**kwargs))
+    def connect(self, *, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
+        return self.async_await(self.bleak_client.connect(**kwargs), timeout=timeout)
 
     def is_connected(self) -> bool:
         """Return the bleak client's connection state when available."""
