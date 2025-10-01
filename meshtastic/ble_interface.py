@@ -218,7 +218,7 @@ class BLEInterface(MeshInterface):
         else:
             Thread(target=self.close, name="BLEClose", daemon=True).start()
 
-    def from_num_handler(self, _, b: bytes) -> None:  # pylint: disable=C0116
+    def from_num_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """Handle callbacks for fromnum notify.
         Note: this method does not need to be async because it is just setting an event.
         """
@@ -255,7 +255,7 @@ class BLEInterface(MeshInterface):
         # Critical notification for receiving packets - let failures bubble up
         client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
-    async def log_radio_handler(self, _, b):  # pylint: disable=C0116
+    async def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         log_record = mesh_pb2.LogRecord()
         try:
             log_record.ParseFromString(bytes(b))
@@ -269,7 +269,9 @@ class BLEInterface(MeshInterface):
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
-    async def legacy_log_radio_handler(self, _, b):  # pylint: disable=C0116
+    async def legacy_log_radio_handler(
+        self, _, b: bytearray
+    ) -> None:  # pylint: disable=C0116
         log_radio = b.decode("utf-8").replace("\n", "")
         self._handleLogLine(log_radio)
 
