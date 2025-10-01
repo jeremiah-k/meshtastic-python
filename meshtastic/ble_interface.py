@@ -12,7 +12,7 @@ from queue import Empty
 from threading import Event, Lock, Thread
 from typing import List, Optional
 
-from bleak import BleakClient, BleakScanner, BLEDevice
+from bleak import BleakClient as BleakRootClient, BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError
 
@@ -174,7 +174,7 @@ class BLEInterface(MeshInterface):
         rep += ")"
         return rep
 
-    def _on_ble_disconnect(self, client: "BleakClient") -> None:
+    def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """Disconnected callback from Bleak."""
         if self._closing:
             logger.debug(
@@ -651,7 +651,7 @@ class BLEClient:
             logger.debug("No address provided - only discover method will work.")
             return
 
-        self.bleak_client = BleakClient(address, **kwargs)
+        self.bleak_client = BleakRootClient(address, **kwargs)
 
     def discover(self, **kwargs):  # pylint: disable=C0116
         return self.async_await(BleakScanner.discover(**kwargs))
