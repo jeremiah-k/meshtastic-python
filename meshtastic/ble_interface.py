@@ -668,8 +668,6 @@ class BLEClient:
         return self.async_await(self.bleak_client.pair(**kwargs))
 
     def connect(self, *, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
-        if timeout is not None:
-            return self.async_await(self.bleak_client.connect(timeout=timeout, **kwargs), timeout=timeout)
         return self.async_await(self.bleak_client.connect(**kwargs), timeout=timeout)
 
     def is_connected(self) -> bool:
