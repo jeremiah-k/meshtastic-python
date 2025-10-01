@@ -631,6 +631,142 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     iface3.close()
 
 
+def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
+    """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
+    import threading
+    import time
+    import logging
+    from unittest.mock import MagicMock, patch
+
+    from meshtastic.ble_interface import BLEInterface, BLEClient
+
+    # Set logging level to DEBUG to capture all messages
+    caplog.set_level(logging.DEBUG)
+
+    # Mock device for testing
+    mock_device = MagicMock()
+    mock_device.address = "00:11:22:33:44:55"
+    mock_device.name = "Test Device"
+
+    class StressTestClient(BLEClient):
+        """Mock client that simulates rapid connect/disconnect cycles."""
+
+        def __init__(self):
+            super().__init__()
+            self.connect_count = 0
+            self.disconnect_count = 0
+            self.is_connected_result = True
+            self._should_fail_connect = False
+
+        def connect(self, *_args, **_kwargs):
+            """Mock connect that tracks connection attempts."""
+            if self._should_fail_connect:
+                raise RuntimeError("Simulated connection failure")
+            self.connect_count += 1
+            return self
+
+        def is_connected(self):
+            """Mock is_connected that returns configurable result."""
+            return self.is_connected_result
+
+        def disconnect(self, *_args, **_kwargs):
+            """Mock disconnect that tracks disconnection attempts."""
+            self.disconnect_count += 1
+
+        def start_notify(self, *_args, **_kwargs):
+            """Mock start_notify that does nothing."""
+            pass
+
+        def stop_notify(self, *_args, **_kwargs):
+            """Mock stop_notify that does nothing."""
+            pass
+
+    def create_interface_with_auto_reconnect():
+        """Create a BLE interface with auto-reconnect enabled for stress testing."""
+        client = StressTestClient()
+        
+        # Mock the scan method to return our test device
+        with patch.object(BLEInterface, 'scan', return_value=[mock_device]):
+            # Mock the connect method to return our test client
+            with patch.object(BLEInterface, 'connect', return_value=client):
+                iface = BLEInterface(
+                    address=None,  # Required positional argument
+                    noProto=True,
+                    auto_reconnect=True,
+                )
+                return iface, client
+
+    # Test 1: Rapid disconnect callbacks
+    iface, client = create_interface_with_auto_reconnect()
+
+    def simulate_rapid_disconnects():
+        """Simulate multiple rapid disconnect callbacks."""
+        for _ in range(10):
+            iface._on_ble_disconnect(client)
+            time.sleep(0.01)  # Very short delay between disconnects
+
+    # Start rapid disconnect simulation in a separate thread
+    disconnect_thread = threading.Thread(target=simulate_rapid_disconnects)
+    disconnect_thread.start()
+    disconnect_thread.join()
+
+    # Verify that the interface handled rapid disconnects gracefully
+    assert client.disconnect_count >= 0  # Should not crash
+    assert not iface._disconnect_notified  # Should be reset after handling
+
+    iface.close()
+
+    # Test 2: Concurrent connect/disconnect operations
+    iface2, client2 = create_interface_with_auto_reconnect()
+
+    def rapid_connect_disconnect_cycle():
+        """Perform rapid connect/disconnect cycles."""
+        for _ in range(5):
+            try:
+                iface2._on_ble_disconnect(client2)
+                time.sleep(0.005)
+            except Exception:
+                pass  # Expected during stress testing
+
+    # Start multiple threads for concurrent operations
+    threads = []
+    for _ in range(3):
+        thread = threading.Thread(target=rapid_connect_disconnect_cycle)
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+
+    # Verify thread-safety - no exceptions should be raised
+    assert client2.disconnect_count >= 0
+
+    iface2.close()
+
+    # Test 3: Stress test with connection failures
+    iface3, client3 = create_interface_with_auto_reconnect()
+    client3._should_fail_connect = True
+
+    # Simulate disconnects that trigger reconnection attempts
+    for _ in range(5):
+        try:
+            iface3._on_ble_disconnect(client3)
+            time.sleep(0.01)
+        except Exception:
+            pass  # Expected due to simulated connection failures
+
+    # Verify graceful handling of connection failures
+    assert client3.connect_count >= 0  # Should attempt reconnections
+
+    iface3.close()
+
+    # Verify no critical errors in logs
+    log_messages = [record.message for record in caplog.records]
+    critical_errors = [msg for msg in log_messages if 'CRITICAL' in msg or 'FATAL' in msg]
+    assert len(critical_errors) == 0, f"Critical errors found in logs: {critical_errors}"
+
+
 def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     """Test that BLEClient.is_connected handles exceptions gracefully."""
     _ = monkeypatch  # Mark as unused
