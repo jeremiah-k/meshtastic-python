@@ -915,6 +915,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
 def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
+    _ = monkeypatch  # Mark as unused
     import threading
     import time
     import logging
