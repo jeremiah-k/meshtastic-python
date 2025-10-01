@@ -602,18 +602,25 @@ class BLEInterface(MeshInterface):
             BLEInterface.BLEError: If the write operation fails.
         """
         b: bytes = toRadio.SerializeToString()
+        if not b:
+            return
+
+        write_successful = False
         with self._client_lock:
             client = self.client
-        if b and client:  # we silently ignore writes while we are shutting down
-            logger.debug(f"TORADIO write: {b.hex()}")
-            try:
-                # Use write-with-response to ensure delivery is acknowledged by the peripheral.
-                client.write_gatt_char(TORADIO_UUID, b, response=True)
-            except (BleakError, RuntimeError, OSError) as e:
-                logger.debug(
-                    "Error during write operation: %s", type(e).__name__, exc_info=True
-                )
-                raise BLEInterface.BLEError(ERROR_WRITING_BLE) from e
+            if client:  # we silently ignore writes while we are shutting down
+                logger.debug(f"TORADIO write: {b.hex()}")
+                try:
+                    # Use write-with-response to ensure delivery is acknowledged by the peripheral.
+                    client.write_gatt_char(TORADIO_UUID, b, response=True)
+                    write_successful = True
+                except (BleakError, RuntimeError, OSError) as e:
+                    logger.debug(
+                        "Error during write operation: %s", type(e).__name__, exc_info=True
+                    )
+                    raise BLEInterface.BLEError(ERROR_WRITING_BLE) from e
+
+        if write_successful:
             # Allow to propagate and then prompt the reader
             time.sleep(SEND_PROPAGATION_DELAY)
             self._read_trigger.set()
