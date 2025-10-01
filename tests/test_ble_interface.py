@@ -413,72 +413,53 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
             pass  # Ignore cleanup errors
 
 
-def test_decode_error_handled_gracefully(caplog, monkeypatch):
-    """Test that DecodeError is handled gracefully without closing the interface."""
-    import google.protobuf.message
+def test_receive_loop_handles_decode_error(monkeypatch, caplog):
+    """Test that the receive loop handles DecodeError gracefully without closing."""
     import logging
     import threading
-    from meshtastic.ble_interface import BLEInterface
-    from meshtastic import util
+    import time
+    from meshtastic.ble_interface import FROMRADIO_UUID
 
-    # Mock the connect method to avoid actual BLE connection
-    def mock_connect(self, address):
-        class MockClient:
-            def is_connected(self):
-                return True
+    caplog.set_level(logging.WARNING)
 
-            def read_gatt_char(self, uuid):
-                return b'\x01\x00\x00\x00'  # Valid FROMNUM data
+    class MockClient(DummyClient):
+        def read_gatt_char(self, uuid):
+            if uuid == FROMRADIO_UUID:
+                # This data will cause a DecodeError
+                return b"invalid-protobuf-data"
+            return b""
 
-            def disconnect(self, timeout=None):
-                pass
+    client = MockClient()
+    iface = _build_interface(monkeypatch, client)
 
-            def close(self):
-                pass
-
-        return MockClient()
-
-    # Create interface with mocked connection
-    monkeypatch.setattr(BLEInterface, 'connect', mock_connect)
-    iface = BLEInterface("mock_address", noProto=True)
-
-    # Mock _handleFromRadio to raise DecodeError
-    def mock_handle_from_radio(data):
-        raise google.protobuf.message.DecodeError("Test decode error")
-
-    monkeypatch.setattr(iface, '_handleFromRadio', mock_handle_from_radio)
-
-    # Track if close is called
     close_called = threading.Event()
+    original_close = iface.close
 
     def mock_close():
         close_called.set()
+        original_close()
 
-    monkeypatch.setattr(iface, 'close', mock_close)
+    monkeypatch.setattr(iface, "close", mock_close)
 
-    # Simulate the receive loop handling DecodeError
-    try:
-        from meshtastic.ble_interface import FROMRADIO_UUID
-        data = iface.client.read_gatt_char(FROMRADIO_UUID)
-        iface._handleFromRadio(data)
-    except google.protobuf.message.DecodeError:
-        # This should be caught and handled gracefully in the actual receive loop
-        pass
+    # Start the receive thread
+    iface._want_receive = True
 
-    # Manually test the exception handling that occurs in the receive loop
-    try:
-        iface._handleFromRadio(b'\x01\x00\x00\x00')
-    except google.protobuf.message.DecodeError:
-        # In the actual receive loop, this would be caught and logged
-        with caplog.at_level(logging.WARNING):
-            util.logger.warning("Failed to parse packet from radio, discarding.", exc_info=True)
+    # Set up the client
+    with iface._client_lock:
+        iface.client = client
 
-    # Verify that close was NOT called (DecodeError should be handled gracefully)
-    assert not close_called.is_set(), "close() should NOT be called for DecodeError"
+    # Trigger the receive loop to process the bad data
+    iface._read_trigger.set()
 
-    # Verify appropriate logging would occur
-    assert "Failed to parse packet from radio, discarding" in caplog.text
+    # Give the thread a moment to run
+    time.sleep(0.5)
 
+    # Assert that the graceful handling occurred
+    assert "Failed to parse packet from radio, discarding." in caplog.text
+    assert not close_called.is_set(), "close() should not be called for a DecodeError"
+
+    # Clean up
+    iface._want_receive = False
     iface.close()
 
 
