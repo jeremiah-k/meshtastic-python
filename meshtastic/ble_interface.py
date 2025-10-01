@@ -215,13 +215,13 @@ class BLEInterface(MeshInterface):
                 self._disconnect_notified = True
 
             if previous_client:
+                self._disconnected()
                 Thread(
                     target=self._safe_close_client,
                     args=(previous_client,),
                     name="BLEClientClose",
                     daemon=True,
                 ).start()
-                self._disconnected()
             self._read_trigger.set()  # ensure receive loop wakes
             self._reconnected_event.clear()  # clear reconnected event on disconnect
         else:
