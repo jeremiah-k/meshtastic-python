@@ -117,6 +117,7 @@ class BLEInterface(MeshInterface):
         # Thread safety and state management
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
         self._client_lock: Lock = Lock()   # Protects client access during reconnection
+        self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
         self._closing: bool = False        # Indicates shutdown in progress
         self._exit_handler = None
         self.address = address
@@ -541,72 +542,73 @@ class BLEInterface(MeshInterface):
             BLEClient: A connected BLEClient instance for the selected device.
         """
 
-        requested_identifier = address if address is not None else self.address
-        normalized_request = BLEInterface._sanitize_address(requested_identifier)
+        with self._connect_lock:
+            requested_identifier = address if address is not None else self.address
+            normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
-        with self._client_lock:
-            existing_client = self.client
-            if existing_client and existing_client.is_connected():
-                bleak_client = getattr(existing_client, "bleak_client", None)
-                bleak_address = getattr(bleak_client, "address", None)
-                normalized_known_targets = {
-                    self._last_connection_request,
-                    BLEInterface._sanitize_address(self.address),
-                    BLEInterface._sanitize_address(bleak_address),
-                }
-                if normalized_request is None or normalized_request in normalized_known_targets:
-                    logger.debug("Already connected, skipping connect call.")
-                    return existing_client
-
-        # Bleak docs recommend always doing a scan before connecting (even if we know addr)
-        device = self.find_device(address or self.address)
-        self.address = device.address  # Keep address in sync for auto-reconnect
-        client = BLEClient(
-            device.address, disconnected_callback=self._on_ble_disconnect
-        )
-        previous_client = None
-        try:
-            client.connect(await_timeout=CONNECTION_TIMEOUT)
-            services = getattr(client.bleak_client, "services", None)
-            if not services or not getattr(services, "get_characteristic", None):
-                logger.debug(
-                    "BLE services not available immediately after connect; getting services"
-                )
-                client.get_services()
-            # Ensure notifications are always active for this client (reconnect-safe)
-            self._register_notifications(client)
-            # Publish the new client before waking any waiters
             with self._client_lock:
-                previous_client = self.client
-                self.client = client
-                self._disconnect_notified = False
-                normalized_device_address = BLEInterface._sanitize_address(
-                    device.address
-                )
-                if normalized_request is not None:
-                    self._last_connection_request = normalized_request
-                else:
-                    self._last_connection_request = normalized_device_address
-            if previous_client and previous_client is not client:
-                Thread(
-                    target=self._safe_close_client,
-                    args=(previous_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                ).start()
-            # Signal successful reconnection to waiting threads
-            self._reconnected_event.set()
-        except Exception as e:
-            logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
-            try:
-                client.close()
-            except Exception as close_exc:
-                logger.warning(
-                    f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
-                )
-            raise e
+                existing_client = self.client
+                if existing_client and existing_client.is_connected():
+                    bleak_client = getattr(existing_client, "bleak_client", None)
+                    bleak_address = getattr(bleak_client, "address", None)
+                    normalized_known_targets = {
+                        self._last_connection_request,
+                        BLEInterface._sanitize_address(self.address),
+                        BLEInterface._sanitize_address(bleak_address),
+                    }
+                    if normalized_request is None or normalized_request in normalized_known_targets:
+                        logger.debug("Already connected, skipping connect call.")
+                        return existing_client
 
-        return client
+            # Bleak docs recommend always doing a scan before connecting (even if we know addr)
+            device = self.find_device(address or self.address)
+            self.address = device.address  # Keep address in sync for auto-reconnect
+            client = BLEClient(
+                device.address, disconnected_callback=self._on_ble_disconnect
+            )
+            previous_client = None
+            try:
+                client.connect(await_timeout=CONNECTION_TIMEOUT)
+                services = getattr(client.bleak_client, "services", None)
+                if not services or not getattr(services, "get_characteristic", None):
+                    logger.debug(
+                        "BLE services not available immediately after connect; getting services"
+                    )
+                    client.get_services()
+                # Ensure notifications are always active for this client (reconnect-safe)
+                self._register_notifications(client)
+                # Publish the new client before waking any waiters
+                with self._client_lock:
+                    previous_client = self.client
+                    self.client = client
+                    self._disconnect_notified = False
+                    normalized_device_address = BLEInterface._sanitize_address(
+                        device.address
+                    )
+                    if normalized_request is not None:
+                        self._last_connection_request = normalized_request
+                    else:
+                        self._last_connection_request = normalized_device_address
+                if previous_client and previous_client is not client:
+                    Thread(
+                        target=self._safe_close_client,
+                        args=(previous_client,),
+                        name="BLEClientClose",
+                        daemon=True,
+                    ).start()
+                # Signal successful reconnection to waiting threads
+                self._reconnected_event.set()
+            except Exception as e:
+                logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
+                try:
+                    client.close()
+                except Exception as close_exc:
+                    logger.warning(
+                        f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
+                    )
+                raise e
+
+            return client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: "BLEClient"
