@@ -1185,7 +1185,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 iface2._on_ble_disconnect(client2.bleak_client)
                 time.sleep(0.005)
             except (RuntimeError, AttributeError, KeyError) as e:
-                # Expected during stress testing - log for debugging but don't fail test
+                # Expected during stress testing due to race conditions - log for debugging but don't fail test
                 print(f"Stress test disconnect {i}: {type(e).__name__}: {e}")
             except Exception as e:
                 # Unexpected exceptions - log but continue to avoid breaking the stress test
@@ -1213,6 +1213,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     client3._should_fail_connect = True
 
     # Simulate disconnects that trigger reconnection attempts
+    # Exceptions are expected and suppressed to continue stress testing
     for _ in range(5):
         try:
             iface3._on_ble_disconnect(client3.bleak_client)
@@ -1409,6 +1410,9 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
             Returns:
                 The value returned by `callback`, or `None` if `callback` is `None`.
             """
+            if callback:
+                return callback()
+            return None
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
 
