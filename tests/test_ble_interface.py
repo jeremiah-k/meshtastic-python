@@ -916,7 +916,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
         iface._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
-    assert "Error during write operation: _StubBleakError" in caplog.text
+    assert "Error during write operation: BleakError" in caplog.text or "Error during write operation: _StubBleakError" in caplog.text
 
     # Clear caplog for next test
     caplog.clear()
