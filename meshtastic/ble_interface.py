@@ -327,6 +327,7 @@ class BLEInterface(MeshInterface):
         try:
             if len(b) != 4:
                 logger.debug(f"FROMNUM notify has unexpected length {len(b)}; ignoring")
+                self._malformed_notification_count += 1
                 return
             from_num = struct.unpack("<I", b)[0]
             logger.debug(f"FROMNUM notify: {from_num}")
@@ -493,10 +494,12 @@ class BLEInterface(MeshInterface):
                 raise BLEInterface.BLEError(
                     ERROR_MULTIPLE_PERIPHERALS_FOUND.format(address)
                 )
-            logger.warning(
-                "Multiple Meshtastic BLE peripherals detected; selecting the first match: %s",
-                addressed_devices[0].address,
-            )
+            else:
+                # Build a list of found devices for the error message
+                device_list = "\n".join([f"- {d.name} ({d.address})" for d in addressed_devices])
+                raise BLEInterface.BLEError(
+                    f"Multiple Meshtastic BLE peripherals found. Please specify one:\n{device_list}"
+                )
         return addressed_devices[0]
 
     @staticmethod
