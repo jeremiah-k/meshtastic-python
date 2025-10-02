@@ -348,7 +348,7 @@ class BLEInterface(MeshInterface):
             )
 
             devices: List[BLEDevice] = []
-            # With return_adv=True, BleakScanner.discover() returns a dict in bleak 1.1.1
+            # With return_adv=True, BleakScanner.discover() returns a dict
             if response is None:
                 logger.warning("BleakScanner.discover returned None")
                 return devices
