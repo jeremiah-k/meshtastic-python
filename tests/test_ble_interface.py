@@ -465,6 +465,8 @@ def test_close_idempotent(monkeypatch):
     iface = _build_interface(monkeypatch, client)
 
     iface.close()
+    iface.close()
+    iface.close()  # Call multiple times to ensure idempotency
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
