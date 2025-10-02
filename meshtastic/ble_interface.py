@@ -120,6 +120,9 @@ class BLEInterface(MeshInterface):
         self._closing: bool = False        # Indicates shutdown in progress
         self._exit_handler = None
         self.address = address
+        self._last_connection_request: Optional[str] = BLEInterface._sanitize_address(
+            address
+        )
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
 
@@ -541,6 +544,23 @@ class BLEInterface(MeshInterface):
             BLEClient: A connected BLEClient instance for the selected device.
         """
 
+        requested_identifier = address if address is not None else self.address
+        normalized_request = BLEInterface._sanitize_address(requested_identifier)
+
+        with self._client_lock:
+            existing_client = self.client
+            if existing_client and existing_client.is_connected():
+                bleak_client = getattr(existing_client, "bleak_client", None)
+                bleak_address = getattr(bleak_client, "address", None)
+                normalized_known_targets = {
+                    self._last_connection_request,
+                    BLEInterface._sanitize_address(self.address),
+                    BLEInterface._sanitize_address(bleak_address),
+                }
+                if normalized_request is None or normalized_request in normalized_known_targets:
+                    logger.debug("Already connected, skipping connect call.")
+                    return existing_client
+
         # Bleak docs recommend always doing a scan before connecting (even if we know addr)
         device = self.find_device(address or self.address)
         self.address = device.address  # Keep address in sync for auto-reconnect
@@ -563,6 +583,13 @@ class BLEInterface(MeshInterface):
                 previous_client = self.client
                 self.client = client
                 self._disconnect_notified = False
+                normalized_device_address = BLEInterface._sanitize_address(
+                    device.address
+                )
+                if normalized_request is not None:
+                    self._last_connection_request = normalized_request
+                else:
+                    self._last_connection_request = normalized_device_address
             if previous_client and previous_client is not client:
                 Thread(
                     target=self._safe_close_client,
