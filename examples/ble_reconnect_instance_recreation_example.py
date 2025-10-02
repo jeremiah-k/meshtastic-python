@@ -85,7 +85,7 @@ def main():
             with meshtastic.ble_interface.BLEInterface(
                 address,
                 noProto=True,  # Set to False in a real application
-                auto_reconnect=True,
+                auto_reconnect=False,
             ):
                 logger.info("Connection successful. Waiting for disconnection event...")
                 disconnected_event.wait()
