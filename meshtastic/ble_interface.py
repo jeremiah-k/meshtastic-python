@@ -462,6 +462,7 @@ class BLEInterface(MeshInterface):
         client = BLEClient(
             device.address, disconnected_callback=self._on_ble_disconnect
         )
+        previous_client = None
         try:
             client.connect(await_timeout=CONNECTION_TIMEOUT)
             services = getattr(client.bleak_client, "services", None)
@@ -472,6 +473,18 @@ class BLEInterface(MeshInterface):
                 client.get_services()
             # Ensure notifications are always active for this client (reconnect-safe)
             self._register_notifications(client)
+            # Publish the new client before waking any waiters
+            with self._client_lock:
+                previous_client = self.client
+                self.client = client
+                self._disconnect_notified = False
+            if previous_client and previous_client is not client:
+                Thread(
+                    target=self._safe_close_client,
+                    args=(previous_client,),
+                    name="BLEClientClose",
+                    daemon=True,
+                ).start()
             # Signal successful reconnection to waiting threads
             self._reconnected_event.set()
         except Exception as e:
@@ -483,11 +496,7 @@ class BLEInterface(MeshInterface):
                     f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
                 )
             raise e
-        else:
-            # Reset disconnect notification flag on successful connection
-            # This prevents false disconnect events when reconnecting
-            with self._client_lock:
-                self._disconnect_notified = False
+        
         return client
 
     def _handle_read_loop_disconnect(
