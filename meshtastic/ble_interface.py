@@ -150,24 +150,24 @@ class BLEInterface(MeshInterface):
             with self._client_lock:
                 self.client = client
             logger.debug("BLE connected")
+
+            logger.debug("Mesh configure starting")
+            self._startConfig()
+            if not self.noProto:
+                self._waitConnected(timeout=CONNECTION_TIMEOUT)
+                self.waitForConfig()
+
+            # FROMNUM notification is set in _register_notifications
+
+            # We MUST run atexit (if we can) because otherwise (at least on linux) the BLE device is not disconnected
+            # and future connection attempts will fail.  (BlueZ kinda sucks)
+            # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
+            self._exit_handler = atexit.register(self.close)
         except Exception as e:
             self.close()
             if isinstance(e, BLEInterface.BLEError):
                 raise
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
-
-        logger.debug("Mesh configure starting")
-        self._startConfig()
-        if not self.noProto:
-            self._waitConnected(timeout=CONNECTION_TIMEOUT)
-            self.waitForConfig()
-
-        # FROMNUM notification is set in _register_notifications
-
-        # We MUST run atexit (if we can) because otherwise (at least on linux) the BLE device is not disconnected
-        # and future connection attempts will fail.  (BlueZ kinda sucks)
-        # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
-        self._exit_handler = atexit.register(self.close)
 
     def __repr__(self):
         """
