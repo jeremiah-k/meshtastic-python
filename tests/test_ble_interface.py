@@ -317,6 +317,14 @@ class DummyClient:
         """
         return None
 
+    def read_gatt_char(self, *_args, **_kwargs):
+        """
+        Stub that simulates reading a GATT characteristic.
+
+        Returns empty bytes.
+        """
+        return b""
+
     def is_connected(self) -> bool:
         """
         Report the mock BLE client's connection state.
