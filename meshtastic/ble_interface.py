@@ -463,7 +463,7 @@ class BLEInterface(MeshInterface):
             device.address, disconnected_callback=self._on_ble_disconnect
         )
         try:
-            client.connect(timeout=CONNECTION_TIMEOUT)
+            client.connect(await_timeout=CONNECTION_TIMEOUT)
             services = getattr(client.bleak_client, "services", None)
             if not services or not getattr(services, "get_characteristic", None):
                 logger.debug(
@@ -593,10 +593,7 @@ class BLEInterface(MeshInterface):
                                 continue
                             break  # Too many empty reads, exit to recheck state
                         logger.debug(f"FROMRADIO read: {b.hex()}")
-                        try:
-                            self._handleFromRadio(b)
-                        except DecodeError:
-                            logger.warning("Corrupted packet received, discarding", exc_info=True)
+                        self._handleFromRadio(b)
                         retries = 0  # Reset retry counter on successful read
                     except BleakDBusError as e:
                         # Handle D-Bus specific BLE errors (common on Linux)
@@ -751,7 +748,7 @@ class BLEInterface(MeshInterface):
         Always calls the client's close() and logs debug-level details for BLE, OS, or runtime errors encountered during disconnect or close.
         """
         try:
-            client.disconnect(timeout=DISCONNECT_TIMEOUT_SECONDS)
+            client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
         except BLEInterface.BLEError:
             logger.warning("Timed out waiting for BLE disconnect; forcing shutdown")
         except BleakError:
@@ -849,19 +846,19 @@ class BLEClient:
         return self.async_await(self.bleak_client.pair(**kwargs))
 
     def connect(
-        self, *, timeout: Optional[float] = None, **kwargs
+        self, *, await_timeout: Optional[float] = None, **kwargs
     ):  # pylint: disable=C0116
         """
         Initiate a connection on the underlying Bleak client using the internal event loop.
 
         Parameters:
-                timeout (float | None): Maximum seconds to wait for the connect operation to complete; if None, wait indefinitely.
+                await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; if None, wait indefinitely.
                 **kwargs: Forwarded to the underlying Bleak client's `connect` call (e.g., connection parameters or timeout handled by Bleak).
 
         Returns:
                 The value returned by the underlying Bleak client's `connect` call.
         """
-        return self.async_await(self.bleak_client.connect(**kwargs), timeout=timeout)
+        return self.async_await(self.bleak_client.connect(**kwargs), timeout=await_timeout)
 
     def is_connected(self) -> bool:
         """
@@ -887,16 +884,16 @@ class BLEClient:
             return False
 
     def disconnect(
-        self, timeout: Optional[float] = None, **kwargs
+        self, *, await_timeout: Optional[float] = None, **kwargs
     ):  # pylint: disable=C0116
         """
         Disconnects the underlying Bleak client, waiting for the operation to complete.
 
         Parameters:
-            timeout (float | None): Maximum number of seconds to wait for the disconnect operation; if None, wait indefinitely.
+            await_timeout (float | None): Maximum number of seconds to wait for the disconnect operation; if None, wait indefinitely.
             **kwargs: Additional keyword arguments forwarded to the Bleak client's disconnect method.
         """
-        self.async_await(self.bleak_client.disconnect(**kwargs), timeout=timeout)
+        self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
         """Read a GATT characteristic from the connected BLE device.
