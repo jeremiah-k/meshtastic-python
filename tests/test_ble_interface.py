@@ -286,16 +286,15 @@ class DummyClient:
             address (str): Client address identifier, set to "dummy".
             disconnect_exception (Optional[Exception]): Stored exception to raise on disconnect.
             services (SimpleNamespace): Exposes get_characteristic(specifier) -> None for tests.
-            bleak_client: Reference to self to mimic the Bleak client API in tests.
+            bleak_client: A mock bleak client object to mimic the real structure.
         """
         self.disconnect_calls = 0
         self.close_calls = 0
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
         self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
-        self.bleak_client = (
-            self  # For testing purposes, make bleak_client point to self
-        )
+        # The bleak_client should be a separate object to correctly test identity checks
+        self.bleak_client = SimpleNamespace(address=self.address)
 
     def has_characteristic(self, _specifier):
         """
@@ -812,7 +811,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     # Simulate disconnection by calling _on_ble_disconnect directly
     # This simulates what happens when bleak calls the disconnected callback
     disconnect_client = iface.client
-    iface._on_ble_disconnect(disconnect_client)
+    iface._on_ble_disconnect(disconnect_client.bleak_client)
 
     # Allow time for auto-reconnect thread to run
     for _ in range(50):
