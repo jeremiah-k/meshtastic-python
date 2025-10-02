@@ -314,6 +314,17 @@ class BLEInterface(MeshInterface):
 
         thread.start()
 
+    def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False):
+        """Helper to handle malformed FROMNUM notifications."""
+        self._malformed_notification_count += 1
+        logger.debug(reason, exc_info=exc_info)
+        if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
+            logger.warning(
+                f"Received {self._malformed_notification_count} malformed FROMNUM notifications. "
+                "Check BLE connection stability."
+            )
+            self._malformed_notification_count = 0
+
     def from_num_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Handle notifications from the FROMNUM characteristic and wake the read loop.
@@ -329,28 +340,14 @@ class BLEInterface(MeshInterface):
         """
         try:
             if len(b) != 4:
-                logger.debug(f"FROMNUM notify has unexpected length {len(b)}; ignoring")
-                self._malformed_notification_count += 1
-                if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
-                    logger.warning(
-                        f"Received {self._malformed_notification_count} malformed FROMNUM notifications. "
-                        "Check BLE connection stability."
-                    )
-                    self._malformed_notification_count = 0  # Reset counter after warning
+                self._handle_malformed_fromnum(f"FROMNUM notify has unexpected length {len(b)}; ignoring")
                 return
             from_num = struct.unpack("<I", b)[0]
             logger.debug(f"FROMNUM notify: {from_num}")
             # Successful parse: reset malformed counter
             self._malformed_notification_count = 0
         except (struct.error, ValueError):
-            self._malformed_notification_count += 1
-            logger.debug("Malformed FROMNUM notify; ignoring", exc_info=True)
-            if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
-                logger.warning(
-                    f"Received {self._malformed_notification_count} malformed FROMNUM notifications. "
-                    "Check BLE connection stability."
-                )
-                self._malformed_notification_count = 0  # Reset counter after warning
+            self._handle_malformed_fromnum("Malformed FROMNUM notify; ignoring", exc_info=True)
             return
         finally:
             self._read_trigger.set()
@@ -489,7 +486,7 @@ class BLEInterface(MeshInterface):
                 sanitized_device_address = BLEInterface._sanitize_address(
                     device.address
                 )
-                if sanitized_address == sanitized_name or sanitized_address == sanitized_device_address:  # pylint: disable=consider-using-in
+                if sanitized_address in (sanitized_name, sanitized_device_address):
                     filtered_devices.append(device)
             addressed_devices = filtered_devices
 
