@@ -479,7 +479,7 @@ class BLEInterface(MeshInterface):
                 sanitized_device_address = BLEInterface._sanitize_address(
                     device.address
                 )
-                if sanitized_address in (sanitized_name, sanitized_device_address):
+                if sanitized_address == sanitized_name or sanitized_address == sanitized_device_address:  # pylint: disable=consider-using-in
                     filtered_devices.append(device)
             addressed_devices = filtered_devices
 

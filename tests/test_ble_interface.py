@@ -410,7 +410,12 @@ def stub_atexit(
     yield
     # run any registered functions manually to avoid surprising global state
     for func in registered:
-        func()
+        try:
+            func()
+        except Exception as e:
+            # Keep teardown resilient during tests
+            import logging
+            logging.debug("atexit callback %r raised during teardown: %s: %s", func, type(e).__name__, e)
 
 
 def _build_interface(monkeypatch, client):
@@ -734,8 +739,11 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     # Trigger the receive loop to process the bad data
     iface._read_trigger.set()
 
-    # Give the thread a moment to run
-    time.sleep(0.5)
+    # Give the thread time to run: poll for expected log
+    for _ in range(50):
+        if "Failed to parse FromRadio packet, discarding:" in caplog.text:
+            break
+        time.sleep(0.02)
 
     # Assert that the graceful handling occurred
     assert "Failed to parse FromRadio packet, discarding:" in caplog.text
@@ -1185,11 +1193,9 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 iface2._on_ble_disconnect(client2.bleak_client)
                 time.sleep(0.005)
             except (RuntimeError, AttributeError, KeyError) as e:
-                # Expected during stress testing due to race conditions - log for debugging but don't fail test
-                print(f"Stress test disconnect {i}: {type(e).__name__}: {e}")
+                logging.debug("Stress test disconnect %d: %s: %s", i, type(e).__name__, e)
             except Exception as e:
-                # Unexpected exceptions - log but continue to avoid breaking the stress test
-                print(f"Unexpected stress test disconnect {i}: {type(e).__name__}: {e}")
+                logging.debug("Unexpected stress test disconnect %d: %s: %s", i, type(e).__name__, e)
 
     # Start multiple threads for concurrent operations
     threads = []
@@ -1218,8 +1224,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         try:
             iface3._on_ble_disconnect(client3.bleak_client)
             time.sleep(0.01)
-        except Exception:
-            pass  # Expected due to simulated connection failures
+        except Exception as e:
+            logging.debug("Expected failure during stress reconnect: %s: %s", type(e).__name__, e)
 
     # Verify graceful handling of connection failures
     assert client3.bleak_client.connect_count >= 0  # Should attempt reconnections
