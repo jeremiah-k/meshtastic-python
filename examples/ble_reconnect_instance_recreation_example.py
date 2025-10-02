@@ -1,5 +1,5 @@
 """
-Example demonstrating client-side reconnection using the instance recreation pattern.
+Example demonstrating BLE client-side reconnection using the instance recreation pattern.
 
 This example shows the **instance recreation pattern** (simpler but less efficient):
 - Create a new BLEInterface instance for each connection attempt
@@ -9,7 +9,7 @@ This example shows the **instance recreation pattern** (simpler but less efficie
 The instance recreation pattern is simpler to understand but has higher overhead
 due to thread creation/destruction for each reconnection attempt.
 
-For better performance in long-running applications, see reconnect_example.py
+For better performance in long-running applications, see ble_reconnect_instance_reuse_example.py
 which demonstrates the more efficient instance reuse pattern.
 """
 import argparse

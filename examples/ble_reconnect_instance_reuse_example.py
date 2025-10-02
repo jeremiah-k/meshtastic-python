@@ -1,6 +1,6 @@
 """
-Example demonstrating robust client-side reconnection for a
-long-running application that uses the BLE interface.
+Example demonstrating robust BLE client-side reconnection for a
+long-running application.
 
 This example shows the **instance reuse pattern** (preferred for efficiency):
 - Create a single BLEInterface instance with `auto_reconnect=True` (the default)
@@ -11,7 +11,7 @@ The instance reuse pattern is more efficient for long-running applications
 since it maintains the receive thread and other internal state across reconnections.
 
 For an alternative simpler but less efficient approach, see
-reconnect_instance_recreation_example.py which demonstrates the instance recreation pattern.
+ble_reconnect_instance_recreation_example.py which demonstrates the instance recreation pattern.
 """
 import argparse
 import logging
