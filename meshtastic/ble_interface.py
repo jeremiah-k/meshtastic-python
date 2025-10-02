@@ -101,24 +101,14 @@ class BLEInterface(MeshInterface):
         auto_reconnect: bool = True,
     ) -> None:
         """
-        Create a BLEInterface, start its background receive thread, and establish an initial connection to a Meshtastic BLE device.
-
+        Initialize a BLEInterface, start its background receive thread, and attempt an initial connection to a Meshtastic BLE device.
+        
         Parameters:
             address (Optional[str]): BLE address to connect to; if None, any available Meshtastic device may be used.
-            noProto (bool): When True, do not initialize protobuf-based protocol handling.
+            noProto (bool): If True, do not initialize protobuf-based protocol handling.
             debugOut (Optional[io.TextIOWrapper]): Stream to emit debug output to, if provided.
-            noNodes (bool): When True, do not attempt to read the device's node list on startup.
-            auto_reconnect (bool): When True, keep the interface alive across unexpected disconnects and enable reconnection handling; when False, close the interface on disconnect.
-                
-                When auto_reconnect=True, two reconnection patterns are supported:
-                
-                1. **Instance reuse (preferred)**: Reuse the same BLEInterface instance and call connect() again after disconnect.
-                   This is more efficient for long-running applications as it avoids thread teardown/recreation overhead.
-                   The interface uses internal events (_reconnected_event) to coordinate reconnection with the receive loop.
-                
-                2. **Instance recreation (simpler)**: Create new BLEInterface instances after each disconnect.
-                   This approach is simpler to implement but has higher overhead due to thread recreation.
-                   See reconnect_example.py for demonstrations of both patterns.
+            noNodes (bool): If True, do not attempt to read the device's node list on startup.
+            auto_reconnect (bool): If True, keep the interface alive across unexpected disconnects and attempt automatic reconnection; if False, close the interface on disconnect.
         """
         # Thread safety and state management
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
@@ -194,10 +184,10 @@ class BLEInterface(MeshInterface):
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """
-        Handle a Bleak client disconnection and initiate either reconnect or shutdown procedures.
-
-        If a shutdown is in progress this is ignored. When auto_reconnect is enabled, record the disconnect once, clear the current client reference, schedule a safe close of the previous client if present, emit a single disconnected notification, wake the receive loop, and clear the reconnected event so reconnection may proceed. Duplicate or stale disconnect callbacks are ignored. When auto_reconnect is disabled, schedule a full close of the interface.
-
+        Handle a Bleak client disconnection by notifying the interface and initiating either a reconnection workflow or a full shutdown.
+        
+        If `auto_reconnect` is True, notify the parent interface of the disconnect and schedule a safe close of the current client so reconnection can proceed; duplicate or stale disconnect callbacks are ignored. If `auto_reconnect` is False, schedule a full interface close.
+        
         Parameters:
             client (BleakRootClient): The Bleak client instance that triggered the disconnect callback.
         """
@@ -304,10 +294,10 @@ class BLEInterface(MeshInterface):
 
     async def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
-        Handle an incoming protobuf LogRecord notification and forward a formatted log line to the instance log handler.
-
-        Parses a mesh_pb2.LogRecord from the notification payload and constructs a message prefixed with `[source] ` when the record contains a source, then calls `self._handleLogLine` with the resulting string. Malformed records are logged as a warning and ignored.
-
+        Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
+        
+        Parses the notification payload as a `mesh_pb2.LogRecord`. If the record contains a `source`, the forwarded line is prefixed with `[source] `; otherwise the record `message` is forwarded as-is. Malformed records are logged as a warning and ignored.
+        
         Parameters:
             b (bytearray): Serialized `mesh_pb2.LogRecord` payload from the BLE notification.
         """
@@ -326,10 +316,10 @@ class BLEInterface(MeshInterface):
 
     async def legacy_log_radio_handler(self, _, b: bytearray) -> None:
         """
-        Handle a legacy log-radio notification by decoding UTF-8 text and forwarding the line to the log handler.
-
-        Decodes `b` as UTF-8, strips trailing newlines, and passes the resulting string to `self._handleLogLine`. If `b` is not valid UTF-8, logs a warning and skips the entry.
-
+        Handle a legacy log-radio notification by decoding and forwarding the UTF-8 log line.
+        
+        Decodes `b` as UTF-8, strips newline characters, and passes the resulting string to `self._handleLogLine`. If `b` is not valid UTF-8, a warning is logged and the notification is ignored.
+        
         Parameters:
             b (bytearray): Raw notification payload expected to contain a UTF-8 encoded log line.
         """
@@ -344,13 +334,12 @@ class BLEInterface(MeshInterface):
     @staticmethod
     def scan() -> List[BLEDevice]:
         """
-        Finds BLE devices advertising the Meshtastic service UUID.
-
-        Performs a timed BLE scan and returns BLEDevice objects whose advertisements include SERVICE_UUID.
-        Handles variations in BleakScanner.discover() return formats and returns an empty list if no matching devices are found.
-
+        Scan for BLE devices advertising the Meshtastic service UUID.
+        
+        Performs a timed BLE scan, handles variations in BleakScanner.discover() return formats, and returns devices whose advertisements include SERVICE_UUID.
+        
         Returns:
-            List[BLEDevice]: Devices whose advertisements include SERVICE_UUID; empty list if none found.
+            List[BLEDevice]: Devices whose advertisements include SERVICE_UUID; empty list if none are found.
         """
         with BLEClient() as client:
             logger.debug(
@@ -385,16 +374,16 @@ class BLEInterface(MeshInterface):
 
     def find_device(self, address: Optional[str]) -> BLEDevice:
         """
-        Locate a Meshtastic BLE device, optionally filtering by address or device name.
-
+        Finds a Meshtastic BLE device matching an optional address or device name.
+        
         Parameters:
-            address (Optional[str]): Address or device name to match; comparison ignores case and common separators.
-
+            address (Optional[str]): Address or device name to match; comparison ignores case and common separators. If None, any discovered Meshtastic device may be returned.
+        
         Returns:
-            BLEDevice: The matched BLE device (the first match if multiple devices are found).
-
+            BLEDevice: The matched BLE device (the first match when multiple devices were discovered and no address was specified).
+        
         Raises:
-            BLEInterface.BLEError: If no devices are found, or if an address was specified and multiple matching devices are found.
+            BLEInterface.BLEError: If no Meshtastic devices are found, or if an address was provided and multiple matching devices are found.
         """
 
         addressed_devices = BLEInterface.scan()
@@ -503,16 +492,14 @@ class BLEInterface(MeshInterface):
         self, error_message: str, previous_client: "BLEClient"
     ) -> bool:
         """
-        Handle a BLE disconnection detected in the read loop and decide whether the loop should continue for auto-reconnect.
-
-        If auto-reconnect is enabled, this clears the current client reference when appropriate, may emit a single disconnected notification, schedules safe closing of the previous client, and resets read/reconnect triggers so the receive loop can continue. If auto-reconnect is disabled, this requests termination of the read loop.
-
+        Decide whether the receive loop should continue after a BLE disconnection and perform related cleanup for reconnection.
+        
         Parameters:
             error_message (str): Human-readable description of the disconnection cause.
-            previous_client (BLEClient): The BLEClient instance that observed the disconnect.
-
+            previous_client (BLEClient): The BLEClient instance that observed the disconnect and may be closed.
+        
         Returns:
-            `true` if the read loop should continue to allow auto-reconnect, `false` to stop the loop.
+            bool: True if the read loop should continue to allow auto-reconnect, False otherwise.
         """
         logger.debug(f"Device disconnected: {error_message}")
         if self.auto_reconnect:
@@ -547,7 +534,14 @@ class BLEInterface(MeshInterface):
         return False
 
     def _safe_close_client(self, c: "BLEClient") -> None:
-        """Safely close a BLEClient wrapper with exception handling."""
+        """
+        Close the provided BLEClient and suppress common close-time errors.
+        
+        Attempts to close the given BLEClient and ignores BleakError, RuntimeError, and OSError raised during close to avoid propagating shutdown-related exceptions.
+        
+        Parameters:
+            c (BLEClient): The BLEClient instance to close; may be None or already-closed.
+        """
         try:
             c.close()
         except BleakError:
@@ -560,9 +554,9 @@ class BLEInterface(MeshInterface):
 
     def _receiveFromRadioImpl(self) -> None:
         """
-        Continuously reads inbound packets from the BLE radio and delivers them to the interface's packet handler.
-
-        This run-loop waits for a read trigger and then attempts to read from the BLE peripheral, handling transient empty reads with a limited retry loop, managing reconnection when the client is unavailable, and discarding packets that fail protobuf parsing. BLE transport errors drive the reconnect-or-shutdown flow; on an unexpected fatal exception the interface initiates a safe shutdown.
+        Run loop that reads inbound packets from the BLE FROMRADIO characteristic and delivers them to the interface packet handler.
+        
+        Waits on an internal read trigger, performs GATT reads when a BLE client is available, and forwards non-empty payloads to _handleFromRadio. Coordinates with the reconnection logic when the client becomes unavailable and tolerates transient empty reads. On a fatal error, initiates a safe shutdown of the interface.
         """
         try:
             while self._want_receive:
@@ -663,9 +657,9 @@ class BLEInterface(MeshInterface):
 
     def close(self) -> None:
         """
-        Shut down the BLE interface, stop background threads, disconnect the BLE client, and perform cleanup.
-
-        Stops the receive thread and any reconnection waits, unregisters the atexit handler, disconnects and closes the active BLE client, and emits a disconnected indicator if not already sent. This method is idempotent and safe to call multiple times; if a shutdown is already in progress it returns immediately. It also waits briefly for the receive thread and for disconnect-related notifications to complete.
+        Shut down the BLE interface, stop background activity, disconnect the BLE client, and perform cleanup.
+        
+        This method is idempotent and safe to call multiple times. It stops the receive loop and reconnection waits, unregisters the atexit handler, disconnects and closes any active BLE client, emits a disconnected notification if not already sent, and waits briefly for pending disconnect-related notifications and the receive thread to finish.
         """
         with self._closing_lock:
             if self._closing:
@@ -752,10 +746,12 @@ class BLEInterface(MeshInterface):
 
     def _disconnect_and_close_client(self, client: "BLEClient"):
         """
-        Attempt to gracefully disconnect the given BLEClient and ensure its resources are closed.
-
-        Attempts to disconnect the client using the configured timeout and logs a warning if the disconnect times out.
-        Always calls the client's close() and logs debug-level details for BLE, OS, or runtime errors encountered during disconnect or close.
+        Disconnects the given BLEClient and ensures its resources are released.
+        
+        Attempts to disconnect the client using DISCONNECT_TIMEOUT_SECONDS; if the disconnect times out or fails, forces closure. Always closes the client to release underlying resources and logs warnings on timeout and debug details for other disconnect/close errors.
+        
+        Parameters:
+            client (BLEClient): The BLE client instance to disconnect and close.
         """
         try:
             client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
@@ -775,12 +771,12 @@ class BLEInterface(MeshInterface):
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """
-        Drain pending publish callbacks from the publishing thread's queue during shutdown.
-
-        Execute queued runnables inline on the caller's thread until the queue is empty or the provided flush_event is set. Each runnable is executed inside a try/except block so exceptions raised by callbacks are logged and do not interrupt the drain process.
-
+        Drain and run any pending publish callbacks inline until the queue is empty or `flush_event` is set.
+        
+        This executes queued callables from the publishing thread's queue on the current thread, catching and logging exceptions from each callable so draining continues. If the publishing thread has no accessible queue, the method returns immediately.
+        
         Parameters:
-            flush_event (Event): Event that, when set, stops draining and causes the method to return promptly.
+            flush_event (Event): When set, stops draining and causes the function to return promptly.
         """
         queue = getattr(publishingThread, "queue", None)
         if queue is None:
@@ -811,11 +807,11 @@ class BLEClient:
 
     def __init__(self, address=None, **kwargs) -> None:
         """
-        Initialize the BLEClient's internal asyncio event loop and optional Bleak client.
-
+        Create a BLEClient with its own asyncio event loop and, optionally, a Bleak client for a specific address.
+        
         Parameters:
-            address (Optional[str]): BLE device address to connect to. If provided, a Bleak client for that address is constructed; if None, no Bleak client is created and the instance can only be used for discovery.
-            **kwargs: Additional keyword arguments forwarded to the underlying Bleak client constructor.
+            address (Optional[str]): BLE device address to attach a Bleak client to. If None, no Bleak client is created and the instance can only be used for discovery.
+            **kwargs: Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
         """
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
@@ -845,13 +841,13 @@ class BLEClient:
 
     def pair(self, **kwargs):  # pylint: disable=C0116
         """
-        Attempt to pair the BLE client with its device.
-
+        Pair the underlying BLE client with the remote device.
+        
         Parameters:
             kwargs: Backend-specific pairing options forwarded to the underlying BLE client.
-
+        
         Returns:
-            bool: `True` if pairing succeeded, `False` otherwise.
+            `True` if pairing succeeded, `False` otherwise.
         """
         return self.async_await(self.bleak_client.pair(**kwargs))
 
@@ -859,23 +855,23 @@ class BLEClient:
         self, *, await_timeout: Optional[float] = None, **kwargs
     ):  # pylint: disable=C0116
         """
-        Initiate a connection on the underlying Bleak client using the internal event loop.
-
+        Initiates a connection using the underlying Bleak client and its internal event loop.
+        
         Parameters:
-                await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; if None, wait indefinitely.
-                **kwargs: Forwarded to the underlying Bleak client's `connect` call (e.g., connection parameters or timeout handled by Bleak).
-
+            await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; `None` to wait indefinitely.
+            **kwargs: Forwarded to the underlying Bleak client's `connect` call.
+        
         Returns:
-                The value returned by the underlying Bleak client's `connect` call.
+            The value returned by the underlying Bleak client's `connect` call.
         """
         return self.async_await(self.bleak_client.connect(**kwargs), timeout=await_timeout)
 
     def is_connected(self) -> bool:
         """
-        Return whether the underlying Bleak client is currently connected.
-
+        Check whether the underlying Bleak client reports a connected state.
+        
         Returns:
-            bool: `true` if the Bleak client is connected, `false` otherwise.
+            `true` if the underlying Bleak client reports it is connected, `false` otherwise. This will return `false` if no bleak client is present or if the client's connected state cannot be read.
         """
         bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
@@ -922,32 +918,32 @@ class BLEClient:
     def write_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
         """
         Write a GATT characteristic on the connected BLE device and wait for the operation to complete.
-
-        This proxies to the underlying Bleak client's write_gatt_char via the interface's internal event loop and blocks until the write finishes or an error occurs.
-
+        
         Raises:
-                BLEInterface.BLEError: If the internal async operation times out or if the underlying write fails.
+            BLEInterface.BLEError: If the write fails or the operation times out.
         """
         self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs))
 
     def get_services(self):
         """
-        Retrieve the connected device's GATT service information.
-
+        Return the connected device's discovered GATT services and their characteristics.
+        
         Returns:
-            A collection describing the device's GATT services and their characteristics.
+            A collection object describing the device's available GATT services and their characteristics.
         """
         return self.async_await(self.bleak_client.get_services())
 
     def has_characteristic(self, specifier):
         """
-        Return whether the connected device exposes the BLE characteristic identified by `specifier`.
-
+        Determine whether the connected BLE device exposes the characteristic identified by `specifier`.
+        
+        If the client's services are not yet populated, attempts to fetch services before checking.
+        
         Parameters:
-                specifier (str | UUID): Characteristic identifier (UUID string or UUID object) to look up.
-
+            specifier (str | UUID): UUID string or UUID object identifying the characteristic to check.
+        
         Returns:
-                bool: True if the characteristic is present on the connected device's services, False otherwise.
+            bool: `true` if the characteristic is present, `false` otherwise.
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
@@ -963,12 +959,12 @@ class BLEClient:
 
     def start_notify(self, *args, **kwargs):  # pylint: disable=C0116
         """
-        Start notifications for a BLE characteristic on the connected device.
-
+        Subscribe to notifications for a BLE characteristic on the connected device.
+        
         Parameters:
             char_specifier: Identifier for the characteristic to subscribe to (UUID string, UUID object, or integer handle).
-            callback: Callable that will be invoked when a notification is received; called with (sender, data) where `data` is a bytearray.
-            *args, **kwargs: Additional arguments forwarded to the underlying Bleak client's `start_notify` method.
+            callback: Callable invoked when a notification is received; called as (sender, data) where `data` is a bytearray.
+            *args, **kwargs: Additional arguments forwarded to the BLE backend's notification start call.
         """
         self.async_await(self.bleak_client.start_notify(*args, **kwargs))
 
@@ -997,9 +993,9 @@ class BLEClient:
 
     def __exit__(self, _type, _value, _traceback):
         """
-        Close the BLEClient when exiting a context manager.
-
-        This method calls close() to shut down the client's event loop and threads. Any exception information passed to the context manager is ignored.
+        Close the BLEClient's internal event loop and threads when exiting a context manager.
+        
+        Calls `close()` to stop the background event loop and join the event thread. Any exception information passed to the context manager is ignored.
         """
         self.close()
 
@@ -1028,16 +1024,13 @@ class BLEClient:
 
     def async_run(self, coro):  # pylint: disable=C0116
         """
-        Schedule a coroutine to run on the client's internal event loop.
-
-        This is the core bridge between synchronous code and the async event loop.
-        Uses asyncio.run_coroutine_threadsafe which is thread-safe.
-
+        Schedule a coroutine on the client's internal asyncio event loop.
+        
         Parameters:
             coro (coroutine): The coroutine to schedule.
-
+        
         Returns:
-            concurrent.futures.Future: A Future representing the scheduled coroutine's execution and eventual result.
+            concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
         """
         return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
 

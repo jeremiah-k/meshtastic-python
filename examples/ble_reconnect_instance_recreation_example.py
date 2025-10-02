@@ -54,17 +54,9 @@ def on_connection_change(interface, connected):
 
 def main():
     """
-    Run a reconnection loop using the instance recreation pattern.
+    Run a reconnection loop that repeatedly creates a new BLEInterface for each connection attempt.
     
-    This pattern creates a new BLEInterface instance for each connection attempt,
-    which is simpler to understand but less efficient for long-running applications.
-    
-    The function:
-    - Parses a required BLE address from command-line arguments
-    - Creates a new BLEInterface instance for each connection attempt
-    - Uses context manager for automatic resource cleanup
-    - Listens for connection-status events to detect disconnects
-    - Handles KeyboardInterrupt and logs errors appropriately
+    Parses a required BLE address from command-line arguments, subscribes to connection-status events to detect disconnects, and uses a fresh BLEInterface instance (via a context manager) for each attempt. Exits cleanly on KeyboardInterrupt, logs BLE-related and unexpected errors, and retries after RETRY_DELAY_SECONDS when a connection ends or fails.
     """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
