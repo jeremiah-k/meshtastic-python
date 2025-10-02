@@ -264,9 +264,12 @@ class BLEInterface(MeshInterface):
 
         with self._client_lock:
             existing_thread = self._reconnect_thread
-            if existing_thread and existing_thread.is_alive():
-                logger.debug("Auto-reconnect already in progress; skipping new attempt.")
-                return
+            if existing_thread:
+                if existing_thread.is_alive() or existing_thread.ident is None:
+                    logger.debug("Auto-reconnect already in progress; skipping new attempt.")
+                    return
+                # Clear out a finished thread reference before scheduling a fresh one
+                self._reconnect_thread = None
 
             def _attempt_reconnect() -> None:
                 delay = AUTO_RECONNECT_INITIAL_DELAY
