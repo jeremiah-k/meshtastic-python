@@ -591,6 +591,7 @@ class BLEInterface(MeshInterface):
                                 time.sleep(EMPTY_READ_RETRY_DELAY)
                                 retries += 1
                                 continue
+                            logger.warning("Exceeded max retries for empty BLE read from FROMRADIO_UUID")
                             break  # Too many empty reads, exit to recheck state
                         logger.debug(f"FROMRADIO read: {b.hex()}")
                         self._handleFromRadio(b)
