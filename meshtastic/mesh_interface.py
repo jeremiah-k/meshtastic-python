@@ -17,14 +17,15 @@ from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import google.protobuf.json_format
+from google.protobuf.message import DecodeError
 
 try:
     import print_color  # type: ignore[import-untyped]
-except ImportError as e:
+except ImportError:
     print_color = None
 
-from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
+from pubsub import pub
 
 import meshtastic.node
 from meshtastic import (
@@ -92,16 +93,16 @@ class MeshInterface:  # pylint: disable=R0902
     def __init__(
         self, debugOut=None, noProto: bool = False, noNodes: bool = False
     ) -> None:
-        """Constructor
-
-        Keyword Arguments:
-            noProto -- If True, don't try to run our protocol on the
-                       link - just be a dumb serial client.
-            noNodes -- If True, instruct the node to not send its nodedb
-                       on startup, just other configuration information.
+        """
+        Initialize a MeshInterface instance and configure its internal state and defaults.
+        
+        Parameters:
+            debugOut (file-like | None): If provided, subscribe to log lines and forward formatted log output to this stream.
+            noProto (bool): When True, disable running the mesh protocol over the transport (act as a dumb serial client).
+            noNodes (bool): When True, instruct the device not to send its node database at startup; only other configuration will be requested. This sets an initial configId to request node-less configuration.
         """
         self.debugOut = debugOut
-        self.nodes: Optional[Dict[str, Dict]] = None  # FIXME
+        self.nodes: Dict[str, Dict] = {}  # Initialize as empty dict to prevent AttributeError
         self.isConnected: threading.Event = threading.Event()
         self.noProto: bool = noProto
         self.localNode: meshtastic.node.Node = meshtastic.node.Node(
@@ -124,7 +125,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.heartbeatTimer: Optional[threading.Timer] = None
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
         self.currentPacketId: int = random.randint(0, 0xFFFFFFFF)
-        self.nodesByNum: Optional[Dict[int, Dict]] = None
+        self.nodesByNum: Dict[int, Dict] = {}  # Initialize as empty dict to prevent AttributeError
         self.noNodes: bool = noNodes
         self.configId: Optional[int] = NODELESS_WANT_CONFIG_ID if noNodes else None
         self.gotResponse: bool = False  # used in gpio read
@@ -226,11 +227,18 @@ class MeshInterface:  # pylint: disable=R0902
     def showNodes(
         self, includeSelf: bool = True, showFields: Optional[List[str]] = None
     ) -> str:  # pylint: disable=W0613
-        """Show table summary of nodes in mesh
-
-           Args:
-                includeSelf (bool): Include ourself in the output?
-                showFields (List[str]): List of fields to show in output
+        """
+        Render a formatted table of known mesh nodes.
+        
+        Generates a human-readable table (using tabulate) with one row per known node. Columns are chosen from showFields or a sensible default set and some fields (e.g., "since", "lastHeard", battery, position) are formatted for display. The table is printed to stdout and also returned as a string.
+        
+        Parameters:
+            includeSelf (bool): If False, omit the local node from the output. If True, include it.
+            showFields (List[str] | None): Ordered list of field paths to include as columns (e.g., "user.longName", "position.latitude").
+                If None or empty, a default set of common fields will be used. "N" (row number) is always included.
+        
+        Returns:
+            str: The rendered table as a string.
         """
 
         def get_human_readable(name):
@@ -272,7 +280,15 @@ class MeshInterface:  # pylint: disable=R0902
             )
 
         def getTimeAgo(ts) -> Optional[str]:
-            """Format how long ago have we heard from this node (aka timeago)."""
+            """
+            Return a human-friendly string describing how long ago a POSIX timestamp occurred.
+            
+            Parameters:
+                ts (float | int | None): POSIX timestamp in seconds since the epoch; if None, no value is available.
+            
+            Returns:
+                Optional[str]: A short human-readable interval (e.g., "now", "30 sec ago", "1 hour ago"), or `None` if `ts` is `None` or represents a time in the future.
+            """
             if ts is None:
                 return None
             delta = datetime.now() - datetime.fromtimestamp(ts)
@@ -282,7 +298,16 @@ class MeshInterface:  # pylint: disable=R0902
             return _timeago(delta_secs)
 
         def getNestedValue(node_dict: Dict[str, Any], key_path: str) -> Any:
-            if key_path.index(".") < 0:
+            """
+            Retrieve a nested value from a dictionary using a dot-separated key path.
+            
+            Parameters:
+                key_path (str): Dot-separated sequence of keys (e.g. "user.location.lat") defining the nested path to retrieve.
+            
+            Returns:
+                The value found at the specified path, or `None` if any key along the path is missing or an intermediate value is not a dictionary.
+            """
+            if "." not in key_path:
                 logger.debug("getNestedValue was called without a nested path.")
                 return None
             keys = key_path.split(".")
@@ -363,8 +388,11 @@ class MeshInterface:  # pylint: disable=R0902
                     fields[field] = formatted_value
 
                 # Filter out any field in the data set that was not specified.
-                filteredData = {get_human_readable(k): v for k, v in fields.items() if k in showFields}
-                filteredData.update({get_human_readable(k): v for k, v in fields.items()})
+                filteredData = {
+                    get_human_readable(k): v
+                    for k, v in fields.items()
+                    if k in showFields
+                }
                 rows.append(filteredData)
 
         rows.sort(key=lambda r: r.get("LastHeard") or "0000", reverse=True)
@@ -1094,15 +1122,31 @@ class MeshInterface:  # pylint: disable=R0902
         return None
 
     def getRingtone(self):
-        """Get ringtone"""
+        """
+        Retrieve the configured ringtone for the local node.
+        
+        Returns:
+            str: The ringtone identifier for the local node, or `None` if no local node or ringtone is unavailable.
+        """
         node = self.localNode
         if node is not None:
             return node.get_ringtone()
         return None
 
     def _waitConnected(self, timeout=30.0):
-        """Block until the initial node db download is complete, or timeout
-        and raise an exception"""
+        """
+        Waits until the interface is marked connected or the timeout elapses.
+        
+        If noProto is True, the method returns immediately. Otherwise it blocks up to
+        timeout seconds for the connection to complete.
+        
+        Parameters:
+            timeout (float): Maximum time in seconds to wait for connection completion.
+        
+        Raises:
+            MeshInterface.MeshInterfaceError: If waiting times out.
+            Exception: Re-raises any exception stored in self.failure if the connection failed.
+        """
         if not self.noProto:
             if not self.isConnected.wait(timeout):  # timeout after x seconds
                 raise MeshInterface.MeshInterfaceError(
@@ -1110,11 +1154,21 @@ class MeshInterface:  # pylint: disable=R0902
                 )
 
         # If we failed while connecting, raise the connection to the client
-        if self.failure:
+        if self.failure is not None:
             raise self.failure
 
     def _generatePacketId(self) -> int:
-        """Get a new unique packet ID"""
+        """
+        Create and store a new 32-bit packet identifier for outgoing mesh packets.
+        
+        Updates self.currentPacketId with the generated identifier and returns it.
+        
+        Returns:
+            int: The new 32-bit packet identifier.
+        
+        Raises:
+            MeshInterface.MeshInterfaceError: If self.currentPacketId is None (no base ID available to derive the next packet ID).
+        """
         if self.currentPacketId is None:
             raise MeshInterface.MeshInterfaceError(
                 "Not connected yet, can not generate packet"
@@ -1127,14 +1181,27 @@ class MeshInterface:  # pylint: disable=R0902
             return self.currentPacketId
 
     def _disconnected(self):
-        """Called by subclasses to tell clients this interface has disconnected"""
+        """
+        Mark the interface as disconnected and notify subscribers.
+        
+        Clears the internal connected flag and asynchronously publishes two events:
+        `meshtastic.connection.lost` and `meshtastic.connection.status` with
+        `connected=False`.
+        """
         self.isConnected.clear()
         publishingThread.queueWork(
             lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
         )
+        publishingThread.queueWork(
+            lambda: pub.sendMessage("meshtastic.connection.status", interface=self, connected=False)
+        )
 
     def sendHeartbeat(self):
-        """Sends a heartbeat to the radio. Can be used to verify the connection is healthy."""
+        """
+        Send a heartbeat to the radio to maintain or verify the connection.
+        
+        This triggers a heartbeat message to be sent to the connected radio device; it does not return a value.
+        """
         p = mesh_pb2.ToRadio()
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
         self._sendToRadio(p)
@@ -1153,7 +1220,12 @@ class MeshInterface:  # pylint: disable=R0902
         callback()  # run our periodic callback now, it will make another timer if necessary
 
     def _connected(self):
-        """Called by this class to tell clients we are now fully connected to a node"""
+        """
+        Mark the interface as connected, start the heartbeat timer, and publish connection events.
+        
+        This sets the internal connected state and schedules a periodic heartbeat. It also asynchronously publishes the following pubsub messages: "meshtastic.connection.established" and "meshtastic.connection.status" with connected=True.
+        
+        """
         # (because I'm lazy) _connected might be called when remote Node
         # objects complete their config reads, don't generate redundant isConnected
         # for the local interface
@@ -1165,9 +1237,18 @@ class MeshInterface:  # pylint: disable=R0902
                     "meshtastic.connection.established", interface=self
                 )
             )
+            publishingThread.queueWork(
+                lambda: pub.sendMessage(
+                    "meshtastic.connection.status", interface=self, connected=True
+                )
+            )
 
     def _startConfig(self):
-        """Start device packets flowing"""
+        """
+        Reset local node and channel state and request configuration from the radio.
+        
+        Clears cached myInfo, node mappings, and local channel list; ensures self.configId is a 32-bit value that is not the reserved NODELESS_WANT_CONFIG_ID (generating a new value if needed); then sends a ToRadio request with want_config_id set to initiate the device configuration flow.
+        """
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
@@ -1286,15 +1367,28 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _handleFromRadio(self, fromRadioBytes):
         """
-        Handle a packet that arrived from the radio(update model and publish events)
-
-        Called by subclasses."""
+        Process raw FromRadio protobuf bytes, update interface state, and publish related events.
+        
+        Parses the provided protobuf bytes (converting bytearray to bytes when needed), updates interface state such as myInfo, metadata, node records, local configuration, and queue status, and enqueues pubsub notifications for node updates, client notifications, MQTT proxy messages, xmodem packets, log records, and other radio events. Handles reboot/config-complete notifications by triggering reconfiguration. Corrupted protobuf payloads are discarded without raising.
+        
+        Parameters:
+            fromRadioBytes (bytes | bytearray): Raw FromRadio protobuf bytes received from the radio; bytearray inputs are converted to bytes before parsing.
+        """
         fromRadio = mesh_pb2.FromRadio()
+        # Ensure we have bytes, not bytearray (BLE interface can return bytearray)
+        if isinstance(fromRadioBytes, bytearray):
+            fromRadioBytes = bytes(fromRadioBytes)
         logger.debug(
             f"in mesh_interface.py _handleFromRadio() fromRadioBytes: {fromRadioBytes}"
         )
         try:
             fromRadio.ParseFromString(fromRadioBytes)
+        except DecodeError:
+            # Handle protobuf parsing errors gracefully - discard corrupted packet
+            logger.warning(
+                f"Failed to parse FromRadio packet, discarding: {fromRadioBytes}"
+            )
+            return
         except Exception as ex:
             logger.error(
                     f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}"
@@ -1516,20 +1610,16 @@ class MeshInterface:  # pylint: disable=R0902
         self._localChannels.append(channel)
 
     def _handlePacketFromRadio(self, meshPacket, hack=False):
-        """Handle a MeshPacket that just arrived from the radio
-
-        hack - well, since we used 'from', which is a python keyword,
-               as an attribute to MeshPacket in protobufs,
-               there really is no way to do something like this:
-                    meshPacket = mesh_pb2.MeshPacket()
-                    meshPacket.from = 123
-               If hack is True, we can unit test this code.
-
-        Will publish one of the following events:
-        - meshtastic.receive.text(packet = MeshPacket dictionary)
-        - meshtastic.receive.position(packet = MeshPacket dictionary)
-        - meshtastic.receive.user(packet = MeshPacket dictionary)
-        - meshtastic.receive.data(packet = MeshPacket dictionary)
+        """
+        Process an incoming MeshPacket from the radio and publish the corresponding meshtastic.receive event.
+        
+        Converts the protobuf MeshPacket to a dictionary, attaches the raw protobuf under the "raw" key, and ensures "from" and "to" keys are present. Populates human-readable "fromId" and "toId" when available. If the packet contains a decoded payload, restores the raw byte payload, determines a topic (meshtastic.receive, meshtastic.receive.data.<portnum>, or meshtastic.receive.<handler.name>), and attempts to decode the payload using registered protocol handlers; decoded protobufs are placed under asDict["decoded"][<handler.name>] with a "raw" protobuf object. If a protocol handler provides an onReceive callback it will be invoked. If the message contains a requestId and a matching response handler was registered, the response handler callback will be invoked according to ACK/NAK handling rules. The final packet dictionary is published asynchronously via the pubsub system.
+        
+        Errors during decoding, id lookup, or handler invocation are logged and do not raise exceptions.
+        
+        Parameters:
+            meshPacket: A MeshPacket protobuf instance received from the radio.
+            hack (bool): If True, accept packets missing the "from" field (used for unit testing).
         """
         asDict = google.protobuf.json_format.MessageToDict(meshPacket)
 
