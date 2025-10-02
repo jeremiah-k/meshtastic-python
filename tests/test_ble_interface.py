@@ -1118,14 +1118,19 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         """
         Trigger a short burst of rapid disconnect events to stress the BLE reconnect logic.
         
-        Calls iface2._on_ble_disconnect with client2.bleak_client five times, pausing 5 ms between calls; any exceptions raised during the stress calls are caught and ignored.
+        Calls iface2._on_ble_disconnect with client2.bleak_client five times, pausing 5 ms between calls; 
+        any exceptions raised during the stress calls are caught and logged for debugging.
         """
-        for _ in range(5):
+        for i in range(5):
             try:
                 iface2._on_ble_disconnect(client2.bleak_client)
                 time.sleep(0.005)
-            except Exception:
-                pass  # Expected during stress testing
+            except (RuntimeError, AttributeError, KeyError) as e:
+                # Expected during stress testing - log for debugging but don't fail test
+                print(f"Stress test disconnect {i}: {type(e).__name__}: {e}")
+            except Exception as e:
+                # Unexpected exceptions - log but continue to avoid breaking the stress test
+                print(f"Unexpected stress test disconnect {i}: {type(e).__name__}: {e}")
 
     # Start multiple threads for concurrent operations
     threads = []

@@ -593,7 +593,10 @@ class BLEInterface(MeshInterface):
                                 continue
                             break  # Too many empty reads, exit to recheck state
                         logger.debug(f"FROMRADIO read: {b.hex()}")
-                        self._handleFromRadio(b)
+                        try:
+                            self._handleFromRadio(b)
+                        except DecodeError:
+                            logger.warning("Corrupted packet received, discarding", exc_info=True)
                         retries = 0  # Reset retry counter on successful read
                     except BleakDBusError as e:
                         # Handle D-Bus specific BLE errors (common on Linux)

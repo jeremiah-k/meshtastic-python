@@ -21,7 +21,7 @@ from google.protobuf.message import DecodeError
 
 try:
     import print_color  # type: ignore[import-untyped]
-except ImportError as e:
+except ImportError:
     print_color = None
 
 from tabulate import tabulate
@@ -283,7 +283,7 @@ class MeshInterface:  # pylint: disable=R0902
             return _timeago(delta_secs)
 
         def getNestedValue(node_dict: Dict[str, Any], key_path: str) -> Any:
-            if key_path.index(".") < 0:
+            if "." not in key_path:
                 logger.debug("getNestedValue was called without a nested path.")
                 return None
             keys = key_path.split(".")
@@ -364,8 +364,11 @@ class MeshInterface:  # pylint: disable=R0902
                     fields[field] = formatted_value
 
                 # Filter out any field in the data set that was not specified.
-                filteredData = {get_human_readable(k): v for k, v in fields.items() if k in showFields}
-                filteredData.update({get_human_readable(k): v for k, v in fields.items()})
+                filteredData = {
+                    get_human_readable(k): v
+                    for k, v in fields.items()
+                    if k in showFields
+                }
                 rows.append(filteredData)
 
         rows.sort(key=lambda r: r.get("LastHeard") or "0000", reverse=True)
@@ -1573,8 +1576,8 @@ class MeshInterface:  # pylint: disable=R0902
         hack - well, since we used 'from', which is a python keyword,
                as an attribute to MeshPacket in protobufs,
                there really is no way to do something like this:
-                    meshPacket = mesh_pb2.MeshPacket()
-                    meshPacket.from = 123
+                     meshPacket = mesh_pb2.MeshPacket()
+                     meshPacket.from = 123
                If hack is True, we can unit test this code.
 
         Will publish one of the following events:
@@ -1582,6 +1585,10 @@ class MeshInterface:  # pylint: disable=R0902
         - meshtastic.receive.position(packet = MeshPacket dictionary)
         - meshtastic.receive.user(packet = MeshPacket dictionary)
         - meshtastic.receive.data(packet = MeshPacket dictionary)
+
+        Note: This method handles errors gracefully - missing fields or lookup
+        failures will log warnings but not raise exceptions to avoid disrupting
+        packet processing.
         """
         asDict = google.protobuf.json_format.MessageToDict(meshPacket)
 
