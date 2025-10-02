@@ -55,17 +55,9 @@ def on_connection_change(interface, connected):
 
 def main():
     """
-    Run a reconnection loop using the instance reuse pattern (preferred approach).
+    Run a reconnection loop that reuses a single BLEInterface instance to maintain a long-lived connection to a Meshtastic device.
     
-    This pattern creates a single BLEInterface instance and reuses it across
-    reconnection attempts, which is more efficient for long-running applications.
-    
-    The function:
-    - Parses a required BLE address from command-line arguments
-    - Creates one BLEInterface with auto_reconnect=True
-    - Listens for connection-status events to detect disconnects
-    - Calls connect() again on the same instance when disconnect occurs
-    - Handles KeyboardInterrupt and logs errors appropriately
+    This function parses a required BLE address from command-line arguments, subscribes to connection-status events, creates one BLEInterface with auto_reconnect enabled, and repeatedly attempts to connect using the same instance. It waits for a disconnection signal to trigger reconnection attempts, handles KeyboardInterrupt for graceful exit, logs BLE connection errors and unexpected exceptions, and ensures the BLE interface is closed on exit.
     """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
