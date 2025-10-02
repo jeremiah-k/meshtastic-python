@@ -109,6 +109,16 @@ class BLEInterface(MeshInterface):
             debugOut (Optional[io.TextIOWrapper]): Stream to emit debug output to, if provided.
             noNodes (bool): When True, do not attempt to read the device's node list on startup.
             auto_reconnect (bool): When True, keep the interface alive across unexpected disconnects and enable reconnection handling; when False, close the interface on disconnect.
+                
+                When auto_reconnect=True, two reconnection patterns are supported:
+                
+                1. **Instance reuse (preferred)**: Reuse the same BLEInterface instance and call connect() again after disconnect.
+                   This is more efficient for long-running applications as it avoids thread teardown/recreation overhead.
+                   The interface uses internal events (_reconnected_event) to coordinate reconnection with the receive loop.
+                
+                2. **Instance recreation (simpler)**: Create new BLEInterface instances after each disconnect.
+                   This approach is simpler to implement but has higher overhead due to thread recreation.
+                   See reconnect_example.py for demonstrations of both patterns.
         """
         self._closing_lock: Lock = Lock()
         self._client_lock: Lock = Lock()
