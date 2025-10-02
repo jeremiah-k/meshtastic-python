@@ -376,7 +376,7 @@ class BLEInterface(MeshInterface):
         # Critical notification for receiving packets - let failures bubble up
         client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
-    async def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
+    def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
@@ -401,7 +401,7 @@ class BLEInterface(MeshInterface):
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
-    async def legacy_log_radio_handler(self, _, b: bytearray) -> None:
+    def legacy_log_radio_handler(self, _, b: bytearray) -> None:
         """
         Handle a legacy log-radio notification by decoding and forwarding the UTF-8 log line.
 
@@ -471,7 +471,10 @@ class BLEInterface(MeshInterface):
             If None, any discovered Meshtastic device may be returned.
 
         Returns:
-            BLEDevice: The matched BLE device (the first match when multiple devices were discovered and no address was specified).
+            BLEDevice: The matched BLE device.
+
+        Note:
+            If multiple Meshtastic devices are found and no address is specified, a BLEError is raised to avoid ambiguity.
 
         Raises:
             BLEInterface.BLEError: If no Meshtastic devices are found, or if an address was provided and multiple matching devices are found.
@@ -481,15 +484,13 @@ class BLEInterface(MeshInterface):
 
         if address:
             sanitized_address = BLEInterface._sanitize_address(address)
-            filtered_devices = []
-            for device in addressed_devices:
-                sanitized_name = BLEInterface._sanitize_address(device.name)
-                sanitized_device_address = BLEInterface._sanitize_address(
-                    device.address
+            addressed_devices = [
+                device for device in addressed_devices
+                if sanitized_address in (
+                    BLEInterface._sanitize_address(device.name),
+                    BLEInterface._sanitize_address(device.address),
                 )
-                if sanitized_address in (sanitized_name, sanitized_device_address):
-                    filtered_devices.append(device)
-            addressed_devices = filtered_devices
+            ]
 
         if len(addressed_devices) == 0:
             if address:
@@ -598,7 +599,7 @@ class BLEInterface(MeshInterface):
                     ).start()
                 # Signal successful reconnection to waiting threads
                 self._reconnected_event.set()
-            except Exception as e:
+            except Exception:
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 try:
                     client.close()
@@ -606,7 +607,7 @@ class BLEInterface(MeshInterface):
                     logger.warning(
                         f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
                     )
-                raise e
+                raise
 
             return client
 
@@ -969,7 +970,7 @@ class BLEClient:
         Keyword arguments are forwarded to BleakScanner.discover (for example, `timeout` or `adapter`).
 
         Returns:
-            A list of discovered BLEDevice objects.
+            A list of BLEDevice objects, or a mapping of devices/advertisements when `return_adv=True` is used.
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
@@ -1055,7 +1056,7 @@ class BLEClient:
         Write a GATT characteristic on the connected BLE device and wait for the operation to complete.
 
         Raises:
-            BLEInterface.BLEError: If the write fails or the operation times out.
+            Underlying exceptions from the BLE backend. Callers at the BLEInterface layer wrap these as needed.
         """
         self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs))
 
