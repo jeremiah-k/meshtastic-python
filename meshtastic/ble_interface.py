@@ -275,10 +275,7 @@ class BLEInterface(MeshInterface):
                             return
                         try:
                             logger.debug("Attempting BLE auto-reconnect.")
-                            new_client = self.connect(self.address)
-                            with self._client_lock:
-                                if self.client is None and new_client is not None:
-                                    self.client = new_client
+                            self.connect(self.address)
                             logger.info("BLE auto-reconnect succeeded.")
                             return
                         except self.BLEError as err:
