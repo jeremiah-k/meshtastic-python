@@ -328,6 +328,12 @@ class BLEInterface(MeshInterface):
             if len(b) != 4:
                 logger.debug(f"FROMNUM notify has unexpected length {len(b)}; ignoring")
                 self._malformed_notification_count += 1
+                if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
+                    logger.warning(
+                        f"Received {self._malformed_notification_count} malformed FROMNUM notifications. "
+                        "Check BLE connection stability."
+                    )
+                    self._malformed_notification_count = 0  # Reset counter after warning
                 return
             from_num = struct.unpack("<I", b)[0]
             logger.debug(f"FROMNUM notify: {from_num}")
