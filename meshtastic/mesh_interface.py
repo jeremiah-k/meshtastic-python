@@ -302,6 +302,7 @@ class MeshInterface:  # pylint: disable=R0902
             Retrieve a nested value from a dictionary using a dot-separated key path.
             
             Parameters:
+                node_dict (Dict[str, Any]): The dictionary to search.
                 key_path (str): Dot-separated sequence of keys (e.g. "user.location.lat") defining the nested path to retrieve.
             
             Returns:

@@ -299,6 +299,7 @@ class BLEInterface(MeshInterface):
         Parses the notification payload as a `mesh_pb2.LogRecord`. If the record contains a `source`, the forwarded line is prefixed with `[source] `; otherwise the record `message` is forwarded as-is. Malformed records are logged as a warning and ignored.
         
         Parameters:
+            _ (Any): Unused sender/handle parameter supplied by the BLE library.
             b (bytearray): Serialized `mesh_pb2.LogRecord` payload from the BLE notification.
         """
         log_record = mesh_pb2.LogRecord()
@@ -321,6 +322,7 @@ class BLEInterface(MeshInterface):
         Decodes `b` as UTF-8, strips newline characters, and passes the resulting string to `self._handleLogLine`. If `b` is not valid UTF-8, a warning is logged and the notification is ignored.
         
         Parameters:
+            _ (Any): Unused sender/handle parameter supplied by the BLE library.
             b (bytearray): Raw notification payload expected to contain a UTF-8 encoded log line.
         """
         try:
