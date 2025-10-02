@@ -105,8 +105,9 @@ def main():
 
     finally:
         # Clean up the interface when done
-        logger.info("Closing BLE interface...")
-        iface.close()
+        if iface:
+            logger.info("Closing BLE interface...")
+            iface.close()
 
 
 if __name__ == "__main__":
