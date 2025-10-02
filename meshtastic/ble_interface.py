@@ -537,6 +537,7 @@ class BLEInterface(MeshInterface):
 
         # Bleak docs recommend always doing a scan before connecting (even if we know addr)
         device = self.find_device(address or self.address)
+        self.address = device.address  # Keep address in sync for auto-reconnect
         client = BLEClient(
             device.address, disconnected_callback=self._on_ble_disconnect
         )
