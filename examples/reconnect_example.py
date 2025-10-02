@@ -1,5 +1,5 @@
 """
-Example demonstrating robust client-side reconnection strategies for a
+Example demonstrating robust client-side reconnection for a
 long-running application that uses the BLE interface.
 
 This example shows the **instance reuse pattern** (preferred for efficiency):
@@ -10,8 +10,8 @@ This example shows the **instance reuse pattern** (preferred for efficiency):
 The instance reuse pattern is more efficient for long-running applications
 since it maintains the receive thread and other internal state across reconnections.
 
-For comparison, an alternative instance recreation pattern is also included
-as a commented example at the end of this file.
+For an alternative simpler but less efficient approach, see
+reconnect_instance_recreation_example.py which demonstrates the instance recreation pattern.
 """
 import argparse
 import logging
@@ -117,53 +117,5 @@ def main():
         iface.close()
 
 
-#
-# Alternative: Instance Recreation Pattern (simpler but less efficient)
-# -------------------------------------------------------------------------
-# The following commented code shows the instance recreation pattern.
-# This approach is simpler to understand but has higher overhead due to
-# thread creation/destruction for each reconnection attempt.
-#
-# def main_instance_recreation():
-#     """Alternative implementation using instance recreation pattern."""
-#     logging.basicConfig(level=logging.INFO)
-#     parser = argparse.ArgumentParser(
-#         description="Meshtastic BLE interface reconnection (instance recreation pattern)."
-#     )
-#     parser.add_argument("address", help="The BLE address of your Meshtastic device.")
-#     args = parser.parse_args()
-#     address = args.address
-#
-#     # Subscribe to the connection change event
-#     pub.subscribe(on_connection_change, "meshtastic.connection.status")
-#
-#     while True:
-#         try:
-#             disconnected_event.clear()
-#             logger.info("Attempting to connect to %s...", address)
-#             # Create new instance each time (simpler but less efficient)
-#             with meshtastic.ble_interface.BLEInterface(
-#                 address,
-#                 noProto=True,  # Set to False in a real application
-#                 auto_reconnect=True,
-#             ):
-#                 logger.info("Connection successful. Waiting for disconnection event...")
-#                 disconnected_event.wait()
-#                 logger.info("Disconnected normally.")
-#
-#         except KeyboardInterrupt:
-#             logger.info("Exiting...")
-#             break
-#         except meshtastic.ble_interface.BLEInterface.BLEError:
-#             logger.exception("Connection failed")
-#         except Exception:
-#             logger.exception("An unexpected error occurred")
-#
-#         logger.info("Retrying in %d seconds...", RETRY_DELAY_SECONDS)
-#         time.sleep(RETRY_DELAY_SECONDS)
-
-
 if __name__ == "__main__":
     main()
-    # To use the alternative pattern, uncomment the following line and comment out the above:
-    # main_instance_recreation()
