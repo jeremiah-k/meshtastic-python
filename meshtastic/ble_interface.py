@@ -149,15 +149,12 @@ class BLEInterface(MeshInterface):
 
         self.client: Optional[BLEClient] = None
         try:
-            logger.debug(f"BLE connecting to: {address if address else 'any'}")
-            self._initialize_connection(address)
-            logger.debug("BLE connected")
+            self._connect_and_configure(address)
 
-            if self._exit_handler is None:
-                # We MUST run atexit (if we can) because otherwise (at least on linux) the BLE device is not disconnected
-                # and future connection attempts will fail.  (BlueZ kinda sucks)
-                # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
-                self._exit_handler = atexit.register(self.close)
+            # We MUST run atexit (if we can) because otherwise (at least on linux) the BLE device is not disconnected
+            # and future connection attempts will fail.  (BlueZ kinda sucks)
+            # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
+            self._exit_handler = atexit.register(self.close)
         except Exception as e:
             self.close()
             if isinstance(e, BLEInterface.BLEError):
@@ -183,58 +180,17 @@ class BLEInterface(MeshInterface):
             parts.append("auto_reconnect=False")
         return f"BLEInterface({', '.join(parts)})"
 
-    def _initialize_connection(
-        self, address: Optional[str]
-    ) -> Optional["BLEClient"]:
-        """
-        Establish a BLE connection and perform the mesh handshake sequence.
+    def _connect_and_configure(self, address: Optional[str]):
+        """Connect to the device and perform the initial configuration handshake."""
+        logger.debug(f"BLE connecting to: {address if address else 'any'}")
+        self.connect(address)
+        logger.debug("BLE connected")
 
-        Parameters:
-            address (Optional[str]): Device address or name to connect to; if None, any compatible device may be used.
-
-        Returns:
-            BLEClient | None: The connected BLE client or None when initialization was skipped due to shutdown.
-
-        Raises:
-            Exception: Propagates any failure encountered during connection or handshake after ensuring resources are cleaned up.
-        """
-
-        if self._closing:
-            logger.debug("Skipping connection initialization because interface is closing")
-            return None
-
-        client: Optional["BLEClient"] = None
-        try:
-            client = self.connect(address)
-            logger.debug("Mesh configure starting")
-            self._startConfig()
-            if not self.noProto and not self._closing:
-                self._waitConnected(timeout=CONNECTION_TIMEOUT)
-                self.waitForConfig()
-            return client
-        except Exception:
-            logger.debug("Connection initialization failed", exc_info=True)
-
-            if not self._closing:
-                with self._client_lock:
-                    current_client = self.client
-                    if current_client is not None and current_client is client:
-                        self.client = None
-                    else:
-                        current_client = client
-                if current_client:
-                    try:
-                        self._disconnect_and_close_client(current_client)
-                    except Exception:  # pragma: no cover - defensive cleanup
-                        logger.debug(
-                            "Error during client cleanup after failed initialization",
-                            exc_info=True,
-                        )
-                # Preserve ability to notify on future disconnect events
-                with self._client_lock:
-                    self._disconnect_notified = False
-
-            raise
+        logger.debug("Mesh configure starting")
+        self._startConfig()
+        if not self.noProto:
+            self._waitConnected(timeout=CONNECTION_TIMEOUT)
+            self.waitForConfig()
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """
@@ -308,12 +264,9 @@ class BLEInterface(MeshInterface):
 
         with self._client_lock:
             existing_thread = self._reconnect_thread
-            if existing_thread:
-                if existing_thread.is_alive() or existing_thread.ident is None:
-                    logger.debug("Auto-reconnect already in progress; skipping new attempt.")
-                    return
-                # Clear out a finished thread reference before scheduling a fresh one
-                self._reconnect_thread = None
+            if existing_thread and existing_thread.is_alive():
+                logger.debug("Auto-reconnect already in progress; skipping new attempt.")
+                return
 
             def _attempt_reconnect() -> None:
                 delay = AUTO_RECONNECT_INITIAL_DELAY
@@ -326,7 +279,7 @@ class BLEInterface(MeshInterface):
                             return
                         try:
                             logger.debug("Attempting BLE auto-reconnect.")
-                            self._initialize_connection(self.address)
+                            self._connect_and_configure(self.address)
                             logger.info("BLE auto-reconnect succeeded.")
                             return
                         except self.BLEError as err:
@@ -417,7 +370,7 @@ class BLEInterface(MeshInterface):
                 client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
             if client.has_characteristic(LOGRADIO_UUID):
                 client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
-        except (BleakError, BLEInterface.BLEError):
+        except BleakError:
             logger.debug("Failed to start optional log notifications", exc_info=True)
 
         # Critical notification for receiving packets - let failures bubble up
@@ -518,10 +471,7 @@ class BLEInterface(MeshInterface):
             If None, any discovered Meshtastic device may be returned.
 
         Returns:
-            BLEDevice: The matched BLE device.
-
-        Note:
-            If multiple Meshtastic devices are found and no address is specified, a BLEError is raised to avoid ambiguity.
+            BLEDevice: The matched BLE device (the first match when multiple devices were discovered and no address was specified).
 
         Raises:
             BLEInterface.BLEError: If no Meshtastic devices are found, or if an address was provided and multiple matching devices are found.
@@ -531,13 +481,15 @@ class BLEInterface(MeshInterface):
 
         if address:
             sanitized_address = BLEInterface._sanitize_address(address)
-            addressed_devices = [
-                device for device in addressed_devices
-                if sanitized_address in (
-                    BLEInterface._sanitize_address(device.name),
-                    BLEInterface._sanitize_address(device.address),
+            filtered_devices = []
+            for device in addressed_devices:
+                sanitized_name = BLEInterface._sanitize_address(device.name)
+                sanitized_device_address = BLEInterface._sanitize_address(
+                    device.address
                 )
-            ]
+                if sanitized_address in (sanitized_name, sanitized_device_address):
+                    filtered_devices.append(device)
+            addressed_devices = filtered_devices
 
         if len(addressed_devices) == 0:
             if address:
@@ -646,7 +598,7 @@ class BLEInterface(MeshInterface):
                     ).start()
                 # Signal successful reconnection to waiting threads
                 self._reconnected_event.set()
-            except Exception:
+            except Exception as e:
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 try:
                     client.close()
@@ -654,7 +606,7 @@ class BLEInterface(MeshInterface):
                     logger.warning(
                         f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
                     )
-                raise
+                raise e
 
             return client
 
@@ -1017,7 +969,7 @@ class BLEClient:
         Keyword arguments are forwarded to BleakScanner.discover (for example, `timeout` or `adapter`).
 
         Returns:
-            A list of BLEDevice objects, or a mapping of devices/advertisements when `return_adv=True` is used.
+            A list of discovered BLEDevice objects.
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
@@ -1103,7 +1055,7 @@ class BLEClient:
         Write a GATT characteristic on the connected BLE device and wait for the operation to complete.
 
         Raises:
-            Underlying exceptions from the BLE backend. Callers at the BLEInterface layer wrap these as needed.
+            BLEInterface.BLEError: If the write fails or the operation times out.
         """
         self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs))
 
