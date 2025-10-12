@@ -114,6 +114,7 @@ class BLEInterface(MeshInterface):
             noNodes (bool): If True, do not attempt to read the device's node list on startup.
             auto_reconnect (bool): If True, keep the interface alive across unexpected disconnects and attempt
                 automatic reconnection; if False, close the interface on disconnect.
+            timeout (int): How long to wait for replies (default: 300 seconds).
         """
         # Thread safety and state management
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
