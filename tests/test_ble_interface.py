@@ -857,9 +857,6 @@ def test_auto_reconnect_behavior(monkeypatch):
     assert wait_for_status(True, 1), "Initial handshake should publish connected status"
     initial_connected_events = status_count(True)
 
-    assert iface.heartbeatTimer is not None
-    assert iface.heartbeatTimer.daemon is True
-
     # Track if close() was called
     close_called = []
     original_close = iface.close
@@ -904,7 +901,6 @@ def test_auto_reconnect_behavior(monkeypatch):
 
     iface.auto_reconnect = False
     iface.close()
-    assert iface.heartbeatTimer is None
 
 
 def test_send_to_radio_specific_exceptions(monkeypatch, caplog):

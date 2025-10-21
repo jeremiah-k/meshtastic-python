@@ -144,7 +144,6 @@ class MeshInterface:  # pylint: disable=R0902
         """Shutdown this interface"""
         if self.heartbeatTimer:
             self.heartbeatTimer.cancel()
-            self.heartbeatTimer = None
 
         self._sendDisconnect()
 
@@ -1216,7 +1215,6 @@ class MeshInterface:  # pylint: disable=R0902
             interval = 300
             logger.debug(f"Sending heartbeat, interval {interval} seconds")
             self.heartbeatTimer = threading.Timer(interval, callback)
-            self.heartbeatTimer.daemon = True
             self.heartbeatTimer.start()
             self.sendHeartbeat()
 
