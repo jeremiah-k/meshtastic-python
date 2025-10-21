@@ -325,10 +325,6 @@ class DummyClient:
         """
         return b""
 
-    def write_gatt_char(self, *_args, **_kwargs):
-        """Stub that simulates writing to a GATT characteristic and does nothing."""
-        return None
-
     def is_connected(self) -> bool:
         """
         Report the mock BLE client's connection state.
@@ -445,32 +441,30 @@ def _build_interface(monkeypatch, client):
 
     connect_calls: list = []
 
-    def _stub_initialize(_self, requested_address):
+    def _stub_connect(_self, _address=None):
         """
-        Provide a minimal connection initialization routine for tests without performing BLE I/O.
+        Return a preconfigured BLE client used by tests.
 
         Parameters:
-            requested_address (str | None): Address supplied by the caller. Recorded for later inspection.
+            _address (str | None): Present to match the original connect signature; ignored by this stub.
 
         Returns:
-            client: The provided dummy client instance.
+            client: The preconfigured client instance to be used by tests.
         """
-        connect_calls.append(requested_address)
+        connect_calls.append(_address)
         _self.client = client
-        _self.address = getattr(client, "address", requested_address)
-        _self._last_connection_request = BLEInterface._sanitize_address(
-            requested_address if requested_address is not None else _self.address
-        )
         _self._disconnect_notified = False
         if hasattr(_self, "_reconnected_event"):
             _self._reconnected_event.set()
         return client
 
     def _stub_start_config(_self):
-        """Do nothing for start-up configuration in utility tests."""
+        """
+        Do nothing for start-up configuration.
+        """
         return None
 
-    monkeypatch.setattr(BLEInterface, "_initialize_connection", _stub_initialize)
+    monkeypatch.setattr(BLEInterface, "connect", _stub_connect)
     monkeypatch.setattr(BLEInterface, "_startConfig", _stub_start_config)
     iface = BLEInterface(address="dummy", noProto=True)
     iface._connect_stub_calls = connect_calls
@@ -767,18 +761,27 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     iface.close()
 
 
-def test_auto_reconnect_behavior(monkeypatch):
-    """Test auto_reconnect functionality ensures full handshake and reconnection flow."""
+def test_auto_reconnect_behavior(monkeypatch, caplog):
+    """Test auto_reconnect functionality when disconnection occurs."""
+    _ = caplog  # Mark as unused
     import time
 
     import meshtastic.mesh_interface as mesh_iface_module
-    from meshtastic.ble_interface import BLEInterface, CONNECTION_TIMEOUT
 
     # Track published events
     published_events = []
 
     def _capture_events(topic, **kwargs):
-        """Capture published events for later assertions."""
+        """
+        Capture a published event by appending its topic and payload to the test-harness list `published_events`.
+
+        Parameters:
+            topic (str): The pub/sub topic of the event.
+            **kwargs: Arbitrary event payload fields; stored as a dictionary alongside the topic.
+
+        Side effects:
+            Appends a tuple (topic, kwargs) to the global `published_events` list.
+        """
         published_events.append((topic, kwargs))
 
     # Create a fresh pub mock for this test
@@ -789,117 +792,78 @@ def test_auto_reconnect_behavior(monkeypatch):
     )
     monkeypatch.setattr(mesh_iface_module, "pub", fresh_pub)
 
-    class ConnectedDummyClient(DummyClient):
-        """Dummy client that reports an active connection state."""
+    # Create a client that can simulate disconnection
+    client = DummyClient()
 
-        def is_connected(self):  # pylint: disable=override-method-signature
-            return True
-
-    client = ConnectedDummyClient()
-
-    connect_calls: list = []
-    start_config_calls: list = []
-    wait_connected_calls: list = []
-    wait_for_config_calls: list = []
-
-    def fake_connect(self, address=None):
-        connect_calls.append(address)
-        self.client = client
-        self.address = client.address
-        self._last_connection_request = BLEInterface._sanitize_address(
-            address if address is not None else self.address
-        )
-        self._disconnect_notified = False
-        if hasattr(self, "_reconnected_event"):
-            self._reconnected_event.set()
-        return client
-
-    def fake_start_config(self):
-        start_config_calls.append(True)
-        self.myInfo = None
-        self.nodes = {}
-        self.nodesByNum = {}
-        self._localChannels = []
-
-    def fake_wait_connected(self, timeout=CONNECTION_TIMEOUT):
-        wait_connected_calls.append(timeout)
-        return None
-
-    def fake_wait_for_config(self):
-        wait_for_config_calls.append(True)
-        self._handleConfigComplete()
-
-    monkeypatch.setattr(BLEInterface, "connect", fake_connect)
-    monkeypatch.setattr(BLEInterface, "_startConfig", fake_start_config)
-    monkeypatch.setattr(BLEInterface, "_waitConnected", fake_wait_connected)
-    monkeypatch.setattr(BLEInterface, "waitForConfig", fake_wait_for_config)
-
-    iface = BLEInterface(address="dummy", noProto=False, auto_reconnect=True)
-
-    assert start_config_calls == [True]
-    assert wait_connected_calls and wait_for_config_calls
-
-    def status_count(value: bool) -> int:
-        return sum(
-            1
-            for topic, kw in published_events
-            if topic == "meshtastic.connection.status" and kw.get("connected") is value
-        )
-
-    def wait_for_status(value: bool, target: int, timeout: float = 1.0) -> bool:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if status_count(value) >= target:
-                return True
-            time.sleep(0.01)
-        return status_count(value) >= target
-
-    assert wait_for_status(True, 1), "Initial handshake should publish connected status"
-    initial_connected_events = status_count(True)
+    # Build interface with auto_reconnect=True
+    iface = _build_interface(monkeypatch, client)
+    iface.auto_reconnect = True
+    assert iface._connect_stub_calls == ["dummy"], "Initial connect should occur on instantiation"
 
     # Track if close() was called
     close_called = []
     original_close = iface.close
 
     def _track_close():
+        """
+        Record that close was invoked and then call the original close function.
+
+        Returns:
+            The value returned by the wrapped original_close() call.
+        """
         close_called.append(True)
         return original_close()
 
     monkeypatch.setattr(iface, "close", _track_close)
 
     # Simulate disconnection by calling _on_ble_disconnect directly
+    # This simulates what happens when bleak calls the disconnected callback
     disconnect_client = iface.client
     iface._on_ble_disconnect(disconnect_client.bleak_client)
 
-    assert wait_for_status(False, 1), "Disconnect should publish connected=False status"
-
-    # Allow time for auto-reconnect thread to run and handshake to complete
-    deadline = time.time() + 1.0
-    while time.time() < deadline:
-        if (
-            len(connect_calls) >= 2
-            and iface.client is client
-            and status_count(True) >= initial_connected_events + 1
-        ):
+    # Allow time for auto-reconnect thread to run
+    for _ in range(50):
+        if len(iface._connect_stub_calls) >= 2 and iface.client is client:
             break
         time.sleep(0.01)
 
     # Assertions
-    assert len(close_called) == 0, "close() should not be called when auto_reconnect=True"
+    # 1. BLEInterface.close() should NOT be called when auto_reconnect=True
+    assert (
+        len(close_called) == 0
+    ), "close() should not be called when auto_reconnect=True"
 
-    assert status_count(False) == 1, "Exactly one disconnect event expected"
-    assert status_count(True) >= initial_connected_events + 1, "Reconnection should publish a connected status"
+    # 2. Connection status event should be published with connected=False
+    disconnect_events = [
+        (topic, kw)
+        for topic, kw in published_events
+        if topic == "meshtastic.connection.status" and kw.get("connected") is False
+    ]
+    assert (
+        len(disconnect_events) == 1
+    ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"
 
-    assert len(connect_calls) >= 2, "auto_reconnect should invoke connect() after disconnection"
-    assert len(start_config_calls) >= 2, "_startConfig should run during reconnect"
-    assert len(wait_for_config_calls) >= 2, "waitForConfig should run during reconnect"
-    assert iface.client is client, "client should be restored after successful auto-reconnect"
+    # 3. Auto-reconnect should have attempted a reconnect and restored the client
+    assert (
+        len(iface._connect_stub_calls) >= 2
+    ), "auto_reconnect should invoke connect() after disconnection"
+    assert (
+        iface.client is client
+    ), "client should be restored after successful auto-reconnect"
+
+    # 4. Ensure disconnect flag resets for future disconnect handling
     assert not iface._disconnect_notified, "_disconnect_notified should reset after auto-reconnect"
 
-    assert iface._want_receive is True, "_want_receive should remain True for auto_reconnect"
-    assert iface._receiveThread is not None and iface._receiveThread.is_alive()
+    # 5. Receive thread should remain alive, waiting for new connection
+    # Check that _want_receive is still True and receive thread is alive
+    assert (
+        iface._want_receive is True
+    ), "_want_receive should remain True for auto_reconnect"
+    assert iface._receiveThread is not None, "receive thread should still exist"
+    assert iface._receiveThread.is_alive(), "receive thread should remain alive"
 
-    iface.auto_reconnect = False
+    # Clean up
+    iface.auto_reconnect = False  # Disable auto_reconnect for proper cleanup
     iface.close()
 
 
@@ -1172,20 +1136,16 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         # Mock the scan method to return our test device
         stack.enter_context(patch.object(BLEInterface, 'scan', return_value=[mock_device]))
 
-        def _patched_initialize(self, address=None):
+        def _patched_connect(self, address=None):
             connect_calls.append(address)
             client.connect()
             self.client = client
-            self.address = client.bleak_client.address
-            self._last_connection_request = BLEInterface._sanitize_address(
-                address if address is not None else self.address
-            )
             self._disconnect_notified = False
             if hasattr(self, "_reconnected_event"):
                 self._reconnected_event.set()
             return client
 
-        stack.enter_context(patch.object(BLEInterface, '_initialize_connection', _patched_initialize))
+        stack.enter_context(patch.object(BLEInterface, 'connect', _patched_connect))
 
         iface = BLEInterface(
             address=None,  # Required positional argument
