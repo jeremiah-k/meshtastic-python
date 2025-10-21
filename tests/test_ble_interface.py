@@ -445,30 +445,32 @@ def _build_interface(monkeypatch, client):
 
     connect_calls: list = []
 
-    def _stub_connect(_self, _address=None):
+    def _stub_initialize(_self, requested_address):
         """
-        Return a preconfigured BLE client used by tests.
+        Provide a minimal connection initialization routine for tests without performing BLE I/O.
 
         Parameters:
-            _address (str | None): Present to match the original connect signature; ignored by this stub.
+            requested_address (str | None): Address supplied by the caller. Recorded for later inspection.
 
         Returns:
-            client: The preconfigured client instance to be used by tests.
+            client: The provided dummy client instance.
         """
-        connect_calls.append(_address)
+        connect_calls.append(requested_address)
         _self.client = client
+        _self.address = getattr(client, "address", requested_address)
+        _self._last_connection_request = BLEInterface._sanitize_address(
+            requested_address if requested_address is not None else _self.address
+        )
         _self._disconnect_notified = False
         if hasattr(_self, "_reconnected_event"):
             _self._reconnected_event.set()
         return client
 
     def _stub_start_config(_self):
-        """
-        Do nothing for start-up configuration.
-        """
+        """Do nothing for start-up configuration in utility tests."""
         return None
 
-    monkeypatch.setattr(BLEInterface, "connect", _stub_connect)
+    monkeypatch.setattr(BLEInterface, "_initialize_connection", _stub_initialize)
     monkeypatch.setattr(BLEInterface, "_startConfig", _stub_start_config)
     iface = BLEInterface(address="dummy", noProto=True)
     iface._connect_stub_calls = connect_calls
@@ -1174,16 +1176,20 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         # Mock the scan method to return our test device
         stack.enter_context(patch.object(BLEInterface, 'scan', return_value=[mock_device]))
 
-        def _patched_connect(self, address=None):
+        def _patched_initialize(self, address=None):
             connect_calls.append(address)
             client.connect()
             self.client = client
+            self.address = client.bleak_client.address
+            self._last_connection_request = BLEInterface._sanitize_address(
+                address if address is not None else self.address
+            )
             self._disconnect_notified = False
             if hasattr(self, "_reconnected_event"):
                 self._reconnected_event.set()
             return client
 
-        stack.enter_context(patch.object(BLEInterface, 'connect', _patched_connect))
+        stack.enter_context(patch.object(BLEInterface, '_initialize_connection', _patched_initialize))
 
         iface = BLEInterface(
             address=None,  # Required positional argument
