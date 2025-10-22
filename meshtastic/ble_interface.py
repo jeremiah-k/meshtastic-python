@@ -244,12 +244,16 @@ class BLEInterface(MeshInterface):
             # Notify parent interface of disconnection and close previous client asynchronously
             if previous_client:
                 self._disconnected()
+                # Use an event to wait for client close to complete to avoid race conditions
+                close_completed_event = Event()
                 Thread(
                     target=self._safe_close_client,
-                    args=(previous_client,),
+                    args=(previous_client, close_completed_event),
                     name="BLEClientClose",
                     daemon=True,
                 ).start()
+                if not close_completed_event.wait(timeout=DISCONNECT_TIMEOUT_SECONDS):
+                    logger.warning("Timeout waiting for BLE client to close.")
 
             # Event coordination: wake receive loop and clear reconnection flag
             self._read_trigger.set()  # Wake receive loop to handle reconnection
@@ -662,7 +666,9 @@ class BLEInterface(MeshInterface):
         self._want_receive = False
         return False
 
-    def _safe_close_client(self, c: "BLEClient") -> None:
+    def _safe_close_client(
+        self, c: "BLEClient", event: Optional[Event] = None
+    ) -> None:
         """
         Close the provided BLEClient and suppress common close-time errors.
 
@@ -671,6 +677,7 @@ class BLEInterface(MeshInterface):
 
         Parameters:
             c (BLEClient): The BLEClient instance to close; may be None or already-closed.
+            event (Optional[Event]): An optional threading.Event to set after the client is closed.
         """
         try:
             c.close()
@@ -681,6 +688,9 @@ class BLEInterface(MeshInterface):
                 "OS/Runtime error during client close (possible resource or threading issue)",
                 exc_info=True,
             )
+        finally:
+            if event:
+                event.set()
 
     def _receiveFromRadioImpl(self) -> None:
         """
