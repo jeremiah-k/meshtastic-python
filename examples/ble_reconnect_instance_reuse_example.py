@@ -15,52 +15,20 @@ ble_reconnect_instance_recreation_example.py which demonstrates the instance rec
 """
 import argparse
 import logging
-import threading
 import time
-
-from pubsub import pub
 
 import meshtastic
 import meshtastic.ble_interface
 
-# Retry delay in seconds when connection fails
-RETRY_DELAY_SECONDS = 5
-
 logger = logging.getLogger(__name__)
-
-# A thread-safe flag to signal disconnection
-disconnected_event = threading.Event()
-
-
-def on_connection_change(interface, connected):
-    """
-    Handle a BLE interface's connection status change and notify the main loop on disconnect.
-
-    If `connected` is False, sets the module-level `disconnected_event` to signal the main loop to retry the connection.
-
-    Parameters
-    ----------
-        interface: The BLE interface object whose connection status changed.
-        connected (bool): `True` when the interface is connected, `False` when disconnected.
-    """
-    iface_label = getattr(interface, "address", repr(interface))
-    logger.info(
-        "Connection changed for %s: %s",
-        iface_label,
-        "Connected" if connected else "Disconnected",
-    )
-    if not connected:
-        # Signal the main loop that we've been disconnected
-        disconnected_event.set()
 
 
 def main():
     """
     Run a reconnection loop that reuses a single BLEInterface instance to maintain a long-lived connection to a Meshtastic device.
 
-    This function parses a required BLE address from command-line arguments, subscribes to connection-status events,
-    and creates one BLEInterface with auto_reconnect enabled. The interface will handle reconnections automatically.
-    This example then waits for a KeyboardInterrupt to gracefully exit, while logging connection status changes.
+    This function parses a required BLE address from command-line arguments and creates one BLEInterface with auto_reconnect enabled.
+    The interface will handle reconnections automatically. This example then waits for a KeyboardInterrupt to gracefully exit.
     """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -70,9 +38,6 @@ def main():
     args = parser.parse_args()
     address = args.address
 
-    # Subscribe to the connection change event to be notified of status changes
-    pub.subscribe(on_connection_change, "meshtastic.connection.status")
-
     iface = None
     try:
         # Create a single BLEInterface instance that we'll reuse across reconnections.
@@ -80,7 +45,7 @@ def main():
         logger.info("Creating and connecting to BLE interface for %s...", address)
         iface = meshtastic.ble_interface.BLEInterface(
             address,
-            noProto=True,  # Set to False in a real application
+            noProto=True,  # Set to False to enable protobuf processing in production
         )
         logger.info(
             "Connection successful. The interface will now auto-reconnect on disconnect."
