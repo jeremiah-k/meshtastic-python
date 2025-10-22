@@ -4,7 +4,7 @@ long-running application.
 
 This example shows the **instance reuse pattern** (preferred for efficiency):
 - Create a single BLEInterface instance with `auto_reconnect=True` (the default)
-- When disconnect occurs, call connect() again on the same instance
+- The interface handles all reconnections automatically when disconnects occur
 - This avoids thread teardown/recreation overhead for better performance
 
 The instance reuse pattern is more efficient for long-running applications
@@ -35,10 +35,11 @@ disconnected_event = threading.Event()
 def on_connection_change(interface, connected):
     """
     Handle a BLE interface's connection status change and notify the main loop on disconnect.
-    
+
     If `connected` is False, sets the module-level `disconnected_event` to signal the main loop to retry the connection.
-    
-    Parameters:
+
+    Parameters
+    ----------
         interface: The BLE interface object whose connection status changed.
         connected (bool): `True` when the interface is connected, `False` when disconnected.
     """
@@ -56,8 +57,10 @@ def on_connection_change(interface, connected):
 def main():
     """
     Run a reconnection loop that reuses a single BLEInterface instance to maintain a long-lived connection to a Meshtastic device.
-    
-    This function parses a required BLE address from command-line arguments, subscribes to connection-status events, creates one BLEInterface with auto_reconnect enabled, and repeatedly attempts to connect using the same instance. It waits for a disconnection signal to trigger reconnection attempts, handles KeyboardInterrupt for graceful exit, logs BLE connection errors and unexpected exceptions, and ensures the BLE interface is closed on exit.
+
+    This function parses a required BLE address from command-line arguments, subscribes to connection-status events,
+    and creates one BLEInterface with auto_reconnect enabled. The interface will handle reconnections automatically.
+    This example then waits for a KeyboardInterrupt to gracefully exit, while logging connection status changes.
     """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -67,41 +70,33 @@ def main():
     args = parser.parse_args()
     address = args.address
 
-    # Subscribe to the connection change event
+    # Subscribe to the connection change event to be notified of status changes
     pub.subscribe(on_connection_change, "meshtastic.connection.status")
 
-    # Create a single BLEInterface instance that we'll reuse across reconnections
-    logger.info("Creating BLE interface for %s...", address)
-    iface = meshtastic.ble_interface.BLEInterface(
-        address,
-        noProto=True,  # Set to False in a real application
-        auto_reconnect=True,  # Keep interface alive across disconnects
-    )
-
+    iface = None
     try:
+        # Create a single BLEInterface instance that we'll reuse across reconnections.
+        # auto_reconnect=True (the default) means the interface will handle all reconnections automatically.
+        logger.info("Creating and connecting to BLE interface for %s...", address)
+        iface = meshtastic.ble_interface.BLEInterface(
+            address,
+            noProto=True,  # Set to False in a real application
+        )
+        logger.info(
+            "Connection successful. The interface will now auto-reconnect on disconnect."
+        )
+
+        # In a real app, you could now start using the interface to send/receive data.
+        # For this example, we'll just sleep until the user presses Ctrl+C.
         while True:
-            try:
-                disconnected_event.clear()
-                
-                # Attempt to connect (or reconnect) using the same interface instance
-                logger.info("Attempting to connect to %s...", address)
-                iface.connect()
-                logger.info("Connection successful. Waiting for disconnection event...")
-                
-                # Wait until the on_connection_change callback signals a disconnect
-                disconnected_event.wait()
-                logger.info("Disconnected normally. Will attempt to reconnect...")
+            time.sleep(1)
 
-            except KeyboardInterrupt:
-                logger.info("Exiting...")
-                break
-            except meshtastic.ble_interface.BLEInterface.BLEError:
-                logger.exception("Connection failed")
-            except Exception:
-                logger.exception("An unexpected error occurred")
-
-            logger.info("Retrying in %d seconds...", RETRY_DELAY_SECONDS)
-            time.sleep(RETRY_DELAY_SECONDS)
+    except KeyboardInterrupt:
+        logger.info("Exiting...")
+    except meshtastic.ble_interface.BLEInterface.BLEError:
+        logger.exception("Connection failed")
+    except Exception:
+        logger.exception("An unexpected error occurred")
 
     finally:
         # Clean up the interface when done
