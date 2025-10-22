@@ -378,7 +378,7 @@ class BLEInterface(MeshInterface):
         # Critical notification for receiving packets - let failures bubble up
         client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
-    async def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
+    def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
@@ -403,7 +403,7 @@ class BLEInterface(MeshInterface):
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
-    async def legacy_log_radio_handler(self, _, b: bytearray) -> None:
+    def legacy_log_radio_handler(self, _, b: bytearray) -> None:
         """
         Handle a legacy log-radio notification by decoding and forwarding the UTF-8 log line.
 

@@ -272,7 +272,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         def formatFloat(value, precision=2, unit="") -> Optional[str]:
             """Format a float value with precision."""
-            return f"{value:.{precision}f}{unit}" if value else None
+            return f"{value:.{precision}f}{unit}" if value is not None else None
 
         def getLH(ts) -> Optional[str]:
             """Format last heard"""
@@ -1684,16 +1684,23 @@ class MeshInterface:  # pylint: disable=R0902
 
                 # Convert to protobuf if possible
                 if handler.protobufFactory is not None:
-                    pb = handler.protobufFactory()
-                    pb.ParseFromString(meshPacket.decoded.payload)
-                    p = google.protobuf.json_format.MessageToDict(pb)
-                    asDict["decoded"][handler.name] = p
-                    # Also provide the protobuf raw
-                    asDict["decoded"][handler.name]["raw"] = pb
+                    try:
+                        pb = handler.protobufFactory()
+                        pb.ParseFromString(meshPacket.decoded.payload)
+                        p = google.protobuf.json_format.MessageToDict(pb)
+                        asDict["decoded"][handler.name] = p
+                        asDict["decoded"][handler.name]["raw"] = pb
+                    except (DecodeError, ValueError, KeyError) as parse_err:
+                        logger.warning("Failed to decode %s payload; skipping. err=%r", handler.name, parse_err)
+                    except Exception:
+                        logger.exception("Unexpected error decoding %s payload; skipping.", handler.name)
 
                 # Call specialized onReceive if necessary
                 if handler.onReceive is not None:
-                    handler.onReceive(self, asDict)
+                    try:
+                        handler.onReceive(self, asDict)
+                    except Exception:
+                        logger.exception("onReceive callback for %s raised; continuing.", handler.name)
 
             # Is this message in response to a request, if so, look for a handler
             requestId = decoded.get("requestId")
@@ -1718,7 +1725,10 @@ class MeshInterface:  # pylint: disable=R0902
                         logger.debug(
                             f"Calling response handler for requestId {requestId}"
                         )
-                        handler.callback(asDict)
+                        try:
+                            handler.callback(asDict)
+                        except Exception:
+                            logger.exception("Response handler callback for requestId %s raised; continuing.", requestId)
 
         logger.debug(f"Publishing {topic}: packet={stripnl(asDict)} ")
         publishingThread.queueWork(

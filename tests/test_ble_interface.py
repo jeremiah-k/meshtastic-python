@@ -122,7 +122,7 @@ def mock_bleak(monkeypatch):
 
     The installed module exposes:
     - `BleakClient`: a stub client class with async connect/disconnect/read/write methods and a synchronous `is_connected`.
-    - `BleakScanner.discover`: an async coroutine that returns an empty mapping.
+    - `BleakScanner.discover`: an async coroutine that returns an empty list.
     - `BLEDevice`: a minimal device-like class with `address` and `name` attributes.
 
     Parameters:
@@ -211,12 +211,12 @@ def mock_bleak(monkeypatch):
 
     async def _stub_discover(**_kwargs):
         """
-        Return an empty mapping simulating BLE device discovery; accepts and ignores any keyword arguments for API compatibility.
+        Return an empty list simulating BLE device discovery; accepts and ignores any keyword arguments for API compatibility.
 
         Returns:
-            dict: Empty dictionary representing no discovered devices.
+            list: Empty list representing no discovered devices.
         """
-        return {}
+        return []
 
     class _StubBLEDevice:
         def __init__(self, address=None, name=None):
