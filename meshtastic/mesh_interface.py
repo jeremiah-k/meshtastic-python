@@ -390,9 +390,7 @@ class MeshInterface:  # pylint: disable=R0902
 
                 # Filter out any field in the data set that was not specified.
                 filteredData = {
-                    get_human_readable(k): v
-                    for k, v in fields.items()
-                    if k in showFields
+                    get_human_readable(k): v for k, v in fields.items()
                 }
                 rows.append(filteredData)
 
