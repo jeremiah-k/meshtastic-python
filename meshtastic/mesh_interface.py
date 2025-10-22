@@ -309,9 +309,6 @@ class MeshInterface:  # pylint: disable=R0902
             Returns:
                 The value found at the specified path, or `None` if any key along the path is missing or an intermediate value is not a dictionary.
             """
-            if "." not in key_path:
-                logger.debug("getNestedValue was called without a nested path.")
-                return None
             keys = key_path.split(".")
             value: Optional[Union[str, dict]] = node_dict
             for key in keys:
