@@ -56,7 +56,10 @@ def main():
     """
     Run a reconnection loop that repeatedly creates a new BLEInterface for each connection attempt.
     
-    Parses a required BLE address from command-line arguments, subscribes to connection-status events to detect disconnects, and uses a fresh BLEInterface instance (via a context manager) for each attempt. Exits cleanly on KeyboardInterrupt, logs BLE-related and unexpected errors, and retries after RETRY_DELAY_SECONDS when a connection ends or fails.
+    Parses a required BLE address from command-line arguments, subscribes to connection-status events 
+    to detect disconnects, and uses a fresh BLEInterface instance (via a context manager) for each attempt. 
+    Exits cleanly on KeyboardInterrupt, logs BLE-related and unexpected errors, and retries after 
+    RETRY_DELAY_SECONDS when a connection ends or fails.
     """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -74,30 +77,30 @@ def main():
     try:
         while True:
             try:
-            disconnected_event.clear()
-            logger.info("Attempting to connect to %s...", address)
-            # Create new instance each time (simpler but less efficient)
-            with meshtastic.ble_interface.BLEInterface(
-                address,
-                noProto=True,  # Set to False in a real application
-                auto_reconnect=False,
-            ):
-                logger.info("Connection successful. Waiting for disconnection event...")
-                disconnected_event.wait()
-                logger.info("Disconnected normally.")
+                disconnected_event.clear()
+                logger.info("Attempting to connect to %s...", address)
+                # Create new instance each time (simpler but less efficient)
+                with meshtastic.ble_interface.BLEInterface(
+                    address,
+                    noProto=True,  # Set to False in a real application
+                    auto_reconnect=False,
+                ):
+                    logger.info("Connection successful. Waiting for disconnection event...")
+                    disconnected_event.wait()
+                    logger.info("Disconnected normally.")
 
-        except KeyboardInterrupt:
-            logger.info("Exiting...")
-            break
+            except KeyboardInterrupt:
+                logger.info("Exiting...")
+                break
+            except meshtastic.ble_interface.BLEInterface.BLEError:
+                logger.exception("Connection failed")
+            except Exception:
+                logger.exception("An unexpected error occurred")
+
+            logger.info("Retrying in %d seconds...", delay)
+            time.sleep(delay)
     finally:
         pub.unsubscribe(on_connection_change, "meshtastic.connection.status")
-        except meshtastic.ble_interface.BLEInterface.BLEError:
-            logger.exception("Connection failed")
-        except Exception:
-            logger.exception("An unexpected error occurred")
-
-        logger.info("Retrying in %d seconds...", delay)
-        time.sleep(delay)
 
 
 if __name__ == "__main__":
