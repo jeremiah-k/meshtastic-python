@@ -94,7 +94,7 @@ class BLEInterface(MeshInterface):
     class BLEError(Exception):
         """An exception class for BLE errors."""
 
-    def __init__(
+    def __init__( # pylint: disable=R0917
         self,
         address: Optional[str],
         noProto: bool = False,
@@ -102,6 +102,7 @@ class BLEInterface(MeshInterface):
         noNodes: bool = False,
         *,
         auto_reconnect: bool = True,
+        timeout: int = 300,
     ) -> None:
         """
         Initialize a BLEInterface, start its background receive thread, and attempt an initial connection to a Meshtastic BLE device.
@@ -135,7 +136,7 @@ class BLEInterface(MeshInterface):
 
         # Initialize parent interface
         MeshInterface.__init__(
-            self, debugOut=debugOut, noProto=noProto, noNodes=noNodes
+            self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
         )
 
         # Start background receive thread for inbound packet processing
