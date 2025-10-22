@@ -5,6 +5,7 @@ import atexit
 import contextlib
 import io
 import logging
+import random
 import struct
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -139,6 +140,9 @@ class BLEInterface(MeshInterface):
         MeshInterface.__init__(
             self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
         )
+
+        # Initialize retry counter for transient read errors
+        self._read_retry_count = 0
 
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
@@ -301,7 +305,7 @@ class BLEInterface(MeshInterface):
 
                         if self._closing or not self.auto_reconnect:
                             return
-                        time.sleep(delay)
+                        time.sleep(delay + (0.25 * delay * (random.random() - 0.5)))
                         delay = min(delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY)
                 finally:
                     with self._client_lock:
@@ -738,7 +742,16 @@ class BLEInterface(MeshInterface):
                             if self._handle_read_loop_disconnect(str(e), client):
                                 break
                             return
-                        logger.debug("Error reading BLE", exc_info=True)
+                        # Client is still connected, this might be a transient error
+                        # Retry a few times before escalating
+                        retry_count = getattr(self, '_read_retry_count', 0)
+                        if retry_count < 3:
+                            self._read_retry_count = retry_count + 1
+                            logger.debug("Transient BLE read error, retrying (%d/3)", retry_count + 1)
+                            time.sleep(0.1)
+                            continue
+                        self._read_retry_count = 0
+                        logger.debug("Persistent BLE read error after retries", exc_info=True)
                         raise BLEInterface.BLEError(ERROR_READING_BLE) from e
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")

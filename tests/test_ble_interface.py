@@ -8,8 +8,6 @@ from typing import Optional
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 
 @pytest.fixture(autouse=True)
 def mock_serial(monkeypatch):
@@ -167,13 +165,7 @@ def mock_bleak(monkeypatch):
             """
             return None
 
-        async def discover(self, **_kwargs):
-            """
-            Simulate BLE device discovery that always returns no devices.
-
-            This stub ignores any keyword arguments passed via `**_kwargs` and returns None to indicate no devices were found.
-            """
-            return None
+        
 
         async def start_notify(self, **_kwargs):
             """
@@ -636,7 +628,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
                 Raises:
                     Exception: An instance of the client's `exception_type` with the message "Test exception".
                 """
-                raise self.exception_type("Test exception")
+                raise self.exception_type("test")  # noqa: TRY003
 
         client = ExceptionClient(exc_type)
         iface = _build_interface(monkeypatch, client)
@@ -685,7 +677,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         iface._want_receive = False
         try:
             iface.close()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
             # Log for visibility; still allow test to proceed with cleanup.
             print(f"Cleanup error in iface.close(): {exc!r}")
 
@@ -856,9 +848,14 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
     # 5. Receive thread should remain alive, waiting for new connection
     # Check that _want_receive is still True and receive thread is alive
-    assert (
-        iface._want_receive is True
-    ), "_want_receive should remain True for auto_reconnect"
+    assert iface._want_receive is True, "_want_receive should remain True for auto_reconnect"
+    assert iface._receiveThread is not None, "receive thread should still exist"
+    # Wait up to ~1s for receive thread to be alive
+    for _ in range(100):
+        t = getattr(iface, "_receiveThread", None)
+        if t and t.is_alive():
+            break
+        time.sleep(0.01)
     assert iface._receiveThread is not None, "receive thread should still exist"
     assert iface._receiveThread.is_alive(), "receive thread should remain alive"
 
@@ -899,7 +896,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             Raises:
                 Exception: An instance of `self.exception_type` indicating the simulated write error.
             """
-            raise self.exception_type("Test write exception")
+            raise self.exception_type("write failed")  # noqa: TRY003
 
     # Test BleakError specifically
     client = ExceptionClient(BleakError)
@@ -998,7 +995,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 self: The mock client instance with `connect_count` incremented.
             """
             if self._should_fail_connect:
-                raise RuntimeError("Simulated connection failure")
+                raise RuntimeError("connect fail")  # noqa: TRY003
             self.connect_count += 1
             return self
 
@@ -1072,7 +1069,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 self: The mock client instance with `connect_count` incremented.
             """
             if self._should_fail_connect:
-                raise RuntimeError("Simulated connection failure")
+                raise RuntimeError("connect fail")  # noqa: TRY003
             self.connect_count += 1
             return self
 
@@ -1201,7 +1198,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 time.sleep(0.005)
             except (RuntimeError, AttributeError, KeyError) as e:
                 logging.debug("Stress test disconnect %d: %s: %s", i, type(e).__name__, e)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - test teardown must be resilient
                 logging.debug("Unexpected stress test disconnect %d: %s: %s", i, type(e).__name__, e)
 
     # Start multiple threads for concurrent operations
@@ -1231,7 +1228,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         try:
             iface3._on_ble_disconnect(client3.bleak_client)
             time.sleep(0.01)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - expected during failure stress
             logging.debug("Expected failure during stress reconnect: %s: %s", type(e).__name__, e)
 
     # Verify graceful handling of connection failures
@@ -1241,9 +1238,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     iface3._test_patch_stack.close()
 
     # Verify no critical errors in logs
-    log_messages = [record.message for record in caplog.records]
-    critical_errors = [msg for msg in log_messages if 'CRITICAL' in msg or 'FATAL' in msg]
-    assert len(critical_errors) == 0, f"Critical errors found in logs: {critical_errors}"
+    critical = [r for r in caplog.records if r.levelno >= logging.CRITICAL]
+    assert not critical, f"Critical errors found in logs: {[r.message for r in critical]}"
 
 
 def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
@@ -1275,7 +1271,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
             Raises:
                 Exception: An instance of `self.exception_type` is raised with the message "Connection check failed".
             """
-            raise self.exception_type("Connection check failed")
+            raise self.exception_type("conn check failed")  # noqa: TRY003
 
     # Create BLEClient with a mock bleak client that raises exceptions
     ble_client = BLEClient.__new__(BLEClient)
@@ -1325,7 +1321,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     class MockPublishingThread:
         """Mock publishingThread that raises RuntimeError in queueWork."""
 
-        def queueWork(self, callback):
+        def queueWork(self, _callback):
             """
             Simulate a publishingThread.queueWork that always raises a threading error.
 
@@ -1335,7 +1331,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
             Raises:
                 RuntimeError: Always raised with the message "Threading error in queueWork".
             """
-            raise RuntimeError("Threading error in queueWork")
+            raise RuntimeError("thread error in queueWork")  # noqa: TRY003
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
 
@@ -1350,7 +1346,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     class MockPublishingThread2:
         """Mock publishingThread that raises ValueError in queueWork."""
 
-        def queueWork(self, callback):
+        def queueWork(self, _callback):
             """
             Enqueue a callback for deferred execution — stub implementation that always fails.
 
@@ -1360,7 +1356,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
             Raises:
                 ValueError: Always raised with message "Invalid event state".
             """
-            raise ValueError("Invalid event state")
+            raise ValueError("invalid state")  # noqa: TRY003
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread2())
 
@@ -1394,7 +1390,7 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
             Raises:
                 ValueError: Always raised to indicate the mock callback failed during execution.
             """
-            raise ValueError("Callback execution failed")
+            raise ValueError("callback failed")  # noqa: TRY003
 
     mock_queue = Queue()
     mock_queue.put(ExceptionRunnable())
@@ -1413,7 +1409,7 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
             """
             self.queue = mock_queue
 
-        def queueWork(self, callback):
+        def queueWork(self, _callback):
             """
             Execute the given callback immediately (used to simulate scheduling work).
 
@@ -1423,8 +1419,8 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
             Returns:
                 The value returned by `callback`, or `None` if `callback` is `None`.
             """
-            if callback:
-                return callback()
+            if _callback:
+                return _callback()
             return None
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())

@@ -38,23 +38,20 @@ def main():
     args = parser.parse_args()
     address = args.address
 
-    iface = None
     try:
-        # Create a single BLEInterface instance that we'll reuse across reconnections.
-        # auto_reconnect=True (the default) means the interface will handle all reconnections automatically.
         logger.info("Creating and connecting to BLE interface for %s...", address)
-        iface = meshtastic.ble_interface.BLEInterface(
+        with meshtastic.ble_interface.BLEInterface(
             address,
             noProto=True,  # Set to False to enable protobuf processing in production
-        )
-        logger.info(
-            "Connection successful. The interface will now auto-reconnect on disconnect."
-        )
+        ):
+            logger.info(
+                "Connection successful. The interface will now auto-reconnect on disconnect."
+            )
 
-        # In a real app, you could now start using the interface to send/receive data.
-        # For this example, we'll just sleep until the user presses Ctrl+C.
-        while True:
-            time.sleep(1)
+            # In a real app, you could now start using the interface to send/receive data.
+            # For this example, we'll just sleep until the user presses Ctrl+C.
+            while True:
+                time.sleep(1)
 
     except KeyboardInterrupt:
         logger.info("Exiting...")
@@ -62,12 +59,6 @@ def main():
         logger.exception("Connection failed")
     except Exception:
         logger.exception("An unexpected error occurred")
-
-    finally:
-        # Clean up the interface when done
-        if iface:
-            logger.info("Closing BLE interface...")
-            iface.close()
 
 
 if __name__ == "__main__":

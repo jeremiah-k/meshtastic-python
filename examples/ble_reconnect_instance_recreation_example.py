@@ -63,14 +63,17 @@ def main():
         description="Meshtastic BLE interface reconnection (instance recreation pattern)."
     )
     parser.add_argument("address", help="The BLE address of your Meshtastic device.")
+    parser.add_argument("--retry-delay", type=int, default=RETRY_DELAY_SECONDS,
+                        help="Seconds to wait before reconnect attempts (default: 5).")
     args = parser.parse_args()
     address = args.address
+    delay = args.retry_delay
 
     # Subscribe to the connection change event
     pub.subscribe(on_connection_change, "meshtastic.connection.status")
-
-    while True:
-        try:
+    try:
+        while True:
+            try:
             disconnected_event.clear()
             logger.info("Attempting to connect to %s...", address)
             # Create new instance each time (simpler but less efficient)
@@ -86,13 +89,15 @@ def main():
         except KeyboardInterrupt:
             logger.info("Exiting...")
             break
+    finally:
+        pub.unsubscribe(on_connection_change, "meshtastic.connection.status")
         except meshtastic.ble_interface.BLEInterface.BLEError:
             logger.exception("Connection failed")
         except Exception:
             logger.exception("An unexpected error occurred")
 
-        logger.info("Retrying in %d seconds...", RETRY_DELAY_SECONDS)
-        time.sleep(RETRY_DELAY_SECONDS)
+        logger.info("Retrying in %d seconds...", delay)
+        time.sleep(delay)
 
 
 if __name__ == "__main__":

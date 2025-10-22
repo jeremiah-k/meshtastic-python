@@ -1172,8 +1172,8 @@ class MeshInterface:  # pylint: disable=R0902
             )
         else:
             nextPacketId = (self.currentPacketId + 1) & 0xFFFFFFFF
-            nextPacketId = nextPacketId & 0x3FF                           # == (0xFFFFFFFF >> 22), masks upper 22 bits
-            randomPart = (random.randint(0, 0x3FFFFF) << 10) & 0xFFFFFFFF # generate number with 10 zeros at end
+            nextPacketId = nextPacketId & 0x3FF                           # keep lower 10 bits for monotonic portion
+            randomPart = (random.randint(0, 0x3FFFFF) << 10) & 0xFFFFFFFF # 22 random bits shifted left by 10
             self.currentPacketId = nextPacketId | randomPart              # combine
             return self.currentPacketId
 
@@ -1386,12 +1386,9 @@ class MeshInterface:  # pylint: disable=R0902
                 f"Failed to parse FromRadio packet, discarding: {fromRadioBytes}"
             )
             return
-        except Exception as ex:
-            logger.error(
-                    f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}"
-            )
-            traceback.print_exc()
-            raise ex
+        except Exception:
+            logger.exception("Error while parsing FromRadio bytes: %r", fromRadioBytes)
+            raise
         asDict = google.protobuf.json_format.MessageToDict(fromRadio)
         logger.debug(f"Received from radio: {fromRadio}")
         if fromRadio.HasField("my_info"):
