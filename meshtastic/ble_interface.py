@@ -731,6 +731,7 @@ class BLEInterface(MeshInterface):
                         logger.debug(f"FROMRADIO read: {b.hex()}")
                         self._handleFromRadio(b)
                         retries = 0  # Reset retry counter on successful read
+                        self._read_retry_count = 0  # Reset transient error retry counter on successful read
                     except BleakDBusError as e:
                         # Handle D-Bus specific BLE errors (common on Linux)
                         if self._handle_read_loop_disconnect(str(e), client):
