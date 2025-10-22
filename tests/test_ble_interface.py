@@ -628,7 +628,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
                 Raises:
                     Exception: An instance of the client's `exception_type` with the message "Test exception".
                 """
-                raise self.exception_type("test")  # noqa: TRY003
+                raise self.exception_type("test")
 
         client = ExceptionClient(exc_type)
         iface = _build_interface(monkeypatch, client)
@@ -896,7 +896,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             Raises:
                 Exception: An instance of `self.exception_type` indicating the simulated write error.
             """
-            raise self.exception_type("write failed")  # noqa: TRY003
+            raise self.exception_type("write failed")
 
     # Test BleakError specifically
     client = ExceptionClient(BleakError)

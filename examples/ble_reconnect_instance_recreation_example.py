@@ -76,9 +76,9 @@ def main():
     pub.subscribe(on_connection_change, "meshtastic.connection.status")
     try:
         while True:
+            disconnected_event.clear()
+            logger.info("Attempting to connect to %s...", address)
             try:
-                disconnected_event.clear()
-                logger.info("Attempting to connect to %s...", address)
                 # Create new instance each time (simpler but less efficient)
                 with meshtastic.ble_interface.BLEInterface(
                     address,
@@ -88,10 +88,6 @@ def main():
                     logger.info("Connection successful. Waiting for disconnection event...")
                     disconnected_event.wait()
                     logger.info("Disconnected normally.")
-
-            except KeyboardInterrupt:
-                logger.info("Exiting...")
-                break
             except meshtastic.ble_interface.BLEInterface.BLEError:
                 logger.exception("Connection failed")
             except Exception:
@@ -99,6 +95,8 @@ def main():
 
             logger.info("Retrying in %d seconds...", delay)
             time.sleep(delay)
+    except KeyboardInterrupt:
+        logger.info("Exiting...")
     finally:
         pub.unsubscribe(on_connection_change, "meshtastic.connection.status")
 

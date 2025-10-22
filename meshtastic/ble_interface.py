@@ -608,7 +608,7 @@ class BLEInterface(MeshInterface):
                     ).start()
                 # Signal successful reconnection to waiting threads
                 self._reconnected_event.set()
-            except Exception as e:
+            except Exception:
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 try:
                     client.close()
@@ -616,7 +616,7 @@ class BLEInterface(MeshInterface):
                     logger.warning(
                         f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
                     )
-                raise e
+                raise
 
             return client
 
@@ -803,6 +803,8 @@ class BLEInterface(MeshInterface):
                         "Error during write operation: %s", type(e).__name__, exc_info=True
                     )
                     raise BLEInterface.BLEError(ERROR_WRITING_BLE) from e
+            else:
+                logger.debug("Skipping TORADIO write: no BLE client (closing or disconnected).")
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
