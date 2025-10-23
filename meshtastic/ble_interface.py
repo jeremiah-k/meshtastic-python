@@ -363,14 +363,12 @@ class BLEErrorHandler:
     Helper class for consistent error handling in BLE operations.
 
     This class provides static methods for standardized error handling patterns
-    throughout the BLE interface. It centralizes error classification, logging,
-    and recovery strategies.
+    throughout the BLE interface. It centralizes error logging and recovery strategies.
 
     Features:
         - Safe execution with fallback return values
         - Consistent error logging and classification
         - Cleanup operations that never raise exceptions
-        - Error severity assessment (recoverable vs critical)
     """
 
     @staticmethod
@@ -418,36 +416,7 @@ class BLEErrorHandler:
         except Exception as e:
             logger.debug("Error during %s: %s", cleanup_name, e)
 
-    @staticmethod
-    def is_recoverable_error(error: Exception) -> bool:
-        """
-        Determine whether an exception is considered recoverable and should not halt BLE operations.
-        
-        Recoverable errors include corrupted protobuf packets, timeouts, and empty-queue events.
-        
-        Returns:
-            True if `error` is an instance of a recoverable exception (`DecodeError`, `FutureTimeoutError`, or `Empty`), False otherwise.
-        """
-        recoverable_errors = (
-            DecodeError,  # Corrupted protobuf packets
-            FutureTimeoutError,  # Timeouts
-            Empty,  # Queue empty
-        )
-        return isinstance(error, recoverable_errors)
-
-    @staticmethod
-    def is_critical_error(error: Exception) -> bool:
-        """
-        Determine whether an exception is classified as a critical error.
-        
-        Returns:
-            `true` if the error is a critical type (D-Bus system errors or connection failures), `false` otherwise.
-        """
-        critical_errors = (
-            BleakDBusError,  # D-Bus system errors
-            ConnectionError,  # Connection failures
-        )
-        return isinstance(error, critical_errors)
+    
 
 
 class BLEInterface(MeshInterface):
@@ -1098,34 +1067,42 @@ class BLEInterface(MeshInterface):
                 return devices_found
 
             # Library-friendly async execution: handle both cases where event loop is running or not
+            # This pattern is necessary to support environments with existing event loops
             try:
                 asyncio.get_running_loop()
                 # A loop is running in this thread, run async code in separate thread
                 # to avoid interference with the existing event loop
-                devices = []
+                from concurrent.futures import Future
+
+                future: Future[list] = Future()
                 def _run_async_in_thread():
                     """
-                    Run the device discovery coroutine and assign its result to the enclosing variable `devices`.
-                    
-                    Executes _get_devices_async_and_filter(address) and stores the returned list into the nonlocal `devices` name so the outer scope can access the discovered devices.
+                    Run the device discovery coroutine and set the result or exception on a future.
                     """
-                    nonlocal devices
-                    devices = asyncio.run(
-                        BLEInterface._with_timeout(
-                            _get_devices_async_and_filter(address),
-                            BLE_SCAN_TIMEOUT,
-                            "connected-device fallback",
+                    try:
+                        result = asyncio.run(
+                            BLEInterface._with_timeout(
+                                _get_devices_async_and_filter(address),
+                                BLE_SCAN_TIMEOUT,
+                                "connected-device fallback",
+                            )
                         )
-                    )
+                        future.set_result(result)
+                    except Exception as e:
+                        future.set_exception(e)
 
-                thread = Thread(target=_run_async_in_thread)
+                thread = Thread(target=_run_async_in_thread, daemon=True)
                 thread.start()
-                thread.join(timeout=BLE_SCAN_TIMEOUT)
-                if thread.is_alive():
+                try:
+                    devices = future.result(timeout=BLE_SCAN_TIMEOUT)
+                except FutureTimeoutError:
                     logger.debug(
                         "Fallback connected-device discovery thread exceeded %.1fs timeout",
                         BLE_SCAN_TIMEOUT,
                     )
+                    return []
+                except Exception as e:
+                    logger.debug("Fallback device discovery thread failed with exception: %s", e)
                     return []
             except RuntimeError:
                 # No running loop in this thread
