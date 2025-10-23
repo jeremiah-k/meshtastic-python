@@ -68,6 +68,7 @@ BLE_SCAN_TIMEOUT = 10.0
 RECEIVE_WAIT_TIMEOUT = 0.5
 EMPTY_READ_RETRY_DELAY = 0.1
 EMPTY_READ_MAX_RETRIES = 5
+TRANSIENT_READ_MAX_RETRIES = 3
 SEND_PROPAGATION_DELAY = 0.01
 CONNECTION_TIMEOUT = 60.0
 AUTO_RECONNECT_INITIAL_DELAY = 1.0
@@ -773,7 +774,7 @@ class BLEInterface(MeshInterface):
         elif address and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
             device_list = "\n".join([f"- {d.name} ({d.address})" for d in addressed_devices])
-            raise BLEInterface.BLEError(
+            raise self.BLEError(
                 f"Multiple Meshtastic BLE peripherals found matching '{address}'. Please specify one:\n{device_list}"
                 )
         else:
@@ -1060,9 +1061,9 @@ class BLEInterface(MeshInterface):
                         # Client is still connected, this might be a transient error
                         # Retry a few times before escalating
                         retry_count = getattr(self, '_read_retry_count', 0)
-                        if retry_count < 3:
+                        if retry_count < TRANSIENT_READ_MAX_RETRIES:
                             self._read_retry_count = retry_count + 1
-                            logger.debug("Transient BLE read error, retrying (%d/3)", retry_count + 1)
+                            logger.debug("Transient BLE read error, retrying (%d/%d)", retry_count + 1, TRANSIENT_READ_MAX_RETRIES)
                             time.sleep(0.1)
                             continue
                         self._read_retry_count = 0
