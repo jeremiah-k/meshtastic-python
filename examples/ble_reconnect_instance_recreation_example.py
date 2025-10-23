@@ -33,13 +33,13 @@ disconnected_event = threading.Event()
 
 def on_connection_change(interface, connected):
     """
-    Handle a BLE interface's connection status change and notify the main loop on disconnect.
+    Handle BLE interface connection changes and notify the main loop when a disconnect occurs.
     
-    If `connected` is False, sets the module-level `disconnected_event` to signal the main loop to retry the connection.
+    Logs the interface's address (or repr) and connection state. When disconnected, sets the module-level `disconnected_event` to signal the main loop to attempt a reconnect.
     
     Parameters:
-        interface: The BLE interface object whose connection status changed.
-        connected (bool): `True` when the interface is connected, `False` when disconnected.
+        interface: The BLE interface object whose connection status changed; its `address` attribute is used for logging if present.
+        connected (bool): `True` if the interface is connected, `False` if it is disconnected.
     """
     iface_label = getattr(interface, "address", repr(interface))
     logger.info(
