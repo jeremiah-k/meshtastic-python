@@ -93,6 +93,9 @@ BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
+# TODO: ConnectionState enum is part of planned future refactoring to implement
+# a proper state machine for connection management (see ble_refactoring_plan.md).
+# Currently unused but retained for future implementation.
 class ConnectionState(Enum):
     """Enum for managing BLE connection states."""
     DISCONNECTED = "disconnected"
@@ -981,7 +984,7 @@ class BLEInterface(MeshInterface):
             c (BLEClient): The BLEClient instance to close; may be None or already-closed.
             event (Optional[Event]): An optional threading.Event to set after the client is closed.
         """
-        BLEErrorHandler.safe_cleanup(c.close, "client close")
+        self.error_handler.safe_cleanup(c.close, "client close")
         if event:
             event.set()
 
