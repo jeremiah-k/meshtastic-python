@@ -1,17 +1,12 @@
 """
-Example demonstrating robust BLE client-side reconnection for a
-long-running application.
+Example demonstrating robust BLE client-side reconnection for a long-running application.
 
-This example shows the **instance reuse pattern** (preferred for efficiency):
-- Create a single BLEInterface instance with `auto_reconnect=True` (the default)
-- The interface handles all reconnections automatically when disconnects occur
-- This avoids thread teardown/recreation overhead for better performance
+Use this **instance reuse pattern** when you want the most efficient reconnection strategy:
+- Keep one `BLEInterface` alive with `auto_reconnect=True` (default) so the same receive thread survives disconnects.
+- React to reconnection state changes via the built-in `meshtastic.connection.status` pubsub messages if the application needs UI or logging hooks.
+- Tune `AUTO_RECONNECT_INITIAL_DELAY`, `AUTO_RECONNECT_MAX_DELAY`, and `AUTO_RECONNECT_BACKOFF` in `meshtastic.ble_interface` to balance battery-powered nodes versus desktop development rigs.
 
-The instance reuse pattern is more efficient for long-running applications
-since it maintains the receive thread and other internal state across reconnections.
-
-For an alternative simpler but less efficient approach, see
-ble_reconnect_instance_recreation_example.py which demonstrates the instance recreation pattern.
+For an alternative, simpler-but-slower approach, see `ble_reconnect_instance_recreation_example.py`, which recreates the interface each time instead of reusing it.
 """
 import argparse
 import logging

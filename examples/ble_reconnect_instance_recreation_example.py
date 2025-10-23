@@ -1,16 +1,12 @@
 """
 Example demonstrating BLE client-side reconnection using the instance recreation pattern.
 
-This example shows the **instance recreation pattern** (simpler but less efficient):
-- Create a new BLEInterface instance for each connection attempt
-- Use context manager for automatic cleanup
-- When disconnect occurs, create a fresh instance for reconnection
+Reach for this **instance recreation pattern** when simplicity matters more than raw efficiency:
+- Create a new `BLEInterface` for each attempt, letting the context manager clean up threads deterministically.
+- Rely on the `meshtastic.connection.status` pubsub signal to decide when to tear down and start the next connection.
+- Adjust `RETRY_DELAY_SECONDS` (or the `--retry-delay` flag) alongside BLE backoff constants when targeting battery-powered nodes to avoid reconnect storms.
 
-The instance recreation pattern is simpler to understand but has higher overhead
-due to thread creation/destruction for each reconnection attempt.
-
-For better performance in long-running applications, see ble_reconnect_instance_reuse_example.py
-which demonstrates the more efficient instance reuse pattern.
+For better performance in long-running applications, see `ble_reconnect_instance_reuse_example.py`, which keeps one interface instance alive and lets its internal auto-reconnect loop handle disconnects.
 """
 import argparse
 import logging

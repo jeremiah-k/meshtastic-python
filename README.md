@@ -58,3 +58,12 @@ This should always be considered a list in progress and flux -- inclusion doesn'
 ## Stats
 
 ![Alt](https://repobeats.axiom.co/api/embed/c71ee8fc4a79690402e5d2807a41eec5e96d9039.svg "Repobeats analytics image")
+
+## BLE Interface Options
+
+The BLE client gained a few new knobs that are worth calling out for anyone building scripts on top of `meshtastic.ble_interface.BLEInterface`:
+
+- `auto_reconnect` (default: `True`) keeps the interface alive across transient Bluetooth disconnects. Set this to `False` if you prefer to tear down and recreate the interface yourself (see `examples/ble_reconnect_instance_recreation_example.py`).
+- `timeout` controls how long the interface waits for protocol replies before raising `BLEInterface.BLEError`. Leave it at the default unless you have unusually slow links; the value propagates through the BLE client so that reads, writes, and notification setup all respect it.
+
+The `examples/ble_reconnect_instance_reuse_example.py` and `examples/ble_reconnect_instance_recreation_example.py` scripts demonstrate both reconnection strategies with these options.

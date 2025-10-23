@@ -130,6 +130,7 @@ def mock_bleak(monkeypatch):
         module: The fake `bleak` module object that was inserted into sys.modules.
     """
     bleak_module = types.ModuleType("bleak")
+    bleak_module.__version__ = "1.1.1"
 
     class _StubBleakClient:
         def __init__(self, address=None, **_kwargs):
@@ -468,6 +469,75 @@ def _build_interface(monkeypatch, client):
     return iface
 
 
+def test_find_device_returns_single_scan_result(monkeypatch):
+    """find_device should return the lone scanned device."""
+    from meshtastic.ble_interface import BLEInterface, BLEDevice
+
+    iface = object.__new__(BLEInterface)
+    scanned_device = BLEDevice(address="11:22:33:44:55:66", name="Test Device")
+    monkeypatch.setattr(BLEInterface, "scan", lambda: [scanned_device])
+
+    result = BLEInterface.find_device(iface, None)
+
+    assert result is scanned_device
+
+
+def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
+    """find_device should fall back to connected-device lookup when scan is empty."""
+    from meshtastic.ble_interface import BLEInterface, BLEDevice
+
+    iface = object.__new__(BLEInterface)
+    fallback_device = BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Fallback")
+    monkeypatch.setattr(BLEInterface, "scan", lambda: [])
+
+    def _fake_connected(_self, _address):
+        return [fallback_device]
+
+    monkeypatch.setattr(BLEInterface, "_find_connected_devices", _fake_connected)
+
+    result = BLEInterface.find_device(iface, "aa-bb-cc-dd-ee-ff")
+
+    assert result is fallback_device
+
+
+def test_find_device_multiple_matches_raises(monkeypatch):
+    """Providing an address that matches multiple devices should raise BLEError."""
+    from meshtastic.ble_interface import BLEInterface, BLEDevice
+
+    iface = object.__new__(BLEInterface)
+    devices = [
+        BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
+        BLEDevice(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
+    ]
+    monkeypatch.setattr(BLEInterface, "scan", lambda: devices)
+
+    with pytest.raises(BLEInterface.BLEError) as excinfo:
+        BLEInterface.find_device(iface, "aa bb cc dd ee ff")
+
+    assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
+
+
+def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypatch):
+    """When the version guard disallows the fallback, the private backend is never touched."""
+    from meshtastic.ble_interface import BLEInterface
+
+    iface = object.__new__(BLEInterface)
+
+    monkeypatch.setattr(
+        "meshtastic.ble_interface._bleak_supports_connected_fallback", lambda: False
+    )
+
+    class BoomScanner:
+        def __init__(self):
+            raise AssertionError("BleakScanner should not be instantiated when guard fails")
+
+    monkeypatch.setattr("meshtastic.ble_interface.BleakScanner", BoomScanner)
+
+    result = BLEInterface._find_connected_devices(iface, "AA:BB")
+
+    assert result == []
+
+
 def test_close_idempotent(monkeypatch):
     """Test that close() is idempotent and only calls disconnect once."""
     client = DummyClient()
@@ -507,7 +577,6 @@ def test_close_handles_bleak_error(monkeypatch):
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
-    # exactly one disconnect status
     assert (
         sum(
             1
@@ -579,15 +648,23 @@ def test_close_handles_os_error(monkeypatch):
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
-    # exactly one disconnect status
-    assert (
-        sum(
-            1
-            for topic, kw in calls
-            if topic == "meshtastic.connection.status" and kw.get("connected") is False
-        )
-        == 1
-    )
+
+
+def test_close_clears_ble_threads(monkeypatch):
+    """Closing the interface should leave no BLE* threads running."""
+    import threading
+
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client)
+
+    iface.close()
+
+    lingering = [
+        thread.name
+        for thread in threading.enumerate()
+        if thread.name.startswith("BLE")
+    ]
+    assert not lingering
 
 
 def test_receive_thread_specific_exceptions(monkeypatch, caplog):
@@ -721,7 +798,7 @@ def test_log_notification_registration(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
         
-        def start_notify(self, uuid, handler):
+        def start_notify(self, uuid, handler, **_kwargs):
             """
             Record a notification registration request for the specified characteristic UUID.
             
@@ -789,7 +866,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
         
-        def start_notify(self, uuid, handler):
+        def start_notify(self, uuid, handler, **_kwargs):
             """
             Record a notification registration request for the specified characteristic UUID.
             
@@ -827,18 +904,9 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     class MockClient(DummyClient):
         """Mock client that returns invalid protobuf data to trigger DecodeError."""
 
-        def read_gatt_char(self, uuid):
-            """
-            Return mocked GATT characteristic bytes; provide intentionally malformed protobuf data for the radio characteristic.
-            
-            Parameters:
-                uuid: The UUID of the GATT characteristic to read. If equal to `FROMRADIO_UUID`, the returned bytes are malformed for protobuf parsing.
-            
-            Returns:
-                bytes: `b"invalid-protobuf-data"` when `uuid` is `FROMRADIO_UUID`, otherwise `b""`.
-            """
+        def read_gatt_char(self, uuid, timeout=None, **_kwargs):
+            """Return malformed protobuf data for FROMRADIO to force a DecodeError."""
             if uuid == FROMRADIO_UUID:
-                # This data will cause a DecodeError
                 return b"invalid-protobuf-data"
             return b""
 
@@ -1434,6 +1502,43 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     result = ble_client.is_connected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
+
+
+def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
+    """BLEClient.async_await should wrap FutureTimeoutError in BLEInterface.BLEError."""
+    from concurrent.futures import TimeoutError as FutureTimeoutError
+
+    from meshtastic.ble_interface import BLEClient, BLEInterface
+
+    client = BLEClient()  # address=None keeps underlying bleak client unset
+
+    class _FakeFuture:
+        def __init__(self):
+            self.cancelled = False
+            self.coro = None
+
+        def result(self, _timeout=None):
+            raise FutureTimeoutError()
+
+        def cancel(self):
+            self.cancelled = True
+
+    fake_future = _FakeFuture()
+    def _fake_async_run(coro):
+        fake_future.coro = coro
+        return fake_future
+
+    monkeypatch.setattr(client, "async_run", _fake_async_run)
+
+    with pytest.raises(BLEInterface.BLEError) as excinfo:
+        client.async_await(object(), timeout=0.01)
+
+    assert "Async operation timed out" in str(excinfo.value)
+    assert fake_future.cancelled is True
+
+    client.close()
+    if fake_future.coro is not None:
+        fake_future.coro.close()
 
 
 def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):

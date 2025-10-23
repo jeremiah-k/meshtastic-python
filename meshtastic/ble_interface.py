@@ -1,11 +1,11 @@
-"""Bluetooth interface
-"""
+"""Bluetooth interface."""
 import asyncio
 import atexit
 import contextlib
 import io
 import logging
 import random
+import re
 import struct
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -13,10 +13,12 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, Lock, RLock, Thread, current_thread
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+from bleak import BLEDevice
 from bleak import BleakClient as BleakRootClient
-from bleak import BleakScanner, BLEDevice
+from bleak import BleakScanner
+from bleak import __version__ as BLEAK_VERSION
 from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError
 
@@ -32,7 +34,7 @@ FROMNUM_UUID = "ed9da18c-a800-4f66-a670-aa7547e34453"
 LEGACY_LOGRADIO_UUID = "6c6fd238-78fa-436b-aacf-15c5be1ef2e2"
 LOGRADIO_UUID = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
 MALFORMED_NOTIFICATION_THRESHOLD = 10
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("meshtastic.ble")
 
 """
 Exception Handling Philosophy for BLE Interface
@@ -60,8 +62,8 @@ issues while making critical failures visible to developers.
 """
 
 DISCONNECT_TIMEOUT_SECONDS = 5.0
-RECEIVE_THREAD_JOIN_TIMEOUT = 2.0
-EVENT_THREAD_JOIN_TIMEOUT = 2.0
+RECEIVE_THREAD_JOIN_TIMEOUT = 2.0  # Bounded join keeps shutdown responsive for CLI users and tests
+EVENT_THREAD_JOIN_TIMEOUT = 2.0  # Matches receive thread join window for consistent teardown
 
 # BLE timeout and retry constants
 BLE_SCAN_TIMEOUT = 10.0
@@ -69,11 +71,17 @@ RECEIVE_WAIT_TIMEOUT = 0.5
 EMPTY_READ_RETRY_DELAY = 0.1
 EMPTY_READ_MAX_RETRIES = 5
 TRANSIENT_READ_MAX_RETRIES = 3
+TRANSIENT_READ_RETRY_DELAY = 0.1
 SEND_PROPAGATION_DELAY = 0.01
+GATT_IO_TIMEOUT = 10.0
+NOTIFICATION_START_TIMEOUT = 10.0
 CONNECTION_TIMEOUT = 60.0
 AUTO_RECONNECT_INITIAL_DELAY = 1.0
 AUTO_RECONNECT_MAX_DELAY = 30.0
 AUTO_RECONNECT_BACKOFF = 2.0
+AUTO_RECONNECT_JITTER_RATIO = 0.15  # ±15% jitter prevents reconnect stampedes across hosts
+
+BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
 
 # Error message constants
 ERROR_READING_BLE = "Error reading BLE"
@@ -89,8 +97,31 @@ ERROR_NO_PERIPHERALS_FOUND = (
 )
 
 # BLEClient-specific constants
-BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
+BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0  # Ensures client.close() does not block shutdown indefinitely
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
+
+
+def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
+    """
+    Extract a three-part integer version tuple from `version_str`.
+
+    This helper is intentionally permissive — non-numeric segments are ignored and
+    missing components are treated as zeros.
+    """
+    matches = re.findall(r"\d+", version_str or "")
+    while len(matches) < 3:
+        matches.append("0")
+    try:
+        return tuple(int(segment) for segment in matches[:3])  # type: ignore[return-value]
+    except ValueError:
+        return 0, 0, 0
+
+
+def _bleak_supports_connected_fallback() -> bool:
+    """
+    Determine whether the installed bleak version supports the connected-device fallback.
+    """
+    return _parse_version_triplet(BLEAK_VERSION) >= BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
 
 
 # TODO: ConnectionState enum is part of planned future refactoring to implement
@@ -362,7 +393,7 @@ class BLEErrorHandler:
             return func()
         except (BleakError, BleakDBusError, DecodeError, FutureTimeoutError) as e:
             if log_error:
-                logger.debug(f"{error_msg}: {e}")
+                logger.debug("%s: %s", error_msg, e)
             if reraise:
                 raise
             return default_return
@@ -379,7 +410,7 @@ class BLEErrorHandler:
         try:
             func()
         except Exception as e:
-            logger.debug(f"Error during {cleanup_name}: {e}")
+            logger.debug("Error during %s: %s", cleanup_name, e)
 
     @staticmethod
     def is_recoverable_error(error: Exception) -> bool:
@@ -440,6 +471,9 @@ class BLEInterface(MeshInterface):
     need platform-specific setup for BLE operations.
     """
 
+    # Lock acquisition order (outermost first): _connect_lock -> _client_lock -> _closing_lock.
+    # Maintaining this order prevents deadlocks when multiple locks are needed.
+
     class BLEError(Exception):
         """An exception class for BLE errors."""
 
@@ -474,6 +508,7 @@ class BLEInterface(MeshInterface):
         self._client_lock: Lock = Lock()   # Protects client access during reconnection
         self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
         self._closing: bool = False        # Indicates shutdown in progress
+        self._closed: bool = False         # Tracks completion of shutdown for idempotent close()
         self._exit_handler = None
         self.address = address
         self._last_connection_request: Optional[str] = BLEInterface._sanitize_address(
@@ -513,7 +548,7 @@ class BLEInterface(MeshInterface):
 
         self.client: Optional["BLEClient"] = None
         try:
-            logger.debug(f"BLE connecting to: {address if address else 'any'}")
+            logger.debug("BLE connecting to: %s", address if address else "any")
             client = self.connect(address)
             with self._client_lock:
                 self.client = client
@@ -570,7 +605,7 @@ class BLEInterface(MeshInterface):
         """
         # Ignore disconnects during shutdown to avoid race conditions
         if self._closing:
-            logger.debug(f"Ignoring disconnect from {source} during shutdown.")
+            logger.debug("Ignoring disconnect from %s during shutdown.", source)
             return False
 
         # Determine which client we're dealing with
@@ -587,20 +622,20 @@ class BLEInterface(MeshInterface):
         elif bleak_client:
             address = getattr(bleak_client, "address", repr(bleak_client))
 
-        logger.debug(f"BLE client {address} disconnected (source: {source}).")
+        logger.debug("BLE client %s disconnected (source: %s).", address, source)
 
         if self.auto_reconnect:
             previous_client = None
             with self._client_lock:
                 # Prevent duplicate disconnect notifications
                 if self._disconnect_notified:
-                    logger.debug(f"Ignoring duplicate disconnect from {source}.")
+                    logger.debug("Ignoring duplicate disconnect from %s.", source)
                     return True
 
                 current_client = self.client
                 # Ignore stale client disconnects (from previous connections)
                 if target_client and current_client and target_client is not current_client:
-                    logger.debug(f"Ignoring stale disconnect from {source}.")
+                    logger.debug("Ignoring stale disconnect from %s.", source)
                     return True
 
                 previous_client = current_client
@@ -696,7 +731,9 @@ class BLEInterface(MeshInterface):
 
                         if self._closing or not self.auto_reconnect:
                             return
-                        time.sleep(delay + (0.25 * delay * (random.random() - 0.5)))  # noqa: S311 non-cryptographic jitter
+                        jitter = AUTO_RECONNECT_JITTER_RATIO * ((random.random() * 2.0) - 1.0)  # noqa: S311 non-cryptographic jitter
+                        sleep_seconds = delay * (1.0 + jitter)
+                        time.sleep(sleep_seconds)
                         delay = min(delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY)
                 finally:
                     with self._client_lock:
@@ -723,11 +760,11 @@ class BLEInterface(MeshInterface):
         	exc_info (bool): If True, include exception traceback information in the debug log.
         """
         self._malformed_notification_count += 1
-        logger.debug(reason, exc_info=exc_info)
+        logger.debug("%s", reason, exc_info=exc_info)
         if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
             logger.warning(
-                f"Received {self._malformed_notification_count} malformed FROMNUM notifications. "
-                "Check BLE connection stability."
+                "Received %d malformed FROMNUM notifications. Check BLE connection stability.",
+                self._malformed_notification_count,
             )
             self._malformed_notification_count = 0
 
@@ -749,7 +786,7 @@ class BLEInterface(MeshInterface):
                 self._handle_malformed_fromnum(f"FROMNUM notify has unexpected length {len(b)}; ignoring")
                 return
             from_num = struct.unpack("<I", b)[0]
-            logger.debug(f"FROMNUM notify: {from_num}")
+            logger.debug("FROMNUM notify: %d", from_num)
             # Successful parse: reset malformed counter
             self._malformed_notification_count = 0
         except (struct.error, ValueError):
@@ -777,9 +814,17 @@ class BLEInterface(MeshInterface):
             If the legacy text log characteristic is present, subscribes the legacy log handler; if the protobuf-based log characteristic is present, subscribes the protobuf log handler.
             """
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
-                client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
+                client.start_notify(
+                    LEGACY_LOGRADIO_UUID,
+                    self.legacy_log_radio_handler,
+                    timeout=NOTIFICATION_START_TIMEOUT,
+                )
             if client.has_characteristic(LOGRADIO_UUID):
-                client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
+                client.start_notify(
+                    LOGRADIO_UUID,
+                    self.log_radio_handler,
+                    timeout=NOTIFICATION_START_TIMEOUT,
+                )
 
         # Start optional log notifications; failures here are non-fatal.
         try:
@@ -788,7 +833,11 @@ class BLEInterface(MeshInterface):
             logger.debug("Failed to start optional log notifications: %s", e)
 
         # Critical notification for packet ingress
-        client.start_notify(FROMNUM_UUID, self.from_num_handler)
+        client.start_notify(
+            FROMNUM_UUID,
+            self.from_num_handler,
+            timeout=NOTIFICATION_START_TIMEOUT,
+        )
 
     def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
@@ -835,6 +884,21 @@ class BLEInterface(MeshInterface):
             )
 
     @staticmethod
+    async def _with_timeout(awaitable, timeout: Optional[float], label: str):
+        """
+        Await `awaitable`, enforcing `timeout` seconds if provided.
+
+        Raises:
+            BLEInterface.BLEError: when the awaitable does not finish before the timeout elapses.
+        """
+        if timeout is None:
+            return await awaitable
+        try:
+            return await asyncio.wait_for(awaitable, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise BLEInterface.BLEError(f"{label} timed out after {timeout:.1f} seconds") from exc
+
+    @staticmethod
     def scan() -> List[BLEDevice]:
         """
         Scan for BLE devices advertising the Meshtastic service UUID.
@@ -860,7 +924,8 @@ class BLEInterface(MeshInterface):
                 return devices
             if not isinstance(response, dict):
                 logger.warning(
-                    f"BleakScanner.discover returned unexpected type: {type(response)}"
+                    "BleakScanner.discover returned unexpected type: %s",
+                    type(response),
                 )
                 return devices
             for _, value in response.items():
@@ -868,7 +933,8 @@ class BLEInterface(MeshInterface):
                     device, adv = value
                 else:
                     logger.warning(
-                        f"Unexpected return type from BleakScanner.discover: {type(value)}"
+                        "Unexpected return type from BleakScanner.discover: %s",
+                        type(value),
                     )
                     continue
                 suuids = getattr(adv, "service_uuids", None)
@@ -941,7 +1007,12 @@ class BLEInterface(MeshInterface):
         if address is None or not address.strip():
             return None
         return (
-            address.strip().replace("-", "").replace("_", "").replace(":", "").lower()
+            address.strip()
+            .replace("-", "")
+            .replace("_", "")
+            .replace(":", "")
+            .replace(" ", "")
+            .lower()
         )
 
     def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
@@ -958,6 +1029,13 @@ class BLEInterface(MeshInterface):
         Returns:
             List[BLEDevice]: List of connected Meshtastic devices
         """
+        if not _bleak_supports_connected_fallback():
+            logger.debug(
+                "Skipping fallback connected-device scan; bleak %s < %s",
+                BLEAK_VERSION,
+                ".".join(str(part) for part in BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION),
+            )
+            return []
         try:
             # Try to use BleakScanner to get cached device information
             # This works even when scanning fails due to adapter issues
@@ -985,7 +1063,11 @@ class BLEInterface(MeshInterface):
 
                 # Try to get device information from the backend
                 if hasattr(scanner, '_backend') and hasattr(scanner._backend, 'get_devices'):
-                    backend_devices = await scanner._backend.get_devices()
+                    backend_devices = await BLEInterface._with_timeout(
+                        scanner._backend.get_devices(),
+                        BLE_SCAN_TIMEOUT,
+                        "connected-device enumeration",
+                    )
 
                     for device in backend_devices:
                         # Check if device has Meshtastic service UUID
@@ -1022,20 +1104,38 @@ class BLEInterface(MeshInterface):
                     Executes _get_devices_async_and_filter(address) and stores the returned list into the nonlocal `devices` name so the outer scope can access the discovered devices.
                     """
                     nonlocal devices
-                    devices = asyncio.run(_get_devices_async_and_filter(address))
+                    devices = asyncio.run(
+                        BLEInterface._with_timeout(
+                            _get_devices_async_and_filter(address),
+                            BLE_SCAN_TIMEOUT,
+                            "connected-device fallback",
+                        )
+                    )
 
                 thread = Thread(target=_run_async_in_thread)
                 thread.start()
-                thread.join()
+                thread.join(timeout=BLE_SCAN_TIMEOUT)
+                if thread.is_alive():
+                    logger.debug(
+                        "Fallback connected-device discovery thread exceeded %.1fs timeout",
+                        BLE_SCAN_TIMEOUT,
+                    )
+                    return []
             except RuntimeError:
                 # No running loop in this thread
-                devices = asyncio.run(_get_devices_async_and_filter(address))
+                devices = asyncio.run(
+                    BLEInterface._with_timeout(
+                        _get_devices_async_and_filter(address),
+                        BLE_SCAN_TIMEOUT,
+                        "connected-device fallback",
+                    )
+                )
 
-            logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
+            logger.debug("Found %d connected Meshtastic devices via fallback", len(devices))
             return devices
 
-        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError) as e:
-            logger.debug(f"Fallback device discovery failed: {e}")
+        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError, self.BLEError) as e:
+            logger.debug("Fallback device discovery failed: %s", e)
             return []
 
     def connect(self, address: Optional[str] = None) -> "BLEClient":
@@ -1054,6 +1154,7 @@ class BLEInterface(MeshInterface):
         """
 
         with self._connect_lock:
+            # Invariant: BLEClient lifecycle (create/close) stays under _connect_lock to avoid concurrent loop manipulation.
             requested_identifier = address if address is not None else self.address
             normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
@@ -1085,7 +1186,7 @@ class BLEInterface(MeshInterface):
                     logger.debug(
                         "BLE services not available immediately after connect; getting services"
                     )
-                    client.get_services()
+                    client.get_services(timeout=GATT_IO_TIMEOUT)
                 # Ensure notifications are always active for this client (reconnect-safe)
                 self._register_notifications(client)
                 # Publish the new client before waking any waiters
@@ -1133,7 +1234,7 @@ class BLEInterface(MeshInterface):
         Returns:
             bool: `true` if the read loop should continue to allow auto-reconnect, `false` otherwise.
         """
-        logger.debug(f"Device disconnected: {error_message}")
+        logger.debug("Device disconnected: %s", error_message)
         should_continue = self._handle_disconnect(f"read_loop: {error_message}", client=previous_client)
         if not should_continue:
             # End our read loop immediately
@@ -1193,16 +1294,16 @@ class BLEInterface(MeshInterface):
                         break
                     try:
                         # Read from the FROMRADIO characteristic for incoming packets
-                        b = client.read_gatt_char(FROMRADIO_UUID)
+                        b = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
                         if not b:
                             # Handle empty reads with limited retries to avoid busy-looping
                             if retries < EMPTY_READ_MAX_RETRIES:
                                 time.sleep(EMPTY_READ_RETRY_DELAY)
                                 retries += 1
                                 continue
-                            logger.warning(f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}")
+                            logger.warning("Exceeded max retries for empty BLE read from %s", FROMRADIO_UUID)
                             break  # Too many empty reads, exit to recheck state
-                        logger.debug(f"FROMRADIO read: {b.hex()}")
+                        logger.debug("FROMRADIO read: %s", b.hex())
                         self._handleFromRadio(b)
                         retries = 0  # Reset retry counter on successful read
                         self._read_retry_count = 0  # Reset transient error retry counter on successful read
@@ -1223,7 +1324,7 @@ class BLEInterface(MeshInterface):
                         if retry_count < TRANSIENT_READ_MAX_RETRIES:
                             self._read_retry_count = retry_count + 1
                             logger.debug("Transient BLE read error, retrying (%d/%d)", retry_count + 1, TRANSIENT_READ_MAX_RETRIES)
-                            time.sleep(0.1)
+                            time.sleep(TRANSIENT_READ_RETRY_DELAY)
                             continue
                         self._read_retry_count = 0
                         logger.debug("Persistent BLE read error after retries", exc_info=True)
@@ -1259,10 +1360,10 @@ class BLEInterface(MeshInterface):
         with self._client_lock:
             client = self.client
             if client:  # Silently ignore writes while shutting down to avoid errors
-                logger.debug(f"TORADIO write: {b.hex()}")
+                logger.debug("TORADIO write: %s", b.hex())
                 try:
                     # Use write-with-response to ensure delivery is acknowledged by the peripheral
-                    client.write_gatt_char(TORADIO_UUID, b, response=True)
+                    client.write_gatt_char(TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT)
                     write_successful = True
                 except (BleakError, RuntimeError, OSError) as e:
                     # Log detailed error information and wrap in our interface exception
@@ -1287,6 +1388,11 @@ class BLEInterface(MeshInterface):
             and waits briefly for pending disconnect-related notifications and the receive thread to finish.
         """
         with self._closing_lock:
+            if self._closed:
+                logger.debug(
+                    "BLEInterface.close called on already closed interface; ignoring"
+                )
+                return
             if self._closing:
                 logger.debug(
                     "BLEInterface.close called while another shutdown is in progress; ignoring"
@@ -1336,6 +1442,8 @@ class BLEInterface(MeshInterface):
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
+        with self._closing_lock:
+            self._closed = True
 
     def _wait_for_disconnect_notifications(
         self, timeout: Optional[float] = None
@@ -1424,6 +1532,8 @@ class BLEClient:
         """
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
+        # Share exception type with BLEInterface for consistent public API.
+        self.BLEError = BLEInterface.BLEError
 
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
@@ -1521,37 +1631,38 @@ class BLEClient:
         """
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
-    def read_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
+    def read_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """Read a GATT characteristic from the connected BLE device.
 
         Forwards all arguments to the underlying Bleak client's `read_gatt_char`.
 
         Parameters:
             *args: Positional arguments forwarded to `read_gatt_char` (typically the characteristic UUID or handle).
+            timeout (float | None): Maximum seconds to wait for the read to complete.
             **kwargs: Keyword arguments forwarded to `read_gatt_char`.
 
         Returns:
             bytes: The raw bytes read from the characteristic.
         """
-        return self.async_await(self.bleak_client.read_gatt_char(*args, **kwargs))
+        return self.async_await(self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout)
 
-    def write_gatt_char(self, *args, **kwargs):  # pylint: disable=C0116
+    def write_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Write the given bytes to a GATT characteristic on the connected BLE device and wait for completion.
         
         Raises:
             BLEInterface.BLEError: If the write operation fails or times out.
         """
-        self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs))
+        self.async_await(self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout)
 
-    def get_services(self):
+    def get_services(self, timeout: Optional[float] = None):
         """
         Retrieve the discovered GATT services and characteristics for the connected device.
         
         Returns:
             The device's GATT services and their characteristics as returned by the underlying BLE library.
         """
-        return self.async_await(self.bleak_client.get_services())
+        return self.async_await(self.bleak_client.get_services(), timeout=timeout)
 
     def has_characteristic(self, specifier):
         """
@@ -1566,14 +1677,14 @@ class BLEClient:
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             self.error_handler.safe_execute(
-                self.get_services,
+                lambda: self.get_services(timeout=GATT_IO_TIMEOUT),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False
             )
             services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
-    def start_notify(self, *args, **kwargs):  # pylint: disable=C0116
+    def start_notify(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Subscribe to notifications for a BLE characteristic on the connected device.
 
@@ -1582,7 +1693,7 @@ class BLEClient:
             callback: Callable invoked when a notification is received; called as (sender, data) where `data` is a bytearray.
             *args, **kwargs: Additional arguments forwarded to the BLE backend's notification start call.
         """
-        self.async_await(self.bleak_client.start_notify(*args, **kwargs))
+        self.async_await(self.bleak_client.start_notify(*args, **kwargs), timeout=timeout)
 
     def close(self):  # pylint: disable=C0116
         """
@@ -1632,6 +1743,9 @@ class BLEClient:
         Raises:
             BLEInterface.BLEError: If the wait times out.
         """
+        # Exception mapping contract:
+        #   - FutureTimeoutError -> BLEInterface.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
+        #   - Bleak* exceptions propagate so BLEInterface wrappers can convert them consistently.
         future = self.async_run(coro)
         try:
             return future.result(timeout)
