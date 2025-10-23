@@ -864,6 +864,17 @@ class BLEInterface(MeshInterface):
                 devices = asyncio.run(_get_devices_async_and_filter(address))
             else:
                 # A loop is running in this thread: spin a private loop just for this call
+                # 
+                # Note: This pattern of creating a new event loop within a thread that already
+                # has a running loop is generally discouraged, but is considered safe here because:
+                # 1. The async function (_get_devices_async_and_filter) is simple and isolated
+                # 2. It only makes a single async call to scanner._backend.get_devices()
+                # 3. It doesn't spawn background tasks or interact with other async resources
+                # 4. The loop is very short-lived and immediately closed
+                # 
+                # This approach avoids adding dependencies like nest_asyncio while providing
+                # the needed fallback functionality. If the async function becomes more complex
+                # in the future, consider alternative approaches.
                 _loop = asyncio.new_event_loop()
                 try:
                     devices = _loop.run_until_complete(_get_devices_async_and_filter(address))
