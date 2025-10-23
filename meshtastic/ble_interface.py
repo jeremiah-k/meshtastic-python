@@ -810,6 +810,11 @@ class BLEInterface(MeshInterface):
 
         addressed_devices = BLEInterface.scan()
 
+        # If scan didn't find any devices and we have a specific address, try fallback
+        if not addressed_devices and address:
+            logger.debug("Scan found no devices, trying fallback to already-connected devices")
+            addressed_devices = self._find_connected_devices(address)
+
         if address:
             sanitized_address = BLEInterface._sanitize_address(address)
             filtered_devices = []
@@ -852,6 +857,81 @@ class BLEInterface(MeshInterface):
         return (
             address.strip().replace("-", "").replace("_", "").replace(":", "").lower()
         )
+
+    def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
+        """
+        Fallback method to find already-connected Meshtastic devices when scanning fails.
+        
+        This method uses the system's Bluetooth adapter to check for devices that are
+        already connected and have the Meshtastic service UUID, which may not be
+        discoverable via normal scanning when already connected.
+        
+        Parameters:
+            address (Optional[str]): Specific address to look for, if None returns all connected Meshtastic devices
+            
+        Returns:
+            List[BLEDevice]: List of connected Meshtastic devices
+        """
+        try:
+            # Try to use BleakScanner to get cached device information
+            # This works even when scanning fails due to adapter issues
+            import asyncio
+            from bleak import BleakScanner
+            
+            # Create a simple event loop for this operation
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Get devices from the scanner's cached data
+                scanner = BleakScanner()
+                devices = []
+                
+                # Try to get device information from the backend
+                if hasattr(scanner, '_backend') and hasattr(scanner._backend, 'get_devices'):
+                    backend_devices = loop.run_until_complete(scanner._backend.get_devices())
+                    
+                    for device in backend_devices:
+                        # Check if device has Meshtastic service UUID
+                        if hasattr(device, 'metadata') and device.metadata:
+                            uuids = device.metadata.get('uuids', [])
+                            if SERVICE_UUID in uuids:
+                                # If specific address requested, filter by it
+                                if address:
+                                    sanitized_target = BLEInterface._sanitize_address(address)
+                                    sanitized_addr = BLEInterface._sanitize_address(device.address)
+                                    sanitized_name = BLEInterface._sanitize_address(device.name) if device.name else ""
+                                    
+                                    if sanitized_target in (sanitized_addr, sanitized_name):
+                                        # Create a BLEDevice-like object
+                                        from bleak import BLEDevice
+                                        ble_device = BLEDevice(
+                                            device.address,
+                                            device.name,
+                                            device.metadata,
+                                            rssi=device.rssi if hasattr(device, 'rssi') else None
+                                        )
+                                        devices.append(ble_device)
+                                else:
+                                    # Add all connected Meshtastic devices
+                                    from bleak import BLEDevice
+                                    ble_device = BLEDevice(
+                                        device.address,
+                                        device.name,
+                                        device.metadata,
+                                        rssi=device.rssi if hasattr(device, 'rssi') else None
+                                    )
+                                    devices.append(ble_device)
+                
+                logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
+                return devices
+                
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.debug(f"Fallback device discovery failed: {e}")
+            return []
 
     def connect(self, address: Optional[str] = None) -> "BLEClient":
         """
