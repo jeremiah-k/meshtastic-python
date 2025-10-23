@@ -9,8 +9,10 @@ import random
 import struct
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
+from enum import Enum
 from queue import Empty
-from threading import Event, Lock, Thread, current_thread
+from threading import Event, Lock, RLock, Thread, current_thread
 from typing import List, Optional
 
 from bleak import BleakClient as BleakRootClient
@@ -87,6 +89,166 @@ ERROR_NO_PERIPHERALS_FOUND = (
     "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
 )
 ERROR_ASYNC_TIMEOUT = "Async operation timed out"
+
+
+class ConnectionState(Enum):
+    """Enum for managing BLE connection states."""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    DISCONNECTING = "disconnecting"
+    RECONNECTING = "reconnecting"
+    ERROR = "error"
+
+
+@dataclass
+class BLEConfig:
+    """Configuration class for BLE interface settings."""
+    # Timeout values (seconds)
+    disconnect_timeout: float = 5.0
+    thread_join_timeout: float = 2.0
+    scan_timeout: float = 10.0
+    receive_wait_timeout: float = 0.5
+    connection_timeout: float = 60.0
+    
+    # Retry configuration
+    empty_read_retry_delay: float = 0.1
+    empty_read_max_retries: int = 5
+    send_propagation_delay: float = 0.01
+    
+    # Auto-reconnect configuration
+    auto_reconnect_initial_delay: float = 1.0
+    auto_reconnect_max_delay: float = 30.0
+    auto_reconnect_backoff: float = 2.0
+    
+    # Thresholds
+    malformed_notification_threshold: int = 10
+
+
+class ThreadCoordinator:
+    """Simplified thread management for BLE operations."""
+    
+    def __init__(self):
+        self._lock = RLock()
+        self._threads: List[Thread] = []
+        self._events: dict[str, Event] = {}
+    
+    def create_thread(self, target, name: str, daemon: bool = True) -> Thread:
+        """Create and track a new thread."""
+        with self._lock:
+            thread = Thread(target=target, name=name, daemon=daemon)
+            self._threads.append(thread)
+            return thread
+    
+    def create_event(self, name: str) -> Event:
+        """Create and track a new event."""
+        with self._lock:
+            event = Event()
+            self._events[name] = event
+            return event
+    
+    def get_event(self, name: str) -> Optional[Event]:
+        """Get a tracked event by name."""
+        with self._lock:
+            return self._events.get(name)
+    
+    def start_thread(self, thread: Thread):
+        """Start a tracked thread."""
+        with self._lock:
+            if thread in self._threads:
+                thread.start()
+    
+    def join_all(self, timeout: float = None):
+        """Join all tracked threads."""
+        with self._lock:
+            for thread in self._threads:
+                if thread.is_alive():
+                    thread.join(timeout=timeout)
+    
+    def set_event(self, name: str):
+        """Set a tracked event."""
+        with self._lock:
+            if name in self._events:
+                self._events[name].set()
+    
+    def clear_event(self, name: str):
+        """Clear a tracked event."""
+        with self._lock:
+            if name in self._events:
+                self._events[name].clear()
+    
+    def wait_for_event(self, name: str, timeout: float = None) -> bool:
+        """Wait for a tracked event."""
+        event = self.get_event(name)
+        if event:
+            return event.wait(timeout=timeout)
+        return False
+    
+    def cleanup(self):
+        """Clean up all threads and events."""
+        with self._lock:
+            # Signal all events
+            for event in self._events.values():
+                event.set()
+            
+            # Join threads with timeout
+            for thread in self._threads:
+                if thread.is_alive():
+                    thread.join(timeout=2.0)
+            
+            # Clear tracking
+            self._threads.clear()
+            self._events.clear()
+
+
+class BLEErrorHandler:
+    """Helper class for consistent error handling in BLE operations."""
+    
+    @staticmethod
+    def safe_execute(func, default_return=None, log_error: bool = True, 
+                    error_msg: str = "Error in operation", reraise: bool = False):
+        """Safely execute a function with consistent error handling."""
+        try:
+            return func()
+        except (BleakError, BleakDBusError, DecodeError, FutureTimeoutError) as e:
+            if log_error:
+                logger.debug(f"{error_msg}: {e}")
+            if reraise:
+                raise
+            return default_return
+        except Exception as e:
+            if log_error:
+                logger.error(f"Unexpected error in {error_msg}: {e}")
+            if reraise:
+                raise
+            return default_return
+    
+    @staticmethod
+    def safe_cleanup(func, cleanup_name: str = "cleanup operation"):
+        """Safely execute cleanup operations without raising exceptions."""
+        try:
+            func()
+        except Exception as e:
+            logger.debug(f"Error during {cleanup_name}: {e}")
+    
+    @staticmethod
+    def is_recoverable_error(error: Exception) -> bool:
+        """Check if an error is recoverable (should not stop operations)."""
+        recoverable_errors = (
+            DecodeError,  # Corrupted protobuf packets
+            FutureTimeoutError,  # Timeouts
+            Empty,  # Queue empty
+        )
+        return isinstance(error, recoverable_errors)
+    
+    @staticmethod
+    def is_critical_error(error: Exception) -> bool:
+        """Check if an error is critical (should stop operations)."""
+        critical_errors = (
+            BleakDBusError,  # D-Bus system errors
+            ConnectionError,  # Connection failures
+        )
+        return isinstance(error, critical_errors)
 
 
 class BLEInterface(MeshInterface):
