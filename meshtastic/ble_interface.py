@@ -2,6 +2,7 @@
 import asyncio
 import atexit
 import contextlib
+import importlib.metadata
 import io
 import logging
 import random
@@ -18,8 +19,13 @@ from typing import List, Optional, Tuple
 from bleak import BLEDevice
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
-from bleak import __version__ as BLEAK_VERSION
 from bleak.exc import BleakDBusError, BleakError
+
+# Get bleak version - try direct import first, fallback to importlib.metadata
+try:
+    from bleak import __version__ as BLEAK_VERSION
+except ImportError:
+    BLEAK_VERSION = importlib.metadata.version("bleak")
 from google.protobuf.message import DecodeError
 
 from meshtastic import publishingThread
