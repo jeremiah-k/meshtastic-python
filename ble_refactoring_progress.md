@@ -87,11 +87,15 @@ This document tracks the systematic refactoring of the BLE interface according t
 ## Phase 5: Constants and Configuration Consolidation
 
 ### Task 13: Group related constants into BLEConfig dataclass
-- [ ] **PENDING** - Consolidate scattered constants
+- [x] **COMPLETED** - Consolidate scattered constants into BLEConfig
+- **Date**: 2025-10-22
+- **Notes**: Added all BLE UUIDs, timeout values, retry configuration, auto-reconnect settings, thresholds, and error messages to BLEConfig dataclass.
 - **Dependencies**: Task 12
 
 ### Task 14: Update all references to use config object
-- [ ] **PENDING** - Replace scattered constant usage
+- [x] **COMPLETED** - Replace scattered constant usage with config
+- **Date**: 2025-10-22
+- **Notes**: Updated all references to global constants to use self.config instead. All 12 tests passing.
 - **Dependencies**: Task 13
 
 ## Phase 6: Final Integration
@@ -118,12 +122,12 @@ This document tracks the systematic refactoring of the BLE interface according t
 
 ## Progress Summary
 
-### Completed Tasks: 10/19 (53%)
+### Completed Tasks: 12/19 (63%)
 ### In Progress Tasks: 0/19 (0%)
-### Pending Tasks: 9/19 (47%)
+### Pending Tasks: 7/19 (37%)
 
-### Current Phase: Phase 5 - Constants and Configuration Consolidation
-### Phase Progress: 0/2 tasks completed (0%)
+### Current Phase: Phase 6 - Final Integration
+### Phase Progress: 0/4 tasks completed (0%)
 
 ### Phase 1 - State Management Consolidation: ✅ COMPLETED
 All infrastructure components successfully added and tested.
