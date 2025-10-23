@@ -8,6 +8,7 @@ Reach for this **instance recreation pattern** when simplicity matters more than
 
 For better performance in long-running applications, see `ble_reconnect_instance_reuse_example.py`, which keeps one interface instance alive and lets its internal auto-reconnect loop handle disconnects.
 """
+
 import argparse
 import logging
 import threading
@@ -30,12 +31,14 @@ disconnected_event = threading.Event()
 def on_connection_change(interface, connected):
     """
     Handle BLE interface connection changes and notify the main loop when a disconnect occurs.
-    
+
     Logs the interface's address (or repr) and connection state. When disconnected, sets the module-level `disconnected_event` to signal the main loop to attempt a reconnect.
-    
-    Parameters:
+
+    Parameters
+    ----------
         interface: The BLE interface object whose connection status changed; its `address` attribute is used for logging if present.
         connected (bool): `True` if the interface is connected, `False` if it is disconnected.
+
     """
     iface_label = getattr(interface, "address", repr(interface))
     logger.info(
@@ -51,10 +54,10 @@ def on_connection_change(interface, connected):
 def main():
     """
     Run a reconnection loop that repeatedly creates a new BLEInterface for each connection attempt.
-    
-    Parses a required BLE address from command-line arguments, subscribes to connection-status events 
-    to detect disconnects, and uses a fresh BLEInterface instance (via a context manager) for each attempt. 
-    Exits cleanly on KeyboardInterrupt, logs BLE-related and unexpected errors, and retries after 
+
+    Parses a required BLE address from command-line arguments, subscribes to connection-status events
+    to detect disconnects, and uses a fresh BLEInterface instance (via a context manager) for each attempt.
+    Exits cleanly on KeyboardInterrupt, logs BLE-related and unexpected errors, and retries after
     RETRY_DELAY_SECONDS when a connection ends or fails.
     """
     logging.basicConfig(level=logging.INFO)
@@ -62,8 +65,12 @@ def main():
         description="Meshtastic BLE interface reconnection (instance recreation pattern)."
     )
     parser.add_argument("address", help="The BLE address of your Meshtastic device.")
-    parser.add_argument("--retry-delay", type=int, default=RETRY_DELAY_SECONDS,
-                        help=f"Seconds to wait before reconnect attempts (default: {RETRY_DELAY_SECONDS}).")
+    parser.add_argument(
+        "--retry-delay",
+        type=int,
+        default=RETRY_DELAY_SECONDS,
+        help=f"Seconds to wait before reconnect attempts (default: {RETRY_DELAY_SECONDS}).",
+    )
     args = parser.parse_args()
     address = args.address
     delay = args.retry_delay
@@ -81,7 +88,9 @@ def main():
                     noProto=True,  # Set to False in a real application
                     auto_reconnect=False,
                 ):
-                    logger.info("Connection successful. Waiting for disconnection event...")
+                    logger.info(
+                        "Connection successful. Waiting for disconnection event..."
+                    )
                     disconnected_event.wait()
                     logger.info("Disconnected normally.")
             except meshtastic.ble_interface.BLEInterface.BLEError:

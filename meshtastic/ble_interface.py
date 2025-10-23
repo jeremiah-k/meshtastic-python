@@ -635,7 +635,8 @@ class BLEInterface(MeshInterface):
 
         Returns:
         -------
-            bool: `true` if the interface should remain running and (when enabled) attempt auto-reconnect, `false` if the interface has begun shutdown.
+            bool: `true` if the interface should remain running and (when enabled) attempt auto-reconnect,
+              `false` if the interface has begun shutdown.
 
         """
         # Ignore disconnects during shutdown to avoid race conditions
@@ -724,7 +725,10 @@ class BLEInterface(MeshInterface):
         """
         Start a background thread that repeatedly attempts to reconnect over BLE until a connection succeeds or shutdown is initiated.
 
-        This schedules a single auto-reconnect worker (no-op if auto-reconnect is disabled, the interface is closing, or a reconnect thread is already running). The worker repeatedly tries to connect to the stored address, backing off with jitter between attempts, and stops when a connection succeeds, auto-reconnect is disabled, or the interface is closing. When the worker exits it clears the internal reconnect-thread reference.
+        This schedules a single auto-reconnect worker (no-op if auto-reconnect is disabled, the interface is closing,
+        or a reconnect thread is already running). The worker repeatedly tries to connect to the stored address,
+        backing off with jitter between attempts, and stops when a connection succeeds, auto-reconnect is disabled,
+        or the interface is closing. When the worker exits it clears the internal reconnect-thread reference.
         """
 
         if not self.auto_reconnect:
@@ -747,7 +751,9 @@ class BLEInterface(MeshInterface):
                 """
                 Attempt to re-establish a BLE connection in a background reconnect loop.
 
-                Keeps trying to connect to the interface's target address until a connection succeeds, the interface is closed, or auto-reconnect is disabled. Retries use exponential backoff with jitter between attempts and log each outcome. When the loop exits, clears the internal reconnect-thread tracker.
+                Keeps trying to connect to the interface's target address until a connection succeeds, the interface
+                is closed, or auto-reconnect is disabled. Retries use exponential backoff with jitter between attempts
+                and log each outcome. When the loop exits, clears the internal reconnect-thread tracker.
                 """
                 delay = AUTO_RECONNECT_INITIAL_DELAY
                 try:
@@ -807,7 +813,8 @@ class BLEInterface(MeshInterface):
         """
         Increment and track malformed FROMNUM notification occurrences and emit a warning when a threshold is reached.
 
-        Increments the internal malformed-notification counter, logs the provided reason (optionally with exception info), and when the counter reaches MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
+        Increments the internal malformed-notification counter, logs the provided reason (optionally with exception info),
+        and when the counter reaches MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
 
         Args:
         ----
@@ -876,7 +883,8 @@ class BLEInterface(MeshInterface):
             """
             Register log notification handlers for available radio log characteristics on the current client.
 
-            If the legacy text log characteristic is present, subscribes the legacy log handler; if the protobuf-based log characteristic is present, subscribes the protobuf log handler.
+            If the legacy text log characteristic is present, subscribes the legacy log handler; if the protobuf-based
+            log characteristic is present, subscribes the protobuf log handler.
             """
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
                 client.start_notify(
@@ -1021,11 +1029,13 @@ class BLEInterface(MeshInterface):
 
         Args:
         ----
-            address (Optional[str]): Address or device name to match; comparison ignores case and common separators (':', '-', '_', and spaces). If None, any discovered Meshtastic device may be returned.
+            address (Optional[str]): Address or device name to match; comparison ignores case and common separators
+                (':', '-', '_', and spaces). If None, any discovered Meshtastic device may be returned.
 
         Returns:
         -------
-            BLEDevice: The matched BLE device. If no address is provided and multiple devices are discovered, the first discovered device is returned.
+            BLEDevice: The matched BLE device. If no address is provided and multiple devices are discovered,
+                the first discovered device is returned.
 
         Raises:
         ------
@@ -1087,7 +1097,8 @@ class BLEInterface(MeshInterface):
 
         Returns:
         -------
-            Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace, and lowercased, or `None` if `address` is None or contains only whitespace.
+            Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace,
+                and lowercased, or `None` if `address` is None or contains only whitespace.
 
         """
         if address is None or not address.strip():
@@ -1145,7 +1156,9 @@ class BLEInterface(MeshInterface):
                 Retrieve connected Meshtastic BLE devices and optionally filter by address or name.
 
                 Args:
-                    address_to_find (Optional[str]): Bluetooth address or device name to match; separators (":", "-", "_", spaces) are ignored when comparing. If None, returns all connected devices advertising the Meshtastic service.
+                    address_to_find (Optional[str]): Bluetooth address or device name to match; separators (":", "-", "_",
+                        spaces) are ignored when comparing. If None, returns all connected devices advertising the
+                        Meshtastic service.
 
                 Returns:
                 -------
@@ -1629,7 +1642,9 @@ class BLEInterface(MeshInterface):
         """
         Wait up to `timeout` seconds for queued publish notifications to flush before proceeding.
 
-        If the queue does not flush within `timeout`, this method logs the timeout if the publishing thread is still alive; if the publishing thread is not running, it drains the publish queue synchronously. Errors raised while attempting the flush are caught and logged.
+        If the queue does not flush within `timeout`, this method logs the timeout if the publishing thread is still alive;
+        if the publishing thread is not running, it drains the publish queue synchronously. Errors raised while attempting
+        the flush are caught and logged.
 
         Args:
         ----
@@ -1656,7 +1671,8 @@ class BLEInterface(MeshInterface):
         """
         Disconnect the specified BLEClient and ensure its resources are released.
 
-        Attempts to disconnect the client within DISCONNECT_TIMEOUT_SECONDS; if the disconnect times out or fails, forces a close to release underlying resources.
+        Attempts to disconnect the client within DISCONNECT_TIMEOUT_SECONDS; if the disconnect times out or fails,
+        forces a close to release underlying resources.
 
         Args:
         ----
@@ -1710,7 +1726,8 @@ class BLEClient:
 
         Args:
         ----
-            address (Optional[str]): BLE device address to attach a Bleak client to. If None, the instance is created for discovery-only use and will not instantiate an underlying Bleak client.
+            address (Optional[str]): BLE device address to attach a Bleak client to. If None, the instance is created for
+                discovery-only use and will not instantiate an underlying Bleak client.
             **kwargs: Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
 
         """
@@ -1786,7 +1803,8 @@ class BLEClient:
         Determine if the underlying Bleak client is currently connected.
 
         Returns:
-            `true` if the underlying Bleak client reports it is connected, `false` otherwise (also `false` when no Bleak client exists or the connection state cannot be read).
+            `true` if the underlying Bleak client reports it is connected, `false` otherwise (also `false` when no
+                Bleak client exists or the connection state cannot be read).
 
         """
         bleak_client = getattr(self, "bleak_client", None)
@@ -1918,7 +1936,8 @@ class BLEClient:
         """
         Shuts down the client's asyncio event loop and its background thread.
 
-        Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit, and logs a warning if the thread does not terminate within that timeout.
+        Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit,
+        and logs a warning if the thread does not terminate within that timeout.
         """
         self.async_run(self._stop_event_loop())
         self._eventThread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)

@@ -8,6 +8,7 @@ Use this **instance reuse pattern** when you want the most efficient reconnectio
 
 For an alternative, simpler-but-slower approach, see `ble_reconnect_instance_recreation_example.py`, which recreates the interface each time instead of reusing it.
 """
+
 import argparse
 import logging
 import time

@@ -16,6 +16,7 @@ This document provides a comprehensive plan to refactor the BLE interface (`mesh
 6. **Scattered Constants**: 20+ configuration constants distributed throughout the file
 
 ### Current Metrics
+
 - **Lines of Code**: 1211
 - **Methods**: ~30 methods
 - **Lock Objects**: 3 separate locks
@@ -39,6 +40,7 @@ This document provides a comprehensive plan to refactor the BLE interface (`mesh
 #### 1.1 Replace Multiple Locks with Unified State Management
 
 **Current Approach:**
+
 ```python
 self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
 self._client_lock: Lock = Lock()   # Protects client access during reconnection
@@ -46,6 +48,7 @@ self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
 ```
 
 **Planned Approach (DEFERRED):**
+
 ```python
 from enum import Enum
 from threading import RLock
@@ -67,6 +70,7 @@ class BLEInterface(MeshInterface):
 **Implementation Note:** The consolidation to a single RLock and ConnectionState enum has been **deferred** to a later phase. The current implementation retains the three-lock approach to preserve the battle-tested lock hierarchy and minimize refactoring risk. Future consolidation may be considered after the current refactoring proves stable in production.
 
 **Planned Benefits (when implemented):**
+
 - Reduces from 3 locks to 1 reentrant lock
 - Eliminates potential deadlocks
 - Clearer state transitions
@@ -75,6 +79,7 @@ class BLEInterface(MeshInterface):
 #### 1.2 Consolidate State Flags
 
 **Current Approach:**
+
 ```python
 self._closing: bool = False
 self._disconnect_notified: bool = False
@@ -82,6 +87,7 @@ self._want_receive: bool = True
 ```
 
 **Refactored Approach:**
+
 ```python
 @property
 def is_closing(self) -> bool:
@@ -101,16 +107,18 @@ def should_receive(self) -> bool:
 #### 2.1 Create Single Disconnect Handler
 
 **Current Approach:**
+
 - `_on_ble_disconnect()` - Handles bleak callback
 - `_handle_read_loop_disconnect()` - Handles read loop disconnects
 - Duplicate logic for client cleanup and reconnection
 
 **Refactored Approach:**
+
 ```python
 def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None) -> None:
     """
     Unified disconnect handling from any source.
-    
+
     Args:
         source: Description of disconnect source ("bleak_callback", "read_loop", etc.)
         client: The client that disconnected (if available)
@@ -119,28 +127,28 @@ def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None) 
         if self._state in (ConnectionState.CLOSING, ConnectionState.CLOSED):
             logger.debug(f"Ignoring disconnect from {source} - already closing")
             return
-            
+
         # Check for stale client
         if client and client is not self._client:
             logger.debug(f"Ignoring stale disconnect from {source}")
             return
-            
+
         # Update state and cleanup
         previous_client = self._client
         self._client = None
         self._state = ConnectionState.DISCONNECTED
-        
+
         # Notify parent if not already notified
         if not self._disconnect_notified:
             self._disconnect_notified = True
             self._disconnected()
-    
+
     # Cleanup outside lock to avoid holding during operations
     if previous_client:
         self._safe_close_client(previous_client)
-    
+
     logger.info(f"BLE disconnected: {source}")
-    
+
     # Handle reconnection
     if self.auto_reconnect:
         self._schedule_auto_reconnect()
@@ -149,6 +157,7 @@ def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None) 
 ```
 
 **Benefits:**
+
 - Eliminates code duplication
 - Single source of truth for disconnect handling
 - Consistent behavior across all disconnect scenarios
@@ -159,6 +168,7 @@ def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None) 
 #### 3.1 Create Error Handling Helpers
 
 **Current Approach:**
+
 ```python
 try:
     client.close()
@@ -169,19 +179,20 @@ except (RuntimeError, OSError):
 ```
 
 **Refactored Approach:**
+
 ```python
 def _safe_execute(self, operation: str, func, *args, **kwargs) -> Any:
     """
     Safely execute an operation with consistent error handling.
-    
+
     Args:
         operation: Description of the operation for logging
         func: Function to execute
         *args, **kwargs: Arguments to pass to func
-    
+
     Returns:
         Result of func() if it succeeds.
-    
+
     Raises:
         self.BLEError: Wrapped and re-raised for BLE/DBus/system/unexpected errors.
     """
@@ -211,6 +222,7 @@ def _safe_cleanup(self, operation: str, func, *args, **kwargs) -> None:
 ```
 
 **Usage:**
+
 ```python
 def _safe_close_client(self, client: "BLEClient") -> None:
     self._safe_cleanup("client close", client.close)
@@ -224,6 +236,7 @@ def connect(self, address: Optional[str] = None) -> "BLEClient":
 #### 4.1 Consolidate Thread Coordination
 
 **Current Approach:**
+
 ```python
 self._read_trigger: Event = Event()      # Signals when data is available to read
 self._reconnected_event: Event = Event() # Signals when reconnection occurred
@@ -231,26 +244,27 @@ self._reconnect_thread: Optional[Thread] = None
 ```
 
 **Refactored Approach:**
+
 ```python
 class ThreadCoordinator:
     """Simplified thread coordination for BLE operations."""
-    
+
     def __init__(self):
         self._stop_event = Event()
         self._data_ready = Event()
-        
+
     def stop(self) -> None:
         self._stop_event.set()
         self._data_ready.set()  # Wake any waiting threads
-        
+
     @property
     def should_stop(self) -> bool:
         return self._stop_event.is_set()
-        
+
     def wait_for_data(self, timeout: float) -> bool:
         """Wait for data or stop signal."""
         return self._data_ready.wait(timeout=timeout) and not self.should_stop
-        
+
     def signal_data(self) -> None:
         self._data_ready.set()
 ```
@@ -260,6 +274,7 @@ class ThreadCoordinator:
 #### 5.1 Group Related Constants
 
 **Current Approach:**
+
 ```python
 DISCONNECT_TIMEOUT_SECONDS = 5.0
 RECEIVE_THREAD_JOIN_TIMEOUT = 2.0
@@ -277,28 +292,29 @@ AUTO_RECONNECT_BACKOFF = 2.0
 ```
 
 **Refactored Approach:**
+
 ```python
 @dataclass
 class BLEConfig:
     """Consolidated BLE configuration."""
-    
+
     # Timeout values (seconds)
     disconnect_timeout: float = 5.0
     thread_join_timeout: float = 2.0
     scan_timeout: float = 10.0
     receive_wait_timeout: float = 0.5
     connection_timeout: float = 60.0
-    
+
     # Retry configuration
     empty_read_retry_delay: float = 0.1
     empty_read_max_retries: int = 5
     send_propagation_delay: float = 0.01
-    
+
     # Auto-reconnect configuration
     auto_reconnect_initial_delay: float = 1.0
     auto_reconnect_max_delay: float = 30.0
     auto_reconnect_backoff: float = 2.0
-    
+
     # Thresholds
     malformed_notification_threshold: int = 10
 
@@ -311,6 +327,7 @@ config = BLEConfig()
 #### 6.1 Merge Similar Methods
 
 **Current Methods to Consolidate:**
+
 - `_on_ble_disconnect()` + `_handle_read_loop_disconnect()` → `_handle_disconnect()`
 - `_schedule_auto_reconnect()` + `_reconnect_with_backoff()` → `_start_reconnection()`
 - Multiple small error handling methods → `_safe_execute()` and `_safe_cleanup()`
@@ -318,12 +335,14 @@ config = BLEConfig()
 #### 6.2 Simplify Receive Loop
 
 **Current Approach:**
+
 ```python
 def _receiveFromRadioImpl(self) -> None:
     # 100+ lines of complex retry logic, error handling, state management
 ```
 
 **Refactored Approach:**
+
 ```python
 def _receiveFromRadioImpl(self) -> None:
     """Simplified receive loop with helper methods."""
@@ -331,11 +350,11 @@ def _receiveFromRadioImpl(self) -> None:
         try:
             if not self._coordinator.wait_for_data(config.receive_wait_timeout):
                 continue
-                
+
             data = self._read_from_client()
             if data:
                 self._handleFromRadio(data)
-                
+
         except Exception as e:
             if self._should_handle_receive_error(e):
                 self._handle_receive_error(e)
@@ -356,36 +375,42 @@ def _should_handle_receive_error(self, error: Exception) -> bool:
 ## Implementation Steps
 
 ### Step 1: Create New Infrastructure (Day 1)
+
 1. Add `ConnectionState` enum and `BLEConfig` dataclass
 2. Create `ThreadCoordinator` class
 3. Add error handling helper methods
 4. Ensure all existing tests pass
 
 ### Step 2: Refactor State Management (Day 2)
+
 1. Replace multiple locks with single `_state_lock`
 2. Implement state-based logic
 3. Update all methods to use new state management
 4. Run comprehensive tests
 
 ### Step 3: Consolidate Disconnect Handling (Day 3)
+
 1. Create unified `_handle_disconnect()` method
 2. Remove duplicate disconnect logic
 3. Update all call sites
 4. Test all disconnect scenarios
 
 ### Step 4: Simplify Error Handling (Day 4)
+
 1. Replace verbose try/catch blocks with helper methods
 2. Ensure consistent error handling throughout
 3. Maintain all existing error behavior
 4. Verify error handling tests pass
 
 ### Step 5: Thread Management Cleanup (Day 5)
+
 1. Implement `ThreadCoordinator`
 2. Simplify receive loop
 3. Remove redundant event objects
 4. Test thread safety
 
 ### Step 6: Final Integration and Testing (Day 6)
+
 1. Complete method consolidation
 2. Update documentation
 3. Run full test suite
@@ -395,6 +420,7 @@ def _should_handle_receive_error(self, error: Exception) -> bool:
 ## Expected Outcomes
 
 ### Code Metrics
+
 - **Lines of Code**: Reduce from 1211 to ~900-1000 lines (17-26% reduction)
 - **Methods**: Reduce from ~30 to ~20 methods
 - **Lock Objects**: Reduce from 3 to 1
@@ -402,6 +428,7 @@ def _should_handle_receive_error(self, error: Exception) -> bool:
 - **Cyclomatic Complexity**: Reduce average method complexity
 
 ### Quality Improvements
+
 - **Maintainability**: Easier to understand and modify
 - **Testability**: Simpler methods are easier to test
 - **Reliability**: Unified error handling reduces bugs
@@ -409,6 +436,7 @@ def _should_handle_receive_error(self, error: Exception) -> bool:
 - **Readability**: Clearer intent and structure
 
 ### Preservation Guarantees
+
 - **All Functionality**: No feature regression
 - **Error Handling**: Maintain comprehensive error coverage
 - **Linux Support**: Preserve D-Bus error handling
@@ -418,11 +446,13 @@ def _should_handle_receive_error(self, error: Exception) -> bool:
 ## Risk Mitigation
 
 ### Development Risks
+
 1. **Breaking Changes**: Mitigate by running tests after each step
 2. **Performance Regression**: Monitor performance during refactoring
 3. **Thread Safety Issues**: Careful testing of concurrent scenarios
 
 ### Mitigation Strategies
+
 1. **Incremental Development**: Implement one phase at a time
 2. **Comprehensive Testing**: Run full test suite after each change
 3. **Code Review**: Peer review of each refactoring step
