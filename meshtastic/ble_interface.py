@@ -360,70 +360,94 @@ class BLEInterface(MeshInterface):
             parts.append("auto_reconnect=False")
         return f"BLEInterface({', '.join(parts)})"
 
-    def _on_ble_disconnect(self, client: BleakRootClient) -> None:
+    def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None, bleak_client: Optional[BleakRootClient] = None) -> bool:
         """
-        Handle a Bleak client disconnection by notifying the interface and initiating either a reconnection workflow or a full shutdown.
-
-        If `auto_reconnect` is True, notify the parent interface of the disconnect and schedule a safe close of the current
-        client so reconnection can proceed; duplicate or stale disconnect callbacks are ignored.
-        If `auto_reconnect` is False, schedule a full interface close.
-
-        Parameters:
-            client (BleakRootClient): The Bleak client instance that triggered the disconnect callback.
+        Unified disconnect handling from any source.
+        
+        This method consolidates disconnect handling from callbacks, read loop errors,
+        and explicit disconnect requests. It manages state transitions, client cleanup,
+        and reconnection logic in a single place.
+        
+        Args:
+            source: Description of disconnect source ("bleak_callback", "read_loop", "explicit", etc.)
+            client: The BLEClient that disconnected (if available)
+            bleak_client: The underlying BleakRootClient (if available)
+            
+        Returns:
+            bool: True if the interface should continue operating (for reconnection), False if it should shut down
         """
         # Ignore disconnects during shutdown to avoid race conditions
         if self._closing:
-            logger.debug(
-                "Ignoring disconnect callback because a shutdown is already in progress."
-            )
-            return
-
-        address = getattr(client, "address", repr(client))
-        logger.debug(f"BLE client {address} disconnected.")
-
+            logger.debug(f"Ignoring disconnect from {source} during shutdown.")
+            return False
+        
+        # Determine which client we're dealing with
+        target_client = client
+        if not target_client and bleak_client:
+            # Find the BLEClient that contains this bleak_client
+            target_client = self.client
+            if target_client and getattr(target_client, "bleak_client", None) is not bleak_client:
+                target_client = None
+        
+        address = "unknown"
+        if target_client:
+            address = getattr(target_client, "address", repr(target_client))
+        elif bleak_client:
+            address = getattr(bleak_client, "address", repr(bleak_client))
+        
+        logger.debug(f"BLE client {address} disconnected (source: {source}).")
+        
         if self.auto_reconnect:
             previous_client = None
             with self._client_lock:
                 # Prevent duplicate disconnect notifications
                 if self._disconnect_notified:
-                    logger.debug("Ignoring duplicate disconnect callback.")
-                    return
+                    logger.debug(f"Ignoring duplicate disconnect from {source}.")
+                    return True
 
                 current_client = self.client
                 # Ignore stale client disconnects (from previous connections)
-                if (
-                    current_client
-                    and getattr(current_client, "bleak_client", None) is not client
-                ):
-                    logger.debug(
-                        "Ignoring disconnect from a stale BLE client instance."
-                    )
-                    return
+                if target_client and current_client and target_client is not current_client:
+                    logger.debug(f"Ignoring stale disconnect from {source}.")
+                    return True
+                
                 previous_client = current_client
                 self.client = None
                 self._disconnect_notified = True
 
-            # Notify parent interface of disconnection and close previous client asynchronously
+            # Notify parent interface of disconnection
             if previous_client:
                 self._disconnected()
-                # Use an event to wait for client close to complete to avoid race conditions
-                close_completed_event = Event()
+                # Close previous client asynchronously
                 Thread(
                     target=self._safe_close_client,
-                    args=(previous_client, close_completed_event),
+                    args=(previous_client,),
                     name="BLEClientClose",
                     daemon=True,
                 ).start()
-                if not close_completed_event.wait(timeout=DISCONNECT_TIMEOUT_SECONDS):
-                    logger.warning("Timeout waiting for BLE client to close.")
 
-            # Event coordination: wake receive loop and clear reconnection flag
-            self._read_trigger.set()  # Wake receive loop to handle reconnection
-            self._reconnected_event.clear()  # Clear reconnected event on disconnect
+            # Event coordination for reconnection
+            self._read_trigger.clear()
+            self._reconnected_event.clear()
             self._schedule_auto_reconnect()
+            return True
         else:
-            # When auto_reconnect is disabled, close the entire interface
-            Thread(target=self.close, name="BLEClose", daemon=True).start()
+            # Auto-reconnect disabled - close the interface
+            logger.debug("Auto-reconnect disabled, closing interface.")
+            self.close()
+            return False
+
+    def _on_ble_disconnect(self, client: BleakRootClient) -> None:
+        """
+        Handle a Bleak client disconnection callback from bleak.
+
+        This is a wrapper around the unified _handle_disconnect method for callback
+        notifications from the BLE library.
+
+        Parameters:
+            client (BleakRootClient): The Bleak client instance that triggered the disconnect callback.
+        """
+        self._handle_disconnect("bleak_callback", bleak_client=client)
 
     def _schedule_auto_reconnect(self) -> None:
         """Start (if needed) a background task that retries BLE connection until success or shutdown."""
@@ -788,6 +812,9 @@ class BLEInterface(MeshInterface):
         """
         Decide whether the receive loop should continue after a BLE disconnection and perform related cleanup for reconnection.
 
+        This is a wrapper around the unified _handle_disconnect method for read loop
+        disconnect notifications.
+
         Parameters:
             error_message (str): Human-readable description of the disconnection cause.
             previous_client (BLEClient): The BLEClient instance that observed the disconnect and may be closed.
@@ -796,37 +823,11 @@ class BLEInterface(MeshInterface):
             bool: True if the read loop should continue to allow auto-reconnect, False otherwise.
         """
         logger.debug(f"Device disconnected: {error_message}")
-        if self.auto_reconnect:
-            notify_disconnect = False
-            should_close = False
-            with self._client_lock:
-                current = self.client
-                if current is previous_client:
-                    self.client = None
-                    should_close = True
-                    if not self._disconnect_notified:
-                        self._disconnect_notified = True
-                        notify_disconnect = True
-                else:
-                    logger.debug(
-                        "Read-loop disconnect from a stale BLE client; ignoring."
-                    )
-            if notify_disconnect:
-                self._disconnected()
-            if should_close:
-                Thread(
-                    target=self._safe_close_client,
-                    args=(previous_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                ).start()
-            self._read_trigger.clear()
-            self._reconnected_event.clear()
-            self._schedule_auto_reconnect()
-            return True
-        # End our read loop immediately
-        self._want_receive = False
-        return False
+        should_continue = self._handle_disconnect(f"read_loop: {error_message}", client=previous_client)
+        if not should_continue:
+            # End our read loop immediately
+            self._want_receive = False
+        return should_continue
 
     def _safe_close_client(
         self, c: "BLEClient", event: Optional[Event] = None
