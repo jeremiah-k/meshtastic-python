@@ -103,7 +103,40 @@ class ConnectionState(Enum):
 
 @dataclass
 class BLEConfig:
-    """Configuration class for BLE interface settings."""
+    """
+    Configuration class for BLE interface settings.
+    
+    This dataclass consolidates all configuration parameters for BLE operations,
+    including UUIDs, timeouts, retry settings, and error messages. It provides
+    a single point of configuration management for the BLE interface.
+    
+    Attributes:
+        service_uuid: Primary Meshtastic BLE service UUID
+        toradio_uuid: Characteristic UUID for sending data to radio
+        fromradio_uuid: Characteristic UUID for receiving data from radio
+        fromnum_uuid: Characteristic UUID for packet count notifications
+        legacy_logradio_uuid: Legacy logging characteristic UUID
+        logradio_uuid: Modern logging characteristic UUID
+        
+        disconnect_timeout: Timeout for disconnect operations (seconds)
+        thread_join_timeout: Timeout for thread joining operations (seconds)
+        event_thread_join_timeout: Timeout for event thread joining (seconds)
+        scan_timeout: Timeout for BLE device scanning (seconds)
+        receive_wait_timeout: Timeout for waiting on receive events (seconds)
+        connection_timeout: Timeout for establishing BLE connection (seconds)
+        
+        empty_read_retry_delay: Delay between empty read retries (seconds)
+        empty_read_max_retries: Maximum number of empty read retries
+        send_propagation_delay: Delay after sending data to allow propagation (seconds)
+        
+        auto_reconnect_initial_delay: Initial delay before reconnection attempts (seconds)
+        auto_reconnect_max_delay: Maximum delay between reconnection attempts (seconds)
+        auto_reconnect_backoff: Multiplier for exponential backoff in reconnection
+        
+        malformed_notification_threshold: Max malformed notifications before warning
+        
+        error_*: Standardized error message templates
+    """
     # BLE UUID constants
     service_uuid: str = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
     toradio_uuid: str = "f75c76d2-129e-4dad-a1dd-7866124401e7"
@@ -144,9 +177,23 @@ class BLEConfig:
 
 
 class ThreadCoordinator:
-    """Simplified thread management for BLE operations."""
+    """
+    Simplified thread management for BLE operations.
+    
+    This class provides centralized thread and event management for BLE interface
+    operations. It ensures proper cleanup, prevents resource leaks, and provides
+    a consistent API for thread coordination patterns.
+    
+    Features:
+        - Thread lifecycle management (create, start, join, cleanup)
+        - Event coordination for thread synchronization
+        - Automatic resource cleanup on shutdown
+        - Thread-safe operations with RLock
+        - Helper methods for common coordination patterns
+    """
     
     def __init__(self):
+        """Initialize the thread coordinator with empty tracking collections."""
         self._lock = RLock()
         self._threads: List[Thread] = []
         self._events: dict[str, Event] = {}
@@ -245,7 +292,19 @@ class ThreadCoordinator:
 
 
 class BLEErrorHandler:
-    """Helper class for consistent error handling in BLE operations."""
+    """
+    Helper class for consistent error handling in BLE operations.
+    
+    This class provides static methods for standardized error handling patterns
+    throughout the BLE interface. It centralizes error classification, logging,
+    and recovery strategies.
+    
+    Features:
+        - Safe execution with fallback return values
+        - Consistent error logging and classification
+        - Cleanup operations that never raise exceptions
+        - Error severity assessment (recoverable vs critical)
+    """
     
     @staticmethod
     def safe_execute(func, default_return=None, log_error: bool = True, 
@@ -295,7 +354,31 @@ class BLEErrorHandler:
 
 
 class BLEInterface(MeshInterface):
-    """MeshInterface using BLE to connect to devices."""
+    """
+    MeshInterface using BLE to connect to Meshtastic devices.
+    
+    This class provides a complete BLE interface for Meshtastic communication,
+    handling connection management, packet transmission/reception, error recovery,
+    and automatic reconnection. It extends MeshInterface with BLE-specific
+    functionality while maintaining API compatibility.
+    
+    Key Features:
+        - Automatic connection management and recovery
+        - Thread-safe operations with centralized thread coordination
+        - Unified error handling and logging
+        - Configurable timeouts and retry behavior
+        - Support for both legacy and modern BLE characteristics
+        - Comprehensive state management
+        
+    Architecture:
+        - ThreadCoordinator: Centralized thread and event management
+        - BLEConfig: Consolidated configuration management
+        - BLEErrorHandler: Standardized error handling patterns
+        - ConnectionState: Enum-based state tracking
+        
+    Note: This interface requires appropriate Bluetooth permissions and may
+    need platform-specific setup for BLE operations.
+    """
 
     class BLEError(Exception):
         """An exception class for BLE errors."""
