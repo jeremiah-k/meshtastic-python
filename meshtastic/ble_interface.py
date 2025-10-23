@@ -478,7 +478,7 @@ class BLEInterface(MeshInterface):
             self.close()
             if isinstance(e, BLEInterface.BLEError):
                 raise
-            raise BLEInterface.BLEError(self.config.error_connection_failed.format(e)) from e
+            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
     def __repr__(self):
         """
@@ -828,7 +828,7 @@ class BLEInterface(MeshInterface):
 
         if len(addressed_devices) == 0:
             raise self.BLEError(
-                self.config.error_no_peripheral_found.format(address_or_identifier)
+                ERROR_NO_PERIPHERAL_FOUND.format(address_or_identifier)
             )
         else:
             # Build a list of found devices for the error message
@@ -1047,7 +1047,7 @@ class BLEInterface(MeshInterface):
                             continue
                         self._read_retry_count = 0
                         logger.debug("Persistent BLE read error after retries", exc_info=True)
-                        raise BLEInterface.BLEError(self.config.error_reading_ble) from e
+                        raise BLEInterface.BLEError(ERROR_READING_BLE) from e
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")
             if not self._closing:
@@ -1089,7 +1089,7 @@ class BLEInterface(MeshInterface):
                     logger.debug(
                         "Error during write operation: %s", type(e).__name__, exc_info=True
                     )
-                    raise BLEInterface.BLEError(self.config.error_writing_ble) from e
+                    raise BLEInterface.BLEError(ERROR_WRITING_BLE) from e
             else:
                 logger.debug("Skipping TORADIO write: no BLE client (closing or disconnected).")
 
