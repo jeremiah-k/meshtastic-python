@@ -1111,7 +1111,7 @@ class BLEInterface(MeshInterface):
                 # Signal successful reconnection to waiting threads
                 self.thread_coordinator.set_event("reconnected_event")
                 self._read_retry_count = 0  # Reset transient error counter on successful connect
-            except Exception:  # noqa: BLE001 - Intentional blanket catch for connection cleanup
+            except Exception:  # Intentional blanket catch for connection cleanup
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 self.error_handler.safe_cleanup(
                     client.close
