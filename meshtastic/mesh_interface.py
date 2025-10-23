@@ -1383,7 +1383,7 @@ class MeshInterface:  # pylint: disable=R0902
         except DecodeError:
             # Handle protobuf parsing errors gracefully - discard corrupted packet
             logger.warning(
-                f"Failed to parse FromRadio packet, discarding: {fromRadioBytes}"
+                "Failed to parse FromRadio packet, discarding: %r", fromRadioBytes
             )
             return
         except Exception:

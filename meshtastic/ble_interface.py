@@ -792,7 +792,7 @@ class BLEInterface(MeshInterface):
             Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace,
             and lowercased, or None if `address` is None.
         """
-        if address is None:
+        if address is None or not address.strip():
             return None
         return (
             address.strip().replace("-", "").replace("_", "").replace(":", "").lower()
@@ -846,14 +846,12 @@ class BLEInterface(MeshInterface):
 
                                     if sanitized_target in (sanitized_addr, sanitized_name):
                                         devices_found.append(BLEDevice(
-                                            device.address, device.name, device.metadata,
-                                            rssi=device.rssi if hasattr(device, 'rssi') else None
+                                            device.address, device.name, device.metadata
                                         ))
                                 else:
                                     # Add all connected Meshtastic devices
                                     devices_found.append(BLEDevice(
-                                        device.address, device.name, device.metadata,
-                                        rssi=device.rssi if hasattr(device, 'rssi') else None
+                                        device.address, device.name, device.metadata
                                     ))
                 return devices_found
 
