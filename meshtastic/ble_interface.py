@@ -77,9 +77,7 @@ AUTO_RECONNECT_BACKOFF = 2.0
 # Error message constants
 ERROR_READING_BLE = "Error reading BLE"
 ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
-ERROR_MULTIPLE_PERIPHERALS_FOUND = (
-    "More than one Meshtastic BLE peripheral with identifier or address '{0}' found."
-)
+
 ERROR_WRITING_BLE = (
     "Error writing BLE. This is often caused by missing Bluetooth "
     "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
@@ -631,13 +629,13 @@ class BLEInterface(MeshInterface):
                 client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
             if client.has_characteristic(LOGRADIO_UUID):
                 client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
-        
+
         # Start optional log notifications; failures here are non-fatal.
         try:
             _start_log_notifications()
         except (BleakError, BleakDBusError, RuntimeError) as e:
             logger.debug("Failed to start optional log notifications: %s", e)
-        
+
         # Critical notification for packet ingress
         client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
@@ -812,7 +810,7 @@ class BLEInterface(MeshInterface):
         try:
             # Try to use BleakScanner to get cached device information
             # This works even when scanning fails due to adapter issues
-            
+
             # NOTE: Using private API scanner._backend.get_devices() as bleak 1.1.1
             # doesn't provide a public API to enumerate already-connected devices.
             # BleakScanner.discover() only returns actively advertising devices,

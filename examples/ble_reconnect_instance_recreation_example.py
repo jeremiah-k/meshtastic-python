@@ -67,7 +67,7 @@ def main():
     )
     parser.add_argument("address", help="The BLE address of your Meshtastic device.")
     parser.add_argument("--retry-delay", type=int, default=RETRY_DELAY_SECONDS,
-                        help="Seconds to wait before reconnect attempts (default: 5).")
+                        help=f"Seconds to wait before reconnect attempts (default: {RETRY_DELAY_SECONDS}).")
     args = parser.parse_args()
     address = args.address
     delay = args.retry_delay
