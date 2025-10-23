@@ -43,7 +43,7 @@ def main():
         with meshtastic.ble_interface.BLEInterface(
             address,
             noProto=True,  # Set to False to enable protobuf processing in production
-        ):
+        ) as interface:
             logger.info(
                 "Connection successful. The interface will now auto-reconnect on disconnect."
             )

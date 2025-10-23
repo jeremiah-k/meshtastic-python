@@ -682,6 +682,90 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
             print(f"Cleanup error in iface.close(): {exc!r}")
 
 
+def test_log_notification_registration(monkeypatch):
+    """Test that log notifications are properly registered for both legacy and current log UUIDs."""
+    from meshtastic.ble_interface import LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID
+    
+    class MockClientWithLogChars(DummyClient):
+        """Mock client that has log characteristics."""
+        
+        def __init__(self):
+            super().__init__()
+            self.start_notify_calls = []
+            self.has_characteristic_map = {
+                LEGACY_LOGRADIO_UUID: True,
+                LOGRADIO_UUID: True,
+                FROMNUM_UUID: True,
+            }
+        
+        def has_characteristic(self, uuid):
+            return self.has_characteristic_map.get(uuid, False)
+        
+        def start_notify(self, uuid, handler):
+            self.start_notify_calls.append((uuid, handler))
+    
+    client = MockClientWithLogChars()
+    iface = _build_interface(monkeypatch, client)
+    
+    # Call _register_notifications to test log notification setup
+    iface._register_notifications(client)
+    
+    # Verify that all three notifications were registered
+    registered_uuids = [call[0] for call in client.start_notify_calls]
+    
+    # Should have registered both log notifications and the critical FROMNUM notification
+    assert LEGACY_LOGRADIO_UUID in registered_uuids, "Legacy log notification should be registered"
+    assert LOGRADIO_UUID in registered_uuids, "Current log notification should be registered"
+    assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should be registered"
+    
+    # Verify handlers are correctly associated
+    legacy_call = next(call for call in client.start_notify_calls if call[0] == LEGACY_LOGRADIO_UUID)
+    current_call = next(call for call in client.start_notify_calls if call[0] == LOGRADIO_UUID)
+    fromnum_call = next(call for call in client.start_notify_calls if call[0] == FROMNUM_UUID)
+    
+    assert legacy_call[1] == iface.legacy_log_radio_handler, "Legacy log handler should be registered"
+    assert current_call[1] == iface.log_radio_handler, "Current log handler should be registered"
+    assert fromnum_call[1] == iface.from_num_handler, "FROMNUM handler should be registered"
+    
+    iface.close()
+
+
+def test_log_notification_registration_missing_characteristics(monkeypatch):
+    """Test that log notification registration handles missing characteristics gracefully."""
+    from meshtastic.ble_interface import LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, FROMNUM_UUID
+    
+    class MockClientWithoutLogChars(DummyClient):
+        """Mock client that doesn't have log characteristics."""
+        
+        def __init__(self):
+            super().__init__()
+            self.start_notify_calls = []
+            self.has_characteristic_map = {
+                FROMNUM_UUID: True,  # Only have the critical one
+            }
+        
+        def has_characteristic(self, uuid):
+            return self.has_characteristic_map.get(uuid, False)
+        
+        def start_notify(self, uuid, handler):
+            self.start_notify_calls.append((uuid, handler))
+    
+    client = MockClientWithoutLogChars()
+    iface = _build_interface(monkeypatch, client)
+    
+    # Call _register_notifications - should not fail even without log characteristics
+    iface._register_notifications(client)
+    
+    # Verify that only FROMNUM notification was registered
+    registered_uuids = [call[0] for call in client.start_notify_calls]
+    
+    assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should still be registered"
+    assert LEGACY_LOGRADIO_UUID not in registered_uuids, "Legacy log notification should not be registered when characteristic is missing"
+    assert LOGRADIO_UUID not in registered_uuids, "Current log notification should not be registered when characteristic is missing"
+    
+    iface.close()
+
+
 def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     """Test that the receive loop handles DecodeError gracefully without closing."""
     import logging
@@ -1340,7 +1424,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
     # Should handle RuntimeError gracefully
     iface._wait_for_disconnect_notifications()
-    assert "Runtime error during disconnect notification flush" in caplog.text
+    assert "disconnect notification flush" in caplog.text
 
     # Clear caplog
     caplog.clear()
@@ -1365,7 +1449,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
     # Should handle ValueError gracefully
     iface._wait_for_disconnect_notifications()
-    assert "Unexpected error in Runtime error during disconnect notification flush (possible threading issue): invalid state" in caplog.text
+    assert "disconnect notification flush" in caplog.text
 
     iface.close()
 

@@ -631,6 +631,14 @@ class BLEInterface(MeshInterface):
                 client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
             if client.has_characteristic(LOGRADIO_UUID):
                 client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
+        
+        # Start optional log notifications; failures here are non-fatal.
+        try:
+            _start_log_notifications()
+        except (BleakError, BleakDBusError, RuntimeError) as e:
+            logger.debug("Failed to start optional log notifications: %s", e)
+        
+        # Critical notification for packet ingress
         client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
     def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
@@ -804,6 +812,13 @@ class BLEInterface(MeshInterface):
         try:
             # Try to use BleakScanner to get cached device information
             # This works even when scanning fails due to adapter issues
+            
+            # NOTE: Using private API scanner._backend.get_devices() as bleak 1.1.1
+            # doesn't provide a public API to enumerate already-connected devices.
+            # BleakScanner.discover() only returns actively advertising devices,
+            # which won't find already-connected devices that aren't broadcasting.
+            # TODO: Revisit if bleak adds public support for connected device enumeration.
+            # Trade-off: Using private API is unstable but provides needed fallback functionality.
 
             # Create a simple event loop for this operation
             loop = asyncio.new_event_loop()
