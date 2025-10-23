@@ -19,12 +19,10 @@ def mock_serial(monkeypatch):
     - `SerialException` and `SerialTimeoutException` aliased to `Exception`.
     - `serial.tools` and `serial.tools.list_ports` entries installed in `sys.modules`.
 
-    Parameters
-    ----------
+    Args:
         monkeypatch: Pytest monkeypatch fixture used to set entries in `sys.modules`.
 
-    Returns
-    -------
+    Returns:
         The mocked `serial` module object.
 
     """
@@ -75,7 +73,8 @@ def mock_publishing_thread(monkeypatch):
     """
     Install a fake publishingThread module whose queueWork executes callbacks immediately.
 
-    The fake module is inserted into sys.modules under the name "publishingThread" to ensure tests run with a predictable, synchronous queueWork implementation.
+    The fake module is inserted into sys.modules under the name "publishingThread" to ensure tests run
+    with a predictable, synchronous queueWork implementation.
 
     Returns:
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
@@ -87,8 +86,7 @@ def mock_publishing_thread(monkeypatch):
         """
         Invoke `callback` immediately instead of queuing it for deferred execution (test helper).
 
-        Parameters
-        ----------
+        Args:
             callback (Optional[Callable[[], Any]]): Callable to execute; if falsy, no action is taken.
 
         """
@@ -131,12 +129,10 @@ def mock_bleak(monkeypatch):
     - `BleakScanner.discover`: an async coroutine that returns an empty list.
     - `BLEDevice`: a minimal device-like class with `address` and `name` attributes.
 
-    Parameters
-    ----------
+    Args:
         monkeypatch: pytest's monkeypatch fixture used to insert the fake module into sys.modules.
 
-    Returns
-    -------
+    Returns:
         module: The fake `bleak` module object that was inserted into sys.modules.
 
     """
@@ -148,13 +144,11 @@ def mock_bleak(monkeypatch):
             """
             Minimal test BLE client holding an address and a lightweight services shim.
 
-            Parameters
-            ----------
+            Args:
                 address (str | None): BLE device address associated with this client, or None.
                 **_kwargs: Additional keyword arguments are accepted and ignored.
 
-            Attributes
-            ----------
+            Attributes:
                 services (types.SimpleNamespace): Provides get_characteristic(specifier) which always returns None.
 
             """
@@ -236,8 +230,7 @@ def mock_bleak(monkeypatch):
             """
             Represent a BLE device with an optional address and human-readable name.
 
-            Parameters
-            ----------
+            Args:
                 address (str | None): BLE device address, if known.
                 name (str | None): Human-readable device name, if known.
 
@@ -258,12 +251,11 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
     """
     Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
 
-    Parameters
-    ----------
+    Args:
+        monkeypatch: pytest monkeypatch fixture used to register the fake module.
         mock_bleak (module): The fake `bleak` module to which the `exc` submodule will be attached.
 
-    Returns
-    -------
+    Returns:
         bleak_exc_module (module): The created `bleak.exc` module containing `BleakError` and `BleakDBusError` exception classes.
 
     """
@@ -295,12 +287,10 @@ class DummyClient:
         """
         Test double representing a BLE client for use in unit tests.
 
-        Parameters
-        ----------
+        Args:
             disconnect_exception (Optional[Exception]): Exception to raise when disconnect() is called; pass None to disable raising.
 
-        Attributes
-        ----------
+        Attributes:
             disconnect_calls (int): Number of times disconnect() has been invoked.
             close_calls (int): Number of times close() has been invoked.
             address (str): Client address identifier, set to "dummy".
@@ -319,7 +309,7 @@ class DummyClient:
 
     def has_characteristic(self, _specifier):
         """
-        Determines if the mock client exposes a BLE characteristic matching the given specifier.
+        Determine if the mock client exposes a BLE characteristic matching the given specifier.
 
         Parameters
         ----------
@@ -352,7 +342,7 @@ class DummyClient:
 
     def is_connected(self) -> bool:
         """
-        Always reports the mock BLE client as connected.
+        Report the mock BLE client as connected.
 
         Returns:
             connected (bool): `true` if the mock client is connected (this stub always returns `true`), `false` otherwise.
@@ -416,12 +406,10 @@ def stub_atexit(
         """
         Register a callable by appending it to the module-level `registered` list.
 
-        Parameters
-        ----------
+        Args:
             func (callable): The callable to register; can also be used as a decorator.
 
-        Returns
-        -------
+        Returns:
             callable: The same callable that was registered.
 
         """
@@ -434,8 +422,7 @@ def stub_atexit(
 
         All entries that are the same object as `func` (identity comparison) are removed.
 
-        Parameters
-        ----------
+        Args:
             func (callable): The callback to unregister.
 
         """
@@ -467,13 +454,11 @@ def _build_interface(monkeypatch, client):
     Create a BLEInterface configured for tests where its `connect` method is stubbed to return the supplied client
     and its `_startConfig` method is a no-op.
 
-    Parameters
-    ----------
+    Args:
         monkeypatch: pytest monkeypatch fixture used to patch BLEInterface methods.
         client: Fake or mock BLE client instance that the patched `connect` method will return.
 
-    Returns
-    -------
+    Returns:
         BLEInterface: An instance whose `connect` returns `client` and whose `_startConfig` performs no configuration.
 
     """
@@ -495,7 +480,8 @@ def _build_interface(monkeypatch, client):
 
         Notes
         -----
-            As a side effect, sets `_self.client` to the test client, clears `_self._disconnect_notified`, appends the address to `connect_calls`, and sets `_self._reconnected_event` if present.
+            As a side effect, sets `_self.client` to the test client, clears `_self._disconnect_notified`,
+            appends the address to `connect_calls`, and sets `_self._reconnected_event` if present.
 
         """
         connect_calls.append(_address)
@@ -615,8 +601,7 @@ def test_close_handles_bleak_error(monkeypatch):
         """
         Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
 
-        Parameters
-        ----------
+        Args:
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
 
@@ -652,8 +637,7 @@ def test_close_handles_runtime_error(monkeypatch):
         """
         Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
 
-        Parameters
-        ----------
+        Args:
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
 
@@ -690,8 +674,7 @@ def test_close_handles_os_error(monkeypatch):
         """
         Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
 
-        Parameters
-        ----------
+        Args:
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
 
@@ -753,8 +736,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
                 """
                 Test client that raises a configured exception from its faulting methods.
 
-                Parameters
-                ----------
+                Args:
                     exception_type (Exception | type): An exception instance or exception class that the client will raise when its faulting methods are invoked.
 
                 """
@@ -782,13 +764,11 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
             """
             Mark the given event to indicate close was invoked and then call the original close function.
 
-            Parameters
-            ----------
+            Args:
                 close_called (threading.Event): Event that will be set to signal that close was called.
                 original_close (Callable[[], Any]): The original close callable to invoke.
 
-            Returns
-            -------
+            Returns:
                 The result returned by invoking `original_close`.
 
             """
@@ -858,12 +838,10 @@ def test_log_notification_registration(monkeypatch):
             """
             Check whether the client reports support for the given characteristic UUID.
 
-            Parameters
-            ----------
+            Args:
                 uuid (str | uuid.UUID): The characteristic UUID to look up.
 
-            Returns
-            -------
+            Returns:
                 bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
 
             """
@@ -873,8 +851,7 @@ def test_log_notification_registration(monkeypatch):
             """
             Record a notification registration request for the specified characteristic UUID.
 
-            Parameters
-            ----------
+            Args:
                 uuid (str): The characteristic UUID for which notifications are being registered.
                 handler (callable): The callback to be invoked when a notification for the UUID is received.
 
@@ -951,12 +928,10 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             Check whether the client reports support for the given characteristic UUID.
 
-            Parameters
-            ----------
+            Args:
                 uuid (str | uuid.UUID): The characteristic UUID to look up.
 
-            Returns
-            -------
+            Returns:
                 bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
 
             """
@@ -966,8 +941,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             Record a notification registration request for the specified characteristic UUID.
 
-            Parameters
-            ----------
+            Args:
                 uuid (str): The characteristic UUID for which notifications are being registered.
                 handler (callable): The callback to be invoked when a notification for the UUID is received.
 
@@ -1071,8 +1045,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
         """
         Record a pub/sub event by appending its topic and payload to the test harness list `published_events`.
 
-        Parameters
-        ----------
+        Args:
             topic (str): The pub/sub topic of the event.
             **kwargs: Arbitrary event payload fields; stored as a dict.
 
@@ -1193,8 +1166,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             """
             Create an ExceptionClient that raises the specified exception type during simulated BLE operations.
 
-            Parameters
-            ----------
+            Args:
                 exception_type (type): Exception class to be raised by the client's BLE methods when invoked.
 
             """
@@ -1459,12 +1431,11 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Record the attempted connection address, attach the provided client to the interface, clear the disconnect flag, signal a reconnection event if present, and return the client.
 
-            Parameters
-            ----------
+            Args:
+                self: The BLEInterface instance.
                 address (str | None): Optional address that was used to connect; recorded for test inspection.
 
-            Returns
-            -------
+            Returns:
                 client: The client instance that was attached to the interface.
 
             """
@@ -1601,8 +1572,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
             """
             Initialize a test client that raises the given exception type from its simulated BLE operations.
 
-            Parameters
-            ----------
+            Args:
                 exception_type (type): Exception class that the client's methods will raise to simulate BLE failures.
 
             """
@@ -1610,7 +1580,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
 
         def is_connected(self):
             """
-            Always raise the configured exception to simulate a failing connection-state check.
+            Raise the configured exception to simulate a failing connection-state check.
 
             Raises:
                 Exception: An instance of `self.exception_type` is raised with the message "conn check failed".
@@ -1778,7 +1748,7 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
 
         def __call__(self):
             """
-            A callable test stub that always raises ValueError to simulate a failing callback.
+            Simulate a failing callback by always raising ValueError.
 
             Raises:
                 ValueError: Always raised to indicate the mock callback failed during execution.
