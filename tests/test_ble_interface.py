@@ -1,12 +1,21 @@
 """Tests for the BLE interface module."""
 
+import logging
 import sys
+import threading
+import time
 import types
 from contextlib import ExitStack
+from queue import Queue
 from types import SimpleNamespace
 from typing import Optional
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Import meshtastic modules for use in tests
+import meshtastic.ble_interface as ble_mod
+import meshtastic.mesh_interface as mesh_iface_module
 
 
 @pytest.fixture(autouse=True)
@@ -428,7 +437,7 @@ def stub_atexit(
         """
         registered[:] = [f for f in registered if f is not func]
 
-    import meshtastic.ble_interface as ble_mod
+    # meshtastic.ble_interface already imported at top as ble_mod
 
     monkeypatch.setattr(ble_mod.atexit, "register", fake_register, raising=True)
     monkeypatch.setattr(ble_mod.atexit, "unregister", fake_unregister, raising=True)
@@ -694,7 +703,7 @@ def test_close_handles_os_error(monkeypatch):
 
 def test_close_clears_ble_threads(monkeypatch):
     """Closing the interface should leave no BLE* threads running."""
-    import threading
+    # threading already imported at top
 
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
@@ -709,8 +718,7 @@ def test_close_clears_ble_threads(monkeypatch):
 
 def test_receive_thread_specific_exceptions(monkeypatch, caplog):
     """Test that receive thread handles specific exceptions correctly."""
-    import logging
-    import threading
+    # logging and threading already imported at top
 
     from meshtastic.ble_interface import BleakError
 
@@ -972,9 +980,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
 def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     """Test that the receive loop handles DecodeError gracefully without closing."""
-    import logging
-    import threading
-    import time
+    # logging, threading, and time already imported at top
 
     from meshtastic.ble_interface import FROMRADIO_UUID
 
@@ -1034,9 +1040,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
 def test_auto_reconnect_behavior(monkeypatch, caplog):
     """Test auto_reconnect functionality when disconnection occurs."""
     _ = caplog  # Mark as unused
-    import time
-
-    import meshtastic.mesh_interface as mesh_iface_module
+    # time and meshtastic.mesh_interface already imported at top
 
     # Track published events
     published_events = []
@@ -1152,8 +1156,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
 def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     """Test that sendToRadio handles specific exceptions correctly."""
-    import logging
-
+    # logging already imported at top
     from meshtastic.ble_interface import BleakError, BLEInterface
 
     # Set logging level to DEBUG to capture debug messages
@@ -1239,10 +1242,8 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
     _ = monkeypatch  # Mark as unused
-    import logging
-    import threading
-    import time
-    from unittest.mock import MagicMock, patch
+    # logging, threading, and time already imported at top
+    # MagicMock, patch already imported at top
 
     from meshtastic.ble_interface import BLEClient, BLEInterface
 
@@ -1558,8 +1559,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     """Test that BLEClient.is_connected handles exceptions gracefully."""
     _ = monkeypatch  # Mark as unused
-    import logging
-
+    # logging already imported at top
     from meshtastic.ble_interface import BLEClient
 
     # Set logging level to DEBUG to capture debug messages
@@ -1660,7 +1660,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
 def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     """Test that _wait_for_disconnect_notifications handles exceptions gracefully."""
-    import logging
+    # logging already imported at top
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -1673,7 +1673,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     iface = _build_interface(monkeypatch, client)
 
     # Mock publishingThread to raise RuntimeError
-    import meshtastic.ble_interface as ble_mod
+    # meshtastic.ble_interface already imported at top as ble_mod
 
     class MockPublishingThread:
         """Mock publishingThread that raises RuntimeError in queueWork."""
@@ -1732,9 +1732,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
 def test_drain_publish_queue_exceptions(monkeypatch, caplog):
     """Test that _drain_publish_queue handles exceptions gracefully."""
-    import logging
-    import threading
-    from queue import Queue
+    # logging, threading, and Queue already imported at top
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -1760,7 +1758,7 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
     mock_queue.put(ExceptionRunnable())
 
     # Mock publishingThread with the queue
-    import meshtastic.ble_interface as ble_mod
+    # meshtastic.ble_interface already imported at top as ble_mod
 
     class MockPublishingThread:
         """Mock publishingThread with a predefined queue."""
