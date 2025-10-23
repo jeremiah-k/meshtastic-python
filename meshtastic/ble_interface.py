@@ -10,7 +10,8 @@ import random
 import re
 import struct
 import time
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, Lock, RLock, Thread, current_thread
@@ -184,21 +185,19 @@ class ThreadCoordinator:
         self._events: dict[str, Event] = {}
 
     def create_thread(
-        self, target, name: str, daemon: bool = True, args=(), kwargs=None
+        self, target, name: str, *, daemon: bool = True, args=(), kwargs=None
     ) -> Thread:
         """
-        Create and register a new Thread configured with the given target and arguments.
+        Create and register a new Thread with target, name, daemon, args, and kwargs.
 
-        Parameters
-        ----------
+        Args:
             target (callable): The callable to be executed by the thread.
             name (str): The thread's name.
             daemon (bool): Whether the thread should be a daemon thread.
             args (tuple): Positional arguments to pass to `target`.
             kwargs (dict): Keyword arguments to pass to `target`.
 
-        Returns
-        -------
+        Returns:
             Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
 
         """
@@ -211,14 +210,12 @@ class ThreadCoordinator:
 
     def create_event(self, name: str) -> Event:
         """
-        Create and register a new Event associated with the given name.
+        Create and register a new Event with the specified name.
 
-        Parameters
-        ----------
+        Args:
             name (str): Key under which the event will be stored and retrievable.
 
-        Returns
-        -------
+        Returns:
             Event: The newly created Event instance.
 
         """
@@ -229,14 +226,12 @@ class ThreadCoordinator:
 
     def get_event(self, name: str) -> Optional[Event]:
         """
-        Retrieve a previously created Event by name.
+        Retrieve a previously created Event by the specified name.
 
-        Parameters
-        ----------
+        Args:
             name (str): The identifier of the tracked event.
 
-        Returns
-        -------
+        Returns:
             Optional[Event]: The Event instance if found, otherwise `None`.
 
         """
@@ -255,10 +250,9 @@ class ThreadCoordinator:
 
     def join_thread(self, thread: Thread, timeout: Optional[float] = None):
         """
-        Join a tracked thread, waiting up to `timeout` seconds for it to finish.
+        Join a tracked thread with the specified thread and timeout.
 
-        Parameters
-        ----------
+        Args:
                 thread (Thread): The thread to join; only joined if it is currently tracked and alive.
                 timeout (float | None): Maximum seconds to wait for the thread to finish. If None, wait indefinitely.
 
@@ -269,10 +263,9 @@ class ThreadCoordinator:
 
     def join_all(self, timeout: Optional[float] = None):
         """
-        Wait for all threads tracked by the coordinator to finish.
+        Wait for all tracked threads with the specified timeout.
 
-        Parameters
-        ----------
+        Args:
             timeout (Optional[float]): Maximum number of seconds to wait for each thread to join.
                 If `None`, wait indefinitely for each thread.
 
@@ -284,13 +277,15 @@ class ThreadCoordinator:
 
     def set_event(self, name: str):
         """
-        Set the tracked event with the given name.
+        Set the tracked event with the specified name.
 
         If no event exists with that name, this is a no-op.
 
-        Parameters
-        ----------
+        Args:
             name (str): Name of the tracked event to set.
+
+        Returns:
+            None.
 
         """
         with self._lock:
@@ -299,12 +294,12 @@ class ThreadCoordinator:
 
     def clear_event(self, name: str):
         """
-        Clear the tracked event with the given name if it exists.
+        Clear the tracked event with the specified name.
 
         If an event with `name` is being tracked, clear its internal flag; otherwise do nothing.
 
-        Parameters
-        ----------
+        Args:
+        ----
             name (str): The identifier of the tracked event to clear.
 
         """
@@ -314,14 +309,14 @@ class ThreadCoordinator:
 
     def wait_for_event(self, name: str, timeout: Optional[float] = None) -> bool:
         """
-        Waits until the named tracked event is set or until the timeout elapses.
+        Wait until the named tracked event is set or until the timeout elapses.
 
-        Parameters
-        ----------
+        Args:
+        ----
             name (str): Name of the tracked event to wait for.
             timeout (Optional[float]): Maximum time in seconds to wait; None means wait indefinitely.
 
-        Returns
+        Returns:
         -------
             bool: True if the event was set before the timeout, False otherwise or if the event is not tracked.
 
@@ -335,11 +330,11 @@ class ThreadCoordinator:
         """
         Check whether a tracked event is set and clear it if set.
 
-        Parameters
-        ----------
+        Args:
+        ----
             name (str): The tracked event's name.
 
-        Returns
+        Returns:
         -------
             bool: `True` if the event was set (and was cleared), `False` otherwise.
 
@@ -354,8 +349,8 @@ class ThreadCoordinator:
         """
         Set the named events so any threads waiting on them are woken.
 
-        Parameters
-        ----------
+        Args:
+        ----
             event_names (str): One or more names of events previously created via create_event; each named event will be set.
 
         """
@@ -366,8 +361,8 @@ class ThreadCoordinator:
         """
         Clear multiple tracked events by name.
 
-        Parameters
-        ----------
+        Args:
+        ----
             event_names (str): One or more event names to clear; names that are not tracked are ignored.
 
         """
@@ -378,7 +373,8 @@ class ThreadCoordinator:
         """
         Signal all tracked events, join and stop tracked threads, and clear coordinator state.
 
-        Sets every tracked Event, joins each tracked Thread (except the current thread) with a short timeout, and then clears the internal thread and event registries so the coordinator no longer tracks them.
+        Sets every tracked Event, joins each tracked Thread (except current) with a short timeout,
+        then clears internal thread and event registries so the coordinator no longer tracks them.
         """
         with self._lock:
             # Signal all events
@@ -420,25 +416,26 @@ class BLEErrorHandler:
         """
         Execute a callable and return its result while converting handled exceptions into a default value.
 
-        Parameters
-        ----------
+        Args:
+        ----
             func (callable): A zero-argument callable to execute.
             default_return: Value to return if execution fails; defaults to None.
             log_error (bool): If True, log caught exceptions; defaults to True.
             error_msg (str): Message used when logging errors; defaults to "Error in operation".
             reraise (bool): If True, re-raise any caught exception instead of returning default_return.
 
-        Returns
+        Returns:
         -------
             The value returned by `func()` on success, or `default_return` if a handled exception occurs.
 
-        Raises
+        Raises:
         ------
             Exception: Re-raises the original exception if `reraise` is True.
 
-        Notes
+        Notes:
         -----
-            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError; all other exceptions are also caught and treated the same.
+            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError;
+        all other exceptions are also caught and treated the same.
 
         """
         try:
@@ -511,8 +508,8 @@ class BLEInterface(MeshInterface):
         """
         Initialize a BLEInterface, start its background receive thread, and attempt an initial connection to a Meshtastic BLE device.
 
-        Parameters
-        ----------
+        Args:
+        ----
             address (Optional[str]): BLE address to connect to; if None, any available Meshtastic device may be used.
             noProto (bool): If True, do not initialize protobuf-based protocol handling.
             debugOut (Optional[io.TextIOWrapper]): Stream to emit debug output to, if provided.
@@ -630,13 +627,13 @@ class BLEInterface(MeshInterface):
         """
         Handle a BLE client disconnection and initiate either reconnection or shutdown.
 
-        Parameters
-        ----------
+        Args:
+        ----
             source (str): Short tag indicating the origin of the disconnect (e.g., "bleak_callback", "read_loop", "explicit").
             client (Optional[BLEClient]): The BLEClient instance related to the disconnect, if available.
             bleak_client (Optional[BleakRootClient]): The underlying Bleak client associated with the disconnect, if available.
 
-        Returns
+        Returns:
         -------
             bool: `true` if the interface should remain running and (when enabled) attempt auto-reconnect, `false` if the interface has begun shutdown.
 
@@ -716,8 +713,8 @@ class BLEInterface(MeshInterface):
         This is a wrapper around the unified _handle_disconnect method for callback
         notifications from the BLE library.
 
-        Parameters
-        ----------
+        Args:
+        ----
             client (BleakRootClient): The Bleak client instance that triggered the disconnect callback.
 
         """
@@ -812,8 +809,8 @@ class BLEInterface(MeshInterface):
 
         Increments the internal malformed-notification counter, logs the provided reason (optionally with exception info), and when the counter reaches MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
 
-        Parameters
-        ----------
+        Args:
+        ----
                 reason (str): Human-readable message describing why the notification was considered malformed.
                 exc_info (bool): If True, include exception traceback information in the debug log.
 
@@ -836,8 +833,8 @@ class BLEInterface(MeshInterface):
         counter and logs; if the counter reaches config.malformed_notification_threshold, emits a warning and resets the
         counter. Always sets self._read_trigger to signal the read loop.
 
-        Parameters
-        ----------
+        Args:
+        ----
             _ (Any): Unused sender/handle parameter supplied by the BLE library.
             b (bytearray): Notification payload expected to be exactly 4 bytes containing a little-endian unsigned 32-bit integer.
 
@@ -868,8 +865,8 @@ class BLEInterface(MeshInterface):
         handlers are caught and logged at debug level. Also registers the critical FROMNUM notification handler for
         incoming packets — failures to register this notification are not suppressed and will propagate.
 
-        Parameters
-        ----------
+        Args:
+        ----
             client (BLEClient): Connected BLE client to register notifications on.
 
         """
@@ -915,8 +912,8 @@ class BLEInterface(MeshInterface):
         with `[source] `; otherwise the record `message` is forwarded as-is. Malformed records are logged as a warning
         and ignored.
 
-        Parameters
-        ----------
+        Args:
+        ----
             _ (Any): Unused sender/handle parameter supplied by the BLE library.
             b (bytearray): Serialized `mesh_pb2.LogRecord` payload from the BLE notification.
 
@@ -941,8 +938,8 @@ class BLEInterface(MeshInterface):
         Decodes `b` as UTF-8, strips newline characters, and passes the resulting string to `self._handleLogLine`.
         If `b` is not valid UTF-8, a warning is logged and the notification is ignored.
 
-        Parameters
-        ----------
+        Args:
+        ----
             _ (Any): Unused sender/handle parameter supplied by the BLE library.
             b (bytearray): Raw notification payload expected to contain a UTF-8 encoded log line.
 
@@ -1022,15 +1019,15 @@ class BLEInterface(MeshInterface):
         """
         Find the Meshtastic BLE device matching an optional address or device name.
 
-        Parameters
-        ----------
+        Args:
+        ----
             address (Optional[str]): Address or device name to match; comparison ignores case and common separators (':', '-', '_', and spaces). If None, any discovered Meshtastic device may be returned.
 
-        Returns
+        Returns:
         -------
             BLEDevice: The matched BLE device. If no address is provided and multiple devices are discovered, the first discovered device is returned.
 
-        Raises
+        Raises:
         ------
             BLEInterface.BLEError: If no Meshtastic devices are found, or if an address was provided and multiple matching devices are found.
 
@@ -1084,11 +1081,11 @@ class BLEInterface(MeshInterface):
         """
         Normalize a BLE address by removing common separators and converting to lowercase.
 
-        Parameters
-        ----------
+        Args:
+        ----
             address (Optional[str]): BLE address or identifier; may be None or empty/whitespace.
 
-        Returns
+        Returns:
         -------
             Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace, and lowercased, or `None` if `address` is None or contains only whitespace.
 
@@ -1112,11 +1109,11 @@ class BLEInterface(MeshInterface):
         already connected and have the Meshtastic service UUID, which may not be
         discoverable via normal scanning when already connected.
 
-        Parameters
-        ----------
+        Args:
+        ----
             address (Optional[str]): Specific address to look for, if None returns all connected Meshtastic devices
 
-        Returns
+        Returns:
         -------
             List[BLEDevice]: List of connected Meshtastic devices
 
@@ -1147,11 +1144,10 @@ class BLEInterface(MeshInterface):
                 """
                 Retrieve connected Meshtastic BLE devices and optionally filter by address or name.
 
-                Parameters
-                ----------
+                Args:
                     address_to_find (Optional[str]): Bluetooth address or device name to match; separators (":", "-", "_", spaces) are ignored when comparing. If None, returns all connected devices advertising the Meshtastic service.
 
-                Returns
+                Returns:
                 -------
                     List[BLEDevice]: Devices advertising the Meshtastic service that match the optional filter, or an empty list if none found.
 
@@ -1282,11 +1278,11 @@ class BLEInterface(MeshInterface):
             On success returns a connected BLEClient with notifications registered and internal reconnect state updated.
             On failure, the created client is closed before the exception is propagated.
 
-        Parameters
-        ----------
+        Args:
+        ----
             address (Optional[str]): BLE address or device name to connect to; may be None to allow automatic discovery.
 
-        Returns
+        Returns:
         -------
             BLEClient: A connected BLEClient instance for the selected device.
 
@@ -1371,12 +1367,12 @@ class BLEInterface(MeshInterface):
         """
         Decides whether the receive loop should continue after a BLE disconnection.
 
-        Parameters
-        ----------
+        Args:
+        ----
             error_message (str): Human-readable description of the disconnection cause.
             previous_client (BLEClient): The BLEClient instance that observed the disconnect and may be closed.
 
-        Returns
+        Returns:
         -------
             bool: `true` if the read loop should continue to allow auto-reconnect, `false` otherwise.
 
@@ -1397,8 +1393,8 @@ class BLEInterface(MeshInterface):
         Attempts to close the given BLEClient and ignores BleakError, RuntimeError, and OSError raised during close
             to avoid propagating shutdown-related exceptions.
 
-        Parameters
-        ----------
+        Args:
+        ----
             c (BLEClient): The BLEClient instance to close; may be None or already-closed.
             event (Optional[Event]): An optional threading.Event to set after the client is closed.
 
@@ -1514,11 +1510,11 @@ class BLEInterface(MeshInterface):
             is available. If the serialized payload is empty or no client is present (e.g., during shutdown), the call is a
             no-op. After a successful write, the method waits briefly to allow propagation and then signals the read trigger.
 
-        Parameters
-        ----------
+        Args:
+        ----
             toRadio: A protobuf message with a SerializeToString() method representing the outbound radio packet.
 
-        Raises
+        Raises:
         ------
             BLEInterface.BLEError: If the write operation fails.
 
@@ -1635,8 +1631,8 @@ class BLEInterface(MeshInterface):
 
         If the queue does not flush within `timeout`, this method logs the timeout if the publishing thread is still alive; if the publishing thread is not running, it drains the publish queue synchronously. Errors raised while attempting the flush are caught and logged.
 
-        Parameters
-        ----------
+        Args:
+        ----
             timeout (float | None): Maximum seconds to wait for the publish queue to flush. If None, uses DISCONNECT_TIMEOUT_SECONDS.
 
         """
@@ -1662,8 +1658,8 @@ class BLEInterface(MeshInterface):
 
         Attempts to disconnect the client within DISCONNECT_TIMEOUT_SECONDS; if the disconnect times out or fails, forces a close to release underlying resources.
 
-        Parameters
-        ----------
+        Args:
+        ----
             client (BLEClient): The BLE client instance to disconnect and close.
 
         """
@@ -1681,8 +1677,8 @@ class BLEInterface(MeshInterface):
         This executes queued callables from the publishing thread's queue on the current thread, catching and logging exceptions from
             each callable so draining continues. If the publishing thread has no accessible queue, the method returns immediately.
 
-        Parameters
-        ----------
+        Args:
+        ----
             flush_event (Event): When set, stops draining and causes the function to return promptly.
 
         """
@@ -1712,8 +1708,8 @@ class BLEClient:
         """
         Create a BLEClient with a dedicated asyncio event loop and, if an address is provided, an underlying Bleak client attached to that address.
 
-        Parameters
-        ----------
+        Args:
+        ----
             address (Optional[str]): BLE device address to attach a Bleak client to. If None, the instance is created for discovery-only use and will not instantiate an underlying Bleak client.
             **kwargs: Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
 
@@ -1754,11 +1750,11 @@ class BLEClient:
         """
         Pair the underlying BLE client with the remote device.
 
-        Parameters
-        ----------
+        Args:
+        ----
             kwargs: Backend-specific pairing options forwarded to the underlying BLE client.
 
-        Returns
+        Returns:
         -------
             `True` if pairing succeeded, `False` otherwise.
 
@@ -1769,14 +1765,14 @@ class BLEClient:
         self, *, await_timeout: Optional[float] = None, **kwargs
     ):  # pylint: disable=C0116
         """
-        Initiates a connection using the underlying Bleak client and its internal event loop.
+        Initiate a connection using the underlying Bleak client and its internal event loop.
 
-        Parameters
-        ----------
+        Args:
+        ----
             await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; `None` to wait indefinitely.
             **kwargs: Forwarded to the underlying Bleak client's `connect` call.
 
-        Returns
+        Returns:
         -------
             The value returned by the underlying Bleak client's `connect` call.
 
@@ -1825,8 +1821,8 @@ class BLEClient:
         """
         Disconnect the underlying Bleak client and wait for the operation to finish.
 
-        Parameters
-        ----------
+        Args:
+        ----
             await_timeout (float | None): Maximum seconds to wait for disconnect completion; if None, wait indefinitely.
             **kwargs: Additional keyword arguments forwarded to the Bleak client's disconnect method.
 
@@ -1840,13 +1836,13 @@ class BLEClient:
 
         Forwards all arguments to the underlying Bleak client's `read_gatt_char`.
 
-        Parameters
-        ----------
+        Args:
+        ----
             *args: Positional arguments forwarded to `read_gatt_char` (typically the characteristic UUID or handle).
             timeout (float | None): Maximum seconds to wait for the read to complete.
             **kwargs: Keyword arguments forwarded to `read_gatt_char`.
 
-        Returns
+        Returns:
         -------
             bytes: The raw bytes read from the characteristic.
 
@@ -1883,11 +1879,11 @@ class BLEClient:
         """
         Check whether the connected BLE device exposes the characteristic identified by `specifier`.
 
-        Parameters
-        ----------
+        Args:
+        ----
             specifier (str | UUID): UUID string or UUID object identifying the characteristic to check.
 
-        Returns
+        Returns:
         -------
             `true` if the characteristic is present, `false` otherwise.
 
@@ -1908,11 +1904,10 @@ class BLEClient:
         """
         Subscribe to notifications for a BLE characteristic on the connected device.
 
-        Parameters
-        ----------
-            char_specifier: Identifier for the characteristic to subscribe to (UUID string, UUID object, or integer handle).
-            callback: Callable invoked when a notification is received; called as (sender, data) where `data` is a bytearray.
-            *args, **kwargs: Additional arguments forwarded to the BLE backend's notification start call.
+        Args:
+            *args: Additional arguments forwarded to the BLE backend's notification start call.
+            timeout (Optional[float]): Timeout for the operation.
+            **kwargs: Additional keyword arguments forwarded to the BLE backend's notification start call.
 
         """
         self.async_await(
@@ -1954,20 +1949,20 @@ class BLEClient:
 
     def async_await(self, coro, timeout=None):  # pylint: disable=C0116
         """
-        Waits for the given coroutine to complete on the client's event loop and returns its result.
+        Wait for the given coroutine to complete on the client's event loop and return its result.
 
         If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEInterface.BLEError is raised.
 
-        Parameters
-        ----------
+        Args:
+        ----
             coro: The coroutine to run on the client's internal event loop.
             timeout (float | None): Maximum seconds to wait for completion; `None` means wait indefinitely.
 
-        Returns
+        Returns:
         -------
             The value produced by the completed coroutine.
 
-        Raises
+        Raises:
         ------
             BLEInterface.BLEError: If the wait times out.
 
@@ -1986,11 +1981,11 @@ class BLEClient:
         """
         Schedule a coroutine on the client's internal asyncio event loop.
 
-        Parameters
-        ----------
+        Args:
+        ----
             coro (coroutine): The coroutine to schedule.
 
-        Returns
+        Returns:
         -------
             concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
 
