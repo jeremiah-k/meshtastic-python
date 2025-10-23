@@ -45,7 +45,7 @@ self._client_lock: Lock = Lock()   # Protects client access during reconnection
 self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
 ```
 
-**Refactored Approach:**
+**Planned Approach (DEFERRED):**
 ```python
 from enum import Enum
 from threading import RLock
@@ -64,7 +64,9 @@ class BLEInterface(MeshInterface):
         self._client: Optional["BLEClient"] = None
 ```
 
-**Benefits:**
+**Implementation Note:** The consolidation to a single RLock and ConnectionState enum has been **deferred** to a later phase. The current implementation retains the three-lock approach to preserve the battle-tested lock hierarchy and minimize refactoring risk. Future consolidation may be considered after the current refactoring proves stable in production.
+
+**Planned Benefits (when implemented):**
 - Reduces from 3 locks to 1 reentrant lock
 - Eliminates potential deadlocks
 - Clearer state transitions

@@ -90,7 +90,6 @@ ERROR_NO_PERIPHERALS_FOUND = (
 # BLEClient-specific constants
 BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
-ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
 # TODO: ConnectionState enum is part of planned future refactoring to implement
@@ -251,9 +250,9 @@ class BLEErrorHandler:
             if reraise:
                 raise
             return default_return
-        except Exception as e:
+        except Exception:
             if log_error:
-                logger.error(f"Unexpected error in {error_msg}: {e}")
+                logger.exception("%s", error_msg)
             if reraise:
                 raise
             return default_return
@@ -340,6 +339,9 @@ class BLEInterface(MeshInterface):
         """
 
         # Thread safety and state management
+        # Note: We maintain three separate locks instead of a single RLock as originally planned
+        # to preserve the current battle-tested lock hierarchy and minimize refactoring risk.
+        # Future consolidation to a single lock may be considered in a later phase.
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
         self._client_lock: Lock = Lock()   # Protects client access during reconnection
         self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
@@ -381,7 +383,7 @@ class BLEInterface(MeshInterface):
         self.thread_coordinator.start_thread(self._receiveThread)
         logger.debug("Threads running")
 
-        self.client: Optional[BLEClient] = None
+        self.client: Optional["BLEClient"] = None
         try:
             logger.debug(f"BLE connecting to: {address if address else 'any'}")
             client = self.connect(address)
@@ -855,10 +857,19 @@ class BLEInterface(MeshInterface):
                                     ))
                 return devices_found
 
-            # Library-friendly async execution: use asyncio.run() which handles
-            # event loop creation/cleanup automatically and is safe in library context
-            # when called from synchronous code without a running event loop
-            devices = asyncio.run(_get_devices_async_and_filter(address))
+            # Library-friendly async execution: handle both cases where event loop is running or not
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                # No running loop in this thread
+                devices = asyncio.run(_get_devices_async_and_filter(address))
+            else:
+                # A loop is running in this thread: spin a private loop just for this call
+                _loop = asyncio.new_event_loop()
+                try:
+                    devices = _loop.run_until_complete(_get_devices_async_and_filter(address))
+                finally:
+                    _loop.close()
 
             logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
             return devices
