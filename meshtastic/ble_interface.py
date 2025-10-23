@@ -952,6 +952,7 @@ class BLEInterface(MeshInterface):
                     self.thread_coordinator.start_thread(close_thread)
                 # Signal successful reconnection to waiting threads
                 self.thread_coordinator.set_event("reconnected_event")
+                self._read_retry_count = 0  # Reset transient error counter on successful connect
             except Exception:
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 self.error_handler.safe_cleanup(
