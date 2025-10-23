@@ -109,11 +109,11 @@ class ConnectionState(Enum):
 class BLEConfig:
     """
     Configuration class for BLE interface settings.
-    
+
     This dataclass consolidates all configuration parameters for BLE operations,
     including UUIDs, timeouts, retry settings, and error messages. It provides
     a single point of configuration management for the BLE interface.
-    
+
     Attributes:
         service_uuid: Primary Meshtastic BLE service UUID
         toradio_uuid: Characteristic UUID for sending data to radio
@@ -121,24 +121,24 @@ class BLEConfig:
         fromnum_uuid: Characteristic UUID for packet count notifications
         legacy_logradio_uuid: Legacy logging characteristic UUID
         logradio_uuid: Modern logging characteristic UUID
-        
+
         disconnect_timeout: Timeout for disconnect operations (seconds)
         thread_join_timeout: Timeout for thread joining operations (seconds)
         event_thread_join_timeout: Timeout for event thread joining (seconds)
         scan_timeout: Timeout for BLE device scanning (seconds)
         receive_wait_timeout: Timeout for waiting on receive events (seconds)
         connection_timeout: Timeout for establishing BLE connection (seconds)
-        
+
         empty_read_retry_delay: Delay between empty read retries (seconds)
         empty_read_max_retries: Maximum number of empty read retries
         send_propagation_delay: Delay after sending data to allow propagation (seconds)
-        
+
         auto_reconnect_initial_delay: Initial delay before reconnection attempts (seconds)
         auto_reconnect_max_delay: Maximum delay between reconnection attempts (seconds)
         auto_reconnect_backoff: Multiplier for exponential backoff in reconnection
-        
+
         malformed_notification_threshold: Max malformed notifications before warning
-        
+
         error_*: Standardized error message templates
     """
     # BLE UUID constants
@@ -148,7 +148,7 @@ class BLEConfig:
     fromnum_uuid: str = "ed9da18c-a800-4f66-a670-aa7547e34453"
     legacy_logradio_uuid: str = "6c6fd238-78fa-436b-aacf-15c5be1ef2e2"
     logradio_uuid: str = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
-    
+
     # Timeout values (seconds)
     disconnect_timeout: float = 5.0
     thread_join_timeout: float = 2.0
@@ -156,25 +156,30 @@ class BLEConfig:
     scan_timeout: float = 10.0
     receive_wait_timeout: float = 0.5
     connection_timeout: float = 60.0
-    
+
     # Retry configuration
     empty_read_retry_delay: float = 0.1
     empty_read_max_retries: int = 5
     send_propagation_delay: float = 0.01
-    
+
     # Auto-reconnect configuration
     auto_reconnect_initial_delay: float = 1.0
     auto_reconnect_max_delay: float = 30.0
     auto_reconnect_backoff: float = 2.0
-    
+
     # Thresholds
     malformed_notification_threshold: int = 10
-    
+
     # Error messages
     error_reading_ble: str = "Error reading BLE"
     error_no_peripheral_found: str = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
-    error_multiple_peripherals_found: str = "More than one Meshtastic BLE peripheral with identifier or address '{0}' found."
-    error_writing_ble: str = "Error writing BLE. This is often caused by missing Bluetooth permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
+    error_multiple_peripherals_found: str = (
+        "More than one Meshtastic BLE peripheral with identifier or address '{0}' found."
+    )
+    error_writing_ble: str = (
+        "Error writing BLE. This is often caused by missing Bluetooth "
+        "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
+    )
     error_connection_failed: str = "Connection failed: {0}"
     error_no_peripherals_found: str = "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
     error_async_timeout: str = "Async operation timed out"
@@ -183,11 +188,11 @@ class BLEConfig:
 class ThreadCoordinator:
     """
     Simplified thread management for BLE operations.
-    
+
     This class provides centralized thread and event management for BLE interface
     operations. It ensures proper cleanup, prevents resource leaks, and provides
     a consistent API for thread coordination patterns.
-    
+
     Features:
         - Thread lifecycle management (create, start, join, cleanup)
         - Event coordination for thread synchronization
@@ -195,70 +200,70 @@ class ThreadCoordinator:
         - Thread-safe operations with RLock
         - Helper methods for common coordination patterns
     """
-    
+
     def __init__(self):
         """Initialize the thread coordinator with empty tracking collections."""
         self._lock = RLock()
         self._threads: List[Thread] = []
         self._events: dict[str, Event] = {}
-    
+
     def create_thread(self, target, name: str, daemon: bool = True, args=()) -> Thread:
         """Create and track a new thread."""
         with self._lock:
             thread = Thread(target=target, name=name, daemon=daemon, args=args)
             self._threads.append(thread)
             return thread
-    
+
     def create_event(self, name: str) -> Event:
         """Create and track a new event."""
         with self._lock:
             event = Event()
             self._events[name] = event
             return event
-    
+
     def get_event(self, name: str) -> Optional[Event]:
         """Get a tracked event by name."""
         with self._lock:
             return self._events.get(name)
-    
+
     def start_thread(self, thread: Thread):
         """Start a tracked thread."""
         with self._lock:
             if thread in self._threads:
                 thread.start()
-    
-    def join_thread(self, thread: Thread, timeout: float = None):
+
+    def join_thread(self, thread: Thread, timeout: Optional[float] = None):
         """Join a specific tracked thread."""
         with self._lock:
             if thread in self._threads and thread.is_alive():
                 thread.join(timeout=timeout)
-    
-    def join_all(self, timeout: float = None):
+
+    def join_all(self, timeout: Optional[float] = None):
         """Join all tracked threads."""
         with self._lock:
             for thread in self._threads:
                 if thread.is_alive():
                     thread.join(timeout=timeout)
-    
+
     def set_event(self, name: str):
         """Set a tracked event."""
         with self._lock:
             if name in self._events:
                 self._events[name].set()
-    
+
     def clear_event(self, name: str):
         """Clear a tracked event."""
         with self._lock:
             if name in self._events:
                 self._events[name].clear()
-    
-    def wait_for_event(self, name: str, timeout: float = None) -> bool:
+
+    def wait_for_event(self, name: str, timeout: Optional[float] = None) -> bool:
         """Wait for a tracked event."""
         event = self.get_event(name)
         if event:
             return event.wait(timeout=timeout)
         return False
-    
+
     def check_and_clear_event(self, name: str) -> bool:
         """Check if an event is set and clear it if it was."""
         event = self.get_event(name)
@@ -266,30 +271,30 @@ class ThreadCoordinator:
             event.clear()
             return True
         return False
-    
+
     def wake_waiting_threads(self, *event_names: str):
         """Set multiple events to wake waiting threads."""
         for name in event_names:
             self.set_event(name)
-    
+
     def clear_events(self, *event_names: str):
         """Clear multiple events."""
         for name in event_names:
             self.clear_event(name)
-    
+
     def cleanup(self):
         """Clean up all threads and events."""
         with self._lock:
             # Signal all events
             for event in self._events.values():
                 event.set()
-            
+
             # Join threads with timeout (except current thread)
             current = current_thread()
             for thread in self._threads:
                 if thread.is_alive() and thread is not current:
                     thread.join(timeout=2.0)
-            
+
             # Clear tracking
             self._threads.clear()
             self._events.clear()
@@ -298,20 +303,20 @@ class ThreadCoordinator:
 class BLEErrorHandler:
     """
     Helper class for consistent error handling in BLE operations.
-    
+
     This class provides static methods for standardized error handling patterns
     throughout the BLE interface. It centralizes error classification, logging,
     and recovery strategies.
-    
+
     Features:
         - Safe execution with fallback return values
         - Consistent error logging and classification
         - Cleanup operations that never raise exceptions
         - Error severity assessment (recoverable vs critical)
     """
-    
+
     @staticmethod
-    def safe_execute(func, default_return=None, log_error: bool = True, 
+    def safe_execute(func, default_return=None, log_error: bool = True,
                     error_msg: str = "Error in operation", reraise: bool = False):
         """Safely execute a function with consistent error handling."""
         try:
@@ -328,7 +333,7 @@ class BLEErrorHandler:
             if reraise:
                 raise
             return default_return
-    
+
     @staticmethod
     def safe_cleanup(func, cleanup_name: str = "cleanup operation"):
         """Safely execute cleanup operations without raising exceptions."""
@@ -336,7 +341,7 @@ class BLEErrorHandler:
             func()
         except Exception as e:
             logger.debug(f"Error during {cleanup_name}: {e}")
-    
+
     @staticmethod
     def is_recoverable_error(error: Exception) -> bool:
         """Check if an error is recoverable (should not stop operations)."""
@@ -346,7 +351,7 @@ class BLEErrorHandler:
             Empty,  # Queue empty
         )
         return isinstance(error, recoverable_errors)
-    
+
     @staticmethod
     def is_critical_error(error: Exception) -> bool:
         """Check if an error is critical (should stop operations)."""
@@ -360,12 +365,12 @@ class BLEErrorHandler:
 class BLEInterface(MeshInterface):
     """
     MeshInterface using BLE to connect to Meshtastic devices.
-    
+
     This class provides a complete BLE interface for Meshtastic communication,
     handling connection management, packet transmission/reception, error recovery,
     and automatic reconnection. It extends MeshInterface with BLE-specific
     functionality while maintaining API compatibility.
-    
+
     Key Features:
         - Automatic connection management and recovery
         - Thread-safe operations with centralized thread coordination
@@ -373,13 +378,13 @@ class BLEInterface(MeshInterface):
         - Configurable timeouts and retry behavior
         - Support for both legacy and modern BLE characteristics
         - Comprehensive state management
-        
+
     Architecture:
         - ThreadCoordinator: Centralized thread and event management
         - BLEConfig: Consolidated configuration management
         - BLEErrorHandler: Standardized error handling patterns
         - ConnectionState: Enum-based state tracking
-        
+
     Note: This interface requires appropriate Bluetooth permissions and may
     need platform-specific setup for BLE operations.
     """
@@ -411,7 +416,7 @@ class BLEInterface(MeshInterface):
         """
         # Configuration
         self.config = BLEConfig()
-        
+
         # Thread safety and state management
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
         self._client_lock: Lock = Lock()   # Protects client access during reconnection
@@ -427,7 +432,7 @@ class BLEInterface(MeshInterface):
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
-        
+
         # Thread management infrastructure
         self.thread_coordinator = ThreadCoordinator()
 
@@ -502,16 +507,16 @@ class BLEInterface(MeshInterface):
     def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None, bleak_client: Optional[BleakRootClient] = None) -> bool:
         """
         Unified disconnect handling from any source.
-        
+
         This method consolidates disconnect handling from callbacks, read loop errors,
         and explicit disconnect requests. It manages state transitions, client cleanup,
         and reconnection logic in a single place.
-        
+
         Args:
             source: Description of disconnect source ("bleak_callback", "read_loop", "explicit", etc.)
             client: The BLEClient that disconnected (if available)
             bleak_client: The underlying BleakRootClient (if available)
-            
+
         Returns:
             bool: True if the interface should continue operating (for reconnection), False if it should shut down
         """
@@ -519,7 +524,7 @@ class BLEInterface(MeshInterface):
         if self._closing:
             logger.debug(f"Ignoring disconnect from {source} during shutdown.")
             return False
-        
+
         # Determine which client we're dealing with
         target_client = client
         if not target_client and bleak_client:
@@ -527,15 +532,15 @@ class BLEInterface(MeshInterface):
             target_client = self.client
             if target_client and getattr(target_client, "bleak_client", None) is not bleak_client:
                 target_client = None
-        
+
         address = "unknown"
         if target_client:
             address = getattr(target_client, "address", repr(target_client))
         elif bleak_client:
             address = getattr(bleak_client, "address", repr(bleak_client))
-        
+
         logger.debug(f"BLE client {address} disconnected (source: {source}).")
-        
+
         if self.auto_reconnect:
             previous_client = None
             with self._client_lock:
@@ -549,7 +554,7 @@ class BLEInterface(MeshInterface):
                 if target_client and current_client and target_client is not current_client:
                     logger.debug(f"Ignoring stale disconnect from {source}.")
                     return True
-                
+
                 previous_client = current_client
                 self.client = None
                 self._disconnect_notified = True
@@ -665,9 +670,9 @@ class BLEInterface(MeshInterface):
         """
         Handle notifications from the FROMNUM characteristic and wake the read loop.
 
-        Parses a 4-byte little-endian unsigned integer from the notification payload `b`. On a successful parse, resets the 
-        malformed-notification counter and logs the parsed value. On parse failure, increments the malformed-notification 
-        counter and logs; if the counter reaches config.malformed_notification_threshold, emits a warning and resets the 
+        Parses a 4-byte little-endian unsigned integer from the notification payload `b`. On a successful parse, resets the
+        malformed-notification counter and logs the parsed value. On parse failure, increments the malformed-notification
+        counter and logs; if the counter reaches config.malformed_notification_threshold, emits a warning and resets the
         counter. Always sets self._read_trigger to signal the read loop.
 
         Parameters:
@@ -692,8 +697,8 @@ class BLEInterface(MeshInterface):
         """
         Register BLE characteristic notification handlers on the given client.
 
-        Registers optional log notification handlers for legacy and current log characteristics; failures to start these optional 
-        handlers are caught and logged at debug level. Also registers the critical FROMNUM notification handler for 
+        Registers optional log notification handlers for legacy and current log characteristics; failures to start these optional
+        handlers are caught and logged at debug level. Also registers the critical FROMNUM notification handler for
         incoming packets — failures to register this notification are not suppressed and will propagate.
 
         Parameters:
@@ -711,8 +716,8 @@ class BLEInterface(MeshInterface):
         """
         Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
-        Parses the notification payload as a `mesh_pb2.LogRecord`. If the record contains a `source`, the forwarded line is prefixed 
-        with `[source] `; otherwise the record `message` is forwarded as-is. Malformed records are logged as a warning 
+        Parses the notification payload as a `mesh_pb2.LogRecord`. If the record contains a `source`, the forwarded line is prefixed
+        with `[source] `; otherwise the record `message` is forwarded as-is. Malformed records are logged as a warning
         and ignored.
 
         Parameters:
@@ -736,7 +741,7 @@ class BLEInterface(MeshInterface):
         """
         Handle a legacy log-radio notification by decoding and forwarding the UTF-8 log line.
 
-        Decodes `b` as UTF-8, strips newline characters, and passes the resulting string to `self._handleLogLine`. 
+        Decodes `b` as UTF-8, strips newline characters, and passes the resulting string to `self._handleLogLine`.
         If `b` is not valid UTF-8, a warning is logged and the notification is ignored.
 
         Parameters:
@@ -756,7 +761,7 @@ class BLEInterface(MeshInterface):
         """
         Scan for BLE devices advertising the Meshtastic service UUID.
 
-        Performs a timed BLE scan, handles variations in BleakScanner.discover() return formats, and returns devices whose 
+        Performs a timed BLE scan, handles variations in BleakScanner.discover() return formats, and returns devices whose
         advertisements include the Meshtastic service UUID.
 
         Returns:
@@ -861,14 +866,14 @@ class BLEInterface(MeshInterface):
     def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
         Fallback method to find already-connected Meshtastic devices when scanning fails.
-        
+
         This method uses the system's Bluetooth adapter to check for devices that are
         already connected and have the Meshtastic service UUID, which may not be
         discoverable via normal scanning when already connected.
-        
+
         Parameters:
             address (Optional[str]): Specific address to look for, if None returns all connected Meshtastic devices
-            
+
         Returns:
             List[BLEDevice]: List of connected Meshtastic devices
         """
@@ -877,20 +882,20 @@ class BLEInterface(MeshInterface):
             # This works even when scanning fails due to adapter issues
             import asyncio
             from bleak import BleakScanner
-            
+
             # Create a simple event loop for this operation
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             try:
                 # Get devices from the scanner's cached data
                 scanner = BleakScanner()
                 devices = []
-                
+
                 # Try to get device information from the backend
                 if hasattr(scanner, '_backend') and hasattr(scanner._backend, 'get_devices'):
                     backend_devices = loop.run_until_complete(scanner._backend.get_devices())
-                    
+
                     for device in backend_devices:
                         # Check if device has Meshtastic service UUID
                         if hasattr(device, 'metadata') and device.metadata:
@@ -901,7 +906,7 @@ class BLEInterface(MeshInterface):
                                     sanitized_target = BLEInterface._sanitize_address(address)
                                     sanitized_addr = BLEInterface._sanitize_address(device.address)
                                     sanitized_name = BLEInterface._sanitize_address(device.name) if device.name else ""
-                                    
+
                                     if sanitized_target in (sanitized_addr, sanitized_name):
                                         # Create a BLEDevice-like object
                                         from bleak import BLEDevice
@@ -922,13 +927,13 @@ class BLEInterface(MeshInterface):
                                         rssi=device.rssi if hasattr(device, 'rssi') else None
                                     )
                                     devices.append(ble_device)
-                
+
                 logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
                 return devices
-                
+
             finally:
                 loop.close()
-                
+
         except Exception as e:
             logger.debug(f"Fallback device discovery failed: {e}")
             return []
@@ -1230,12 +1235,12 @@ class BLEInterface(MeshInterface):
         if notify:
             self._disconnected()  # send the disconnected indicator up to clients
             self._wait_for_disconnect_notifications()
-        
+
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
 
     def _wait_for_disconnect_notifications(
-        self, timeout: float = None
+        self, timeout: Optional[float] = None
     ) -> None:
         """
         Wait briefly for queued publish notifications to flush before continuing.
@@ -1245,7 +1250,7 @@ class BLEInterface(MeshInterface):
             alive; otherwise it logs the timeout and returns. Any RuntimeError or ValueError
             raised while attempting the flush is caught and logged.
         Parameters:
-            timeout (float): Maximum seconds to wait for the publish queue to flush. 
+            timeout (float): Maximum seconds to wait for the publish queue to flush.
                            Defaults to config.disconnect_timeout if not provided.
         """
         if timeout is None:
@@ -1256,7 +1261,7 @@ class BLEInterface(MeshInterface):
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False
         )
-        
+
         if not flush_event.wait(timeout=timeout):
             thread = getattr(publishingThread, "thread", None)
             if thread is not None and thread.is_alive():
@@ -1327,7 +1332,7 @@ class BLEClient:
         """
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
-        
+
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
         # Start event loop in background thread for async operations
@@ -1397,7 +1402,7 @@ class BLEClient:
             if callable(connected):
                 connected = connected()
             return bool(connected)
-        
+
         return self.error_handler.safe_execute(
             _check_connection,
             default_return=False,
