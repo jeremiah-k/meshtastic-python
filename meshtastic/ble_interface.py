@@ -10,7 +10,7 @@ import random
 import re
 import struct
 import time
-from concurrent.futures import TimeoutError as FutureTimeoutError
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, Lock, RLock, Thread, current_thread
@@ -1215,8 +1215,6 @@ class BLEInterface(MeshInterface):
                 asyncio.get_running_loop()
                 # A loop is running in this thread, run async code in separate thread
                 # to avoid interference with the existing event loop
-                from concurrent.futures import Future
-
                 future: Future[list] = Future()
 
                 def _run_async_in_thread():
