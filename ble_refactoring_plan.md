@@ -180,7 +180,10 @@ def _safe_execute(self, operation: str, func, *args, **kwargs) -> Any:
         *args, **kwargs: Arguments to pass to func
     
     Returns:
-        Result of func() or None if error occurred
+        Result of func() if it succeeds.
+    
+    Raises:
+        self.BLEError: Wrapped and re-raised for BLE/DBus/system/unexpected errors.
     """
     try:
         return func(*args, **kwargs)

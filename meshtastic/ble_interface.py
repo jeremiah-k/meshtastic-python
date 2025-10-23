@@ -216,7 +216,7 @@ class ThreadCoordinator:
             current = current_thread()
             for thread in self._threads:
                 if thread.is_alive() and thread is not current:
-                    thread.join(timeout=2.0)
+                    thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
 
             # Clear tracking
             self._threads.clear()
