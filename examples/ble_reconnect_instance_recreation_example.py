@@ -4,9 +4,11 @@ Example demonstrating BLE client-side reconnection using the instance recreation
 Reach for this **instance recreation pattern** when simplicity matters more than raw efficiency:
 - Create a new `BLEInterface` for each attempt, letting the context manager clean up threads deterministically.
 - Rely on the `meshtastic.connection.status` pubsub signal to decide when to tear down and start the next connection.
-- Adjust `RETRY_DELAY_SECONDS` (or the `--retry-delay` flag) alongside BLE backoff constants when targeting battery-powered nodes to avoid reconnect storms.
+- Adjust `RETRY_DELAY_SECONDS` (or the `--retry-delay` flag) alongside BLE backoff constants when targeting battery-powered
+  nodes to avoid reconnect storms.
 
-For better performance in long-running applications, see `ble_reconnect_instance_reuse_example.py`, which keeps one interface instance alive and lets its internal auto-reconnect loop handle disconnects.
+For better performance in long-running applications, see `ble_reconnect_instance_reuse_example.py`, which keeps one interface
+instance alive and lets its internal auto-reconnect loop handle disconnects.
 """
 
 import argparse
@@ -32,10 +34,10 @@ def on_connection_change(interface, connected):
     """
     Handle BLE interface connection changes and notify the main loop when a disconnect occurs.
 
-    Logs the interface's address (or repr) and connection state. When disconnected, sets the module-level `disconnected_event` to signal the main loop to attempt a reconnect.
+    Logs the interface's address (or repr) and connection state. When disconnected, sets the module-level `disconnected_event`
+    to signal the main loop to attempt a reconnect.
 
-    Parameters
-    ----------
+    Args:
         interface: The BLE interface object whose connection status changed; its `address` attribute is used for logging if present.
         connected (bool): `True` if the interface is connected, `False` if it is disconnected.
 
