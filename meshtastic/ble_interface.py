@@ -133,10 +133,10 @@ class ThreadCoordinator:
         self._threads: List[Thread] = []
         self._events: dict[str, Event] = {}
     
-    def create_thread(self, target, name: str, daemon: bool = True) -> Thread:
+    def create_thread(self, target, name: str, daemon: bool = True, args=()) -> Thread:
         """Create and track a new thread."""
         with self._lock:
-            thread = Thread(target=target, name=name, daemon=daemon)
+            thread = Thread(target=target, name=name, daemon=daemon, args=args)
             self._threads.append(thread)
             return thread
     
@@ -157,6 +157,12 @@ class ThreadCoordinator:
         with self._lock:
             if thread in self._threads:
                 thread.start()
+    
+    def join_thread(self, thread: Thread, timeout: float = None):
+        """Join a specific tracked thread."""
+        with self._lock:
+            if thread in self._threads and thread.is_alive():
+                thread.join(timeout=timeout)
     
     def join_all(self, timeout: float = None):
         """Join all tracked threads."""
@@ -184,6 +190,24 @@ class ThreadCoordinator:
             return event.wait(timeout=timeout)
         return False
     
+    def check_and_clear_event(self, name: str) -> bool:
+        """Check if an event is set and clear it if it was."""
+        event = self.get_event(name)
+        if event and event.is_set():
+            event.clear()
+            return True
+        return False
+    
+    def wake_waiting_threads(self, *event_names: str):
+        """Set multiple events to wake waiting threads."""
+        for name in event_names:
+            self.set_event(name)
+    
+    def clear_events(self, *event_names: str):
+        """Clear multiple events."""
+        for name in event_names:
+            self.clear_event(name)
+    
     def cleanup(self):
         """Clean up all threads and events."""
         with self._lock:
@@ -191,9 +215,10 @@ class ThreadCoordinator:
             for event in self._events.values():
                 event.set()
             
-            # Join threads with timeout
+            # Join threads with timeout (except current thread)
+            current = current_thread()
             for thread in self._threads:
-                if thread.is_alive():
+                if thread.is_alive() and thread is not current:
                     thread.join(timeout=2.0)
             
             # Clear tracking
@@ -292,14 +317,17 @@ class BLEInterface(MeshInterface):
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
 
-        # Event coordination for reconnection and read operations
-        self._read_trigger: Event = Event()      # Signals when data is available to read
-        self._reconnected_event: Event = Event() # Signals when reconnection occurred
-        self._malformed_notification_count = 0   # Tracks corrupted packets for threshold
-        self._reconnect_thread: Optional[Thread] = None
-
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
+        
+        # Thread management infrastructure
+        self.thread_coordinator = ThreadCoordinator()
+
+        # Event coordination for reconnection and read operations
+        self._read_trigger = self.thread_coordinator.create_event("read_trigger")      # Signals when data is available to read
+        self._reconnected_event = self.thread_coordinator.create_event("reconnected_event") # Signals when reconnection occurred
+        self._malformed_notification_count = 0   # Tracks corrupted packets for threshold
+        self._reconnect_thread: Optional[Thread] = None
 
         # Initialize parent interface
         MeshInterface.__init__(
@@ -312,10 +340,10 @@ class BLEInterface(MeshInterface):
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
         self._want_receive = True
-        self._receiveThread: Optional[Thread] = Thread(
+        self._receiveThread: Optional[Thread] = self.thread_coordinator.create_thread(
             target=self._receiveFromRadioImpl, name="BLEReceive", daemon=True
         )
-        self._receiveThread.start()
+        self.thread_coordinator.start_thread(self._receiveThread)
         logger.debug("Threads running")
 
         self.client: Optional[BLEClient] = None
@@ -422,16 +450,16 @@ class BLEInterface(MeshInterface):
             if previous_client:
                 self._disconnected()
                 # Close previous client asynchronously
-                Thread(
+                close_thread = self.thread_coordinator.create_thread(
                     target=self._safe_close_client,
                     args=(previous_client,),
                     name="BLEClientClose",
                     daemon=True,
-                ).start()
+                )
+                self.thread_coordinator.start_thread(close_thread)
 
             # Event coordination for reconnection
-            self._read_trigger.clear()
-            self._reconnected_event.clear()
+            self.thread_coordinator.clear_events("read_trigger", "reconnected_event")
             self._schedule_auto_reconnect()
             return True
         else:
@@ -505,14 +533,14 @@ class BLEInterface(MeshInterface):
                         if self._reconnect_thread is current_thread():
                             self._reconnect_thread = None
 
-            thread = Thread(
+            thread = self.thread_coordinator.create_thread(
                 target=_attempt_reconnect,
                 name="BLEAutoReconnect",
                 daemon=True,
             )
             self._reconnect_thread = thread
 
-        thread.start()
+        self.thread_coordinator.start_thread(thread)
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False):
         """Helper to handle malformed FROMNUM notifications."""
@@ -550,7 +578,7 @@ class BLEInterface(MeshInterface):
             self._handle_malformed_fromnum("Malformed FROMNUM notify; ignoring", exc_info=True)
             return
         finally:
-            self._read_trigger.set()
+            self.thread_coordinator.set_event("read_trigger")
 
     def _register_notifications(self, client: "BLEClient") -> None:
         """
@@ -789,14 +817,15 @@ class BLEInterface(MeshInterface):
                     else:
                         self._last_connection_request = normalized_device_address
                 if previous_client and previous_client is not client:
-                    Thread(
+                    close_thread = self.thread_coordinator.create_thread(
                         target=self._safe_close_client,
                         args=(previous_client,),
                         name="BLEClientClose",
                         daemon=True,
-                    ).start()
+                    )
+                    self.thread_coordinator.start_thread(close_thread)
                 # Signal successful reconnection to waiting threads
-                self._reconnected_event.set()
+                self.thread_coordinator.set_event("reconnected_event")
             except Exception:
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 self.error_handler.safe_cleanup(
@@ -857,13 +886,12 @@ class BLEInterface(MeshInterface):
         try:
             while self._want_receive:
                 # Wait for data to read, but also check periodically for reconnection
-                if not self._read_trigger.wait(timeout=RECEIVE_WAIT_TIMEOUT):
+                if not self.thread_coordinator.wait_for_event("read_trigger", timeout=RECEIVE_WAIT_TIMEOUT):
                     # Timeout occurred, check if we were reconnected during this time
-                    if self._reconnected_event.is_set():
-                        self._reconnected_event.clear()
+                    if self.thread_coordinator.check_and_clear_event("reconnected_event"):
                         logger.debug("Detected reconnection, resuming normal operation")
                     continue
-                self._read_trigger.clear()
+                self.thread_coordinator.clear_event("read_trigger")
 
                 # Retry loop for handling empty reads and transient BLE issues
                 retries: int = 0
@@ -876,7 +904,7 @@ class BLEInterface(MeshInterface):
                                 "BLE client is None; waiting for application-managed reconnect"
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
-                            self._reconnected_event.wait(timeout=RECEIVE_WAIT_TIMEOUT)
+                            self.thread_coordinator.wait_for_event("reconnected_event", timeout=RECEIVE_WAIT_TIMEOUT)
                             break  # Return to outer loop to re-check state
                         logger.debug("BLE client is None, shutting down")
                         self._want_receive = False
@@ -922,7 +950,10 @@ class BLEInterface(MeshInterface):
             logger.exception("Fatal error in BLE receive thread, closing interface.")
             if not self._closing:
                 # Use a thread to avoid deadlocks if close() waits for this thread
-                Thread(target=self.close, name="BLECloseOnError", daemon=True).start()
+                error_close_thread = self.thread_coordinator.create_thread(
+                    target=self.close, name="BLECloseOnError", daemon=True
+                )
+                self.thread_coordinator.start_thread(error_close_thread)
 
     def _sendToRadioImpl(self, toRadio) -> None:
         """
@@ -963,7 +994,7 @@ class BLEInterface(MeshInterface):
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
             time.sleep(SEND_PROPAGATION_DELAY)
-            self._read_trigger.set()  # Wake receive loop to process any response
+            self.thread_coordinator.set_event("read_trigger")  # Wake receive loop to process any response
 
     def close(self) -> None:
         """
@@ -989,10 +1020,9 @@ class BLEInterface(MeshInterface):
 
         if self._want_receive:
             self._want_receive = False  # Tell the thread we want it to stop
-            self._read_trigger.set()  # Wake up the receive thread if it's waiting
-            self._reconnected_event.set()  # Ensure any reconnection waits are released
+            self.thread_coordinator.wake_waiting_threads("read_trigger", "reconnected_event")  # Wake all waiting threads
             if self._receiveThread:
-                self._receiveThread.join(timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
+                self.thread_coordinator.join_thread(self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
                 if self._receiveThread.is_alive():
                     logger.warning(
                         "BLE receive thread did not exit within %.1fs",
@@ -1021,6 +1051,9 @@ class BLEInterface(MeshInterface):
         if notify:
             self._disconnected()  # send the disconnected indicator up to clients
             self._wait_for_disconnect_notifications()
+        
+        # Clean up thread coordinator
+        self.thread_coordinator.cleanup()
 
     def _wait_for_disconnect_notifications(
         self, timeout: float = DISCONNECT_TIMEOUT_SECONDS

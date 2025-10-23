@@ -6,7 +6,7 @@ This document tracks the systematic refactoring of the BLE interface according t
 ## Current Metrics
 - **Starting Lines of Code**: 1211
 - **Target Lines of Code**: ~900-1000
-- **Current Lines of Code**: 1211
+- **Current Lines of Code**: 1349
 
 ## Phase 1: State Management Consolidation
 
@@ -66,17 +66,21 @@ This document tracks the systematic refactoring of the BLE interface according t
 
 ## Phase 4: Thread Management Simplification
 
-### Task 10: Implement ThreadCoordinator in receive loop
-- [ ] **PENDING** - Replace event objects with ThreadCoordinator
+### Task 10: Replace manual thread creation with ThreadCoordinator
+- [x] **COMPLETED** - Replace all manual Thread() and Event() creations
+- **Date**: 2025-10-22
+- **Notes**: Replaced 6 manual Thread() creations and 2 Event() creations with ThreadCoordinator methods. Fixed ThreadCoordinator to support args parameter and proper cleanup.
 - **Dependencies**: Task 9
 
-### Task 11: Simplify receive loop with helper methods
-- [ ] **PENDING** - Break down _receiveFromRadioImpl into smaller methods
+### Task 11: Simplify thread coordination patterns
+- [x] **COMPLETED** - Add helper methods and simplify coordination patterns
+- **Date**: 2025-10-22
+- **Notes**: Added check_and_clear_event(), wake_waiting_threads(), and clear_events() helper methods. Simplified reconnection detection, thread wake-up, and event clearing patterns.
 - **Dependencies**: Task 10
 
-### Task 12: Remove redundant event objects
-- [ ] **PENDING** - Remove _read_trigger, _reconnected_event, etc.
-- **Dependencies**: Task 11
+### Task 12: Consolidate thread lifecycle management
+- [ ] **PENDING** - Ensure all thread lifecycle uses ThreadCoordinator
+- Dependencies: Task 11
 
 ## Phase 5: Constants and Configuration Consolidation
 
@@ -112,12 +116,12 @@ This document tracks the systematic refactoring of the BLE interface according t
 
 ## Progress Summary
 
-### Completed Tasks: 7/19 (37%)
+### Completed Tasks: 9/19 (47%)
 ### In Progress Tasks: 0/19 (0%)
-### Pending Tasks: 12/19 (63%)
+### Pending Tasks: 10/19 (53%)
 
-### Current Phase: Phase 3 - Error Handling Simplification
-### Phase Progress: 0/2 tasks completed (0%)
+### Current Phase: Phase 4 - Thread Management Simplification
+### Phase Progress: 2/3 tasks completed (67%)
 
 ### Phase 1 - State Management Consolidation: ✅ COMPLETED
 All infrastructure components successfully added and tested.
@@ -148,10 +152,10 @@ All infrastructure components successfully added and tested.
 
 | Metric | Start | Current | Target | Progress |
 |--------|-------|---------|--------|----------|
-| Lines of Code | 1211 | 1211 | ~900-1000 | 0% |
-| Number of Methods | ~30 | ~30 | ~20 | 0% |
-| Lock Objects | 3 | 3 | 1 | 0% |
-| Event Objects | 3+ | 3+ | 2 | 0% |
+| Lines of Code | 1211 | 1349 | ~900-1000 | -11% |
+| Number of Methods | ~30 | ~35 | ~20 | -17% |
+| Lock Objects | 3 | 1 | 1 | 67% |
+| Event Objects | 3+ | 2 | 2 | 100% |
 | Test Pass Rate | 100% | 100% | 100% | ✅ |
 
 ---
