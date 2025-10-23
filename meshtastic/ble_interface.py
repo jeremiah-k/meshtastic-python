@@ -818,18 +818,15 @@ class BLEInterface(MeshInterface):
             # TODO: Revisit if bleak adds public support for connected device enumeration.
             # Trade-off: Using private API is unstable but provides needed fallback functionality.
 
-            # Create a simple event loop for this operation
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            try:
+            async def _get_devices_async_and_filter(address_to_find: Optional[str]) -> List[BLEDevice]:
+                """Async helper to get and filter connected Meshtastic devices."""
                 # Get devices from the scanner's cached data
                 scanner = BleakScanner()
-                devices = []
+                devices_found = []
 
                 # Try to get device information from the backend
                 if hasattr(scanner, '_backend') and hasattr(scanner._backend, 'get_devices'):
-                    backend_devices = loop.run_until_complete(scanner._backend.get_devices())
+                    backend_devices = await scanner._backend.get_devices()
 
                     for device in backend_devices:
                         # Check if device has Meshtastic service UUID
@@ -837,35 +834,31 @@ class BLEInterface(MeshInterface):
                             uuids = device.metadata.get('uuids', [])
                             if SERVICE_UUID in uuids:
                                 # If specific address requested, filter by it
-                                if address:
-                                    sanitized_target = BLEInterface._sanitize_address(address)
+                                if address_to_find:
+                                    sanitized_target = BLEInterface._sanitize_address(address_to_find)
                                     sanitized_addr = BLEInterface._sanitize_address(device.address)
                                     sanitized_name = BLEInterface._sanitize_address(device.name) if device.name else ""
 
                                     if sanitized_target in (sanitized_addr, sanitized_name):
-                                        # Create a BLEDevice-like object
-                                        ble_device = BLEDevice(
-                                            device.address,
-                                            device.name,
-                                            device.metadata,
+                                        devices_found.append(BLEDevice(
+                                            device.address, device.name, device.metadata,
                                             rssi=device.rssi if hasattr(device, 'rssi') else None
-                                        )
-                                        devices.append(ble_device)
+                                        ))
                                 else:
                                     # Add all connected Meshtastic devices
-                                    ble_device = BLEDevice(
-                                        device.address,
-                                        device.name,
-                                        device.metadata,
+                                    devices_found.append(BLEDevice(
+                                        device.address, device.name, device.metadata,
                                         rssi=device.rssi if hasattr(device, 'rssi') else None
-                                    )
-                                    devices.append(ble_device)
+                                    ))
+                return devices_found
 
-                logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
-                return devices
+            # Library-friendly async execution: use asyncio.run() which handles
+            # event loop creation/cleanup automatically and is safe in library context
+            # when called from synchronous code without a running event loop
+            devices = asyncio.run(_get_devices_async_and_filter(address))
 
-            finally:
-                loop.close()
+            logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
+            return devices
 
         except Exception as e:
             logger.debug(f"Fallback device discovery failed: {e}")
