@@ -298,6 +298,9 @@ class BLEInterface(MeshInterface):
         self._malformed_notification_count = 0   # Tracks corrupted packets for threshold
         self._reconnect_thread: Optional[Thread] = None
 
+        # Error handling infrastructure
+        self.error_handler = BLEErrorHandler()
+
         # Initialize parent interface
         MeshInterface.__init__(
             self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
@@ -561,13 +564,13 @@ class BLEInterface(MeshInterface):
             client (BLEClient): Connected BLE client to register notifications on.
         """
         # Optional log notifications - failures are not critical
-        try:
+        def _start_log_notifications():
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
                 client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
             if client.has_characteristic(LOGRADIO_UUID):
                 client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
-        except BleakError:
-            logger.debug("Failed to start optional log notifications", exc_info=True)
+        
+        BLEErrorHandler.safe_cleanup(_start_log_notifications, "optional log notifications")
 
         # Critical notification for receiving packets - let failures bubble up
         client.start_notify(FROMNUM_UUID, self.from_num_handler)
@@ -842,18 +845,9 @@ class BLEInterface(MeshInterface):
             c (BLEClient): The BLEClient instance to close; may be None or already-closed.
             event (Optional[Event]): An optional threading.Event to set after the client is closed.
         """
-        try:
-            c.close()
-        except BleakError:
-            logger.debug("BLE-specific error during client close", exc_info=True)
-        except (RuntimeError, OSError):
-            logger.debug(
-                "OS/Runtime error during client close (possible resource or threading issue)",
-                exc_info=True,
-            )
-        finally:
-            if event:
-                event.set()
+        BLEErrorHandler.safe_cleanup(lambda: c.close(), "client close")
+        if event:
+            event.set()
 
     def _receiveFromRadioImpl(self) -> None:
         """
@@ -990,12 +984,11 @@ class BLEInterface(MeshInterface):
                 return
             self._closing = True
 
-        try:
-            # Close parent interface (stops publishing thread, etc.)
-            MeshInterface.close(self)
-        except Exception:
-            # Log but don't let parent interface errors prevent BLE cleanup
-            logger.exception("Error closing mesh interface")
+        # Close parent interface (stops publishing thread, etc.)
+        self.error_handler.safe_execute(
+            lambda: MeshInterface.close(self),
+            error_msg="Error closing mesh interface"
+        )
 
         if self._want_receive:
             self._want_receive = False  # Tell the thread we want it to stop
@@ -1046,24 +1039,18 @@ class BLEInterface(MeshInterface):
             timeout (float): Maximum seconds to wait for the publish queue to flush.
         """
         flush_event = Event()
-        try:
-            publishingThread.queueWork(flush_event.set)
-            if not flush_event.wait(timeout=timeout):
-                thread = getattr(publishingThread, "thread", None)
-                if thread is not None and thread.is_alive():
-                    logger.debug("Timed out waiting for publish queue flush")
-                else:
-                    self._drain_publish_queue(flush_event)
-        except RuntimeError:  # pragma: no cover - defensive logging
-            logger.debug(
-                "Runtime error during disconnect notification flush (possible threading issue)",
-                exc_info=True,
-            )
-        except ValueError:  # pragma: no cover - defensive logging
-            logger.debug(
-                "Value error during disconnect notification flush (possible invalid event state)",
-                exc_info=True,
-            )
+        self.error_handler.safe_execute(
+            lambda: publishingThread.queueWork(flush_event.set),
+            error_msg="Runtime error during disconnect notification flush (possible threading issue)",
+            reraise=False
+        )
+        
+        if not flush_event.wait(timeout=timeout):
+            thread = getattr(publishingThread, "thread", None)
+            if thread is not None and thread.is_alive():
+                logger.debug("Timed out waiting for publish queue flush")
+            else:
+                self._drain_publish_queue(flush_event)
 
     def _disconnect_and_close_client(self, client: "BLEClient"):
         """
@@ -1077,17 +1064,8 @@ class BLEInterface(MeshInterface):
             client (BLEClient): The BLE client instance to disconnect and close.
         """
         try:
-            client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
-        except BLEInterface.BLEError:
-            logger.warning("Timed out waiting for BLE disconnect; forcing shutdown")
-        except BleakError:
-            logger.debug(
-                "BLE-specific error during disconnect operation", exc_info=True
-            )
-        except (RuntimeError, OSError):  # pragma: no cover - defensive logging
-            logger.debug(
-                "OS/Runtime error during disconnect (possible resource or threading issue)",
-                exc_info=True,
+            self.error_handler.safe_cleanup(
+                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
             )
         finally:
             self._safe_close_client(client)
@@ -1138,6 +1116,9 @@ class BLEClient:
             can only be used for discovery.
             **kwargs: Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
         """
+        # Error handling infrastructure
+        self.error_handler = BLEErrorHandler()
+        
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
         # Start event loop in background thread for async operations
@@ -1202,18 +1183,18 @@ class BLEClient:
         bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
             return False
-        try:
+        def _check_connection():
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
                 connected = connected()
             return bool(connected)
-        except (
-            AttributeError,
-            TypeError,
-            RuntimeError,
-        ):  # pragma: no cover - defensive logging
-            logger.debug("Unable to read bleak connection state", exc_info=True)
-            return False
+        
+        return self.error_handler.safe_execute(
+            _check_connection,
+            default_return=False,
+            error_msg="Unable to read bleak connection state",
+            reraise=False
+        )
 
     def disconnect(
         self, *, await_timeout: Optional[float] = None, **kwargs
@@ -1273,14 +1254,12 @@ class BLEClient:
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
-            try:
-                self.get_services()
-                services = getattr(self.bleak_client, "services", None)
-            except (BLEInterface.BLEError, BleakError):  # pragma: no cover - defensive
-                logger.debug(
-                    "Unable to populate services before has_characteristic",
-                    exc_info=True,
-                )
+            self.error_handler.safe_execute(
+                self.get_services,
+                error_msg="Unable to populate services before has_characteristic",
+                reraise=False
+            )
+            services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
     def start_notify(self, *args, **kwargs):  # pylint: disable=C0116
@@ -1364,10 +1343,12 @@ class BLEClient:
 
     def _run_event_loop(self):
         """Run the event loop in the dedicated thread until stopped."""
-        try:
-            self._eventLoop.run_forever()
-        finally:
-            self._eventLoop.close()  # Clean up resources when loop stops
+        self.error_handler.safe_execute(
+            self._eventLoop.run_forever,
+            error_msg="Error in event loop",
+            reraise=False
+        )
+        self._eventLoop.close()  # Clean up resources when loop stops
 
     async def _stop_event_loop(self):
         """Signal the event loop to stop running."""

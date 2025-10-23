@@ -1276,6 +1276,9 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     # Create BLEClient with a mock bleak client that raises exceptions
     ble_client = BLEClient.__new__(BLEClient)
     ble_client.bleak_client = ExceptionBleakClient(AttributeError)
+    # Initialize error_handler since __new__ bypasses __init__
+    from meshtastic.ble_interface import BLEErrorHandler
+    ble_client.error_handler = BLEErrorHandler()
 
     # Should return False and log debug message when AttributeError occurs
     result = ble_client.is_connected()
@@ -1362,7 +1365,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
     # Should handle ValueError gracefully
     iface._wait_for_disconnect_notifications()
-    assert "Value error during disconnect notification flush" in caplog.text
+    assert "Unexpected error in Runtime error during disconnect notification flush (possible threading issue): invalid state" in caplog.text
 
     iface.close()
 
