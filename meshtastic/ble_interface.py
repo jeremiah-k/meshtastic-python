@@ -138,7 +138,7 @@ class ThreadCoordinator:
         self._threads: List[Thread] = []
         self._events: dict[str, Event] = {}
 
-    def create_thread(self, target, name: str, daemon: bool = True, args=(), **kwargs) -> Thread:
+    def create_thread(self, target, name: str, daemon: bool = True, args=(), kwargs=None) -> Thread:
         """
         Create and register a new Thread configured with the given target and arguments.
         
@@ -147,13 +147,13 @@ class ThreadCoordinator:
             name (str): The thread's name.
             daemon (bool): Whether the thread should be a daemon thread.
             args (tuple): Positional arguments to pass to `target`.
-            **kwargs: Keyword arguments to pass to `target`.
+            kwargs (dict): Keyword arguments to pass to `target`.
         
         Returns:
             Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
         """
         with self._lock:
-            thread = Thread(target=target, name=name, daemon=daemon, args=args, **kwargs)
+            thread = Thread(target=target, name=name, daemon=daemon, args=args, kwargs=kwargs)
             self._threads.append(thread)
             return thread
 
