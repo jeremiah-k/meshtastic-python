@@ -799,12 +799,9 @@ class BLEInterface(MeshInterface):
                 self._reconnected_event.set()
             except Exception:
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
-                try:
-                    client.close()
-                except Exception as close_exc:
-                    logger.warning(
-                        f"Ignoring exception during client cleanup on connection failure: {close_exc!r}"
-                    )
+                self.error_handler.safe_cleanup(
+                    client.close
+                )
                 raise
 
             return client
@@ -1088,14 +1085,11 @@ class BLEInterface(MeshInterface):
                 runnable = queue.get_nowait()
             except Empty:
                 break
-            try:
-                runnable()
-            except Exception as exc:  # pragma: no cover - defensive logging
-                logger.debug(
-                    "Error in deferred publish callback: %s",
-                    exc,
-                    exc_info=True,
-                )
+            self.error_handler.safe_execute(
+                runnable,
+                error_msg="Error in deferred publish callback",
+                reraise=False
+            )
 
 
 class BLEClient:
