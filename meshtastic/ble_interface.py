@@ -824,15 +824,16 @@ class BLEInterface(MeshInterface):
 
         if len(addressed_devices) == 0:
             raise self.BLEError(
-                ERROR_NO_PERIPHERAL_FOUND.format(address_or_identifier)
+                ERROR_NO_PERIPHERAL_FOUND.format(address)
             )
+        elif len(addressed_devices) == 1:
+            return addressed_devices[0]
         else:
             # Build a list of found devices for the error message
             device_list = "\n".join([f"- {d.name} ({d.address})" for d in addressed_devices])
             raise BLEInterface.BLEError(
                 f"Multiple Meshtastic BLE peripherals found. Please specify one:\n{device_list}"
                 )
-        return addressed_devices[0]
 
     @staticmethod
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
