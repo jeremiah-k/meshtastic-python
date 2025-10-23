@@ -465,7 +465,7 @@ class BLEInterface(MeshInterface):
             logger.debug("Mesh configure starting")
             self._startConfig()
             if not self.noProto:
-                self._waitConnected(timeout=self.config.connection_timeout)
+                self._waitConnected(timeout=CONNECTION_TIMEOUT)
                 self.waitForConfig()
 
             # FROMNUM notification is set in _register_notifications
@@ -604,7 +604,7 @@ class BLEInterface(MeshInterface):
                 return
 
             def _attempt_reconnect() -> None:
-                delay = self.config.auto_reconnect_initial_delay
+                delay = AUTO_RECONNECT_INITIAL_DELAY
                 try:
                     while True:
                         if self._closing or not self.auto_reconnect:
@@ -635,7 +635,7 @@ class BLEInterface(MeshInterface):
                         if self._closing or not self.auto_reconnect:
                             return
                         time.sleep(delay + (0.25 * delay * (random.random() - 0.5)))
-                        delay = min(delay * self.config.auto_reconnect_backoff, self.config.auto_reconnect_max_delay)
+                        delay = min(delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY)
                 finally:
                     with self._client_lock:
                         if self._reconnect_thread is current_thread():
@@ -654,7 +654,7 @@ class BLEInterface(MeshInterface):
         """Helper to handle malformed FROMNUM notifications."""
         self._malformed_notification_count += 1
         logger.debug(reason, exc_info=exc_info)
-        if self._malformed_notification_count >= self.config.malformed_notification_threshold:
+        if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
             logger.warning(
                 f"Received {self._malformed_notification_count} malformed FROMNUM notifications. "
                 "Check BLE connection stability."
@@ -701,15 +701,11 @@ class BLEInterface(MeshInterface):
         """
         # Optional log notifications - failures are not critical
         def _start_log_notifications():
-            if client.has_characteristic(self.config.legacy_logradio_uuid):
-                client.start_notify(self.config.legacy_logradio_uuid, self.legacy_log_radio_handler)
-            if client.has_characteristic(self.config.logradio_uuid):
-                client.start_notify(self.config.logradio_uuid, self.log_radio_handler)
-        
-        BLEErrorHandler.safe_cleanup(_start_log_notifications, "optional log notifications")
-
-        # Critical notification for receiving packets - let failures bubble up
-        client.start_notify(self.config.fromnum_uuid, self.from_num_handler)
+            if client.has_characteristic(LEGACY_LOGRADIO_UUID):
+                client.start_notify(LEGACY_LOGRADIO_UUID, self.legacy_log_radio_handler)
+            if client.has_characteristic(LOGRADIO_UUID):
+                client.start_notify(LOGRADIO_UUID, self.log_radio_handler)
+        client.start_notify(FROMNUM_UUID, self.from_num_handler)
 
     def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
@@ -768,10 +764,10 @@ class BLEInterface(MeshInterface):
         """
         with BLEClient() as client:
             logger.debug(
-                "Scanning for BLE devices (takes %.0f seconds)...", self.config.scan_timeout
+                "Scanning for BLE devices (takes %.0f seconds)...", BLE_SCAN_TIMEOUT
             )
             response = client.discover(
-                timeout=self.config.scan_timeout, return_adv=True, service_uuids=[self.config.service_uuid]
+                timeout=BLE_SCAN_TIMEOUT, return_adv=True, service_uuids=[SERVICE_UUID]
             )
 
             devices: List[BLEDevice] = []
@@ -793,7 +789,7 @@ class BLEInterface(MeshInterface):
                     )
                     continue
                 suuids = getattr(adv, "service_uuids", None)
-                if suuids and self.config.service_uuid in suuids:
+                if suuids and SERVICE_UUID in suuids:
                     devices.append(device)
             return devices
 
@@ -897,7 +893,7 @@ class BLEInterface(MeshInterface):
             )
             previous_client = None
             try:
-                client.connect(await_timeout=self.config.connection_timeout)
+                client.connect(await_timeout=CONNECTION_TIMEOUT)
                 services = getattr(client.bleak_client, "services", None)
                 if not services or not getattr(services, "get_characteristic", None):
                     logger.debug(
@@ -988,7 +984,7 @@ class BLEInterface(MeshInterface):
         try:
             while self._want_receive:
                 # Wait for data to read, but also check periodically for reconnection
-                if not self.thread_coordinator.wait_for_event("read_trigger", timeout=self.config.receive_wait_timeout):
+                if not self.thread_coordinator.wait_for_event("read_trigger", timeout=RECEIVE_WAIT_TIMEOUT):
                     # Timeout occurred, check if we were reconnected during this time
                     if self.thread_coordinator.check_and_clear_event("reconnected_event"):
                         logger.debug("Detected reconnection, resuming normal operation")
@@ -1006,21 +1002,21 @@ class BLEInterface(MeshInterface):
                                 "BLE client is None; waiting for application-managed reconnect"
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
-                            self.thread_coordinator.wait_for_event("reconnected_event", timeout=self.config.receive_wait_timeout)
+                            self.thread_coordinator.wait_for_event("reconnected_event", timeout=RECEIVE_WAIT_TIMEOUT)
                             break  # Return to outer loop to re-check state
                         logger.debug("BLE client is None, shutting down")
                         self._want_receive = False
                         break
                     try:
                         # Read from the FROMRADIO characteristic for incoming packets
-                        b = client.read_gatt_char(self.config.fromradio_uuid)
+                        b = client.read_gatt_char(FROMRADIO_UUID)
                         if not b:
                             # Handle empty reads with limited retries to avoid busy-looping
-                            if retries < self.config.empty_read_max_retries:
-                                time.sleep(self.config.empty_read_retry_delay)
+                            if retries < EMPTY_READ_MAX_RETRIES:
+                                time.sleep(EMPTY_READ_RETRY_DELAY)
                                 retries += 1
                                 continue
-                            logger.warning(f"Exceeded max retries for empty BLE read from {self.config.fromradio_uuid}")
+                            logger.warning(f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}")
                             break  # Too many empty reads, exit to recheck state
                         logger.debug(f"FROMRADIO read: {b.hex()}")
                         self._handleFromRadio(b)
@@ -1082,7 +1078,7 @@ class BLEInterface(MeshInterface):
                 logger.debug(f"TORADIO write: {b.hex()}")
                 try:
                     # Use write-with-response to ensure delivery is acknowledged by the peripheral
-                    client.write_gatt_char(self.config.toradio_uuid, b, response=True)
+                    client.write_gatt_char(TORADIO_UUID, b, response=True)
                     write_successful = True
                 except (BleakError, RuntimeError, OSError) as e:
                     # Log detailed error information and wrap in our interface exception
@@ -1095,7 +1091,7 @@ class BLEInterface(MeshInterface):
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
-            time.sleep(self.config.send_propagation_delay)
+            time.sleep(SEND_PROPAGATION_DELAY)
             self.thread_coordinator.set_event("read_trigger")  # Wake receive loop to process any response
 
     def close(self) -> None:
@@ -1124,11 +1120,11 @@ class BLEInterface(MeshInterface):
             self._want_receive = False  # Tell the thread we want it to stop
             self.thread_coordinator.wake_waiting_threads("read_trigger", "reconnected_event")  # Wake all waiting threads
             if self._receiveThread:
-                self.thread_coordinator.join_thread(self._receiveThread, timeout=self.config.thread_join_timeout)
+                self.thread_coordinator.join_thread(self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
                 if self._receiveThread.is_alive():
                     logger.warning(
                         "BLE receive thread did not exit within %.1fs",
-                        self.config.thread_join_timeout,
+                        RECEIVE_THREAD_JOIN_TIMEOUT,
                     )
                 self._receiveThread = None
 
@@ -1172,7 +1168,7 @@ class BLEInterface(MeshInterface):
                            Defaults to config.disconnect_timeout if not provided.
         """
         if timeout is None:
-            timeout = self.config.disconnect_timeout
+            timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
         self.error_handler.safe_execute(
             lambda: publishingThread.queueWork(flush_event.set),
@@ -1200,7 +1196,7 @@ class BLEInterface(MeshInterface):
         """
         try:
             self.error_handler.safe_cleanup(
-                lambda: client.disconnect(await_timeout=self.config.disconnect_timeout)
+                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
             )
         finally:
             self._safe_close_client(client)
