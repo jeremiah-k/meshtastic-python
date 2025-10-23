@@ -761,10 +761,10 @@ class BLEInterface(MeshInterface):
         Scan for BLE devices advertising the Meshtastic service UUID.
 
         Performs a timed BLE scan, handles variations in BleakScanner.discover() return formats, and returns devices whose 
-        advertisements include {self.config.service_uuid}.
+        advertisements include the Meshtastic service UUID.
 
         Returns:
-            List[BLEDevice]: Devices whose advertisements include {self.config.service_uuid}; empty list if none are found.
+            List[BLEDevice]: Devices whose advertisements include the Meshtastic service UUID; empty list if none are found.
         """
         with BLEClient() as client:
             logger.debug(
