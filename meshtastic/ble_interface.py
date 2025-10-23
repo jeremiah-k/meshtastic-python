@@ -9,7 +9,7 @@ import random
 import struct
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from dataclasses import dataclass
+
 from enum import Enum
 from queue import Empty
 from threading import Event, Lock, RLock, Thread, current_thread
@@ -105,84 +105,7 @@ class ConnectionState(Enum):
     ERROR = "error"
 
 
-@dataclass
-class BLEConfig:
-    """
-    Configuration class for BLE interface settings.
 
-    This dataclass consolidates all configuration parameters for BLE operations,
-    including UUIDs, timeouts, retry settings, and error messages. It provides
-    a single point of configuration management for the BLE interface.
-
-    Attributes:
-        service_uuid: Primary Meshtastic BLE service UUID
-        toradio_uuid: Characteristic UUID for sending data to radio
-        fromradio_uuid: Characteristic UUID for receiving data from radio
-        fromnum_uuid: Characteristic UUID for packet count notifications
-        legacy_logradio_uuid: Legacy logging characteristic UUID
-        logradio_uuid: Modern logging characteristic UUID
-
-        disconnect_timeout: Timeout for disconnect operations (seconds)
-        thread_join_timeout: Timeout for thread joining operations (seconds)
-        event_thread_join_timeout: Timeout for event thread joining (seconds)
-        scan_timeout: Timeout for BLE device scanning (seconds)
-        receive_wait_timeout: Timeout for waiting on receive events (seconds)
-        connection_timeout: Timeout for establishing BLE connection (seconds)
-
-        empty_read_retry_delay: Delay between empty read retries (seconds)
-        empty_read_max_retries: Maximum number of empty read retries
-        send_propagation_delay: Delay after sending data to allow propagation (seconds)
-
-        auto_reconnect_initial_delay: Initial delay before reconnection attempts (seconds)
-        auto_reconnect_max_delay: Maximum delay between reconnection attempts (seconds)
-        auto_reconnect_backoff: Multiplier for exponential backoff in reconnection
-
-        malformed_notification_threshold: Max malformed notifications before warning
-
-        error_*: Standardized error message templates
-    """
-    # BLE UUID constants
-    service_uuid: str = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
-    toradio_uuid: str = "f75c76d2-129e-4dad-a1dd-7866124401e7"
-    fromradio_uuid: str = "2c55e69e-4993-11ed-b878-0242ac120002"
-    fromnum_uuid: str = "ed9da18c-a800-4f66-a670-aa7547e34453"
-    legacy_logradio_uuid: str = "6c6fd238-78fa-436b-aacf-15c5be1ef2e2"
-    logradio_uuid: str = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
-
-    # Timeout values (seconds)
-    disconnect_timeout: float = 5.0
-    thread_join_timeout: float = 2.0
-    event_thread_join_timeout: float = 2.0
-    scan_timeout: float = 10.0
-    receive_wait_timeout: float = 0.5
-    connection_timeout: float = 60.0
-
-    # Retry configuration
-    empty_read_retry_delay: float = 0.1
-    empty_read_max_retries: int = 5
-    send_propagation_delay: float = 0.01
-
-    # Auto-reconnect configuration
-    auto_reconnect_initial_delay: float = 1.0
-    auto_reconnect_max_delay: float = 30.0
-    auto_reconnect_backoff: float = 2.0
-
-    # Thresholds
-    malformed_notification_threshold: int = 10
-
-    # Error messages
-    error_reading_ble: str = "Error reading BLE"
-    error_no_peripheral_found: str = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
-    error_multiple_peripherals_found: str = (
-        "More than one Meshtastic BLE peripheral with identifier or address '{0}' found."
-    )
-    error_writing_ble: str = (
-        "Error writing BLE. This is often caused by missing Bluetooth "
-        "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
-    )
-    error_connection_failed: str = "Connection failed: {0}"
-    error_no_peripherals_found: str = "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
-    error_async_timeout: str = "Async operation timed out"
 
 
 class ThreadCoordinator:
@@ -414,8 +337,6 @@ class BLEInterface(MeshInterface):
                 automatic reconnection; if False, close the interface on disconnect.
             timeout (int): How long to wait for replies (default: 300 seconds).
         """
-        # Configuration
-        self.config = BLEConfig()
 
         # Thread safety and state management
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
@@ -838,12 +759,15 @@ class BLEInterface(MeshInterface):
             )
         elif len(addressed_devices) == 1:
             return addressed_devices[0]
-        else:
+        elif address and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
             device_list = "\n".join([f"- {d.name} ({d.address})" for d in addressed_devices])
             raise BLEInterface.BLEError(
-                f"Multiple Meshtastic BLE peripherals found. Please specify one:\n{device_list}"
+                f"Multiple Meshtastic BLE peripherals found matching '{address}'. Please specify one:\n{device_list}"
                 )
+        else:
+            # No specific address provided and multiple devices found, return the first one
+            return addressed_devices[0]
 
     @staticmethod
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
@@ -880,8 +804,6 @@ class BLEInterface(MeshInterface):
         try:
             # Try to use BleakScanner to get cached device information
             # This works even when scanning fails due to adapter issues
-            import asyncio
-            from bleak import BleakScanner
 
             # Create a simple event loop for this operation
             loop = asyncio.new_event_loop()
@@ -909,7 +831,6 @@ class BLEInterface(MeshInterface):
 
                                     if sanitized_target in (sanitized_addr, sanitized_name):
                                         # Create a BLEDevice-like object
-                                        from bleak import BLEDevice
                                         ble_device = BLEDevice(
                                             device.address,
                                             device.name,
@@ -919,7 +840,6 @@ class BLEInterface(MeshInterface):
                                         devices.append(ble_device)
                                 else:
                                     # Add all connected Meshtastic devices
-                                    from bleak import BLEDevice
                                     ble_device = BLEDevice(
                                         device.address,
                                         device.name,
@@ -1055,7 +975,7 @@ class BLEInterface(MeshInterface):
             c (BLEClient): The BLEClient instance to close; may be None or already-closed.
             event (Optional[Event]): An optional threading.Event to set after the client is closed.
         """
-        BLEErrorHandler.safe_cleanup(lambda: c.close(), "client close")
+        BLEErrorHandler.safe_cleanup(c.close, "client close")
         if event:
             event.set()
 

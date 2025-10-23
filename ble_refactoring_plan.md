@@ -322,7 +322,7 @@ def _receiveFromRadioImpl(self) -> None:
 ```python
 def _receiveFromRadioImpl(self) -> None:
     """Simplified receive loop with helper methods."""
-    while self._coordinator.should_stop and self.should_receive:
+    while not self._coordinator.should_stop and self.should_receive:
         try:
             if not self._coordinator.wait_for_data(config.receive_wait_timeout):
                 continue
