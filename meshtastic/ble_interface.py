@@ -88,6 +88,10 @@ ERROR_CONNECTION_FAILED = "Connection failed: {0}"
 ERROR_NO_PERIPHERALS_FOUND = (
     "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
 )
+
+# BLEClient-specific constants
+BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
+BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
@@ -1405,15 +1409,15 @@ class BLEClient:
         """
         Stop and tear down the BLE client's internal event loop and its thread.
 
-        Attempts to stop the internal asyncio event loop, waits up to config.event_thread_join_timeout for the event thread to exit,
+        Attempts to stop the internal asyncio event loop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the event thread to exit,
             and logs a warning if the thread does not terminate in time.
         """
         self.async_run(self._stop_event_loop())
-        self._eventThread.join(timeout=self.config.event_thread_join_timeout)
+        self._eventThread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():
             logger.warning(
                 "BLE event thread did not exit within %.1fs",
-                self.config.event_thread_join_timeout,
+                BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
             )
 
     def __enter__(self):
@@ -1455,7 +1459,7 @@ class BLEClient:
             return future.result(timeout)
         except FutureTimeoutError as e:
             future.cancel()  # Clean up pending task to avoid resource leaks
-            raise BLEInterface.BLEError(self.config.error_async_timeout) from e
+            raise BLEInterface.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116
         """
