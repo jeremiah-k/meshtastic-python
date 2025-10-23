@@ -79,8 +79,10 @@ This document tracks the systematic refactoring of the BLE interface according t
 - **Dependencies**: Task 10
 
 ### Task 12: Consolidate thread lifecycle management
-- [ ] **PENDING** - Ensure all thread lifecycle uses ThreadCoordinator
-- Dependencies: Task 11
+- [x] **COMPLETED** - All main thread lifecycle uses ThreadCoordinator
+- **Date**: 2025-10-22
+- **Notes**: All thread creation, starting, and cleanup in BLEInterface properly uses ThreadCoordinator. Manual thread management in BLEClient class is appropriate for its separate responsibilities.
+- **Dependencies**: Task 11
 
 ## Phase 5: Constants and Configuration Consolidation
 
@@ -116,12 +118,12 @@ This document tracks the systematic refactoring of the BLE interface according t
 
 ## Progress Summary
 
-### Completed Tasks: 9/19 (47%)
+### Completed Tasks: 10/19 (53%)
 ### In Progress Tasks: 0/19 (0%)
-### Pending Tasks: 10/19 (53%)
+### Pending Tasks: 9/19 (47%)
 
-### Current Phase: Phase 4 - Thread Management Simplification
-### Phase Progress: 2/3 tasks completed (67%)
+### Current Phase: Phase 5 - Constants and Configuration Consolidation
+### Phase Progress: 0/2 tasks completed (0%)
 
 ### Phase 1 - State Management Consolidation: ✅ COMPLETED
 All infrastructure components successfully added and tested.
