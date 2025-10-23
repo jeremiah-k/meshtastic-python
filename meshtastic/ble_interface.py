@@ -305,7 +305,7 @@ class BLEInterface(MeshInterface):
 
     Architecture:
         - ThreadCoordinator: Centralized thread and event management
-        - BLEConfig: Consolidated configuration management
+        - Module-level constants: Configurable timeouts, UUIDs, and error messages
         - BLEErrorHandler: Standardized error handling patterns
         - ConnectionState: Enum-based state tracking
 
@@ -564,7 +564,7 @@ class BLEInterface(MeshInterface):
 
                         if self._closing or not self.auto_reconnect:
                             return
-                        time.sleep(delay + (0.25 * delay * (random.random() - 0.5)))
+                        time.sleep(delay + (0.25 * delay * (random.random() - 0.5)))  # noqa: S311 non-cryptographic jitter
                         delay = min(delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY)
                 finally:
                     with self._client_lock:
@@ -755,31 +755,33 @@ class BLEInterface(MeshInterface):
 
         if address:
             sanitized_address = BLEInterface._sanitize_address(address)
-            filtered_devices = []
-            for device in addressed_devices:
-                sanitized_name = BLEInterface._sanitize_address(device.name)
-                sanitized_device_address = BLEInterface._sanitize_address(
-                    device.address
-                )
-                if sanitized_address in (sanitized_name, sanitized_device_address):
-                    filtered_devices.append(device)
-            addressed_devices = filtered_devices
+            if sanitized_address is None:
+                logger.debug("Empty/whitespace address provided; treating as 'any device'")
+            else:
+                filtered_devices = []
+                for device in addressed_devices:
+                    sanitized_name = BLEInterface._sanitize_address(device.name)
+                    sanitized_device_address = BLEInterface._sanitize_address(
+                        device.address
+                    )
+                    if sanitized_address in (sanitized_name, sanitized_device_address):
+                        filtered_devices.append(device)
+                addressed_devices = filtered_devices
 
         if len(addressed_devices) == 0:
-            raise self.BLEError(
-                ERROR_NO_PERIPHERAL_FOUND.format(address)
-            )
-        elif len(addressed_devices) == 1:
+            if address:
+                raise self.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
+            raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
+        if len(addressed_devices) == 1:
             return addressed_devices[0]
-        elif address and len(addressed_devices) > 1:
+        if address and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
             device_list = "\n".join([f"- {d.name} ({d.address})" for d in addressed_devices])
             raise self.BLEError(
                 f"Multiple Meshtastic BLE peripherals found matching '{address}'. Please specify one:\n{device_list}"
                 )
-        else:
-            # No specific address provided and multiple devices found, return the first one
-            return addressed_devices[0]
+        # No specific address provided and multiple devices found, return the first one
+        return addressed_devices[0]
 
     @staticmethod
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
@@ -876,7 +878,7 @@ class BLEInterface(MeshInterface):
             logger.debug(f"Found {len(devices)} connected Meshtastic devices via fallback")
             return devices
 
-        except Exception as e:
+        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError) as e:
             logger.debug(f"Fallback device discovery failed: {e}")
             return []
 
@@ -953,7 +955,7 @@ class BLEInterface(MeshInterface):
                 # Signal successful reconnection to waiting threads
                 self.thread_coordinator.set_event("reconnected_event")
                 self._read_retry_count = 0  # Reset transient error counter on successful connect
-            except Exception:
+            except Exception:  # noqa: BLE001 - Intentional blanket catch for connection cleanup
                 logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
                 self.error_handler.safe_cleanup(
                     client.close
@@ -1072,7 +1074,7 @@ class BLEInterface(MeshInterface):
                             continue
                         self._read_retry_count = 0
                         logger.debug("Persistent BLE read error after retries", exc_info=True)
-                        raise BLEInterface.BLEError(ERROR_READING_BLE) from e
+                        raise self.BLEError(ERROR_READING_BLE) from e
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")
             if not self._closing:
@@ -1114,7 +1116,7 @@ class BLEInterface(MeshInterface):
                     logger.debug(
                         "Error during write operation: %s", type(e).__name__, exc_info=True
                     )
-                    raise BLEInterface.BLEError(ERROR_WRITING_BLE) from e
+                    raise self.BLEError(ERROR_WRITING_BLE) from e
             else:
                 logger.debug("Skipping TORADIO write: no BLE client (closing or disconnected).")
 
@@ -1484,7 +1486,7 @@ class BLEClient:
             return future.result(timeout)
         except FutureTimeoutError as e:
             future.cancel()  # Clean up pending task to avoid resource leaks
-            raise BLEInterface.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116
         """
