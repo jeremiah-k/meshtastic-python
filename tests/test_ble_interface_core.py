@@ -50,6 +50,13 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
 
     def _fake_connected(_self, _address):
+        """
+        Provide a fake connected-device lookup that always returns the predefined `fallback_device`.
+
+        Returns:
+            list: A single-element list containing the preset `fallback_device`.
+
+        """
         return [fallback_device]
 
     monkeypatch.setattr(BLEInterface, "_find_connected_devices", _fake_connected)
@@ -90,6 +97,15 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
         """Mock scanner that raises an exception when instantiated."""
 
         def __init__(self):
+            """
+            Prevent instantiation by always raising an AssertionError when the private-backend guard disallows it.
+
+            This initializer exists solely to signal that creating a BleakScanner is not permitted under the failing guard.
+
+            Raises:
+                AssertionError: "BleakScanner should not be instantiated when guard fails"
+
+            """
             raise AssertionError(
                 "BleakScanner should not be instantiated when guard fails"
             )
@@ -125,7 +141,8 @@ def test_close_handles_bleak_error(monkeypatch):
         """
         Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
 
-        Args:
+        Parameters
+        ----------
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
 
@@ -161,7 +178,8 @@ def test_close_handles_runtime_error(monkeypatch):
         """
         Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
 
-        Args:
+        Parameters
+        ----------
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
 
@@ -198,7 +216,8 @@ def test_close_handles_os_error(monkeypatch):
         """
         Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
 
-        Args:
+        Parameters
+        ----------
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
 
@@ -264,11 +283,12 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def __init__(self, exception_type):
                 """
-                Test client that raises a configured exception from its faulting methods.
+                Create a test client configured to raise a specific exception from its faulting methods.
 
-                Args:
-                    exception_type (Exception | type): An exception instance or exception class that the
-                        client will raise when its faulting methods are invoked.
+                Parameters
+                ----------
+                    exception_type (Exception | type): An exception instance or an exception class; the client will raise
+                        this exception (or an instance of it) when its faulting methods are invoked.
 
                 """
                 super().__init__()
@@ -293,14 +313,16 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         def mock_close(close_called=close_called, original_close=original_close):
             """
-            Mark the given event to indicate close was invoked and then call the original close function.
+            Signal that close was invoked and then call the original close function.
 
-            Args:
-                close_called (threading.Event): Event that will be set to signal that close was called.
+            Parameters
+            ----------
+                close_called (threading.Event): Event that will be set to signal that close was invoked.
                 original_close (Callable[[], Any]): The original close callable to invoke.
 
-            Returns:
-                The result returned by invoking `original_close`.
+            Returns
+            -------
+                Any: The value returned by `original_close`.
 
             """
             close_called.set()
@@ -346,13 +368,13 @@ def test_log_notification_registration(monkeypatch):
 
         def __init__(self):
             """
-            Initialize the mock client with default notification tracking and characteristic availability.
+            Initialize the mock client and set up notification tracking and characteristic availability.
 
             Attributes:
-                start_notify_calls (list): Records arguments of each start_notify invocation.
-                has_characteristic_map (dict): Maps characteristic UUID constants to booleans indicating
-                    whether the client reports that characteristic is present. Defaults
-                    include LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
+                start_notify_calls (list): Records the arguments of each start_notify invocation.
+                has_characteristic_map (dict): Maps characteristic UUIDs to booleans indicating whether the
+                    client reports that characteristic is present. By default, includes
+                    LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
 
             """
             super().__init__()
@@ -365,20 +387,28 @@ def test_log_notification_registration(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Check whether the client reports support for the given characteristic UUID.
+            Determine whether the client's characteristic map contains the given characteristic UUID.
 
-            Args:
-                uuid (str | uuid.UUID): The characteristic UUID to look up.
+            Parameters
+            ----------
+                uuid (str | uuid.UUID): Characteristic UUID to check.
 
-            Returns:
-                bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
+            Returns
+            -------
+                bool: True if the UUID is present in the client's characteristic map, False otherwise.
 
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
-            Record a notification registration request for the specified characteristic UUID.
+            Record a requested notification registration by saving the characteristic UUID and its handler.
+
+            Parameters
+            ----------
+                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID (usually a string) and the second is the notification handler (callable). When present, the pair is appended to `self.start_notify_calls`.
+                _kwargs (dict): Additional keyword arguments are accepted but ignored by this test helper.
+
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
