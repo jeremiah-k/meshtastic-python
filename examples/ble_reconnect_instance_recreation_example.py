@@ -32,15 +32,13 @@ disconnected_event = threading.Event()
 
 def on_connection_change(interface, connected):
     """
-    Handle BLE interface connection changes and notify the main loop when a disconnect occurs.
-
-    Logs the interface's address (or repr) and connection state. When disconnected, sets the module-level `disconnected_event`
-    to signal the main loop to attempt a reconnect.
-
-    Args:
-        interface: The BLE interface object whose connection status changed; its `address` attribute is used for logging if present.
-        connected (bool): `True` if the interface is connected, `False` if it is disconnected.
-
+    Handle BLE interface connection state changes and signal disconnects to the main loop.
+    
+    Logs the interface label (uses `interface.address` if present, otherwise the object's `repr`) and sets the module-level `disconnected_event` when `connected` is False to notify the reconnection loop.
+    
+    Parameters:
+        interface: A BLE interface object; its `address` attribute is used for logging if available.
+        connected (bool): `True` when the interface is connected, `False` when it is disconnected.
     """
     iface_label = getattr(interface, "address", repr(interface))
     logger.info(
@@ -55,12 +53,13 @@ def on_connection_change(interface, connected):
 
 def main():
     """
-    Run a reconnection loop that repeatedly creates a new BLEInterface for each connection attempt.
-
-    Parses a required BLE address from command-line arguments, subscribes to connection-status events
-    to detect disconnects, and uses a fresh BLEInterface instance (via a context manager) for each attempt.
-    Exits cleanly on KeyboardInterrupt, logs BLE-related and unexpected errors, and retries after
-    RETRY_DELAY_SECONDS when a connection ends or fails.
+    Run a reconnection loop that repeatedly creates a new BLEInterface instance and manages retry attempts.
+    
+    Parses a required BLE device address and optional `--retry-delay` from the command line, subscribes to the
+    "meshtastic.connection.status" pubsub topic to detect disconnects, and for each attempt creates a fresh
+    BLEInterface (noProto=True, auto_reconnect=False) inside a context manager. Waits for a disconnection signal,
+    logs BLE-specific and unexpected errors, sleeps for the configured delay before retrying, exits on
+    KeyboardInterrupt, and always unsubscribes from the pubsub topic on shutdown.
     """
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
