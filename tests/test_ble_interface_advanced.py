@@ -544,7 +544,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             `client` is the StressTestClient that iface.connect() will return.
 
         """
-        client = StressTestClient()
+        outer_client = StressTestClient()
         connect_calls: list = []
 
         stack = ExitStack()
@@ -557,7 +557,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         def _patched_connect(
             self: BLEInterface,
             address: Optional[str] = None,
-            client: Optional["StressTestClient"] = None,
         ) -> "StressTestClient":
             """
             Attach a StressTestClient to the interface, record the connection address, clear disconnect state, and signal any reconnected event.
@@ -569,7 +568,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             ----------
                 self: BLEInterface instance to patch.
                 address (Optional[str]): Address used for the connection; appended to connect_calls for inspection.
-                client (Optional[StressTestClient]): Client to attach; if omitted a new StressTestClient is created and connected.
 
             Returns
             -------
@@ -577,14 +575,12 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             """
             connect_calls.append(address)
-            if client is None:
-                client = StressTestClient()
-            client.connect()
-            self.client = client
+            outer_client.connect()
+            self.client = outer_client
             self._disconnect_notified = False
             if hasattr(self, "_reconnected_event"):
                 self._reconnected_event.set()
-            return client
+            return outer_client
 
         stack.enter_context(patch.object(BLEInterface, "connect", _patched_connect))
 
@@ -595,7 +591,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         )
         iface._test_patch_stack = stack
         iface._connect_stub_calls = connect_calls
-        return iface, client
+        return iface, iface.client
 
     # Test 1: Rapid disconnect callbacks
     iface, client = create_interface_with_auto_reconnect()

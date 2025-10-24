@@ -88,20 +88,9 @@ def mock_publishing_thread(monkeypatch):
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
 
     """
-
-
-def execute_immediately(callback):
-    """
-    Execute provided callback immediately instead of queuing it.
-
-    Parameters
-    ----------
-        callback (Optional[Callable[[], Any]]): Callable to execute; if falsy, no action is taken.
-
-    """
     publishing_thread_module = types.ModuleType("publishingThread")
 
-    def mock_queue_work(callback):
+    def queueWork(callback):
         """
         Invoke `callback` immediately instead of scheduling it for later execution.
 
@@ -113,13 +102,13 @@ def execute_immediately(callback):
         if callback:
             callback()
 
-    publishing_thread_module.queueWork = mock_queue_work
+    publishing_thread_module.queueWork = queueWork
 
-    # Remove any existing module to ensure fresh state
+    # Ensure fresh state
     if "publishingThread" in sys.modules:
         del sys.modules["publishingThread"]
 
-        monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
+    monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
     return publishing_thread_module
 
 

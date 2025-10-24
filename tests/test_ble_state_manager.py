@@ -1,5 +1,6 @@
 """Tests for BLEStateManager state machine functionality."""
 
+import gc
 import threading
 import time
 from unittest.mock import MagicMock, Mock
@@ -498,7 +499,7 @@ class TestPhase4PerformanceOptimization:
     """Test Phase 4 performance optimization and validation."""
 
 
-def test_state_transition_performance(self):
+def test_state_transition_performance():
     """Measure performance of state transitions under realistic load."""
     manager = BLEStateManager()
     mock_client = MagicMock()
@@ -530,7 +531,7 @@ def test_state_transition_performance(self):
     )
 
 
-def test_lock_contention_performance(self):
+def test_lock_contention_performance():
     """
     Measure BLEStateManager throughput and correctness under lock contention.
 
@@ -610,7 +611,7 @@ def test_lock_contention_performance(self):
     print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
 
 
-def test_memory_efficiency(self):
+def test_memory_efficiency():
     """Verify that BLEStateManager does not leak memory during creation and destruction."""
     # Force garbage collection
     gc.collect()
@@ -642,7 +643,7 @@ def test_memory_efficiency(self):
     print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 
 
-def test_property_access_performance(self):
+def test_property_access_performance():
     """Test that state property access is fast."""
 
     manager = BLEStateManager()
