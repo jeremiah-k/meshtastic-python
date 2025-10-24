@@ -347,7 +347,9 @@ def test_log_notification_registration(monkeypatch):
 
             Parameters
             ----------
-                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID (usually a string) and the second is the notification handler (callable). When present, the pair is appended to `self.start_notify_calls`.
+                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID
+                (usually a string) and the second is the notification handler (callable). When present,
+                the pair is appended to `self.start_notify_calls`.
                 _kwargs (dict): Additional keyword arguments are accepted but ignored by this test helper.
 
             """

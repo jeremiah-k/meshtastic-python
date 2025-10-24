@@ -119,7 +119,7 @@ def execute_immediately(callback):
     if "publishingThread" in sys.modules:
         del sys.modules["publishingThread"]
 
-    monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
+        monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
     return publishing_thread_module
 
 
@@ -397,7 +397,10 @@ def stub_atexit(
     """
     Patch meshtastic.ble_interface.atexit.register/unregister to record callbacks and invoke them after the test.
 
-    This pytest fixture replaces the module's atexit.register and atexit.unregister with stubs that append registered callables to an internal list. The fixture yields to the test and, after the test completes, invokes all recorded callbacks (exceptions raised by callbacks are caught and logged at debug level). The additional fixture arguments are accepted only to enforce fixture ordering and are not otherwise used.
+    This pytest fixture replaces the module's atexit.register and atexit.unregister with stubs that append registered
+        callables to an internal list. The fixture yields to the test and, after the test completes, invokes all
+        recorded callbacks (exceptions raised by callbacks are caught and logged at debug level). The additional
+        fixture arguments are accepted only to enforce fixture ordering and are not otherwise used.
     """
     registered = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).

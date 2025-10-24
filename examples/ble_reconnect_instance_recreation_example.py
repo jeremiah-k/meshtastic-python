@@ -34,7 +34,9 @@ def on_connection_change(interface, connected):
     """
     Handle BLE interface connection state changes and signal disconnects to the main loop.
 
-    Logs the interface label (uses `interface.address` if present, otherwise the object's `repr`) and sets the module-level `disconnected_event` when `connected` is False to notify the reconnection loop.
+    Logs the interface label (uses `interface.address` if present, otherwise the object's `repr`)
+    and sets the module-level `disconnected_event` when `connected` is False to notify
+    the reconnection loop.
 
     Parameters
     ----------

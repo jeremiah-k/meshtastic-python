@@ -2,7 +2,7 @@
 
 import threading
 import time
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from meshtastic.ble_interface import (  # type: ignore[import-untyped]
     BLEStateManager,
@@ -184,7 +184,8 @@ class TestBLEStateManager:
         """
         Verify that attempting an invalid state transition emits a warning log.
 
-        Specifically, transitioning from DISCONNECTED to CONNECTED should produce a WARNING log message: "Invalid state transition: disconnected → connected".
+        Specifically, transitioning from DISCONNECTED to CONNECTED should produce a WARNING log message: 
+        "Invalid state transition: disconnected → connected".
         """
         manager = BLEStateManager()
 
@@ -257,7 +258,8 @@ class TestBLEInterfaceStateIntegration:
         """
         Verify BLEStateManager can be instantiated standalone and exhibits expected initial properties and basic transition behavior.
 
-        Checks that a newly created manager starts in DISCONNECTED with can_connect True, is_connected False, is_closing False, and no client, and that transitioning to CONNECTING succeeds and updates the state and can_connect flag.
+        Checks that a newly created manager starts in DISCONNECTED with can_connect True, is_connected False, is_closing False, 
+        and no client, and that transitioning to CONNECTING succeeds and updates the state and can_connect flag.
         """
 
         # Test state manager can be created and used independently
@@ -314,8 +316,6 @@ class TestBLEInterfaceStateIntegration:
 
     def test_client_management_with_states(self):
         """Test client management works correctly with state transitions."""
-        from unittest.mock import MagicMock
-
         manager = BLEStateManager()
         mock_client = MagicMock()
 
@@ -365,8 +365,6 @@ class TestPhase3LockConsolidation:
 
     def test_unified_lock_thread_safety(self):
         """Test that unified state lock provides thread safety for concurrent operations."""
-        from unittest.mock import MagicMock
-
         manager = BLEStateManager()
         results = []
         errors = []
@@ -499,11 +497,8 @@ class TestPhase3LockConsolidation:
 class TestPhase4PerformanceOptimization:
     """Test Phase 4 performance optimization and validation."""
 
-    def test_state_transition_performance(self):
-        """Test that state transitions are performant."""
-        import time
-        from unittest.mock import MagicMock
-
+def test_state_transition_performance(self):
+        """Measure performance of state transitions under realistic load."""
         manager = BLEStateManager()
         mock_client = MagicMock()
 
@@ -545,7 +540,7 @@ class TestPhase4PerformanceOptimization:
 
         def worker(worker_id):
             """
-            Performs a sequence of simulated BLE state transitions as a worker and records its operation count and elapsed time.
+            Perform a sequence of simulated BLE state transitions as a worker and record its operation count and elapsed time.
 
             Simulates 100 iterations of attempting transitions in order: CONNECTING, CONNECTED, DISCONNECTED. Counts each successful transition as one operation, measures elapsed wall-clock time for the loop, and appends a result dictionary to the external `results` list with keys "worker_id", "operations", and "time".
 
@@ -611,15 +606,8 @@ class TestPhase4PerformanceOptimization:
             f"Contention performance: {total_operations} operations in {total_time:.3f}s"
         )
 
-    def test_memory_efficiency(self):
-        """
-        Checks that creating and destroying many BLEStateManager instances does not cause substantial memory growth.
-
-        Runs a sequence of lifecycle transitions on 100 BLEStateManager objects, forces garbage collection before and after, and asserts that the number of GC-tracked objects increases by less than 1000; raises an assertion if growth indicates a potential memory leak.
-        """
-        import gc
-        from unittest.mock import MagicMock
-
+def test_memory_efficiency(self):
+        """Verify that BLEStateManager does not leak memory during creation and destruction."""
         # Force garbage collection
         gc.collect()
         initial_objects = len(gc.get_objects())

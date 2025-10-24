@@ -117,7 +117,10 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Initialize a MeshInterface and prepare internal state, timers, and defaults required to operate with a Meshtastic device.
 
-        This sets up in-memory structures (nodes, nodesByNum, responseHandlers, queue), creates a local placeholder Node, configures timeout and acknowledgment helpers, seeds the initial packet ID state, and starts heartbeat/config behavior as needed. If debugOut is provided, log lines are forwarded to that handler. If noNodes is True, the instance will request node-less configuration. If noProto is True, transport-level protocol processing is disabled.
+        This sets up in-memory structures (nodes, nodesByNum, responseHandlers, queue), creates a local placeholder Node,
+        configures timeout and acknowledgment helpers, seeds the initial packet ID state, and starts heartbeat/config
+        behavior as needed. If debugOut is provided, log lines are forwarded to that handler. If noNodes is True,
+        the instance will request node-less configuration. If noProto is True, transport-level protocol processing is disabled.
 
         Parameters
         ----------
@@ -285,12 +288,15 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Render a human-readable table of known mesh nodes.
 
-        Renders a tabular view (one row per known node) using either a sensible default column set or the ordered dot-path fields provided in showFields. The table is printed to stdout and also returned.
+        Renders a tabular view (one row per known node) using either a sensible default column set or the ordered
+        dot-path fields provided in showFields. The table is printed to stdout and also returned.
 
         Parameters
         ----------
             includeSelf (bool): If False, omit the local node from the table.
-            showFields (List[str] | None): Ordered list of dot-separated field paths to include as columns (for example, "user.longName"). If None or empty, a default set of common fields is used; the row number ("N") is always included.
+            showFields (List[str] | None): Ordered list of dot-separated field paths to include as columns
+                (for example, "user.longName"). If None or empty, a default set of common fields is used;
+                the row number ("N") is always included.
 
         Returns
         -------
@@ -679,7 +685,9 @@ class MeshInterface:  # pylint: disable=R0902
         hopLimit: Optional[int] = None,
         pkiEncrypted: Optional[bool] = False,
         publicKey: Optional[bytes] = None,
-        priority: mesh_pb2.MeshPacket.Priority.ValueType = mesh_pb2.MeshPacket.Priority.RELIABLE,
+        priority: mesh_pb2.MeshPacket.Priority.ValueType = (
+            mesh_pb2.MeshPacket.Priority.RELIABLE
+        ),
         replyId: Optional[int] = None,
     ):  # pylint: disable=R0913
         """
@@ -1374,7 +1382,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def waitForConfig(self):
         """
-        Waits until the interface and local node configuration have been received.
+        Wait until the interface and local node configuration have been received.
 
         Returns:
             True if both the interface (myInfo and nodes) and the local node config were obtained.
@@ -1554,7 +1562,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _waitConnected(self, timeout=30.0):
         """
-        Waits until the interface is connected or the timeout elapses.
+        Wait until the interface is connected or the timeout elapses.
 
         If `noProto` is True this returns immediately. Otherwise it waits up to `timeout` seconds for the connection to be established; if a fatal failure was recorded during connection it is re-raised.
 
@@ -2124,6 +2132,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         Parameters
         ----------
+                meshPacket: Incoming MeshPacket protobuf to process.
                 hack (bool): If True, accept packets that are missing the "from" field (used for testing).
 
         """

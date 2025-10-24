@@ -417,7 +417,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def is_connected(self):
             """
-            Indicates whether the mock client is connected.
+            Indicate whether the mock client is connected.
 
             Returns:
                 `True` indicating the mock client always reports a connected state.
@@ -494,7 +494,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def is_connected(self):
             """
-            Indicates whether the mock client is configured as connected.
+            Indicate whether the mock client is configured as connected.
 
             Returns:
                 True if the mock client is configured as connected, False otherwise.
@@ -562,10 +562,12 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Attach a StressTestClient to the interface, record the connection address, clear disconnect state, and signal any reconnected event.
 
-            Records the attempted connection address for test inspection, creates and connects a StressTestClient if none is provided, sets it as the interface's client, clears _disconnect_notified, and sets _reconnected_event when present.
+            Records the attempted connection address for test inspection, creates and connects a StressTestClient if none is provided,
+            sets it as the interface's client, clears _disconnect_notified, and sets _reconnected_event when present.
 
             Parameters
             ----------
+                self: BLEInterface instance to patch.
                 address (Optional[str]): Address used for the connection; appended to connect_calls for inspection.
                 client (Optional[StressTestClient]): Client to attach; if omitted a new StressTestClient is created and connected.
 
