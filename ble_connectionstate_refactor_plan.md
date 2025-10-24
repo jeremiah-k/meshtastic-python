@@ -7,14 +7,16 @@ This document provides a detailed plan for implementing the `ConnectionState` en
 ## Current State Analysis
 
 ### Existing Implementation
+
 - **ConnectionState enum**: Defined but completely unused
 - **Current approach**: 3 separate locks + boolean flags
   - `self._closing_lock: Lock` - Prevents concurrent close operations
-  - `self._client_lock: Lock` - Protects client access during reconnection  
+  - `self._client_lock: Lock` - Protects client access during reconnection
   - `self._connect_lock: Lock` - Prevents concurrent connection attempts
   - `self._closing: bool` - Indicates shutdown in progress (used in 13 places)
 
 ### Complexity Sources
+
 1. **Lock hierarchy management** - Must acquire locks in correct order
 2. **State scattered across multiple variables** - `_closing`, client references, lock states
 3. **Potential for deadlocks** - Multiple locks increase complexity
@@ -23,10 +25,11 @@ This document provides a detailed plan for implementing the `ConnectionState` en
 ## Proposed State Machine Design
 
 ### State Definition
+
 ```python
 class ConnectionState(Enum):
     """Enum for managing BLE connection states."""
-    
+
     DISCONNECTED = "disconnected"      # No connection, ready to connect
     CONNECTING = "connecting"          # Connection attempt in progress
     CONNECTED = "connected"            # Successfully connected, operational
@@ -36,6 +39,7 @@ class ConnectionState(Enum):
 ```
 
 ### State Transition Rules
+
 ```
 DISCONNECTED → CONNECTING → CONNECTED
     ↓              ↓           ↓
@@ -47,33 +51,34 @@ DISCONNECTED → CONNECTING → CONNECTED
 ### Implementation Architecture
 
 #### Core State Manager
+
 ```python
 class BLEStateManager:
     """Thread-safe state management for BLE connections."""
-    
+
     def __init__(self):
         self._state_lock = RLock()  # Single reentrant lock
         self._state = ConnectionState.DISCONNECTED
         self._client: Optional["BLEClient"] = None
-        
+
     @property
     def state(self) -> ConnectionState:
         with self._state_lock:
             return self._state
-            
-    @property 
+
+    @property
     def is_connected(self) -> bool:
         return self.state == ConnectionState.CONNECTED
-        
+
     @property
     def is_closing(self) -> bool:
         return self.state in (ConnectionState.DISCONNECTING, ConnectionState.ERROR)
-        
+
     @property
     def can_connect(self) -> bool:
         return self.state == ConnectionState.DISCONNECTED
-        
-    def transition_to(self, new_state: ConnectionState, 
+
+    def transition_to(self, new_state: ConnectionState,
                     client: Optional["BLEClient"] = None) -> bool:
         """Thread-safe state transition with validation."""
         with self._state_lock:
@@ -92,7 +97,9 @@ class BLEStateManager:
 #### Integration Points
 
 ### 1. Connection Method Refactoring
+
 **Current approach:**
+
 ```python
 def connect(self, address: Optional[str] = None) -> "BLEClient":
     with self._connect_lock:
@@ -102,6 +109,7 @@ def connect(self, address: Optional[str] = None) -> "BLEClient":
 ```
 
 **Proposed approach:**
+
 ```python
 def connect(self, address: Optional[str] = None) -> "BLEClient":
     if not self._state_manager.can_connect:
@@ -109,7 +117,7 @@ def connect(self, address: Optional[str] = None) -> "BLEClient":
             raise self.BLEError("Cannot connect while closing")
         else:
             raise self.BLEError("Already connected or connecting")
-            
+
     self._state_manager.transition_to(ConnectionState.CONNECTING)
     try:
         client = self._do_connect(address)
@@ -121,19 +129,21 @@ def connect(self, address: Optional[str] = None) -> "BLEClient":
 ```
 
 ### 2. Disconnect Handling Unification
+
 **Current approach:** Multiple disconnect handlers
 **Proposed approach:** Single state-driven handler
+
 ```python
 def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None) -> None:
     """Unified disconnect handling based on current state."""
-    
+
     # Validate disconnect source
     if client and client is not self._state_manager._client:
         logger.debug(f"Ignoring stale disconnect from {source}")
         return
-        
+
     current_state = self._state_manager.state
-    
+
     # Handle based on current state
     if current_state == ConnectionState.CONNECTED:
         self._state_manager.transition_to(ConnectionState.DISCONNECTED)
@@ -146,6 +156,7 @@ def _handle_disconnect(self, source: str, client: Optional["BLEClient"] = None) 
 ```
 
 ### 3. Auto-Reconnect Integration
+
 ```python
 def _schedule_reconnect_if_enabled(self) -> None:
     """Schedule auto-reconnect based on state and configuration."""
@@ -157,24 +168,28 @@ def _schedule_reconnect_if_enabled(self) -> None:
 ## Implementation Strategy
 
 ### Phase 1: Infrastructure Setup (Low Risk)
+
 1. **Create BLEStateManager class** with basic state management
-2. **Add state manager instance** to BLEInterface.__init__
+2. **Add state manager instance** to BLEInterface.**init**
 3. **Implement state validation** methods
 4. **Add comprehensive unit tests** for state manager
 
 ### Phase 2: Gradual Migration (Medium Risk)
+
 1. **Migrate connection logic** to use state manager
 2. **Update disconnect handling** to be state-driven
 3. **Replace boolean flags** with state-based properties
 4. **Maintain backward compatibility** during transition
 
 ### Phase 3: Lock Consolidation (High Risk)
-1. **Remove individual locks** (_closing_lock, _client_lock, _connect_lock)
-2. **Replace with single _state_lock** from state manager
+
+1. **Remove individual locks** (\_closing_lock, \_client_lock, \_connect_lock)
+2. **Replace with single \_state_lock** from state manager
 3. **Update all synchronization points**
 4. **Comprehensive testing** of concurrent scenarios
 
 ### Phase 4: Cleanup and Optimization
+
 1. **Remove unused boolean flags** and old state variables
 2. **Optimize state transitions** for performance
 3. **Add state transition logging** for debugging
@@ -183,6 +198,7 @@ def _schedule_reconnect_if_enabled(self) -> None:
 ## Risk Mitigation
 
 ### Technical Risks
+
 1. **Race conditions** during state transitions
    - Mitigation: Single reentrant lock, atomic transitions
 2. **Deadlock potential** from improper lock usage
@@ -191,6 +207,7 @@ def _schedule_reconnect_if_enabled(self) -> None:
    - Mitigation: Comprehensive state validation and testing
 
 ### Implementation Risks
+
 1. **Breaking existing functionality**
    - Mitigation: Incremental migration, extensive testing
 2. **Performance regression**
@@ -199,6 +216,7 @@ def _schedule_reconnect_if_enabled(self) -> None:
    - Mitigation: Thread safety analysis, stress testing
 
 ### Mitigation Strategies
+
 1. **Incremental deployment** - Phase by phase implementation
 2. **Comprehensive testing** - Unit, integration, stress tests
 3. **Rollback capability** - Keep old code during transition
@@ -208,34 +226,37 @@ def _schedule_reconnect_if_enabled(self) -> None:
 ## Testing Strategy
 
 ### Unit Tests
+
 ```python
 class TestBLEStateManager:
     def test_state_transitions(self):
         # Test all valid transitions
         # Test invalid transitions are rejected
-        
+
     def test_thread_safety(self):
         # Test concurrent state access
         # Test race conditions
-        
+
     def test_state_properties(self):
         # Test is_connected, is_closing, etc.
 ```
 
 ### Integration Tests
+
 ```python
 class TestBLEInterfaceStateIntegration:
     def test_connection_lifecycle(self):
         # Test full connect/disconnect cycle
-        
+
     def test_concurrent_operations(self):
         # Test multiple threads accessing interface
-        
+
     def test_error_recovery(self):
         # Test error state handling and recovery
 ```
 
 ### Stress Tests
+
 - **Rapid connect/disconnect cycles**
 - **Concurrent connection attempts**
 - **Auto-reconnect under failure conditions**
@@ -244,17 +265,20 @@ class TestBLEInterfaceStateIntegration:
 ## Success Metrics
 
 ### Code Quality Improvements
+
 - **Lock count**: 3 → 1 (67% reduction)
 - **State variables**: Multiple scattered → Single state manager
 - **Cyclomatic complexity**: Reduce average method complexity
 - **Code clarity**: Easier to understand current system state
 
 ### Performance Targets
+
 - **No performance regression** in connection/disconnect operations
 - **Reduced lock contention** in multi-threaded scenarios
 - **Faster state determination** (single property access vs multiple checks)
 
 ### Reliability Goals
+
 - **All existing tests pass** without modification
 - **No new race conditions** or threading bugs
 - **Maintain error handling** robustness
@@ -263,16 +287,19 @@ class TestBLEInterfaceStateIntegration:
 ## Implementation Timeline
 
 ### Week 1: Foundation
+
 - Day 1-2: Create BLEStateManager with comprehensive tests
 - Day 3-4: Implement basic state transition logic
 - Day 5: Integration testing and code review
 
 ### Week 2: Migration
+
 - Day 1-2: Migrate connection logic to state manager
 - Day 3-4: Update disconnect handling
 - Day 5: Testing and validation
 
 ### Week 3: Consolidation
+
 - Day 1-2: Remove old locks and state variables
 - Day 3-4: Comprehensive testing and optimization
 - Day 5: Documentation and final review
@@ -280,11 +307,13 @@ class TestBLEInterfaceStateIntegration:
 ## Rollback Plan
 
 ### Immediate Rollback
+
 - Keep old implementation code during transition
 - Feature flags to switch between old/new implementations
 - Automated tests to verify both implementations work identically
 
 ### Post-Deployment Rollback
+
 - Monitor for issues in production
 - Quick revert capability if problems detected
 - Clear rollback procedures documented
@@ -300,6 +329,7 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 ## Progress Tracking
 
 ### Completed
+
 - [x] Analysis of current implementation
 - [x] State machine design specification
 - [x] Risk assessment and mitigation planning
@@ -311,6 +341,7 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 - [x] Phase 1 commit with backward compatibility
 
 ### Completed
+
 - [x] Phase 2: Migration planning
 - [x] Phase 2: Gradual migration to state-based logic
 - [x] Phase 2: Migrate connection logic to use state manager
@@ -319,6 +350,7 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 - [x] Phase 2: Integration tests for new state-based logic
 
 ### Completed
+
 - [x] Phase 2: Comprehensive testing and validation
 - [x] Phase 3: Lock consolidation (remove old locks)
 - [x] Phase 3: Replace with single unified state lock
@@ -327,6 +359,7 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 - [x] Phase 3: Remove boolean flags and old state variables
 
 ### Completed
+
 - [x] Phase 4: Performance testing and optimization
 - [x] Phase 4: State transition performance validation
 - [x] Phase 4: Lock contention performance testing
@@ -334,6 +367,7 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 - [x] Phase 4: Property access performance testing
 
 ### Completed
+
 - [x] Phase 4: Code quality cleanup and optimization
 - [x] Phase 4: Pylint and MyPy compliance (9.97/10 rating)
 - [x] Phase 4: Removal of development comments and TODOs
@@ -341,6 +375,7 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 - [x] Phase 4: Documentation updates
 
 ### Ready for Production
+
 - [x] All phases complete
 - [x] Performance targets exceeded
 - [x] Code quality standards met
@@ -351,21 +386,25 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 ### Phase 4 Performance Testing Results
 
 **State Transition Performance:**
+
 - 3000 state transitions in 0.016s
 - Average: 5.3μs per transition
 - Target: <100μs ✅ **Exceeded**
 
 **Lock Contention Performance:**
+
 - 1500 operations under contention in 0.113s
 - 5 concurrent threads with realistic workload
 - Target: <5s ✅ **Exceeded**
 
 **Memory Efficiency:**
+
 - Only 88 objects created for 100 state managers
 - No significant memory leaks detected
 - Target: <1000 objects ✅ **Exceeded**
 
 **Property Access Performance:**
+
 - 50000 property accesses in 0.017s
 - Average: 0.34μs per access
 - Target: <1μs ✅ **Exceeded**
@@ -373,23 +412,26 @@ The phased approach minimizes risk while delivering incremental improvements. Th
 ### Architecture Improvements
 
 **Before Refactoring:**
+
 - 3 separate locks + boolean flags
 - Complex lock hierarchy and coordination
 - Potential for deadlock scenarios
 - 15+ lines of lock management code
 
 **After Refactoring:**
+
 - Single unified state machine
 - Reentrant lock eliminates deadlock potential
 - Clear state transition validation
 - 3 lines of synchronization code
 
 **Code Complexity Reduction:**
+
 - Lock management: 15+ lines → 3 lines (80% reduction)
 - State validation: scattered → centralized
 - Thread safety: complex → guaranteed by design
 
 ---
 
-*Last Updated: 2025-10-24*
-*Status: Phase 4 Complete, Ready for Production*
+_Last Updated: 2025-10-24_
+_Status: Phase 4 Complete, Ready for Production_

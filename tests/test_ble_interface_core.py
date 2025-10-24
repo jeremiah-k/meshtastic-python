@@ -231,7 +231,8 @@ def test_close_clears_ble_threads(monkeypatch):
     # Check for specific BLE interface threads that should be cleaned up
     # BLEClient thread might persist in test environment, so focus on interface-managed threads
     lingering = [
-        thread.name for thread in threading.enumerate()
+        thread.name
+        for thread in threading.enumerate()
         if thread.name.startswith("BLE") and thread.name != "BLEClient"
     ]
     assert not lingering, f"Found lingering BLE threads: {lingering}"
@@ -414,13 +415,16 @@ def test_log_notification_registration(monkeypatch):
     )
 
     assert (
-        callable(legacy_call[1]) and legacy_call[1].__name__ == iface.legacy_log_radio_handler.__name__
+        callable(legacy_call[1])
+        and legacy_call[1].__name__ == iface.legacy_log_radio_handler.__name__
     ), "Legacy log handler should be registered"
     assert (
-        callable(current_call[1]) and current_call[1].__name__ == iface.log_radio_handler.__name__
+        callable(current_call[1])
+        and current_call[1].__name__ == iface.log_radio_handler.__name__
     ), "Current log handler should be registered"
     assert (
-        callable(fromnum_call[1]) and fromnum_call[1].__name__ == iface.from_num_handler.__name__
+        callable(fromnum_call[1])
+        and fromnum_call[1].__name__ == iface.from_num_handler.__name__
     ), "FROMNUM handler should be registered"
 
     iface.close()

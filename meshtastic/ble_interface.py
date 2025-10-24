@@ -86,7 +86,9 @@ CONNECTION_TIMEOUT = 60.0
 
 # Error message constants
 ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
-ERROR_MULTIPLE_DEVICES = "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
+ERROR_MULTIPLE_DEVICES = (
+    "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
+)
 AUTO_RECONNECT_INITIAL_DELAY = 1.0
 AUTO_RECONNECT_MAX_DELAY = 30.0
 AUTO_RECONNECT_BACKOFF = 2.0
@@ -193,8 +195,9 @@ class BLEStateManager:
         with self._state_lock:
             return self._client
 
-    def transition_to(self, new_state: ConnectionState,
-                    client: Optional["BLEClient"] = None) -> bool:
+    def transition_to(
+        self, new_state: ConnectionState, client: Optional["BLEClient"] = None
+    ) -> bool:
         """Thread-safe state transition with validation.
 
         Args:
@@ -203,6 +206,7 @@ class BLEStateManager:
 
         Returns:
             True if transition was valid and applied, False otherwise
+
         """
         with self._state_lock:
             if self._is_valid_transition(self._state, new_state):
@@ -218,11 +222,14 @@ class BLEStateManager:
                 logger.debug(f"State transition: {old_state.value} → {new_state.value}")
                 return True
             else:
-                logger.warning(f"Invalid state transition: {self._state.value} → {new_state.value}")
+                logger.warning(
+                    f"Invalid state transition: {self._state.value} → {new_state.value}"
+                )
                 return False
 
-    def _is_valid_transition(self, from_state: ConnectionState,
-                           to_state: ConnectionState) -> bool:
+    def _is_valid_transition(
+        self, from_state: ConnectionState, to_state: ConnectionState
+    ) -> bool:
         """Validate if a state transition is allowed.
 
         Args:
@@ -231,30 +238,42 @@ class BLEStateManager:
 
         Returns:
             True if transition is valid, False otherwise
+
         """
         # Define valid transitions based on connection lifecycle
         valid_transitions = {
             ConnectionState.DISCONNECTED: {
-                ConnectionState.CONNECTING, ConnectionState.ERROR
+                ConnectionState.CONNECTING,
+                ConnectionState.ERROR,
             },
             ConnectionState.CONNECTING: {
-                ConnectionState.CONNECTED, ConnectionState.DISCONNECTING,
-                ConnectionState.ERROR, ConnectionState.DISCONNECTED
+                ConnectionState.CONNECTED,
+                ConnectionState.DISCONNECTING,
+                ConnectionState.ERROR,
+                ConnectionState.DISCONNECTED,
             },
             ConnectionState.CONNECTED: {
-                ConnectionState.DISCONNECTING, ConnectionState.RECONNECTING,
-                ConnectionState.DISCONNECTED, ConnectionState.ERROR
+                ConnectionState.DISCONNECTING,
+                ConnectionState.RECONNECTING,
+                ConnectionState.DISCONNECTED,
+                ConnectionState.ERROR,
             },
             ConnectionState.DISCONNECTING: {
-                ConnectionState.DISCONNECTED, ConnectionState.ERROR
+                ConnectionState.DISCONNECTED,
+                ConnectionState.ERROR,
             },
             ConnectionState.RECONNECTING: {
-                ConnectionState.CONNECTED, ConnectionState.DISCONNECTING,
-                ConnectionState.CONNECTING, ConnectionState.ERROR, ConnectionState.DISCONNECTED
+                ConnectionState.CONNECTED,
+                ConnectionState.DISCONNECTING,
+                ConnectionState.CONNECTING,
+                ConnectionState.ERROR,
+                ConnectionState.DISCONNECTED,
             },
             ConnectionState.ERROR: {
-                ConnectionState.DISCONNECTED, ConnectionState.CONNECTING, ConnectionState.RECONNECTING
-            }
+                ConnectionState.DISCONNECTED,
+                ConnectionState.CONNECTING,
+                ConnectionState.RECONNECTING,
+            },
         }
 
         return to_state in valid_transitions.get(from_state, set())
@@ -633,7 +652,9 @@ class BLEInterface(MeshInterface):
         # Thread safety and state management
         # Unified state-based lock system replacing multiple locks and boolean flags
         self._state_manager = BLEStateManager()  # Centralized state tracking
-        self._state_lock = self._state_manager._state_lock  # Direct access to unified lock
+        self._state_lock = (
+            self._state_manager._state_lock
+        )  # Direct access to unified lock
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
@@ -792,7 +813,7 @@ class BLEInterface(MeshInterface):
                 self.client = None
                 self._disconnect_notified = True
 
-# Transition to DISCONNECTED state on disconnect
+            # Transition to DISCONNECTED state on disconnect
             if previous_client:
                 self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                 self._disconnected()
@@ -810,7 +831,7 @@ class BLEInterface(MeshInterface):
             self._schedule_auto_reconnect()
             return True
         else:
-# Transition to DISCONNECTING state when closing
+            # Transition to DISCONNECTING state when closing
             self._state_manager.transition_to(ConnectionState.DISCONNECTING)
             # Auto-reconnect disabled - close interface
             logger.debug("Auto-reconnect disabled, closing interface.")
@@ -843,14 +864,14 @@ class BLEInterface(MeshInterface):
 
         if not self.auto_reconnect:
             return
-# Use state manager instead of boolean flag
+        # Use state manager instead of boolean flag
         if self._state_manager.is_closing:
             logger.debug(
                 "Skipping auto-reconnect scheduling because interface is closing."
             )
             return
 
-# Use unified state lock instead of _client_lock
+        # Use unified state lock instead of _client_lock
         with self._state_lock:
             existing_thread = self._reconnect_thread
             if existing_thread and existing_thread.is_alive():
@@ -870,7 +891,7 @@ class BLEInterface(MeshInterface):
                 delay = AUTO_RECONNECT_INITIAL_DELAY
                 try:
                     while True:
-# Use state manager instead of boolean flag
+                        # Use state manager instead of boolean flag
                         if self._state_manager.is_closing or not self.auto_reconnect:
                             logger.debug(
                                 "Auto-reconnect aborted because interface is closing or disabled."
@@ -882,16 +903,24 @@ class BLEInterface(MeshInterface):
                             logger.info("BLE auto-reconnect succeeded.")
                             return
                         except self.BLEError as err:
-# Use state manager instead of boolean flag
-                            if self._state_manager.is_closing or not self.auto_reconnect:
+                            # Use state manager instead of boolean flag
+                            if (
+                                self._state_manager.is_closing
+                                or not self.auto_reconnect
+                            ):
                                 logger.debug(
                                     "Auto-reconnect cancelled after failure due to shutdown/disable."
                                 )
                                 return
                             logger.warning("Auto-reconnect attempt failed: %s", err)
-                        except Exception:  # Intentional broad catch for reconnect resilience
-# Use state manager instead of boolean flag
-                            if self._state_manager.is_closing or not self.auto_reconnect:
+                        except (
+                            Exception
+                        ):  # Intentional broad catch for reconnect resilience
+                            # Use state manager instead of boolean flag
+                            if (
+                                self._state_manager.is_closing
+                                or not self.auto_reconnect
+                            ):
                                 logger.debug(
                                     "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
                                 )
@@ -1092,9 +1121,7 @@ class BLEInterface(MeshInterface):
         try:
             return await asyncio.wait_for(awaitable, timeout=timeout)
         except asyncio.TimeoutError as exc:
-            raise BLEInterface.BLEError(
-                ERROR_TIMEOUT.format(label, timeout)
-            ) from exc
+            raise BLEInterface.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
 
     @staticmethod
     def scan() -> List[BLEDevice]:
@@ -1198,9 +1225,7 @@ class BLEInterface(MeshInterface):
             device_list = "\n".join(
                 [f"- {d.name} ({d.address})" for d in addressed_devices]
             )
-            raise self.BLEError(
-                ERROR_MULTIPLE_DEVICES.format(address, device_list)
-            )
+            raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
 
@@ -1300,7 +1325,9 @@ class BLEInterface(MeshInterface):
                     # Performance optimization: Calculate sanitized_target once before loop
                     sanitized_target = None
                     if address_to_find:
-                        sanitized_target = BLEInterface._sanitize_address(address_to_find)
+                        sanitized_target = BLEInterface._sanitize_address(
+                            address_to_find
+                        )
 
                     for device in backend_devices:
                         # Check if device has Meshtastic service UUID
@@ -1444,10 +1471,10 @@ class BLEInterface(MeshInterface):
 
         """
 
-# Use unified state lock instead of nested _connect_lock and _client_lock
+        # Use unified state lock instead of nested _connect_lock and _client_lock
         with self._state_lock:
             # Invariant: BLEClient lifecycle stays under unified lock to avoid concurrent manipulation.
-# Use state manager for connection validation
+            # Use state manager for connection validation
             if not self.can_initiate_connection:
                 if self.is_connection_closing:
                     raise self.BLEError("Cannot connect while interface is closing")
@@ -1468,13 +1495,13 @@ class BLEInterface(MeshInterface):
                     BLEInterface._sanitize_address(bleak_address),
                 }
                 if (
-                        normalized_request is None
-                        or normalized_request in normalized_known_targets
-                    ):
+                    normalized_request is None
+                    or normalized_request in normalized_known_targets
+                ):
                     logger.debug("Already connected, skipping connect call.")
                     return existing_client
 
-# Phase 2: Transition to CONNECTING state before connection attempt
+            # Phase 2: Transition to CONNECTING state before connection attempt
             self._state_manager.transition_to(ConnectionState.CONNECTING)
             # Bleak docs recommend always doing a scan before connecting (even if we know addr)
             device = self.find_device(address or self.address)
@@ -1494,10 +1521,10 @@ class BLEInterface(MeshInterface):
                 # Ensure notifications are always active for this client (reconnect-safe)
                 self._register_notifications(client)
 
-# Transition to CONNECTED state on successful connection
+                # Transition to CONNECTED state on successful connection
                 self._state_manager.transition_to(ConnectionState.CONNECTED, client)
 
-# Client access now protected by unified state lock
+                # Client access now protected by unified state lock
                 previous_client = self.client
                 self.client = client
                 self._disconnect_notified = False
@@ -1526,7 +1553,7 @@ class BLEInterface(MeshInterface):
                     "Failed to connect, closing BLEClient thread.", exc_info=True
                 )
                 self.error_handler.safe_cleanup(client.close)
-# Transition to ERROR state on connection failure
+                # Transition to ERROR state on connection failure
                 self._state_manager.transition_to(ConnectionState.ERROR)
                 raise
 
@@ -1666,7 +1693,7 @@ class BLEInterface(MeshInterface):
                         raise self.BLEError(ERROR_READING_BLE) from e
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")
-# Use state manager instead of boolean flag
+            # Use state manager instead of boolean flag
             if not self._state_manager.is_closing:
                 # Use a thread to avoid deadlocks if close() waits for this thread
                 error_close_thread = self.thread_coordinator.create_thread(
@@ -1696,7 +1723,7 @@ class BLEInterface(MeshInterface):
             return
 
         write_successful = False
-# Use unified state lock instead of _client_lock
+        # Use unified state lock instead of _client_lock
         with self._state_lock:
             client = self.client
             if client:  # Silently ignore writes while shutting down to avoid errors
@@ -1735,7 +1762,7 @@ class BLEInterface(MeshInterface):
             atexit handler, disconnects and closes any active BLE client, emits a disconnected notification if not already sent,
             and waits briefly for pending disconnect-related notifications and the receive thread to finish.
         """
-# Use unified state lock instead of _closing_lock
+        # Use unified state lock instead of _closing_lock
         with self._state_lock:
             if self._closed:
                 logger.debug(
@@ -1747,7 +1774,7 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called while another shutdown is in progress; ignoring"
                 )
                 return
-# Transition to DISCONNECTING state on close (replaces _closing flag)
+            # Transition to DISCONNECTING state on close (replaces _closing flag)
             self._state_manager.transition_to(ConnectionState.DISCONNECTING)
 
         # Close parent interface (stops publishing thread, etc.)
@@ -1776,14 +1803,14 @@ class BLEInterface(MeshInterface):
                 atexit.unregister(self._exit_handler)
             self._exit_handler = None
 
-# Use unified state lock instead of _client_lock
+        # Use unified state lock instead of _client_lock
         with self._state_lock:
             client = self.client
             self.client = None
         if client:
             self._disconnect_and_close_client(client)
 
-# Use unified state lock instead of _client_lock
+        # Use unified state lock instead of _client_lock
         # Send disconnected indicator if not already notified
         notify = False
         with self._state_lock:
@@ -1797,7 +1824,7 @@ class BLEInterface(MeshInterface):
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
-# Use unified state lock instead of _closing_lock
+        # Use unified state lock instead of _closing_lock
         with self._state_lock:
             self._closed = True
 
@@ -1883,7 +1910,7 @@ class BLEClient:
     This class provides a synchronous interface to Bleak's async operations by running
     an internal event loop in a dedicated thread. It handles the complexity of
     asyncio-to-thread synchronization while providing a simple API for BLE operations.
-"""
+    """
 
     # Class-level fallback so callers using __new__ still get the right exception type
     BLEError = BLEInterface.BLEError

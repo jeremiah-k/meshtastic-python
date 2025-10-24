@@ -544,7 +544,11 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             patch.object(BLEInterface, "scan", return_value=[mock_device])
         )
 
-        def _patched_connect(self: BLEInterface, address: Optional[str] = None, client: Optional["StressTestClient"] = None) -> "StressTestClient":
+        def _patched_connect(
+            self: BLEInterface,
+            address: Optional[str] = None,
+            client: Optional["StressTestClient"] = None,
+        ) -> "StressTestClient":
             """Record the attempted connection address, attach the provided client to the interface,
             clear the disconnect flag, signal a reconnection event if present, and return the client.
 

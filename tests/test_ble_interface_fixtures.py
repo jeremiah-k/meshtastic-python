@@ -469,7 +469,9 @@ def _build_interface(monkeypatch, client):
 
     connect_calls: list = []
 
-    def _stub_connect(_self: BLEInterface, _address: Optional[str] = None) -> "DummyClient":
+    def _stub_connect(
+        _self: BLEInterface, _address: Optional[str] = None
+    ) -> "DummyClient":
         """
         Provide the preconfigured BLE client used by tests and record the connect attempt.
 

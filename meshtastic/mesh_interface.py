@@ -453,7 +453,11 @@ class MeshInterface:  # pylint: disable=R0902
                     fields[field] = formatted_value
 
                 # Filter out any field in data set that was not specified.
-                filteredData = {get_human_readable(k): v for k, v in fields.items() if k in showFields}
+                filteredData = {
+                    get_human_readable(k): v
+                    for k, v in fields.items()
+                    if k in showFields
+                }
                 rows.append(filteredData)
 
         rows.sort(key=lambda r: r.get("LastHeard") or "0000", reverse=True)
