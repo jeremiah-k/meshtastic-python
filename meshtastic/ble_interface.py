@@ -156,6 +156,113 @@ class ConnectionState(Enum):
     ERROR = "error"
 
 
+class BLEStateManager:
+    """Thread-safe state management for BLE connections.
+    
+    Replaces multiple locks and boolean flags with a single state machine
+    for clearer connection management and reduced complexity.
+    """
+    
+    def __init__(self):
+        """Initialize state manager with disconnected state."""
+        self._state_lock = RLock()  # Single reentrant lock for all state changes
+        self._state = ConnectionState.DISCONNECTED
+        self._client: Optional["BLEClient"] = None
+        
+    @property
+    def state(self) -> ConnectionState:
+        """Get current connection state."""
+        with self._state_lock:
+            return self._state
+            
+    @property 
+    def is_connected(self) -> bool:
+        """Check if currently connected."""
+        return self.state == ConnectionState.CONNECTED
+        
+    @property
+    def is_closing(self) -> bool:
+        """Check if interface is closing or in error state."""
+        return self.state in (ConnectionState.DISCONNECTING, ConnectionState.ERROR)
+        
+    @property
+    def can_connect(self) -> bool:
+        """Check if a new connection can be initiated."""
+        return self.state == ConnectionState.DISCONNECTED
+        
+    @property
+    def client(self) -> Optional["BLEClient"]:
+        """Get current BLE client."""
+        with self._state_lock:
+            return self._client
+            
+    def transition_to(self, new_state: ConnectionState, 
+                    client: Optional["BLEClient"] = None) -> bool:
+        """Thread-safe state transition with validation.
+        
+        Args:
+            new_state: Target state to transition to
+            client: BLE client associated with this transition (optional)
+            
+        Returns:
+            True if transition was valid and applied, False otherwise
+        """
+        with self._state_lock:
+            if self._is_valid_transition(self._state, new_state):
+                old_state = self._state
+                self._state = new_state
+                
+                # Update client reference if provided
+                if client is not None:
+                    self._client = client
+                elif new_state == ConnectionState.DISCONNECTED:
+                    self._client = None
+                    
+                logger.debug(f"State transition: {old_state.value} → {new_state.value}")
+                return True
+            else:
+                logger.warning(f"Invalid state transition: {self._state.value} → {new_state.value}")
+                return False
+                
+    def _is_valid_transition(self, from_state: ConnectionState, 
+                           to_state: ConnectionState) -> bool:
+        """Validate if a state transition is allowed.
+        
+        Args:
+            from_state: Current state
+            to_state: Desired next state
+            
+        Returns:
+            True if transition is valid, False otherwise
+        """
+        # Define valid transitions based on connection lifecycle
+        valid_transitions = {
+            ConnectionState.DISCONNECTED: {
+                ConnectionState.CONNECTING, ConnectionState.ERROR
+            },
+            ConnectionState.CONNECTING: {
+                ConnectionState.CONNECTED, ConnectionState.DISCONNECTING, 
+                ConnectionState.ERROR, ConnectionState.DISCONNECTED
+            },
+            ConnectionState.CONNECTED: {
+                ConnectionState.DISCONNECTING, ConnectionState.RECONNECTING, 
+                ConnectionState.DISCONNECTED, ConnectionState.ERROR
+            },
+            ConnectionState.DISCONNECTING: {
+                ConnectionState.DISCONNECTED, ConnectionState.ERROR
+            },
+            ConnectionState.RECONNECTING: {
+                ConnectionState.CONNECTED, ConnectionState.DISCONNECTING,
+                ConnectionState.CONNECTING, ConnectionState.ERROR, ConnectionState.DISCONNECTED
+            },
+            ConnectionState.ERROR: {
+                ConnectionState.DISCONNECTED, ConnectionState.CONNECTING, ConnectionState.RECONNECTING
+            }
+        }
+        
+        return to_state in valid_transitions.get(from_state, set())
+
+
 class ThreadCoordinator:
     """
     Simplified thread management for BLE operations.
@@ -527,13 +634,17 @@ class BLEInterface(MeshInterface):
         """
 
         # Thread safety and state management
-        # Note: We maintain three separate locks instead of a single RLock as originally planned
-        # to preserve the current battle-tested lock hierarchy and minimize refactoring risk.
-        # Future consolidation to a single lock may be considered in a later phase.
+        # Phase 1: Add BLEStateManager alongside existing locks for gradual migration
+        # Note: We maintain three separate locks plus new state manager to preserve
+        # current battle-tested lock hierarchy while enabling new state-based logic.
+        # Future consolidation to a single lock will occur in Phase 3.
         self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
         self._client_lock: Lock = Lock()  # Protects client access during reconnection
         self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
         self._closing: bool = False  # Indicates shutdown in progress
+        
+        # New state management (Phase 1 addition)
+        self._state_manager = BLEStateManager()  # Centralized state tracking
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
@@ -1291,6 +1402,27 @@ class BLEInterface(MeshInterface):
         ) as e:
             logger.debug("Fallback device discovery failed: %s", e)
             return []
+
+    # State management convenience properties (Phase 1 addition)
+    @property
+    def connection_state(self) -> ConnectionState:
+        """Get current connection state from state manager."""
+        return self._state_manager.state
+        
+    @property
+    def is_connection_connected(self) -> bool:
+        """Check if currently connected via state manager."""
+        return self._state_manager.is_connected
+        
+    @property
+    def is_connection_closing(self) -> bool:
+        """Check if interface is closing via state manager."""
+        return self._state_manager.is_closing
+        
+    @property
+    def can_initiate_connection(self) -> bool:
+        """Check if a new connection can be initiated via state manager."""
+        return self._state_manager.can_connect
 
     def connect(self, address: Optional[str] = None) -> "BLEClient":
         """
