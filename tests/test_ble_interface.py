@@ -1497,7 +1497,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     # Test 2: Concurrent connect/disconnect operations
     iface2, client2 = create_interface_with_auto_reconnect()
 
-    def stress_test_disconnects():
+    def _stress_test_disconnects():
         """Call iface2._on_ble_disconnect(client2.bleak_client) five times with a 5 millisecond pause
         between calls; any exceptions raised during the loop are suppressed and logged to allow the stress cycle to continue.
         Trigger a short burst of simulated BLE disconnections on iface2 to exercise auto-reconnect and disconnect handling.
@@ -1525,7 +1525,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     # Start multiple threads for concurrent operations
     threads = []
     for _ in range(3):
-        thread = threading.Thread(target=rapid_connect_disconnect_cycle)
+        thread = threading.Thread(target=_stress_test_disconnects)
         threads.append(thread)
         thread.start()
 
