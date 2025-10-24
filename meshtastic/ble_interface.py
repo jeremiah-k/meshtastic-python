@@ -756,8 +756,8 @@ class BLEInterface(MeshInterface):
               `false` if the interface has begun shutdown.
 
         """
-        # Ignore disconnects during shutdown to avoid race conditions
-        if self._closing:
+        # Phase 2: Use state manager for disconnect validation
+        if self.is_connection_closing:
             logger.debug("Ignoring disconnect from %s during shutdown.", source)
             return False
 
@@ -802,8 +802,9 @@ class BLEInterface(MeshInterface):
                 self.client = None
                 self._disconnect_notified = True
 
-            # Notify parent interface of disconnection
+            # Phase 2: Transition to DISCONNECTED state on disconnect
             if previous_client:
+                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                 self._disconnected()
                 # Close previous client asynchronously
                 close_thread = self.thread_coordinator.create_thread(
@@ -819,7 +820,9 @@ class BLEInterface(MeshInterface):
             self._schedule_auto_reconnect()
             return True
         else:
-            # Auto-reconnect disabled - close the interface
+            # Phase 2: Transition to DISCONNECTING state when closing
+            self._state_manager.transition_to(ConnectionState.DISCONNECTING)
+            # Auto-reconnect disabled - close interface
             logger.debug("Auto-reconnect disabled, closing interface.")
             self.close()
             return False
@@ -850,7 +853,8 @@ class BLEInterface(MeshInterface):
 
         if not self.auto_reconnect:
             return
-        if self._closing:
+        # Phase 2: Use state manager instead of boolean flag
+        if self._state_manager.is_closing:
             logger.debug(
                 "Skipping auto-reconnect scheduling because interface is closing."
             )
@@ -875,7 +879,8 @@ class BLEInterface(MeshInterface):
                 delay = AUTO_RECONNECT_INITIAL_DELAY
                 try:
                     while True:
-                        if self._closing or not self.auto_reconnect:
+                        # Phase 2: Use state manager instead of boolean flag
+                        if self._state_manager.is_closing or not self.auto_reconnect:
                             logger.debug(
                                 "Auto-reconnect aborted because interface is closing or disabled."
                             )
@@ -886,14 +891,16 @@ class BLEInterface(MeshInterface):
                             logger.info("BLE auto-reconnect succeeded.")
                             return
                         except self.BLEError as err:
-                            if self._closing or not self.auto_reconnect:
+                            # Phase 2: Use state manager instead of boolean flag
+                            if self._state_manager.is_closing or not self.auto_reconnect:
                                 logger.debug(
                                     "Auto-reconnect cancelled after failure due to shutdown/disable."
                                 )
                                 return
                             logger.warning("Auto-reconnect attempt failed: %s", err)
                         except Exception:  # Intentional broad catch for reconnect resilience
-                            if self._closing or not self.auto_reconnect:
+                            # Phase 2: Use state manager instead of boolean flag
+                            if self._state_manager.is_closing or not self.auto_reconnect:
                                 logger.debug(
                                     "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
                                 )
@@ -1444,6 +1451,13 @@ class BLEInterface(MeshInterface):
 
         with self._connect_lock:
             # Invariant: BLEClient lifecycle (create/close) stays under _connect_lock to avoid concurrent loop manipulation.
+            # Phase 2: Use state manager for connection validation
+            if not self.can_initiate_connection:
+                if self.is_connection_closing:
+                    raise self.BLEError("Cannot connect while interface is closing")
+                else:
+                    raise self.BLEError("Already connected or connection in progress")
+                    
             requested_identifier = address if address is not None else self.address
             normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
@@ -1464,6 +1478,9 @@ class BLEInterface(MeshInterface):
                         logger.debug("Already connected, skipping connect call.")
                         return existing_client
 
+            # Phase 2: Transition to CONNECTING state before connection attempt
+            self._state_manager.transition_to(ConnectionState.CONNECTING)
+            
             # Bleak docs recommend always doing a scan before connecting (even if we know addr)
             device = self.find_device(address or self.address)
             self.address = device.address  # Keep address in sync for auto-reconnect
@@ -1481,6 +1498,10 @@ class BLEInterface(MeshInterface):
                     client.get_services()
                 # Ensure notifications are always active for this client (reconnect-safe)
                 self._register_notifications(client)
+                
+                # Phase 2: Transition to CONNECTED state on successful connection
+                self._state_manager.transition_to(ConnectionState.CONNECTED, client)
+                
                 # Publish the new client before waking any waiters
                 with self._client_lock:
                     previous_client = self.client
@@ -1511,6 +1532,8 @@ class BLEInterface(MeshInterface):
                     "Failed to connect, closing BLEClient thread.", exc_info=True
                 )
                 self.error_handler.safe_cleanup(client.close)
+                # Phase 2: Transition to ERROR state on connection failure
+                self._state_manager.transition_to(ConnectionState.ERROR)
                 raise
 
             return client
@@ -1649,7 +1672,8 @@ class BLEInterface(MeshInterface):
                         raise self.BLEError(ERROR_READING_BLE) from e
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")
-            if not self._closing:
+            # Phase 2: Use state manager instead of boolean flag
+            if not self._state_manager.is_closing:
                 # Use a thread to avoid deadlocks if close() waits for this thread
                 error_close_thread = self.thread_coordinator.create_thread(
                     target=self.close, name="BLECloseOnError", daemon=True
@@ -1722,12 +1746,14 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called on already closed interface; ignoring"
                 )
                 return
-            if self._closing:
+            if self.is_connection_closing:
                 logger.debug(
                     "BLEInterface.close called while another shutdown is in progress; ignoring"
                 )
                 return
-            self._closing = True
+            # Phase 2: Transition to DISCONNECTING state on close
+            self._state_manager.transition_to(ConnectionState.DISCONNECTING)
+            self._closing = True  # Keep for backward compatibility during Phase 2
 
         # Close parent interface (stops publishing thread, etc.)
         self.error_handler.safe_execute(

@@ -217,3 +217,105 @@ class TestBLEStateManager:
         manager.transition_to(ConnectionState.DISCONNECTED)
         assert manager.state == ConnectionState.DISCONNECTED
         assert manager.can_connect
+
+
+class TestBLEInterfaceStateIntegration:
+    """Test integration between BLEStateManager and BLEInterface (Phase 2)."""
+    
+    def test_state_manager_standalone_initialization(self):
+        """Test BLEStateManager initialization without full BLEInterface."""
+        from meshtastic.ble_interface import BLEStateManager
+        
+        # Test state manager can be created and used independently
+        manager = BLEStateManager()
+        
+        # Check initial state
+        assert manager.state == ConnectionState.DISCONNECTED
+        assert manager.can_connect
+        assert not manager.is_connected
+        assert not manager.is_closing
+        assert manager.client is None
+        
+        # Test state transitions work
+        assert manager.transition_to(ConnectionState.CONNECTING)
+        assert manager.state == ConnectionState.CONNECTING
+        assert not manager.can_connect
+        
+    def test_state_based_property_usage(self):
+        """Test that state-based properties work as expected for Phase 2 migration."""
+        from meshtastic.ble_interface import BLEStateManager
+        
+        manager = BLEStateManager()
+        
+        # Test initial state properties
+        assert manager.state == ConnectionState.DISCONNECTED
+        assert not manager.is_connected
+        assert not manager.is_closing
+        assert manager.can_connect
+        
+        # Test transitioning through states
+        manager.transition_to(ConnectionState.CONNECTING)
+        assert manager.state == ConnectionState.CONNECTING
+        assert not manager.is_connected
+        assert not manager.is_closing
+        assert not manager.can_connect
+        
+        manager.transition_to(ConnectionState.CONNECTED)
+        assert manager.state == ConnectionState.CONNECTED
+        assert manager.is_connected
+        assert not manager.is_closing
+        assert not manager.can_connect
+        
+        manager.transition_to(ConnectionState.DISCONNECTING)
+        assert manager.state == ConnectionState.DISCONNECTING
+        assert not manager.is_connected
+        assert manager.is_closing
+        assert not manager.can_connect
+        
+        # Test ERROR state also counts as closing
+        manager.transition_to(ConnectionState.ERROR)
+        assert manager.state == ConnectionState.ERROR
+        assert not manager.is_connected
+        assert manager.is_closing
+        assert not manager.can_connect
+    
+    def test_client_management_with_states(self):
+        """Test client management works correctly with state transitions."""
+        from meshtastic.ble_interface import BLEStateManager
+        from unittest.mock import MagicMock
+        
+        manager = BLEStateManager()
+        mock_client = MagicMock()
+        
+        # Should be able to set client when transitioning to CONNECTED (via CONNECTING)
+        assert manager.transition_to(ConnectionState.CONNECTING)
+        assert manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+        assert manager.client is mock_client
+        assert manager.is_connected
+        
+        # Client should be cleared when transitioning to DISCONNECTED
+        assert manager.transition_to(ConnectionState.DISCONNECTED)
+        assert manager.client is None
+        assert manager.state == ConnectionState.DISCONNECTED
+        
+        # Should not be able to set client for invalid states
+        assert not manager.transition_to(ConnectionState.DISCONNECTED, client=mock_client)
+        assert manager.client is None
+    
+    def test_state_transition_validation(self):
+        """Test state transition validation for connection scenarios."""
+        from meshtastic.ble_interface import BLEStateManager
+        
+        manager = BLEStateManager()
+        
+        # Valid transitions from DISCONNECTED
+        assert manager.transition_to(ConnectionState.CONNECTING)
+        assert manager.transition_to(ConnectionState.DISCONNECTING)  # Can close without connecting
+        
+        # Reset to DISCONNECTED
+        manager.transition_to(ConnectionState.DISCONNECTED)
+        
+        # Invalid transitions from DISCONNECTED
+        assert not manager.transition_to(ConnectionState.CONNECTED)  # Must go through CONNECTING first
+        assert not manager.transition_to(ConnectionState.RECONNECTING)  # Must have been connected first
+        # Note: ERROR state is actually allowed from DISCONNECTED in current implementation
