@@ -87,7 +87,7 @@ def main():
                 # Create new instance each time (simpler but less efficient)
                 with meshtastic.ble_interface.BLEInterface(
                     address,
-                    noProto=True,  # Set to False in a real application
+                    noProto=True,  # For example simplicity only; use False (default) in real applications for full protocol processing
                     auto_reconnect=False,
                 ):
                     logger.info(

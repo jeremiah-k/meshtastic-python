@@ -83,6 +83,10 @@ SEND_PROPAGATION_DELAY = 0.01
 GATT_IO_TIMEOUT = 10.0
 NOTIFICATION_START_TIMEOUT = 10.0
 CONNECTION_TIMEOUT = 60.0
+
+# Error message constants
+ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
+ERROR_MULTIPLE_DEVICES = "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
 AUTO_RECONNECT_INITIAL_DELAY = 1.0
 AUTO_RECONNECT_MAX_DELAY = 30.0
 AUTO_RECONNECT_BACKOFF = 2.0
@@ -777,15 +781,16 @@ class BLEInterface(MeshInterface):
                                 )
                                 return
                             logger.warning("Auto-reconnect attempt failed: %s", err)
-                        except Exception:
+                        except Exception:  # Intentional broad catch for reconnect resilience
                             if self._closing or not self.auto_reconnect:
                                 logger.debug(
                                     "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
                                 )
                                 return
-                            logger.exception(
-                                "Unexpected error during auto-reconnect attempt"
-                            )
+                            else:
+                                logger.exception(
+                                    "Unexpected error during auto-reconnect attempt"
+                                )
 
                         if self._closing or not self.auto_reconnect:
                             return
@@ -977,7 +982,7 @@ class BLEInterface(MeshInterface):
             return await asyncio.wait_for(awaitable, timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise BLEInterface.BLEError(
-                f"{label} timed out after {timeout:.1f} seconds"
+                ERROR_TIMEOUT.format(label, timeout)
             ) from exc
 
     @staticmethod
@@ -1083,7 +1088,7 @@ class BLEInterface(MeshInterface):
                 [f"- {d.name} ({d.address})" for d in addressed_devices]
             )
             raise self.BLEError(
-                f"Multiple Meshtastic BLE peripherals found matching '{address}'. Please specify one:\n{device_list}"
+                ERROR_MULTIPLE_DEVICES.format(address, device_list)
             )
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
