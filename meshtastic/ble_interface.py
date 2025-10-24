@@ -618,9 +618,6 @@ class BLEInterface(MeshInterface):
     need platform-specific setup for BLE operations.
     """
 
-    # Lock acquisition order (outermost first): _connect_lock -> _client_lock -> _closing_lock.
-    # Maintaining this order prevents deadlocks when multiple locks are needed.
-
     class BLEError(Exception):
         """An exception class for BLE errors."""
 
@@ -792,7 +789,7 @@ class BLEInterface(MeshInterface):
 
         if self.auto_reconnect:
             previous_client = None
-            # Use unified state lock instead of _client_lock
+            # Use unified state lock
             with self._state_lock:
                 # Prevent duplicate disconnect notifications
                 if self._disconnect_notified:
@@ -871,7 +868,7 @@ class BLEInterface(MeshInterface):
             )
             return
 
-        # Use unified state lock instead of _client_lock
+        # Use unified state lock
         with self._state_lock:
             existing_thread = self._reconnect_thread
             if existing_thread and existing_thread.is_alive():
@@ -942,7 +939,7 @@ class BLEInterface(MeshInterface):
                             delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY
                         )
                 finally:
-                    # Use unified state lock instead of _client_lock
+                    # Use unified state lock
                     with self._state_lock:
                         if self._reconnect_thread is current_thread():
                             self._reconnect_thread = None
@@ -1471,7 +1468,7 @@ class BLEInterface(MeshInterface):
 
         """
 
-        # Use unified state lock instead of nested _connect_lock and _client_lock
+        # Use unified state lock
         with self._state_lock:
             # Invariant: BLEClient lifecycle stays under unified lock to avoid concurrent manipulation.
             # Use state manager for connection validation
@@ -1626,7 +1623,7 @@ class BLEInterface(MeshInterface):
                 # Retry loop for handling empty reads and transient BLE issues
                 retries: int = 0
                 while self._want_receive:
-                    # Use unified state lock instead of _client_lock
+                    # Use unified state lock
                     with self._state_lock:
                         client = self.client
                     if client is None:
@@ -1723,7 +1720,7 @@ class BLEInterface(MeshInterface):
             return
 
         write_successful = False
-        # Use unified state lock instead of _client_lock
+        # Use unified state lock
         with self._state_lock:
             client = self.client
             if client:  # Silently ignore writes while shutting down to avoid errors
@@ -1762,7 +1759,7 @@ class BLEInterface(MeshInterface):
             atexit handler, disconnects and closes any active BLE client, emits a disconnected notification if not already sent,
             and waits briefly for pending disconnect-related notifications and the receive thread to finish.
         """
-        # Use unified state lock instead of _closing_lock
+        # Use unified state lock
         with self._state_lock:
             if self._closed:
                 logger.debug(
@@ -1803,14 +1800,14 @@ class BLEInterface(MeshInterface):
                 atexit.unregister(self._exit_handler)
             self._exit_handler = None
 
-        # Use unified state lock instead of _client_lock
+        # Use unified state lock
         with self._state_lock:
             client = self.client
             self.client = None
         if client:
             self._disconnect_and_close_client(client)
 
-        # Use unified state lock instead of _client_lock
+        # Use unified state lock
         # Send disconnected indicator if not already notified
         notify = False
         with self._state_lock:
@@ -1824,7 +1821,7 @@ class BLEInterface(MeshInterface):
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
-        # Use unified state lock instead of _closing_lock
+        # Use unified state lock
         with self._state_lock:
             self._closed = True
 
