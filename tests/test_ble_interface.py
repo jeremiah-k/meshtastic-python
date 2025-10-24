@@ -867,15 +867,14 @@ def test_log_notification_registration(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, uuid, handler, **_kwargs):
+        def start_notify(self, *_args, **_kwargs):
             """
             Record a notification registration request for the specified characteristic UUID.
-
-            Args:
-                uuid (str): The characteristic UUID for which notifications are being registered.
-                handler (callable): The callback to be invoked when a notification for the UUID is received.
-
             """
+            # Extract uuid and handler from args if available
+            if len(_args) >= 2:
+                uuid, handler = _args[0], _args[1]
+                self.start_notify_calls.append((uuid, handler))
             self.start_notify_calls.append((uuid, handler))
 
     client = MockClientWithLogChars()
@@ -953,16 +952,14 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, uuid, handler, **_kwargs):
+        def start_notify(self, *_args, **_kwargs):
             """
             Record a notification registration request for the specified characteristic UUID.
-
-            Args:
-                uuid (str): The characteristic UUID for which notifications are being registered.
-                handler (callable): The callback to be invoked when a notification for the UUID is received.
-
             """
-            self.start_notify_calls.append((uuid, handler))
+            # Extract uuid and handler from args if available
+            if len(_args) >= 2:
+                uuid, handler = _args[0], _args[1]
+                self.start_notify_calls.append((uuid, handler))
 
     client = MockClientWithoutLogChars()
     iface = _build_interface(monkeypatch, client)
@@ -996,9 +993,10 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     class MockClient(DummyClient):
         """Mock client that returns invalid protobuf data to trigger DecodeError."""
 
-        def read_gatt_char(self, uuid, timeout=None, **_kwargs):
+        def read_gatt_char(self, *_args, **_kwargs):
             """Return malformed protobuf data for FROMRADIO to force a DecodeError."""
-            if uuid == ble_mod.FROMRADIO_UUID:
+            # Extract uuid from args if available
+            if _args and _args[0] == ble_mod.FROMRADIO_UUID:
                 return b"invalid-protobuf-data"
             return b""
 
