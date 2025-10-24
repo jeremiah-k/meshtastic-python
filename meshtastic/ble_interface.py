@@ -258,7 +258,7 @@ class ThreadCoordinator:
 
         """
         with self._lock:
-            if thread in self._threads and thread.is_alive():
+            if thread in self._threads and thread.is_alive() and thread is not current_thread():
                 thread.join(timeout=timeout)
 
     def join_all(self, timeout: Optional[float] = None):
@@ -1224,7 +1224,7 @@ class BLEInterface(MeshInterface):
                 asyncio.get_running_loop()
                 # A loop is running in this thread, run async code in separate thread
                 # to avoid interference with the existing event loop
-                future: Future[list] = Future()
+                future: Future[List[BLEDevice]] = Future()
 
                 def _run_async_in_thread():
                     """
@@ -1446,7 +1446,7 @@ class BLEInterface(MeshInterface):
                     if client is None:
                         if self.auto_reconnect:
                             logger.debug(
-                                "BLE client is None; waiting for application-managed reconnect"
+                                "BLE client is None; waiting for auto-reconnect"
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
                             self.thread_coordinator.wait_for_event(
