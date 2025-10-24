@@ -1341,7 +1341,7 @@ class BLEInterface(MeshInterface):
                     logger.debug(
                         "BLE services not available immediately after connect; getting services"
                     )
-                    client.get_services(timeout=GATT_IO_TIMEOUT)
+                    client.get_services()
                 # Ensure notifications are always active for this client (reconnect-safe)
                 self._register_notifications(client)
                 # Publish the new client before waking any waiters
@@ -1890,7 +1890,7 @@ class BLEClient:
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def get_services(self, timeout: Optional[float] = None):
+    def get_services(self):
         """
         Retrieve the discovered GATT services and characteristics for the connected device.
 
@@ -1899,8 +1899,6 @@ class BLEClient:
 
         """
         # services is a property, not an async method, so we access it directly
-        # timeout parameter is kept for API compatibility but not used
-        _ = timeout  # Mark as intentionally unused for API compatibility
         return self.bleak_client.services
 
     def has_characteristic(self, specifier):
@@ -1919,7 +1917,7 @@ class BLEClient:
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             self.error_handler.safe_execute(
-                lambda: self.get_services(timeout=GATT_IO_TIMEOUT),
+                lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
