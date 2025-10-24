@@ -184,7 +184,7 @@ class TestBLEStateManager:
         """
         Verify that attempting an invalid state transition emits a warning log.
 
-        Specifically, transitioning from DISCONNECTED to CONNECTED should produce a WARNING log message: 
+        Specifically, transitioning from DISCONNECTED to CONNECTED should produce a WARNING log message:
         "Invalid state transition: disconnected → connected".
         """
         manager = BLEStateManager()
@@ -258,7 +258,7 @@ class TestBLEInterfaceStateIntegration:
         """
         Verify BLEStateManager can be instantiated standalone and exhibits expected initial properties and basic transition behavior.
 
-        Checks that a newly created manager starts in DISCONNECTED with can_connect True, is_connected False, is_closing False, 
+        Checks that a newly created manager starts in DISCONNECTED with can_connect True, is_connected False, is_closing False,
         and no client, and that transitioning to CONNECTING succeeds and updates the state and can_connect flag.
         """
 
@@ -497,172 +497,175 @@ class TestPhase3LockConsolidation:
 class TestPhase4PerformanceOptimization:
     """Test Phase 4 performance optimization and validation."""
 
+
 def test_state_transition_performance(self):
-        """Measure performance of state transitions under realistic load."""
+    """Measure performance of state transitions under realistic load."""
+    manager = BLEStateManager()
+    mock_client = MagicMock()
+
+    # Measure state transition performance
+    iterations = 1000
+    start_time = time.perf_counter()
+
+    for _i in range(iterations):
+        # Cycle through states
+        manager.transition_to(ConnectionState.CONNECTING)
+        manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+        manager.transition_to(ConnectionState.DISCONNECTED)
+
+    end_time = time.perf_counter()
+    elapsed = end_time - start_time
+
+    # Should complete quickly under typical CI conditions (allow headroom)
+    assert (
+        elapsed < 3.0
+    ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+
+    # Calculate average transition time
+    avg_time = elapsed / (iterations * 3)
+    assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
+
+    print(
+        f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
+    )
+
+
+def test_lock_contention_performance(self):
+    """
+    Measure BLEStateManager throughput and correctness under lock contention.
+
+    Spawns 5 worker threads that each perform 100 iterations of CONNECTING → CONNECTED → DISCONNECTED
+    transition attempts (3 operations per iteration) with a short delay to simulate work. Asserts the total
+    elapsed time stays below 5.0 seconds and that at least 80% of the expected operations
+    (5 * 100 * 3) succeeded. Prints a brief performance summary.
+    """
+
+    manager = BLEStateManager()
+    results = []
+
+    def worker(worker_id):
+        """
+        Perform a sequence of simulated BLE state transitions as a worker and record its operation count and elapsed time.
+
+        Simulates 100 iterations of attempting transitions in order: CONNECTING, CONNECTED, DISCONNECTED. Counts each successful transition as one operation, measures elapsed wall-clock time for the loop, and appends a result dictionary to the external `results` list with keys "worker_id", "operations", and "time".
+
+        Parameters
+        ----------
+            worker_id (int): Identifier included in the appended result to distinguish this worker's measurements.
+
+        Side effects:
+            Appends a dict to the outer-scope `results` list and calls `manager.transition_to(...)` using the outer-scope `manager`.
+
+        """
+        start_time = time.perf_counter()
+        operations = 0
+
+        for _i in range(100):
+            # Simulate realistic state operations
+            if manager.transition_to(ConnectionState.CONNECTING):
+                operations += 1
+            if manager.transition_to(ConnectionState.CONNECTED):
+                operations += 1
+            if manager.transition_to(ConnectionState.DISCONNECTED):
+                operations += 1
+
+            # Small delay to simulate real work
+            time.sleep(0.001)
+
+        end_time = time.perf_counter()
+        results.append(
+            {
+                "worker_id": worker_id,
+                "operations": operations,
+                "time": end_time - start_time,
+            }
+        )
+
+    # Create multiple contending threads
+    threads = []
+    start_time = time.perf_counter()
+
+    for i in range(5):
+        thread = threading.Thread(target=worker, args=(i,))
+        threads.append(thread)
+        thread.start()
+
+    # Wait for completion
+    for thread in threads:
+        thread.join()
+
+    end_time = time.perf_counter()
+    total_time = end_time - start_time
+
+    # Verify reasonable performance under contention
+    assert total_time < 5.0, f"Contention test too slow: {total_time:.3f}s"
+
+    # Verify all operations completed
+    total_operations = sum(r["operations"] for r in results)
+    expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
+    assert (
+        total_operations >= expected_operations * 0.8
+    ), f"Too many failed operations: {total_operations}/{expected_operations}"
+
+    print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
+
+
+def test_memory_efficiency(self):
+    """Verify that BLEStateManager does not leak memory during creation and destruction."""
+    # Force garbage collection
+    gc.collect()
+    initial_objects = len(gc.get_objects())
+
+    # Create and destroy many state managers
+    for _i in range(100):
         manager = BLEStateManager()
         mock_client = MagicMock()
 
-        # Measure state transition performance
-        iterations = 1000
-        start_time = time.perf_counter()
+        # Perform state operations
+        manager.transition_to(ConnectionState.CONNECTING)
+        manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+        manager.transition_to(ConnectionState.DISCONNECTED)
 
-        for _i in range(iterations):
-            # Cycle through states
-            manager.transition_to(ConnectionState.CONNECTING)
-            manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
-            manager.transition_to(ConnectionState.DISCONNECTED)
+        # Delete reference
+        del manager
 
-        end_time = time.perf_counter()
-        elapsed = end_time - start_time
+    # Force garbage collection
+    gc.collect()
+    final_objects = len(gc.get_objects())
 
-        # Should complete quickly under typical CI conditions (allow headroom)
-        assert (
-            elapsed < 3.0
-        ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+    # Should not have significant memory growth
+    object_growth = final_objects - initial_objects
+    assert (
+        object_growth < 1000
+    ), f"Potential memory leak: {object_growth} objects created"
 
-        # Calculate average transition time
-        avg_time = elapsed / (iterations * 3)
-        assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
+    print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 
-        print(
-            f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
-        )
 
-    def test_lock_contention_performance(self):
-        """
-        Measure BLEStateManager throughput and correctness under lock contention.
+def test_property_access_performance(self):
+    """Test that state property access is fast."""
 
-        Spawns 5 worker threads that each perform 100 iterations of CONNECTING → CONNECTED → DISCONNECTED transition attempts (3 operations per iteration) with a short delay to simulate work. Asserts the total elapsed time stays below 5.0 seconds and that at least 80% of the expected operations (5 * 100 * 3) succeeded. Prints a brief performance summary.
-        """
+    manager = BLEStateManager()
 
-        manager = BLEStateManager()
-        results = []
+    # Measure property access performance
+    iterations = 10000
+    start_time = time.perf_counter()
 
-        def worker(worker_id):
-            """
-            Perform a sequence of simulated BLE state transitions as a worker and record its operation count and elapsed time.
+    for _i in range(iterations):
+        # Access all properties
+        _ = manager.state
+        _ = manager.is_connected
+        _ = manager.is_closing
+        _ = manager.can_connect
+        _ = manager.client
 
-            Simulates 100 iterations of attempting transitions in order: CONNECTING, CONNECTED, DISCONNECTED. Counts each successful transition as one operation, measures elapsed wall-clock time for the loop, and appends a result dictionary to the external `results` list with keys "worker_id", "operations", and "time".
+    end_time = time.perf_counter()
+    elapsed = end_time - start_time
 
-            Parameters
-            ----------
-                worker_id (int): Identifier included in the appended result to distinguish this worker's measurements.
+    # Property access should be very fast
+    avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
+    assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
 
-            Side effects:
-                Appends a dict to the outer-scope `results` list and calls `manager.transition_to(...)` using the outer-scope `manager`.
-
-            """
-            start_time = time.perf_counter()
-            operations = 0
-
-            for _i in range(100):
-                # Simulate realistic state operations
-                if manager.transition_to(ConnectionState.CONNECTING):
-                    operations += 1
-                if manager.transition_to(ConnectionState.CONNECTED):
-                    operations += 1
-                if manager.transition_to(ConnectionState.DISCONNECTED):
-                    operations += 1
-
-                # Small delay to simulate real work
-                time.sleep(0.001)
-
-            end_time = time.perf_counter()
-            results.append(
-                {
-                    "worker_id": worker_id,
-                    "operations": operations,
-                    "time": end_time - start_time,
-                }
-            )
-
-        # Create multiple contending threads
-        threads = []
-        start_time = time.perf_counter()
-
-        for i in range(5):
-            thread = threading.Thread(target=worker, args=(i,))
-            threads.append(thread)
-            thread.start()
-
-        # Wait for completion
-        for thread in threads:
-            thread.join()
-
-        end_time = time.perf_counter()
-        total_time = end_time - start_time
-
-        # Verify reasonable performance under contention
-        assert total_time < 5.0, f"Contention test too slow: {total_time:.3f}s"
-
-        # Verify all operations completed
-        total_operations = sum(r["operations"] for r in results)
-        expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
-        assert (
-            total_operations >= expected_operations * 0.8
-        ), f"Too many failed operations: {total_operations}/{expected_operations}"
-
-        print(
-            f"Contention performance: {total_operations} operations in {total_time:.3f}s"
-        )
-
-def test_memory_efficiency(self):
-        """Verify that BLEStateManager does not leak memory during creation and destruction."""
-        # Force garbage collection
-        gc.collect()
-        initial_objects = len(gc.get_objects())
-
-        # Create and destroy many state managers
-        for _i in range(100):
-            manager = BLEStateManager()
-            mock_client = MagicMock()
-
-            # Perform state operations
-            manager.transition_to(ConnectionState.CONNECTING)
-            manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
-            manager.transition_to(ConnectionState.DISCONNECTED)
-
-            # Delete reference
-            del manager
-
-        # Force garbage collection
-        gc.collect()
-        final_objects = len(gc.get_objects())
-
-        # Should not have significant memory growth
-        object_growth = final_objects - initial_objects
-        assert (
-            object_growth < 1000
-        ), f"Potential memory leak: {object_growth} objects created"
-
-        print(
-            f"Memory efficiency: {object_growth} objects created for 100 state managers"
-        )
-
-    def test_property_access_performance(self):
-        """Test that state property access is fast."""
-
-        manager = BLEStateManager()
-
-        # Measure property access performance
-        iterations = 10000
-        start_time = time.perf_counter()
-
-        for _i in range(iterations):
-            # Access all properties
-            _ = manager.state
-            _ = manager.is_connected
-            _ = manager.is_closing
-            _ = manager.can_connect
-            _ = manager.client
-
-        end_time = time.perf_counter()
-        elapsed = end_time - start_time
-
-        # Property access should be very fast
-        avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
-        assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
-
-        print(
-            f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
-        )
+    print(
+        f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
+    )
