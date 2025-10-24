@@ -438,3 +438,158 @@ class TestPhase3LockConsolidation:
         
         # Verify final state is consistent
         assert manager.state == ConnectionState.DISCONNECTED
+
+
+class TestPhase4PerformanceOptimization:
+    """Test Phase 4 performance optimization and validation."""
+    
+    def test_state_transition_performance(self):
+        """Test that state transitions are performant."""
+        from meshtastic.ble_interface import BLEStateManager
+        from unittest.mock import MagicMock
+        import time
+        
+        manager = BLEStateManager()
+        mock_client = MagicMock()
+        
+        # Measure state transition performance
+        iterations = 1000
+        start_time = time.perf_counter()
+        
+        for i in range(iterations):
+            # Cycle through states
+            manager.transition_to(ConnectionState.CONNECTING)
+            manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+            manager.transition_to(ConnectionState.DISCONNECTED)
+        
+        end_time = time.perf_counter()
+        elapsed = end_time - start_time
+        
+        # Should complete 3000 transitions quickly (less than 1 second)
+        assert elapsed < 1.0, f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+        
+        # Calculate average transition time
+        avg_time = elapsed / (iterations * 3)
+        assert avg_time < 0.0001, f"Average transition time too high: {avg_time:.6f}s"
+        
+        print(f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s")
+    
+    def test_lock_contention_performance(self):
+        """Test performance under lock contention."""
+        from meshtastic.ble_interface import BLEStateManager
+        import threading
+        import time
+        
+        manager = BLEStateManager()
+        results = []
+        
+        def worker(worker_id):
+            start_time = time.perf_counter()
+            operations = 0
+            
+            for i in range(100):
+                # Simulate realistic state operations
+                if manager.transition_to(ConnectionState.CONNECTING):
+                    operations += 1
+                if manager.transition_to(ConnectionState.CONNECTED):
+                    operations += 1
+                if manager.transition_to(ConnectionState.DISCONNECTED):
+                    operations += 1
+                
+                # Small delay to simulate real work
+                time.sleep(0.001)
+            
+            end_time = time.perf_counter()
+            results.append({
+                'worker_id': worker_id,
+                'operations': operations,
+                'time': end_time - start_time
+            })
+        
+        # Create multiple contending threads
+        threads = []
+        start_time = time.perf_counter()
+        
+        for i in range(5):
+            thread = threading.Thread(target=worker, args=(i,))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for completion
+        for thread in threads:
+            thread.join()
+        
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        
+        # Verify reasonable performance under contention
+        assert total_time < 5.0, f"Contention test too slow: {total_time:.3f}s"
+        
+        # Verify all operations completed
+        total_operations = sum(r['operations'] for r in results)
+        expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
+        assert total_operations >= expected_operations * 0.8, f"Too many failed operations: {total_operations}/{expected_operations}"
+        
+        print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
+    
+    def test_memory_efficiency(self):
+        """Test that state manager doesn't leak memory."""
+        from meshtastic.ble_interface import BLEStateManager
+        from unittest.mock import MagicMock
+        import gc
+        import sys
+        
+        # Force garbage collection
+        gc.collect()
+        initial_objects = len(gc.get_objects())
+        
+        # Create and destroy many state managers
+        for i in range(100):
+            manager = BLEStateManager()
+            mock_client = MagicMock()
+            
+            # Perform state operations
+            manager.transition_to(ConnectionState.CONNECTING)
+            manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+            manager.transition_to(ConnectionState.DISCONNECTED)
+            
+            # Delete reference
+            del manager
+        
+        # Force garbage collection
+        gc.collect()
+        final_objects = len(gc.get_objects())
+        
+        # Should not have significant memory growth
+        object_growth = final_objects - initial_objects
+        assert object_growth < 1000, f"Potential memory leak: {object_growth} objects created"
+        
+        print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
+    
+    def test_property_access_performance(self):
+        """Test that state property access is fast."""
+        from meshtastic.ble_interface import BLEStateManager
+        import time
+        
+        manager = BLEStateManager()
+        
+        # Measure property access performance
+        iterations = 10000
+        start_time = time.perf_counter()
+        
+        for i in range(iterations):
+            # Access all properties
+            _ = manager.state
+            _ = manager.is_connected
+            _ = manager.is_closing
+            _ = manager.can_connect
+            _ = manager.client
+        
+        end_time = time.perf_counter()
+        elapsed = end_time - start_time
+        
+        # Property access should be very fast
+        avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
+        assert avg_time < 0.000001, f"Property access too slow: {avg_time:.9f}s"
+        
+        print(f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s")
