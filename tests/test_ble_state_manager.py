@@ -319,3 +319,122 @@ class TestBLEInterfaceStateIntegration:
         assert not manager.transition_to(ConnectionState.CONNECTED)  # Must go through CONNECTING first
         assert not manager.transition_to(ConnectionState.RECONNECTING)  # Must have been connected first
         # Note: ERROR state is actually allowed from DISCONNECTED in current implementation
+
+
+class TestPhase3LockConsolidation:
+    """Test Phase 3 lock consolidation and concurrent scenarios."""
+    
+    def test_unified_lock_thread_safety(self):
+        """Test that unified state lock provides thread safety for concurrent operations."""
+        from meshtastic.ble_interface import BLEStateManager
+        from unittest.mock import MagicMock
+        import threading
+        import time
+        
+        manager = BLEStateManager()
+        results = []
+        errors = []
+        
+        def worker(worker_id):
+            try:
+                for i in range(10):
+                    # Simulate state transitions
+                    if i % 3 == 0:
+                        success = manager.transition_to(ConnectionState.CONNECTING)
+                    elif i % 3 == 1:
+                        mock_client = MagicMock()
+                        success = manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+                    else:
+                        success = manager.transition_to(ConnectionState.DISCONNECTED)
+                    
+                    results.append((worker_id, i, manager.state, success))
+                    time.sleep(0.001)  # Small delay to encourage interleaving
+            except Exception as e:
+                errors.append((worker_id, str(e)))
+        
+        # Create multiple threads
+        threads = []
+        for i in range(5):
+            thread = threading.Thread(target=worker, args=(i,))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+        
+        # Verify no errors occurred
+        assert len(errors) == 0, f"Errors occurred: {errors}"
+        
+        # Verify all operations completed
+        assert len(results) == 50, f"Expected 50 operations, got {len(results)}"
+        
+        # Verify final state is valid
+        assert manager.state in ConnectionState
+        
+        # Verify client consistency
+        if manager.state == ConnectionState.CONNECTED:
+            assert manager.client is not None
+        else:
+            assert manager.client is None
+    
+    def test_reentrant_lock_behavior(self):
+        """Test that unified lock supports reentrancy for nested operations."""
+        from meshtastic.ble_interface import BLEStateManager
+        from unittest.mock import MagicMock
+        
+        manager = BLEStateManager()
+        mock_client = MagicMock()
+        
+        # Test nested lock acquisition through state manager methods
+        def nested_operation():
+            # This should work without deadlock due to reentrant lock
+            assert manager.transition_to(ConnectionState.CONNECTING)
+            assert manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+            assert manager.client is mock_client
+            assert manager.is_connected
+        
+        # Acquire lock manually then call nested operation
+        with manager._state_lock:
+            nested_operation()
+        
+        # Verify state is consistent
+        assert manager.state == ConnectionState.CONNECTED
+        assert manager.client is mock_client
+    
+    def test_lock_contention_resolution(self):
+        """Test that lock contention is handled gracefully."""
+        from meshtastic.ble_interface import BLEStateManager
+        import threading
+        import time
+        
+        manager = BLEStateManager()
+        contention_count = [0]
+        
+        def contending_worker():
+            try:
+                # Try to acquire lock and perform operation
+                with manager._state_lock:
+                    # Simulate some work
+                    time.sleep(0.01)
+                    manager.transition_to(ConnectionState.CONNECTING)
+                    manager.transition_to(ConnectionState.DISCONNECTED)
+            except:
+                contention_count[0] += 1
+        
+        # Create multiple contending threads
+        threads = []
+        for i in range(10):
+            thread = threading.Thread(target=contending_worker)
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for completion
+        for thread in threads:
+            thread.join()
+        
+        # Verify no contention errors
+        assert contention_count[0] == 0
+        
+        # Verify final state is consistent
+        assert manager.state == ConnectionState.DISCONNECTED

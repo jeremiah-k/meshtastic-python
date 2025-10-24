@@ -310,8 +310,8 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         # Start the receive thread
         iface._want_receive = True
 
-        # Set up the client
-        with iface._client_lock:
+        # Phase 3: Use unified state lock instead of _client_lock
+        with iface._state_lock:
             iface.client = client
 
         # Trigger the receive loop

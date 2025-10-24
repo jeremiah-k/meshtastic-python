@@ -634,17 +634,10 @@ class BLEInterface(MeshInterface):
         """
 
         # Thread safety and state management
-        # Phase 1: Add BLEStateManager alongside existing locks for gradual migration
-        # Note: We maintain three separate locks plus new state manager to preserve
-        # current battle-tested lock hierarchy while enabling new state-based logic.
-        # Future consolidation to a single lock will occur in Phase 3.
-        self._closing_lock: Lock = Lock()  # Prevents concurrent close operations
-        self._client_lock: Lock = Lock()  # Protects client access during reconnection
-        self._connect_lock: Lock = Lock()  # Prevents concurrent connection attempts
-        self._closing: bool = False  # Indicates shutdown in progress
-        
-        # New state management (Phase 1 addition)
+        # Phase 3: Consolidated to single state-based lock system
+        # Replaced multiple locks and boolean flags with unified state manager
         self._state_manager = BLEStateManager()  # Centralized state tracking
+        self._state_lock = self._state_manager._state_lock  # Direct access to unified lock
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
@@ -693,7 +686,8 @@ class BLEInterface(MeshInterface):
         try:
             logger.debug("BLE connecting to: %s", address if address else "any")
             client = self.connect(address)
-            with self._client_lock:
+            # Phase 3: Use unified state lock instead of _client_lock
+            with self._state_lock:
                 self.client = client
             logger.debug("BLE connected")
 
@@ -782,7 +776,8 @@ class BLEInterface(MeshInterface):
 
         if self.auto_reconnect:
             previous_client = None
-            with self._client_lock:
+            # Phase 3: Use unified state lock instead of _client_lock
+            with self._state_lock:
                 # Prevent duplicate disconnect notifications
                 if self._disconnect_notified:
                     logger.debug("Ignoring duplicate disconnect from %s.", source)
@@ -860,7 +855,8 @@ class BLEInterface(MeshInterface):
             )
             return
 
-        with self._client_lock:
+        # Phase 3: Use unified state lock instead of _client_lock
+        with self._state_lock:
             existing_thread = self._reconnect_thread
             if existing_thread and existing_thread.is_alive():
                 logger.debug(
@@ -910,7 +906,8 @@ class BLEInterface(MeshInterface):
                                     "Unexpected error during auto-reconnect attempt"
                                 )
 
-                        if self._closing or not self.auto_reconnect:
+                        # Phase 3: Use state manager instead of boolean flag
+                        if self.is_connection_closing or not self.auto_reconnect:
                             return
                         jitter = AUTO_RECONNECT_JITTER_RATIO * (
                             (random.random() * 2.0) - 1.0
@@ -921,7 +918,8 @@ class BLEInterface(MeshInterface):
                             delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY
                         )
                 finally:
-                    with self._client_lock:
+                    # Phase 3: Use unified state lock instead of _client_lock
+                    with self._state_lock:
                         if self._reconnect_thread is current_thread():
                             self._reconnect_thread = None
 
@@ -1449,8 +1447,9 @@ class BLEInterface(MeshInterface):
 
         """
 
-        with self._connect_lock:
-            # Invariant: BLEClient lifecycle (create/close) stays under _connect_lock to avoid concurrent loop manipulation.
+        # Phase 3: Use unified state lock instead of nested _connect_lock and _client_lock
+        with self._state_lock:
+            # Invariant: BLEClient lifecycle stays under unified lock to avoid concurrent manipulation.
             # Phase 2: Use state manager for connection validation
             if not self.can_initiate_connection:
                 if self.is_connection_closing:
@@ -1461,9 +1460,9 @@ class BLEInterface(MeshInterface):
             requested_identifier = address if address is not None else self.address
             normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
-            with self._client_lock:
-                existing_client = self.client
-                if existing_client and existing_client.is_connected():
+            # Client access now protected by unified state lock
+            existing_client = self.client
+            if existing_client and existing_client.is_connected():
                     bleak_client = getattr(existing_client, "bleak_client", None)
                     bleak_address = getattr(bleak_client, "address", None)
                     normalized_known_targets = {
@@ -1502,18 +1501,17 @@ class BLEInterface(MeshInterface):
                 # Phase 2: Transition to CONNECTED state on successful connection
                 self._state_manager.transition_to(ConnectionState.CONNECTED, client)
                 
-                # Publish the new client before waking any waiters
-                with self._client_lock:
-                    previous_client = self.client
-                    self.client = client
-                    self._disconnect_notified = False
-                    normalized_device_address = BLEInterface._sanitize_address(
-                        device.address
-                    )
-                    if normalized_request is not None:
-                        self._last_connection_request = normalized_request
-                    else:
-                        self._last_connection_request = normalized_device_address
+                # Phase 3: Client access now protected by unified state lock
+                previous_client = self.client
+                self.client = client
+                self._disconnect_notified = False
+                normalized_device_address = BLEInterface._sanitize_address(
+                    device.address
+                )
+                if normalized_request is not None:
+                    self._last_connection_request = normalized_request
+                else:
+                    self._last_connection_request = normalized_device_address
                 if previous_client and previous_client is not client:
                     close_thread = self.thread_coordinator.create_thread(
                         target=self._safe_close_client,
@@ -1605,7 +1603,8 @@ class BLEInterface(MeshInterface):
                 # Retry loop for handling empty reads and transient BLE issues
                 retries: int = 0
                 while self._want_receive:
-                    with self._client_lock:
+                    # Phase 3: Use unified state lock instead of _client_lock
+                    with self._state_lock:
                         client = self.client
                     if client is None:
                         if self.auto_reconnect:
@@ -1702,7 +1701,8 @@ class BLEInterface(MeshInterface):
             return
 
         write_successful = False
-        with self._client_lock:
+        # Phase 3: Use unified state lock instead of _client_lock
+        with self._state_lock:
             client = self.client
             if client:  # Silently ignore writes while shutting down to avoid errors
                 logger.debug("TORADIO write: %s", b.hex())
@@ -1740,7 +1740,8 @@ class BLEInterface(MeshInterface):
             atexit handler, disconnects and closes any active BLE client, emits a disconnected notification if not already sent,
             and waits briefly for pending disconnect-related notifications and the receive thread to finish.
         """
-        with self._closing_lock:
+        # Phase 3: Use unified state lock instead of _closing_lock
+        with self._state_lock:
             if self._closed:
                 logger.debug(
                     "BLEInterface.close called on already closed interface; ignoring"
@@ -1751,9 +1752,8 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called while another shutdown is in progress; ignoring"
                 )
                 return
-            # Phase 2: Transition to DISCONNECTING state on close
+            # Phase 3: Transition to DISCONNECTING state on close (replaces _closing flag)
             self._state_manager.transition_to(ConnectionState.DISCONNECTING)
-            self._closing = True  # Keep for backward compatibility during Phase 2
 
         # Close parent interface (stops publishing thread, etc.)
         self.error_handler.safe_execute(
@@ -1781,15 +1781,17 @@ class BLEInterface(MeshInterface):
                 atexit.unregister(self._exit_handler)
             self._exit_handler = None
 
-        with self._client_lock:
+        # Phase 3: Use unified state lock instead of _client_lock
+        with self._state_lock:
             client = self.client
             self.client = None
         if client:
             self._disconnect_and_close_client(client)
 
+        # Phase 3: Use unified state lock instead of _client_lock
         # Send disconnected indicator if not already notified
         notify = False
-        with self._client_lock:
+        with self._state_lock:
             if not self._disconnect_notified:
                 self._disconnect_notified = True
                 notify = True
@@ -1800,7 +1802,8 @@ class BLEInterface(MeshInterface):
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
-        with self._closing_lock:
+        # Phase 3: Use unified state lock instead of _closing_lock
+        with self._state_lock:
             self._closed = True
 
     def _wait_for_disconnect_notifications(
