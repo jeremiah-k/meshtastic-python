@@ -4,8 +4,8 @@ import logging
 import threading
 import time
 
-import pytest
-from bleak.exc import BleakError
+import pytest  # type: ignore[import-untyped]
+from bleak.exc import BleakError  # type: ignore[import-untyped]
 from pubsub import pub  # type: ignore[import-untyped]
 
 # Import common fixtures

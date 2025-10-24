@@ -16,7 +16,7 @@ import logging
 import threading
 import time
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic
 import meshtastic.ble_interface

@@ -6,7 +6,7 @@ import types
 from types import SimpleNamespace
 from typing import Optional
 
-import pytest
+import pytest  # type: ignore[import-untyped]
 
 # Import meshtastic modules for use in tests
 import meshtastic.ble_interface as ble_mod

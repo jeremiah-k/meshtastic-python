@@ -20,7 +20,7 @@ from typing import List, Optional, Tuple
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
-from google.protobuf.message import DecodeError
+from google.protobuf.message import DecodeError  # type: ignore[import-untyped]
 
 from meshtastic import publishingThread
 from meshtastic.mesh_interface import MeshInterface
@@ -2104,6 +2104,7 @@ class BLEClient:
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
+            # Lambda is appropriate here for deferred execution in error handling
             self.error_handler.safe_execute(
                 lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",

@@ -10,8 +10,8 @@ from queue import Queue
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
-import pytest
-from bleak.exc import BleakError
+import pytest  # type: ignore[import-untyped]
+from bleak.exc import BleakError  # type: ignore[import-untyped]
 
 # Import common fixtures
 from test_ble_interface_fixtures import (

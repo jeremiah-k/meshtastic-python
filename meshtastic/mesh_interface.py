@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import google.protobuf.json_format
-from google.protobuf.message import DecodeError
+from google.protobuf.message import DecodeError  # type: ignore[import-untyped]
 
 try:
     import print_color  # type: ignore[import-untyped]

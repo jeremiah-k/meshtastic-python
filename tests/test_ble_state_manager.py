@@ -4,7 +4,7 @@ import threading
 import time
 from unittest.mock import Mock
 
-from meshtastic.ble_interface import BLEStateManager, ConnectionState
+from meshtastic.ble_interface import BLEStateManager, ConnectionState  # type: ignore[import-untyped]
 
 
 class TestBLEStateManager:
@@ -227,7 +227,6 @@ class TestBLEInterfaceStateIntegration:
 
     def test_state_manager_standalone_initialization(self):
         """Test BLEStateManager initialization without full BLEInterface."""
-        from meshtastic.ble_interface import BLEStateManager
 
         # Test state manager can be created and used independently
         manager = BLEStateManager()
@@ -246,7 +245,6 @@ class TestBLEInterfaceStateIntegration:
 
     def test_state_based_property_usage(self):
         """Test that state-based properties work as expected for Phase 2 migration."""
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
 
@@ -286,8 +284,6 @@ class TestBLEInterfaceStateIntegration:
         """Test client management works correctly with state transitions."""
         from unittest.mock import MagicMock
 
-        from meshtastic.ble_interface import BLEStateManager
-
         manager = BLEStateManager()
         mock_client = MagicMock()
 
@@ -310,7 +306,6 @@ class TestBLEInterfaceStateIntegration:
 
     def test_state_transition_validation(self):
         """Test state transition validation for connection scenarios."""
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
 
@@ -338,11 +333,7 @@ class TestPhase3LockConsolidation:
 
     def test_unified_lock_thread_safety(self):
         """Test that unified state lock provides thread safety for concurrent operations."""
-        import threading
-        import time
         from unittest.mock import MagicMock
-
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
         results = []
@@ -397,8 +388,6 @@ class TestPhase3LockConsolidation:
         """Test that unified lock supports reentrancy for nested operations."""
         from unittest.mock import MagicMock
 
-        from meshtastic.ble_interface import BLEStateManager
-
         manager = BLEStateManager()
         mock_client = MagicMock()
 
@@ -420,10 +409,6 @@ class TestPhase3LockConsolidation:
 
     def test_lock_contention_resolution(self):
         """Test that lock contention is handled gracefully."""
-        import threading
-        import time
-
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
         contention_count = [0]
@@ -436,7 +421,7 @@ class TestPhase3LockConsolidation:
                     time.sleep(0.01)
                     manager.transition_to(ConnectionState.CONNECTING)
                     manager.transition_to(ConnectionState.DISCONNECTED)
-            except:
+            except Exception:
                 contention_count[0] += 1
 
         # Create multiple contending threads
@@ -464,8 +449,6 @@ class TestPhase4PerformanceOptimization:
         """Test that state transitions are performant."""
         import time
         from unittest.mock import MagicMock
-
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
         mock_client = MagicMock()
@@ -498,10 +481,6 @@ class TestPhase4PerformanceOptimization:
 
     def test_lock_contention_performance(self):
         """Test performance under lock contention."""
-        import threading
-        import time
-
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
         results = []
@@ -566,8 +545,6 @@ class TestPhase4PerformanceOptimization:
         import gc
         from unittest.mock import MagicMock
 
-        from meshtastic.ble_interface import BLEStateManager
-
         # Force garbage collection
         gc.collect()
         initial_objects = len(gc.get_objects())
@@ -601,9 +578,6 @@ class TestPhase4PerformanceOptimization:
 
     def test_property_access_performance(self):
         """Test that state property access is fast."""
-        import time
-
-        from meshtastic.ble_interface import BLEStateManager
 
         manager = BLEStateManager()
 
