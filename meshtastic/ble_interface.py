@@ -503,9 +503,9 @@ class BLEInterface(MeshInterface):
         noProto: bool = False,
         debugOut: Optional[io.TextIOWrapper] = None,
         noNodes: bool = False,
+        timeout: int = 300,
         *,
         auto_reconnect: bool = True,
-        timeout: int = 300,
     ) -> None:
         """
         Initialize a BLEInterface, start its background receive thread, and attempt an initial connection to a Meshtastic BLE device.
