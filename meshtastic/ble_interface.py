@@ -1302,6 +1302,11 @@ class BLEInterface(MeshInterface):
                         "connected-device enumeration",
                     )
 
+                    # Performance optimization: Calculate sanitized_target once before loop
+                    sanitized_target = None
+                    if address_to_find:
+                        sanitized_target = BLEInterface._sanitize_address(address_to_find)
+                    
                     for device in backend_devices:
                         # Check if device has Meshtastic service UUID
                         if hasattr(device, "metadata") and device.metadata:
@@ -1309,9 +1314,6 @@ class BLEInterface(MeshInterface):
                             if SERVICE_UUID in uuids:
                                 # If specific address requested, filter by it
                                 if address_to_find:
-                                    sanitized_target = BLEInterface._sanitize_address(
-                                        address_to_find
-                                    )
                                     sanitized_addr = BLEInterface._sanitize_address(
                                         device.address
                                     )
@@ -1654,12 +1656,11 @@ class BLEInterface(MeshInterface):
                             return
                         # Client is still connected, this might be a transient error
                         # Retry a few times before escalating
-                        retry_count = getattr(self, "_read_retry_count", 0)
-                        if retry_count < TRANSIENT_READ_MAX_RETRIES:
-                            self._read_retry_count = retry_count + 1
+                        if self._read_retry_count < TRANSIENT_READ_MAX_RETRIES:
+                            self._read_retry_count += 1
                             logger.debug(
                                 "Transient BLE read error, retrying (%d/%d)",
-                                retry_count + 1,
+                                self._read_retry_count,
                                 TRANSIENT_READ_MAX_RETRIES,
                             )
                             time.sleep(TRANSIENT_READ_RETRY_DELAY)
