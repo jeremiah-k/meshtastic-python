@@ -582,9 +582,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     iface, client = create_interface_with_auto_reconnect()
 
     def simulate_rapid_disconnects():
-        """Invoke the interface disconnect handler with the test client's bleak_client ten times
-        with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.
-        Simulate a burst of BLE disconnection events to exercise reconnect/disconnect handling.
+        """Simulate a burst of BLE disconnection events to exercise reconnect/disconnect handling.
 
         Invokes the interface disconnect handler with the test client's bleak_client ten times
         with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.

@@ -49,8 +49,7 @@ def main():
             # In a real app, you could now start using the interface to send/receive data.
             # For example: interface.sendText("Hello mesh!")
             # For this example, we'll just sleep until the user presses Ctrl+C.
-            # Demonstrate that we have access to the interface (educational purpose)
-            _ = interface  # Mark as intentionally used for educational clarity
+            logger.debug("Interface ready for use: %s", interface)
             while True:
                 time.sleep(1)
 

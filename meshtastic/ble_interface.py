@@ -272,8 +272,9 @@ class ThreadCoordinator:
 
         """
         with self._lock:
+            current = current_thread()
             for thread in self._threads:
-                if thread.is_alive():
+                if thread.is_alive() and thread is not current:
                     thread.join(timeout=timeout)
 
     def set_event(self, name: str):
@@ -790,7 +791,7 @@ class BLEInterface(MeshInterface):
                             return
                         jitter = AUTO_RECONNECT_JITTER_RATIO * (
                             (random.random() * 2.0) - 1.0
-                        )  # noqa: S311 non-cryptographic jitter
+                        )
                         sleep_seconds = delay * (1.0 + jitter)
                         time.sleep(sleep_seconds)
                         delay = min(
@@ -1252,11 +1253,13 @@ class BLEInterface(MeshInterface):
                         "Fallback connected-device discovery thread exceeded %.1fs timeout",
                         BLE_SCAN_TIMEOUT,
                     )
+                    thread.join(timeout=0.1)
                     return []
                 except Exception as e:
                     logger.debug(
                         "Fallback device discovery thread failed with exception: %s", e
                     )
+                    thread.join(timeout=0.1)
                     return []
             except RuntimeError:
                 # No running loop in this thread
@@ -1719,7 +1722,10 @@ class BLEClient:
     This class provides a synchronous interface to Bleak's async operations by running
     an internal event loop in a dedicated thread. It handles the complexity of
     asyncio-to-thread synchronization while providing a simple API for BLE operations.
-    """
+"""
+
+    # Class-level fallback so callers using __new__ still get the right exception type
+    BLEError = BLEInterface.BLEError
 
     def __init__(self, address=None, **kwargs) -> None:
         """

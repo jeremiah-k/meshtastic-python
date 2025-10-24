@@ -452,7 +452,7 @@ class MeshInterface:  # pylint: disable=R0902
 
                     fields[field] = formatted_value
 
-                # Filter out any field in the data set that was not specified.
+                # Create row data, translating field names to human-readable headers.
                 filteredData = {get_human_readable(k): v for k, v in fields.items()}
                 rows.append(filteredData)
 
