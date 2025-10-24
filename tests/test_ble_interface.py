@@ -531,7 +531,7 @@ def test_find_device_returns_single_scan_result(monkeypatch):
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    scanned_device = ble_mod.BLEDevice(address="11:22:33:44:55:66", name="Test Device")
+    scanned_device = ble_mod.BLEDevice(address="11:22:33:44:55:66", name="Test Device", details={})
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [scanned_device])
 
     result = ble_mod.BLEInterface.find_device(iface, None)
@@ -544,7 +544,7 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    fallback_device = ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Fallback")
+    fallback_device = ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Fallback", details={})
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
 
     def _fake_connected(_self, _address):
@@ -563,8 +563,8 @@ def test_find_device_multiple_matches_raises(monkeypatch):
 
     iface = object.__new__(ble_mod.BLEInterface)
     devices = [
-        ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
-        ble_mod.BLEDevice(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
+        ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1", details={}),
+        ble_mod.BLEDevice(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2", details={}),
     ]
     monkeypatch.setattr(BLEInterface, "scan", lambda: devices)
 
@@ -875,7 +875,6 @@ def test_log_notification_registration(monkeypatch):
             if len(_args) >= 2:
                 uuid, handler = _args[0], _args[1]
                 self.start_notify_calls.append((uuid, handler))
-            self.start_notify_calls.append((uuid, handler))
 
     client = MockClientWithLogChars()
     iface = _build_interface(monkeypatch, client)
@@ -1445,6 +1444,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             """
             connect_calls.append(address)
+            if client is None:
+                client = StressTestClient()
             client.connect()
             self.client = client
             self._disconnect_notified = False
