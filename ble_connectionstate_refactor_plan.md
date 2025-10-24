@@ -170,7 +170,7 @@ def _schedule_reconnect_if_enabled(self) -> None:
 ### Phase 1: Infrastructure Setup (Low Risk)
 
 1. **Create BLEStateManager class** with basic state management
-2. **Add state manager instance** to BLEInterface.**init**
+2. **Add state manager instance** to `BLEInterface.__init__`
 3. **Implement state validation** methods
 4. **Add comprehensive unit tests** for state manager
 
@@ -217,7 +217,7 @@ def _schedule_reconnect_if_enabled(self) -> None:
 
 ### Mitigation Strategies
 
-1. **Incremental deployment** - Phase by phase implementation
+1. **Incremental deployment** - Phase-by-phase implementation
 2. **Comprehensive testing** - Unit, integration, stress tests
 3. **Rollback capability** - Keep old code during transition
 4. **Code review** - Peer review of each phase

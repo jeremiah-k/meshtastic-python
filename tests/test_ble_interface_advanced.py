@@ -146,7 +146,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     iface._want_receive = True
 
     # Set up the client
-    with iface._client_lock:
+    with iface._state_lock:
         iface.client = client
 
     # Trigger the receive loop to process the bad data
@@ -818,7 +818,9 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     assert fake_future.cancelled is True
 
     client.close()
-    if fake_future.coro is not None:
+    if getattr(fake_future, "coro", None) is not None and hasattr(
+        fake_future.coro, "close"
+    ):
         fake_future.coro.close()
 
 

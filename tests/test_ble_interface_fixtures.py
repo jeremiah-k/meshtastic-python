@@ -88,11 +88,16 @@ def mock_publishing_thread(monkeypatch):
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
 
     """
+
+
+def execute_immediately(callback):
     """
-    Execute the provided callback immediately instead of queuing it.
-    
-    Parameters:
+    Execute provided callback immediately instead of queuing it.
+
+    Parameters
+    ----------
         callback (Optional[Callable[[], Any]]): Callable to execute; if falsy, no action is taken.
+
     """
     publishing_thread_module = types.ModuleType("publishingThread")
 
@@ -350,7 +355,7 @@ class DummyClient:
         Report whether the mock BLE client is connected; this stub always reports connected.
 
         Returns:
-            `true` if the mock client is connected, `false` otherwise.
+            `True` if the mock client is connected, `False` otherwise.
 
         """
         return True

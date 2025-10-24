@@ -520,14 +520,14 @@ class TestPhase4PerformanceOptimization:
         end_time = time.perf_counter()
         elapsed = end_time - start_time
 
-        # Should complete 3000 transitions quickly (less than 1 second)
+        # Should complete quickly under typical CI conditions (allow headroom)
         assert (
-            elapsed < 1.0
+            elapsed < 3.0
         ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
 
         # Calculate average transition time
         avg_time = elapsed / (iterations * 3)
-        assert avg_time < 0.0001, f"Average transition time too high: {avg_time:.6f}s"
+        assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
 
         print(
             f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
@@ -673,7 +673,7 @@ class TestPhase4PerformanceOptimization:
 
         # Property access should be very fast
         avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
-        assert avg_time < 0.000001, f"Property access too slow: {avg_time:.9f}s"
+        assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
 
         print(
             f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"

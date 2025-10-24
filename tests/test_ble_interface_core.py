@@ -130,9 +130,9 @@ def test_close_idempotent(monkeypatch):
     assert client.close_calls == 1
 
 
-def test_close_handles_bleak_error(monkeypatch):
-    """Test that close() handles BleakError gracefully."""
-    # BleakError already imported at top as ble_mod.BleakError
+@pytest.mark.parametrize("exc_cls", [BleakError, RuntimeError, OSError])
+def test_close_handles_errors(monkeypatch, exc_cls):
+    """Test that close() handles various exception types gracefully."""
     # pub already imported at top as mesh_iface_module.pub
 
     calls = []
@@ -151,7 +151,7 @@ def test_close_handles_bleak_error(monkeypatch):
 
     monkeypatch.setattr(pub, "sendMessage", _capture)
 
-    client = DummyClient(disconnect_exception=BleakError("Not connected"))
+    client = DummyClient(disconnect_exception=exc_cls("boom"))
     iface = _build_interface(monkeypatch, client)
 
     iface.close()
@@ -161,70 +161,11 @@ def test_close_handles_bleak_error(monkeypatch):
     assert (
         sum(
             1
-            for topic, kw in calls
-            if topic == "meshtastic.connection.status" and kw.get("connected") is False
+            for t, kw in calls
+            if t == "meshtastic.connection.status" and kw.get("connected") is False
         )
         == 1
     )
-
-
-def test_close_handles_runtime_error(monkeypatch):
-    """Test that close() handles RuntimeError gracefully."""
-    # pub already imported at top as mesh_iface_module.pub
-
-    calls = []
-
-    def _capture(topic, **kwargs):
-        """
-        Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
-
-        Parameters
-        ----------
-            topic (str): Pubsub topic name.
-            **kwargs: Additional message fields to capture alongside the topic.
-
-        """
-        calls.append((topic, kwargs))
-
-    monkeypatch.setattr(pub, "sendMessage", _capture)
-
-    client = DummyClient(disconnect_exception=RuntimeError("Threading issue"))
-    iface = _build_interface(monkeypatch, client)
-
-    iface.close()
-
-    assert client.disconnect_calls == 1
-    assert client.close_calls == 1
-    # exactly one disconnect status
-    assert (
-        sum(
-            1
-            for topic, kw in calls
-            if topic == "meshtastic.connection.status" and kw.get("connected") is False
-        )
-        == 1
-    )
-
-
-def test_close_handles_os_error(monkeypatch):
-    """Test that close() handles OSError gracefully."""
-    # pub already imported at top as mesh_iface_module.pub
-
-    calls = []
-
-    def _capture(topic, **kwargs):
-        """
-        Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
-
-        Parameters
-        ----------
-            topic (str): Pubsub topic name.
-            **kwargs: Additional message fields to capture alongside the topic.
-
-        """
-        calls.append((topic, kwargs))
-
-    monkeypatch.setattr(pub, "sendMessage", _capture)
 
     client = DummyClient(disconnect_exception=OSError("Permission denied"))
     iface = _build_interface(monkeypatch, client)

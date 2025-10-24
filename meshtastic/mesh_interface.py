@@ -276,7 +276,7 @@ class MeshInterface:  # pylint: disable=R0902
                 nodeid = n2["user"]["id"]
                 nodes[nodeid] = n2
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
-        print(infos)
+        print(infos, file=file)
         return infos
 
     def showNodes(

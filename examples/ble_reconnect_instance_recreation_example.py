@@ -63,7 +63,6 @@ def main():
     logs BLE-specific and unexpected errors, sleeps for the configured delay before retrying, exits on
     KeyboardInterrupt, and always unsubscribes from the pubsub topic on shutdown.
     """
-    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         description="Meshtastic BLE interface reconnection (instance recreation pattern)."
     )
@@ -74,9 +73,16 @@ def main():
         default=RETRY_DELAY_SECONDS,
         help=f"Seconds to wait before reconnect attempts (default: {RETRY_DELAY_SECONDS}).",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
+        help="Logging level (default: INFO).",
+    )
     args = parser.parse_args()
     address = args.address
     delay = args.retry_delay
+    logging.basicConfig(level=getattr(logging, args.log_level, logging.INFO))
 
     # Subscribe to the connection change event
     pub.subscribe(on_connection_change, "meshtastic.connection.status")
