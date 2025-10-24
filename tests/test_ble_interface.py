@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import types
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack
 from queue import Queue
 from types import SimpleNamespace
@@ -12,10 +13,20 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from bleak.exc import BleakError
+from pubsub import pub  # type: ignore[import-untyped]
 
 # Import meshtastic modules for use in tests
 import meshtastic.ble_interface as ble_mod
 import meshtastic.mesh_interface as mesh_iface_module
+from meshtastic.ble_interface import (
+    FROMNUM_UUID,
+    LEGACY_LOGRADIO_UUID,
+    LOGRADIO_UUID,
+    BLEClient,
+    BLEInterface,
+)
+from meshtastic.protobuf import mesh_pb2
 
 
 @pytest.fixture(autouse=True)
@@ -448,7 +459,7 @@ def stub_atexit(
             func()
         except Exception as e:
             # Keep teardown resilient during tests
-            import logging
+            # logging already imported at top
 
             logging.debug(
                 "atexit callback %r raised during teardown: %s: %s",
@@ -471,7 +482,7 @@ def _build_interface(monkeypatch, client):
         BLEInterface: An instance whose `connect` returns `client` and whose `_startConfig` performs no configuration.
 
     """
-    from meshtastic.ble_interface import BLEInterface
+    # BLEInterface already imported at top as ble_mod.BLEInterface
 
     connect_calls: list = []
 
@@ -517,24 +528,24 @@ def _build_interface(monkeypatch, client):
 
 def test_find_device_returns_single_scan_result(monkeypatch):
     """find_device should return the lone scanned device."""
-    from meshtastic.ble_interface import BLEDevice, BLEInterface
+    # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
-    iface = object.__new__(BLEInterface)
-    scanned_device = BLEDevice(address="11:22:33:44:55:66", name="Test Device")
-    monkeypatch.setattr(BLEInterface, "scan", lambda: [scanned_device])
+    iface = object.__new__(ble_mod.BLEInterface)
+    scanned_device = ble_mod.BLEDevice(address="11:22:33:44:55:66", name="Test Device")
+    monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [scanned_device])
 
-    result = BLEInterface.find_device(iface, None)
+    result = ble_mod.BLEInterface.find_device(iface, None)
 
     assert result is scanned_device
 
 
 def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
     """find_device should fall back to connected-device lookup when scan is empty."""
-    from meshtastic.ble_interface import BLEDevice, BLEInterface
+    # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
-    iface = object.__new__(BLEInterface)
-    fallback_device = BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Fallback")
-    monkeypatch.setattr(BLEInterface, "scan", lambda: [])
+    iface = object.__new__(ble_mod.BLEInterface)
+    fallback_device = ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Fallback")
+    monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
 
     def _fake_connected(_self, _address):
         return [fallback_device]
@@ -548,12 +559,12 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
 def test_find_device_multiple_matches_raises(monkeypatch):
     """Providing an address that matches multiple devices should raise BLEError."""
-    from meshtastic.ble_interface import BLEDevice, BLEInterface
+    # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
-    iface = object.__new__(BLEInterface)
+    iface = object.__new__(ble_mod.BLEInterface)
     devices = [
-        BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
-        BLEDevice(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
+        ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
+        ble_mod.BLEDevice(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
     ]
     monkeypatch.setattr(BLEInterface, "scan", lambda: devices)
 
@@ -565,15 +576,17 @@ def test_find_device_multiple_matches_raises(monkeypatch):
 
 def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypatch):
     """When the version guard disallows the fallback, the private backend is never touched."""
-    from meshtastic.ble_interface import BLEInterface
+    # BLEInterface already imported at top as ble_mod.BLEInterface
 
-    iface = object.__new__(BLEInterface)
+    iface = object.__new__(ble_mod.BLEInterface)
 
     monkeypatch.setattr(
         "meshtastic.ble_interface._bleak_supports_connected_fallback", lambda: False
     )
 
     class BoomScanner:
+        """Mock scanner that raises an exception when instantiated."""
+
         def __init__(self):
             raise AssertionError(
                 "BleakScanner should not be instantiated when guard fails"
@@ -601,8 +614,8 @@ def test_close_idempotent(monkeypatch):
 
 def test_close_handles_bleak_error(monkeypatch):
     """Test that close() handles BleakError gracefully."""
-    from meshtastic.ble_interface import BleakError
-    from meshtastic.mesh_interface import pub
+    # BleakError already imported at top as ble_mod.BleakError
+    # pub already imported at top as mesh_iface_module.pub
 
     calls = []
 
@@ -638,7 +651,7 @@ def test_close_handles_bleak_error(monkeypatch):
 
 def test_close_handles_runtime_error(monkeypatch):
     """Test that close() handles RuntimeError gracefully."""
-    from meshtastic.mesh_interface import pub
+    # pub already imported at top as mesh_iface_module.pub
 
     calls = []
 
@@ -675,7 +688,7 @@ def test_close_handles_runtime_error(monkeypatch):
 
 def test_close_handles_os_error(monkeypatch):
     """Test that close() handles OSError gracefully."""
-    from meshtastic.mesh_interface import pub
+    # pub already imported at top as mesh_iface_module.pub
 
     calls = []
 
@@ -720,7 +733,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
     """Test that receive thread handles specific exceptions correctly."""
     # logging and threading already imported at top
 
-    from meshtastic.ble_interface import BleakError
+    # BleakError already imported at top as ble_mod.BleakError
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -745,7 +758,8 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
                 Test client that raises a configured exception from its faulting methods.
 
                 Args:
-                    exception_type (Exception | type): An exception instance or exception class that the client will raise when its faulting methods are invoked.
+                    exception_type (Exception | type): An exception instance or exception class that the
+                        client will raise when its faulting methods are invoked.
 
                 """
                 super().__init__()
@@ -816,11 +830,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
 def test_log_notification_registration(monkeypatch):
     """Test that log notifications are properly registered for both legacy and current log UUIDs."""
-    from meshtastic.ble_interface import (
-        FROMNUM_UUID,
-        LEGACY_LOGRADIO_UUID,
-        LOGRADIO_UUID,
-    )
+    # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
     class MockClientWithLogChars(DummyClient):
         """Mock client that has log characteristics."""
@@ -831,7 +841,9 @@ def test_log_notification_registration(monkeypatch):
 
             Attributes:
                 start_notify_calls (list): Records arguments of each start_notify invocation.
-                has_characteristic_map (dict): Maps characteristic UUID constants to booleans indicating whether the client reports that characteristic is present. Defaults include LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
+                has_characteristic_map (dict): Maps characteristic UUID constants to booleans indicating
+                    whether the client reports that characteristic is present. Defaults
+                    include LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
 
             """
             super().__init__()
@@ -910,11 +922,7 @@ def test_log_notification_registration(monkeypatch):
 
 def test_log_notification_registration_missing_characteristics(monkeypatch):
     """Test that log notification registration handles missing characteristics gracefully."""
-    from meshtastic.ble_interface import (
-        FROMNUM_UUID,
-        LEGACY_LOGRADIO_UUID,
-        LOGRADIO_UUID,
-    )
+    # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
     class MockClientWithoutLogChars(DummyClient):
         """Mock client that doesn't have log characteristics."""
@@ -981,8 +989,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     """Test that the receive loop handles DecodeError gracefully without closing."""
     # logging, threading, and time already imported at top
-
-    from meshtastic.ble_interface import FROMRADIO_UUID
+    # FROMRADIO_UUID already imported at top as ble_mod.FROMRADIO_UUID
 
     caplog.set_level(logging.WARNING)
 
@@ -991,7 +998,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
 
         def read_gatt_char(self, uuid, timeout=None, **_kwargs):
             """Return malformed protobuf data for FROMRADIO to force a DecodeError."""
-            if uuid == FROMRADIO_UUID:
+            if uuid == ble_mod.FROMRADIO_UUID:
                 return b"invalid-protobuf-data"
             return b""
 
@@ -1157,7 +1164,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     """Test that sendToRadio handles specific exceptions correctly."""
     # logging already imported at top
-    from meshtastic.ble_interface import BleakError, BLEInterface
+    # BleakError already imported at top as ble_mod.BleakError, BLEInterface
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -1193,7 +1200,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     iface = _build_interface(monkeypatch, client)
 
     # Create a mock ToRadio message with actual data to ensure it's not empty
-    from meshtastic.protobuf import mesh_pb2
+    # mesh_pb2 already imported at top
 
     to_radio = mesh_pb2.ToRadio()
     to_radio.packet.decoded.payload = b"test_data"
@@ -1245,7 +1252,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     # logging, threading, and time already imported at top
     # MagicMock, patch already imported at top
 
-    from meshtastic.ble_interface import BLEClient, BLEInterface
+    # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
     # Set logging level to DEBUG to capture all messages
     caplog.set_level(logging.DEBUG)
@@ -1306,7 +1313,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Record a disconnect attempt on this mock client by incrementing its counter.
 
-            Accepts arbitrary positional and keyword arguments for call-site compatibility; all passed arguments are ignored. Side effect: increments `disconnect_count` by 1.
+            Accepts arbitrary positional and keyword arguments for call-site compatibility; all passed
+            arguments are ignored. Side effect: increments `disconnect_count` by 1.
             """
             self.disconnect_count += 1
 
@@ -1314,7 +1322,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             No-op stub that accepts any positional and keyword arguments and intentionally performs no action.
             """
-            pass
 
         def stop_notify(self, *_args, **_kwargs):
             """
@@ -1322,7 +1329,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             Accepts any positional and keyword arguments and ignores them; provided solely for API compatibility with real BLE client implementations.
             """
-            pass
 
     class StressTestClient(BLEClient):
         """Mock client that simulates rapid connect/disconnect cycles."""
@@ -1381,7 +1387,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Record a disconnect attempt on this mock client by incrementing its counter.
 
-            Accepts arbitrary positional and keyword arguments for call-site compatibility; all passed arguments are ignored. Side effect: increments `disconnect_count` by 1.
+            Accepts arbitrary positional and keyword arguments for call-site compatibility; all passed
+            arguments are ignored. Side effect: increments `disconnect_count` by 1.
             """
             self.disconnect_count += 1
 
@@ -1389,7 +1396,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             No-op stub that accepts any positional and keyword arguments and intentionally performs no action.
             """
-            pass
 
         def stop_notify(self, *_args, **_kwargs):
             """
@@ -1397,7 +1403,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             Accepts any positional and keyword arguments and ignores them; provided solely for API compatibility with real BLE client implementations.
             """
-            pass
 
         def close(self):
             """
@@ -1406,16 +1411,16 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             This intentionally performs no action so that calling `close()` on a mock client does not trigger
             event-loop side effects or errors during unit tests.
             """
-            pass
 
     def create_interface_with_auto_reconnect():
         """
         Create a BLEInterface configured for stress testing with auto-reconnect enabled.
 
-        Patches BLEInterface.scan and BLEInterface.connect so the created interface will discover a test device and return a StressTestClient when connecting.
+        Patches BLEInterface.scan and BLEInterface.connect so the created interface will discover a test device
+        and return a StressTestClient when connecting.
 
-        Returns:
-            (iface, client): `iface` is a BLEInterface instance with `auto_reconnect=True`; `client` is the StressTestClient that `iface.connect()` will return.
+            (iface, client): `iface` is a BLEInterface instance with `auto_reconnect=True`;
+            `client` is the StressTestClient that `iface.connect()` will return.
 
         """
         client = StressTestClient()
@@ -1428,13 +1433,14 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             patch.object(BLEInterface, "scan", return_value=[mock_device])
         )
 
-        def _patched_connect(self, address=None):
-            """
-            Record the attempted connection address, attach the provided client to the interface, clear the disconnect flag, signal a reconnection event if present, and return the client.
+        def _patched_connect(self, address=None, client=None):
+            """Record the attempted connection address, attach the provided client to the interface,
+            clear the disconnect flag, signal a reconnection event if present, and return the client.
 
             Args:
                 self: The BLEInterface instance.
                 address (str | None): Optional address that was used to connect; recorded for test inspection.
+                client: The client instance to attach to the interface.
 
             Returns:
                 client: The client instance that was attached to the interface.
@@ -1463,10 +1469,12 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     iface, client = create_interface_with_auto_reconnect()
 
     def simulate_rapid_disconnects():
-        """
+        """Invoke the interface disconnect handler with the test client's bleak_client ten times
+        with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.
         Simulate a burst of BLE disconnection events to exercise reconnect/disconnect handling.
 
-        Invokes the interface disconnect handler with the test client's bleak_client ten times with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.
+        Invokes the interface disconnect handler with the test client's bleak_client ten times
+        with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.
         """
         for _ in range(10):
             iface._on_ble_disconnect(client.bleak_client)
@@ -1489,11 +1497,14 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     # Test 2: Concurrent connect/disconnect operations
     iface2, client2 = create_interface_with_auto_reconnect()
 
-    def rapid_connect_disconnect_cycle():
-        """
+    def stress_test_disconnects():
+        """Call iface2._on_ble_disconnect(client2.bleak_client) five times with a 5 millisecond pause
+        between calls; any exceptions raised during the loop are suppressed and logged to allow the stress cycle to continue.
         Trigger a short burst of simulated BLE disconnections on iface2 to exercise auto-reconnect and disconnect handling.
 
-        Calls iface2._on_ble_disconnect(client2.bleak_client) five times with a 5 millisecond pause between calls; any exceptions raised during the loop are suppressed and logged to allow the stress cycle to continue.
+        Calls iface2._on_ble_disconnect(client2.bleak_client) five times with a 5 millisecond pause
+        between calls; any exceptions raised during the loop are suppressed and logged
+        to allow the stress cycle to continue.
         """
         for i in range(5):
             try:
@@ -1560,7 +1571,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     """Test that BLEClient.is_connected handles exceptions gracefully."""
     _ = monkeypatch  # Mark as unused
     # logging already imported at top
-    from meshtastic.ble_interface import BLEClient
+    # BLEClient already imported at top as ble_mod.BLEClient
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -1592,9 +1603,9 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     ble_client = BLEClient.__new__(BLEClient)
     ble_client.bleak_client = ExceptionBleakClient(AttributeError)
     # Initialize error_handler since __new__ bypasses __init__
-    from meshtastic.ble_interface import BLEErrorHandler
+    # BLEErrorHandler already imported at top as ble_mod.BLEErrorHandler
 
-    ble_client.error_handler = BLEErrorHandler()
+    ble_client.error_handler = ble_mod.BLEErrorHandler()
 
     # Should return False and log debug message when AttributeError occurs
     result = ble_client.is_connected()
@@ -1622,11 +1633,10 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
 
 def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     """BLEClient.async_await should wrap FutureTimeoutError in BLEInterface.BLEError."""
-    from concurrent.futures import TimeoutError as FutureTimeoutError
 
-    from meshtastic.ble_interface import BLEClient, BLEInterface
+    # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
-    client = BLEClient()  # address=None keeps underlying bleak client unset
+    client = ble_mod.BLEClient()  # address=None keeps underlying bleak client unset
 
     class _FakeFuture:
         def __init__(self):
@@ -1634,9 +1644,11 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
             self.coro = None
 
         def result(self, _timeout=None):
+            """Fake result method that raises FutureTimeoutError."""
             raise FutureTimeoutError()
 
         def cancel(self):
+            """Fake cancel method that marks the future as cancelled."""
             self.cancelled = True
 
     fake_future = _FakeFuture()
