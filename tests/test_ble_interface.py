@@ -531,7 +531,9 @@ def test_find_device_returns_single_scan_result(monkeypatch):
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    scanned_device = ble_mod.BLEDevice(address="11:22:33:44:55:66", name="Test Device", details={})
+    scanned_device = ble_mod.BLEDevice(
+        address="11:22:33:44:55:66", name="Test Device", details={}
+    )
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [scanned_device])
 
     result = ble_mod.BLEInterface.find_device(iface, None)
@@ -544,7 +546,9 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    fallback_device = ble_mod.BLEDevice(address="AA:BB:CC:DD:EE:FF", name="Fallback", details={})
+    fallback_device = ble_mod.BLEDevice(
+        address="AA:BB:CC:DD:EE:FF", name="Fallback", details={}
+    )
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
 
     def _fake_connected(_self, _address):
@@ -906,13 +910,13 @@ def test_log_notification_registration(monkeypatch):
     )
 
     assert (
-        legacy_call[1] == iface.legacy_log_radio_handler
+        legacy_call[1] is iface.legacy_log_radio_handler
     ), "Legacy log handler should be registered"
     assert (
-        current_call[1] == iface.log_radio_handler
+        current_call[1] is iface.log_radio_handler
     ), "Current log handler should be registered"
     assert (
-        fromnum_call[1] == iface.from_num_handler
+        fromnum_call[1] is iface.from_num_handler
     ), "FROMNUM handler should be registered"
 
     iface.close()

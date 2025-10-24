@@ -20,18 +20,15 @@ from typing import List, Optional, Tuple
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
-
-# Get bleak version - try direct import first, fallback to importlib.metadata
-try:
-    from bleak import __version__ as BLEAK_VERSION
-except ImportError:
-    BLEAK_VERSION = importlib.metadata.version("bleak")
 from google.protobuf.message import DecodeError
 
 from meshtastic import publishingThread
 from meshtastic.mesh_interface import MeshInterface
 
 from .protobuf import mesh_pb2
+
+# Get bleak version using importlib.metadata (reliable method)
+BLEAK_VERSION = importlib.metadata.version("bleak")
 
 SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
 TORADIO_UUID = "f75c76d2-129e-4dad-a1dd-7866124401e7"
@@ -258,7 +255,11 @@ class ThreadCoordinator:
 
         """
         with self._lock:
-            if thread in self._threads and thread.is_alive() and thread is not current_thread():
+            if (
+                thread in self._threads
+                and thread.is_alive()
+                and thread is not current_thread()
+            ):
                 thread.join(timeout=timeout)
 
     def join_all(self, timeout: Optional[float] = None):
@@ -1891,7 +1892,10 @@ class BLEClient:
             The device's GATT services and their characteristics as returned by the underlying BLE library.
 
         """
-        return self.async_await(self.bleak_client.get_services(), timeout=timeout)
+        # services is a property, not an async method, so we access it directly
+        # timeout parameter is kept for API compatibility but not used
+        _ = timeout  # Mark as intentionally unused for API compatibility
+        return self.bleak_client.services
 
     def has_characteristic(self, specifier):
         """
