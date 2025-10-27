@@ -124,18 +124,16 @@ class TestBLEStateManager:
 
         def worker(worker_id):
             """
-            Perform repeated state transition attempts in a worker thread and record outcomes.
-
-            This worker runs 100 iterations; on even iterations it attempts to transition the shared
-            manager to ConnectionState.CONNECTING, and on odd iterations to ConnectionState.DISCONNECTED.
-            Each attempt's result is appended to the shared `results` list as a tuple
-            (worker_id, iteration_index, success, current_state_value). Any exception raised during
-            execution is appended to the shared `errors` list as (worker_id, error_message).
-
-            Parameters
-            ----------
+            Run 100 transition attempts in a worker thread and record outcomes.
+            
+            On each iteration the worker tries to transition the shared `manager` to
+            ConnectionState.CONNECTING on even iterations and ConnectionState.DISCONNECTED on odd iterations.
+            Each attempt appends a result tuple (worker_id, iteration_index, success, current_state_value)
+            to the shared `results` list. Any exception raised is appended to the shared `errors` list as
+            (worker_id, error_message).
+            
+            Parameters:
                 worker_id (int): Identifier for this worker used when recording results and errors.
-
             """
             try:
                 for i in range(100):
@@ -205,11 +203,10 @@ class TestBLEStateManager:
         def nested_operation():
             # This should work with reentrant lock
             """
-            Read the manager's current connection state while exercising the manager's reentrant state lock.
-
+            Acquire the manager's reentrant state lock twice and return the manager's current connection state.
+            
             Returns:
                 ConnectionState: The current connection state.
-
             """
             with manager._state_lock:
                 with manager._state_lock:
@@ -234,7 +231,11 @@ class TestBLEStateManager:
             assert isinstance(state, ConnectionState)
 
     def test_state_consistency_after_error(self):
-        """Test state consistency after error transitions."""
+        """
+        Verify BLEStateManager maintains correct state and properties after an error and can recover to DISCONNECTED.
+        
+        After transitioning to `ERROR`, the manager's state is `ConnectionState.ERROR`, `is_connected` is `False`, `is_closing` is `True`, and `can_connect` is `False`. After transitioning to `DISCONNECTED`, the manager's state is `ConnectionState.DISCONNECTED` and `can_connect` is `True`.
+        """
         manager = BLEStateManager()
 
         # Simulate error during connection
@@ -372,17 +373,12 @@ class TestPhase3LockConsolidation:
 
         def worker(worker_id):
             """
-            Perform a sequence of state transitions against the shared BLEStateManager to exercise concurrent behavior.
-
-            This worker runs a short loop that alternates requests to transition the manager through 
-            CONNECTING, CONNECTED (with a mock client), and DISCONNECTED states, recording each 
-            attempt's outcome by appending tuples to a shared `results` list and recording exceptions 
-            to a shared `errors` list. A small sleep between iterations encourages thread interleaving.
-
-            Parameters
-            ----------
-                worker_id (int | str): Identifier used in recorded result entries to distinguish this worker's operations.
-
+            Perform a sequence of state transitions on the shared BLEStateManager to exercise concurrent behavior.
+            
+            Each worker attempts multiple transitions (CONNECTING, CONNECTED with a mock client, DISCONNECTED) and records outcomes by appending (worker_id, iteration, manager.state, success) to the shared `results` list; any exceptions are appended to the shared `errors` list as (worker_id, error_message).
+            
+            Parameters:
+                worker_id (int | str): Identifier used in recorded result and error entries to distinguish this worker's operations.
             """
             try:
                 for i in range(10):
@@ -484,12 +480,8 @@ class TestPhase3LockConsolidation:
 def test_lock_contention_performance():
     """
     Measure BLEStateManager throughput and correctness under lock contention.
-
-    Spawns 5 worker threads that each perform 100 iterations of CONNECTING → CONNECTED → 
-    DISCONNECTED transition attempts (3 operations per iteration) with a short delay to 
-    simulate work. Asserts the total elapsed time stays below 5.0 seconds and that 
-    at least 80% of the expected operations (5 * 100 * 3) succeeded. 
-    Prints a brief performance summary.
+    
+    Runs five worker threads that each attempt 100 cycles of CONNECTING → CONNECTED → DISCONNECTED transitions and verifies timing and success rate; asserts total elapsed time is below 5.0 seconds and that at least 80% of the expected operations completed. Prints a short performance summary.
     """
 
     manager = BLEStateManager()
@@ -497,17 +489,12 @@ def test_lock_contention_performance():
 
     def worker(worker_id):
         """
-        Perform a sequence of simulated BLE state transitions as a worker and record its operation count and elapsed time.
-
-        Simulates 100 iterations of attempting transitions in order: CONNECTING, CONNECTED, DISCONNECTED. Counts each successful transition as one operation, measures elapsed wall-clock time for the loop, and appends a result dictionary to the external `results` list with keys "worker_id", "operations", and "time".
-
-        Parameters
-        ----------
+        Run a worker that performs 100 simulated BLE state-transition cycles and records its operation count and elapsed time.
+        
+        Attempts transitions to CONNECTING, CONNECTED, and DISCONNECTED on each iteration; increments the operation count for each successful transition, measures wall-clock elapsed time for the loop, and appends a result dict with keys "worker_id", "operations", and "time" to the outer-scope `results` list (using the outer-scope `manager` for transitions).
+        
+        Parameters:
             worker_id (int): Identifier included in the appended result to distinguish this worker's measurements.
-
-        Side effects:
-            Appends a dict to the outer-scope `results` list and calls `manager.transition_to(...)` using the outer-scope `manager`.
-
         """
         start_time = time.perf_counter()
         operations = 0
@@ -595,7 +582,11 @@ def test_memory_efficiency():
 
 
 def test_property_access_performance():
-    """Test that state property access is fast."""
+    """
+    Measure average access time of BLEStateManager properties and assert it meets the performance threshold.
+    
+    Runs 10,000 iterations accessing the following properties each iteration: `state`, `is_connected`, `is_closing`, `can_connect`, and `client`. Computes the average time per property access and asserts it is less than 1e-5 seconds; raises an AssertionError if the threshold is exceeded. Prints a short performance summary.
+    """
 
     manager = BLEStateManager()
 
