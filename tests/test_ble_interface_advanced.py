@@ -309,10 +309,10 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             Simulate a failed GATT characteristic write by raising the configured exception.
 
             Raises:
-                Exception: An instance of `self.exception_type` with the message "write failed" to emulate a write error.
+                Exception: An instance of `self.exception_type` to emulate a write error.
 
             """
-            raise self.exception_type("write failed")
+            raise self.exception_type()
 
     # Test BleakError specifically
     client = ExceptionClient(BleakError)
@@ -414,7 +414,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             """
             if self._should_fail_connect:
-                raise RuntimeError("connect fail")  # noqa: TRY003
+                raise RuntimeError()
             self.connect_count += 1
             return self
 
@@ -451,13 +451,10 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
 
     class StressTestClient(BLEClient):
-        """Mock client that simulates rapid connect/disconnect cycles."""
+        """Mock BLE client for stress testing concurrent operations."""
 
-        def __init__(self):  # pylint: disable=super-init-not-called
-            # Don't call super().__init__() to avoid creating real event loop
+        def __init__(self):
             """
-            Initialize the mock BLE root client used in tests.
-
             Creates attributes that simulate a Bleak client and track connection activity:
 
             Attributes:
@@ -492,7 +489,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             """
             if self._should_fail_connect:
-                raise RuntimeError("connect fail")  # noqa: TRY003
+                raise RuntimeError()
             self.connect_count += 1
             return self
 
@@ -611,6 +608,11 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     disconnect_thread.start()
     disconnect_thread.join()
 
+    # Wait briefly for reconnect scheduling to occur
+    for _ in range(100):
+        if len(iface._connect_stub_calls) >= 2:
+            break
+        time.sleep(0.01)
     # Verify that the interface handled rapid disconnects gracefully
     assert client.bleak_client.disconnect_count >= 0  # Should not crash
     assert (
@@ -852,10 +854,10 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
             Raises
             ------
-                RuntimeError: Always raised with the message "thread error in queueWork".
+                RuntimeError: Always raised.
 
             """
-            raise RuntimeError("thread error in queueWork")  # noqa: TRY003
+            raise RuntimeError()
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
 
@@ -875,10 +877,10 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
             Always rejects an enqueued callback by raising a ValueError indicating an invalid state.
 
             Raises:
-                ValueError: Always raised with the message "invalid state".
+                ValueError: Always raised.
 
             """
-            raise ValueError("invalid state")  # noqa: TRY003
+            raise ValueError()
 
     monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread2())
 
@@ -911,7 +913,7 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
                 ValueError: Always raised to indicate the mock callback failed during execution.
 
             """
-            raise ValueError("callback failed")  # noqa: TRY003
+            raise ValueError()
 
     mock_queue = Queue()
     mock_queue.put(ExceptionRunnable())

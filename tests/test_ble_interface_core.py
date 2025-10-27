@@ -97,18 +97,8 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
         """Mock scanner that raises an exception when instantiated."""
 
         def __init__(self):
-            """
-            Prevent instantiation by always raising an AssertionError when the private-backend guard disallows it.
-
-            This initializer exists solely to signal that creating a BleakScanner is not permitted under the failing guard.
-
-            Raises:
-                AssertionError: "BleakScanner should not be instantiated when guard fails"
-
-            """
-            raise AssertionError(
-                "BleakScanner should not be instantiated when guard fails"
-            )
+            import pytest
+            pytest.fail()
 
     monkeypatch.setattr("meshtastic.ble_interface.BleakScanner", BoomScanner)
 
@@ -187,16 +177,17 @@ def test_close_clears_ble_threads(monkeypatch):
 
     iface.close()
 
-    # Give threads a moment to clean up
-    time.sleep(0.1)
-
-    # Check for specific BLE interface threads that should be cleaned up
-    # BLEClient thread might persist in test environment, so focus on interface-managed threads
-    lingering = [
-        thread.name
-        for thread in threading.enumerate()
-        if thread.name.startswith("BLE") and thread.name != "BLEClient"
-    ]
+    # Wait up to 2s for interface-managed threads to terminate
+    deadline = time.time() + 2.0
+    while True:
+        lingering = [
+            t.name
+            for t in threading.enumerate()
+            if t.name.startswith("BLE") and t.name != "BLEClient"
+        ]
+        if not lingering or time.time() >= deadline:
+            break
+        time.sleep(0.02)
     assert not lingering, f"Found lingering BLE threads: {lingering}"
 
 

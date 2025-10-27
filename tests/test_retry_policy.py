@@ -217,3 +217,6 @@ class TestRetryPolicy:
         empty_policy.next_attempt()
         assert empty_policy.get_attempt_count() == 1
         assert transient_policy.get_attempt_count() == 0
+        # Cleanup to avoid state bleed into other tests
+        empty_policy.reset()
+        transient_policy.reset()

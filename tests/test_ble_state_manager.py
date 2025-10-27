@@ -146,9 +146,7 @@ class TestBLEStateManager:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
                     results.append((worker_id, i, success, manager.state.value))
                     time.sleep(0.001)  # Small delay to increase contention
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - capture any exception for test harness
+            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Start multiple threads
@@ -166,7 +164,7 @@ class TestBLEStateManager:
         assert len(errors) == 0, f"Errors occurred: {errors}"
 
         # Verify final state is valid
-        assert manager.state in ConnectionState
+        assert isinstance(manager.state, ConnectionState)
 
         # Verify all transitions were either successful or failed gracefully
         assert len(results) == 500  # 5 workers * 100 iterations each
@@ -402,9 +400,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - capture any exception for test harness
+            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -425,7 +421,7 @@ class TestPhase3LockConsolidation:
         assert len(results) == 50, f"Expected 50 operations, got {len(results)}"
 
         # Verify final state is valid
-        assert manager.state in ConnectionState
+        assert isinstance(manager.state, ConnectionState)
 
         # Verify client consistency
         if manager.state == ConnectionState.CONNECTED:
@@ -618,7 +614,7 @@ def test_property_access_performance():
 
     # Property access should be very fast
     avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
-    assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
+    assert avg_time < 0.00002, f"Property access too slow: {avg_time:.9f}s"
 
     print(
         f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"

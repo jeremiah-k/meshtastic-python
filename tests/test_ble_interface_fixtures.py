@@ -174,12 +174,13 @@ def mock_bleak(monkeypatch):
             """
             return None
 
-        async def start_notify(self, **_kwargs):
+        async def start_notify(self, *_args, **_kwargs):
             """
-            Accepts arbitrary keyword arguments and does nothing.
+            Accepts arbitrary arguments and does nothing.
 
             Parameters
             ----------
+                _args: Positional arguments provided for compatibility; they are ignored.
                 _kwargs (dict): Keyword arguments provided for compatibility; they are ignored.
 
             """
@@ -248,8 +249,25 @@ def mock_bleak(monkeypatch):
             self.address = address
             self.name = name
 
+    class _StubBleakScanner:
+        def __init__(self):
+            pass
+
+        @staticmethod
+        async def discover(**_kwargs):
+            return []
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+        async def register_detection_callback(self, callback):
+            pass
+
     bleak_module.BleakClient = _StubBleakClient
-    bleak_module.BleakScanner = SimpleNamespace(discover=_stub_discover)
+    bleak_module.BleakScanner = _StubBleakScanner
     bleak_module.BLEDevice = _StubBLEDevice
 
     monkeypatch.setitem(sys.modules, "bleak", bleak_module)

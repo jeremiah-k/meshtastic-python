@@ -69,7 +69,7 @@ def main():
     parser.add_argument("address", help="The BLE address of your Meshtastic device.")
     parser.add_argument(
         "--retry-delay",
-        type=int,
+        type=float,
         default=RETRY_DELAY_SECONDS,
         help=f"Seconds to wait before reconnect attempts (default: {RETRY_DELAY_SECONDS}).",
     )
@@ -80,6 +80,8 @@ def main():
         help="Logging level (default: INFO).",
     )
     args = parser.parse_args()
+    if args.retry_delay < 0:
+        parser.error("--retry-delay must be >= 0")
     address = args.address
     delay = args.retry_delay
     logging.basicConfig(level=getattr(logging, args.log_level, logging.INFO))
@@ -100,8 +102,13 @@ def main():
                     logger.info(
                         "Connection successful. Waiting for disconnection event..."
                     )
-                    disconnected_event.wait()
-                    logger.info("Disconnected normally.")
+                    timeout_s = max(2 * delay, 30.0)
+                    if not disconnected_event.wait(timeout=timeout_s):
+                        logger.warning(
+                            "No disconnect event within %.1fs; proceeding to retry.", timeout_s
+                        )
+                    else:
+                        logger.info("Disconnected normally.")
             except meshtastic.ble_interface.BLEInterface.BLEError:
                 logger.exception("Connection failed")
             except Exception:
