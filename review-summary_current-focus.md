@@ -153,3 +153,4 @@ New tests present: tests/test_retry_policy.py
 - [x] Notification lifecycle on reconnect
 - [x] Expose observability hooks
 - [x] Audit state transitions
+- [x] Improve test robustness with dependency injection for random source

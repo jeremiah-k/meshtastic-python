@@ -597,6 +597,7 @@ class ReconnectPolicy:
         backoff: float = 2.0,
         jitter_ratio: float = 0.1,
         max_retries: Optional[int] = None,
+        random_source=None,
     ):
         """
         Initialize reconnection policy.
@@ -633,6 +634,7 @@ class ReconnectPolicy:
         self.backoff = backoff
         self.jitter_ratio = jitter_ratio
         self.max_retries = max_retries
+        self._random = random_source or random
         self._attempt_count = 0
 
     def reset(self) -> None:
@@ -657,7 +659,7 @@ class ReconnectPolicy:
         delay = min(self.initial_delay * (self.backoff**attempt), self.max_delay)
 
         # Add jitter
-        jitter = delay * self.jitter_ratio * (random.random() * 2.0 - 1.0)
+        jitter = delay * self.jitter_ratio * (self._random.random() * 2.0 - 1.0)
 
         return delay + jitter
 

@@ -105,24 +105,17 @@ class TestReconnectPolicy:
         """Test delay calculation includes jitter."""
         import random
         rnd = random.Random(12345)
-        # monkeypatch random used inside policy
         policy = ReconnectPolicy(
             initial_delay=10.0,
             max_delay=100.0,
             backoff=1.1,  # Valid backoff > 1.0
             jitter_ratio=0.5,  # 50% jitter
             max_retries=5,
+            random_source=rnd,
         )
-        # Patch the random module used by the policy
-        import meshtastic.ble_interface as ble_mod
-        original_random = ble_mod.random
-        ble_mod.random = rnd
-        try:
-            # With jitter, delay should be within expected range
-            delay = policy.get_delay(0)
-            assert 5.0 <= delay <= 15.0  # 10.0 ± 50%
-        finally:
-            ble_mod.random = original_random
+        # With jitter, delay should be within expected range
+        delay = policy.get_delay(0)
+        assert 5.0 <= delay <= 15.0  # 10.0 ± 50%
 
     def test_should_retry_with_limit(self):
         """Test should_retry logic with retry limit."""
