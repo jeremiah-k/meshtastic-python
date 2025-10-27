@@ -3258,4 +3258,8 @@ class BLEClient:
         """
         Request the internal event loop to stop.
         """
+        # Cancel all pending tasks to prevent callback errors after loop closure
+        for task in asyncio.all_tasks(self._eventLoop):
+            if not task.done():
+                task.cancel()
         self._eventLoop.stop()
