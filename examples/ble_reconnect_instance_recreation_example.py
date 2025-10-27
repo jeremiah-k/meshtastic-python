@@ -114,7 +114,7 @@ def main():
             except Exception:
                 logger.exception("An unexpected error occurred")
 
-            logger.info("Retrying in %d seconds...", delay)
+            logger.info(f"Retrying in {delay} seconds...")
             time.sleep(delay)
     except KeyboardInterrupt:
         logger.info("Exiting...")
