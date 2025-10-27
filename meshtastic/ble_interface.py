@@ -3099,14 +3099,12 @@ class BLEClient:
         Retrieve the discovered GATT services and characteristics for the connected device.
 
         Args:
-            timeout (float | None): Deprecated. Ignored for backward compatibility.
+            timeout (float | None): Ignored for backward compatibility.
 
         Returns:
             The device's GATT services and their characteristics as returned by the underlying BLE library.
 
         """
-        if timeout is not None:
-            logger.warning("get_services(timeout=...) is deprecated and ignored")
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services
 
