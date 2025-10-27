@@ -46,6 +46,238 @@ LOGRADIO_UUID = "5a3d6e49-06e6-4423-9944-e9de8cdf9547"
 MALFORMED_NOTIFICATION_THRESHOLD = 10
 logger = logging.getLogger("meshtastic.ble")
 
+
+class NotificationManager:
+    """
+    Manages BLE notification handler lifecycle to prevent leaks.
+    
+    This class tracks active notification subscriptions and ensures
+    proper cleanup during disconnection and reconnection.
+    """
+    
+    def __init__(self):
+        """Initialize notification manager."""
+        self._active_subscriptions = {}  # token -> (characteristic, callback)
+        self._subscription_counter = 0
+        self._lock = RLock()
+    
+    def subscribe(self, characteristic: str, callback) -> int:
+        """
+        Subscribe to notifications with tracking.
+        
+        Args:
+            characteristic: BLE characteristic UUID
+            callback: Notification callback function
+            
+        Returns:
+            Subscription token for later unsubscription
+        """
+        with self._lock:
+            token = self._subscription_counter
+            self._subscription_counter += 1
+            self._active_subscriptions[token] = (characteristic, callback)
+            return token
+    
+    def unsubscribe(self, token: int) -> bool:
+        """
+        Unsubscribe from notifications using token.
+        
+        Args:
+            token: Subscription token returned by subscribe()
+            
+        Returns:
+            True if subscription was found and removed, False otherwise
+        """
+        with self._lock:
+            if token in self._active_subscriptions:
+                del self._active_subscriptions[token]
+                return True
+            return False
+    
+    def get_active_subscriptions(self) -> dict:
+        """Get copy of active subscriptions."""
+        with self._lock:
+            return self._active_subscriptions.copy()
+    
+    def cleanup_all(self) -> None:
+        """Clear all active subscriptions."""
+        with self._lock:
+            self._active_subscriptions.clear()
+    
+    def __len__(self) -> int:
+        """Get number of active subscriptions."""
+        with self._lock:
+            return len(self._active_subscriptions)
+
+
+class ReconnectPolicy:
+    """
+    Centralized reconnection and retry policy for BLE operations.
+    
+    This class provides a unified approach to handling retries, backoff,
+    and jitter for various BLE operations including reconnection attempts,
+    read retries, and transient error recovery.
+    """
+    
+    def __init__(
+        self,
+        initial_delay: float = 1.0,
+        max_delay: float = 30.0,
+        backoff: float = 2.0,
+        jitter_ratio: float = 0.1,
+        max_retries: Optional[int] = None,
+    ):
+        """
+        Initialize reconnection policy.
+        
+        Args:
+            initial_delay: Initial delay between retries in seconds
+            max_delay: Maximum delay between retries in seconds
+            backoff: Multiplier for exponential backoff
+            jitter_ratio: Ratio for random jitter (0.0 to 1.0)
+            max_retries: Maximum number of retries (None for infinite)
+        """
+        self.initial_delay = initial_delay
+        self.max_delay = max_delay
+        self.backoff = backoff
+        self.jitter_ratio = jitter_ratio
+        self.max_retries = max_retries
+        self._attempt_count = 0
+    
+    def reset(self) -> None:
+        """Reset attempt counter for new retry sequence."""
+        self._attempt_count = 0
+    
+    def get_delay(self, attempt: Optional[int] = None) -> float:
+        """
+        Calculate delay for given attempt number with backoff and jitter.
+        
+        Args:
+            attempt: Attempt number (uses internal counter if None)
+            
+        Returns:
+            Delay in seconds
+        """
+        if attempt is None:
+            attempt = self._attempt_count
+        
+        # Calculate exponential backoff
+        delay = min(self.initial_delay * (self.backoff ** attempt), self.max_delay)
+        
+        # Add jitter
+        jitter = delay * self.jitter_ratio * (random.random() * 2.0 - 1.0)
+        
+        return delay + jitter
+    
+    def should_retry(self, attempt: Optional[int] = None) -> bool:
+        """
+        Check if retry should be attempted for given attempt number.
+        
+        Args:
+            attempt: Attempt number (uses internal counter if None)
+            
+        Returns:
+            True if retry should be attempted
+        """
+        if attempt is None:
+            attempt = self._attempt_count
+        
+        return self.max_retries is None or attempt < self.max_retries
+    
+    def next_attempt(self) -> Tuple[float, bool]:
+        """
+        Get delay for next attempt and increment counter.
+        
+        Returns:
+            Tuple of (delay_seconds, should_retry)
+        """
+        delay = self.get_delay()
+        should_retry = self.should_retry()
+        self._attempt_count += 1
+        return delay, should_retry
+    
+    def get_attempt_count(self) -> int:
+        """Get current attempt count."""
+        return self._attempt_count
+
+
+class AsyncDispatcher:
+    """
+    Safe async coroutine execution that works in any context.
+    
+    This class provides a way to run coroutines safely whether called
+    from an async context (with running event loop) or from a sync context.
+    It prevents deadlocks that can occur when using asyncio.run inside
+    an already running event loop.
+    """
+    
+    def __init__(self, event_loop: Optional[asyncio.AbstractEventLoop] = None):
+        """
+        Initialize the dispatcher.
+        
+        Args:
+            event_loop: Optional event loop to use for dispatching
+        """
+        self._event_loop = event_loop
+    
+    def run_coroutine(self, coro):
+        """
+        Run a coroutine safely in any context.
+        
+        Args:
+            coro: The coroutine to run
+            
+        Returns:
+            The result of the coroutine
+            
+        Raises:
+            The same exceptions that the coroutine would raise
+        """
+        try:
+            # Check if we're in an async context with a running loop
+            loop = asyncio.get_running_loop()
+            if self._event_loop and loop != self._event_loop:
+                # We have a specific loop but we're in a different one
+                # Use run_coroutine_threadsafe to dispatch to the correct loop
+                future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
+                return future.result()
+            else:
+                # We're in a running loop - this is the complex case
+                # Run the coroutine in a separate thread to avoid blocking
+                import threading
+                
+                result_container = []
+                exception_container = []
+                
+                def run_in_thread():
+                    try:
+                        # Create new event loop for this thread
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            result = new_loop.run_until_complete(coro)
+                            result_container.append(result)
+                        finally:
+                            new_loop.close()
+                    except Exception as e:
+                        exception_container.append(e)
+                
+                thread = threading.Thread(target=run_in_thread)
+                thread.start()
+                thread.join()
+                
+                if exception_container:
+                    raise exception_container[0]
+                return result_container[0]
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run
+            return asyncio.run(coro)
+    
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop):
+        """Set the event loop for future dispatches."""
+        self._event_loop = loop
+
+
 """
 Exception Handling Philosophy for BLE Interface
 
@@ -174,6 +406,7 @@ class BLEStateManager:
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
         self._client: Optional["BLEClient"] = None
+        self._state_version = 0  # Version counter to prevent stale completions
 
     @property
     def state(self) -> ConnectionState:
@@ -201,6 +434,12 @@ class BLEStateManager:
         """Get current BLE client."""
         with self._state_lock:
             return self._client
+    
+    @property
+    def state_version(self) -> int:
+        """Get current state version for tracking stale operations."""
+        with self._state_lock:
+            return self._state_version
 
     def transition_to(
         self, new_state: ConnectionState, client: Optional["BLEClient"] = None
@@ -219,6 +458,7 @@ class BLEStateManager:
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
                 self._state = new_state
+                self._state_version += 1  # Increment version for each transition
 
                 # Update client reference if provided
                 if client is not None:
@@ -226,13 +466,25 @@ class BLEStateManager:
                 elif new_state == ConnectionState.DISCONNECTED:
                     self._client = None
 
-                logger.debug(f"State transition: {old_state.value} → {new_state.value}")
+                logger.debug(f"State transition: {old_state.value} → {new_state.value} (v{self._state_version})")
                 return True
             else:
                 logger.warning(
                     f"Invalid state transition: {self._state.value} → {new_state.value}"
                 )
                 return False
+
+    def is_version_current(self, version: int) -> bool:
+        """Check if a state version is still current.
+        
+        Args:
+            version: Version to check against current state
+            
+        Returns:
+            True if version is current, False if stale
+        """
+        with self._state_lock:
+            return version == self._state_version
 
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
@@ -672,6 +924,21 @@ class BLEInterface(MeshInterface):
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
+        
+        # Async dispatch infrastructure for safe coroutine execution
+        self._async_dispatcher = AsyncDispatcher()
+        
+        # Reconnection policy for centralized retry logic
+        self._reconnect_policy = ReconnectPolicy(
+            initial_delay=AUTO_RECONNECT_INITIAL_DELAY,
+            max_delay=AUTO_RECONNECT_MAX_DELAY,
+            backoff=AUTO_RECONNECT_BACKOFF,
+            jitter_ratio=AUTO_RECONNECT_JITTER_RATIO,
+            max_retries=None,  # Infinite retries for reconnection
+        )
+
+        # Notification manager for handler lifecycle
+        self._notification_manager = NotificationManager()
 
         # Thread management infrastructure
         self.thread_coordinator = ThreadCoordinator()
@@ -727,7 +994,19 @@ class BLEInterface(MeshInterface):
             self.close()
             if isinstance(e, BLEInterface.BLEError):
                 raise
-            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
+                raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
+
+    def _is_state_version_current(self, version: int) -> bool:
+        """
+        Check if a state version is still current to prevent stale operations.
+        
+        Args:
+            version: State version to check
+            
+        Returns:
+            True if version is current, False if stale
+        """
+        return self._state_manager.is_version_current(version)
 
     def __repr__(self):
         """
@@ -892,7 +1171,8 @@ class BLEInterface(MeshInterface):
                 is closed, or auto-reconnect is disabled. Retries use exponential backoff with jitter between attempts
                 and log each outcome. When the loop exits, clears the internal reconnect-thread tracker.
                 """
-                delay = AUTO_RECONNECT_INITIAL_DELAY
+                # Reset reconnection policy for new retry sequence
+                self._reconnect_policy.reset()
                 try:
                     while True:
                         # Use state manager instead of boolean flag
@@ -902,9 +1182,11 @@ class BLEInterface(MeshInterface):
                             )
                             return
                         try:
-                            logger.debug("Attempting BLE auto-reconnect.")
+                            logger.debug("Attempting BLE auto-reconnect (attempt %d).", 
+                                       self._reconnect_policy.get_attempt_count() + 1)
                             self.connect(self.address)
-                            logger.info("BLE auto-reconnect succeeded.")
+                            logger.info("BLE auto-reconnect succeeded after %d attempts.", 
+                                       self._reconnect_policy.get_attempt_count())
                             return
                         except self.BLEError as err:
                             # Use state manager instead of boolean flag
@@ -916,7 +1198,8 @@ class BLEInterface(MeshInterface):
                                     "Auto-reconnect cancelled after failure due to shutdown/disable."
                                 )
                                 return
-                            logger.warning("Auto-reconnect attempt failed: %s", err)
+                            logger.warning("Auto-reconnect attempt %d failed: %s", 
+                                         self._reconnect_policy.get_attempt_count(), err)
                         except (
                             Exception
                         ):  # Intentional broad catch for reconnect resilience
@@ -931,20 +1214,22 @@ class BLEInterface(MeshInterface):
                                 return
                             else:
                                 logger.exception(
-                                    "Unexpected error during auto-reconnect attempt"
+                                    "Unexpected error during auto-reconnect attempt %d",
+                                    self._reconnect_policy.get_attempt_count()
                                 )
 
                         # Use state manager instead of boolean flag
                         if self.is_connection_closing or not self.auto_reconnect:
                             return
-                        jitter = AUTO_RECONNECT_JITTER_RATIO * (
-                            (random.random() * 2.0) - 1.0
-                        )
-                        sleep_seconds = delay * (1.0 + jitter)
-                        time.sleep(sleep_seconds)
-                        delay = min(
-                            delay * AUTO_RECONNECT_BACKOFF, AUTO_RECONNECT_MAX_DELAY
-                        )
+                        
+                        # Get delay and check if we should retry using centralized policy
+                        sleep_delay, should_retry = self._reconnect_policy.next_attempt()
+                        if not should_retry:
+                            logger.info("Auto-reconnect reached maximum retry limit.")
+                            return
+                        
+                        logger.debug("Waiting %.2f seconds before next reconnect attempt.", sleep_delay)
+                        time.sleep(sleep_delay)
                 finally:
                     # Use unified state lock
                     with self._state_lock:
@@ -1028,6 +1313,9 @@ class BLEInterface(MeshInterface):
             client (BLEClient): Connected BLE client to register notifications on.
 
         """
+        
+        # Clear any existing subscriptions from previous connections
+        self._notification_manager.cleanup_all()
 
         # Optional log notifications - failures are not critical
         def _start_log_notifications():
@@ -1038,12 +1326,20 @@ class BLEInterface(MeshInterface):
             log characteristic is present, subscribes the protobuf log handler.
             """
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
+                token = self._notification_manager.subscribe(
+                    LEGACY_LOGRADIO_UUID,
+                    self.legacy_log_radio_handler,
+                )
                 client.start_notify(
                     LEGACY_LOGRADIO_UUID,
                     self.legacy_log_radio_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
             if client.has_characteristic(LOGRADIO_UUID):
+                token = self._notification_manager.subscribe(
+                    LOGRADIO_UUID,
+                    self.log_radio_handler,
+                )
                 client.start_notify(
                     LOGRADIO_UUID,
                     self.log_radio_handler,
@@ -1057,6 +1353,10 @@ class BLEInterface(MeshInterface):
             logger.debug("Failed to start optional log notifications: %s", e)
 
         # Critical notification for packet ingress
+        token = self._notification_manager.subscribe(
+            FROMNUM_UUID,
+            self.from_num_handler,
+        )
         client.start_notify(
             FROMNUM_UUID,
             self.from_num_handler,
@@ -1382,7 +1682,7 @@ class BLEInterface(MeshInterface):
                     Run the device discovery coroutine and set the result or exception on a future.
                     """
                     try:
-                        result = asyncio.run(
+                        result = self._async_dispatcher.run_coroutine(
                             BLEInterface._with_timeout(
                                 _get_devices_async_and_filter(address),
                                 BLE_SCAN_TIMEOUT,
@@ -1412,7 +1712,7 @@ class BLEInterface(MeshInterface):
                     return []
             except RuntimeError:
                 # No running loop in this thread
-                devices = asyncio.run(
+                devices = self._async_dispatcher.run_coroutine(
                     BLEInterface._with_timeout(
                         _get_devices_async_and_filter(address),
                         BLE_SCAN_TIMEOUT,
@@ -1527,6 +1827,9 @@ class BLEInterface(MeshInterface):
 
                 # Transition to CONNECTED state on successful connection
                 self._state_manager.transition_to(ConnectionState.CONNECTED, client)
+
+                # Mark parent interface as connected
+                self._connected()
 
                 # Client access now protected by unified state lock
                 with self._state_lock:
@@ -1779,6 +2082,10 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called while another shutdown is in progress; ignoring"
                 )
                 return
+
+            # Get client reference before cleanup
+            client = self.client
+
             # Transition to DISCONNECTING state on close (replaces _closing flag)
             self._state_manager.transition_to(ConnectionState.DISCONNECTING)
 
@@ -1803,29 +2110,29 @@ class BLEInterface(MeshInterface):
                     )
                 self._receiveThread = None
 
+        # Clean up notification subscriptions before disconnect
+        self._notification_manager.cleanup_all()
+
         if self._exit_handler:
             with contextlib.suppress(ValueError):
                 atexit.unregister(self._exit_handler)
             self._exit_handler = None
 
-        # Use unified state lock
-        with self._state_lock:
-            client = self.client
-            self.client = None
+        # Clean up notification subscriptions before disconnect
+        self._notification_manager.cleanup_all()
+
+        # Disconnect client if we have one
         if client:
             self._disconnect_and_close_client(client)
 
-        # Use unified state lock
-        # Send disconnected indicator if not already notified
-        notify = False
-        with self._state_lock:
-            if not self._disconnect_notified:
-                self._disconnect_notified = True
-                notify = True
+        # Ensure connection status is updated and pubsub message is sent
+        if self.isConnected.is_set():
+            self._disconnected()
 
-        if notify:
-            self._disconnected()  # send the disconnected indicator up to clients
-            self._wait_for_disconnect_notifications()
+        if self._exit_handler:
+            with contextlib.suppress(ValueError):
+                atexit.unregister(self._exit_handler)
+            self._exit_handler = None
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
@@ -1936,8 +2243,13 @@ class BLEClient:
         # Share exception type with BLEInterface for consistent public API.
         self.BLEError = BLEInterface.BLEError
 
+        # Async dispatcher for safe coroutine execution
+        self._async_dispatcher = AsyncDispatcher()
+
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
+        # Configure async dispatcher with the event loop
+        self._async_dispatcher.set_event_loop(self._eventLoop)
         # Start event loop in background thread for async operations
         self._eventThread = Thread(
             target=self._run_event_loop, name="BLEClient", daemon=True

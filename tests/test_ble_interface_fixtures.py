@@ -508,6 +508,8 @@ def _build_interface(monkeypatch, client):
         connect_calls.append(_address)
         _self.client = client
         _self._disconnect_notified = False
+        # Mark as connected for proper pubsub behavior in tests
+        _self._connected()
         if hasattr(_self, "_reconnected_event"):
             _self._reconnected_event.set()
         return client
