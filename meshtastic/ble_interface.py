@@ -3229,8 +3229,9 @@ class BLEClient:
         try:
             return future.result(timeout)
         except FutureTimeoutError as e:
-            # Don't cancel future to avoid callback errors when loop is closing
-            # The task will be cancelled when the loop stops
+            # Cancel the underlying task directly to avoid callback errors when loop is closing
+            if hasattr(future, '_asyncio_future') and future._asyncio_future:
+                future._asyncio_future.cancel()
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116
