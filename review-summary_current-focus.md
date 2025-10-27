@@ -149,8 +149,8 @@ New tests present: tests/test_retry_policy.py
 
 - [x] Add BC shim for get_services
 - [x] Use BLEErrorHandler at call sites
-- [x] Make sleeps unambiguously off-loop
-- [x] Notification lifecycle on reconnect
+- [x] Make sleeps unambiguously off-loop (added comments documenting thread context)
+- [x] Notification lifecycle on reconnect (added cleanup_all on reconnect start)
 - [x] Expose observability hooks
 - [x] Audit state transitions
 - [x] Improve test robustness with dependency injection for random source

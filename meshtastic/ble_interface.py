@@ -1730,6 +1730,8 @@ class BLEInterface(MeshInterface):
                                 "Attempting BLE auto-reconnect (attempt %d).",
                                 attempt_num,
                             )
+                            # Clean up any stale subscriptions before reconnect
+                            self._notification_manager.cleanup_all()
                             self.connect(self.address)
                             self._observability.record_reconnection_success(attempt_num)
                             # Re-establish subscriptions after reconnect
@@ -1788,6 +1790,7 @@ class BLEInterface(MeshInterface):
                             "Waiting %.2f seconds before next reconnect attempt.",
                             sleep_delay,
                         )
+                        # This sleep runs in the reconnect worker thread, not on the event loop
                         time.sleep(sleep_delay)
                 finally:
                     # Use unified state lock
@@ -2709,6 +2712,7 @@ class BLEInterface(MeshInterface):
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
+            # This runs in the calling thread (typically main or mesh thread), not event loop
             time.sleep(BLEConfig.SEND_PROPAGATION_DELAY)
             self.thread_coordinator.set_event(
                 "read_trigger"
