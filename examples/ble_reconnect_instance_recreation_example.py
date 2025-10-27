@@ -80,8 +80,8 @@ def main():
         help="Logging level (default: INFO).",
     )
     args = parser.parse_args()
-    if args.retry_delay < 0:
-        parser.error("--retry-delay must be >= 0")
+    if args.retry_delay <= 0:
+        parser.error("--retry-delay must be > 0")
     address = args.address
     delay = args.retry_delay
     logging.basicConfig(level=getattr(logging, args.log_level, logging.INFO))
