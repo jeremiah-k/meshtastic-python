@@ -27,6 +27,21 @@ from meshtastic.mesh_interface import MeshInterface
 
 from .protobuf import mesh_pb2
 
+# Loop-safe sleep helpers
+def _sleep(delay, loop=None):
+    """Sleep for delay seconds, using asyncio if on event loop, time.sleep otherwise."""
+    try:
+        asyncio.get_running_loop()
+        if not loop:
+            raise RuntimeError
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(delay), loop).result()
+    except RuntimeError:
+        time.sleep(delay)
+
+async def _asleep(delay):
+    """Async sleep for delay seconds."""
+    await asyncio.sleep(delay)
+
 # Get bleak version with a safe fallback to the module attribute (works with mocks)
 try:
     BLEAK_VERSION = importlib.metadata.version("bleak")
@@ -1790,8 +1805,7 @@ class BLEInterface(MeshInterface):
                             "Waiting %.2f seconds before next reconnect attempt.",
                             sleep_delay,
                         )
-                        # This sleep runs in the reconnect worker thread, not on the event loop
-                        time.sleep(sleep_delay)
+                        _sleep(sleep_delay)
                 finally:
                     # Use unified state lock
                     with self._state_lock:
@@ -2712,8 +2726,7 @@ class BLEInterface(MeshInterface):
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
-            # This runs in the calling thread (typically main or mesh thread), not event loop
-            time.sleep(BLEConfig.SEND_PROPAGATION_DELAY)
+            _sleep(BLEConfig.SEND_PROPAGATION_DELAY)
             self.thread_coordinator.set_event(
                 "read_trigger"
             )  # Wake receive loop to process any response
