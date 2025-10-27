@@ -11,15 +11,31 @@ import pytest
 # Load policies only after bleak/pubsub/serial/tabulate are mocked by autouse fixtures.
 @pytest.fixture(autouse=True)
 def _load_policies_after_mocks(
-    mock_serial,            # ensure ordering
+    mock_serial,  # ensure ordering
     mock_pubsub,
     mock_tabulate,
     mock_bleak,
     mock_bleak_exc,
     mock_publishing_thread,
 ):
+    """
+    Ensure meshtastic.ble_interface is imported after specified test mocks and bind its ReconnectPolicy and RetryPolicy into the module globals.
+
+    Each parameter is unused by the function body and exists to ensure the corresponding test-side fixture/mocks are applied before importing the module.
+
+    Parameters
+    ----------
+        mock_serial: Fixture that mocks serial interactions; included to control import ordering.
+        mock_pubsub: Fixture that mocks pub/sub functionality; included to control import ordering.
+        mock_tabulate: Fixture that mocks tabulate usage; included to control import ordering.
+        mock_bleak: Fixture that mocks the bleak BLE library; included to control import ordering.
+        mock_bleak_exc: Fixture that mocks bleak exceptions; included to control import ordering.
+        mock_publishing_thread: Fixture that mocks the publishing thread; included to control import ordering.
+
+    """
     global ReconnectPolicy, RetryPolicy
     import importlib
+
     ble_mod = importlib.import_module("meshtastic.ble_interface")
     ReconnectPolicy = ble_mod.ReconnectPolicy
     RetryPolicy = ble_mod.RetryPolicy
@@ -104,6 +120,7 @@ class TestReconnectPolicy:
     def test_delay_calculation_with_jitter(self):
         """Test delay calculation includes jitter."""
         import random
+
         rnd = random.Random(12345)
         policy = ReconnectPolicy(
             initial_delay=10.0,

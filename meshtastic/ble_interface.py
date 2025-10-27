@@ -7,17 +7,16 @@ import importlib.metadata
 import io
 import logging
 import random
-import warnings
 import re
 import struct
 import time
-from concurrent.futures import Future
+import warnings
+from abc import ABC, abstractmethod
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, RLock, Thread, current_thread
-from abc import ABC, abstractmethod
-from typing import Callable, List, Optional, Tuple, Union, cast
+from typing import Callable, List, Optional, Tuple
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
@@ -28,6 +27,7 @@ from meshtastic import publishingThread
 from meshtastic.mesh_interface import MeshInterface
 
 from .protobuf import mesh_pb2
+
 
 # Loop-safe sleep helpers
 def _sleep(delay, loop=None):
@@ -40,9 +40,11 @@ def _sleep(delay, loop=None):
     except RuntimeError:
         time.sleep(delay)
 
+
 async def _asleep(delay):
     """Async sleep for delay seconds."""
     await asyncio.sleep(delay)
+
 
 # Get bleak version with a safe fallback to the module attribute (works with mocks)
 try:
@@ -130,9 +132,13 @@ class NotificationManager:
 
         Args:
             client: BLE client to resubscribe on
+
         """
         with self._lock:
-            for token, (characteristic, callback) in self._active_subscriptions.items():
+            for _token, (
+                characteristic,
+                callback,
+            ) in self._active_subscriptions.items():
                 try:
                     client.start_notify(characteristic, callback)
                 except Exception as e:
@@ -155,10 +161,12 @@ class BLEErrors:
     # Connection errors
     ERROR_CONNECTION_FAILED = "Connection failed: {0}"
     ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
-    ERROR_NO_PERIPHERALS_FOUND = "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
+    ERROR_NO_PERIPHERALS_FOUND = (
+        "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
+    )
     ERROR_MULTIPLE_DEVICES = "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
 
-    # Operation errors  
+    # Operation errors
     ERROR_READING_BLE = "Error reading BLE"
     ERROR_WRITING_BLE = (
         "Error writing BLE. This is often caused by missing Bluetooth "
@@ -531,7 +539,9 @@ class BLEStateManager:
         with self._state_lock:
             return self._state_version
 
-    def set_on_state_change(self, callback: Optional[Callable[[ConnectionState, str], None]]) -> None:
+    def set_on_state_change(
+        self, callback: Optional[Callable[[ConnectionState, str], None]]
+    ) -> None:
         """Set callback for state change notifications."""
         with self._state_lock:
             self._on_state_change = callback
@@ -566,7 +576,9 @@ class BLEStateManager:
                 )
                 if self._on_state_change:
                     try:
-                        self._on_state_change(new_state, f"Transition from {old_state.value}")
+                        self._on_state_change(
+                            new_state, f"Transition from {old_state.value}"
+                        )
                     except Exception as e:
                         logger.debug("Error in on_state_change callback: %s", e)
                 return True
@@ -991,7 +1003,7 @@ class RetryPolicy:
 
 class DiscoveryStrategy(ABC):
     """Abstract base class for device discovery strategies."""
-    
+
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """Discover devices using this strategy."""
@@ -1000,7 +1012,7 @@ class DiscoveryStrategy(ABC):
 
 class ScanStrategy(DiscoveryStrategy):
     """Device discovery using BLE scanning."""
-    
+
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """Discover devices by scanning for Meshtastic service."""
         return await BLEInterface._with_timeout(
@@ -1015,10 +1027,10 @@ class ScanStrategy(DiscoveryStrategy):
 
 class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery using already-connected device enumeration."""
-    
+
     def __init__(self, async_dispatcher):
         self.async_dispatcher = async_dispatcher
-    
+
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """Discover already-connected Meshtastic devices."""
         if not _bleak_supports_connected_fallback():
@@ -1030,14 +1042,16 @@ class ConnectedStrategy(DiscoveryStrategy):
                 ),
             )
             return []
-        
+
         try:
             # Get devices from the scanner's cached data
             scanner = BleakScanner()
             devices_found = []
 
             # Try to get device information from the backend
-            if hasattr(scanner, "_backend") and hasattr(scanner._backend, "get_devices"):
+            if hasattr(scanner, "_backend") and hasattr(
+                scanner._backend, "get_devices"
+            ):
                 backend_devices = await BLEInterface._with_timeout(
                     scanner._backend.get_devices(),
                     timeout,
@@ -1056,36 +1070,49 @@ class ConnectedStrategy(DiscoveryStrategy):
                         if SERVICE_UUID in uuids:
                             # If specific address requested, filter by it
                             if address:
-                                sanitized_addr = BLEInterface._sanitize_address(device.address)
+                                sanitized_addr = BLEInterface._sanitize_address(
+                                    device.address
+                                )
                                 sanitized_name = (
                                     BLEInterface._sanitize_address(device.name)
-                                    if device.name else ""
+                                    if device.name
+                                    else ""
                                 )
 
                                 if sanitized_target in (sanitized_addr, sanitized_name):
                                     devices_found.append(
-                                        BLEDevice(device.address, device.name, device.metadata)
+                                        BLEDevice(
+                                            device.address, device.name, device.metadata
+                                        )
                                     )
                             else:
                                 # Add all connected Meshtastic devices
                                 devices_found.append(
-                                    BLEDevice(device.address, device.name, device.metadata)
+                                    BLEDevice(
+                                        device.address, device.name, device.metadata
+                                    )
                                 )
             return devices_found
-            
-        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError) as e:
+
+        except (
+            BleakError,
+            BleakDBusError,
+            AttributeError,
+            RuntimeError,
+            asyncio.TimeoutError,
+        ) as e:
             logger.debug("Connected device discovery failed: %s", e)
             return []
 
 
 class DiscoveryManager:
     """Orchestrates device discovery using multiple strategies."""
-    
+
     def __init__(self, async_dispatcher):
         self.async_dispatcher = async_dispatcher
         self.scan_strategy = ScanStrategy()
         self.connected_strategy = ConnectedStrategy(async_dispatcher)
-    
+
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """Discover devices using appropriate strategy."""
         # First try scanning
@@ -1093,16 +1120,18 @@ class DiscoveryManager:
             devices = self.async_dispatcher.run_coroutine(
                 self.scan_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
             )
-            
+
             # If scan didn't find any devices and we have a specific address, try connected fallback
             if not devices and address:
                 logger.debug(
                     "Scan found no devices, trying fallback to already-connected devices"
                 )
                 devices = self.async_dispatcher.run_coroutine(
-                    self.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+                    self.connected_strategy.discover(
+                        address, BLEConfig.BLE_SCAN_TIMEOUT
+                    )
                 )
-            
+
             return devices
         except Exception as e:
             logger.debug("Device discovery failed: %s", e)
@@ -1111,29 +1140,36 @@ class DiscoveryManager:
 
 class ConnectionValidator:
     """Handles connection validation logic and state checking."""
-    
+
     def __init__(self, state_manager, state_lock):
         self.state_manager = state_manager
         self.state_lock = state_lock
-    
+
     def can_initiate_connection(self) -> bool:
         """Check if connection can be initiated based on current state."""
         return self.state_manager.can_initiate_connection
-    
+
     def validate_connection_request(self) -> None:
         """Validate that connection can be initiated, raise exception if not."""
         if not self.can_initiate_connection():
             if self.state_manager.state == ConnectionState.CLOSING:
                 raise BLEInterface.BLEError("Cannot connect while interface is closing")
             else:
-                raise BLEInterface.BLEError("Already connected or connection in progress")
-    
-    def check_existing_client(self, client, normalized_request: Optional[str], 
-                            last_connection_request: Optional[str], address: Optional[str]) -> bool:
+                raise BLEInterface.BLEError(
+                    "Already connected or connection in progress"
+                )
+
+    def check_existing_client(
+        self,
+        client,
+        normalized_request: Optional[str],
+        last_connection_request: Optional[str],
+        address: Optional[str],
+    ) -> bool:
         """Check if existing client can be reused."""
         if not client or not client.is_connected():
             return False
-        
+
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
@@ -1141,24 +1177,25 @@ class ConnectionValidator:
             BLEInterface._sanitize_address(address),
             BLEInterface._sanitize_address(bleak_address),
         }
-        
-        return (normalized_request is None or 
-                normalized_request in normalized_known_targets)
+
+        return (
+            normalized_request is None or normalized_request in normalized_known_targets
+        )
 
 
 class ClientManager:
     """Manages BLE client lifecycle and cleanup."""
-    
+
     def __init__(self, state_manager, state_lock, thread_coordinator, error_handler):
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
         self.error_handler = error_handler
-    
+
     def create_client(self, device_address: str, disconnect_callback) -> "BLEClient":
         """Create a new BLE client for the given device address."""
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
-    
+
     def connect_client(self, client: "BLEClient") -> None:
         """Connect the client and ensure services are available."""
         client.connect(await_timeout=BLEConfig.CONNECTION_TIMEOUT)
@@ -1168,16 +1205,20 @@ class ClientManager:
                 "BLE services not available immediately after connect; getting services"
             )
             client.get_services()
-    
-    def update_client_reference(self, new_client: "BLEClient", old_client: Optional["BLEClient"],
-                               disconnect_notified: bool = False) -> None:
+
+    def update_client_reference(
+        self,
+        new_client: "BLEClient",
+        old_client: Optional["BLEClient"],
+        disconnect_notified: bool = False,
+    ) -> None:
         """Update the client reference and handle cleanup of old client."""
         with self.state_lock:
             previous_client = old_client
             # This would be set on the BLEInterface instance
             # self.client = new_client
             # self._disconnect_notified = disconnect_notified
-            
+
             if previous_client and previous_client is not new_client:
                 close_thread = self.thread_coordinator.create_thread(
                     target=self._safe_close_client,
@@ -1186,7 +1227,7 @@ class ClientManager:
                     daemon=True,
                 )
                 self.thread_coordinator.start_thread(close_thread)
-    
+
     def _safe_close_client(self, client: "BLEClient") -> None:
         """Safely close a client, handling any exceptions."""
         self.error_handler.safe_cleanup(client.close)
@@ -1194,99 +1235,123 @@ class ClientManager:
 
 class ConnectionOrchestrator:
     """Orchestrates the connection process using various strategies."""
-    
-    def __init__(self, validator: ConnectionValidator, client_manager: ClientManager,
-                 discovery_manager: DiscoveryManager, state_manager: ConnectionState,
-                 state_lock, thread_coordinator):
+
+    def __init__(
+        self,
+        validator: ConnectionValidator,
+        client_manager: ClientManager,
+        discovery_manager: DiscoveryManager,
+        state_manager: ConnectionState,
+        state_lock,
+        thread_coordinator,
+    ):
         self.validator = validator
         self.client_manager = client_manager
         self.discovery_manager = discovery_manager
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
-    
-    def establish_connection(self, address: Optional[str], current_address: Optional[str],
-                            last_connection_request: Optional[str], 
-                            register_notifications_func, on_connected_func,
-                            on_disconnect_func) -> "BLEClient":
+
+    def establish_connection(
+        self,
+        address: Optional[str],
+        current_address: Optional[str],
+        last_connection_request: Optional[str],
+        register_notifications_func,
+        on_connected_func,
+        on_disconnect_func,
+    ) -> "BLEClient":
         """Establish a complete BLE connection."""
         # Validate connection request
         self.validator.validate_connection_request()
-        
+
         target_address = address if address is not None else current_address
         logger.info("Attempting to connect to %s", target_address or "any")
-        
+
         # Normalize the request
         requested_identifier = address if address is not None else current_address
         normalized_request = BLEInterface._sanitize_address(requested_identifier)
-        
+
         # Transition to CONNECTING state
         self.state_manager.transition_to(ConnectionState.CONNECTING)
-        
+
         try:
             # Find device
             device = self.discovery_manager.discover_devices(address or current_address)
             if not device:
                 raise BLEInterface.BLEError("No device found")
-            
+
             # Create and connect client
-            client = self.client_manager.create_client(device.address, on_disconnect_func)
+            client = self.client_manager.create_client(
+                device.address, on_disconnect_func
+            )
             self.client_manager.connect_client(client)
-            
+
             # Register notifications
             register_notifications_func(client)
-            
+
             # Transition to CONNECTED state
             self.state_manager.transition_to(ConnectionState.CONNECTED, client)
-            
+
             # Mark parent interface as connected
             on_connected_func()
-            
+
             # Signal successful reconnection
             self.thread_coordinator.set_event("reconnected_event")
-            
+
             normalized_device_address = BLEInterface._sanitize_address(device.address)
-            logger.info("Connection successful to %s", normalized_device_address or "unknown")
-            
+            logger.info(
+                "Connection successful to %s", normalized_device_address or "unknown"
+            )
+
             return client
-            
+
         except Exception as e:
             logger.error("Connection failed to %s: %s", target_address or "unknown", e)
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
-            self.client_manager._safe_close_client(client) if 'client' in locals() else None
+            (
+                self.client_manager._safe_close_client(client)
+                if "client" in locals()
+                else None
+            )
             self.state_manager.transition_to(ConnectionState.ERROR)
             raise
 
 
 class ReconnectScheduler:
     """Handles auto-reconnect scheduling and thread management."""
-    
+
     def __init__(self, state_manager, state_lock, thread_coordinator, reconnect_worker):
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
         self.reconnect_worker = reconnect_worker
         self._reconnect_thread: Optional[Thread] = None
-    
+
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event) -> bool:
         """Schedule auto-reconnect if conditions are met.
-        
+
         Returns:
             bool: True if reconnect was scheduled, False otherwise
+
         """
         if not auto_reconnect:
             return False
-            
+
         if self.state_manager.is_closing:
-            logger.debug("Skipping auto-reconnect scheduling because interface is closing.")
+            logger.debug(
+                "Skipping auto-reconnect scheduling because interface is closing."
+            )
             return False
-        
+
         with self.state_lock:
             existing_thread = self._reconnect_thread
             if existing_thread and existing_thread.is_alive():
-                logger.debug("Auto-reconnect already in progress; skipping new attempt.")
+                logger.debug(
+                    "Auto-reconnect already in progress; skipping new attempt."
+                )
                 return False
-            
+
             thread = self.thread_coordinator.create_thread(
                 target=self.reconnect_worker.attempt_reconnect_loop,
                 args=(auto_reconnect, shutdown_event),
@@ -1296,7 +1361,7 @@ class ReconnectScheduler:
             self._reconnect_thread = thread
             self.thread_coordinator.start_thread(thread)
             return True
-    
+
     def clear_thread_reference(self):
         """Clear the reconnect thread reference when thread exits."""
         with self.state_lock:
@@ -1306,62 +1371,85 @@ class ReconnectScheduler:
 
 class ReconnectWorker:
     """Handles the actual reconnection attempt loop logic."""
-    
+
     def __init__(self, interface):
         self.interface = interface
-    
+
     def attempt_reconnect_loop(self, auto_reconnect: bool, shutdown_event) -> None:
         """Main reconnection loop with retry policy and error handling."""
         # Reset reconnection policy for new retry sequence
         self.interface._reconnect_policy.reset()
-        
+
         try:
             while not shutdown_event.is_set():
                 if self.interface._state_manager.is_closing or not auto_reconnect:
-                    logger.debug("Auto-reconnect aborted because interface is closing or disabled.")
+                    logger.debug(
+                        "Auto-reconnect aborted because interface is closing or disabled."
+                    )
                     return
-                
+
                 try:
-                    attempt_num = self.interface._reconnect_policy.get_attempt_count() + 1
-                    logger.info("Attempting BLE auto-reconnect (attempt %d).", attempt_num)
-                    
+                    attempt_num = (
+                        self.interface._reconnect_policy.get_attempt_count() + 1
+                    )
+                    logger.info(
+                        "Attempting BLE auto-reconnect (attempt %d).", attempt_num
+                    )
+
                     # Clean up any stale subscriptions before reconnect
                     self.interface._notification_manager.cleanup_all()
                     self.interface.connect(self.interface.address)
-                    
+
                     # Re-establish subscriptions after reconnect
-                    self.interface._notification_manager.resubscribe_all(self.interface.bleak_client)
-                    logger.info("BLE auto-reconnect succeeded after %d attempts.", attempt_num)
+                    self.interface._notification_manager.resubscribe_all(
+                        self.interface.bleak_client
+                    )
+                    logger.info(
+                        "BLE auto-reconnect succeeded after %d attempts.", attempt_num
+                    )
                     return
-                    
+
                 except self.interface.BLEError as err:
-                    if (self.interface._state_manager.is_closing or not auto_reconnect):
-                        logger.debug("Auto-reconnect cancelled after failure due to shutdown/disable.")
+                    if self.interface._state_manager.is_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after failure due to shutdown/disable."
+                        )
                         return
-                    logger.warning("Auto-reconnect attempt %d failed: %s", 
-                                self.interface._reconnect_policy.get_attempt_count(), err)
-                
+                    logger.warning(
+                        "Auto-reconnect attempt %d failed: %s",
+                        self.interface._reconnect_policy.get_attempt_count(),
+                        err,
+                    )
+
                 except Exception:  # Intentional broad catch for reconnect resilience
-                    if (self.interface._state_manager.is_closing or not auto_reconnect):
-                        logger.debug("Auto-reconnect cancelled after unexpected failure due to shutdown/disable.")
+                    if self.interface._state_manager.is_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
+                        )
                         return
                     else:
-                        logger.exception("Unexpected error during auto-reconnect attempt %d",
-                                      self.interface._reconnect_policy.get_attempt_count())
-                
+                        logger.exception(
+                            "Unexpected error during auto-reconnect attempt %d",
+                            self.interface._reconnect_policy.get_attempt_count(),
+                        )
+
                 # Check if we should continue retrying
                 if self.interface.is_connection_closing or not auto_reconnect:
                     return
-                
+
                 # Get delay and check if we should retry using centralized policy
-                sleep_delay, should_retry = self.interface._reconnect_policy.next_attempt()
+                sleep_delay, should_retry = (
+                    self.interface._reconnect_policy.next_attempt()
+                )
                 if not should_retry:
                     logger.info("Auto-reconnect reached maximum retry limit.")
                     return
-                
-                logger.debug("Waiting %.2f seconds before next reconnect attempt.", sleep_delay)
+
+                logger.debug(
+                    "Waiting %.2f seconds before next reconnect attempt.", sleep_delay
+                )
                 _sleep(sleep_delay)
-                
+
         finally:
             self.interface._reconnect_scheduler.clear_thread_reference()
 
@@ -1420,7 +1508,7 @@ class BLEInterface(MeshInterface):
             timeout (int): How long to wait for replies (default: 300 seconds).
 
         """
-        
+
         # Initialize components in focused phases
         self._initialize_state_management(address, auto_reconnect)
         self._initialize_error_handling()
@@ -1432,7 +1520,9 @@ class BLEInterface(MeshInterface):
         self._start_background_threads()
         self._establish_initial_connection(address)
 
-    def _initialize_state_management(self, address: Optional[str], auto_reconnect: bool) -> None:
+    def _initialize_state_management(
+        self, address: Optional[str], auto_reconnect: bool
+    ) -> None:
         """Initialize state management components and basic properties."""
         # Thread safety and state management
         # Unified state-based lock system replacing multiple locks and boolean flags
@@ -1445,7 +1535,9 @@ class BLEInterface(MeshInterface):
         )
         self._exit_handler = None
         self.address = address
-        self._last_connection_request: Optional[str] = BLEInterface._sanitize_address(address)
+        self._last_connection_request: Optional[str] = BLEInterface._sanitize_address(
+            address
+        )
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
 
@@ -1479,18 +1571,31 @@ class BLEInterface(MeshInterface):
         self.thread_coordinator = ThreadCoordinator()
 
         # Connection management infrastructure
-        self._connection_validator = ConnectionValidator(self._state_manager, self._state_lock)
-        self._client_manager = ClientManager(self._state_manager, self._state_lock, 
-                                           self.thread_coordinator, self.error_handler)
+        self._connection_validator = ConnectionValidator(
+            self._state_manager, self._state_lock
+        )
+        self._client_manager = ClientManager(
+            self._state_manager,
+            self._state_lock,
+            self.thread_coordinator,
+            self.error_handler,
+        )
         self._connection_orchestrator = ConnectionOrchestrator(
-            self._connection_validator, self._client_manager, self._discovery_manager,
-            self._state_manager, self._state_lock, self.thread_coordinator
+            self._connection_validator,
+            self._client_manager,
+            self._discovery_manager,
+            self._state_manager,
+            self._state_lock,
+            self.thread_coordinator,
         )
 
         # Auto-reconnection management infrastructure
         self._reconnect_worker = ReconnectWorker(self)
         self._reconnect_scheduler = ReconnectScheduler(
-            self._state_manager, self._state_lock, self.thread_coordinator, self._reconnect_worker
+            self._state_manager,
+            self._state_lock,
+            self.thread_coordinator,
+            self._reconnect_worker,
         )
 
     def _initialize_events(self) -> None:
@@ -1504,12 +1609,17 @@ class BLEInterface(MeshInterface):
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator.create_event(
             "shutdown_event"
-        ) # Signals all threads to shutdown
+        )  # Signals all threads to shutdown
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
         self._reconnect_thread: Optional[Thread] = None
 
-    def _initialize_parent_interface(self, debugOut: Optional[io.TextIOWrapper], 
-                                 noProto: bool, noNodes: bool, timeout: int) -> None:
+    def _initialize_parent_interface(
+        self,
+        debugOut: Optional[io.TextIOWrapper],
+        noProto: bool,
+        noNodes: bool,
+        timeout: int,
+    ) -> None:
         """Initialize parent MeshInterface and retry counter."""
         # Initialize parent interface
         MeshInterface.__init__(
@@ -1557,7 +1667,9 @@ class BLEInterface(MeshInterface):
             self.close()
             if isinstance(e, BLEInterface.BLEError):
                 raise
-            raise BLEInterface.BLEError(BLEErrors.ERROR_CONNECTION_FAILED.format(e)) from e
+            raise BLEInterface.BLEError(
+                BLEErrors.ERROR_CONNECTION_FAILED.format(e)
+            ) from e
 
     def _is_state_version_current(self, version: int) -> bool:
         """
@@ -1709,7 +1821,9 @@ class BLEInterface(MeshInterface):
         backing off with jitter between attempts, and stops when a connection succeeds, auto-reconnect is disabled,
         or interface is closing. When the worker exits it clears the internal reconnect-thread reference.
         """
-        self._reconnect_scheduler.schedule_reconnect(self.auto_reconnect, self._shutdown_event)
+        self._reconnect_scheduler.schedule_reconnect(
+            self.auto_reconnect, self._shutdown_event
+        )
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False):
         """
@@ -1750,11 +1864,9 @@ class BLEInterface(MeshInterface):
 
         """
         # Record notification for observability
-        is_malformed = False
 
         try:
             if len(b) != 4:
-                is_malformed = True
                 self._handle_malformed_fromnum(
                     f"FROMNUM notify has unexpected length {len(b)}; ignoring"
                 )
@@ -1764,7 +1876,6 @@ class BLEInterface(MeshInterface):
             # Successful parse: reset malformed counter
             self._malformed_notification_count = 0
         except (struct.error, ValueError):
-            is_malformed = True
             self._handle_malformed_fromnum(
                 "Malformed FROMNUM notify; ignoring", exc_info=True
             )
@@ -1797,16 +1908,17 @@ class BLEInterface(MeshInterface):
             If the legacy text log characteristic is present, subscribes the legacy log handler; if the protobuf-based
             log characteristic is present, subscribes the protobuf log handler.
             """
+
             def _safe_legacy_handler(sender, data):
                 BLEErrorHandler.safe_execute(
                     lambda: self.legacy_log_radio_handler(sender, data),
-                    error_msg="Error in legacy log notification handler"
+                    error_msg="Error in legacy log notification handler",
                 )
 
             def _safe_log_handler(sender, data):
                 BLEErrorHandler.safe_execute(
                     lambda: self.log_radio_handler(sender, data),
-                    error_msg="Error in log notification handler"
+                    error_msg="Error in log notification handler",
                 )
 
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
@@ -1838,10 +1950,11 @@ class BLEInterface(MeshInterface):
 
         # Critical notification for packet ingress
         try:
+
             def _safe_from_num_handler(sender, data):
                 BLEErrorHandler.safe_execute(
                     lambda: self.from_num_handler(sender, data),
-                    error_msg="Error in FROMNUM notification handler"
+                    error_msg="Error in FROMNUM notification handler",
                 )
 
             _ = self._notification_manager.subscribe(
@@ -1928,7 +2041,9 @@ class BLEInterface(MeshInterface):
         try:
             return await asyncio.wait_for(awaitable, timeout=timeout)
         except asyncio.TimeoutError as exc:
-            raise BLEInterface.BLEError(BLEErrors.ERROR_TIMEOUT.format(label, timeout)) from exc
+            raise BLEInterface.BLEError(
+                BLEErrors.ERROR_TIMEOUT.format(label, timeout)
+            ) from exc
 
     @staticmethod
     def scan() -> List[BLEDevice]:
@@ -1999,7 +2114,7 @@ class BLEInterface(MeshInterface):
         """
 
         # Use discovery manager to find devices if available, otherwise fall back to legacy approach
-        if hasattr(self, '_discovery_manager'):
+        if hasattr(self, "_discovery_manager"):
             addressed_devices = self._discovery_manager.discover_devices(address)
         else:
             # Legacy fallback for tests that don't call __init__
@@ -2039,7 +2154,9 @@ class BLEInterface(MeshInterface):
             device_list = "\n".join(
                 [f"- {d.name} ({d.address})" for d in addressed_devices]
             )
-            raise self.BLEError(BLEErrors.ERROR_MULTIPLE_DEVICES.format(address, device_list))
+            raise self.BLEError(
+                BLEErrors.ERROR_MULTIPLE_DEVICES.format(address, device_list)
+            )
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
 
@@ -2069,20 +2186,20 @@ class BLEInterface(MeshInterface):
             .lower()
         )
 
-
-
     def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
         Fallback method to find already-connected Meshtastic devices when scanning fails.
-        
+
         This method is kept for backward compatibility with tests. For new code,
         use the DiscoveryManager instead.
         """
-        if hasattr(self, '_discovery_manager'):
+        if hasattr(self, "_discovery_manager"):
             return self._async_dispatcher.run_coroutine(
-                self._discovery_manager.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+                self._discovery_manager.connected_strategy.discover(
+                    address, BLEConfig.BLE_SCAN_TIMEOUT
+                )
             )
-        
+
         # Legacy implementation for tests that don't call __init__
         if not _bleak_supports_connected_fallback():
             logger.debug(
@@ -2093,17 +2210,21 @@ class BLEInterface(MeshInterface):
                 ),
             )
             return []
-        
+
         try:
             scanner = BleakScanner()
             devices_found = []
 
-            if hasattr(scanner, "_backend") and hasattr(scanner._backend, "get_devices"):
-                backend_devices = asyncio.run(BLEInterface._with_timeout(
-                    scanner._backend.get_devices(),
-                    BLEConfig.BLE_SCAN_TIMEOUT,
-                    "connected-device enumeration",
-                ))
+            if hasattr(scanner, "_backend") and hasattr(
+                scanner._backend, "get_devices"
+            ):
+                backend_devices = asyncio.run(
+                    BLEInterface._with_timeout(
+                        scanner._backend.get_devices(),
+                        BLEConfig.BLE_SCAN_TIMEOUT,
+                        "connected-device enumeration",
+                    )
+                )
 
                 sanitized_target = None
                 if address:
@@ -2114,21 +2235,35 @@ class BLEInterface(MeshInterface):
                         uuids = device.metadata.get("uuids", [])
                         if SERVICE_UUID in uuids:
                             if address:
-                                sanitized_addr = BLEInterface._sanitize_address(device.address)
+                                sanitized_addr = BLEInterface._sanitize_address(
+                                    device.address
+                                )
                                 sanitized_name = (
-                                    BLEInterface._sanitize_address(device.name) if device.name else ""
+                                    BLEInterface._sanitize_address(device.name)
+                                    if device.name
+                                    else ""
                                 )
                                 if sanitized_target in (sanitized_addr, sanitized_name):
                                     devices_found.append(
-                                        BLEDevice(device.address, device.name, device.metadata)
+                                        BLEDevice(
+                                            device.address, device.name, device.metadata
+                                        )
                                     )
                             else:
                                 devices_found.append(
-                                    BLEDevice(device.address, device.name, device.metadata)
+                                    BLEDevice(
+                                        device.address, device.name, device.metadata
+                                    )
                                 )
             return devices_found
-            
-        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError) as e:
+
+        except (
+            BleakError,
+            BleakDBusError,
+            AttributeError,
+            RuntimeError,
+            asyncio.TimeoutError,
+        ) as e:
             logger.debug("Connected device discovery failed: %s", e)
             return []
 
@@ -2153,7 +2288,9 @@ class BLEInterface(MeshInterface):
         """Check if a new connection can be initiated via state manager."""
         return self._state_manager.can_connect
 
-    def set_on_state_change(self, callback: Optional[Callable[[ConnectionState, str], None]]) -> None:
+    def set_on_state_change(
+        self, callback: Optional[Callable[[ConnectionState, str], None]]
+    ) -> None:
         """Set callback for state change notifications."""
         self._state_manager.set_on_state_change(callback)
 
@@ -2182,42 +2319,63 @@ class BLEInterface(MeshInterface):
             # Check for existing client that can be reused
             requested_identifier = address if address is not None else self.address
             normalized_request = BLEInterface._sanitize_address(requested_identifier)
-            
+
             existing_client = self.client
-            if (existing_client and existing_client.is_connected() and 
-                self._connection_validator.check_existing_client(
-                    existing_client, normalized_request, self._last_connection_request, self.address)):
+            if (
+                existing_client
+                and existing_client.is_connected()
+                and self._connection_validator.check_existing_client(
+                    existing_client,
+                    normalized_request,
+                    self._last_connection_request,
+                    self.address,
+                )
+            ):
                 logger.debug("Already connected, skipping connect call.")
                 return existing_client
 
             # Use connection orchestrator to establish connection
             client = self._connection_orchestrator.establish_connection(
-                address, self.address, self._last_connection_request,
-                self._register_notifications, self._connected, self._on_ble_disconnect
+                address,
+                self.address,
+                self._last_connection_request,
+                self._register_notifications,
+                self._connected,
+                self._on_ble_disconnect,
             )
-            
+
             # Update interface state and client references
-            device_address = client.bleak_client.address if hasattr(client, 'bleak_client') else None
+            device_address = (
+                client.bleak_client.address if hasattr(client, "bleak_client") else None
+            )
             self.address = device_address  # Keep address in sync for auto-reconnect
-            
+
             # Update client reference and handle cleanup
             previous_client = self.client
             self.client = client
             self._disconnect_notified = False
-            
-            normalized_device_address = BLEInterface._sanitize_address(device_address or "")
+
+            normalized_device_address = BLEInterface._sanitize_address(
+                device_address or ""
+            )
             if normalized_request is not None:
                 self._last_connection_request = normalized_request
             else:
                 self._last_connection_request = normalized_device_address
-            
+
             # Clean up previous client
             if previous_client and previous_client is not client:
-                self._client_manager.update_client_reference(client, previous_client, False)
-            
+                self._client_manager.update_client_reference(
+                    client, previous_client, False
+                )
+
             # Reset retry counter and signal success
-            self._read_retry_count = 0  # Reset transient error counter on successful connect
-            logger.info("Connection successful to %s", normalized_device_address or "unknown")
+            self._read_retry_count = (
+                0  # Reset transient error counter on successful connect
+            )
+            logger.info(
+                "Connection successful to %s", normalized_device_address or "unknown"
+            )
 
             return client
 
@@ -2731,8 +2889,10 @@ class BLEClient:
 
         """
         BLEErrorHandler.safe_execute(
-            lambda: self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout),
-            error_msg="Error during disconnect"
+            lambda: self.async_await(
+                self.bleak_client.disconnect(**kwargs), timeout=await_timeout
+            ),
+            error_msg="Error during disconnect",
         )
 
     def read_gatt_char(
@@ -2786,7 +2946,7 @@ class BLEClient:
             warnings.warn(
                 "The 'timeout' parameter for get_services() is deprecated and will be removed in a future version.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services

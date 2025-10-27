@@ -105,7 +105,8 @@ def main():
                     timeout_s = max(2 * delay, 30.0)
                     if not disconnected_event.wait(timeout=timeout_s):
                         logger.warning(
-                            "No disconnect event within %.1fs; proceeding to retry.", timeout_s
+                            "No disconnect event within %.1fs; proceeding to retry.",
+                            timeout_s,
                         )
                     else:
                         logger.info("Disconnected normally.")

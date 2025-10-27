@@ -2,11 +2,9 @@
 Shared pytest fixtures for BLE interface tests.
 """
 
-import logging
 import sys
 import types
 from types import SimpleNamespace
-from typing import Optional
 
 import pytest  # type: ignore[import-untyped]
 
@@ -49,11 +47,10 @@ def mock_serial(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_pubsub(monkeypatch):
     """
-
-    Injects a fake `pubsub` module into sys.modules for tests.
+    Provide a fake `pubsub` module in sys.modules for tests.
 
     Returns:
-        module: The injected fake `pubsub` module whose `pub` attribute is a SimpleNamespace with `subscribe`
+        The injected fake `pubsub` module. Its `pub` attribute is a SimpleNamespace with `subscribe`
         and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
 
     """
@@ -83,11 +80,11 @@ def mock_publishing_thread(monkeypatch):
 
     def queueWork(callback):
         """
-        Invoke `callback` immediately instead of scheduling it for later execution.
+        Run the provided callback immediately if one is supplied.
 
         Parameters
         ----------
-            callback (Optional[Callable[[], Any]]): Callable to execute; if falsy (e.g., `None`), no action is taken.
+                callback (Optional[Callable[[], Any]]): Callable to execute; if `None` or falsy, nothing is invoked.
 
         """
         if callback:
@@ -106,7 +103,7 @@ def mock_publishing_thread(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_tabulate(monkeypatch):
     """
-    Install a minimal fake `tabulate` module into sys.modules for tests.
+    Install a minimal fake `tabulate` module into `sys.modules` for use in tests.
 
     Returns:
         The fake `tabulate` module object inserted into `sys.modules`.
@@ -122,13 +119,9 @@ def mock_tabulate(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_bleak(monkeypatch):
     """
-    Inject a minimal fake 'bleak' module into sys.modules for use in tests.
+    Injects a minimal fake `bleak` module into sys.modules for use in tests.
 
-    The injected module provides:
-    - BleakClient: a stub client implementing the basic BleakClient API (async connect/disconnect/read/write/start_notify and sync is_connected).
-    - BleakScanner.discover: an async coroutine that returns an empty list.
-    - BLEDevice: a lightweight device object with `address` and `name` attributes.
-    - __version__: set to "1.1.1".
+    The injected module exposes a stubbed BleakClient (no-op async methods and is_connected always False), a BleakScanner with async discover returning an empty list, a lightweight BLEDevice type, and __version__ = "1.1.1".
 
     Returns:
         module: The fake `bleak` module object inserted into sys.modules.
@@ -140,7 +133,7 @@ def mock_bleak(monkeypatch):
     class _StubBleakClient:
         def __init__(self, address=None, **_kwargs):
             """
-            Initialize a minimal test BLE client with an optional address and a lightweight services shim.
+            Create a minimal test BLE client bound to an optional address with a lightweight services shim.
 
             Parameters
             ----------
@@ -149,7 +142,7 @@ def mock_bleak(monkeypatch):
 
             Attributes
             ----------
-                services (types.SimpleNamespace): Exposes `get_characteristic(specifier)` which always returns `None`.
+                services (types.SimpleNamespace): Provides `get_characteristic(specifier)` which always returns `None`.
 
             """
             self.address = address
@@ -157,32 +150,33 @@ def mock_bleak(monkeypatch):
 
         async def connect(self, **_kwargs):
             """
-            Accept any keyword arguments and perform no connection as a test stub.
+            No-op connect method for the stub Bleak client that ignores any keyword arguments.
 
-            This no-op connect ignores all provided keyword arguments and always returns None.
+            Parameters
+            ----------
+                _kwargs (dict): Ignored keyword arguments.
+
+            Returns
+            -------
+                None
+
             """
             return None
 
         async def disconnect(self, **_kwargs):
             """
-            Perform a no-op disconnection for the test double.
+            No-op disconnect for the test double.
 
-            Any keyword arguments provided are accepted and ignored.
-
-            Returns:
-                None: No value is returned.
-
+            Accepts and ignores any keyword arguments. Returns None.
             """
             return None
 
         async def start_notify(self, *_args, **_kwargs):
             """
-            Accepts arbitrary arguments and does nothing.
+            No-op placeholder for starting notifications on a BLE characteristic; accepts any arguments for API compatibility.
 
-            Parameters
-            ----------
-                _args: Positional arguments provided for compatibility; they are ignored.
-                _kwargs (dict): Keyword arguments provided for compatibility; they are ignored.
+            Returns:
+                None: This stub does not perform any action.
 
             """
             return None
@@ -199,9 +193,9 @@ def mock_bleak(monkeypatch):
 
         async def write_gatt_char(self, *_args, **_kwargs):
             """
-            Accepts any arguments and performs no operation, emulating BleakClient.write_gatt_char for tests.
+            No-op stub that accepts any arguments to emulate BleakClient.write_gatt_char in tests.
 
-            The stub ignores all positional and keyword arguments and produces no side effects.
+            This function ignores all positional and keyword arguments and performs no side effects.
 
             Returns:
                 None
@@ -214,23 +208,18 @@ def mock_bleak(monkeypatch):
             Report whether the dummy BLE client is connected.
 
             Returns:
-                False — the dummy client is never connected.
+                False (this stubbed client never reports being connected).
 
             """
             return False
 
     async def _stub_discover(**_kwargs):
         """
-        Simulate BLE device discovery.
+        Simulate BLE device discovery by returning an empty list.
 
-        Accepts and ignores arbitrary keyword arguments for API compatibility.
+        Accepts arbitrary keyword arguments for API compatibility; all are ignored.
 
-        Parameters
-        ----------
-            **_kwargs (dict): Ignored keyword arguments.
-
-        Returns
-        -------
+        Returns:
             list: Empty list of discovered BLE devices.
 
         """
@@ -239,13 +228,14 @@ def mock_bleak(monkeypatch):
     class _StubBLEDevice:
         def __init__(self, address=None, name=None, **_kwargs):
             """
-            Create a minimal BLE device representation.
+            Initialize a minimal BLE device representation.
 
             Parameters
             ----------
                 address (str | None): BLE device address, if known.
                 name (str | None): Human-readable device name, if known.
-                **_kwargs: Additional keyword arguments are accepted and ignored.
+                **_kwargs: Additional keyword arguments are accepted and ignored; if a `details` mapping
+                    is provided it will be preserved on the instance as `self.details`.
 
             """
             self.address = address
@@ -256,19 +246,52 @@ def mock_bleak(monkeypatch):
     class _StubBleakScanner:
         def __init__(self, *_args, **_kwargs):
             # accept arbitrary args/kwargs for parity with real BleakScanner
+            """
+            Initialize a stub BleakScanner; accepts any positional and keyword arguments for API compatibility.
+
+            Parameters
+            ----------
+                _args: Positional arguments passed through for compatibility with the real BleakScanner (ignored).
+                _kwargs: Keyword arguments passed through for compatibility with the real BleakScanner (ignored).
+
+            """
             pass
 
         @staticmethod
         async def discover(**_kwargs):
+            """
+            Simulate BLE discovery that finds no devices.
+
+            Returns:
+                list: An empty list of discovered BLE devices.
+
+            """
             return []
 
         async def start(self):
+            """
+            Start the BLE scanner.
+
+            This stub implementation performs no action.
+
+            Returns:
+                None
+
+            """
             pass
 
         async def stop(self):
+            """
+            Stop the scanner. This stub method performs no action.
+            """
             pass
 
         def register_detection_callback(self, *_args, **_kwargs):
+            """
+            Accepts a detection callback but performs no action.
+
+            Any positional and keyword arguments are accepted and ignored.
+            """
             return None
 
     bleak_module.BleakClient = _StubBleakClient
@@ -282,10 +305,12 @@ def mock_bleak(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-name
     """
-    Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
+    Create and register a minimal bleak.exc submodule exposing BleakError and BleakDBusError.
+
+    The created module is attached as the `exc` attribute of the provided `mock_bleak` module and inserted into sys.modules under "bleak.exc".
 
     Returns:
-        bleak_exc_module (module): The created `bleak.exc` module providing `BleakError` and `BleakDBusError`.
+        bleak_exc_module (module): Module object providing `BleakError` and `BleakDBusError`.
 
     """
     bleak_exc_module = types.ModuleType("bleak.exc")

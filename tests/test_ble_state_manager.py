@@ -17,8 +17,14 @@ def _load_state_manager_after_mocks(
     mock_bleak_exc,
     mock_publishing_thread,
 ):
+    """
+    Ensure BLEStateManager and ConnectionState are loaded into module globals for tests.
+
+    Dynamically imports the meshtastic.ble_interface module and assigns its BLEStateManager and ConnectionState attributes to the module-level globals BLEStateManager and ConnectionState so tests can reference them after mock fixtures are applied.
+    """
     global BLEStateManager, ConnectionState
     import importlib
+
     ble_mod = importlib.import_module("meshtastic.ble_interface")
     BLEStateManager = ble_mod.BLEStateManager
     ConnectionState = ble_mod.ConnectionState
@@ -137,13 +143,12 @@ class TestBLEStateManager:
 
         def worker(worker_id):
             """
-            Run 100 transition attempts in a worker thread and record outcomes.
+            Run 100 transition attempts from a worker thread and record outcomes.
 
-            On each iteration the worker tries to transition the shared `manager` to
-            ConnectionState.CONNECTING on even iterations and ConnectionState.DISCONNECTED on odd iterations.
-            Each attempt appends a result tuple (worker_id, iteration_index, success, current_state_value)
-            to the shared `results` list. Any exception raised is appended to the shared `errors` list as
-            (worker_id, error_message).
+            Each iteration attempts to transition the shared `manager` to ConnectionState.CONNECTING on even
+            indices and ConnectionState.DISCONNECTED on odd indices. Each attempt appends a tuple
+            (worker_id, iteration_index, success, current_state_value) to the shared `results` list.
+            If an exception occurs, a tuple (worker_id, error_message) is appended to the shared `errors` list.
 
             Parameters
             ----------
@@ -159,7 +164,9 @@ class TestBLEStateManager:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
                     results.append((worker_id, i, success, manager.state.value))
                     time.sleep(0.001)  # Small delay to increase contention
-            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Start multiple threads
@@ -218,10 +225,10 @@ class TestBLEStateManager:
         def nested_operation():
             # This should work with reentrant lock
             """
-            Acquire the manager's reentrant state lock twice and return the manager's current connection state.
+            Acquire the manager's reentrant state lock twice and obtain the manager's current connection state.
 
             Returns:
-                ConnectionState: The current connection state.
+                ConnectionState: The manager's current connection state.
 
             """
             with manager._state_lock:
@@ -391,7 +398,9 @@ class TestPhase3LockConsolidation:
             """
             Perform a sequence of state transitions on the shared BLEStateManager to exercise concurrent behavior.
 
-            Each worker attempts multiple transitions (CONNECTING, CONNECTED with a mock client, DISCONNECTED) and records outcomes by appending (worker_id, iteration, manager.state, success) to the shared `results` list; any exceptions are appended to the shared `errors` list as (worker_id, error_message).
+            This worker runs several iterations, attempting CONNECTING, CONNECTED (with a mock client), and DISCONNECTED transitions, and records outcomes by appending tuples to the shared lists:
+            - results: (worker_id, iteration, manager.state, success)
+            - errors: (worker_id, error_message) for any exceptions raised during execution
 
             Parameters
             ----------
@@ -413,7 +422,9 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -452,6 +463,11 @@ class TestPhase3LockConsolidation:
         # Test nested lock acquisition through state manager methods
         def nested_operation():
             # This should work without deadlock due to reentrant lock
+            """
+            Acquire the manager's reentrant state lock and perform a sequence of state transitions to exercise nested-lock behavior.
+
+            This function enters manager._state_lock and performs transitions: CONNECTING, CONNECTED (with a mock client), and DISCONNECTED. It validates that acquiring the lock reentrantly while performing transitions does not cause a deadlock.
+            """
             with manager._state_lock:
                 manager.transition_to(ConnectionState.CONNECTING)
                 manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
@@ -467,6 +483,7 @@ class TestPhase3LockConsolidation:
     def test_state_transition_performance(self):
         """Measure performance of state transitions under realistic load."""
         import os
+
         manager = BLEStateManager()
         mock_client = MagicMock()
 
@@ -484,9 +501,9 @@ class TestPhase3LockConsolidation:
         elapsed = end_time - start_time
 
         # Should complete quickly under typical CI conditions (allow headroom)
-        assert elapsed < (4.5 if os.getenv("CI") else 3.0), (
-            f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
-        )
+        assert elapsed < (
+            4.5 if os.getenv("CI") else 3.0
+        ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
 
         # Calculate average transition time
         avg_time = elapsed / (iterations * 3)
@@ -500,9 +517,9 @@ class TestPhase3LockConsolidation:
 @pytest.mark.slow
 def test_lock_contention_performance():
     """
-    Measure BLEStateManager throughput and correctness under lock contention.
+    Measure BLEStateManager throughput and correctness under lock contention by running multiple worker threads that perform repeated state transitions.
 
-    Runs five worker threads that each attempt 100 cycles of CONNECTING → CONNECTED → DISCONNECTED transitions and verifies timing and success rate; asserts total elapsed time is below 5.0 seconds and that at least 80% of the expected operations completed. Prints a short performance summary.
+    Runs five worker threads that each perform 100 cycles of CONNECTING → CONNECTED → DISCONNECTED transitions against a shared BLEStateManager, verifies the total elapsed time is below a CI-adjusted threshold, and asserts at least 80% of the expected operations completed. Prints a short performance summary including total operations and elapsed time.
     """
     import os
 
@@ -511,9 +528,9 @@ def test_lock_contention_performance():
 
     def worker(worker_id):
         """
-        Run a worker that performs 100 simulated BLE state-transition cycles and records its operation count and elapsed time.
+        Perform 100 BLE state-transition cycles and record this worker's operation count and elapsed time.
 
-        Attempts transitions to CONNECTING, CONNECTED, and DISCONNECTED on each iteration; increments the operation count for each successful transition, measures wall-clock elapsed time for the loop, and appends a result dict with keys "worker_id", "operations", and "time" to the outer-scope `results` list (using the outer-scope `manager` for transitions).
+        Runs 100 iterations attempting transitions to CONNECTING, CONNECTED, and DISCONNECTED on the outer-scope `manager`, counts successful transitions, measures wall-clock time for the loop, and appends a result dict with keys "worker_id", "operations", and "time" to the outer-scope `results` list.
 
         Parameters
         ----------
@@ -561,7 +578,9 @@ def test_lock_contention_performance():
     total_time = end_time - start_time
 
     # Verify reasonable performance under contention
-    assert total_time < (7.5 if os.getenv("CI") else 5.0), f"Contention test too slow: {total_time:.3f}s"
+    assert total_time < (
+        7.5 if os.getenv("CI") else 5.0
+    ), f"Contention test too slow: {total_time:.3f}s"
 
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
@@ -574,7 +593,11 @@ def test_lock_contention_performance():
 
 
 def test_memory_efficiency():
-    """Verify that BLEStateManager does not leak memory during creation and destruction."""
+    """
+    Check that creating and destroying many BLEStateManager instances does not cause substantial memory growth.
+
+    Creates 100 BLEStateManager instances, transitions each through CONNECTING → CONNECTED (with a mock client) → DISCONNECTED, forces garbage collection before and after, and asserts the net number of tracked Python objects increases by less than 1000. Prints the measured object growth for the run.
+    """
     # Force garbage collection
     gc.collect()
     initial_objects = len(gc.get_objects())
@@ -608,9 +631,9 @@ def test_memory_efficiency():
 @pytest.mark.slow
 def test_property_access_performance():
     """
-    Measure average access time of BLEStateManager properties and assert it meets the performance threshold.
+    Measure average access time of key BLEStateManager properties and assert it meets a performance threshold.
 
-    Runs 10,000 iterations accessing the following properties each iteration: `state`, `is_connected`, `is_closing`, `can_connect`, and `client`. Computes the average time per property access and asserts it is less than 1e-5 seconds; raises an AssertionError if the threshold is exceeded. Prints a short performance summary.
+    Performs repeated reads of the following properties: `state`, `is_connected`, `is_closing`, `can_connect`, and `client`. Uses 5,000 iterations when running in CI (environment variable `CI` set) and 10,000 iterations otherwise, computes the average time per property access, and raises an AssertionError if the average exceeds the configured threshold (a higher threshold is allowed in CI). Prints a concise performance summary with total accesses, elapsed time, and average time per access.
     """
     import os
 
@@ -633,7 +656,9 @@ def test_property_access_performance():
 
     # Property access should be very fast
     avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
-    assert avg_time < (0.00003 if os.getenv("CI") else 0.00002), f"Property access too slow: {avg_time:.9f}s"
+    assert avg_time < (
+        0.00003 if os.getenv("CI") else 0.00002
+    ), f"Property access too slow: {avg_time:.9f}s"
 
     print(
         f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
