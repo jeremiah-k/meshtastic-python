@@ -385,10 +385,14 @@ class BLEObservability:
                 "score": 100,
             }
 
+            # Type aliases for clarity
+            issues_list = cast(list[str], health["issues"])
+            score_value = cast(int, health["score"])
+
             # Check error rate
             if len(recent_errors) > 10:
-                health["issues"].append("High error rate in last 5 minutes")
-                health["score"] -= 20
+                issues_list.append("High error rate in last 5 minutes")
+                health["score"] = score_value - 20
 
             # Check connection success rate
             connection_attempts = cast(int, metrics["connection_attempts"])
@@ -399,23 +403,24 @@ class BLEObservability:
             if connection_attempts > 5:
                 success_rate = connection_successes / connection_attempts
                 if success_rate < 0.5:
-                    health["issues"].append("Low connection success rate")
-                    health["score"] -= 30
+                    issues_list.append("Low connection success rate")
+                    health["score"] = cast(int, health["score"]) - 30
                 elif success_rate < 0.8:
-                    health["issues"].append("Moderate connection success rate")
-                    health["score"] -= 15
+                    issues_list.append("Moderate connection success rate")
+                    health["score"] = cast(int, health["score"]) - 15
 
             # Check malformed notification rate
             if notifications_received > 50:
                 malformed_rate = malformed_notifications / notifications_received
                 if malformed_rate > 0.1:
-                    health["issues"].append("High malformed notification rate")
-                    health["score"] -= 25
+                    issues_list.append("High malformed notification rate")
+                    health["score"] = cast(int, health["score"]) - 25
 
             # Determine overall status
-            if health["score"] >= 80:
+            final_score = cast(int, health["score"])
+            if final_score >= 80:
                 health["status"] = "healthy"
-            elif health["score"] >= 60:
+            elif final_score >= 60:
                 health["status"] = "degraded"
             else:
                 health["status"] = "unhealthy"
@@ -2613,6 +2618,8 @@ class BLEInterface(MeshInterface):
         # Ensure connection status is updated and pubsub message is sent
         if self.isConnected.is_set():
             self._disconnected()
+            # Wait for disconnect notifications to be processed
+            self._wait_for_disconnect_notifications(timeout=1.0)
 
         # Clean up atexit handler
         if self._exit_handler:

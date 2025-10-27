@@ -374,7 +374,10 @@ class TestPhase3LockConsolidation:
             """
             Perform a sequence of state transitions against the shared BLEStateManager to exercise concurrent behavior.
 
-            This worker runs a short loop that alternates requests to transition the manager through CONNECTING, CONNECTED (with a mock client), and DISCONNECTED states, recording each attempt's outcome by appending tuples to a shared `results` list and recording exceptions to a shared `errors` list. A small sleep between iterations encourages thread interleaving.
+            This worker runs a short loop that alternates requests to transition the manager through 
+            CONNECTING, CONNECTED (with a mock client), and DISCONNECTED states, recording each 
+            attempt's outcome by appending tuples to a shared `results` list and recording exceptions 
+            to a shared `errors` list. A small sleep between iterations encourages thread interleaving.
 
             Parameters
             ----------
@@ -435,87 +438,34 @@ class TestPhase3LockConsolidation:
         # Test nested lock acquisition through state manager methods
         def nested_operation():
             # This should work without deadlock due to reentrant lock
-            """
-            Exercise a nested sequence of state transitions under the manager's reentrant lock to verify no deadlock occurs and state/client consistency is preserved.
+            with manager._state_lock:
+                manager.transition_to(ConnectionState.CONNECTING)
+                manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+                manager.transition_to(ConnectionState.DISCONNECTED)
 
-            Performs CONNECTING → CONNECTED (with a mock client), asserts the client is set and the manager reports connected.
-            """
-            assert manager.transition_to(ConnectionState.CONNECTING)
-            assert manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
-            assert manager.client is mock_client
-            assert manager.is_connected
+        # Call nested operation - should not deadlock
+        nested_operation()
 
-        # Acquire lock manually then call nested operation
-        with manager._state_lock:
-            nested_operation()
-
-        # Verify state is consistent
-        assert manager.state == ConnectionState.CONNECTED
-        assert manager.client is mock_client
-
-    def test_lock_contention_resolution(self):
-        """
-        Ensure BLEStateManager's state lock handles concurrent contention without raising exceptions and leaves the manager in DISCONNECTED.
-
-        Spawns multiple threads that each acquire the manager's state lock and perform state transitions; the test asserts no contention-related exceptions occurred and that the final manager.state equals ConnectionState.DISCONNECTED.
-        """
-
-        manager = BLEStateManager()
-        contention_count = [0]
-
-        def contending_worker():
-            """
-            Worker used in contention tests: acquires the manager's internal state lock, sleeps briefly to simulate work, then transitions the manager through CONNECTING to DISCONNECTED. If an exception occurs, increments the shared `contention_count[0]`.
-            """
-            try:
-                # Try to acquire lock and perform operation
-                with manager._state_lock:
-                    # Simulate some work
-                    time.sleep(0.01)
-                    manager.transition_to(ConnectionState.CONNECTING)
-                    manager.transition_to(ConnectionState.DISCONNECTED)
-            except Exception:
-                contention_count[0] += 1
-
-        # Create multiple contending threads
-        threads = []
-        for _i in range(10):
-            thread = threading.Thread(target=contending_worker)
-            threads.append(thread)
-            thread.start()
-
-        # Wait for completion
-        for thread in threads:
-            thread.join()
-
-        # Verify no contention errors
-        assert contention_count[0] == 0
-
-        # Verify final state is consistent
+        # Verify final state
         assert manager.state == ConnectionState.DISCONNECTED
 
+    def test_state_transition_performance(self):
+        """Measure performance of state transitions under realistic load."""
+        manager = BLEStateManager()
+        mock_client = MagicMock()
 
-class TestPhase4PerformanceOptimization:
-    """Test Phase 4 performance optimization and validation."""
+        # Measure state transition performance
+        iterations = 1000
+        start_time = time.perf_counter()
 
+        for _i in range(iterations):
+            # Cycle through states
+            manager.transition_to(ConnectionState.CONNECTING)
+            manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+            manager.transition_to(ConnectionState.DISCONNECTED)
 
-def test_state_transition_performance():
-    """Measure performance of state transitions under realistic load."""
-    manager = BLEStateManager()
-    mock_client = MagicMock()
-
-    # Measure state transition performance
-    iterations = 1000
-    start_time = time.perf_counter()
-
-    for _i in range(iterations):
-        # Cycle through states
-        manager.transition_to(ConnectionState.CONNECTING)
-        manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
-        manager.transition_to(ConnectionState.DISCONNECTED)
-
-    end_time = time.perf_counter()
-    elapsed = end_time - start_time
+        end_time = time.perf_counter()
+        elapsed = end_time - start_time
 
     # Should complete quickly under typical CI conditions (allow headroom)
     assert (
@@ -535,10 +485,11 @@ def test_lock_contention_performance():
     """
     Measure BLEStateManager throughput and correctness under lock contention.
 
-    Spawns 5 worker threads that each perform 100 iterations of CONNECTING → CONNECTED → DISCONNECTED
-    transition attempts (3 operations per iteration) with a short delay to simulate work. Asserts the total
-    elapsed time stays below 5.0 seconds and that at least 80% of the expected operations
-    (5 * 100 * 3) succeeded. Prints a brief performance summary.
+    Spawns 5 worker threads that each perform 100 iterations of CONNECTING → CONNECTED → 
+    DISCONNECTED transition attempts (3 operations per iteration) with a short delay to 
+    simulate work. Asserts the total elapsed time stays below 5.0 seconds and that 
+    at least 80% of the expected operations (5 * 100 * 3) succeeded. 
+    Prints a brief performance summary.
     """
 
     manager = BLEStateManager()

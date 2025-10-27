@@ -23,6 +23,7 @@ def mock_serial(monkeypatch):
 
     Parameters
     ----------
+        monkeypatch: pytest monkeypatch fixture for module manipulation.
         monkeypatch: pytest monkeypatch fixture used to install modules into sys.modules.
 
     Returns
