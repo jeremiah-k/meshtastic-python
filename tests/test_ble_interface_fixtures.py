@@ -510,6 +510,14 @@ def _build_interface(monkeypatch, client):
         _self._disconnect_notified = False
         # Mark as connected for proper pubsub behavior in tests
         _self._connected()
+        # Update state manager to CONNECTED for proper state tracking
+        # In tests, we skip CONNECTING and go directly to CONNECTED
+        from meshtastic.ble_interface import ConnectionState
+        # First transition to CONNECTING to simulate proper connection flow
+        _self._state_manager.transition_to(ConnectionState.CONNECTING)
+        success = _self._state_manager.transition_to(ConnectionState.CONNECTED, client)
+        if not success:
+            print(f"WARNING: State transition to CONNECTED failed, current state: {_self._state_manager.state}")
         if hasattr(_self, "_reconnected_event"):
             _self._reconnected_event.set()
         return client
