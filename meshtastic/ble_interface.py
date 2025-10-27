@@ -733,8 +733,15 @@ class AsyncDispatcher:
 
         except RuntimeError:
             # No running loop - we're in a synchronous context
-            # Safe to use asyncio.run here
-            return asyncio.run(coro)
+            # Create a new event loop to run the coroutine safely
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                return new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close()
+                # Clean up the event loop reference
+                asyncio.set_event_loop(None)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for future dispatches."""
