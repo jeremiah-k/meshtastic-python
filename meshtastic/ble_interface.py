@@ -15,7 +15,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, RLock, Thread, current_thread
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union, cast
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
@@ -32,6 +32,7 @@ try:
     BLEAK_VERSION = importlib.metadata.version("bleak")
 except importlib.metadata.PackageNotFoundError:
     try:
+        # Import at module level to avoid import-outside-toplevel warning
         from bleak import __version__ as _bleak_ver  # type: ignore
     except Exception:
         _bleak_ver = "0.0.0"
@@ -50,160 +51,184 @@ logger = logging.getLogger("meshtastic.ble")
 class BLEObservability:
     """
     Comprehensive observability system for BLE interface operations.
-    
+
     This class provides metrics collection, enhanced logging, performance monitoring,
     and debugging capabilities for the BLE interface. It tracks connection statistics,
     operation performance, error patterns, and system health indicators.
     """
-    
+
     def __init__(self, enabled: bool = True):
         """
         Initialize observability system.
-        
+
         Args:
             enabled: Whether observability features are enabled
+
         """
         self.enabled = enabled
-        self._metrics = {
-            'connection_attempts': 0,
-            'connection_successes': 0,
-            'connection_failures': 0,
-            'reconnection_attempts': 0,
-            'reconnection_successes': 0,
-            'bytes_sent': 0,
-            'bytes_received': 0,
-            'packets_sent': 0,
-            'packets_received': 0,
-            'notifications_received': 0,
-            'malformed_notifications': 0,
-            'read_retries': 0,
-            'read_timeouts': 0,
-            'write_retries': 0,
-            'write_timeouts': 0,
-            'error_count': 0,
-            'warning_count': 0,
-            'last_activity': None,
-            'connection_start_time': None,
-            'total_connected_time': 0.0,
-            'peak_memory_usage': 0,
+        self._metrics: dict[str, Union[int, float, None]] = {
+            "connection_attempts": 0,
+            "connection_successes": 0,
+            "connection_failures": 0,
+            "reconnection_attempts": 0,
+            "reconnection_successes": 0,
+            "bytes_sent": 0,
+            "bytes_received": 0,
+            "packets_sent": 0,
+            "packets_received": 0,
+            "notifications_received": 0,
+            "malformed_notifications": 0,
+            "read_retries": 0,
+            "read_timeouts": 0,
+            "write_retries": 0,
+            "write_timeouts": 0,
+            "error_count": 0,
+            "warning_count": 0,
+            "last_activity": None,
+            "connection_start_time": None,
+            "total_connected_time": 0.0,
+            "peak_memory_usage": 0,
         }
-        self._performance_samples = []
-        self._error_history = []
-        self._connection_history = []
+        self._performance_samples: list[dict] = []
+        self._error_history: list[dict] = []
+        self._connection_history: list[dict] = []
         self._lock = RLock()
-        
+
         # Performance tracking
-        self._operation_start_times = {}
+        self._operation_start_times: dict[str, float] = {}
         self._slow_operation_threshold = 5.0  # seconds
-        
+
         # Observability logger
         self._obs_logger = logging.getLogger("meshtastic.ble.observability")
-    
+
+    def _increment_metric(self, key: str, value: int = 1) -> None:
+        """Safely increment a metric value."""
+        with self._lock:
+            self._metrics[key] = cast(int, self._metrics[key]) + value
+
     def record_connection_attempt(self, address: str):
         """Record a connection attempt."""
         if not self.enabled:
             return
+        self._increment_metric("connection_attempts")
         with self._lock:
-            self._metrics['connection_attempts'] += 1
-            self._metrics['connection_start_time'] = time.time()
+            self._metrics["connection_start_time"] = time.time()
             self._obs_logger.info(f"Connection attempt to {address}")
-    
+
     def record_connection_success(self, address: str, duration: float):
         """Record a successful connection."""
         if not self.enabled:
             return
+        self._increment_metric("connection_successes")
         with self._lock:
-            self._metrics['connection_successes'] += 1
-            if self._metrics['connection_start_time']:
-                actual_duration = time.time() - self._metrics['connection_start_time']
-                self._record_performance_sample('connection', actual_duration)
-            self._connection_history.append({
-                'address': address,
-                'status': 'success',
-                'timestamp': time.time(),
-                'duration': duration
-            })
+            if self._metrics["connection_start_time"]:
+                actual_duration = time.time() - cast(
+                    float, self._metrics["connection_start_time"]
+                )
+                self._record_performance_sample("connection", actual_duration)
+            self._connection_history.append(
+                {
+                    "address": address,
+                    "status": "success",
+                    "timestamp": time.time(),
+                    "duration": duration,
+                }
+            )
             self._obs_logger.info(f"Connected to {address} in {duration:.2f}s")
-    
+
     def record_connection_failure(self, address: str, error: str):
         """Record a connection failure."""
         if not self.enabled:
             return
+        self._increment_metric("connection_failures")
         with self._lock:
-            self._metrics['connection_failures'] += 1
-            self._connection_history.append({
-                'address': address,
-                'status': 'failed',
-                'timestamp': time.time(),
-                'error': error
-            })
-            self._obs_logger.warning(f"Connection failed to {address}: {error}")
-    
+            self._connection_history.append(
+                {
+                    "address": address,
+                    "status": "failed",
+                    "timestamp": time.time(),
+                    "error": error,
+                }
+            )
+        self._obs_logger.warning(f"Connection failed to {address}: {error}")
+
     def record_reconnection_attempt(self, attempt: int):
         """Record a reconnection attempt."""
         if not self.enabled:
             return
-        with self._lock:
-            self._metrics['reconnection_attempts'] += 1
-            self._obs_logger.debug(f"Reconnection attempt {attempt}")
-    
+        self._increment_metric("reconnection_attempts")
+        self._obs_logger.debug(f"Reconnection attempt {attempt}")
+
     def record_reconnection_success(self, attempts: int):
         """Record a successful reconnection."""
         if not self.enabled:
             return
-        with self._lock:
-            self._metrics['reconnection_successes'] += 1
-            self._obs_logger.info(f"Reconnection succeeded after {attempts} attempts")
-    
-    def record_data_transfer(self, direction: str, bytes_count: int, packet_count: int = 1):
+        self._increment_metric("reconnection_successes")
+        self._obs_logger.info(f"Reconnection succeeded after {attempts} attempts")
+
+    def record_data_transfer(
+        self, direction: str, bytes_count: int, packet_count: int = 1
+    ):
         """Record data transfer metrics."""
         if not self.enabled:
             return
         with self._lock:
-            self._metrics['last_activity'] = time.time()
-            if direction == 'sent':
-                self._metrics['bytes_sent'] += bytes_count
-                self._metrics['packets_sent'] += packet_count
-            elif direction == 'received':
-                self._metrics['bytes_received'] += bytes_count
-                self._metrics['packets_received'] += packet_count
-    
+            self._metrics["last_activity"] = time.time()
+            if direction == "sent":
+                self._metrics["bytes_sent"] = (
+                    cast(int, self._metrics["bytes_sent"]) + bytes_count
+                )
+                self._metrics["packets_sent"] = (
+                    cast(int, self._metrics["packets_sent"]) + packet_count
+                )
+            elif direction == "received":
+                self._metrics["bytes_received"] = (
+                    cast(int, self._metrics["bytes_received"]) + bytes_count
+                )
+                self._metrics["packets_received"] = (
+                    cast(int, self._metrics["packets_received"]) + packet_count
+                )
+
     def record_notification(self, is_malformed: bool = False):
         """Record notification reception."""
         if not self.enabled:
             return
         with self._lock:
-            self._metrics['notifications_received'] += 1
+            self._metrics["notifications_received"] = (
+                cast(int, self._metrics["notifications_received"]) + 1
+            )
             if is_malformed:
-                self._metrics['malformed_notifications'] += 1
-    
+                self._metrics["malformed_notifications"] = (
+                    cast(int, self._metrics["malformed_notifications"]) + 1
+                )
+
     def record_operation_retry(self, operation: str):
         """Record an operation retry."""
         if not self.enabled:
             return
         with self._lock:
-            retry_key = f'{operation}_retries'
+            retry_key = f"{operation}_retries"
             if retry_key in self._metrics:
-                self._metrics[retry_key] += 1
+                self._metrics[retry_key] = cast(int, self._metrics[retry_key]) + 1
             self._obs_logger.debug(f"Retry for {operation}")
-    
+
     def record_operation_timeout(self, operation: str):
         """Record an operation timeout."""
         if not self.enabled:
             return
         with self._lock:
-            timeout_key = f'{operation}_timeouts'
+            timeout_key = f"{operation}_timeouts"
             if timeout_key in self._metrics:
-                self._metrics[timeout_key] += 1
+                self._metrics[timeout_key] = cast(int, self._metrics[timeout_key]) + 1
             self._obs_logger.warning(f"Timeout for {operation}")
-    
+
     def start_operation_timer(self, operation_id: str):
         """Start timing an operation."""
         if not self.enabled:
             return
         with self._lock:
             self._operation_start_times[operation_id] = time.time()
-    
+
     def end_operation_timer(self, operation_id: str, operation_type: str):
         """End timing an operation and record performance."""
         if not self.enabled:
@@ -213,257 +238,282 @@ class BLEObservability:
                 duration = time.time() - self._operation_start_times[operation_id]
                 del self._operation_start_times[operation_id]
                 self._record_performance_sample(operation_type, duration)
-                
+
                 if duration > self._slow_operation_threshold:
                     self._obs_logger.warning(
                         f"Slow {operation_type}: {duration:.2f}s (threshold: {self._slow_operation_threshold}s)"
                     )
-    
-    def record_error(self, error_type: str, error_msg: str, context: dict = None):
+
+    def record_error(
+        self, error_type: str, error_msg: str, context: Optional[dict] = None
+    ):
         """Record an error occurrence."""
         if not self.enabled:
             return
+        self._increment_metric("error_count")
         with self._lock:
-            self._metrics['error_count'] += 1
             error_record = {
-                'type': error_type,
-                'message': error_msg,
-                'timestamp': time.time(),
-                'context': context or {}
+                "type": error_type,
+                "message": error_msg,
+                "timestamp": time.time(),
+                "context": context or {},
             }
             self._error_history.append(error_record)
-            
+
             # Keep only last 100 errors
             if len(self._error_history) > 100:
                 self._error_history = self._error_history[-100:]
-            
+
             self._obs_logger.error(f"{error_type}: {error_msg}")
-    
-    def record_warning(self, warning_msg: str, context: dict = None):
+
+    def record_warning(self, warning_msg: str, context: Optional[dict] = None):
         """Record a warning occurrence."""
         if not self.enabled:
             return
-        with self._lock:
-            self._metrics['warning_count'] += 1
-            self._obs_logger.warning(f"Warning: {warning_msg}")
-    
+        _ = context  # Suppress unused variable warning
+        self._increment_metric("warning_count")
+        self._obs_logger.warning(f"Warning: {warning_msg}")
+
     def _record_performance_sample(self, operation: str, duration: float):
         """Record a performance sample."""
         sample = {
-            'operation': operation,
-            'duration': duration,
-            'timestamp': time.time()
+            "operation": operation,
+            "duration": duration,
+            "timestamp": time.time(),
         }
         self._performance_samples.append(sample)
-        
+
         # Keep only last 1000 samples
         if len(self._performance_samples) > 1000:
             self._performance_samples = self._performance_samples[-1000:]
-    
+
     def get_metrics(self) -> dict:
         """Get current metrics snapshot."""
         with self._lock:
             metrics = self._metrics.copy()
-            
+
             # Calculate derived metrics
-            if metrics['connection_attempts'] > 0:
-                metrics['connection_success_rate'] = (
-                    metrics['connection_successes'] / metrics['connection_attempts']
+            connection_attempts = cast(int, metrics["connection_attempts"])
+            connection_successes = cast(int, metrics["connection_successes"])
+            reconnection_attempts = cast(int, metrics["reconnection_attempts"])
+            reconnection_successes = cast(int, metrics["reconnection_successes"])
+            packets_sent = cast(int, metrics["packets_sent"])
+            packets_received = cast(int, metrics["packets_received"])
+            bytes_sent = cast(int, metrics["bytes_sent"])
+            bytes_received = cast(int, metrics["bytes_received"])
+
+            if connection_attempts > 0:
+                metrics["connection_success_rate"] = (
+                    connection_successes / connection_attempts
                 )
             else:
-                metrics['connection_success_rate'] = 0.0
-            
-            if metrics['reconnection_attempts'] > 0:
-                metrics['reconnection_success_rate'] = (
-                    metrics['reconnection_successes'] / metrics['reconnection_attempts']
+                metrics["connection_success_rate"] = 0.0
+
+            if reconnection_attempts > 0:
+                metrics["reconnection_success_rate"] = (
+                    reconnection_successes / reconnection_attempts
                 )
             else:
-                metrics['reconnection_success_rate'] = 0.0
-            
+                metrics["reconnection_success_rate"] = 0.0
+
             # Calculate average packet sizes
-            if metrics['packets_sent'] > 0:
-                metrics['avg_packet_size_sent'] = metrics['bytes_sent'] / metrics['packets_sent']
+            if packets_sent > 0:
+                metrics["avg_packet_size_sent"] = bytes_sent / packets_sent
             else:
-                metrics['avg_packet_size_sent'] = 0.0
-            
-            if metrics['packets_received'] > 0:
-                metrics['avg_packet_size_received'] = metrics['bytes_received'] / metrics['packets_received']
+                metrics["avg_packet_size_sent"] = 0.0
+
+            if packets_received > 0:
+                metrics["avg_packet_size_received"] = bytes_received / packets_received
             else:
-                metrics['avg_packet_size_received'] = 0.0
-            
+                metrics["avg_packet_size_received"] = 0.0
+
             return metrics
-    
+
     def get_performance_summary(self) -> dict:
         """Get performance summary statistics."""
         with self._lock:
             if not self._performance_samples:
                 return {}
-            
+
             # Group by operation type
-            by_operation = {}
+            by_operation: dict[str, list[float]] = {}
             for sample in self._performance_samples:
-                op = sample['operation']
+                op = sample["operation"]
                 if op not in by_operation:
                     by_operation[op] = []
-                by_operation[op].append(sample['duration'])
-            
+                by_operation[op].append(cast(float, sample["duration"]))
+
             # Calculate statistics for each operation
             summary = {}
             for op, durations in by_operation.items():
                 summary[op] = {
-                    'count': len(durations),
-                    'avg': sum(durations) / len(durations),
-                    'min': min(durations),
-                    'max': max(durations),
-                    'p95': sorted(durations)[int(len(durations) * 0.95)] if len(durations) > 20 else max(durations)
+                    "count": len(durations),
+                    "avg": sum(durations) / len(durations),
+                    "min": min(durations),
+                    "max": max(durations),
+                    "p95": (
+                        sorted(durations)[int(len(durations) * 0.95)]
+                        if len(durations) > 20
+                        else max(durations)
+                    ),
                 }
-            
+
             return summary
-    
+
     def get_recent_errors(self, count: int = 10) -> list:
         """Get recent error records."""
         with self._lock:
             return self._error_history[-count:] if self._error_history else []
-    
+
     def get_connection_history(self, count: int = 10) -> list:
         """Get recent connection history."""
         with self._lock:
             return self._connection_history[-count:] if self._connection_history else []
-    
+
     def get_health_status(self) -> dict:
         """Get overall system health status."""
         with self._lock:
             metrics = self._metrics
-            recent_errors = [e for e in self._error_history 
-                           if time.time() - e['timestamp'] < 300]  # Last 5 minutes
-            
+            recent_errors = [
+                e for e in self._error_history if time.time() - e["timestamp"] < 300
+            ]  # Last 5 minutes
+
             # Health indicators
-            health = {
-                'status': 'healthy',
-                'issues': [],
-                'score': 100
+            health: dict[str, Union[str, list[str], int]] = {
+                "status": "healthy",
+                "issues": [],
+                "score": 100,
             }
-            
+
             # Check error rate
             if len(recent_errors) > 10:
-                health['issues'].append('High error rate in last 5 minutes')
-                health['score'] -= 20
-            
+                health["issues"].append("High error rate in last 5 minutes")
+                health["score"] -= 20
+
             # Check connection success rate
-            if metrics['connection_attempts'] > 5:
-                success_rate = metrics['connection_successes'] / metrics['connection_attempts']
+            connection_attempts = cast(int, metrics["connection_attempts"])
+            connection_successes = cast(int, metrics["connection_successes"])
+            notifications_received = cast(int, metrics["notifications_received"])
+            malformed_notifications = cast(int, metrics["malformed_notifications"])
+
+            if connection_attempts > 5:
+                success_rate = connection_successes / connection_attempts
                 if success_rate < 0.5:
-                    health['issues'].append('Low connection success rate')
-                    health['score'] -= 30
+                    health["issues"].append("Low connection success rate")
+                    health["score"] -= 30
                 elif success_rate < 0.8:
-                    health['issues'].append('Moderate connection success rate')
-                    health['score'] -= 15
-            
+                    health["issues"].append("Moderate connection success rate")
+                    health["score"] -= 15
+
             # Check malformed notification rate
-            if metrics['notifications_received'] > 50:
-                malformed_rate = metrics['malformed_notifications'] / metrics['notifications_received']
+            if notifications_received > 50:
+                malformed_rate = malformed_notifications / notifications_received
                 if malformed_rate > 0.1:
-                    health['issues'].append('High malformed notification rate')
-                    health['score'] -= 25
-            
+                    health["issues"].append("High malformed notification rate")
+                    health["score"] -= 25
+
             # Determine overall status
-            if health['score'] >= 80:
-                health['status'] = 'healthy'
-            elif health['score'] >= 60:
-                health['status'] = 'degraded'
+            if health["score"] >= 80:
+                health["status"] = "healthy"
+            elif health["score"] >= 60:
+                health["status"] = "degraded"
             else:
-                health['status'] = 'unhealthy'
-            
+                health["status"] = "unhealthy"
+
             return health
-    
+
     def reset_metrics(self):
         """Reset all metrics."""
         with self._lock:
-            self._metrics = {key: 0 if isinstance(value, (int, float)) else value 
-                           for key, value in self._metrics.items()}
+            self._metrics = {
+                key: (0 if isinstance(value, (int, float)) else value)
+                for key, value in self._metrics.items()
+            }
             self._performance_samples.clear()
             self._error_history.clear()
             self._connection_history.clear()
             self._operation_start_times.clear()
             self._obs_logger.info("Metrics reset")
-    
+
     def export_diagnostics(self) -> dict:
         """Export comprehensive diagnostic information."""
         with self._lock:
             return {
-                'timestamp': time.time(),
-                'metrics': self.get_metrics(),
-                'performance_summary': self.get_performance_summary(),
-                'health_status': self.get_health_status(),
-                'recent_errors': self.get_recent_errors(20),
-                'connection_history': self.get_connection_history(20),
-                'system_info': {
-                    'enabled': self.enabled,
-                    'slow_operation_threshold': self._slow_operation_threshold,
-                    'performance_samples_count': len(self._performance_samples),
-                    'error_history_count': len(self._error_history),
-                    'connection_history_count': len(self._connection_history)
-                }
+                "timestamp": time.time(),
+                "metrics": self.get_metrics(),
+                "performance_summary": self.get_performance_summary(),
+                "health_status": self.get_health_status(),
+                "recent_errors": self.get_recent_errors(20),
+                "connection_history": self.get_connection_history(20),
+                "system_info": {
+                    "enabled": self.enabled,
+                    "slow_operation_threshold": self._slow_operation_threshold,
+                    "performance_samples_count": len(self._performance_samples),
+                    "error_history_count": len(self._error_history),
+                    "connection_history_count": len(self._connection_history),
+                },
             }
 
 
 class NotificationManager:
     """
     Manages BLE notification handler lifecycle to prevent leaks.
-    
+
     This class tracks active notification subscriptions and ensures
     proper cleanup during disconnection and reconnection.
     """
-    
+
     def __init__(self):
         """Initialize notification manager."""
         self._active_subscriptions = {}  # token -> (characteristic, callback)
         self._subscription_counter = 0
         self._lock = RLock()
-    
+
     def subscribe(self, characteristic: str, callback) -> int:
         """
         Subscribe to notifications with tracking.
-        
+
         Args:
             characteristic: BLE characteristic UUID
             callback: Notification callback function
-            
+
         Returns:
             Subscription token for later unsubscription
+
         """
         with self._lock:
             token = self._subscription_counter
             self._subscription_counter += 1
             self._active_subscriptions[token] = (characteristic, callback)
             return token
-    
+
     def unsubscribe(self, token: int) -> bool:
         """
         Unsubscribe from notifications using token.
-        
+
         Args:
             token: Subscription token returned by subscribe()
-            
+
         Returns:
             True if subscription was found and removed, False otherwise
+
         """
         with self._lock:
             if token in self._active_subscriptions:
                 del self._active_subscriptions[token]
                 return True
             return False
-    
+
     def get_active_subscriptions(self) -> dict:
         """Get copy of active subscriptions."""
         with self._lock:
             return self._active_subscriptions.copy()
-    
+
     def cleanup_all(self) -> None:
         """Clear all active subscriptions."""
         with self._lock:
             self._active_subscriptions.clear()
-    
+
     def __len__(self) -> int:
         """Get number of active subscriptions."""
         with self._lock:
@@ -473,12 +523,12 @@ class NotificationManager:
 class ReconnectPolicy:
     """
     Centralized reconnection and retry policy for BLE operations.
-    
+
     This class provides a unified approach to handling retries, backoff,
     and jitter for various BLE operations including reconnection attempts,
     read retries, and transient error recovery.
     """
-    
+
     def __init__(
         self,
         initial_delay: float = 1.0,
@@ -489,13 +539,14 @@ class ReconnectPolicy:
     ):
         """
         Initialize reconnection policy.
-        
+
         Args:
             initial_delay: Initial delay between retries in seconds
             max_delay: Maximum delay between retries in seconds
             backoff: Multiplier for exponential backoff
             jitter_ratio: Ratio for random jitter (0.0 to 1.0)
             max_retries: Maximum number of retries (None for infinite)
+
         """
         self.initial_delay = initial_delay
         self.max_delay = max_delay
@@ -503,59 +554,62 @@ class ReconnectPolicy:
         self.jitter_ratio = jitter_ratio
         self.max_retries = max_retries
         self._attempt_count = 0
-    
+
     def reset(self) -> None:
         """Reset attempt counter for new retry sequence."""
         self._attempt_count = 0
-    
+
     def get_delay(self, attempt: Optional[int] = None) -> float:
         """
         Calculate delay for given attempt number with backoff and jitter.
-        
+
         Args:
             attempt: Attempt number (uses internal counter if None)
-            
+
         Returns:
             Delay in seconds
+
         """
         if attempt is None:
             attempt = self._attempt_count
-        
+
         # Calculate exponential backoff
-        delay = min(self.initial_delay * (self.backoff ** attempt), self.max_delay)
-        
+        delay = min(self.initial_delay * (self.backoff**attempt), self.max_delay)
+
         # Add jitter
         jitter = delay * self.jitter_ratio * (random.random() * 2.0 - 1.0)
-        
+
         return delay + jitter
-    
+
     def should_retry(self, attempt: Optional[int] = None) -> bool:
         """
         Check if retry should be attempted for given attempt number.
-        
+
         Args:
             attempt: Attempt number (uses internal counter if None)
-            
+
         Returns:
             True if retry should be attempted
+
         """
         if attempt is None:
             attempt = self._attempt_count
-        
+
         return self.max_retries is None or attempt < self.max_retries
-    
+
     def next_attempt(self) -> Tuple[float, bool]:
         """
         Get delay for next attempt and increment counter.
-        
+
         Returns:
             Tuple of (delay_seconds, should_retry)
+
         """
         delay = self.get_delay()
         should_retry = self.should_retry()
         self._attempt_count += 1
         return delay, should_retry
-    
+
     def get_attempt_count(self) -> int:
         """Get current attempt count."""
         return self._attempt_count
@@ -564,34 +618,36 @@ class ReconnectPolicy:
 class AsyncDispatcher:
     """
     Safe async coroutine execution that works in any context.
-    
+
     This class provides a way to run coroutines safely whether called
     from an async context (with running event loop) or from a sync context.
     It prevents deadlocks that can occur when using asyncio.run inside
     an already running event loop.
     """
-    
+
     def __init__(self, event_loop: Optional[asyncio.AbstractEventLoop] = None):
         """
         Initialize the dispatcher.
-        
+
         Args:
             event_loop: Optional event loop to use for dispatching
+
         """
         self._event_loop = event_loop
-    
+
     def run_coroutine(self, coro):
         """
         Run a coroutine safely in any context.
-        
+
         Args:
             coro: The coroutine to run
-            
+
         Returns:
             The result of the coroutine
-            
+
         Raises:
             The same exceptions that the coroutine would raise
+
         """
         try:
             # Check if we're in an async context with a running loop
@@ -602,13 +658,13 @@ class AsyncDispatcher:
                 future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
                 return future.result()
             else:
-                # We're in a running loop - this is the complex case
-                # Run the coroutine in a separate thread to avoid blocking
+                # We're in a running loop - this is complex case
+                # Run coroutine in a separate thread to avoid blocking
                 import threading
-                
+
                 result_container = []
                 exception_container = []
-                
+
                 def run_in_thread():
                     try:
                         # Create new event loop for this thread
@@ -621,18 +677,18 @@ class AsyncDispatcher:
                             new_loop.close()
                     except Exception as e:
                         exception_container.append(e)
-                
+
                 thread = threading.Thread(target=run_in_thread)
                 thread.start()
                 thread.join()
-                
+
                 if exception_container:
                     raise exception_container[0]
                 return result_container[0]
         except RuntimeError:
             # No running loop, safe to use asyncio.run
             return asyncio.run(coro)
-    
+
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for future dispatches."""
         self._event_loop = loop
@@ -794,7 +850,7 @@ class BLEStateManager:
         """Get current BLE client."""
         with self._state_lock:
             return self._client
-    
+
     @property
     def state_version(self) -> int:
         """Get current state version for tracking stale operations."""
@@ -826,7 +882,9 @@ class BLEStateManager:
                 elif new_state == ConnectionState.DISCONNECTED:
                     self._client = None
 
-                logger.debug(f"State transition: {old_state.value} → {new_state.value} (v{self._state_version})")
+                logger.debug(
+                    f"State transition: {old_state.value} → {new_state.value} (v{self._state_version})"
+                )
                 return True
             else:
                 logger.warning(
@@ -836,12 +894,13 @@ class BLEStateManager:
 
     def is_version_current(self, version: int) -> bool:
         """Check if a state version is still current.
-        
+
         Args:
             version: Version to check against current state
-            
+
         Returns:
             True if version is current, False if stale
+
         """
         with self._state_lock:
             return version == self._state_version
@@ -1284,10 +1343,10 @@ class BLEInterface(MeshInterface):
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
-        
+
         # Async dispatch infrastructure for safe coroutine execution
         self._async_dispatcher = AsyncDispatcher()
-        
+
         # Reconnection policy for centralized retry logic
         self._reconnect_policy = ReconnectPolicy(
             initial_delay=AUTO_RECONNECT_INITIAL_DELAY,
@@ -1357,17 +1416,18 @@ class BLEInterface(MeshInterface):
             self.close()
             if isinstance(e, BLEInterface.BLEError):
                 raise
-                raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
+            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
     def _is_state_version_current(self, version: int) -> bool:
         """
         Check if a state version is still current to prevent stale operations.
-        
+
         Args:
             version: State version to check
-            
+
         Returns:
             True if version is current, False if stale
+
         """
         return self._state_manager.is_version_current(version)
 
@@ -1547,10 +1607,16 @@ class BLEInterface(MeshInterface):
                         try:
                             attempt_num = self._reconnect_policy.get_attempt_count() + 1
                             self._observability.record_reconnection_attempt(attempt_num)
-                            logger.debug("Attempting BLE auto-reconnect (attempt %d).", attempt_num)
+                            logger.debug(
+                                "Attempting BLE auto-reconnect (attempt %d).",
+                                attempt_num,
+                            )
                             self.connect(self.address)
                             self._observability.record_reconnection_success(attempt_num)
-                            logger.info("BLE auto-reconnect succeeded after %d attempts.", attempt_num)
+                            logger.info(
+                                "BLE auto-reconnect succeeded after %d attempts.",
+                                attempt_num,
+                            )
                             return
                         except self.BLEError as err:
                             # Use state manager instead of boolean flag
@@ -1562,8 +1628,11 @@ class BLEInterface(MeshInterface):
                                     "Auto-reconnect cancelled after failure due to shutdown/disable."
                                 )
                                 return
-                            logger.warning("Auto-reconnect attempt %d failed: %s", 
-                                         self._reconnect_policy.get_attempt_count(), err)
+                            logger.warning(
+                                "Auto-reconnect attempt %d failed: %s",
+                                self._reconnect_policy.get_attempt_count(),
+                                err,
+                            )
                         except (
                             Exception
                         ):  # Intentional broad catch for reconnect resilience
@@ -1579,20 +1648,25 @@ class BLEInterface(MeshInterface):
                             else:
                                 logger.exception(
                                     "Unexpected error during auto-reconnect attempt %d",
-                                    self._reconnect_policy.get_attempt_count()
+                                    self._reconnect_policy.get_attempt_count(),
                                 )
 
                         # Use state manager instead of boolean flag
                         if self.is_connection_closing or not self.auto_reconnect:
                             return
-                        
+
                         # Get delay and check if we should retry using centralized policy
-                        sleep_delay, should_retry = self._reconnect_policy.next_attempt()
+                        sleep_delay, should_retry = (
+                            self._reconnect_policy.next_attempt()
+                        )
                         if not should_retry:
                             logger.info("Auto-reconnect reached maximum retry limit.")
                             return
-                        
-                        logger.debug("Waiting %.2f seconds before next reconnect attempt.", sleep_delay)
+
+                        logger.debug(
+                            "Waiting %.2f seconds before next reconnect attempt.",
+                            sleep_delay,
+                        )
                         time.sleep(sleep_delay)
                 finally:
                     # Use unified state lock
@@ -1624,10 +1698,10 @@ class BLEInterface(MeshInterface):
         """
         self._malformed_notification_count += 1
         logger.debug("%s", reason, exc_info=exc_info)
-        
+
         # Record warning for observability
         self._observability.record_warning(f"Malformed FROMNUM notification: {reason}")
-        
+
         if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
             logger.warning(
                 "Received %d malformed FROMNUM notifications. Check BLE connection stability.",
@@ -1652,7 +1726,7 @@ class BLEInterface(MeshInterface):
         """
         # Record notification for observability
         is_malformed = False
-        
+
         try:
             if len(b) != 4:
                 is_malformed = True
@@ -1688,7 +1762,7 @@ class BLEInterface(MeshInterface):
             client (BLEClient): Connected BLE client to register notifications on.
 
         """
-        
+
         # Clear any existing subscriptions from previous connections
         self._notification_manager.cleanup_all()
 
@@ -1701,7 +1775,7 @@ class BLEInterface(MeshInterface):
             log characteristic is present, subscribes the protobuf log handler.
             """
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
-                token = self._notification_manager.subscribe(
+                _ = self._notification_manager.subscribe(
                     LEGACY_LOGRADIO_UUID,
                     self.legacy_log_radio_handler,
                 )
@@ -1711,7 +1785,7 @@ class BLEInterface(MeshInterface):
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
             if client.has_characteristic(LOGRADIO_UUID):
-                token = self._notification_manager.subscribe(
+                _ = self._notification_manager.subscribe(
                     LOGRADIO_UUID,
                     self.log_radio_handler,
                 )
@@ -1729,7 +1803,7 @@ class BLEInterface(MeshInterface):
 
         # Critical notification for packet ingress
         try:
-            token = self._notification_manager.subscribe(
+            _ = self._notification_manager.subscribe(
                 FROMNUM_UUID,
                 self.from_num_handler,
             )
@@ -1743,9 +1817,13 @@ class BLEInterface(MeshInterface):
             logger.error("Failed to start critical FROMNUM notifications: %s", e)
             # In test environments, we want to be more permissive to allow test completion
             if not self.noProto:
-                raise self.BLEError("Failed to establish packet reception channel") from e
+                raise self.BLEError(
+                    "Failed to establish packet reception channel"
+                ) from e
             else:
-                logger.warning("FROMNUM notification failed in noProto mode, continuing")
+                logger.warning(
+                    "FROMNUM notification failed in noProto mode, continuing"
+                )
 
     def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
@@ -2162,7 +2240,7 @@ class BLEInterface(MeshInterface):
         # Record connection attempt for observability
         target_address = address if address is not None else self.address
         self._observability.record_connection_attempt(target_address or "unknown")
-        
+
         # Use unified state lock
         with self._state_lock:
             # Invariant: BLEClient lifecycle stays under unified lock to avoid concurrent manipulation.
@@ -2244,21 +2322,25 @@ class BLEInterface(MeshInterface):
                 self._read_retry_count = (
                     0  # Reset transient error counter on successful connect
                 )
-                
+
                 # Record successful connection for observability
-                connection_duration = time.time() - self._observability._metrics.get('connection_start_time', time.time())
-                self._observability.record_connection_success(
-                    normalized_device_address or "unknown", 
-                    connection_duration
+                start_time = cast(
+                    float,
+                    self._observability._metrics.get(
+                        "connection_start_time", time.time()
+                    ),
                 )
-                
+                connection_duration = time.time() - start_time
+                self._observability.record_connection_success(
+                    normalized_device_address or "unknown", connection_duration
+                )
+
             except Exception as e:  # Intentional blanket catch for connection cleanup
                 # Record connection failure for observability
                 self._observability.record_connection_failure(
-                    target_address or "unknown", 
-                    str(e)
+                    target_address or "unknown", str(e)
                 )
-                
+
                 logger.debug(
                     "Failed to connect, closing BLEClient thread.", exc_info=True
                 )
@@ -2369,10 +2451,10 @@ class BLEInterface(MeshInterface):
                             )
                             break  # Too many empty reads, exit to recheck state
                         logger.debug("FROMRADIO read: %s", b.hex())
-                        
+
                         # Record data transfer for observability
-                        self._observability.record_data_transfer('received', len(b))
-                        
+                        self._observability.record_data_transfer("received", len(b))
+
                         self._handleFromRadio(b)
                         retries = 0  # Reset retry counter on successful read
                         self._read_retry_count = (
@@ -2394,7 +2476,7 @@ class BLEInterface(MeshInterface):
                         if self._read_retry_count < TRANSIENT_READ_MAX_RETRIES:
                             self._read_retry_count += 1
                             # Record retry for observability
-                            self._observability.record_operation_retry('read')
+                            self._observability.record_operation_retry("read")
                             logger.debug(
                                 "Transient BLE read error, retrying (%d/%d)",
                                 self._read_retry_count,
@@ -2439,8 +2521,8 @@ class BLEInterface(MeshInterface):
             return
 
         # Record data transfer for observability
-        self._observability.record_data_transfer('sent', len(b))
-        
+        self._observability.record_data_transfer("sent", len(b))
+
         write_successful = False
         # Use unified state lock
         with self._state_lock:
@@ -2546,11 +2628,14 @@ class BLEInterface(MeshInterface):
                 # The thread will exit on its own due to state change to DISCONNECTING
                 reconnect_thread.join(timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
                 if reconnect_thread.is_alive():
-                    logger.warning("Auto-reconnect thread did not exit within %.1fs", RECEIVE_THREAD_JOIN_TIMEOUT)
+                    logger.warning(
+                        "Auto-reconnect thread did not exit within %.1fs",
+                        RECEIVE_THREAD_JOIN_TIMEOUT,
+                    )
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
-        
+
         # Use unified state lock
         with self._state_lock:
             self._closed = True
@@ -2628,40 +2713,40 @@ class BLEInterface(MeshInterface):
             self.error_handler.safe_execute(
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
-    
+
     # Observability interface methods
     def get_observability_metrics(self) -> dict:
         """Get current BLE interface metrics and performance data."""
         return self._observability.get_metrics()
-    
+
     def get_performance_summary(self) -> dict:
         """Get performance statistics for BLE operations."""
         return self._observability.get_performance_summary()
-    
+
     def get_connection_history(self, count: int = 10) -> list:
         """Get recent connection history."""
         return self._observability.get_connection_history(count)
-    
+
     def get_recent_errors(self, count: int = 10) -> list:
         """Get recent error records."""
         return self._observability.get_recent_errors(count)
-    
+
     def get_health_status(self) -> dict:
         """Get overall BLE interface health status."""
         return self._observability.get_health_status()
-    
+
     def export_diagnostics(self) -> dict:
         """Export comprehensive diagnostic information."""
         diagnostics = self._observability.export_diagnostics()
-        diagnostics['interface_info'] = {
-            'address': self.address,
-            'auto_reconnect': self.auto_reconnect,
-            'connection_state': self.connection_state.value,
-            'is_connected': self.is_connection_connected,
-            'notification_subscriptions': len(self._notification_manager),
+        diagnostics["interface_info"] = {
+            "address": self.address,
+            "auto_reconnect": self.auto_reconnect,
+            "connection_state": self.connection_state.value,
+            "is_connected": self.is_connection_connected,
+            "notification_subscriptions": len(self._notification_manager),
         }
         return diagnostics
-    
+
     def reset_observability_metrics(self):
         """Reset all observability metrics and history."""
         self._observability.reset_metrics()
@@ -2874,6 +2959,7 @@ class BLEClient:
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             # Lambda is appropriate here for deferred execution in error handling
+            # pylint: disable=unnecessary-lambda
             self.error_handler.safe_execute(
                 lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",

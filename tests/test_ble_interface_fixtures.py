@@ -434,13 +434,17 @@ def stub_atexit(
         registered[:] = [f for f in registered if f is not func]
 
     # Import after mocks: ensure bleak/pubsub/serial/tabulate are stubbed first
-    import importlib, importlib.metadata as _im
+    import importlib
+    import importlib.metadata as _im
+
     _orig_version = _im.version
+
     def _version_proxy(name: str):
         if name == "bleak":
             # use mocked bleak's __version__ if available; else a benign default
             return getattr(sys.modules.get("bleak"), "__version__", "0.0.0")
         return _orig_version(name)
+
     monkeypatch.setattr(_im, "version", _version_proxy)
     ble_mod = importlib.import_module("meshtastic.ble_interface")
 
@@ -479,6 +483,7 @@ def _build_interface(monkeypatch, client):
     """
     # Import BLEInterface lazily after mocks are in place
     import importlib
+
     BLEInterface = importlib.import_module("meshtastic.ble_interface").BLEInterface
 
     connect_calls: list = []
@@ -513,11 +518,14 @@ def _build_interface(monkeypatch, client):
         # Update state manager to CONNECTED for proper state tracking
         # In tests, we skip CONNECTING and go directly to CONNECTED
         from meshtastic.ble_interface import ConnectionState
+
         # First transition to CONNECTING to simulate proper connection flow
         _self._state_manager.transition_to(ConnectionState.CONNECTING)
         success = _self._state_manager.transition_to(ConnectionState.CONNECTED, client)
         if not success:
-            print(f"WARNING: State transition to CONNECTED failed, current state: {_self._state_manager.state}")
+            print(
+                f"WARNING: State transition to CONNECTED failed, current state: {_self._state_manager.state}"
+            )
         if hasattr(_self, "_reconnected_event"):
             _self._reconnected_event.set()
         return client
