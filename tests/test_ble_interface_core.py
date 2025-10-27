@@ -51,10 +51,10 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
     def _fake_connected(_self, _address):
         """
-        Provide a fake connected-device lookup that always returns the predefined `fallback_device`.
+        Return the preset fallback device as a single-element list regardless of `_self` or `_address`.
 
         Returns:
-            list: A single-element list containing the preset `fallback_device`.
+            list: A list containing the preset `fallback_device`.
 
         """
         return [fallback_device]
@@ -139,7 +139,9 @@ def test_close_handles_errors(monkeypatch, exc_cls):
 
     def _capture(topic, **kwargs):
         """
-        Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
+        Capture a pubsub message by recording its topic and fields.
+
+        Appends a tuple (topic, kwargs) to the module-level `calls` list for later inspection.
 
         Parameters
         ----------
@@ -224,12 +226,12 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def __init__(self, exception_type):
                 """
-                Create a test client configured to raise a specific exception from its faulting methods.
+                Initialize a test client that raises the configured exception from its faulting methods.
 
                 Parameters
                 ----------
-                    exception_type (Exception | type): An exception instance or an exception class; the client will raise
-                        this exception (or an instance of it) when its faulting methods are invoked.
+                    exception_type (Exception | type): An exception instance or an exception class that the client will raise
+                        when its faulting methods are invoked.
 
                 """
                 super().__init__()
@@ -237,10 +239,10 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def read_gatt_char(self, *_args, **_kwargs):
                 """
-                Raise the client's configured exception to simulate a failing GATT characteristic read.
+                Simulate a failing GATT characteristic read by raising the client's configured exception.
 
                 Raises:
-                    Exception: An instance of the client's `exception_type` with the message "test".
+                    Exception: An instance of `self.exception_type` with the message "test".
 
                 """
                 raise self.exception_type("test")
@@ -309,13 +311,12 @@ def test_log_notification_registration(monkeypatch):
 
         def __init__(self):
             """
-            Initialize the mock client and set up notification tracking and characteristic availability.
+            Create a mock BLE client that tracks notification registrations and reported characteristic presence.
 
             Attributes:
-                start_notify_calls (list): Records the arguments of each start_notify invocation.
-                has_characteristic_map (dict): Maps characteristic UUIDs to booleans indicating whether the
-                    client reports that characteristic is present. By default, includes
-                    LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
+                start_notify_calls (list[tuple]): Recorded arguments for each start_notify invocation.
+                has_characteristic_map (dict[str, bool]): Maps characteristic UUIDs to whether the client reports them present.
+                    Initially sets LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
 
             """
             super().__init__()
@@ -328,7 +329,7 @@ def test_log_notification_registration(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Determine whether the client's characteristic map contains the given characteristic UUID.
+            Check whether the client exposes a characteristic with the given UUID.
 
             Parameters
             ----------
@@ -336,21 +337,19 @@ def test_log_notification_registration(monkeypatch):
 
             Returns
             -------
-                bool: True if the UUID is present in the client's characteristic map, False otherwise.
+                bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
 
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
-            Record a requested notification registration by saving the characteristic UUID and its handler.
+            Record requested notification registrations by appending (characteristic UUID, handler) pairs to self.start_notify_calls.
 
             Parameters
             ----------
-                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID
-                (usually a string) and the second is the notification handler (callable). When present,
-                the pair is appended to `self.start_notify_calls`.
-                _kwargs (dict): Additional keyword arguments are accepted but ignored by this test helper.
+                _args (tuple): Positional arguments; when two or more are provided, the first is treated as the characteristic UUID and the second as the notification handler and the pair is appended to `self.start_notify_calls`.
+                _kwargs (dict): Accepted and ignored.
 
             """
             # Extract uuid and handler from args if available

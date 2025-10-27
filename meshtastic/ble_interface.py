@@ -584,16 +584,21 @@ class ReconnectPolicy:
 
         Raises:
             ValueError: If any parameter is out of valid range
+
         """
         # Input validation
         if initial_delay <= 0:
             raise ValueError(f"initial_delay must be > 0, got {initial_delay}")
         if max_delay < initial_delay:
-            raise ValueError(f"max_delay ({max_delay}) must be >= initial_delay ({initial_delay})")
+            raise ValueError(
+                f"max_delay ({max_delay}) must be >= initial_delay ({initial_delay})"
+            )
         if backoff <= 1.0:
             raise ValueError(f"backoff must be > 1.0, got {backoff}")
         if not (0.0 <= jitter_ratio <= 1.0):
-            raise ValueError(f"jitter_ratio must be between 0.0 and 1.0, got {jitter_ratio}")
+            raise ValueError(
+                f"jitter_ratio must be between 0.0 and 1.0, got {jitter_ratio}"
+            )
         if max_retries is not None and max_retries < 0:
             raise ValueError(f"max_retries must be >= 0 or None, got {max_retries}")
 
@@ -701,6 +706,7 @@ class AsyncDispatcher:
 
         Raises:
             The same exceptions that the coroutine would raise
+
         """
         try:
             # Check if we're in an async context with a running loop
@@ -1309,18 +1315,18 @@ class BLEErrorHandler:
 class RetryPolicy:
     """
     Centralized retry policies for different BLE operations.
-    
+
     Provides specific retry configurations for various scenarios like
     empty reads, transient errors, and connection attempts.
     """
-    
+
     # Read retry policy
     EMPTY_READ = ReconnectPolicy(
         initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
         max_delay=1.0,
         backoff=1.5,
         jitter_ratio=0.1,
-        max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES
+        max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
     )
 
     # Transient error retry policy
@@ -1329,7 +1335,7 @@ class RetryPolicy:
         max_delay=2.0,
         backoff=1.5,
         jitter_ratio=0.1,
-        max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES
+        max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,
     )
 
     # Auto-reconnect policy
@@ -1338,7 +1344,7 @@ class RetryPolicy:
         max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
         backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
         jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
-        max_retries=None  # Unlimited retries for auto-reconnect
+        max_retries=None,  # Unlimited retries for auto-reconnect
     )
 
 
@@ -1976,10 +1982,13 @@ class BLEInterface(MeshInterface):
         """
         with BLEClient() as client:
             logger.debug(
-                "Scanning for BLE devices (takes %.0f seconds)...", BLEConfig.BLE_SCAN_TIMEOUT
+                "Scanning for BLE devices (takes %.0f seconds)...",
+                BLEConfig.BLE_SCAN_TIMEOUT,
             )
             response = client.discover(
-                timeout=BLEConfig.BLE_SCAN_TIMEOUT, return_adv=True, service_uuids=[SERVICE_UUID]
+                timeout=BLEConfig.BLE_SCAN_TIMEOUT,
+                return_adv=True,
+                service_uuids=[SERVICE_UUID],
             )
 
             devices: List[BLEDevice] = []
@@ -2501,7 +2510,8 @@ class BLEInterface(MeshInterface):
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
                             self.thread_coordinator.wait_for_event(
-                                "reconnected_event", timeout=BLEConfig.RECEIVE_WAIT_TIMEOUT
+                                "reconnected_event",
+                                timeout=BLEConfig.RECEIVE_WAIT_TIMEOUT,
                             )
                             break  # Return to outer loop to re-check state
                         logger.debug("BLE client is None, shutting down")
@@ -2546,16 +2556,21 @@ class BLEInterface(MeshInterface):
                             return
                         # Client is still connected, this might be a transient error
                         # Retry a few times before escalating
-                        if self._read_retry_count < BLEConfig.TRANSIENT_READ_MAX_RETRIES:
+                        if (
+                            self._read_retry_count
+                            < BLEConfig.TRANSIENT_READ_MAX_RETRIES
+                        ):
                             self._read_retry_count += 1
                             # Record retry for observability
                             self._observability.record_operation_retry("read")
                             logger.debug(
-                        "Transient BLE read error, retrying (%d/%d)",
-                        self._read_retry_count,
-                        BLEConfig.TRANSIENT_READ_MAX_RETRIES,
+                                "Transient BLE read error, retrying (%d/%d)",
+                                self._read_retry_count,
+                                BLEConfig.TRANSIENT_READ_MAX_RETRIES,
                             )
-                            RetryPolicy.TRANSIENT_ERROR.sleep_with_backoff(self._read_retry_count)
+                            RetryPolicy.TRANSIENT_ERROR.sleep_with_backoff(
+                                self._read_retry_count
+                            )
                             continue
                         self._read_retry_count = 0
                         logger.debug(
@@ -2605,7 +2620,10 @@ class BLEInterface(MeshInterface):
                 try:
                     # Use write-with-response to ensure delivery is acknowledged by the peripheral
                     client.write_gatt_char(
-                        TORADIO_UUID, b, response=True, timeout=BLEConfig.GATT_IO_TIMEOUT
+                        TORADIO_UUID,
+                        b,
+                        response=True,
+                        timeout=BLEConfig.GATT_IO_TIMEOUT,
                     )
                     write_successful = True
                 except (BleakError, RuntimeError, OSError) as e:

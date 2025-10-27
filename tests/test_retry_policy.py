@@ -14,7 +14,7 @@ class TestReconnectPolicy:
     def test_initialization(self):
         """Test ReconnectPolicy initialization with default values."""
         policy = ReconnectPolicy()
-        
+
         assert policy.initial_delay == 1.0
         assert policy.max_delay == 30.0
         assert policy.backoff == 2.0
@@ -29,9 +29,9 @@ class TestReconnectPolicy:
             max_delay=10.0,
             backoff=1.5,
             jitter_ratio=0.2,
-            max_retries=5
+            max_retries=5,
         )
-        
+
         assert policy.initial_delay == 0.5
         assert policy.max_delay == 10.0
         assert policy.backoff == 1.5
@@ -41,12 +41,12 @@ class TestReconnectPolicy:
     def test_reset(self):
         """Test attempt counter reset functionality."""
         policy = ReconnectPolicy(max_retries=3)
-        
+
         # Simulate some attempts
         policy.next_attempt()
         policy.next_attempt()
         assert policy.get_attempt_count() == 2
-        
+
         # Reset and verify
         policy.reset()
         assert policy.get_attempt_count() == 0
@@ -58,9 +58,9 @@ class TestReconnectPolicy:
             max_delay=100.0,
             backoff=2.0,
             jitter_ratio=0.0,  # No jitter
-            max_retries=5
+            max_retries=5,
         )
-        
+
         # Test exponential backoff
         assert policy.get_delay(0) == 1.0  # 1.0 * 2^0
         assert policy.get_delay(1) == 2.0  # 1.0 * 2^1
@@ -74,9 +74,9 @@ class TestReconnectPolicy:
             max_delay=5.0,
             backoff=2.0,
             jitter_ratio=0.0,
-            max_retries=5
+            max_retries=5,
         )
-        
+
         # Should be capped at max_delay
         assert policy.get_delay(0) == 1.0
         assert policy.get_delay(1) == 2.0
@@ -91,9 +91,9 @@ class TestReconnectPolicy:
             max_delay=100.0,
             backoff=1.1,  # Valid backoff > 1.0
             jitter_ratio=0.5,  # 50% jitter
-            max_retries=5
+            max_retries=5,
         )
-        
+
         # With jitter, delay should be within expected range
         delay = policy.get_delay(0)
         assert 5.0 <= delay <= 15.0  # 10.0 ± 50%
@@ -101,7 +101,7 @@ class TestReconnectPolicy:
     def test_should_retry_with_limit(self):
         """Test should_retry logic with retry limit."""
         policy = ReconnectPolicy(max_retries=3)
-        
+
         assert policy.should_retry(0)
         assert policy.should_retry(1)
         assert policy.should_retry(2)
@@ -111,7 +111,7 @@ class TestReconnectPolicy:
     def test_should_retry_unlimited(self):
         """Test should_retry logic with unlimited retries."""
         policy = ReconnectPolicy(max_retries=None)
-        
+
         # Should always retry with unlimited retries
         assert policy.should_retry(0)
         assert policy.should_retry(10)
@@ -124,27 +124,27 @@ class TestReconnectPolicy:
             max_delay=10.0,
             backoff=2.0,
             jitter_ratio=0.0,
-            max_retries=3
+            max_retries=3,
         )
-        
+
         # First attempt
         delay, should_retry = policy.next_attempt()
         assert delay == 1.0
         assert should_retry
         assert policy.get_attempt_count() == 1
-        
+
         # Second attempt
         delay, should_retry = policy.next_attempt()
         assert delay == 2.0
         assert should_retry
         assert policy.get_attempt_count() == 2
-        
+
         # Third attempt
         delay, should_retry = policy.next_attempt()
         assert delay == 4.0
         assert should_retry
         assert policy.get_attempt_count() == 3
-        
+
         # Fourth attempt (should not retry)
         delay, should_retry = policy.next_attempt()
         assert delay == 8.0
@@ -158,13 +158,13 @@ class TestReconnectPolicy:
             max_delay=10.0,
             backoff=2.0,
             jitter_ratio=0.0,
-            max_retries=3
+            max_retries=3,
         )
-        
+
         # Increment counter a few times
         policy.next_attempt()
         policy.next_attempt()
-        
+
         # get_delay(None) should use current counter value
         delay = policy.get_delay(None)
         assert delay == 4.0  # 1.0 * 2^2
@@ -176,7 +176,7 @@ class TestRetryPolicy:
     def test_empty_read_policy(self):
         """Test EMPTY_READ retry policy configuration."""
         policy = RetryPolicy.EMPTY_READ
-        
+
         assert policy.initial_delay == 0.1  # EMPTY_READ_RETRY_DELAY
         assert policy.max_delay == 1.0
         assert policy.backoff == 1.5
@@ -186,7 +186,7 @@ class TestRetryPolicy:
     def test_transient_error_policy(self):
         """Test TRANSIENT_ERROR retry policy configuration."""
         policy = RetryPolicy.TRANSIENT_ERROR
-        
+
         assert policy.initial_delay == 0.1  # TRANSIENT_READ_RETRY_DELAY
         assert policy.max_delay == 2.0
         assert policy.backoff == 1.5
@@ -196,7 +196,7 @@ class TestRetryPolicy:
     def test_auto_reconnect_policy(self):
         """Test AUTO_RECONNECT retry policy configuration."""
         policy = RetryPolicy.AUTO_RECONNECT
-        
+
         assert policy.initial_delay == 1.0  # AUTO_RECONNECT_INITIAL_DELAY
         assert policy.max_delay == 30.0  # AUTO_RECONNECT_MAX_DELAY
         assert policy.backoff == 2.0  # AUTO_RECONNECT_BACKOFF
@@ -207,12 +207,12 @@ class TestRetryPolicy:
         """Test that different policy instances are independent."""
         empty_policy = RetryPolicy.EMPTY_READ
         transient_policy = RetryPolicy.TRANSIENT_ERROR
-        
+
         # Reset one policy shouldn't affect the other
         empty_policy.reset()
         assert empty_policy.get_attempt_count() == 0
         assert transient_policy.get_attempt_count() == 0
-        
+
         # Use one policy shouldn't affect the other
         empty_policy.next_attempt()
         assert empty_policy.get_attempt_count() == 1
