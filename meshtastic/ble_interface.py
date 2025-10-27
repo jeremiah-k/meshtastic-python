@@ -144,6 +144,32 @@ class NotificationManager:
             return len(self._active_subscriptions)
 
 
+class BLEErrors:
+    """
+    Centralized BLE error message constants.
+
+    Organizes all error messages for better maintainability,
+    consistency, and discoverability.
+    """
+
+    # Connection errors
+    ERROR_CONNECTION_FAILED = "Connection failed: {0}"
+    ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
+    ERROR_NO_PERIPHERALS_FOUND = "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
+    ERROR_MULTIPLE_DEVICES = "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
+
+    # Operation errors  
+    ERROR_READING_BLE = "Error reading BLE"
+    ERROR_WRITING_BLE = (
+        "Error writing BLE. This is often caused by missing Bluetooth "
+        "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
+    )
+    ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
+
+    # Client errors
+    BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
+
+
 class BLEConfig:
     """
     Configuration constants for BLE operations.
@@ -409,32 +435,15 @@ EVENT_THREAD_JOIN_TIMEOUT = (
 )
 
 # BLE timeout and retry constants are now in BLEConfig class
+# Error message constants are now in BLEErrors class
 
-# Error message constants
-ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
-ERROR_MULTIPLE_DEVICES = (
-    "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
-)
+# Version constants
 BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
-
-# Error message constants
-ERROR_READING_BLE = "Error reading BLE"
-ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
-
-ERROR_WRITING_BLE = (
-    "Error writing BLE. This is often caused by missing Bluetooth "
-    "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
-)
-ERROR_CONNECTION_FAILED = "Connection failed: {0}"
-ERROR_NO_PERIPHERALS_FOUND = (
-    "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
-)
 
 # BLEClient-specific constants
 BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = (
     2.0  # Ensures client.close() does not block shutdown indefinitely
 )
-BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
@@ -1548,7 +1557,7 @@ class BLEInterface(MeshInterface):
             self.close()
             if isinstance(e, BLEInterface.BLEError):
                 raise
-            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
+            raise BLEInterface.BLEError(BLEErrors.ERROR_CONNECTION_FAILED.format(e)) from e
 
     def _is_state_version_current(self, version: int) -> bool:
         """
@@ -1919,7 +1928,7 @@ class BLEInterface(MeshInterface):
         try:
             return await asyncio.wait_for(awaitable, timeout=timeout)
         except asyncio.TimeoutError as exc:
-            raise BLEInterface.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
+            raise BLEInterface.BLEError(BLEErrors.ERROR_TIMEOUT.format(label, timeout)) from exc
 
     @staticmethod
     def scan() -> List[BLEDevice]:
@@ -2021,8 +2030,8 @@ class BLEInterface(MeshInterface):
 
         if len(addressed_devices) == 0:
             if address:
-                raise self.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
-            raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
+                raise self.BLEError(BLEErrors.ERROR_NO_PERIPHERAL_FOUND.format(address))
+            raise self.BLEError(BLEErrors.ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
         if address and len(addressed_devices) > 1:
@@ -2030,7 +2039,7 @@ class BLEInterface(MeshInterface):
             device_list = "\n".join(
                 [f"- {d.name} ({d.address})" for d in addressed_devices]
             )
-            raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
+            raise self.BLEError(BLEErrors.ERROR_MULTIPLE_DEVICES.format(address, device_list))
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
 
@@ -2350,7 +2359,7 @@ class BLEInterface(MeshInterface):
                         logger.debug(
                             "Persistent BLE read error after retries", exc_info=True
                         )
-                        raise self.BLEError(ERROR_READING_BLE) from e
+                        raise self.BLEError(BLEErrors.ERROR_READING_BLE) from e
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")
             # Use state manager instead of boolean flag
@@ -2404,7 +2413,7 @@ class BLEInterface(MeshInterface):
                         type(e).__name__,
                         exc_info=True,
                     )
-                    raise self.BLEError(ERROR_WRITING_BLE) from e
+                    raise self.BLEError(BLEErrors.ERROR_WRITING_BLE) from e
             else:
                 logger.debug(
                     "Skipping TORADIO write: no BLE client (closing or disconnected)."
@@ -2878,7 +2887,7 @@ class BLEClient:
 
         """
         # Exception mapping contract:
-        #   - FutureTimeoutError -> BLEInterface.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
+        #   - FutureTimeoutError -> BLEInterface.BLEError(BLEErrors.BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so BLEInterface wrappers can convert them consistently.
         future = self.async_run(coro)
         try:
@@ -2886,7 +2895,7 @@ class BLEClient:
         except FutureTimeoutError as e:
             # Cancel the underlying task directly to avoid callback errors when loop is closing
             future.cancel()
-            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+            raise self.BLEError(BLEErrors.BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116
         """
