@@ -16,6 +16,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, RLock, Thread, current_thread
+from abc import ABC, abstractmethod
 from typing import Callable, List, Optional, Tuple, Union, cast
 
 from bleak import BleakClient as BleakRootClient
@@ -979,6 +980,126 @@ class RetryPolicy:
     )
 
 
+class DiscoveryStrategy(ABC):
+    """Abstract base class for device discovery strategies."""
+    
+    @abstractmethod
+    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """Discover devices using this strategy."""
+        pass
+
+
+class ScanStrategy(DiscoveryStrategy):
+    """Device discovery using BLE scanning."""
+    
+    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """Discover devices by scanning for Meshtastic service."""
+        return await BLEInterface._with_timeout(
+            BleakScanner().discover(
+                service_uuids=[SERVICE_UUID],
+                timeout=timeout,
+            ),
+            timeout,
+            "device scanning",
+        )
+
+
+class ConnectedStrategy(DiscoveryStrategy):
+    """Device discovery using already-connected device enumeration."""
+    
+    def __init__(self, async_dispatcher):
+        self.async_dispatcher = async_dispatcher
+    
+    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """Discover already-connected Meshtastic devices."""
+        if not _bleak_supports_connected_fallback():
+            logger.debug(
+                "Skipping fallback connected-device scan; bleak %s < %s",
+                BLEAK_VERSION,
+                ".".join(
+                    str(part) for part in BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
+                ),
+            )
+            return []
+        
+        try:
+            # Get devices from the scanner's cached data
+            scanner = BleakScanner()
+            devices_found = []
+
+            # Try to get device information from the backend
+            if hasattr(scanner, "_backend") and hasattr(scanner._backend, "get_devices"):
+                backend_devices = await BLEInterface._with_timeout(
+                    scanner._backend.get_devices(),
+                    timeout,
+                    "connected-device enumeration",
+                )
+
+                # Performance optimization: Calculate sanitized_target once before loop
+                sanitized_target = None
+                if address:
+                    sanitized_target = BLEInterface._sanitize_address(address)
+
+                for device in backend_devices:
+                    # Check if device has Meshtastic service UUID
+                    if hasattr(device, "metadata") and device.metadata:
+                        uuids = device.metadata.get("uuids", [])
+                        if SERVICE_UUID in uuids:
+                            # If specific address requested, filter by it
+                            if address:
+                                sanitized_addr = BLEInterface._sanitize_address(device.address)
+                                sanitized_name = (
+                                    BLEInterface._sanitize_address(device.name)
+                                    if device.name else ""
+                                )
+
+                                if sanitized_target in (sanitized_addr, sanitized_name):
+                                    devices_found.append(
+                                        BLEDevice(device.address, device.name, device.metadata)
+                                    )
+                            else:
+                                # Add all connected Meshtastic devices
+                                devices_found.append(
+                                    BLEDevice(device.address, device.name, device.metadata)
+                                )
+            return devices_found
+            
+        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError) as e:
+            logger.debug("Connected device discovery failed: %s", e)
+            return []
+
+
+class DiscoveryManager:
+    """Orchestrates device discovery using multiple strategies."""
+    
+    def __init__(self, async_dispatcher):
+        self.async_dispatcher = async_dispatcher
+        self.scan_strategy = ScanStrategy()
+        self.connected_strategy = ConnectedStrategy(async_dispatcher)
+    
+    def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
+        """Discover devices using appropriate strategy."""
+        # First try scanning
+        try:
+            devices = self.async_dispatcher.run_coroutine(
+                self.scan_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+            )
+            
+            # If scan didn't find any devices and we have a specific address, try connected fallback
+            if not devices and address:
+                logger.debug(
+                    "Scan found no devices, trying fallback to already-connected devices"
+                )
+                devices = self.async_dispatcher.run_coroutine(
+                    self.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+                )
+            
+            return devices
+        except Exception as e:
+            logger.debug("Device discovery failed: %s", e)
+            return []
+
+
 class BLEInterface(MeshInterface):
     """
     MeshInterface using BLE to connect to Meshtastic devices.
@@ -1068,6 +1189,9 @@ class BLEInterface(MeshInterface):
 
         # Notification manager for handler lifecycle
         self._notification_manager = NotificationManager()
+
+        # Device discovery manager
+        self._discovery_manager = DiscoveryManager(self._async_dispatcher)
 
         # Thread management infrastructure
         self.thread_coordinator = ThreadCoordinator()
@@ -1680,15 +1804,19 @@ class BLEInterface(MeshInterface):
 
         """
 
-        addressed_devices = BLEInterface.scan()
+        # Use discovery manager to find devices if available, otherwise fall back to legacy approach
+        if hasattr(self, '_discovery_manager'):
+            addressed_devices = self._discovery_manager.discover_devices(address)
+        else:
+            # Legacy fallback for tests that don't call __init__
+            addressed_devices = BLEInterface.scan()
+            if not addressed_devices and address:
+                logger.debug(
+                    "Scan found no devices, trying fallback to already-connected devices"
+                )
+                addressed_devices = self._find_connected_devices(address)
 
-        # If scan didn't find any devices and we have a specific address, try fallback
-        if not addressed_devices and address:
-            logger.debug(
-                "Scan found no devices, trying fallback to already-connected devices"
-            )
-            addressed_devices = self._find_connected_devices(address)
-
+        # Filter by address if provided
         if address:
             sanitized_address = BLEInterface._sanitize_address(address)
             if sanitized_address is None:
@@ -1747,23 +1875,21 @@ class BLEInterface(MeshInterface):
             .lower()
         )
 
+
+
     def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
         Fallback method to find already-connected Meshtastic devices when scanning fails.
-
-        This method uses the system's Bluetooth adapter to check for devices that are
-        already connected and have the Meshtastic service UUID, which may not be
-        discoverable via normal scanning when already connected.
-
-        Args:
-        ----
-            address (Optional[str]): Specific address to look for, if None returns all connected Meshtastic devices
-
-        Returns:
-        -------
-            List[BLEDevice]: List of connected Meshtastic devices
-
+        
+        This method is kept for backward compatibility with tests. For new code,
+        use the DiscoveryManager instead.
         """
+        if hasattr(self, '_discovery_manager'):
+            return self._async_dispatcher.run_coroutine(
+                self._discovery_manager.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+            )
+        
+        # Legacy implementation for tests that don't call __init__
         if not _bleak_supports_connected_fallback():
             logger.debug(
                 "Skipping fallback connected-device scan; bleak %s < %s",
@@ -1773,155 +1899,43 @@ class BLEInterface(MeshInterface):
                 ),
             )
             return []
+        
         try:
-            # Try to use BleakScanner to get cached device information
-            # This works even when scanning fails due to adapter issues
+            scanner = BleakScanner()
+            devices_found = []
 
-            # NOTE: Using private API scanner._backend.get_devices() as bleak 1.1.1
-            # doesn't provide a public API to enumerate already-connected devices.
-            # BleakScanner.discover() only returns actively advertising devices,
-            # which won't find already-connected devices that aren't broadcasting.
-            # TODO: Revisit if bleak adds public support for connected device enumeration.
-            # Trade-off: Using private API is unstable but provides needed fallback functionality.
+            if hasattr(scanner, "_backend") and hasattr(scanner._backend, "get_devices"):
+                backend_devices = asyncio.run(BLEInterface._with_timeout(
+                    scanner._backend.get_devices(),
+                    BLEConfig.BLE_SCAN_TIMEOUT,
+                    "connected-device enumeration",
+                ))
 
-            async def _get_devices_async_and_filter(
-                address_to_find: Optional[str],
-            ) -> List[BLEDevice]:
-                """
-                Retrieve connected Meshtastic BLE devices and optionally filter by address or name.
+                sanitized_target = None
+                if address:
+                    sanitized_target = BLEInterface._sanitize_address(address)
 
-                Args:
-                    address_to_find (Optional[str]): Bluetooth address or device name to match; separators (":", "-", "_",
-                        spaces) are ignored when comparing. If None, returns all connected devices advertising the
-                        Meshtastic service.
-
-                Returns:
-                -------
-                    List[BLEDevice]: Devices advertising the Meshtastic service that match the optional filter, or an empty list if none found.
-
-                """
-                # Get devices from the scanner's cached data
-                scanner = BleakScanner()
-                devices_found = []
-
-                # Try to get device information from the backend
-                if hasattr(scanner, "_backend") and hasattr(
-                    scanner._backend, "get_devices"
-                ):
-                    backend_devices = await BLEInterface._with_timeout(
-                        scanner._backend.get_devices(),
-                        BLEConfig.BLE_SCAN_TIMEOUT,
-                        "connected-device enumeration",
-                    )
-
-                    # Performance optimization: Calculate sanitized_target once before loop
-                    sanitized_target = None
-                    if address_to_find:
-                        sanitized_target = BLEInterface._sanitize_address(
-                            address_to_find
-                        )
-
-                    for device in backend_devices:
-                        # Check if device has Meshtastic service UUID
-                        if hasattr(device, "metadata") and device.metadata:
-                            uuids = device.metadata.get("uuids", [])
-                            if SERVICE_UUID in uuids:
-                                # If specific address requested, filter by it
-                                if address_to_find:
-                                    sanitized_addr = BLEInterface._sanitize_address(
-                                        device.address
-                                    )
-                                    sanitized_name = (
-                                        BLEInterface._sanitize_address(device.name)
-                                        if device.name
-                                        else ""
-                                    )
-
-                                    if sanitized_target in (
-                                        sanitized_addr,
-                                        sanitized_name,
-                                    ):
-                                        devices_found.append(
-                                            BLEDevice(
-                                                device.address,
-                                                device.name,
-                                                device.metadata,
-                                            )
-                                        )
-                                else:
-                                    # Add all connected Meshtastic devices
+                for device in backend_devices:
+                    if hasattr(device, "metadata") and device.metadata:
+                        uuids = device.metadata.get("uuids", [])
+                        if SERVICE_UUID in uuids:
+                            if address:
+                                sanitized_addr = BLEInterface._sanitize_address(device.address)
+                                sanitized_name = (
+                                    BLEInterface._sanitize_address(device.name) if device.name else ""
+                                )
+                                if sanitized_target in (sanitized_addr, sanitized_name):
                                     devices_found.append(
-                                        BLEDevice(
-                                            device.address, device.name, device.metadata
-                                        )
+                                        BLEDevice(device.address, device.name, device.metadata)
                                     )
-                return devices_found
-
-            # Library-friendly async execution: handle both cases where event loop is running or not
-            # This pattern is necessary to support environments with existing event loops
-            try:
-                asyncio.get_running_loop()
-                # A loop is running in this thread, run async code in separate thread
-                # to avoid interference with the existing event loop
-                future: Future[List[BLEDevice]] = Future()
-
-                def _run_async_in_thread():
-                    """
-                    Run the device discovery coroutine and set the result or exception on a future.
-                    """
-                    try:
-                        result = self._async_dispatcher.run_coroutine(
-                            BLEInterface._with_timeout(
-                                _get_devices_async_and_filter(address),
-                                BLEConfig.BLE_SCAN_TIMEOUT,
-                                "connected-device fallback",
-                            )
-                        )
-                        future.set_result(result)
-                    except Exception as e:
-                        future.set_exception(e)
-
-                thread = Thread(target=_run_async_in_thread, daemon=True)
-                thread.start()
-                try:
-                    devices = future.result(timeout=BLEConfig.BLE_SCAN_TIMEOUT)
-                except FutureTimeoutError:
-                    logger.debug(
-                        "Fallback connected-device discovery thread exceeded %.1fs timeout",
-                        BLEConfig.BLE_SCAN_TIMEOUT,
-                    )
-                    thread.join(timeout=0.1)
-                    return []
-                except Exception as e:
-                    logger.debug(
-                        "Fallback device discovery thread failed with exception: %s", e
-                    )
-                    thread.join(timeout=0.1)
-                    return []
-            except RuntimeError:
-                # No running loop in this thread
-                devices = self._async_dispatcher.run_coroutine(
-                    BLEInterface._with_timeout(
-                        _get_devices_async_and_filter(address),
-                        BLEConfig.BLE_SCAN_TIMEOUT,
-                        "connected-device fallback",
-                    )
-                )
-
-            logger.debug(
-                "Found %d connected Meshtastic devices via fallback", len(devices)
-            )
-            return devices
-
-        except (
-            BleakError,
-            BleakDBusError,
-            AttributeError,
-            RuntimeError,
-            asyncio.TimeoutError,
-            self.BLEError,
-        ) as e:
-            logger.debug("Fallback device discovery failed: %s", e)
+                            else:
+                                devices_found.append(
+                                    BLEDevice(device.address, device.name, device.metadata)
+                                )
+            return devices_found
+            
+        except (BleakError, BleakDBusError, AttributeError, RuntimeError, asyncio.TimeoutError) as e:
+            logger.debug("Connected device discovery failed: %s", e)
             return []
 
     # State management convenience properties (Phase 1 addition)
