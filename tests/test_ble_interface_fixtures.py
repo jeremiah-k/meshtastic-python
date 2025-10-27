@@ -23,8 +23,7 @@ def mock_serial(monkeypatch):
 
     Parameters
     ----------
-        monkeypatch: pytest monkeypatch fixture for module manipulation.
-        monkeypatch: pytest monkeypatch fixture used to install modules into sys.modules.
+        monkeypatch: pytest monkeypatch fixture for module manipulation and installing modules into sys.modules.
 
     Returns
     -------
@@ -456,7 +455,7 @@ def stub_atexit(
     for func in registered:
         try:
             func()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - tests must swallow any callback failure
             # Keep teardown resilient during tests
             # logging already imported at top
 

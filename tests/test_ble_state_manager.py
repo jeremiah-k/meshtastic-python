@@ -146,7 +146,7 @@ class TestBLEStateManager:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
                     results.append((worker_id, i, success, manager.state.value))
                     time.sleep(0.001)  # Small delay to increase contention
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Start multiple threads
@@ -399,7 +399,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -467,18 +467,18 @@ class TestPhase3LockConsolidation:
         end_time = time.perf_counter()
         elapsed = end_time - start_time
 
-    # Should complete quickly under typical CI conditions (allow headroom)
-    assert (
-        elapsed < 3.0
-    ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+        # Should complete quickly under typical CI conditions (allow headroom)
+        assert (
+            elapsed < 3.0
+        ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
 
-    # Calculate average transition time
-    avg_time = elapsed / (iterations * 3)
-    assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
+        # Calculate average transition time
+        avg_time = elapsed / (iterations * 3)
+        assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
 
-    print(
-        f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
-    )
+        print(
+            f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
+        )
 
 
 def test_lock_contention_performance():
