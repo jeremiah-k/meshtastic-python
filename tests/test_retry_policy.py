@@ -5,7 +5,24 @@ These tests verify the centralized retry logic and backoff behavior
 that was introduced to address async/thread mixing issues.
 """
 
-from meshtastic.ble_interface import ReconnectPolicy, RetryPolicy
+import pytest
+
+
+# Load policies only after bleak/pubsub/serial/tabulate are mocked by autouse fixtures.
+@pytest.fixture(autouse=True)
+def _load_policies_after_mocks(
+    mock_serial,            # ensure ordering
+    mock_pubsub,
+    mock_tabulate,
+    mock_bleak,
+    mock_bleak_exc,
+    mock_publishing_thread,
+):
+    global ReconnectPolicy, RetryPolicy
+    import importlib
+    ble_mod = importlib.import_module("meshtastic.ble_interface")
+    ReconnectPolicy = ble_mod.ReconnectPolicy
+    RetryPolicy = ble_mod.RetryPolicy
 
 
 class TestReconnectPolicy:
@@ -86,6 +103,9 @@ class TestReconnectPolicy:
 
     def test_delay_calculation_with_jitter(self):
         """Test delay calculation includes jitter."""
+        import random
+        rnd = random.Random(12345)
+        # monkeypatch random used inside policy
         policy = ReconnectPolicy(
             initial_delay=10.0,
             max_delay=100.0,
@@ -93,10 +113,16 @@ class TestReconnectPolicy:
             jitter_ratio=0.5,  # 50% jitter
             max_retries=5,
         )
-
-        # With jitter, delay should be within expected range
-        delay = policy.get_delay(0)
-        assert 5.0 <= delay <= 15.0  # 10.0 ± 50%
+        # Patch the random module used by the policy
+        import meshtastic.ble_interface as ble_mod
+        original_random = ble_mod.random
+        ble_mod.random = rnd
+        try:
+            # With jitter, delay should be within expected range
+            delay = policy.get_delay(0)
+            assert 5.0 <= delay <= 15.0  # 10.0 ± 50%
+        finally:
+            ble_mod.random = original_random
 
     def test_should_retry_with_limit(self):
         """Test should_retry logic with retry limit."""

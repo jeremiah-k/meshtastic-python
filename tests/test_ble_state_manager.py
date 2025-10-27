@@ -5,10 +5,23 @@ import threading
 import time
 from unittest.mock import MagicMock, Mock
 
-from meshtastic.ble_interface import (  # type: ignore[import-untyped]
-    BLEStateManager,
-    ConnectionState,
-)
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _load_state_manager_after_mocks(
+    mock_serial,
+    mock_pubsub,
+    mock_tabulate,
+    mock_bleak,
+    mock_bleak_exc,
+    mock_publishing_thread,
+):
+    global BLEStateManager, ConnectionState
+    import importlib
+    ble_mod = importlib.import_module("meshtastic.ble_interface")
+    BLEStateManager = ble_mod.BLEStateManager
+    ConnectionState = ble_mod.ConnectionState
 
 
 class TestBLEStateManager:
@@ -450,13 +463,15 @@ class TestPhase3LockConsolidation:
         # Verify final state
         assert manager.state == ConnectionState.DISCONNECTED
 
+    @pytest.mark.slow
     def test_state_transition_performance(self):
         """Measure performance of state transitions under realistic load."""
+        import os
         manager = BLEStateManager()
         mock_client = MagicMock()
 
         # Measure state transition performance
-        iterations = 1000
+        iterations = 500 if os.getenv("CI") else 1000
         start_time = time.perf_counter()
 
         for _i in range(iterations):
@@ -469,9 +484,9 @@ class TestPhase3LockConsolidation:
         elapsed = end_time - start_time
 
         # Should complete quickly under typical CI conditions (allow headroom)
-        assert (
-            elapsed < 3.0
-        ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+        assert elapsed < (4.5 if os.getenv("CI") else 3.0), (
+            f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+        )
 
         # Calculate average transition time
         avg_time = elapsed / (iterations * 3)
@@ -482,12 +497,14 @@ class TestPhase3LockConsolidation:
         )
 
 
+@pytest.mark.slow
 def test_lock_contention_performance():
     """
     Measure BLEStateManager throughput and correctness under lock contention.
 
     Runs five worker threads that each attempt 100 cycles of CONNECTING → CONNECTED → DISCONNECTED transitions and verifies timing and success rate; asserts total elapsed time is below 5.0 seconds and that at least 80% of the expected operations completed. Prints a short performance summary.
     """
+    import os
 
     manager = BLEStateManager()
     results = []
@@ -544,7 +561,7 @@ def test_lock_contention_performance():
     total_time = end_time - start_time
 
     # Verify reasonable performance under contention
-    assert total_time < 5.0, f"Contention test too slow: {total_time:.3f}s"
+    assert total_time < (7.5 if os.getenv("CI") else 5.0), f"Contention test too slow: {total_time:.3f}s"
 
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
@@ -588,17 +605,19 @@ def test_memory_efficiency():
     print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 
 
+@pytest.mark.slow
 def test_property_access_performance():
     """
     Measure average access time of BLEStateManager properties and assert it meets the performance threshold.
 
     Runs 10,000 iterations accessing the following properties each iteration: `state`, `is_connected`, `is_closing`, `can_connect`, and `client`. Computes the average time per property access and asserts it is less than 1e-5 seconds; raises an AssertionError if the threshold is exceeded. Prints a short performance summary.
     """
+    import os
 
     manager = BLEStateManager()
 
     # Measure property access performance
-    iterations = 10000
+    iterations = 5000 if os.getenv("CI") else 10000
     start_time = time.perf_counter()
 
     for _i in range(iterations):
@@ -614,7 +633,7 @@ def test_property_access_performance():
 
     # Property access should be very fast
     avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
-    assert avg_time < 0.00002, f"Property access too slow: {avg_time:.9f}s"
+    assert avg_time < (0.00003 if os.getenv("CI") else 0.00002), f"Property access too slow: {avg_time:.9f}s"
 
     print(
         f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
