@@ -23,7 +23,19 @@ def _late_imports(
     mock_publishing_thread,
 ):
     """
-    Import modules only after mocks are installed; expose as globals used by tests.
+    Import the BLE interface and related symbols after test fixtures install their mocks and expose them as module-level globals for tests.
+    
+    Parameters:
+        mock_serial: Fixture that mock-patches serial-related imports to avoid real serial I/O.
+        mock_pubsub: Fixture that mock-patches the pubsub module to capture publications.
+        mock_tabulate: Fixture that mock-patches tabulate to prevent formatting dependencies.
+        mock_bleak: Fixture that mock-patches bleak to avoid real BLE interactions.
+        mock_bleak_exc: Fixture that mock-patches bleak.exc to provide a BleakError class.
+        mock_publishing_thread: Fixture that mock-patches any publishing-thread helpers used by the module.
+    
+    Side effects:
+        Sets the following globals in the test module namespace:
+        `ble_mod`, `BLEInterface`, `FROMNUM_UUID`, `LEGACY_LOGRADIO_UUID`, `LOGRADIO_UUID`, `BleakError`, and `pub`.
     """
     import importlib
     global ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub
@@ -63,11 +75,10 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
     def _fake_connected(_self, _address):
         """
-        Return the preset fallback device as a single-element list regardless of `_self` or `_address`.
-
+        Return the preset fallback device in a single-element list.
+        
         Returns:
-            list: A list containing the preset `fallback_device`.
-
+            list: A list containing the module-level `fallback_device`.
         """
         return [fallback_device]
 
@@ -109,6 +120,13 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
         """Mock scanner that raises an exception when instantiated."""
 
         def __init__(self):
+            """
+            Prevent creating an instance by failing the test if this constructor is invoked.
+            
+            This constructor always invokes pytest.fail to immediately register a test failure instead of constructing the object.
+            
+            @raises pytest.fail: Causes the current test to fail unconditionally.
+            """
             import pytest
             pytest.fail()
 
@@ -236,24 +254,20 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def __init__(self, exception_type):
                 """
-                Initialize a test client that raises the configured exception from its faulting methods.
-
-                Parameters
-                ----------
-                    exception_type (Exception | type): An exception instance or an exception class that the client will raise
-                        when its faulting methods are invoked.
-
+                Create a test BLE client that raises a configured exception from its faulting methods.
+                
+                Parameters:
+                    exception_type (Exception | type): An exception instance or exception class to be raised by the client's methods when invoked.
                 """
                 super().__init__()
                 self.exception_type = exception_type
 
             def read_gatt_char(self, *_args, **_kwargs):
                 """
-                Simulate a failing GATT characteristic read by raising the client's configured exception.
-
+                Raise the client's configured exception to simulate a failing GATT characteristic read.
+                
                 Raises:
-                    Exception: An instance of `self.exception_type` with the message "test".
-
+                    Exception: An instance of the client's configured exception type (`self.exception_type`) with the message "test".
                 """
                 raise self.exception_type("test")
 
@@ -266,17 +280,14 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         def mock_close(close_called=close_called, original_close=original_close):
             """
-            Signal that close was invoked and then call the original close function.
-
-            Parameters
-            ----------
+            Mark the provided event to indicate close was called, then invoke and return the result of the original close callable.
+            
+            Parameters:
                 close_called (threading.Event): Event that will be set to signal that close was invoked.
                 original_close (Callable[[], Any]): The original close callable to invoke.
-
-            Returns
-            -------
-                Any: The value returned by `original_close`.
-
+            
+            Returns:
+                The value returned by `original_close`.
             """
             close_called.set()
             return original_close()
@@ -321,13 +332,11 @@ def test_log_notification_registration(monkeypatch):
 
         def __init__(self):
             """
-            Create a mock BLE client that tracks notification registrations and reported characteristic presence.
-
+            Initialize a mock BLE client that records notification registrations and reported characteristic presence.
+            
             Attributes:
-                start_notify_calls (list[tuple]): Recorded arguments for each start_notify invocation.
-                has_characteristic_map (dict[str, bool]): Maps characteristic UUIDs to whether the client reports them present.
-                    Initially sets LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
-
+                start_notify_calls (list[tuple]): List of (uuid, handler, *args, **kwargs) tuples recorded for each start_notify invocation.
+                has_characteristic_map (dict[str, bool]): Mapping of characteristic UUIDs to a boolean indicating whether the client reports that characteristic as present. Prepopulated with LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
             """
             super().__init__()
             self.start_notify_calls = []
@@ -339,28 +348,21 @@ def test_log_notification_registration(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Check whether the client exposes a characteristic with the given UUID.
-
-            Parameters
-            ----------
+            Determine whether the client exposes a characteristic with the specified UUID.
+            
+            Parameters:
                 uuid (str | uuid.UUID): Characteristic UUID to check.
-
-            Returns
-            -------
-                bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
-
+            
+            Returns:
+                bool: `True` if the characteristic UUID is present, `False` otherwise.
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
-            Record requested notification registrations by appending (characteristic UUID, handler) pairs to self.start_notify_calls.
-
-            Parameters
-            ----------
-                _args (tuple): Positional arguments; when two or more are provided, the first is treated as the characteristic UUID and the second as the notification handler and the pair is appended to `self.start_notify_calls`.
-                _kwargs (dict): Accepted and ignored.
-
+            Record characteristic notification registrations for testing.
+            
+            When called with two or more positional arguments, append a tuple of (characteristic UUID, handler) to self.start_notify_calls. Additional positional arguments beyond the first two are ignored; keyword arguments are accepted and ignored.
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:

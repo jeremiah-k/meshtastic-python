@@ -42,16 +42,13 @@ class DummyClient:
 
     def has_characteristic(self, _specifier):
         """
-        Indicates whether the mock client exposes a BLE characteristic matching the given specifier.
-
-        Parameters
-        ----------
-            _specifier: Identifier for a characteristic (for example, a UUID string or a characteristic object).
-
-        Returns
-        -------
+        Report whether the client exposes a BLE characteristic matching the given specifier.
+        
+        Parameters:
+            _specifier: Identifier for a characteristic (e.g., a UUID string or characteristic object).
+        
+        Returns:
             `False` always.
-
         """
         return False
 
@@ -75,29 +72,25 @@ class DummyClient:
 
     def write_gatt_char(self, *_args, **_kwargs):
         """
-        Simulate writing to a GATT characteristic without performing any operation.
+        Simulate writing to a GATT characteristic; accepts any arguments and performs no action.
         """
         return None
 
     def is_connected(self) -> bool:
         """
-        Report whether the mock BLE client is connected.
-
+        Indicates whether the mock BLE client is connected.
+        
         Returns:
-            True — the mock client is always considered connected.
-
+            `True` because the mock client is always considered connected.
         """
         return True
 
     def disconnect(self, *_args, **_kwargs):
         """
-        Record a disconnect invocation and raise a preconfigured exception if one was provided.
-
-        Increments the instance's disconnect_calls counter. If self.disconnect_exception is set, that exception instance is raised.
-
+        Record that a disconnect was invoked and raise the configured exception, if any.
+        
         Raises:
             Exception: The exception instance stored in `self.disconnect_exception`, if present.
-
         """
         self.disconnect_calls += 1
         if self.disconnect_exception:
@@ -105,9 +98,9 @@ class DummyClient:
 
     def close(self):
         """
-        Record that the client has been closed.
-
-        Increments the instance's close_calls counter to track how many times close() has been invoked.
+        Increment the client's close_calls counter.
+        
+        Used by tests to track how many times the dummy client's close() method has been invoked.
         """
         self.close_calls += 1
 
@@ -141,30 +134,25 @@ def stub_atexit(
 
     def fake_register(func):
         """
-        Register a callable to be invoked later by appending it to the module-level `registered` list.
-
-        Parameters
-        ----------
+        Add a callable to the local registry for later invocation.
+        
+        Parameters:
             func (callable): Callable to register; may also be used as a decorator.
-
-        Returns
-        -------
+        
+        Returns:
             callable: The same callable that was registered.
-
         """
         registered.append(func)
         return func
 
     def fake_unregister(func):
         """
-        Remove all occurrences of a previously registered callback from the module-level registry.
-
-        Comparison is by object identity; every entry identical to `func` is removed.
-
-        Parameters
-        ----------
-            func (callable): The callback to unregister.
-
+        Unregister a previously registered callback by identity.
+        
+        Removes all occurrences of the given callable from the module-level registered list using object identity comparison.
+        
+        Parameters:
+            func (callable): Callback to remove from the registry.
         """
         registered[:] = [f for f in registered if f is not func]
 
@@ -216,17 +204,13 @@ def stub_atexit(
 
 def _build_interface(monkeypatch, client):
     """
-    Create a BLEInterface instance configured for tests with a stubbed `connect` that returns the supplied client and a no-op `_startConfig`.
-
-    Parameters
-    ----------
-        monkeypatch: pytest monkeypatch fixture used to patch BLEInterface methods.
-        client: Fake or mock BLE client instance to be returned by the patched `connect` method.
-
-    Returns
-    -------
-        BLEInterface: A test-configured interface whose `connect` returns `client` and whose `_startConfig` performs no configuration.
-
+    Create a BLEInterface configured for tests with a patched `connect` that returns the supplied `client` and a no-op `_startConfig`.
+    
+    Parameters:
+        client: Fake or mock BLE client instance that the patched `connect` will return and assign to the interface.
+    
+    Returns:
+        BLEInterface: A test-configured interface whose `connect` returns `client`, whose `_startConfig` does nothing, and which exposes `_connect_stub_calls` (list of addresses passed to the stubbed `connect`).
     """
     # Import BLEInterface lazily after mocks are in place
     import importlib
@@ -239,18 +223,15 @@ def _build_interface(monkeypatch, client):
         _self: BLEInterface, _address: Optional[str] = None
     ) -> "DummyClient":
         """
-        Provide the preconfigured test BLE client and record the connection attempt.
-
-        Assigns the test client to the interface, clears the interface's disconnect-notified flag, appends the attempted address to connect_calls, advances the connection state to CONNECTING then CONNECTED, and sets _reconnected_event if present.
-
-        Parameters
-        ----------
-            _address (str | None): Accepted to match the original signature; ignored by this stub.
-
-        Returns
-        -------
-            DummyClient: The preconfigured test client instance.
-
+        Provide the preconfigured test BLE client to the interface and record the connection attempt.
+        
+        Records the attempted address in `connect_calls`, assigns the provided test client to the interface, clears the interface's disconnect-notified flag, sets the interface as connected (including calling its `_connected` hook), advances the internal connection state to CONNECTING then CONNECTED, and sets `_reconnected_event` if present.
+        
+        Parameters:
+            _address (str | None): Ignored by this stub; accepted only to match the original signature.
+        
+        Returns:
+            DummyClient: The preconfigured test client instance assigned to the interface.
         """
         connect_calls.append(_address)
         _self.client = client
