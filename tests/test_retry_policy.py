@@ -89,7 +89,7 @@ class TestReconnectPolicy:
         policy = ReconnectPolicy(
             initial_delay=10.0,
             max_delay=100.0,
-            backoff=1.0,
+            backoff=1.1,  # Valid backoff > 1.0
             jitter_ratio=0.5,  # 50% jitter
             max_retries=5
         )

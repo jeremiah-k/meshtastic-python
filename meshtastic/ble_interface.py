@@ -525,6 +525,36 @@ class NotificationManager:
             return len(self._active_subscriptions)
 
 
+class BLEConfig:
+    """
+    Configuration constants for BLE operations.
+
+    Centralizes all BLE-related constants for better maintainability
+    and organization.
+    """
+
+    # Timing constants
+    BLE_SCAN_TIMEOUT = 10.0
+    RECEIVE_WAIT_TIMEOUT = 0.5
+    EMPTY_READ_RETRY_DELAY = 0.1
+    EMPTY_READ_MAX_RETRIES = 5
+    TRANSIENT_READ_MAX_RETRIES = 3
+    TRANSIENT_READ_RETRY_DELAY = 0.1
+    SEND_PROPAGATION_DELAY = 0.01
+    GATT_IO_TIMEOUT = 10.0
+    NOTIFICATION_START_TIMEOUT = 10.0
+    CONNECTION_TIMEOUT = 60.0
+
+    # Auto-reconnect constants
+    AUTO_RECONNECT_INITIAL_DELAY = 1.0
+    AUTO_RECONNECT_MAX_DELAY = 30.0
+    AUTO_RECONNECT_BACKOFF = 2.0
+    AUTO_RECONNECT_JITTER_RATIO = 0.15  # ±15% jitter prevents reconnect stampedes
+
+    # BLE version compatibility
+    BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
+
+
 class ReconnectPolicy:
     """
     Centralized reconnection and retry policy for BLE operations.
@@ -546,13 +576,27 @@ class ReconnectPolicy:
         Initialize reconnection policy.
 
         Args:
-            initial_delay: Initial delay between retries in seconds
-            max_delay: Maximum delay between retries in seconds
-            backoff: Multiplier for exponential backoff
+            initial_delay: Initial delay between retries in seconds (must be > 0)
+            max_delay: Maximum delay between retries in seconds (must be >= initial_delay)
+            backoff: Multiplier for exponential backoff (must be > 1.0)
             jitter_ratio: Ratio for random jitter (0.0 to 1.0)
-            max_retries: Maximum number of retries (None for infinite)
+            max_retries: Maximum number of retries (None for infinite, must be >= 0 if specified)
 
+        Raises:
+            ValueError: If any parameter is out of valid range
         """
+        # Input validation
+        if initial_delay <= 0:
+            raise ValueError(f"initial_delay must be > 0, got {initial_delay}")
+        if max_delay < initial_delay:
+            raise ValueError(f"max_delay ({max_delay}) must be >= initial_delay ({initial_delay})")
+        if backoff <= 1.0:
+            raise ValueError(f"backoff must be > 1.0, got {backoff}")
+        if not (0.0 <= jitter_ratio <= 1.0):
+            raise ValueError(f"jitter_ratio must be between 0.0 and 1.0, got {jitter_ratio}")
+        if max_retries is not None and max_retries < 0:
+            raise ValueError(f"max_retries must be >= 0 or None, got {max_retries}")
+
         self.initial_delay = initial_delay
         self.max_delay = max_delay
         self.backoff = backoff
@@ -644,6 +688,11 @@ class AsyncDispatcher:
         """
         Run a coroutine safely in any context.
 
+        This method safely executes coroutines whether called from:
+        - Sync context (no running event loop) - uses asyncio.run
+        - Async context (running event loop) - schedules as task
+        - Thread with different event loop - uses thread-safe dispatch
+
         Args:
             coro: The coroutine to run
 
@@ -652,46 +701,39 @@ class AsyncDispatcher:
 
         Raises:
             The same exceptions that the coroutine would raise
-
         """
         try:
             # Check if we're in an async context with a running loop
             loop = asyncio.get_running_loop()
+
             if self._event_loop and loop != self._event_loop:
                 # We have a specific loop but we're in a different one
                 # Use run_coroutine_threadsafe to dispatch to the correct loop
                 future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
                 return future.result()
             else:
-                # We're in a running loop - this is complex case
-                # Run coroutine in a separate thread to avoid blocking
-                import threading
+                # We're in the correct (or no specific) loop
+                # Schedule as a task and wait for completion
+                task = loop.create_task(coro)
+                # Use loop.run_until_complete to wait for the task
+                # This is safe because we're already in an async context
+                import concurrent.futures
 
-                result_container = []
-                exception_container = []
+                # Create a future to bridge sync/async
+                future = concurrent.futures.Future()
 
-                def run_in_thread():
+                def set_result(task):
                     try:
-                        # Create new event loop for this thread
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            result = new_loop.run_until_complete(coro)
-                            result_container.append(result)
-                        finally:
-                            new_loop.close()
+                        future.set_result(task.result())
                     except Exception as e:
-                        exception_container.append(e)
+                        future.set_exception(e)
 
-                thread = threading.Thread(target=run_in_thread)
-                thread.start()
-                thread.join()
+                task.add_done_callback(set_result)
+                return future.result()
 
-                if exception_container:
-                    raise exception_container[0]
-                return result_container[0]
         except RuntimeError:
-            # No running loop, safe to use asyncio.run
+            # No running loop - we're in a synchronous context
+            # Safe to use asyncio.run here
             return asyncio.run(coro)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
@@ -732,30 +774,13 @@ EVENT_THREAD_JOIN_TIMEOUT = (
     2.0  # Matches receive thread join window for consistent teardown
 )
 
-# BLE timeout and retry constants
-BLE_SCAN_TIMEOUT = 10.0
-RECEIVE_WAIT_TIMEOUT = 0.5
-EMPTY_READ_RETRY_DELAY = 0.1
-EMPTY_READ_MAX_RETRIES = 5
-TRANSIENT_READ_MAX_RETRIES = 3
-TRANSIENT_READ_RETRY_DELAY = 0.1
-SEND_PROPAGATION_DELAY = 0.01
-GATT_IO_TIMEOUT = 10.0
-NOTIFICATION_START_TIMEOUT = 10.0
-CONNECTION_TIMEOUT = 60.0
+# BLE timeout and retry constants are now in BLEConfig class
 
 # Error message constants
 ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
 ERROR_MULTIPLE_DEVICES = (
     "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
 )
-AUTO_RECONNECT_INITIAL_DELAY = 1.0
-AUTO_RECONNECT_MAX_DELAY = 30.0
-AUTO_RECONNECT_BACKOFF = 2.0
-AUTO_RECONNECT_JITTER_RATIO = (
-    0.15  # ±15% jitter prevents reconnect stampedes across hosts
-)
-
 BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
 
 # Error message constants
@@ -1284,28 +1309,28 @@ class RetryPolicy:
     
     # Read retry policy
     EMPTY_READ = ReconnectPolicy(
-        initial_delay=EMPTY_READ_RETRY_DELAY,
+        initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
         max_delay=1.0,
         backoff=1.5,
         jitter_ratio=0.1,
-        max_retries=EMPTY_READ_MAX_RETRIES
+        max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES
     )
-    
+
     # Transient error retry policy
     TRANSIENT_ERROR = ReconnectPolicy(
-        initial_delay=TRANSIENT_READ_RETRY_DELAY,
+        initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
         max_delay=2.0,
         backoff=1.5,
         jitter_ratio=0.1,
-        max_retries=TRANSIENT_READ_MAX_RETRIES
+        max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES
     )
-    
+
     # Auto-reconnect policy
     AUTO_RECONNECT = ReconnectPolicy(
-        initial_delay=AUTO_RECONNECT_INITIAL_DELAY,
-        max_delay=AUTO_RECONNECT_MAX_DELAY,
-        backoff=AUTO_RECONNECT_BACKOFF,
-        jitter_ratio=AUTO_RECONNECT_JITTER_RATIO,
+        initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
+        max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
+        backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
+        jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
         max_retries=None  # Unlimited retries for auto-reconnect
     )
 
@@ -1390,10 +1415,10 @@ class BLEInterface(MeshInterface):
 
         # Reconnection policy for centralized retry logic
         self._reconnect_policy = ReconnectPolicy(
-            initial_delay=AUTO_RECONNECT_INITIAL_DELAY,
-            max_delay=AUTO_RECONNECT_MAX_DELAY,
-            backoff=AUTO_RECONNECT_BACKOFF,
-            jitter_ratio=AUTO_RECONNECT_JITTER_RATIO,
+            initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
+            max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
+            backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
+            jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
             max_retries=None,  # Infinite retries for reconnection
         )
 
@@ -1444,7 +1469,7 @@ class BLEInterface(MeshInterface):
             logger.debug("Mesh configure starting")
             self._startConfig()
             if not self.noProto:
-                self._waitConnected(timeout=CONNECTION_TIMEOUT)
+                self._waitConnected(timeout=BLEConfig.CONNECTION_TIMEOUT)
                 self.waitForConfig()
 
             # FROMNUM notification is set in _register_notifications
@@ -1823,7 +1848,7 @@ class BLEInterface(MeshInterface):
                 client.start_notify(
                     LEGACY_LOGRADIO_UUID,
                     self.legacy_log_radio_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
+                    timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
                 )
             if client.has_characteristic(LOGRADIO_UUID):
                 _ = self._notification_manager.subscribe(
@@ -1833,7 +1858,7 @@ class BLEInterface(MeshInterface):
                 client.start_notify(
                     LOGRADIO_UUID,
                     self.log_radio_handler,
-                    timeout=NOTIFICATION_START_TIMEOUT,
+                    timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
                 )
 
         # Start optional log notifications; failures here are non-fatal.
@@ -1851,7 +1876,7 @@ class BLEInterface(MeshInterface):
             client.start_notify(
                 FROMNUM_UUID,
                 self.from_num_handler,
-                timeout=NOTIFICATION_START_TIMEOUT,
+                timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
             )
         except (BleakError, BleakDBusError, RuntimeError) as e:
             # Critical failure - FROMNUM notification is essential for packet reception
@@ -1944,10 +1969,10 @@ class BLEInterface(MeshInterface):
         """
         with BLEClient() as client:
             logger.debug(
-                "Scanning for BLE devices (takes %.0f seconds)...", BLE_SCAN_TIMEOUT
+                "Scanning for BLE devices (takes %.0f seconds)...", BLEConfig.BLE_SCAN_TIMEOUT
             )
             response = client.discover(
-                timeout=BLE_SCAN_TIMEOUT, return_adv=True, service_uuids=[SERVICE_UUID]
+                timeout=BLEConfig.BLE_SCAN_TIMEOUT, return_adv=True, service_uuids=[SERVICE_UUID]
             )
 
             devices: List[BLEDevice] = []
@@ -2125,7 +2150,7 @@ class BLEInterface(MeshInterface):
                 ):
                     backend_devices = await BLEInterface._with_timeout(
                         scanner._backend.get_devices(),
-                        BLE_SCAN_TIMEOUT,
+                        BLEConfig.BLE_SCAN_TIMEOUT,
                         "connected-device enumeration",
                     )
 
@@ -2188,7 +2213,7 @@ class BLEInterface(MeshInterface):
                         result = self._async_dispatcher.run_coroutine(
                             BLEInterface._with_timeout(
                                 _get_devices_async_and_filter(address),
-                                BLE_SCAN_TIMEOUT,
+                                BLEConfig.BLE_SCAN_TIMEOUT,
                                 "connected-device fallback",
                             )
                         )
@@ -2199,11 +2224,11 @@ class BLEInterface(MeshInterface):
                 thread = Thread(target=_run_async_in_thread, daemon=True)
                 thread.start()
                 try:
-                    devices = future.result(timeout=BLE_SCAN_TIMEOUT)
+                    devices = future.result(timeout=BLEConfig.BLE_SCAN_TIMEOUT)
                 except FutureTimeoutError:
                     logger.debug(
                         "Fallback connected-device discovery thread exceeded %.1fs timeout",
-                        BLE_SCAN_TIMEOUT,
+                        BLEConfig.BLE_SCAN_TIMEOUT,
                     )
                     thread.join(timeout=0.1)
                     return []
@@ -2218,7 +2243,7 @@ class BLEInterface(MeshInterface):
                 devices = self._async_dispatcher.run_coroutine(
                     BLEInterface._with_timeout(
                         _get_devices_async_and_filter(address),
-                        BLE_SCAN_TIMEOUT,
+                        BLEConfig.BLE_SCAN_TIMEOUT,
                         "connected-device fallback",
                     )
                 )
@@ -2322,7 +2347,7 @@ class BLEInterface(MeshInterface):
             )
             previous_client = None
             try:
-                client.connect(await_timeout=CONNECTION_TIMEOUT)
+                client.connect(await_timeout=BLEConfig.CONNECTION_TIMEOUT)
                 services = getattr(client.bleak_client, "services", None)
                 if not services or not getattr(services, "get_characteristic", None):
                     logger.debug(
@@ -2446,7 +2471,7 @@ class BLEInterface(MeshInterface):
             while self._want_receive:
                 # Wait for data to read, but also check periodically for reconnection
                 if not self.thread_coordinator.wait_for_event(
-                    "read_trigger", timeout=RECEIVE_WAIT_TIMEOUT
+                    "read_trigger", timeout=BLEConfig.RECEIVE_WAIT_TIMEOUT
                 ):
                     # Timeout occurred, check if we were reconnected during this time
                     if self.thread_coordinator.check_and_clear_event(
@@ -2469,7 +2494,7 @@ class BLEInterface(MeshInterface):
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
                             self.thread_coordinator.wait_for_event(
-                                "reconnected_event", timeout=RECEIVE_WAIT_TIMEOUT
+                                "reconnected_event", timeout=BLEConfig.RECEIVE_WAIT_TIMEOUT
                             )
                             break  # Return to outer loop to re-check state
                         logger.debug("BLE client is None, shutting down")
@@ -2478,7 +2503,7 @@ class BLEInterface(MeshInterface):
                     try:
                         # Read from the FROMRADIO characteristic for incoming packets
                         b = client.read_gatt_char(
-                            FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT
+                            FROMRADIO_UUID, timeout=BLEConfig.GATT_IO_TIMEOUT
                         )
                         if not b:
                             # Handle empty reads with centralized retry policy
@@ -2514,14 +2539,14 @@ class BLEInterface(MeshInterface):
                             return
                         # Client is still connected, this might be a transient error
                         # Retry a few times before escalating
-                        if self._read_retry_count < TRANSIENT_READ_MAX_RETRIES:
+                        if self._read_retry_count < BLEConfig.TRANSIENT_READ_MAX_RETRIES:
                             self._read_retry_count += 1
                             # Record retry for observability
                             self._observability.record_operation_retry("read")
                             logger.debug(
-                                "Transient BLE read error, retrying (%d/%d)",
-                                self._read_retry_count,
-                                TRANSIENT_READ_MAX_RETRIES,
+                        "Transient BLE read error, retrying (%d/%d)",
+                        self._read_retry_count,
+                        BLEConfig.TRANSIENT_READ_MAX_RETRIES,
                             )
                             RetryPolicy.TRANSIENT_ERROR.sleep_with_backoff(self._read_retry_count)
                             continue
@@ -2573,7 +2598,7 @@ class BLEInterface(MeshInterface):
                 try:
                     # Use write-with-response to ensure delivery is acknowledged by the peripheral
                     client.write_gatt_char(
-                        TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT
+                        TORADIO_UUID, b, response=True, timeout=BLEConfig.GATT_IO_TIMEOUT
                     )
                     write_successful = True
                 except (BleakError, RuntimeError, OSError) as e:
@@ -2591,7 +2616,7 @@ class BLEInterface(MeshInterface):
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
-            time.sleep(SEND_PROPAGATION_DELAY)
+            time.sleep(BLEConfig.SEND_PROPAGATION_DELAY)
             self.thread_coordinator.set_event(
                 "read_trigger"
             )  # Wake receive loop to process any response
