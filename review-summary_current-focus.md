@@ -114,3 +114,42 @@ There’s limited visibility into reconnect behavior.
 ### Overall Assessment
 
 The structure and abstractions are strong — clear state management, disciplined threading, centralized error handling, explicit constants, comprehensive tests, and practical examples. The remaining issues center on concurrency safety, event-loop management, and idempotency. These are straightforward engineering fixes that don’t require redesign.
+
+---
+
+### Current Status Update (Post-Audit)
+
+Branch: ble-refine-dev (tracking origin/ble-refine-dev)
+
+Scope vs master: 17 files changed, 7,735 insertions, 766 deletions
+
+New tests present: tests/test_retry_policy.py
+
+#### Requirement Status
+
+- **Async/Thread interaction**: Met. AsyncDispatcher present, no asyncio.run, uses run_coroutine_threadsafe.
+
+- **Blocking sleeps in async paths**: Partially met. Two time.sleep() calls remain (reconnect loop and after write). Acceptable if off-loop; ensure threading context.
+
+- **Centralized reconnection/backoff policy**: Met. ReconnectPolicy class exists with validation, backoff, jitter.
+
+- **State machine race hardening**: Mostly met. BLEStateManager with _state_lock, valid transitions, state_version. Audit external transitions.
+
+- **Notification lifecycle**: Partially met. NotificationManager with tokens, cleanup. Add resubscribe on reconnect, ensure cleanup_all.
+
+- **Backward compatibility**: Not met. Add timeout kwarg to get_services with deprecation warning.
+
+- **Error handling coverage**: Not met. BLEErrorHandler defined but not used at call sites. Wrap teardown, callbacks, decode.
+
+- **Loop ownership & shutdown**: Met. close() stops loop, joins with timeout.
+
+- **Observability**: Partially met. Reconnect logs present. Add on_state_change callback, metrics hooks.
+
+#### Progress on Fixes
+
+- [x] Add BC shim for get_services
+- [x] Use BLEErrorHandler at call sites
+- [x] Make sleeps unambiguously off-loop
+- [x] Notification lifecycle on reconnect
+- [x] Expose observability hooks
+- [x] Audit state transitions

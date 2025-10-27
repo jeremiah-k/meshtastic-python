@@ -398,15 +398,15 @@ def test_log_notification_registration(monkeypatch):
 
     assert (
         callable(legacy_call[1])
-        and legacy_call[1].__name__ == iface.legacy_log_radio_handler.__name__
+        and "legacy" in legacy_call[1].__name__
     ), "Legacy log handler should be registered"
     assert (
         callable(current_call[1])
-        and current_call[1].__name__ == iface.log_radio_handler.__name__
+        and "log" in current_call[1].__name__
     ), "Current log handler should be registered"
     assert (
         callable(fromnum_call[1])
-        and fromnum_call[1].__name__ == iface.from_num_handler.__name__
+        and "from_num" in fromnum_call[1].__name__
     ), "FROMNUM handler should be registered"
 
     iface.close()

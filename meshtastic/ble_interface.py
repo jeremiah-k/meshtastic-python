@@ -15,7 +15,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, RLock, Thread, current_thread
-from typing import List, Optional, Tuple, Union, cast
+from typing import Callable, List, Optional, Tuple, Union, cast
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
@@ -93,6 +93,7 @@ class BLEObservability:
         self._error_history: list[dict] = []
         self._connection_history: list[dict] = []
         self._lock = RLock()
+        self._metrics_callback: Optional[Callable[[str, int, dict], None]] = None
 
         # Performance tracking
         self._operation_start_times: dict[str, float] = {}
@@ -101,10 +102,21 @@ class BLEObservability:
         # Observability logger
         self._obs_logger = logging.getLogger("meshtastic.ble.observability")
 
+    def set_metrics_callback(self, callback: Optional[Callable[[str, int, dict], None]]) -> None:
+        """Set callback for metrics reporting."""
+        with self._lock:
+            self._metrics_callback = callback
+
     def _increment_metric(self, key: str, value: int = 1) -> None:
         """Safely increment a metric value."""
         with self._lock:
-            self._metrics[key] = cast(int, self._metrics[key]) + value
+            old_value = cast(int, self._metrics[key])
+            self._metrics[key] = old_value + value
+            if self._metrics_callback:
+                try:
+                    self._metrics_callback(key, old_value + value, {"interface": "ble"})
+                except Exception as e:
+                    self._obs_logger.debug("Error in metrics callback: %s", e)
 
     def record_connection_attempt(self, address: str):
         """Record a connection attempt."""
@@ -519,6 +531,20 @@ class NotificationManager:
         with self._lock:
             self._active_subscriptions.clear()
 
+    def resubscribe_all(self, client) -> None:
+        """
+        Resubscribe all active subscriptions on the given client.
+
+        Args:
+            client: BLE client to resubscribe on
+        """
+        with self._lock:
+            for token, (characteristic, callback) in self._active_subscriptions.items():
+                try:
+                    client.start_notify(characteristic, callback)
+                except Exception as e:
+                    logger.debug("Failed to resubscribe %s: %s", characteristic, e)
+
     def __len__(self) -> int:
         """Get number of active subscriptions."""
         with self._lock:
@@ -866,6 +892,7 @@ class BLEStateManager:
         self._state = ConnectionState.DISCONNECTED
         self._client: Optional["BLEClient"] = None
         self._state_version = 0  # Version counter to prevent stale completions
+        self._on_state_change: Optional[Callable[[ConnectionState, str], None]] = None
 
     @property
     def state(self) -> ConnectionState:
@@ -900,6 +927,11 @@ class BLEStateManager:
         with self._state_lock:
             return self._state_version
 
+    def set_on_state_change(self, callback: Optional[Callable[[ConnectionState, str], None]]) -> None:
+        """Set callback for state change notifications."""
+        with self._state_lock:
+            self._on_state_change = callback
+
     def transition_to(
         self, new_state: ConnectionState, client: Optional["BLEClient"] = None
     ) -> bool:
@@ -928,6 +960,11 @@ class BLEStateManager:
                 logger.debug(
                     f"State transition: {old_state.value} → {new_state.value} (v{self._state_version})"
                 )
+                if self._on_state_change:
+                    try:
+                        self._on_state_change(new_state, f"Transition from {old_state.value}")
+                    except Exception as e:
+                        logger.debug("Error in on_state_change callback: %s", e)
                 return True
             else:
                 logger.warning(
@@ -1601,6 +1638,7 @@ class BLEInterface(MeshInterface):
             # Transition to DISCONNECTED state on disconnect
             if previous_client:
                 self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                self._notification_manager.cleanup_all()
                 self._disconnected()
                 # Close previous client asynchronously
                 close_thread = self.thread_coordinator.create_thread(
@@ -1692,6 +1730,8 @@ class BLEInterface(MeshInterface):
                             )
                             self.connect(self.address)
                             self._observability.record_reconnection_success(attempt_num)
+                            # Re-establish subscriptions after reconnect
+                            self._notification_manager.resubscribe_all(self.bleak_client)
                             logger.info(
                                 "BLE auto-reconnect succeeded after %d attempts.",
                                 attempt_num,
@@ -1853,24 +1893,36 @@ class BLEInterface(MeshInterface):
             If the legacy text log characteristic is present, subscribes the legacy log handler; if the protobuf-based
             log characteristic is present, subscribes the protobuf log handler.
             """
+            def _safe_legacy_handler(sender, data):
+                BLEErrorHandler.safe_execute(
+                    lambda: self.legacy_log_radio_handler(sender, data),
+                    error_msg="Error in legacy log notification handler"
+                )
+
+            def _safe_log_handler(sender, data):
+                BLEErrorHandler.safe_execute(
+                    lambda: self.log_radio_handler(sender, data),
+                    error_msg="Error in log notification handler"
+                )
+
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
                 _ = self._notification_manager.subscribe(
                     LEGACY_LOGRADIO_UUID,
-                    self.legacy_log_radio_handler,
+                    _safe_legacy_handler,
                 )
                 client.start_notify(
                     LEGACY_LOGRADIO_UUID,
-                    self.legacy_log_radio_handler,
+                    _safe_legacy_handler,
                     timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
                 )
             if client.has_characteristic(LOGRADIO_UUID):
                 _ = self._notification_manager.subscribe(
                     LOGRADIO_UUID,
-                    self.log_radio_handler,
+                    _safe_log_handler,
                 )
                 client.start_notify(
                     LOGRADIO_UUID,
-                    self.log_radio_handler,
+                    _safe_log_handler,
                     timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
                 )
 
@@ -1882,13 +1934,19 @@ class BLEInterface(MeshInterface):
 
         # Critical notification for packet ingress
         try:
+            def _safe_from_num_handler(sender, data):
+                BLEErrorHandler.safe_execute(
+                    lambda: self.from_num_handler(sender, data),
+                    error_msg="Error in FROMNUM notification handler"
+                )
+
             _ = self._notification_manager.subscribe(
                 FROMNUM_UUID,
-                self.from_num_handler,
+                _safe_from_num_handler,
             )
             client.start_notify(
                 FROMNUM_UUID,
-                self.from_num_handler,
+                _safe_from_num_handler,
                 timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
             )
         except (BleakError, BleakDBusError, RuntimeError) as e:
@@ -2300,6 +2358,14 @@ class BLEInterface(MeshInterface):
     def can_initiate_connection(self) -> bool:
         """Check if a new connection can be initiated via state manager."""
         return self._state_manager.can_connect
+
+    def set_on_state_change(self, callback: Optional[Callable[[ConnectionState, str], None]]) -> None:
+        """Set callback for state change notifications."""
+        self._state_manager.set_on_state_change(callback)
+
+    def set_metrics_callback(self, callback: Optional[Callable[[str, int, dict], None]]) -> None:
+        """Set callback for metrics reporting."""
+        self._observability.set_metrics_callback(callback)
 
     def connect(self, address: Optional[str] = None) -> "BLEClient":
         """
@@ -2987,7 +3053,10 @@ class BLEClient:
             **kwargs: Additional keyword arguments forwarded to the Bleak client's disconnect method.
 
         """
-        self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
+        BLEErrorHandler.safe_execute(
+            lambda: self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout),
+            error_msg="Error during disconnect"
+        )
 
     def read_gatt_char(
         self, *args, timeout: Optional[float] = None, **kwargs
@@ -3025,14 +3094,19 @@ class BLEClient:
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def get_services(self):
+    def get_services(self, timeout: float | None = None):
         """
         Retrieve the discovered GATT services and characteristics for the connected device.
+
+        Args:
+            timeout (float | None): Deprecated. Ignored for backward compatibility.
 
         Returns:
             The device's GATT services and their characteristics as returned by the underlying BLE library.
 
         """
+        if timeout is not None:
+            logger.warning("get_services(timeout=...) is deprecated and ignored")
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services
 
