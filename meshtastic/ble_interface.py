@@ -1274,6 +1274,42 @@ class BLEErrorHandler:
             logger.debug("Error during %s: %s", cleanup_name, e)
 
 
+class RetryPolicy:
+    """
+    Centralized retry policies for different BLE operations.
+    
+    Provides specific retry configurations for various scenarios like
+    empty reads, transient errors, and connection attempts.
+    """
+    
+    # Read retry policy
+    EMPTY_READ = ReconnectPolicy(
+        initial_delay=EMPTY_READ_RETRY_DELAY,
+        max_delay=1.0,
+        backoff=1.5,
+        jitter_ratio=0.1,
+        max_retries=EMPTY_READ_MAX_RETRIES
+    )
+    
+    # Transient error retry policy
+    TRANSIENT_ERROR = ReconnectPolicy(
+        initial_delay=TRANSIENT_READ_RETRY_DELAY,
+        max_delay=2.0,
+        backoff=1.5,
+        jitter_ratio=0.1,
+        max_retries=TRANSIENT_READ_MAX_RETRIES
+    )
+    
+    # Auto-reconnect policy
+    AUTO_RECONNECT = ReconnectPolicy(
+        initial_delay=AUTO_RECONNECT_INITIAL_DELAY,
+        max_delay=AUTO_RECONNECT_MAX_DELAY,
+        backoff=AUTO_RECONNECT_BACKOFF,
+        jitter_ratio=AUTO_RECONNECT_JITTER_RATIO,
+        max_retries=None  # Unlimited retries for auto-reconnect
+    )
+
+
 class BLEInterface(MeshInterface):
     """
     MeshInterface using BLE to connect to Meshtastic devices.
@@ -2445,9 +2481,9 @@ class BLEInterface(MeshInterface):
                             FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT
                         )
                         if not b:
-                            # Handle empty reads with limited retries to avoid busy-looping
-                            if retries < EMPTY_READ_MAX_RETRIES:
-                                time.sleep(EMPTY_READ_RETRY_DELAY)
+                            # Handle empty reads with centralized retry policy
+                            if RetryPolicy.EMPTY_READ.should_retry(retries):
+                                RetryPolicy.EMPTY_READ.sleep_with_backoff(retries)
                                 retries += 1
                                 continue
                             logger.warning(
@@ -2487,7 +2523,7 @@ class BLEInterface(MeshInterface):
                                 self._read_retry_count,
                                 TRANSIENT_READ_MAX_RETRIES,
                             )
-                            time.sleep(TRANSIENT_READ_RETRY_DELAY)
+                            RetryPolicy.TRANSIENT_ERROR.sleep_with_backoff(self._read_retry_count)
                             continue
                         self._read_retry_count = 0
                         logger.debug(
