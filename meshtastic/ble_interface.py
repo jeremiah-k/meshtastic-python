@@ -27,8 +27,15 @@ from meshtastic.mesh_interface import MeshInterface
 
 from .protobuf import mesh_pb2
 
-# Get bleak version using importlib.metadata (reliable method)
-BLEAK_VERSION = importlib.metadata.version("bleak")
+# Get bleak version with a safe fallback to the module attribute (works with mocks)
+try:
+    BLEAK_VERSION = importlib.metadata.version("bleak")
+except importlib.metadata.PackageNotFoundError:
+    try:
+        from bleak import __version__ as _bleak_ver  # type: ignore
+    except Exception:
+        _bleak_ver = "0.0.0"
+    BLEAK_VERSION = _bleak_ver
 
 SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
 TORADIO_UUID = "f75c76d2-129e-4dad-a1dd-7866124401e7"
@@ -1522,16 +1529,17 @@ class BLEInterface(MeshInterface):
                 self._state_manager.transition_to(ConnectionState.CONNECTED, client)
 
                 # Client access now protected by unified state lock
-                previous_client = self.client
-                self.client = client
-                self._disconnect_notified = False
-                normalized_device_address = BLEInterface._sanitize_address(
-                    device.address
-                )
-                if normalized_request is not None:
-                    self._last_connection_request = normalized_request
-                else:
-                    self._last_connection_request = normalized_device_address
+                with self._state_lock:
+                    previous_client = self.client
+                    self.client = client
+                    self._disconnect_notified = False
+                    normalized_device_address = BLEInterface._sanitize_address(
+                        device.address
+                    )
+                    if normalized_request is not None:
+                        self._last_connection_request = normalized_request
+                    else:
+                        self._last_connection_request = normalized_device_address
                 if previous_client and previous_client is not client:
                     close_thread = self.thread_coordinator.create_thread(
                         target=self._safe_close_client,

@@ -8,11 +8,7 @@ from typing import Optional
 
 import pytest  # type: ignore[import-untyped]
 
-# Import meshtastic modules for use in tests
-import meshtastic.ble_interface as ble_mod
-from meshtastic.ble_interface import (
-    BLEInterface,
-)
+# NOTE: ble_interface is imported lazily inside fixtures/helpers after mocks are installed.
 
 
 @pytest.fixture(autouse=True)
@@ -339,6 +335,12 @@ class DummyClient:
         """
         return b""
 
+    def write_gatt_char(self, *_args, **_kwargs):
+        """
+        No-op write to emulate BLE writes in tests.
+        """
+        return None
+
     def is_connected(self) -> bool:
         """
         Report whether the mock BLE client is connected; this stub always reports connected.
@@ -431,7 +433,16 @@ def stub_atexit(
         """
         registered[:] = [f for f in registered if f is not func]
 
-    # meshtastic.ble_interface already imported at top as ble_mod
+    # Import after mocks: ensure bleak/pubsub/serial/tabulate are stubbed first
+    import importlib, importlib.metadata as _im
+    _orig_version = _im.version
+    def _version_proxy(name: str):
+        if name == "bleak":
+            # use mocked bleak's __version__ if available; else a benign default
+            return getattr(sys.modules.get("bleak"), "__version__", "0.0.0")
+        return _orig_version(name)
+    monkeypatch.setattr(_im, "version", _version_proxy)
+    ble_mod = importlib.import_module("meshtastic.ble_interface")
 
     monkeypatch.setattr(ble_mod.atexit, "register", fake_register, raising=True)
     monkeypatch.setattr(ble_mod.atexit, "unregister", fake_unregister, raising=True)
@@ -466,7 +477,9 @@ def _build_interface(monkeypatch, client):
         BLEInterface: A test-configured interface whose `connect` returns `client` and whose `_startConfig` performs no configuration.
 
     """
-    # BLEInterface already imported at top as ble_mod.BLEInterface
+    # Import BLEInterface lazily after mocks are in place
+    import importlib
+    BLEInterface = importlib.import_module("meshtastic.ble_interface").BLEInterface
 
     connect_calls: list = []
 
