@@ -1057,7 +1057,7 @@ class DiscoveryManager:
                     )
                     try:
                         # Use the client's event loop for safe async execution
-                        connected_devices = client._run_coroutine_threadsafe(
+                        connected_devices = client.async_await(
                             self.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
                         )
                         devices.extend(connected_devices)
@@ -2090,6 +2090,39 @@ class BLEInterface(MeshInterface):
         return addressed_devices[0]
 
     @staticmethod
+    def _run_async_safely(self, coro):
+        """
+        Run a coroutine safely, handling the case where an event loop is already running.
+        
+        This is used as a fallback when no BLEClient with event loop is available.
+        """
+        try:
+            # Check if there's a running event loop in the current thread
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # If a loop is running, we can't use asyncio.run()
+                # Run the coroutine in a new thread to avoid conflicts
+                from concurrent.futures import Future
+                from threading import Thread
+                
+                future = Future()
+                def run_in_thread():
+                    try:
+                        result = asyncio.run(coro)
+                        future.set_result(result)
+                    except Exception as e:
+                        future.set_exception(e)
+                
+                Thread(target=run_in_thread, daemon=True).start()
+                return future.result()  # This blocks, which is the expected behavior here
+            else:
+                # Loop exists but is not running
+                return asyncio.run(coro)
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run()
+            return asyncio.run(coro)
+
+    @staticmethod
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
         """
         Normalize a BLE address by removing common separators and converting to lowercase.
@@ -2124,15 +2157,15 @@ class BLEInterface(MeshInterface):
         """
         if hasattr(self, "_discovery_manager"):
             try:
-                # Use client's event loop if available, otherwise fall back to asyncio.run
+                # Use client's event loop if available, otherwise fall back to safe asyncio.run
                 if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
-                    return self.client._run_coroutine_threadsafe(
+                    return self.client.async_await(
                         self._discovery_manager.connected_strategy.discover(
                             address, BLEConfig.BLE_SCAN_TIMEOUT
                         )
                     )
                 else:
-                    return asyncio.run(
+                    return self._run_async_safely(
                         self._discovery_manager.connected_strategy.discover(
                             address, BLEConfig.BLE_SCAN_TIMEOUT
                         )
@@ -2162,32 +2195,45 @@ class BLEInterface(MeshInterface):
                 import inspect
                 getter = scanner._backend.get_devices
                 
-                # Use client's event loop if available, otherwise fall back to asyncio.run
-                def run_async_safely(coro):
-                    if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
-                        return self.client._run_coroutine_threadsafe(coro)
-                    else:
-                        return asyncio.run(coro)
-                
+                # Use client's event loop if available, otherwise fall back to safe asyncio.run
                 if inspect.iscoroutinefunction(getter):
-                    backend_devices = run_async_safely(
-                        BLEInterface._with_timeout(
-                            getter(),
-                            BLEConfig.BLE_SCAN_TIMEOUT,
-                            "connected-device enumeration",
+                    if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
+                        backend_devices = self.client.async_await(
+                            BLEInterface._with_timeout(
+                                getter(),
+                                BLEConfig.BLE_SCAN_TIMEOUT,
+                                "connected-device enumeration",
+                            )
                         )
-                    )
+                    else:
+                        backend_devices = self._run_async_safely(
+                            BLEInterface._with_timeout(
+                                getter(),
+                                BLEConfig.BLE_SCAN_TIMEOUT,
+                                "connected-device enumeration",
+                            )
+                        )
                 else:
                     # Run sync getter off the event loop thread with a timeout
                     async def _get_sync():
                         return await asyncio.to_thread(getter)
-                    backend_devices = run_async_safely(
-                        BLEInterface._with_timeout(
-                            _get_sync(),
-                            BLEConfig.BLE_SCAN_TIMEOUT,
-                            "connected-device enumeration",
+                    
+                    if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
+                        backend_devices = self.client.async_await(
+                            BLEInterface._with_timeout(
+                                _get_sync(),
+                                BLEConfig.BLE_SCAN_TIMEOUT,
+                                "connected-device enumeration",
+                            )
                         )
-                    )
+                    else:
+                        backend_devices = self._run_async_safely(
+                            BLEInterface._with_timeout(
+                                _get_sync(),
+                                BLEConfig.BLE_SCAN_TIMEOUT,
+                                "connected-device enumeration",
+                            )
+                        )
 
                 sanitized_target = None
                 if address:
