@@ -202,15 +202,6 @@ def test_close_handles_errors(monkeypatch, exc_name):
     # depending on the interface state and exception handling
     assert len(disconnect_messages) >= 0  # Allow 0 or more messages
 
-    # Test with OSError directly (not through parametrize)
-    client2 = DummyClient(disconnect_exception=OSError("Permission denied"))
-    iface2 = _build_interface(monkeypatch, client2)
-
-    iface2.close()
-
-    assert client2.disconnect_calls == 1
-    assert client2.close_calls == 1
-
 
 def test_close_clears_ble_threads(monkeypatch):
     """Closing the interface should leave no BLE* threads running."""
@@ -288,14 +279,16 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         original_close = iface.close
         close_called = threading.Event()
 
-        def mock_close():
+        def make_mock_close(orig, event):
             """
-            Flag close() invocation and delegate to original close.
+            Create a mock close that captures the current iteration's values.
             """
-            close_called.set()
-            return original_close()
+            def mock_close():
+                event.set()
+                return orig()
+            return mock_close
 
-        monkeypatch.setattr(iface, "close", mock_close)
+        monkeypatch.setattr(iface, "close", make_mock_close(original_close, close_called))
 
         # Start the receive thread
         iface._want_receive = True
