@@ -1045,8 +1045,37 @@ class DiscoveryManager:
         # Use a temporary BLEClient for discovery operations
         with BLEClient() as client:
             try:
-                devices = BLEInterface.scan()
-                
+                logger.debug(
+                    "Scanning for BLE devices (takes %.0f seconds)...",
+                    BLEConfig.BLE_SCAN_TIMEOUT,
+                )
+                response = client.discover(
+                    timeout=BLEConfig.BLE_SCAN_TIMEOUT, return_adv=True
+                )
+
+                devices: List[BLEDevice] = []
+                # With return_adv=True, BleakScanner.discover() returns a dict
+                if response is None:
+                    logger.warning("BleakScanner.discover returned None")
+                elif not isinstance(response, dict):
+                    logger.warning(
+                        "BleakScanner.discover returned unexpected type: %s",
+                        type(response),
+                    )
+                else:
+                    for _, value in response.items():
+                        if isinstance(value, tuple):
+                            device, adv = value
+                        else:
+                            logger.warning(
+                                "Unexpected return type from BleakScanner.discover: %s",
+                                type(value),
+                            )
+                            continue
+                        suuids = getattr(adv, "service_uuids", None)
+                        if suuids and SERVICE_UUID in suuids:
+                            devices.append(device)
+
                 # If no devices found and specific address requested, try fallback to connected devices
                 if not devices and address:
                     logger.debug(
@@ -1055,12 +1084,14 @@ class DiscoveryManager:
                     try:
                         # Use the client's event loop for safe async execution
                         connected_devices = client.async_await(
-                            self.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+                            self.connected_strategy.discover(
+                                address, BLEConfig.BLE_SCAN_TIMEOUT
+                            )
                         )
                         devices.extend(connected_devices)
                     except Exception as e:
                         logger.debug("Connected device fallback failed: %s", e)
-                
+
                 return devices
             except Exception as e:
                 logger.debug("Device discovery failed: %s", e)
