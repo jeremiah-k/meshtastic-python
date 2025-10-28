@@ -95,6 +95,7 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
         Returns:
             list: A single-element list containing the module-level `fallback_device`.
+
         """
         return [fallback_device]
 
@@ -143,6 +144,7 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 
             Raises:
                 The current test is failed via pytest.fail().
+
             """
             import pytest  # pylint: disable=C0415,E0401,W0404,W0621
 
@@ -305,6 +307,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
                 ----------
                 exception_type : Exception or type
                     An exception instance or an exception class; methods that simulate faults will raise this exception when invoked.
+
                 """
                 super().__init__()
                 self.exception_type = exception_type
@@ -315,6 +318,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
                 Raises:
                     Exception: An instance of the client's configured exception type (`self.exception_type`) with the message "test".
+
                 """
                 raise self.exception_type("test")
 
@@ -329,12 +333,15 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
             """
             Create a wrapper that sets an event and then calls the provided close callable.
 
-            Parameters:
+            Parameters
+            ----------
                 orig (callable): The original close function to invoke.
                 event (threading.Event): Event to set when the wrapper is called.
 
-            Returns:
+            Returns
+            -------
                 callable: A no-argument function that sets `event` and returns the result of calling `orig`.
+
             """
 
             def mock_close():
@@ -346,6 +353,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
                 Returns:
                     The value returned by `orig()`.
+
                 """
                 event.set()
                 return orig()
@@ -399,6 +407,7 @@ def test_log_notification_registration(monkeypatch):
             Attributes:
                 start_notify_calls (list[tuple]): Recorded calls to `start_notify`; each entry is the tuple of positional arguments passed (typically `(uuid, handler, ...)`).
                 has_characteristic_map (dict[str, bool]): Mapping from characteristic UUID to `True` if the client reports that characteristic as present. Prepopulated with `LEGACY_LOGRADIO_UUID`, `LOGRADIO_UUID`, and `FROMNUM_UUID` set to `True`.
+
             """
             super().__init__()
             self.start_notify_calls = []
@@ -412,11 +421,14 @@ def test_log_notification_registration(monkeypatch):
             """
             Return whether the client exposes a characteristic with the given UUID.
 
-            Parameters:
+            Parameters
+            ----------
                 uuid: Characteristic UUID to check (str or uuid.UUID).
 
-            Returns:
+            Returns
+            -------
                 True if the characteristic UUID is present, False otherwise.
+
             """
             return self.has_characteristic_map.get(uuid, False)
 

@@ -21,13 +21,15 @@ def _load_policies_after_mocks(
     """
     Ensure meshtastic.ble_interface is imported after test fixtures are applied and expose its ReconnectPolicy and RetryPolicy in the test module globals.
 
-    Parameters:
+    Parameters
+    ----------
         mock_bleak: pytest fixture that mocks the bleak BLE library; included to ensure the mock is active before import.
         mock_bleak_exc: pytest fixture that mocks bleak exceptions; included to ensure the mock is active before import.
         mock_publishing_thread: pytest fixture that mocks the publishing thread; included to ensure the mock is active before import.
         mock_pubsub: pytest fixture that mocks pub/sub functionality; included to ensure the mock is active before import.
         mock_serial: pytest fixture that mocks serial interactions; included to ensure the mock is active before import.
         mock_tabulate: pytest fixture that mocks tabulate usage; included to ensure the mock is active before import.
+
     """
     _ = (
         mock_bleak,

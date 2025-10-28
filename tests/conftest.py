@@ -52,6 +52,7 @@ def mock_pubsub(monkeypatch):
     Returns:
         The injected `pubsub` module whose `pub` attribute is a SimpleNamespace with
         `subscribe` and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
+
     """
     pubsub_module = types.ModuleType("pubsub")
     pubsub_module.pub = SimpleNamespace(
@@ -73,6 +74,7 @@ def mock_publishing_thread(monkeypatch):
 
     Returns:
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
+
     """
     publishing_thread_module = types.ModuleType("publishingThread")
 
@@ -80,8 +82,10 @@ def mock_publishing_thread(monkeypatch):
         """
         Invoke the given callback immediately when a callable is provided.
 
-        Parameters:
+        Parameters
+        ----------
             callback (Optional[Callable[[], Any]]): Callable to execute; if not provided or falsy, no action is taken.
+
         """
         if callback:
             callback()
@@ -103,6 +107,7 @@ def mock_tabulate(monkeypatch):
 
     Returns:
         types.ModuleType: The injected `tabulate` module whose `tabulate(...)` callable returns an empty string.
+
     """
     tabulate_module = types.ModuleType("tabulate")
     tabulate_module.tabulate = lambda *_args, **_kwargs: ""
@@ -131,12 +136,15 @@ def mock_bleak(monkeypatch):
             """
             Initialize a minimal test BLE client bound to an optional device address and a lightweight services shim.
 
-            Parameters:
+            Parameters
+            ----------
                 address (str | None): BLE device address associated with this client, or None.
                 **_kwargs: Additional keyword arguments are accepted and ignored.
 
-            Attributes:
+            Attributes
+            ----------
                 services (types.SimpleNamespace): Provides `get_characteristic(specifier)` which returns `None`.
+
             """
             self.address = address
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
@@ -151,11 +159,14 @@ def mock_bleak(monkeypatch):
             """
             No-op disconnect used by the BleakClient test stub.
 
-            Parameters:
+            Parameters
+            ----------
                 _kwargs (dict): Ignored keyword arguments.
 
-            Returns:
+            Returns
+            -------
                 None
+
             """
             return None
 
@@ -165,6 +176,7 @@ def mock_bleak(monkeypatch):
 
             Returns:
                 None
+
             """
             return None
 
@@ -174,6 +186,7 @@ def mock_bleak(monkeypatch):
 
             Returns:
                 bytes: Empty bytes b''.
+
             """
             return b""
 
@@ -191,6 +204,7 @@ def mock_bleak(monkeypatch):
 
             Returns:
                 `True` if connected, `False` otherwise. For this stubbed client, always returns `False`.
+
             """
             return False
 
@@ -202,6 +216,7 @@ def mock_bleak(monkeypatch):
 
         Returns:
             An empty list of discovered BLE devices.
+
         """
         return []
 

@@ -17,16 +17,19 @@ class DummyClient:
         """
         Initialize a dummy BLE client used as a test double.
 
-        Parameters:
+        Parameters
+        ----------
             disconnect_exception (Optional[Exception]): Exception to raise when disconnect() is called; pass `None` to disable raising.
 
-        Attributes:
+        Attributes
+        ----------
             disconnect_calls (int): Number of times disconnect() has been invoked.
             close_calls (int): Number of times close() has been invoked.
             address (str): Client address identifier, set to "dummy".
             disconnect_exception (Optional[Exception]): Stored exception raised by disconnect(), if any.
             services (types.SimpleNamespace): Provides get_characteristic(specifier) -> None for characteristic lookups.
             bleak_client (types.SimpleNamespace): Minimal mock of a bleak client with an `address` attribute used for identity checks.
+
         """
         self.disconnect_calls = 0
         self.close_calls = 0
@@ -65,6 +68,7 @@ class DummyClient:
 
         Returns:
             bytes: An empty byte string `b''`.
+
         """
         return b""
 
@@ -80,6 +84,7 @@ class DummyClient:
 
         Returns:
             True if the client is considered connected, False otherwise.
+
         """
         return True
 
@@ -135,11 +140,14 @@ def stub_atexit(
         """
         Register a callable for later invocation by appending it to the local registry.
 
-        Parameters:
+        Parameters
+        ----------
             func (callable): Callable to register; may also be used as a decorator.
 
-        Returns:
+        Returns
+        -------
             callable: The registered callable.
+
         """
         registered.append(func)
         return func
@@ -167,11 +175,14 @@ def stub_atexit(
         """
         Return a distribution version, preferring a mocked bleak version when present.
 
-        Parameters:
+        Parameters
+        ----------
             name (str): Distribution name to resolve.
 
-        Returns:
+        Returns
+        -------
             str: If `name` is "bleak", the mocked `bleak.__version__` when available, otherwise "0.0.0". For other names, the version from the original resolver.
+
         """
         if name == "bleak":
             # use mocked bleak's __version__ if available; else a benign default
@@ -230,11 +241,14 @@ def _build_interface(monkeypatch, client):
 
         Records the attempted address in the external `connect_calls` list, assigns the preconfigured test client to the interface, marks the interface as connected, triggers the interface's connected hook, and sets `_reconnected_event` if present.
 
-        Parameters:
+        Parameters
+        ----------
             _address (Optional[str]): Ignored by this stub; accepted to match the original signature.
 
-        Returns:
+        Returns
+        -------
             DummyClient: The test client instance assigned to the interface.
+
         """
         connect_calls.append(_address)
         _self.client = client

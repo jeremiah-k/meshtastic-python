@@ -244,6 +244,7 @@ class TestBLEStateManager:
 
             Returns:
                 ConnectionState: The manager's current connection state.
+
             """
             with manager._state_lock:
                 with manager._state_lock:
@@ -546,8 +547,10 @@ def test_lock_contention_performance():
 
         Performs 100 iterations attempting transitions to ConnectionState.CONNECTING, ConnectionState.CONNECTED, and ConnectionState.DISCONNECTED on the outer-scope `manager`. Counts the number of successful transitions (incremented for each successful transition attempt) and measures the elapsed wall-clock time for the loop. Appends a dict to the outer-scope `results` list with keys "worker_id" (the provided identifier), "operations" (total successful transitions), and "time" (elapsed seconds).
 
-        Parameters:
+        Parameters
+        ----------
             worker_id (int): Identifier recorded in the appended result to distinguish this worker's measurements.
+
         """
         start_time = time.perf_counter()
         operations = 0
