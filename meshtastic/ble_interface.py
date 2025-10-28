@@ -1148,6 +1148,7 @@ class ConnectionOrchestrator:
 
     def __init__(
         self,
+        interface: "BLEInterface",
         validator: ConnectionValidator,
         client_manager: ClientManager,
         discovery_manager: DiscoveryManager,
@@ -1155,6 +1156,7 @@ class ConnectionOrchestrator:
         state_lock,
         thread_coordinator,
     ):
+        self.interface = interface
         self.validator = validator
         self.client_manager = client_manager
         self.discovery_manager = discovery_manager
@@ -1188,12 +1190,7 @@ class ConnectionOrchestrator:
         client = None
         try:
             # Find device
-            devices = self.discovery_manager.discover_devices(address or current_address)
-            if not devices:
-                raise BLEInterface.BLEError("No device found")
-
-            # Create and connect client
-            device = devices[0]  # Use the first discovered device
+            device = self.interface.find_device(address or current_address)
             client = self.client_manager.create_client(
                 device.address, on_disconnect_func
             )
@@ -1490,6 +1487,7 @@ class BLEInterface(MeshInterface):
             self.error_handler,
         )
         self._connection_orchestrator = ConnectionOrchestrator(
+            self,
             self._connection_validator,
             self._client_manager,
             self._discovery_manager,
