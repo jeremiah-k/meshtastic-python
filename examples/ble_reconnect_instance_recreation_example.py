@@ -24,10 +24,6 @@ import meshtastic.ble_interface
 # Retry delay in seconds when connection fails
 RETRY_DELAY_SECONDS = 5
 
-# Timeout multiplier and minimum for disconnect event wait
-DISCONNECT_TIMEOUT_MULTIPLIER = 2
-DISCONNECT_TIMEOUT_MIN_SECONDS = 30.0
-
 logger = logging.getLogger(__name__)
 
 # A thread-safe flag to signal disconnection
