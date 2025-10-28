@@ -145,6 +145,26 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 
 def test_close_idempotent(monkeypatch):
     """Test that close() is idempotent and only calls disconnect once."""
+    # pub already imported at top as mesh_iface_module.pub
+    
+    calls = []
+
+    def _capture(topic, **kwargs):
+        """
+        Capture a pubsub message by recording its topic and fields.
+
+        Appends a tuple (topic, kwargs) to the module-level `calls` list for later inspection.
+
+        Parameters
+        ----------
+            topic (str): Pubsub topic name.
+            **kwargs (dict): Additional message fields to capture alongside the topic.
+
+        """
+        calls.append((topic, kwargs))
+
+    monkeypatch.setattr(pub, "sendMessage", _capture)
+    
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
@@ -154,6 +174,14 @@ def test_close_idempotent(monkeypatch):
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
+    
+    # Check that no disconnect status message is sent during close
+    disconnect_messages = [
+        (t, kw)
+        for t, kw in calls
+        if t == "meshtastic.connection.status" and kw.get("connected") is False
+    ]
+    assert not disconnect_messages, "No disconnect status message should be sent during close"
 
 
 @pytest.mark.parametrize("exc_name", ["BleakError", "RuntimeError", "OSError"])
@@ -192,12 +220,13 @@ def test_close_handles_errors(monkeypatch, exc_name):
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
-    # Check if any disconnect status message was sent
+    # No disconnect status message should be sent when disconnect fails
     disconnect_messages = [
         (t, kw)
         for t, kw in calls
         if t == "meshtastic.connection.status" and kw.get("connected") is False
     ]
+    assert not disconnect_messages, "No disconnect status message should be sent when disconnect fails"
     # No spurious "connected=True" status during close error handling
     assert not any(
         t == "meshtastic.connection.status" and kw.get("connected") is True
