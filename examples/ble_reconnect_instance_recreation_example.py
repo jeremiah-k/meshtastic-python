@@ -107,7 +107,10 @@ def main():
                         "Connection successful. Waiting for disconnection event..."
                     )
                     # Timeout is 2x retry delay or 30s minimum to allow for BLE connection establishment
-                    timeout_s = max(DISCONNECT_TIMEOUT_MULTIPLIER * delay, DISCONNECT_TIMEOUT_MIN_SECONDS)
+                    timeout_s = max(
+                        DISCONNECT_TIMEOUT_MULTIPLIER * delay,
+                        DISCONNECT_TIMEOUT_MIN_SECONDS,
+                    )
                     if not disconnected_event.wait(timeout=timeout_s):
                         logger.warning(
                             "No disconnect event within %.1fs; proceeding to retry.",

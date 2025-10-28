@@ -18,7 +18,19 @@ def _load_state_manager_after_mocks(
     mock_publishing_thread,  # pylint: disable=W0613
 ):
     # Consume fixtures to enforce ordering and silence Ruff (ARG001)
-    _ = (mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread)
+    """
+    Load BLEStateManager and ConnectionState into the module globals after mocks are applied.
+
+    Dynamically import the meshtastic.ble_interface module and assign its BLEStateManager and ConnectionState attributes to the module-level globals so tests can reference them once mock fixtures have been applied.
+    """
+    _ = (
+        mock_serial,
+        mock_pubsub,
+        mock_tabulate,
+        mock_bleak,
+        mock_bleak_exc,
+        mock_publishing_thread,
+    )
     """
     Ensure BLEStateManager and ConnectionState are loaded into module globals for tests.
 
@@ -167,7 +179,9 @@ class TestBLEStateManager:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
                     results.append((worker_id, i, success, manager.state.value))
                     time.sleep(0.001)  # Small delay to increase contention
-            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Start multiple threads
@@ -226,11 +240,10 @@ class TestBLEStateManager:
         def nested_operation():
             # This should work with reentrant lock
             """
-            Acquire the manager's reentrant state lock twice and obtain the manager's current connection state.
+            Obtain the manager's current connection state using a nested acquisition of its reentrant state lock.
 
             Returns:
                 ConnectionState: The manager's current connection state.
-
             """
             with manager._state_lock:
                 with manager._state_lock:
@@ -423,7 +436,9 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -463,9 +478,9 @@ class TestPhase3LockConsolidation:
         def nested_operation():
             # This should work without deadlock due to reentrant lock
             """
-            Acquire the manager's reentrant state lock and perform a sequence of state transitions to exercise nested-lock behavior.
+            Exercise nested reentrant state-lock behavior by performing a sequence of state transitions.
 
-            This function enters manager._state_lock and performs transitions: CONNECTING, CONNECTED (with a mock client), and DISCONNECTED. It validates that acquiring the lock reentrantly while performing transitions does not cause a deadlock.
+            Acquires the manager's reentrant state lock and performs CONNECTING, CONNECTED (with mock_client), and DISCONNECTED transitions to verify nested lock acquisition does not deadlock.
             """
             with manager._state_lock:
                 manager.transition_to(ConnectionState.CONNECTING)
@@ -516,9 +531,9 @@ class TestPhase3LockConsolidation:
 @pytest.mark.slow
 def test_lock_contention_performance():
     """
-    Measure BLEStateManager throughput and correctness under lock contention by running multiple worker threads that perform repeated state transitions.
+    Measure BLEStateManager throughput and correctness under lock contention.
 
-    Runs five worker threads that each perform 100 cycles of CONNECTING → CONNECTED → DISCONNECTED transitions against a shared BLEStateManager, verifies the total elapsed time is below a CI-adjusted threshold, and asserts at least 80% of the expected operations completed. Prints a short performance summary including total operations and elapsed time.
+    Starts five worker threads; each performs 100 cycles of CONNECTING → CONNECTED → DISCONNECTED on a shared BLEStateManager. Asserts the total elapsed time is below a CI-adjusted threshold and that at least 80% of the expected operations completed. Prints a short performance summary with total operations and elapsed time.
     """
     import os
 
@@ -527,14 +542,12 @@ def test_lock_contention_performance():
 
     def worker(worker_id):
         """
-        Perform 100 BLE state-transition cycles and record this worker's operation count and elapsed time.
+        Execute 100 cycles of BLE state transitions and append this worker's metrics to the shared results list.
 
-        Runs 100 iterations attempting transitions to CONNECTING, CONNECTED, and DISCONNECTED on the outer-scope `manager`, counts successful transitions, measures wall-clock time for the loop, and appends a result dict with keys "worker_id", "operations", and "time" to the outer-scope `results` list.
+        Performs 100 iterations attempting transitions to ConnectionState.CONNECTING, ConnectionState.CONNECTED, and ConnectionState.DISCONNECTED on the outer-scope `manager`. Counts the number of successful transitions (incremented for each successful transition attempt) and measures the elapsed wall-clock time for the loop. Appends a dict to the outer-scope `results` list with keys "worker_id" (the provided identifier), "operations" (total successful transitions), and "time" (elapsed seconds).
 
-        Parameters
-        ----------
-            worker_id (int): Identifier included in the appended result to distinguish this worker's measurements.
-
+        Parameters:
+            worker_id (int): Identifier recorded in the appended result to distinguish this worker's measurements.
         """
         start_time = time.perf_counter()
         operations = 0

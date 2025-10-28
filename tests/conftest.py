@@ -47,12 +47,11 @@ def mock_serial(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_pubsub(monkeypatch):
     """
-    Provide a fake `pubsub` module in sys.modules for tests.
+    Injects a fake `pubsub` module into sys.modules for tests.
 
     Returns:
-        The injected fake `pubsub` module. Its `pub` attribute is a SimpleNamespace with `subscribe`
-        and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
-
+        The injected `pubsub` module whose `pub` attribute is a SimpleNamespace with
+        `subscribe` and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
     """
     pubsub_module = types.ModuleType("pubsub")
     pubsub_module.pub = SimpleNamespace(
@@ -68,25 +67,21 @@ def mock_pubsub(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_publishing_thread(monkeypatch):
     """
-    Create and register a mocked publishingThread module whose queueWork executes a provided callback immediately.
+    Inject a lightweight publishingThread module into sys.modules whose queueWork executes a given callback immediately.
 
-    The mock is inserted into sys.modules as "publishingThread" to provide a synchronous, deterministic queueWork implementation for tests.
+    Ensures any existing "publishingThread" entry is removed before insertion to provide a fresh, synchronous test stub.
 
     Returns:
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
-
     """
     publishing_thread_module = types.ModuleType("publishingThread")
 
     def queueWork(callback):
         """
-        Run the provided callback immediately if one is supplied.
+        Invoke the given callback immediately when a callable is provided.
 
-        Parameters
-        ----------
-        callback : Optional[Callable[[], Any]]
-            Callable to execute; if `None` or falsy, nothing is invoked.
-
+        Parameters:
+            callback (Optional[Callable[[], Any]]): Callable to execute; if not provided or falsy, no action is taken.
         """
         if callback:
             callback()
@@ -104,11 +99,10 @@ def mock_publishing_thread(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_tabulate(monkeypatch):
     """
-    Install a minimal fake `tabulate` module into `sys.modules` for use in tests.
+    Install a minimal fake `tabulate` module into `sys.modules` for tests.
 
     Returns:
-        The fake `tabulate` module object inserted into `sys.modules`.
-
+        types.ModuleType: The injected `tabulate` module whose `tabulate(...)` callable returns an empty string.
     """
     tabulate_module = types.ModuleType("tabulate")
     tabulate_module.tabulate = lambda *_args, **_kwargs: ""
@@ -135,97 +129,79 @@ def mock_bleak(monkeypatch):
     class _StubBleakClient:
         def __init__(self, address=None, **_kwargs):
             """
-            Create a minimal test BLE client bound to an optional address with a lightweight services shim.
+            Initialize a minimal test BLE client bound to an optional device address and a lightweight services shim.
 
-            Parameters
-            ----------
-            address : str | None
-                BLE device address associated with this client, or None.
-            **_kwargs : dict
-                Additional keyword arguments are accepted and ignored.
+            Parameters:
+                address (str | None): BLE device address associated with this client, or None.
+                **_kwargs: Additional keyword arguments are accepted and ignored.
 
-            Attributes
-            ----------
-                services (types.SimpleNamespace): Provides `get_characteristic(specifier)` which always returns `None`.
-
+            Attributes:
+                services (types.SimpleNamespace): Provides `get_characteristic(specifier)` which returns `None`.
             """
             self.address = address
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
 
         async def connect(self, **_kwargs):
             """
-            No-op connect method for the stub Bleak client that ignores any keyword arguments.
-
-            Parameters
-            ----------
-                _kwargs (dict): Ignored keyword arguments.
-
-            Returns
-            -------
-                None
-
+            No-op connect method that accepts and ignores any keyword arguments.
             """
             return None
 
         async def disconnect(self, **_kwargs):
             """
-            No-op disconnect for the test double.
+            No-op disconnect used by the BleakClient test stub.
 
-            Accepts and ignores any keyword arguments. Returns None.
+            Parameters:
+                _kwargs (dict): Ignored keyword arguments.
+
+            Returns:
+                None
             """
             return None
 
         async def start_notify(self, *_args, **_kwargs):
             """
-            No-op placeholder for starting notifications on a BLE characteristic; accepts any arguments for API compatibility.
+            Stub implementation that accepts any arguments for API compatibility and performs no action when asked to start notifications on a BLE characteristic.
 
             Returns:
-                None: This stub does not perform any action.
-
+                None
             """
             return None
 
         async def read_gatt_char(self, *_args, **_kwargs):
             """
-            Simulate reading a GATT characteristic and return no data.
+            Simulate reading a GATT characteristic and provide no data.
 
             Returns:
-                bytes: Empty bytes (b'').
-
+                bytes: Empty bytes b''.
             """
             return b""
 
         async def write_gatt_char(self, *_args, **_kwargs):
             """
-            No-op stub that accepts any arguments to emulate BleakClient.write_gatt_char in tests.
+            Accepts any positional and keyword arguments and performs no action.
 
-            This function ignores all positional and keyword arguments and performs no side effects.
-
-            Returns:
-                None
-
+            This no-op stub mirrors the signature of a GATT characteristic write method while producing no side effects.
             """
             return None
 
         def is_connected(self):
             """
-            Report whether the dummy BLE client is connected.
+            Report whether the dummy BLE client has an active connection.
 
             Returns:
-                False (this stubbed client never reports being connected).
-
+                `True` if connected, `False` otherwise. For this stubbed client, always returns `False`.
             """
             return False
 
     async def _stub_discover(**_kwargs):
         """
-        Simulate BLE device discovery by returning an empty list.
+        Simulate BLE device discovery that yields no results.
 
         Accepts arbitrary keyword arguments for API compatibility; all are ignored.
 
         Returns:
-            list: Empty list of discovered BLE devices.
-
+            An empty list of discovered BLE devices.
         """
         return []
 
@@ -254,13 +230,9 @@ def mock_bleak(monkeypatch):
         def __init__(self, *_args, **_kwargs):
             # accept arbitrary args/kwargs for parity with real BleakScanner
             """
-            Initialize a stub BleakScanner; accepts any positional and keyword arguments for API compatibility.
+            Initialize a stub BleakScanner compatible with Bleak's API.
 
-            Parameters
-            ----------
-                _args: Positional arguments passed through for compatibility with the real BleakScanner (ignored).
-                _kwargs: Keyword arguments passed through for compatibility with the real BleakScanner (ignored).
-
+            Accepts any positional and keyword arguments for compatibility; provided arguments are ignored.
             """
 
         @staticmethod
@@ -279,10 +251,6 @@ def mock_bleak(monkeypatch):
             Start the BLE scanner.
 
             This stub implementation performs no action.
-
-            Returns:
-                None
-
             """
 
         async def stop(self):
@@ -292,9 +260,9 @@ def mock_bleak(monkeypatch):
 
         def register_detection_callback(self, *_args, **_kwargs):
             """
-            Accept a detection callback but perform no action.
+            Register a detection callback placeholder that does nothing.
 
-            Any positional and keyword arguments are accepted and ignored.
+            Accepts any positional and keyword arguments and ignores them.
             """
             return None
 
