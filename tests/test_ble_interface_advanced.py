@@ -11,9 +11,7 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest  # type: ignore[import-untyped]  # pylint: disable=E0401
-from bleak.exc import (
-    BleakError,  # type: ignore[import-untyped]  # pylint: disable=E0401
-)
+import importlib
 
 # Import common fixtures
 from test_ble_interface_fixtures import (
@@ -21,17 +19,19 @@ from test_ble_interface_fixtures import (
     _build_interface,
 )
 
-# Import meshtastic modules for use in tests
-import meshtastic.ble_interface as ble_mod
-import meshtastic.mesh_interface as mesh_iface_module
-from meshtastic.ble_interface import (
-    FROMNUM_UUID,
-    LEGACY_LOGRADIO_UUID,
-    LOGRADIO_UUID,
-    BLEClient,
-    BLEInterface,
-)
-from meshtastic.protobuf import mesh_pb2
+@pytest.fixture(autouse=True)
+def _late_imports(mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread):
+    _ = (mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread)
+    global ble_mod, mesh_iface_module, BLEInterface, BLEClient, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, mesh_pb2
+    ble_mod = importlib.import_module("meshtastic.ble_interface")
+    mesh_iface_module = importlib.import_module("meshtastic.mesh_interface")
+    BLEInterface = ble_mod.BLEInterface
+    BLEClient = ble_mod.BLEClient
+    FROMNUM_UUID = ble_mod.FROMNUM_UUID
+    LEGACY_LOGRADIO_UUID = ble_mod.LEGACY_LOGRADIO_UUID
+    LOGRADIO_UUID = ble_mod.LOGRADIO_UUID
+    BleakError = importlib.import_module("bleak.exc").BleakError
+    mesh_pb2 = importlib.import_module("meshtastic.protobuf").mesh_pb2
 
 
 

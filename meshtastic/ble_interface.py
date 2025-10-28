@@ -30,7 +30,7 @@ from .protobuf import mesh_pb2
 
 
 # Loop-safe sleep helpers
-def _sleep(delay, loop=None):
+def _sleep(delay: float):
     """Sleep for delay seconds. This is a blocking call.
 
     NOTE: This function must not be called from a thread with a running asyncio event loop.
@@ -1045,10 +1045,7 @@ class DiscoveryManager:
         # Use a temporary BLEClient for discovery operations
         with BLEClient() as client:
             try:
-                devices = client.discover(
-                    timeout=BLEConfig.BLE_SCAN_TIMEOUT, 
-                    service_uuids=[SERVICE_UUID]
-                )
+                devices = BLEInterface.scan()
                 
                 # If no devices found and specific address requested, try fallback to connected devices
                 if not devices and address:
@@ -1202,9 +1199,8 @@ class ConnectionOrchestrator:
         target_address = address if address is not None else current_address
         logger.info("Attempting to connect to %s", target_address or "any")
 
-        # Normalize the request
+        # Normalize request if needed for logging in future (currently unused)
         requested_identifier = address if address is not None else current_address
-        normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
         # Transition to CONNECTING state
         self.state_manager.transition_to(ConnectionState.CONNECTING)
@@ -1238,7 +1234,7 @@ class ConnectionOrchestrator:
             return client
 
         except Exception as e:
-            logger.error("Connection failed to %s: %s", target_address or "unknown", e)
+            logger.exception("Connection failed to %s: %s", target_address or "unknown", e)
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
             if client:
                 self.client_manager._safe_close_client(client)
@@ -1897,7 +1893,7 @@ class BLEInterface(MeshInterface):
             )
         except (BleakError, BleakDBusError, RuntimeError) as e:
             # Critical failure - FROMNUM notification is essential for packet reception
-            logger.error("Failed to start critical FROMNUM notifications: %s", e)
+            logger.exception("Failed to start critical FROMNUM notifications: %s", e)
             # In test environments, we want to be more permissive to allow test completion
             if not self.noProto:
                 raise self.BLEError(
@@ -1993,8 +1989,7 @@ class BLEInterface(MeshInterface):
             )
             response = client.discover(
                 timeout=BLEConfig.BLE_SCAN_TIMEOUT,
-                return_adv=True,
-                service_uuids=[SERVICE_UUID],
+                return_adv=True
             )
 
             devices: List[BLEDevice] = []
@@ -2323,7 +2318,7 @@ class BLEInterface(MeshInterface):
         target_address = address if address is not None else self.address
         logger.info("Attempting to connect to %s", target_address or "any")
 
-        # Use unified state lock
+        # Fast-path reuse under lock
         with self._state_lock:
             # Check for existing client that can be reused
             requested_identifier = address if address is not None else self.address
@@ -2343,20 +2338,21 @@ class BLEInterface(MeshInterface):
                 logger.debug("Already connected, skipping connect call.")
                 return existing_client
 
-            # Use connection orchestrator to establish connection
-            client = self._connection_orchestrator.establish_connection(
-                address,
-                self.address,
-                self._last_connection_request,
-                self._register_notifications,
-                self._connected,
-                self._on_ble_disconnect,
-            )
+        # Establish connection outside of lock (I/O heavy)
+        client = self._connection_orchestrator.establish_connection(
+            address,
+            self.address,
+            self._last_connection_request,
+            self._register_notifications,
+            self._connected,
+            self._on_ble_disconnect,
+        )
 
-            # Update interface state and client references
-            device_address = (
-                client.bleak_client.address if hasattr(client, "bleak_client") else None
-            )
+        # Update interface state and client references under lock
+        device_address = (
+            client.bleak_client.address if hasattr(client, "bleak_client") else None
+        )
+        with self._state_lock:
             self.address = device_address  # Keep address in sync for auto-reconnect
 
             # Update client reference and handle cleanup
@@ -2662,16 +2658,17 @@ class BLEInterface(MeshInterface):
 
         # Stop reconnection thread if active
         self._shutdown_event.set()
+        # Copy reference under lock; join outside to avoid deadlock with worker cleanup.
         with self._state_lock:
             reconnect_thread = self._reconnect_thread
-            if reconnect_thread and reconnect_thread.is_alive():
-                logger.debug("Stopping auto-reconnect thread for shutdown")
-                reconnect_thread.join(timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
-                if reconnect_thread.is_alive():
-                    logger.warning(
-                        "Auto-reconnect thread did not exit within %.1fs",
-                        RECEIVE_THREAD_JOIN_TIMEOUT,
-                    )
+        if reconnect_thread and reconnect_thread.is_alive():
+            logger.debug("Stopping auto-reconnect thread for shutdown")
+            reconnect_thread.join(timeout=RECEIVE_THREAD_JOIN_TIMEOUT)
+            if reconnect_thread.is_alive():
+                logger.warning(
+                    "Auto-reconnect thread did not exit within %.1fs",
+                    RECEIVE_THREAD_JOIN_TIMEOUT,
+                )
 
         # Clean up thread coordinator
         self.thread_coordinator.cleanup()
@@ -3092,10 +3089,10 @@ class BLEClient:
         """
         Request the internal event loop to stop.
         """
-        # Cancel all pending tasks to prevent callback errors after loop closure
-        for task in asyncio.all_tasks(self._eventLoop):
-            if not task.done():
+        # Cancel all pending tasks on current loop (portable)
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task() and not task.done():
                 task.cancel()
-        # Allow cancelled tasks to complete
+        # Allow cancelled tasks to propagate cancellation
         await asyncio.sleep(0)
         self._eventLoop.stop()
