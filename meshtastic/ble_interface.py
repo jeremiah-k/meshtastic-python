@@ -1144,9 +1144,7 @@ class ClientManager:
         """Update the client reference and handle cleanup of old client."""
         with self.state_lock:
             previous_client = old_client
-            # This would be set on the BLEInterface instance
-            # self.client = new_client
-            # self._disconnect_notified = disconnect_notified
+            
 
             if previous_client and previous_client is not new_client:
                 close_thread = self.thread_coordinator.create_thread(
@@ -2085,7 +2083,7 @@ class BLEInterface(MeshInterface):
         return addressed_devices[0]
 
     @staticmethod
-    def _run_async_safely(self, coro):
+    def _run_async_safely(coro):
         """
         Run a coroutine safely, handling the case where an event loop is already running.
         
