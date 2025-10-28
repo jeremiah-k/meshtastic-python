@@ -31,15 +31,24 @@ from .protobuf import mesh_pb2
 
 # Loop-safe sleep helpers
 def _sleep(delay: float):
-    """Sleep for delay seconds. This is a blocking call.
-
-    NOTE: This function must not be called from a thread with a running asyncio event loop.
+    """
+    Sleep for the given number of seconds.
+    
+    Blocks the current thread for the specified duration. Do not call from a thread that has a running asyncio event loop.
+    
+    Parameters:
+        delay (float): Number of seconds to sleep.
     """
     time.sleep(delay)
 
 
 async def _asleep(delay):
-    """Async sleep for delay seconds."""
+    """
+    Suspend execution for the given number of seconds.
+    
+    Parameters:
+        delay (float): Number of seconds to sleep.
+    """
     await asyncio.sleep(delay)
 
 
@@ -73,7 +82,14 @@ class NotificationManager:
     """
 
     def __init__(self):
-        """Initialize notification manager."""
+        """
+        Create a NotificationManager that tracks and guards BLE notification subscriptions.
+        
+        Initializes internal state:
+        - _active_subscriptions: mapping from subscription token to (characteristic, callback).
+        - _subscription_counter: monotonic counter used to generate unique subscription tokens.
+        - _lock: reentrant lock protecting subscription state.
+        """
         self._active_subscriptions = {}  # token -> (characteristic, callback)
         self._subscription_counter = 0
         self._lock = RLock()
@@ -98,14 +114,13 @@ class NotificationManager:
 
     def unsubscribe(self, token: int) -> bool:
         """
-        Unsubscribe from notifications using token.
-
-        Args:
-            token: Subscription token returned by subscribe()
-
+        Remove an active notification subscription identified by the given token.
+        
+        Parameters:
+            token (int): Subscription token returned by subscribe().
+        
         Returns:
-            True if subscription was found and removed, False otherwise
-
+            bool: `True` if the subscription was found and removed, `False` otherwise.
         """
         with self._lock:
             if token in self._active_subscriptions:
@@ -114,22 +129,30 @@ class NotificationManager:
             return False
 
     def get_active_subscriptions(self) -> dict:
-        """Get copy of active subscriptions."""
+        """
+        Provide a shallow copy of the current active notification subscriptions.
+        
+        Returns:
+            dict: Mapping of subscription identifiers to their subscription details (e.g., callbacks or metadata).
+        """
         with self._lock:
             return self._active_subscriptions.copy()
 
     def cleanup_all(self) -> None:
-        """Clear all active subscriptions."""
+        """
+        Remove all tracked notification subscriptions.
+        
+        Thread-safely clears the manager's internal registry of active subscriptions. This only clears the local tracking state; it does not unsubscribe from notifications on remote BLE clients.
+        """
         with self._lock:
             self._active_subscriptions.clear()
 
     def resubscribe_all(self, client) -> None:
         """
-        Resubscribe all active subscriptions on the given client.
-
-        Args:
-            client: BLE client to resubscribe on
-
+        Resubscribe all currently tracked notification subscriptions to the provided BLE client.
+        
+        Parameters:
+            client (BLEClient): BLE client to register the tracked notification callbacks on. Individual subscription failures are logged and do not raise.
         """
         with self._lock:
             for _token, (
@@ -146,7 +169,12 @@ class NotificationManager:
                     logger.debug("Failed to resubscribe %s: %s", characteristic, e)
 
     def __len__(self) -> int:
-        """Get number of active subscriptions."""
+        """
+        Return the number of active subscriptions.
+        
+        Returns:
+            int: The number of currently active subscriptions.
+        """
         with self._lock:
             return len(self._active_subscriptions)
 
@@ -266,19 +294,20 @@ class ReconnectPolicy:
         self._attempt_count = 0
 
     def reset(self) -> None:
-        """Reset attempt counter for new retry sequence."""
+        """
+        Reset the internal attempt counter to zero to start a new retry sequence.
+        """
         self._attempt_count = 0
 
     def get_delay(self, attempt: Optional[int] = None) -> float:
         """
-        Calculate delay for given attempt number with backoff and jitter.
-
-        Args:
-            attempt: Attempt number (uses internal counter if None)
-
+        Compute the backoff delay for a given retry attempt including jitter.
+        
+        Parameters:
+        	attempt (Optional[int]): Zero-based attempt index to calculate delay for; when None uses the internal attempt counter.
+        
         Returns:
-            Delay in seconds
-
+        	delay (float): Delay in seconds, capped at `max_delay` and adjusted by the configured jitter ratio.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -309,11 +338,14 @@ class ReconnectPolicy:
 
     def next_attempt(self) -> Tuple[float, bool]:
         """
-        Get delay for next attempt and increment counter.
-
+        Return the delay for the next retry attempt and whether another retry should be performed.
+        
+        This method increments the internal attempt counter as a side effect.
+        
         Returns:
-            Tuple of (delay_seconds, should_retry)
-
+            (delay_seconds, should_retry) (Tuple[float, bool]): 
+                delay_seconds: Seconds to wait before the next attempt.
+                should_retry: `True` if another retry attempt should be allowed, `False` otherwise.
         """
         delay = self.get_delay()
         should_retry = self.should_retry()
@@ -321,12 +353,20 @@ class ReconnectPolicy:
         return delay, should_retry
 
     def get_attempt_count(self) -> int:
-        """Get current attempt count."""
+        """
+        Return the number of retry attempts that have been performed.
+        
+        Returns:
+            int: The current attempt count.
+        """
         return self._attempt_count
 
     def sleep_with_backoff(self, attempt: int) -> None:
         """
-        Sleep for the computed backoff delay for given attempt.
+        Sleep for the backoff delay corresponding to the given attempt.
+        
+        Parameters:
+            attempt (int): Attempt number used to compute the delay.
         """
         _sleep(self.get_delay(attempt))
 
@@ -382,10 +422,12 @@ BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = (
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
-    Extract a three-part integer version tuple from `version_str`.
-
-    This helper is intentionally permissive — non-numeric segments are ignored and
-    missing components are treated as zeros.
+    Parse a version string into a three-component version tuple.
+    
+    Non-numeric segments are ignored and missing components are treated as zero. If parsing fails, returns (0, 0, 0).
+    
+    Returns:
+        version (Tuple[int, int, int]): A (major, minor, patch) integer tuple representing the version.
     """
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
@@ -434,7 +476,12 @@ class BLEStateManager:
 
     @property
     def state(self) -> ConnectionState:
-        """Get current connection state."""
+        """
+        Return the current connection state.
+        
+        Returns:
+            ConnectionState: The current BLE connection state (one of the ConnectionState enum members).
+        """
         with self._state_lock:
             return self._state
 
@@ -455,35 +502,55 @@ class BLEStateManager:
 
     @property
     def client(self) -> Optional["BLEClient"]:
-        """Get current BLE client."""
+        """
+        Retrieve the currently tracked BLE client.
+        
+        This access is performed while holding the internal state lock to ensure thread safety.
+        
+        Returns:
+            The `BLEClient` instance if a client is currently tracked, `None` otherwise.
+        """
         with self._state_lock:
             return self._client
 
     @property
     def state_version(self) -> int:
-        """Get current state version for tracking stale operations."""
+        """
+        Return the current state version used to detect stale operations.
+        
+        Returns:
+            int: Monotonically incremented version number representing the current state.
+        """
         with self._state_lock:
             return self._state_version
 
     def set_on_state_change(
         self, callback: Optional[Callable[[ConnectionState, str], None]]
     ) -> None:
-        """Set callback for state change notifications."""
+        """
+        Register a callback to be invoked when the connection state changes.
+        
+        The callback (or None to clear any existing callback) will be called with two arguments:
+        the new ConnectionState and a string identifier (typically the client's address).
+        
+        Parameters:
+            callback (Optional[Callable[[ConnectionState, str], None]]): Function to call on state changes or `None` to unregister.
+        """
         with self._state_lock:
             self._on_state_change = callback
 
     def transition_to(
         self, new_state: ConnectionState, client: Optional["BLEClient"] = None
     ) -> bool:
-        """Thread-safe state transition with validation.
-
-        Args:
-            new_state: Target state to transition to
-            client: BLE client associated with this transition (optional)
-
+        """
+        Attempt a thread-safe transition of the connection state to `new_state`.
+        
+        Parameters:
+            new_state (ConnectionState): The desired target state.
+            client (Optional[BLEClient]): If provided, set as the current client for the new state; if omitted and `new_state` is `DISCONNECTED`, the stored client reference is cleared.
+        
         Returns:
-            True if transition was valid and applied, False otherwise
-
+            bool: `true` if the transition was valid and applied, `false` otherwise.
         """
         with self._state_lock:
             if self._is_valid_transition(self._state, new_state):
@@ -515,14 +582,14 @@ class BLEStateManager:
                 return False
 
     def is_version_current(self, version: int) -> bool:
-        """Check if a state version is still current.
-
-        Args:
-            version: Version to check against current state
-
+        """
+        Determine whether a given state version matches the current state version.
+        
+        Parameters:
+            version (int): State version to compare against the manager's current version.
+        
         Returns:
-            True if version is current, False if stale
-
+            True if the provided version matches the current state version, False otherwise.
         """
         with self._state_lock:
             return version == self._state_version
@@ -530,15 +597,11 @@ class BLEStateManager:
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
     ) -> bool:
-        """Validate if a state transition is allowed.
-
-        Args:
-            from_state: Current state
-            to_state: Desired next state
-
+        """
+        Determine whether a transition from one connection state to another is permitted.
+        
         Returns:
-            True if transition is valid, False otherwise
-
+            `true` if the transition is allowed, `false` otherwise.
         """
         # Define valid transitions based on connection lifecycle
         valid_transitions = {
@@ -843,29 +906,20 @@ class BLEErrorHandler:
         reraise: bool = False,
     ):
         """
-        Execute a callable and return its result while converting handled exceptions into a default value.
-
-        Args:
-        ----
-            func (callable): A zero-argument callable to execute.
-            default_return: Value to return if execution fails; defaults to None.
-            log_error (bool): If True, log caught exceptions; defaults to True.
-            error_msg (str): Message used when logging errors; defaults to "Error in operation".
-            reraise (bool): If True, re-raise any caught exception instead of returning default_return.
-
+        Execute a zero-argument callable and return its result, or return a provided default when handled exceptions occur.
+        
+        Parameters:
+            func (callable): Zero-argument callable to execute.
+            default_return: Value returned if execution fails.
+            log_error (bool): If True, log exceptions when caught.
+            error_msg (str): Message used when logging caught exceptions.
+            reraise (bool): If True, re-raise any caught exception instead of returning `default_return`.
+        
         Returns:
-        -------
             The value returned by `func()` on success, or `default_return` if a handled exception occurs.
-
+        
         Raises:
-        ------
             Exception: Re-raises the original exception if `reraise` is True.
-
-        Notes:
-        -----
-            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError;
-        all other exceptions are also caught and treated the same.
-
         """
         try:
             return func()
@@ -884,7 +938,13 @@ class BLEErrorHandler:
 
     @staticmethod
     def safe_cleanup(func, cleanup_name: str = "cleanup operation"):
-        """Safely execute cleanup operations without raising exceptions."""
+        """
+        Safely execute a cleanup callable and suppress any exceptions raised.
+        
+        Parameters:
+            func (Callable[[], Any]): Zero-argument callable to invoke for cleanup.
+            cleanup_name (str): Human-readable name used in debug logging if an exception occurs.
+        """
         try:
             func()
         except Exception as e:
@@ -932,7 +992,16 @@ class DiscoveryStrategy(ABC):
 
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """Discover devices using this strategy."""
+        """
+        Discover already-connected BLE devices using this strategy, optionally filtering by address.
+        
+        Parameters:
+            address (Optional[str]): Optional device address to filter results. Filtering is case-insensitive and ignores common separators (':', '-', '_', spaces).
+            timeout (float): Maximum time in seconds to wait for discovery.
+        
+        Returns:
+            List[BLEDevice]: A list of discovered BLEDevice objects that match the optional address filter (may be empty if none found or on failure).
+        """
         pass
 
 
@@ -946,7 +1015,16 @@ class ConnectedStrategy(DiscoveryStrategy):
         pass
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """Discover already-connected Meshtastic devices."""
+        """
+        Locate Meshtastic devices already connected to the host's BLE backend.
+        
+        Parameters:
+            address (Optional[str]): Optional device address or name to filter results. Matching is case-insensitive and ignores common separators (':', '-', '_', and spaces). If omitted, all connected Meshtastic devices are returned.
+            timeout (float): Maximum number of seconds to wait for the backend's connected-device enumeration.
+        
+        Returns:
+            List[BLEDevice]: Connected devices that advertise the Meshtastic service; returns an empty list if none are found or if discovery fails.
+        """
         if not _bleak_supports_connected_fallback():
             logger.debug(
                 "Skipping fallback connected-device scan; bleak %s < %s",
@@ -980,6 +1058,12 @@ class ConnectedStrategy(DiscoveryStrategy):
                 else:
                     # Run sync getter off the event loop thread with a timeout
                     async def _get_sync():
+                        """
+                        Run a synchronous getter function in a separate thread and return its result.
+                        
+                        Returns:
+                            The value returned by the synchronous getter.
+                        """
                         return await asyncio.to_thread(getter)
                     backend_devices = await BLEInterface._with_timeout(
                         _get_sync(),
@@ -1038,10 +1122,23 @@ class DiscoveryManager:
     """Orchestrates device discovery using multiple strategies."""
 
     def __init__(self):
+        """
+        Initialize the DiscoveryManager.
+        
+        Creates and assigns a default ConnectedStrategy used for discovering already-connected BLE devices.
+        """
         self.connected_strategy = ConnectedStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
-        """Discover devices using BLE scanning with fallback to connected devices."""
+        """
+        Discover BLE devices by performing a scan and, if no results are found for a specific address, attempt a fallback lookup of already-connected devices.
+        
+        Parameters:
+            address (Optional[str]): Optional device address to filter discovery; when provided and the scan returns no devices, the method will attempt a connected-device fallback using that address.
+        
+        Returns:
+            List[BLEDevice]: A list of discovered BLEDevice objects (may be empty).
+        """
         # Use a temporary BLEClient for discovery operations
         with BLEClient() as client:
             try:
@@ -1071,15 +1168,33 @@ class ConnectionValidator:
     """Handles connection validation logic and state checking."""
 
     def __init__(self, state_manager, state_lock):
+        """
+        Initialize the ConnectionValidator with the shared BLE state manager and its synchronization lock.
+        
+        Parameters:
+            state_manager (BLEStateManager): Manager that tracks connection lifecycle and state.
+            state_lock (threading.Lock): Lock used to synchronize access to shared connection state.
+        """
         self.state_manager = state_manager
         self.state_lock = state_lock
 
     def can_initiate_connection(self) -> bool:
-        """Check if connection can be initiated based on current state."""
+        """
+        Determine whether a new BLE connection may be started given the current connection state.
+        
+        Returns:
+            True if a new connection may be initiated, False otherwise.
+        """
         return self.state_manager.can_connect
 
     def validate_connection_request(self) -> None:
-        """Validate that connection can be initiated, raise exception if not."""
+        """
+        Ensure a new BLE connection may be initiated.
+        
+        Raises:
+            BLEInterface.BLEError: If the interface is closing (message: "Cannot connect while interface is closing")
+                or if a connection is already established or in progress (message: "Already connected or connection in progress").
+        """
         if not self.can_initiate_connection():
             if self.state_manager.is_closing:
                 raise BLEInterface.BLEError("Cannot connect while interface is closing")
@@ -1095,7 +1210,17 @@ class ConnectionValidator:
         last_connection_request: Optional[str],
         address: Optional[str],
     ) -> bool:
-        """Check if existing client can be reused."""
+        """
+        Determine whether an already-connected client can be reused for a new connection request.
+        
+        Parameters:
+            normalized_request (Optional[str]): The sanitized identifier (address with separators removed and lowercased) for the requested connection; when `None`, reuse is allowed regardless of address.
+            last_connection_request (Optional[str]): The last sanitized connection request previously recorded.
+            address (Optional[str]): The raw requested address to compare against the client's address (will be sanitized before comparison).
+        
+        Returns:
+            `true` if the provided client is connected and its (sanitized) address matches the requested identifier or if `normalized_request` is `None`, `false` otherwise.
+        """
         if not client or not client.is_connected():
             return False
 
@@ -1122,7 +1247,16 @@ class ClientManager:
         self.error_handler = error_handler
 
     def create_client(self, device_address: str, disconnect_callback) -> "BLEClient":
-        """Create a new BLE client for the given device address."""
+        """
+        Create a BLEClient configured for the given device address.
+        
+        Parameters:
+            device_address (str): Bluetooth address of the target device.
+            disconnect_callback (callable): Callable invoked when the underlying client disconnects.
+        
+        Returns:
+            BLEClient: A BLEClient instance bound to the specified device and configured to call `disconnect_callback` on disconnect.
+        """
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
     def connect_client(self, client: "BLEClient") -> None:
@@ -1141,7 +1275,16 @@ class ClientManager:
         old_client: Optional["BLEClient"],
         disconnect_notified: bool = False,
     ) -> None:
-        """Update the client reference and handle cleanup of old client."""
+        """
+        Update the manager's current BLE client reference and, if the provided old client differs from the new one, schedule its safe closure in a background thread.
+        
+        This acquires the shared state lock while updating internal references and ensures an outdated client is closed without blocking the caller.
+        
+        Parameters:
+            new_client (BLEClient): The client instance to become the current active client.
+            old_client (Optional[BLEClient]): A previously active client that should be closed if it is different from `new_client`.
+            disconnect_notified (bool): Whether a disconnect event for the old client has already been dispatched; affects bookkeeping but does not change the fact that the old client will be closed if different from `new_client`.
+        """
         with self.state_lock:
             previous_client = old_client
             
@@ -1156,7 +1299,12 @@ class ClientManager:
                 self.thread_coordinator.start_thread(close_thread)
 
     def _safe_close_client(self, client: "BLEClient") -> None:
-        """Safely close a client, handling any exceptions."""
+        """
+        Close the given BLE client without raising exceptions.
+        
+        Parameters:
+            client (BLEClient): The client instance to close; any errors during close are suppressed.
+        """
         self.error_handler.safe_cleanup(client.close)
 
 
@@ -1173,6 +1321,18 @@ class ConnectionOrchestrator:
         state_lock,
         thread_coordinator,
     ):
+        """
+        Initialize the ConnectionOrchestrator with its collaborating components.
+        
+        Parameters:
+            interface: The BLEInterface instance this orchestrator will control.
+            validator: ConnectionValidator used to validate connection requests and reuse logic.
+            client_manager: ClientManager responsible for creating, connecting, and closing BLE clients.
+            discovery_manager: DiscoveryManager used to locate BLE devices.
+            state_manager: BLEStateManager for tracking and transitioning connection state.
+            state_lock: Lock object used to synchronize access to shared connection state.
+            thread_coordinator: ThreadCoordinator used to create and manage background threads and events.
+        """
         self.interface = interface
         self.validator = validator
         self.client_manager = client_manager
@@ -1190,7 +1350,20 @@ class ConnectionOrchestrator:
         on_connected_func,
         on_disconnect_func,
     ) -> "BLEClient":
-        """Establish a complete BLE connection."""
+        """
+        Establishes a BLE connection to a discovered device, registers notifications, and transitions state to CONNECTED.
+        
+        Parameters:
+            address (Optional[str]): Explicit target address to connect to; if None, current_address is used.
+            current_address (Optional[str]): Fallback address to use when `address` is None.
+            last_connection_request (Optional[str]): Identifier of the last connection request (used for logging/validation).
+            register_notifications_func (callable): Function that takes a connected `BLEClient` and registers required notifications.
+            on_connected_func (callable): Callback invoked after the interface transitions to CONNECTED.
+            on_disconnect_func (callable): Callback passed to the client to be invoked on disconnect.
+        
+        Returns:
+            BLEClient: The connected BLE client instance.
+        """
         # Validate connection request
         self.validator.validate_connection_request()
 
@@ -1244,6 +1417,15 @@ class ReconnectScheduler:
     """Handles auto-reconnect scheduling and thread management."""
 
     def __init__(self, state_manager, state_lock, thread_coordinator, reconnect_worker):
+        """
+        Create a ReconnectScheduler that schedules and tracks a background reconnect thread.
+        
+        Parameters:
+            state_manager: BLEStateManager instance used to read/modify connection state.
+            state_lock: threading.Lock used to synchronize access to shared connection state.
+            thread_coordinator: ThreadCoordinator used to create and manage the reconnect thread.
+            reconnect_worker: ReconnectWorker responsible for performing reconnect attempts.
+        """
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
@@ -1251,11 +1433,16 @@ class ReconnectScheduler:
         self._reconnect_thread: Optional[Thread] = None
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event) -> bool:
-        """Schedule auto-reconnect if conditions are met.
-
+        """
+        Start the background reconnect worker if auto-reconnect is enabled, the interface is not closing,
+        and no reconnect thread is already running.
+        
+        Parameters:
+            auto_reconnect (bool): Whether automatic reconnect is currently enabled.
+            shutdown_event (threading.Event): Event set to signal the reconnect thread to stop.
+        
         Returns:
-            bool: True if reconnect was scheduled, False otherwise
-
+            True if a reconnect thread was started, False otherwise.
         """
         if not auto_reconnect:
             return False
@@ -1295,10 +1482,24 @@ class ReconnectWorker:
     """Handles the actual reconnection attempt loop logic."""
 
     def __init__(self, interface):
+        """
+        Create a ReconnectWorker bound to a BLEInterface for performing reconnect attempts.
+        
+        Parameters:
+            interface (BLEInterface): The BLEInterface instance used to initiate reconnection attempts and to query/update connection state.
+        """
         self.interface = interface
 
     def attempt_reconnect_loop(self, auto_reconnect: bool, shutdown_event) -> None:
-        """Main reconnection loop with retry policy and error handling."""
+        """
+        Run the auto-reconnect loop that repeatedly attempts to restore a BLE connection using the configured backoff policy.
+        
+        This routine resets the reconnect policy and then attempts to reconnect until either the provided shutdown event is set, the interface is closing, auto-reconnect is disabled, or the reconnect policy indicates no further retries. On each attempt it clears stale notification subscriptions, tries to connect, and re-subscribes notifications on success. If an attempt fails it applies the reconnect policy (including delay and retry limits) and continues unless shutdown or disabled. The reconnect scheduler reference is cleared when this loop exits.
+        
+        Parameters:
+            auto_reconnect (bool): If False, the loop will abort without attempting reconnection.
+            shutdown_event (threading.Event): Event used to request immediate shutdown of the loop.
+        """
         # Reset reconnection policy for new retry sequence
         self.interface._reconnect_policy.reset()
 
@@ -1417,18 +1618,15 @@ class BLEInterface(MeshInterface):
         auto_reconnect: bool = True,
     ) -> None:
         """
-        Initialize a BLEInterface, start its background receive thread, and attempt an initial connection to a Meshtastic BLE device.
-
-        Args:
-        ----
-            address (Optional[str]): BLE address to connect to; if None, any available Meshtastic device may be used.
-            noProto (bool): If True, do not initialize protobuf-based protocol handling.
-            debugOut (Optional[io.TextIOWrapper]): Stream to emit debug output to, if provided.
-            noNodes (bool): If True, do not attempt to read the device's node list on startup.
-            auto_reconnect (bool): If True, keep the interface alive across unexpected disconnects and attempt
-                automatic reconnection; if False, close the interface on disconnect.
-            timeout (int): How long to wait for replies (default: 300 seconds).
-
+        Create and initialize a BLEInterface, start its background receive thread, and attempt an initial connection to a Meshtastic BLE device.
+        
+        Parameters:
+        	address (Optional[str]): BLE address to connect to; if None, any available Meshtastic device may be used.
+        	noProto (bool): When True, disable protobuf-based protocol handling (uses legacy/limited behavior).
+        	debugOut (Optional[io.TextIOWrapper]): Optional text stream for debug output.
+        	noNodes (bool): When True, skip reading the device's node list during startup.
+        	timeout (int): Timeout in seconds for reply operations (default 300).
+        	auto_reconnect (bool): When True, keep the interface alive across unexpected disconnects and attempt automatic reconnection; when False, the interface will close on disconnect.
         """
 
         # Initialize components in focused phases
@@ -1472,7 +1670,11 @@ class BLEInterface(MeshInterface):
         pass
 
     def _initialize_reconnection_policy(self) -> None:
-        """Initialize reconnection policy with configured parameters."""
+        """
+        Create and assign the reconnection policy used for automatic reconnect attempts.
+        
+        Initializes self._reconnect_policy with parameters from BLEConfig and configures it to retry indefinitely.
+        """
         self._reconnect_policy = ReconnectPolicy(
             initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
             max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
@@ -1522,7 +1724,16 @@ class BLEInterface(MeshInterface):
         )
 
     def _initialize_events(self) -> None:
-        """Initialize event coordination components."""
+        """
+        Create and register thread-coordination events and initialize related state used by the BLE interface.
+        
+        This sets up:
+        - self._read_trigger: event signaled when data is available to read.
+        - self._reconnected_event: event signaled after a successful reconnection.
+        - self._shutdown_event: event used to request shutdown of background threads.
+        - self._malformed_notification_count: counter for corrupted notifications.
+        - self._reconnect_thread: holder for the active reconnect thread (or None).
+        """
         # Event coordination for reconnection and read operations
         self._read_trigger = self.thread_coordinator.create_event(
             "read_trigger"
@@ -1543,7 +1754,11 @@ class BLEInterface(MeshInterface):
         noNodes: bool,
         timeout: int,
     ) -> None:
-        """Initialize parent MeshInterface and retry counter."""
+        """
+        Initialize the parent MeshInterface with the provided flags and reset the transient read retry counter.
+        
+        Calls the parent MeshInterface initializer with debugOut, noProto, noNodes, and timeout, and sets the internal _read_retry_count to 0.
+        """
         # Initialize parent interface
         MeshInterface.__init__(
             self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
@@ -1564,7 +1779,17 @@ class BLEInterface(MeshInterface):
         logger.debug("Threads running")
 
     def _establish_initial_connection(self, address: Optional[str]) -> None:
-        """Establish initial connection and configure interface."""
+        """
+        Establish the initial BLE connection and configure the interface.
+        
+        Attempts to connect to the specified address (or any available device if `address` is None), sets the instance client, starts mesh configuration, and — when protobuf support is enabled — waits for the device to be connected and configured. Registers an atexit handler that closes the interface to ensure the BLE device is disconnected on process exit.
+        
+        Parameters:
+            address (Optional[str]): Target device address or None to connect to any discovered device.
+        
+        Raises:
+            BLEInterface.BLEError: If connection or configuration fails.
+        """
         self.client: Optional["BLEClient"] = None
         try:
             logger.debug("BLE connecting to: %s", address if address else "any")
@@ -1596,25 +1821,22 @@ class BLEInterface(MeshInterface):
 
     def _is_state_version_current(self, version: int) -> bool:
         """
-        Check if a state version is still current to prevent stale operations.
-
-        Args:
-            version: State version to check
-
+        Determine whether the provided state version matches the state manager's current version.
+        
+        Parameters:
+            version (int): State version to compare against the current state version.
+        
         Returns:
-            True if version is current, False if stale
-
+            bool: `True` if `version` equals the current state version, `False` otherwise.
         """
         return self._state_manager.is_version_current(version)
 
     def __repr__(self):
         """
-        Produce a compact textual representation of the BLEInterface including its address and relevant feature flags.
-
+        Return a compact textual representation of the BLEInterface including address and enabled flags.
+        
         Returns:
-            repr_str (str): A string of the form "BLEInterface(...)" that includes the address, `debugOut` if set,
-                and boolean flags for `noProto`, `noNodes`, and `auto_reconnect` when applicable.
-
+            str: A string like "BLEInterface(address='...', debugOut=..., noProto=True, noNodes=True, auto_reconnect=False)" showing the address and any non-default flags.
         """
         parts = [f"address={self.address!r}"]
         if self.debugOut is not None:
@@ -1634,19 +1856,18 @@ class BLEInterface(MeshInterface):
         bleak_client: Optional[BleakRootClient] = None,
     ) -> bool:
         """
-        Handle a BLE client disconnection and initiate either reconnection or shutdown.
-
-        Args:
-        ----
-            source (str): Short tag indicating the origin of the disconnect (e.g., "bleak_callback", "read_loop", "explicit").
+        Handle a BLE client disconnection and trigger either an auto-reconnect sequence or an orderly shutdown.
+        
+        Parameters:
+            source (str): Short tag identifying the origin of the disconnect (e.g., "bleak_callback", "read_loop", "explicit").
             client (Optional[BLEClient]): The BLEClient instance related to the disconnect, if available.
             bleak_client (Optional[BleakRootClient]): The underlying Bleak client associated with the disconnect, if available.
-
+        
         Returns:
-        -------
-            bool: `true` if the interface should remain running and (when enabled) attempt auto-reconnect,
-              `false` if the interface has begun shutdown.
-
+            bool: `True` if the interface should remain running and (when enabled) attempt auto-reconnect, `False` if the interface has begun shutdown.
+        
+        Notes:
+            This method may transition connection state, clear and clean up notifications, schedule an asynchronous client close, and either schedule the reconnect worker or call close() depending on the auto-reconnect setting.
         """
         # Use state manager for disconnect validation
         if self.is_connection_closing:
@@ -1737,12 +1958,9 @@ class BLEInterface(MeshInterface):
 
     def _schedule_auto_reconnect(self) -> None:
         """
-        Start a background thread that repeatedly attempts to reconnect over BLE until a connection succeeds or shutdown is initiated.
-
-        This schedules a single auto-reconnect worker (no-op if auto-reconnect is disabled, interface is closing,
-        or a reconnect thread is already running). The worker repeatedly tries to connect to the stored address,
-        backing off with jitter between attempts, and stops when a connection succeeds, auto-reconnect is disabled,
-        or interface is closing. When the worker exits it clears the internal reconnect-thread reference.
+        Schedule an auto-reconnect worker when reconnection should be attempted.
+        
+        If auto-reconnect is enabled, the interface is not closing, and no reconnect thread is already running, start a background worker that will attempt reconnections; otherwise do nothing.
         """
         self._reconnect_scheduler.schedule_reconnect(
             self.auto_reconnect, self._shutdown_event
@@ -1750,16 +1968,13 @@ class BLEInterface(MeshInterface):
 
     def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False):
         """
-        Increment and track malformed FROMNUM notification occurrences and emit a warning when a threshold is reached.
-
-        Increments the internal malformed-notification counter, logs the provided reason (optionally with exception info),
-        and when the counter reaches MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
-
-        Args:
-        ----
-                reason (str): Human-readable message describing why the notification was considered malformed.
-                exc_info (bool): If True, include exception traceback information in the debug log.
-
+        Track malformed FROMNUM notifications and warn when a threshold is reached.
+        
+        Increments the internal malformed notification counter, logs the provided reason at debug level (including exception traceback when requested), and when the counter reaches MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
+        
+        Parameters:
+            reason (str): Message describing why the notification was considered malformed.
+            exc_info (bool): If True include exception traceback information in the debug log.
         """
         self._malformed_notification_count += 1
         logger.debug("%s", reason, exc_info=exc_info)
@@ -1773,18 +1988,13 @@ class BLEInterface(MeshInterface):
 
     def from_num_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
-        Handle notifications from the FROMNUM characteristic and wake the read loop.
-
-        Parses a 4-byte little-endian unsigned integer from the notification payload `b`. On a successful parse, resets the
-        malformed-notification counter and logs the parsed value. On parse failure, increments the malformed-notification
-        counter and logs; if the counter reaches config.malformed_notification_threshold, emits a warning and resets the
-        counter. Always sets self._read_trigger to signal the read loop.
-
-        Args:
-        ----
+        Handle a FROMNUM characteristic notification and signal the read loop.
+        
+        Parses a 4-byte little-endian unsigned 32-bit integer from the payload `b`. On successful parse resets the malformed-notification counter and logs the parsed value; on parse failure increments the malformed-notification counter and logs a malformed-notify event. In all cases signals the read loop by setting the "read_trigger" event.
+        
+        Parameters:
             _ (Any): Unused sender/handle parameter supplied by the BLE library.
             b (bytearray): Notification payload expected to be exactly 4 bytes containing a little-endian unsigned 32-bit integer.
-
         """
         # Record notification for observability
 
@@ -1808,16 +2018,17 @@ class BLEInterface(MeshInterface):
 
     def _register_notifications(self, client: "BLEClient") -> None:
         """
-        Register BLE characteristic notification handlers on the given client.
-
-        Registers optional log notification handlers for legacy and current log characteristics; failures to start these optional
-        handlers are caught and logged at debug level. Also registers the critical FROMNUM notification handler for
-        incoming packets — failures to register this notification are not suppressed and will propagate.
-
-        Args:
-        ----
+        Register notification handlers for radio log and packet characteristics on the given client.
+        
+        Attempts to start optional log notification handlers (legacy text logs and protobuf log records) and always registers
+        the critical FROMNUM notification used for incoming packets. Failures to start optional log handlers are logged and
+        suppressed; failure to start FROMNUM notifications will raise a BLEError unless the interface is in `noProto` mode.
+        
+        Parameters:
             client (BLEClient): Connected BLE client to register notifications on.
-
+        
+        Raises:
+            BLEError: If registering the FROMNUM notification fails and `noProto` is False.
         """
 
         # Clear any existing subscriptions from previous connections
@@ -1827,18 +2038,33 @@ class BLEInterface(MeshInterface):
         def _start_log_notifications():
             """
             Register log notification handlers for available radio log characteristics on the current client.
-
-            If the legacy text log characteristic is present, subscribes the legacy log handler; if the protobuf-based
-            log characteristic is present, subscribes the protobuf log handler.
+            
+            Creates safe wrappers that route incoming notifications to the legacy or protobuf log handlers via the BLEErrorHandler,
+            subscribes those handlers with the NotificationManager, and starts notifications on any present characteristics
+            (LEGACY_LOGRADIO_UUID and LOGRADIO_UUID) using BLEConfig.NOTIFICATION_START_TIMEOUT.
             """
 
             def _safe_legacy_handler(sender, data):
+                """
+                Invoke the legacy log notification handler for an incoming notification, suppressing and logging any exceptions raised during handling.
+                
+                Parameters:
+                    sender: The originator of the notification (typically the BLE client or characteristic).
+                    data (bytes): The notification payload.
+                """
                 BLEErrorHandler.safe_execute(
                     lambda: self.legacy_log_radio_handler(sender, data),
                     error_msg="Error in legacy log notification handler",
                 )
 
             def _safe_log_handler(sender, data):
+                """
+                Forward a received log-notification to the log handler and ensure any exceptions are caught and handled.
+                
+                Parameters:
+                    sender: The notification sender identifier (BLE client/characteristic).
+                    data: The raw notification payload (bytes) to be processed by the log handler.
+                """
                 BLEErrorHandler.safe_execute(
                     lambda: self.log_radio_handler(sender, data),
                     error_msg="Error in log notification handler",
@@ -1875,6 +2101,13 @@ class BLEInterface(MeshInterface):
         try:
 
             def _safe_from_num_handler(sender, data):
+                """
+                Invoke the FROMNUM notification handler while delegating any raised exceptions to the BLE error handler.
+                
+                Parameters:
+                    sender: The notification sender (backend-specific object).
+                    data: Raw bytes payload received from the FROMNUM characteristic.
+                """
                 BLEErrorHandler.safe_execute(
                     lambda: self.from_num_handler(sender, data),
                     error_msg="Error in FROMNUM notification handler",
@@ -1953,11 +2186,18 @@ class BLEInterface(MeshInterface):
     @staticmethod
     async def _with_timeout(awaitable, timeout: Optional[float], label: str):
         """
-        Await `awaitable`, enforcing `timeout` seconds if provided.
-
+        Await the given awaitable and raise a BLEError if it does not complete within the specified timeout.
+        
+        Parameters:
+            awaitable (Awaitable): The awaitable to run.
+            timeout (Optional[float]): Maximum number of seconds to wait; if None, wait indefinitely.
+            label (str): Human-readable label used in the timeout error message.
+        
+        Returns:
+            The result produced by the awaitable.
+        
         Raises:
-            BLEInterface.BLEError: when the awaitable does not finish before the timeout elapses.
-
+            BLEInterface.BLEError: If the awaitable does not finish before the timeout elapses.
         """
         if timeout is None:
             return await awaitable
@@ -2085,9 +2325,15 @@ class BLEInterface(MeshInterface):
     @staticmethod
     def _run_async_safely(coro):
         """
-        Run a coroutine safely, handling the case where an event loop is already running.
+        Execute a coroutine and return its result, handling cases where an asyncio event loop is already running.
         
-        This is used as a fallback when no BLEClient with event loop is available.
+        If an event loop is active in the current thread, the coroutine is executed in a separate thread and this call blocks until the coroutine completes. If no running loop is present, the coroutine is executed with asyncio.run(). Exceptions raised by the coroutine are propagated.
+        
+        Parameters:
+            coro (Coroutine): The coroutine to execute.
+        
+        Returns:
+            The value returned by the coroutine.
         """
         try:
             # Check if there's a running event loop in the current thread
@@ -2100,6 +2346,12 @@ class BLEInterface(MeshInterface):
                 
                 future = Future()
                 def run_in_thread():
+                    """
+                    Execute the enclosed coroutine via asyncio.run and propagate its outcome to the surrounding Future.
+                    
+                    If the coroutine completes successfully, set the Future's result to the coroutine's return value.
+                    If the coroutine raises, set the Future's exception to the raised exception.
+                    """
                     try:
                         result = asyncio.run(coro)
                         future.set_result(result)
@@ -2119,16 +2371,9 @@ class BLEInterface(MeshInterface):
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
         """
         Normalize a BLE address by removing common separators and converting to lowercase.
-
-        Args:
-        ----
-            address (Optional[str]): BLE address or identifier; may be None or empty/whitespace.
-
+        
         Returns:
-        -------
-            Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace,
-                and lowercased, or `None` if `address` is None or contains only whitespace.
-
+            None if `address` is `None` or contains only whitespace, otherwise the address with '-', '_', ':', and spaces removed and lowercased.
         """
         if address is None or not address.strip():
             return None
@@ -2143,10 +2388,15 @@ class BLEInterface(MeshInterface):
 
     def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
-        Fallback method to find already-connected Meshtastic devices when scanning fails.
-
-        This method is kept for backward compatibility with tests. For new code,
-        use the DiscoveryManager instead.
+        Locate already-connected Meshtastic BLE devices, optionally filtered by address.
+        
+        Attempts to enumerate devices that are already connected and advertising the Meshtastic service. When an address is provided, results are restricted to devices whose sanitized address or sanitized name matches the provided address. This function exists for backward compatibility and may return an empty list on failure or when no matching devices are found.
+        
+        Parameters:
+            address (Optional[str]): Optional address or name fragment used to filter results; input is normalized before matching.
+        
+        Returns:
+            List[BLEDevice]: A list of matching already-connected BLEDevice instances, or an empty list if none are found or discovery fails.
         """
         if hasattr(self, "_discovery_manager"):
             try:
@@ -2209,6 +2459,12 @@ class BLEInterface(MeshInterface):
                 else:
                     # Run sync getter off the event loop thread with a timeout
                     async def _get_sync():
+                        """
+                        Run a synchronous getter function in a separate thread and return its result.
+                        
+                        Returns:
+                            The value returned by the synchronous getter.
+                        """
                         return await asyncio.to_thread(getter)
                     
                     if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
@@ -2293,25 +2549,25 @@ class BLEInterface(MeshInterface):
     def set_on_state_change(
         self, callback: Optional[Callable[[ConnectionState, str], None]]
     ) -> None:
-        """Set callback for state change notifications."""
+        """
+        Register or unregister a callback to be invoked whenever the connection state changes.
+        
+        If provided, `callback` will be called with two arguments: the new ConnectionState and the state's version string. Pass `None` to remove any previously registered callback.
+        
+        Parameters:
+            callback (Optional[Callable[[ConnectionState, str], None]]): Function called on state transitions with signature `(new_state, state_version)`, or `None` to unregister.
+        """
         self._state_manager.set_on_state_change(callback)
 
     def connect(self, address: Optional[str] = None) -> "BLEClient":
         """
-        Establish a BLE connection to the Meshtastic device identified by address.
-
-        If address is provided it will be used to select the peripheral; otherwise a scan is performed to find a suitable device.
-            On success returns a connected BLEClient with notifications registered and internal reconnect state updated.
-            On failure, the created client is closed before the exception is propagated.
-
-        Args:
-        ----
-            address (Optional[str]): BLE address or device name to connect to; may be None to allow automatic discovery.
-
+        Establishes a connection to a Meshtastic device over BLE.
+        
+        Parameters:
+            address (Optional[str]): BLE address or device name to connect to; if None, uses the interface's configured address or performs discovery.
+        
         Returns:
-        -------
-            BLEClient: A connected BLEClient instance for the selected device.
-
+            BLEClient: A connected BLEClient for the selected device.
         """
         target_address = address if address is not None else self.address
         logger.info("Attempting to connect to %s", target_address or "any")
@@ -2426,11 +2682,9 @@ class BLEInterface(MeshInterface):
 
     def _receiveFromRadioImpl(self) -> None:
         """
-        Run loop that reads inbound packets from the BLE FROMRADIO characteristic and delivers them to the interface packet handler.
-
-        Waits on an internal read trigger, performs GATT reads when a BLE client is available, and forwards non-empty payloads
-            to _handleFromRadio. Coordinates with the reconnection logic when the client becomes unavailable and tolerates
-            transient empty reads. On a fatal error, initiates a safe shutdown of the interface.
+        Read loop for inbound BLE FROMRADIO packets and deliver them to the interface packet handler.
+        
+        Waits for a read trigger, performs GATT reads when a BLE client is available, forwards non-empty payloads to _handleFromRadio, tolerates transient empty reads and transient read errors via retry policies, coordinates with reconnection logic when the client is unavailable, and initiates a safe interface shutdown on unrecoverable errors.
         """
         try:
             while self._want_receive:
@@ -2533,20 +2787,15 @@ class BLEInterface(MeshInterface):
 
     def _sendToRadioImpl(self, toRadio) -> None:
         """
-        Send a protobuf message to the radio over the TORADIO BLE characteristic.
-
-        Serializes `toRadio` to bytes and writes them with write-with-response to the TORADIO characteristic when a BLE client
-            is available. If the serialized payload is empty or no client is present (e.g., during shutdown), the call is a
-            no-op. After a successful write, the method waits briefly to allow propagation and then signals the read trigger.
-
-        Args:
-        ----
-            toRadio: A protobuf message with a SerializeToString() method representing the outbound radio packet.
-
+        Send a protobuf radio packet over the TORADIO BLE characteristic.
+        
+        Serializes the provided protobuf message and writes it to the TORADIO characteristic using a write-with-response when a BLE client is available. If the serialized payload is empty or no client is present, the call does nothing. After a successful write, the method waits briefly to allow propagation and then signals the read trigger.
+        
+        Parameters:
+        	toRadio: A protobuf message exposing SerializeToString() that represents the outbound radio packet.
+        
         Raises:
-        ------
-            BLEInterface.BLEError: If the write operation fails.
-
+        	BLEInterface.BLEError: If the BLE write fails.
         """
         b: bytes = toRadio.SerializeToString()
         if not b:
@@ -2589,11 +2838,9 @@ class BLEInterface(MeshInterface):
 
     def close(self) -> None:
         """
-        Shut down the BLE interface, stop background activity, disconnect the BLE client, and perform cleanup.
-
-        This method is idempotent and safe to call multiple times. It stops the receive loop and reconnection waits, unregisters the
-            atexit handler, disconnects and closes any active BLE client, emits a disconnected notification if not already sent,
-            and waits briefly for pending disconnect-related notifications and the receive thread to finish.
+        Shut down the BLE interface and perform orderly cleanup.
+        
+        Stops background receive and reconnect activity, cleans up and unsubscribes notifications, unregisters the atexit handler, disconnects and closes any active BLE client, waits briefly for pending disconnect notifications and threads to finish, and marks the interface closed.
         """
         # Use unified state lock
         with self._state_lock:
@@ -2695,6 +2942,11 @@ class BLEInterface(MeshInterface):
         flush_event = Event()
         queued = False
         def do_queue():
+            """
+            Queue a publish flush by scheduling the flush event to be set and mark that a flush is pending.
+            
+            Enqueues `flush_event.set` on the publishing thread's work queue and sets the enclosing `queued` flag to True.
+            """
             nonlocal queued
             publishingThread.queueWork(flush_event.set)
             queued = True
@@ -2902,20 +3154,14 @@ class BLEClient:
     def read_gatt_char(
         self, *args, timeout: Optional[float] = None, **kwargs
     ):  # pylint: disable=C0116
-        """Read a GATT characteristic from the connected BLE device.
-
-        Forwards all arguments to the underlying Bleak client's `read_gatt_char`.
-
-        Args:
-        ----
-            *args: Positional arguments forwarded to `read_gatt_char` (typically the characteristic UUID or handle).
-            timeout (float | None): Maximum seconds to wait for the read to complete.
-            **kwargs: Keyword arguments forwarded to `read_gatt_char`.
-
+        """
+        Read a GATT characteristic from the connected BLE device.
+        
+        Parameters:
+            timeout (float | None): Maximum seconds to wait for the read to complete; pass None for no timeout.
+        
         Returns:
-        -------
-            bytes: The raw bytes read from the characteristic.
-
+            bytes: Raw bytes read from the characteristic.
         """
         return self.async_await(
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
@@ -2925,11 +3171,13 @@ class BLEClient:
         self, *args, timeout: Optional[float] = None, **kwargs
     ):  # pylint: disable=C0116
         """
-        Write the given bytes to a GATT characteristic on the connected BLE device and wait for completion.
-
+        Write bytes to a GATT characteristic on the connected BLE device and wait for the operation to complete.
+        
+        Parameters:
+            timeout (float | None): Maximum time in seconds to wait for the write to finish; `None` uses the client's default.
+        
         Raises:
-            BLEInterface.BLEError: If the write operation fails or times out.
-
+            BLEInterface.BLEError: If the write operation fails or the wait times out.
         """
         self.async_await(
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
@@ -2938,13 +3186,14 @@ class BLEClient:
     def get_services(self, timeout: float | None = None):
         """
         Retrieve the discovered GATT services and characteristics for the connected device.
-
-        Args:
-            timeout (float | None): Ignored for backward compatibility.
-
+        
+        If `timeout` is provided it is ignored for backward compatibility and a DeprecationWarning is issued.
+        
+        Parameters:
+            timeout (float | None): Deprecated and ignored.
+        
         Returns:
-            The device's GATT services and their characteristics as returned by the underlying BLE library.
-
+            The device's GATT services and their characteristics.
         """
         if timeout is not None:
             warnings.warn(
@@ -2957,16 +3206,13 @@ class BLEClient:
 
     def has_characteristic(self, specifier):
         """
-        Check whether the connected BLE device exposes the characteristic identified by `specifier`.
-
-        Args:
-        ----
+        Determine whether the connected BLE device exposes the characteristic identified by the given specifier.
+        
+        Parameters:
             specifier (str | UUID): UUID string or UUID object identifying the characteristic to check.
-
+        
         Returns:
-        -------
             `true` if the characteristic is present, `false` otherwise.
-
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
@@ -3063,16 +3309,10 @@ class BLEClient:
 
     def async_run(self, coro):  # pylint: disable=C0116
         """
-        Schedule a coroutine on the client's internal asyncio event loop.
-
-        Args:
-        ----
-            coro (coroutine): The coroutine to schedule.
-
+        Schedule the given coroutine to run on the client's internal asyncio event loop.
+        
         Returns:
-        -------
             concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
-
         """
         return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
 
@@ -3085,7 +3325,9 @@ class BLEClient:
 
     async def _stop_event_loop(self):
         """
-        Request the internal event loop to stop.
+        Request shutdown of the client's internal asyncio event loop and cancel its pending tasks.
+        
+        Cancels all pending tasks associated with the loop (excluding the currently running task), yields control to allow cancellations to propagate, and then stops the event loop.
         """
         # Cancel all pending tasks on current loop (portable)
         for task in asyncio.all_tasks():
