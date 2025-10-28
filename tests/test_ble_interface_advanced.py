@@ -476,7 +476,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 _eventLoop, _eventThread: Placeholders to suppress event-loop related warnings during tests.
 
             """
-            super().__init__(address=None)
+            # Don't call super().__init__() to avoid creating real event loop
             self.bleak_client = MockBleakRootClient()
             self.connect_count = 0
             self.disconnect_count = 0

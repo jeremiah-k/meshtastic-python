@@ -31,14 +31,11 @@ from .protobuf import mesh_pb2
 
 # Loop-safe sleep helpers
 def _sleep(delay, loop=None):
-    """Sleep for delay seconds, using asyncio if on event loop, time.sleep otherwise."""
-    try:
-        asyncio.get_running_loop()
-        if not loop:
-            raise RuntimeError
-        asyncio.run_coroutine_threadsafe(asyncio.sleep(delay), loop).result()
-    except RuntimeError:
-        time.sleep(delay)
+    """Sleep for delay seconds. This is a blocking call.
+
+    NOTE: This function must not be called from a thread with a running asyncio event loop.
+    """
+    time.sleep(delay)
 
 
 async def _asleep(delay):
@@ -935,19 +932,7 @@ class DiscoveryStrategy(ABC):
         pass
 
 
-class ScanStrategy(DiscoveryStrategy):
-    """Device discovery using BLE scanning."""
 
-    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """Discover devices by scanning for Meshtastic service."""
-        return await BLEInterface._with_timeout(
-            BleakScanner().discover(
-                service_uuids=[SERVICE_UUID],
-                timeout=timeout,
-            ),
-            timeout,
-            "device scanning",
-        )
 
 
 class ConnectedStrategy(DiscoveryStrategy):
@@ -1038,10 +1023,9 @@ class DiscoveryManager:
 
     def __init__(self):
         self.connected_strategy = ConnectedStrategy()
-        self.scan_strategy = ScanStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
-        """Discover devices using BLE scanning."""
+        """Discover devices using BLE scanning with fallback to connected devices."""
         # Use a temporary BLEClient for discovery operations
         with BLEClient() as client:
             try:
@@ -1049,6 +1033,20 @@ class DiscoveryManager:
                     timeout=BLEConfig.BLE_SCAN_TIMEOUT, 
                     service_uuids=[SERVICE_UUID]
                 )
+                
+                # If no devices found and specific address requested, try fallback to connected devices
+                if not devices and address:
+                    logger.debug(
+                        "Scan found no devices, trying fallback to already-connected devices"
+                    )
+                    try:
+                        connected_devices = asyncio.run(
+                            self.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
+                        )
+                        devices.extend(connected_devices)
+                    except Exception as e:
+                        logger.debug("Connected device fallback failed: %s", e)
+                
                 return devices
             except Exception as e:
                 logger.debug("Device discovery failed: %s", e)
