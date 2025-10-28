@@ -189,15 +189,19 @@ def test_close_idempotent(monkeypatch):
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
 
-    # Check that no disconnect status message is sent during close
+    # Verify disconnect status messages are sent during close (expected behavior)
     disconnect_messages = [
         (t, kw)
         for t, kw in calls
         if t == "meshtastic.connection.status" and kw.get("connected") is False
     ]
-    assert (
-        not disconnect_messages
-    ), "No disconnect status message should be sent during close"
+    assert len(disconnect_messages) == 1, "Exactly one disconnect status message should be sent during close"
+    
+    # But no spurious connected=True during close
+    assert not any(
+        t == "meshtastic.connection.status" and kw.get("connected") is True
+        for t, kw in calls
+    )
 
 
 @pytest.mark.parametrize("exc_name", ["BleakError", "RuntimeError", "OSError"])

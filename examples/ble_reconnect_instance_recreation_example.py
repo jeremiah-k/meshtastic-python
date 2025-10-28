@@ -106,24 +106,15 @@ def main():
                     logger.info(
                         "Connection successful. Waiting for disconnection event..."
                     )
-                    # Timeout is 2x retry delay or 30s minimum to allow for BLE connection establishment
-                    timeout_s = max(
-                        DISCONNECT_TIMEOUT_MULTIPLIER * delay,
-                        DISCONNECT_TIMEOUT_MIN_SECONDS,
-                    )
-                    if not disconnected_event.wait(timeout=timeout_s):
-                        logger.warning(
-                            "No disconnect event within %.1fs; proceeding to retry.",
-                            timeout_s,
-                        )
-                    else:
-                        logger.info("Disconnected normally.")
+                    # Wait indefinitely for disconnect signal from pubsub
+                    disconnected_event.wait()
+                    logger.info("Disconnected.")
             except meshtastic.ble_interface.BLEInterface.BLEError:
                 logger.exception("Connection failed")
             except Exception:
                 logger.exception("An unexpected error occurred")
 
-            logger.info(f"Retrying in {delay} seconds...")
+            logger.info("Retrying in %s seconds...", delay)
             time.sleep(delay)
     except KeyboardInterrupt:
         logger.info("Exiting...")

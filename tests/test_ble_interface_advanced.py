@@ -435,7 +435,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             """
             if self._should_fail_connect:
-                raise RuntimeError()
+                raise RuntimeError("forced connect failure")
             self.connect_count += 1
             return self
 
@@ -511,7 +511,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             """
             if self._should_fail_connect:
-                raise RuntimeError()
+                raise RuntimeError("forced connect failure")
             self.connect_count += 1
             return self
 
@@ -645,6 +645,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         len(iface._connect_stub_calls) >= 2
     ), "Auto-reconnect should continue scheduling during rapid disconnects"
 
+    iface.auto_reconnect = False
     iface.close()
     iface._test_patch_stack.close()
 
@@ -705,8 +706,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 "Expected failure during stress reconnect: %s: %s", type(e).__name__, e
             )
 
-    # Verify graceful handling of connection failures
-    assert client3.bleak_client.connect_count >= 0  # Should attempt reconnections
+    # Verify graceful handling of connection failures: reconnects were scheduled
+    assert len(iface3._connect_stub_calls) >= 1, "Expected at least one reconnect attempt to be scheduled"
 
     iface3.close()
     iface3._test_patch_stack.close()
@@ -861,9 +862,8 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
 
-    # Also ensure the logger is configured to capture the actual module logger
-    logger = logging.getLogger("meshtastic.ble_interface")
-    logger.setLevel(logging.DEBUG)
+    # Capture the module logger at DEBUG just for this test
+    caplog.set_level(logging.DEBUG, logger="meshtastic.ble_interface")
 
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
