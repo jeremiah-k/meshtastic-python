@@ -198,9 +198,11 @@ def test_close_handles_errors(monkeypatch, exc_name):
         for t, kw in calls
         if t == "meshtastic.connection.status" and kw.get("connected") is False
     ]
-    # Note: The disconnect message might not be sent in all test scenarios
-    # depending on the interface state and exception handling
-    assert len(disconnect_messages) >= 0  # Allow 0 or more messages
+    # No spurious "connected=True" status during close error handling
+    assert not any(
+        t == "meshtastic.connection.status" and kw.get("connected") is True
+        for t, kw in calls
+    )
 
 
 def test_close_clears_ble_threads(monkeypatch):

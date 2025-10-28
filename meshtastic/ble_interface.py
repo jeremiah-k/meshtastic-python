@@ -323,6 +323,12 @@ class ReconnectPolicy:
         """Get current attempt count."""
         return self._attempt_count
 
+    def sleep_with_backoff(self, attempt: int) -> None:
+        """
+        Sleep for the computed backoff delay for given attempt.
+        """
+        _sleep(self.get_delay(attempt))
+
 
 
 
@@ -1032,6 +1038,7 @@ class DiscoveryManager:
 
     def __init__(self):
         self.connected_strategy = ConnectedStrategy()
+        self.scan_strategy = ScanStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """Discover devices using BLE scanning."""
@@ -1057,12 +1064,12 @@ class ConnectionValidator:
 
     def can_initiate_connection(self) -> bool:
         """Check if connection can be initiated based on current state."""
-        return self.state_manager.can_initiate_connection
+        return self.state_manager.can_connect
 
     def validate_connection_request(self) -> None:
         """Validate that connection can be initiated, raise exception if not."""
         if not self.can_initiate_connection():
-            if self.state_manager.state == ConnectionState.DISCONNECTING:
+            if self.state_manager.is_closing:
                 raise BLEInterface.BLEError("Cannot connect while interface is closing")
             else:
                 raise BLEInterface.BLEError(
@@ -1308,7 +1315,7 @@ class ReconnectWorker:
 
                     # Re-establish subscriptions after reconnect
                     self.interface._notification_manager.resubscribe_all(
-                        self.interface.bleak_client
+                        self.interface.client
                     )
                     logger.info(
                         "BLE auto-reconnect succeeded after %d attempts.", attempt_num

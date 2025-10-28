@@ -34,6 +34,9 @@ from meshtastic.ble_interface import (
 from meshtastic.protobuf import mesh_pb2
 
 
+
+
+
 def test_log_notification_registration_missing_characteristics(monkeypatch):
     """Test that log notification registration handles missing characteristics gracefully."""
     # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
