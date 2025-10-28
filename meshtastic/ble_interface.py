@@ -137,7 +137,11 @@ class NotificationManager:
                 callback,
             ) in self._active_subscriptions.items():
                 try:
-                    client.start_notify(characteristic, callback)
+                    client.start_notify(
+                    characteristic,
+                    callback,
+                    timeout=BLEConfig.NOTIFICATION_START_TIMEOUT,
+                )
                 except Exception as e:
                     logger.debug("Failed to resubscribe %s: %s", characteristic, e)
 
@@ -965,11 +969,23 @@ class ConnectedStrategy(DiscoveryStrategy):
             if hasattr(scanner, "_backend") and hasattr(
                 scanner._backend, "get_devices"
             ):
-                backend_devices = await BLEInterface._with_timeout(
-                    scanner._backend.get_devices(),
-                    timeout,
-                    "connected-device enumeration",
-                )
+                import inspect
+                getter = scanner._backend.get_devices
+                if inspect.iscoroutinefunction(getter):
+                    backend_devices = await BLEInterface._with_timeout(
+                        getter(),
+                        timeout,
+                        "connected-device enumeration",
+                    )
+                else:
+                    # Run sync getter off the event loop thread with a timeout
+                    async def _get_sync():
+                        return await asyncio.to_thread(getter)
+                    backend_devices = await BLEInterface._with_timeout(
+                        _get_sync(),
+                        timeout,
+                        "connected-device enumeration",
+                    )
 
                 # Performance optimization: Calculate sanitized_target once before loop
                 sanitized_target = None
@@ -2134,13 +2150,27 @@ class BLEInterface(MeshInterface):
             if hasattr(scanner, "_backend") and hasattr(
                 scanner._backend, "get_devices"
             ):
-                backend_devices = asyncio.run(
-                    BLEInterface._with_timeout(
-                        scanner._backend.get_devices(),
-                        BLEConfig.BLE_SCAN_TIMEOUT,
-                        "connected-device enumeration",
+                import inspect
+                getter = scanner._backend.get_devices
+                if inspect.iscoroutinefunction(getter):
+                    backend_devices = asyncio.run(
+                        BLEInterface._with_timeout(
+                            getter(),
+                            BLEConfig.BLE_SCAN_TIMEOUT,
+                            "connected-device enumeration",
+                        )
                     )
-                )
+                else:
+                    # Run sync getter off the event loop thread with a timeout
+                    async def _get_sync():
+                        return await asyncio.to_thread(getter)
+                    backend_devices = asyncio.run(
+                        BLEInterface._with_timeout(
+                            _get_sync(),
+                            BLEConfig.BLE_SCAN_TIMEOUT,
+                            "connected-device enumeration",
+                        )
+                    )
 
                 sanitized_target = None
                 if address:
