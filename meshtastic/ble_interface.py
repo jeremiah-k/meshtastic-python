@@ -924,7 +924,7 @@ class DiscoveryStrategy(ABC):
     """Abstract base class for device discovery strategies."""
 
     @abstractmethod
-    def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """Discover devices using this strategy."""
         pass
 
@@ -968,6 +968,9 @@ class ConnectedStrategy(DiscoveryStrategy):
             devices_found = []
 
             # Try to get device information from the backend
+            # Note: We access the private _backend attribute because bleak does not provide a public API
+            # for enumerating already-connected devices. This is necessary for our use case but may
+            # break in future bleak versions if the internal implementation changes.
             if hasattr(scanner, "_backend") and hasattr(
                 scanner._backend, "get_devices"
             ):
@@ -1028,7 +1031,7 @@ class DiscoveryManager:
     """Orchestrates device discovery using multiple strategies."""
 
     def __init__(self):
-        pass
+        self.connected_strategy = ConnectedStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """Discover devices using BLE scanning."""
@@ -1059,7 +1062,7 @@ class ConnectionValidator:
     def validate_connection_request(self) -> None:
         """Validate that connection can be initiated, raise exception if not."""
         if not self.can_initiate_connection():
-            if self.state_manager.state == ConnectionState.CLOSING:
+            if self.state_manager.state == ConnectionState.DISCONNECTING:
                 raise BLEInterface.BLEError("Cannot connect while interface is closing")
             else:
                 raise BLEInterface.BLEError(
@@ -1148,7 +1151,7 @@ class ConnectionOrchestrator:
         validator: ConnectionValidator,
         client_manager: ClientManager,
         discovery_manager: DiscoveryManager,
-        state_manager: ConnectionState,
+        state_manager: BLEStateManager,
         state_lock,
         thread_coordinator,
     ):
@@ -1182,13 +1185,15 @@ class ConnectionOrchestrator:
         # Transition to CONNECTING state
         self.state_manager.transition_to(ConnectionState.CONNECTING)
 
+        client = None
         try:
             # Find device
-            device = self.discovery_manager.discover_devices(address or current_address)
-            if not device:
+            devices = self.discovery_manager.discover_devices(address or current_address)
+            if not devices:
                 raise BLEInterface.BLEError("No device found")
 
             # Create and connect client
+            device = devices[0]  # Use the first discovered device
             client = self.client_manager.create_client(
                 device.address, on_disconnect_func
             )
@@ -1216,11 +1221,8 @@ class ConnectionOrchestrator:
         except Exception as e:
             logger.error("Connection failed to %s: %s", target_address or "unknown", e)
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
-            (
+            if client:
                 self.client_manager._safe_close_client(client)
-                if "client" in locals()
-                else None
-            )
             self.state_manager.transition_to(ConnectionState.ERROR)
             raise
 
@@ -1440,7 +1442,7 @@ class BLEInterface(MeshInterface):
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
-        self._exit_handler = None
+        self._exit_handler: Optional[Callable[[], None]] = None
         self.address = address
         self._last_connection_request: Optional[str] = BLEInterface._sanitize_address(
             address
@@ -2382,7 +2384,7 @@ class BLEInterface(MeshInterface):
                         if not b:
                             # Handle empty reads with centralized retry policy
                             if RetryPolicy.EMPTY_READ.should_retry(retries):
-                                RetryPolicy.EMPTY_READ.sleep_with_backoff(retries)
+                                _sleep(RetryPolicy.EMPTY_READ.get_delay(retries))
                                 retries += 1
                                 continue
                             logger.warning(
@@ -2420,8 +2422,8 @@ class BLEInterface(MeshInterface):
                                 self._read_retry_count,
                                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
                             )
-                            RetryPolicy.TRANSIENT_ERROR.sleep_with_backoff(
-                                self._read_retry_count
+                            _sleep(
+                                RetryPolicy.TRANSIENT_ERROR.get_delay(self._read_retry_count)
                             )
                             continue
                         self._read_retry_count = 0
@@ -2560,7 +2562,7 @@ class BLEInterface(MeshInterface):
         if self._exit_handler:
             with contextlib.suppress(ValueError):
                 atexit.unregister(self._exit_handler)
-            self._exit_handler = None
+        self._exit_handler = None
 
         # Stop reconnection thread if active
         self._shutdown_event.set()
