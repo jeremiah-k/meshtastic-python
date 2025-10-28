@@ -5,24 +5,25 @@ import threading
 import time
 from unittest.mock import MagicMock, Mock
 
-import pytest
+import pytest  # pylint: disable=E0401
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # pylint: disable=R0917
 def _load_state_manager_after_mocks(
-    mock_serial,
-    mock_pubsub,
-    mock_tabulate,
-    mock_bleak,
-    mock_bleak_exc,
-    mock_publishing_thread,
+    mock_serial,  # pylint: disable=W0613
+    mock_pubsub,  # pylint: disable=W0613
+    mock_tabulate,  # pylint: disable=W0613
+    mock_bleak,  # pylint: disable=W0613
+    mock_bleak_exc,  # pylint: disable=W0613
+    mock_publishing_thread,  # pylint: disable=W0613
 ):
     """
     Ensure BLEStateManager and ConnectionState are loaded into module globals for tests.
 
-    Dynamically imports the meshtastic.ble_interface module and assigns its BLEStateManager and ConnectionState attributes to the module-level globals BLEStateManager and ConnectionState so tests can reference them after mock fixtures are applied.
+    Dynamically imports the meshtastic.ble_interface module and assigns its BLEStateManager and ConnectionState attributes
+    to the module-level globals BLEStateManager and ConnectionState so tests can reference them after mock fixtures are applied.
     """
-    global BLEStateManager, ConnectionState
+    global BLEStateManager, ConnectionState  # pylint: disable=W0601
     import importlib
 
     ble_mod = importlib.import_module("meshtastic.ble_interface")
@@ -455,7 +456,7 @@ class TestPhase3LockConsolidation:
 
     def test_reentrant_lock_behavior(self):
         """Test that unified lock supports reentrancy for nested operations."""
-        from unittest.mock import MagicMock
+        from unittest.mock import MagicMock  # pylint: disable=W0404,W0621
 
         manager = BLEStateManager()
         mock_client = MagicMock()
@@ -482,7 +483,7 @@ class TestPhase3LockConsolidation:
     @pytest.mark.slow
     def test_state_transition_performance(self):
         """Measure performance of state transitions under realistic load."""
-        import os
+        import os  # pylint: disable=C0415
 
         manager = BLEStateManager()
         mock_client = MagicMock()

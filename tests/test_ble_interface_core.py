@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 
-import pytest  # type: ignore[import-untyped]
+import pytest  # type: ignore[import-untyped]  # pylint: disable=E0401
 
 # Import common fixtures
 from test_ble_interface_fixtures import (
@@ -13,14 +13,14 @@ from test_ble_interface_fixtures import (
 )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # pylint: disable=R0917
 def _late_imports(
-    mock_serial,
-    mock_pubsub,
-    mock_tabulate,
-    mock_bleak,
-    mock_bleak_exc,
-    mock_publishing_thread,
+    mock_serial,  # pylint: disable=W0613
+    mock_pubsub,  # pylint: disable=W0613
+    mock_tabulate,  # pylint: disable=W0613
+    mock_bleak,  # pylint: disable=W0613
+    mock_bleak_exc,  # pylint: disable=W0613
+    mock_publishing_thread,  # pylint: disable=W0613
 ):
     """
     Import the BLE interface and related symbols after test fixtures install their mocks and expose them as module-level globals for tests.
@@ -39,9 +39,9 @@ def _late_imports(
         `ble_mod`, `BLEInterface`, `FROMNUM_UUID`, `LEGACY_LOGRADIO_UUID`, `LOGRADIO_UUID`, `BleakError`, and `pub`.
 
     """
-    import importlib
+    import importlib  # pylint: disable=C0415
 
-    global ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub
+    global ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub  # pylint: disable=W0601
     ble_mod = importlib.import_module("meshtastic.ble_interface")
     BLEInterface = ble_mod.BLEInterface
     FROMNUM_UUID = ble_mod.FROMNUM_UUID
@@ -131,7 +131,7 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 
             @raises pytest.fail: Causes the current test to fail unconditionally.
             """
-            import pytest
+            import pytest  # pylint: disable=C0415,E0401,W0404,W0621
 
             pytest.fail()
 
@@ -170,8 +170,8 @@ def test_close_handles_errors(monkeypatch, exc_name):
 
         Parameters
         ----------
-            topic (str): Pubsub topic name.
-            **kwargs: Additional message fields to capture alongside the topic.
+        topic (str): Pubsub topic name.
+        **kwargs (dict): Additional message fields to capture alongside the topic.
 
         """
         calls.append((topic, kwargs))
@@ -287,22 +287,23 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         original_close = iface.close
         close_called = threading.Event()
 
-        def mock_close(close_called=close_called, original_close=original_close):
-            """
-            Mark the provided event to indicate close was called, then invoke and return the result of the original close callable.
+    def mock_close(close_called=close_called, original_close=original_close):
+        """
+        Mark the provided event to indicate close was called, then invoke and return the result
+        of the original close callable.
 
-            Parameters
-            ----------
-                close_called (threading.Event): Event that will be set to signal that close was invoked.
-                original_close (Callable[[], Any]): The original close callable to invoke.
+        Parameters
+        ----------
+            close_called (threading.Event): Event that will be set to signal that close was invoked.
+            original_close (Callable[[], Any]): The original close callable to invoke.
 
-            Returns
-            -------
-                The value returned by `original_close`.
+        Returns
+        -------
+            The value returned by `original_close`.
 
-            """
-            close_called.set()
-            return original_close()
+        """
+        close_called.set()
+        return original_close()
 
         monkeypatch.setattr(iface, "close", mock_close)
 

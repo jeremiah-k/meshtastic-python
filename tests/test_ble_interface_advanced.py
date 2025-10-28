@@ -10,8 +10,10 @@ from queue import Queue
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
-import pytest  # type: ignore[import-untyped]
-from bleak.exc import BleakError  # type: ignore[import-untyped]
+import pytest  # type: ignore[import-untyped]  # pylint: disable=E0401
+from bleak.exc import (
+    BleakError,  # type: ignore[import-untyped]  # pylint: disable=E0401
+)
 
 # Import common fixtures
 from test_ble_interface_fixtures import (
@@ -60,7 +62,8 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
             Parameters
             ----------
-                uuid (str | uuid.UUID): The characteristic UUID to check; may be a string or uuid.UUID.
+            uuid : str | uuid.UUID
+                The characteristic UUID to check; may be a string or uuid.UUID.
 
             Returns
             -------
@@ -117,7 +120,8 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
             """
             Return raw GATT characteristic bytes used by tests.
 
-            When the first positional argument equals ble_mod.FROMRADIO_UUID, return bytes that are invalid protobuf data to trigger a decode error; otherwise return empty bytes.
+            When the first positional argument equals ble_mod.FROMRADIO_UUID, return bytes that are invalid protobuf data
+            to trigger a decode error; otherwise return empty bytes.
 
             Returns:
                 bytes: Invalid protobuf payload when the first positional argument is ble_mod.FROMRADIO_UUID, empty bytes otherwise.
@@ -469,6 +473,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 _eventLoop, _eventThread: Placeholders to suppress event-loop related warnings during tests.
 
             """
+            super().__init__(address=None)
             self.bleak_client = MockBleakRootClient()
             self.connect_count = 0
             self.disconnect_count = 0
@@ -498,7 +503,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def is_connected(self):
             """
-            Indicates whether the mock client is configured as connected.
+            Indicate whether the mock client is configured as connected.
 
             Returns:
                 True if the mock client is configured as connected, False otherwise.
@@ -543,10 +548,13 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         """
         Create a BLEInterface configured for stress testing with auto-reconnect enabled.
 
-        Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mock device and attaches a StressTestClient on connect. The returned interface has auto_reconnect enabled, exposes a test patch stack on `iface._test_patch_stack`, and records connect attempts in `iface._connect_stub_calls` for inspection.
+        Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mock device and attaches a StressTestClient on connect.
+        The returned interface has auto_reconnect enabled, exposes a test patch stack on `iface._test_patch_stack`,
+        and records connect attempts in `iface._connect_stub_calls` for inspection.
 
         Returns:
-            tuple: (iface, client) where `iface` is a BLEInterface instance configured for testing and `client` is the StressTestClient instance that `iface.connect()` will return.
+            tuple: (iface, client) where `iface` is a BLEInterface instance configured for testing
+                and `client` is the StressTestClient instance that `iface.connect()` will return.
 
         """
         outer_client = StressTestClient()
@@ -570,7 +578,10 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             Parameters
             ----------
-                address (Optional[str]): Address used for the connection; appended to the surrounding test's `connect_calls` list for inspection.
+            self : BLEInterface
+                BLEInterface instance.
+            address : Optional[str]
+                Address used for the connection; appended to the surrounding test's `connect_calls` list for inspection.
 
             Returns
             -------
@@ -603,7 +614,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         """
         Simulate a burst of BLE disconnect events against the interface to exercise reconnect and disconnect handling.
 
-        Invokes the interface's _on_ble_disconnect callback 10 times with short (0.01 s) pauses to reproduce rapid disconnect scenarios used by stress tests.
+        Invokes the interface's _on_ble_disconnect callback 10 times with short (0.01 s) pauses
+        to reproduce rapid disconnect scenarios used by stress tests.
         """
         for _ in range(10):
             iface._on_ble_disconnect(client.bleak_client)
@@ -635,7 +647,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         """
         Simulate a rapid sequence of BLE disconnect callbacks on iface2 to exercise auto-reconnect and disconnect handling.
 
-        Calls iface2._on_ble_disconnect(client2.bleak_client) five times with short pauses; exceptions raised by individual calls are logged and suppressed so the stress cycle continues.
+        Calls iface2._on_ble_disconnect(client2.bleak_client) five times with short pauses;
+        exceptions raised by individual calls are logged and suppressed so the stress cycle continues.
         """
         for i in range(5):
             try:
@@ -811,7 +824,8 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
         Parameters
         ----------
-            coro: The coroutine to attach to the test future.
+        coro : Coroutine
+            The coroutine to attach to the test future.
 
         Returns
         -------

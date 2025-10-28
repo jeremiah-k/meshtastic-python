@@ -5,7 +5,7 @@ import sys
 from types import SimpleNamespace
 from typing import Optional
 
-import pytest  # type: ignore[import-untyped]
+import pytest  # type: ignore[import-untyped]  # pylint: disable=E0401
 
 # NOTE: ble_interface is imported lazily inside fixtures/helpers after mocks are installed.
 
@@ -80,9 +80,10 @@ class DummyClient:
 
     def is_connected(self) -> bool:
         """
-        Indicates whether the mock BLE client is connected.
+        Indicate whether the mock BLE client is connected.
 
-        Returns:
+        Returns
+        -------
             `True` because the mock client is always considered connected.
 
         """
@@ -123,7 +124,9 @@ def stub_atexit(
     """
     Collect and invoke callables registered with meshtastic.ble_interface.atexit for the duration of a test.
 
-    Patches meshtastic.ble_interface.atexit.register and .unregister to record callbacks in an internal list, yields to the test, and after the test invokes all recorded callbacks. Exceptions raised by callbacks are caught and logged at debug level. The extra fixture parameters are present only to enforce fixture ordering and are not used by the fixture itself.
+    Patches meshtastic.ble_interface.atexit.register and .unregister to record callbacks in an internal list, yields to the test,
+    and after the test invokes all recorded callbacks. Exceptions raised by callbacks are caught and logged at debug level.
+    The extra fixture parameters are present only to enforce fixture ordering and are not used by the fixture itself.
     """
     registered = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).
@@ -166,28 +169,29 @@ def stub_atexit(
         registered[:] = [f for f in registered if f is not func]
 
     # Import after mocks: ensure bleak/pubsub/serial/tabulate are stubbed first
-    import importlib
-    import importlib.metadata as _im
+    import importlib  # pylint: disable=C0415
+    import importlib.metadata as _im  # pylint: disable=C0415
 
     _orig_version = _im.version
 
     def _version_proxy(name: str):
-        """
-        Resolve a distribution's version, using the mocked bleak version when available.
+    """
+    Resolve a distribution's version, using the mocked bleak version when available.
 
-        Parameters
-        ----------
-            name (str): The distribution name to resolve.
+    Parameters
+    ----------
+        name (str): The distribution name to resolve.
 
-        Returns
-        -------
-            str: The version string for the requested distribution. If `name` is `"bleak"`, returns the mocked bleak module's `__version__` when present, otherwise `"0.0.0"`. For other names, returns the version as determined by the original version lookup.
+    Returns
+    -------
+        str: The version string for the requested distribution. If `name` is `"bleak"`, returns the mocked bleak module's `__version__`
+        when present, otherwise `"0.0.0"`. For other names, returns the version as determined by the original version lookup.
 
-        """
-        if name == "bleak":
-            # use mocked bleak's __version__ if available; else a benign default
-            return getattr(sys.modules.get("bleak"), "__version__", "0.0.0")
-        return _orig_version(name)
+    """
+    if name == "bleak":
+        # use mocked bleak's __version__ if available; else a benign default
+        return getattr(sys.modules.get("bleak"), "__version__", "0.0.0")
+    return _orig_version(name)
 
     monkeypatch.setattr(_im, "version", _version_proxy)
     ble_mod = importlib.import_module("meshtastic.ble_interface")
@@ -218,14 +222,16 @@ def _build_interface(monkeypatch, client):
     Parameters
     ----------
         client: Fake or mock BLE client instance that the patched `connect` will return and assign to the interface.
+        monkeypatch: Pytest monkeypatch fixture for patching.
 
     Returns
     -------
-        BLEInterface: A test-configured interface whose `connect` returns `client`, whose `_startConfig` does nothing, and which exposes `_connect_stub_calls` (list of addresses passed to the stubbed `connect`).
+        BLEInterface: A test-configured interface whose `connect` returns `client`, whose `_startConfig` does nothing,
+        and which exposes `_connect_stub_calls` (list of addresses passed to the stubbed `connect`).
 
     """
     # Import BLEInterface lazily after mocks are in place
-    import importlib
+    import importlib  # pylint: disable=C0415
 
     BLEInterface = importlib.import_module("meshtastic.ble_interface").BLEInterface
 
@@ -258,7 +264,7 @@ def _build_interface(monkeypatch, client):
         _self._connected()
         # Update state manager to CONNECTED for proper state tracking
         # In tests, we skip CONNECTING and go directly to CONNECTED
-        from meshtastic.ble_interface import ConnectionState
+        from meshtastic.ble_interface import ConnectionState  # pylint: disable=C0415
 
         # First transition to CONNECTING to simulate proper connection flow
         _self._state_manager.transition_to(ConnectionState.CONNECTING)

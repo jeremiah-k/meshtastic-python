@@ -6,7 +6,7 @@ import sys
 import types
 from types import SimpleNamespace
 
-import pytest  # type: ignore[import-untyped]
+import pytest  # type: ignore[import-untyped]  # pylint: disable=E0401
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +84,8 @@ def mock_publishing_thread(monkeypatch):
 
         Parameters
         ----------
-                callback (Optional[Callable[[], Any]]): Callable to execute; if `None` or falsy, nothing is invoked.
+        callback : Optional[Callable[[], Any]]
+            Callable to execute; if `None` or falsy, nothing is invoked.
 
         """
         if callback:
@@ -121,7 +122,8 @@ def mock_bleak(monkeypatch):
     """
     Injects a minimal fake `bleak` module into sys.modules for use in tests.
 
-    The injected module exposes a stubbed BleakClient (no-op async methods and is_connected always False), a BleakScanner with async discover returning an empty list, a lightweight BLEDevice type, and __version__ = "1.1.1".
+    The injected module exposes a stubbed BleakClient (no-op async methods and is_connected always False),
+    a BleakScanner with async discover returning an empty list, a lightweight BLEDevice type, and __version__ = "1.1.1".
 
     Returns:
         module: The fake `bleak` module object inserted into sys.modules.
@@ -137,8 +139,10 @@ def mock_bleak(monkeypatch):
 
             Parameters
             ----------
-                address (str | None): BLE device address associated with this client, or None.
-                **_kwargs: Additional keyword arguments are accepted and ignored.
+            address : str | None
+                BLE device address associated with this client, or None.
+            **_kwargs : dict
+                Additional keyword arguments are accepted and ignored.
 
             Attributes
             ----------
@@ -232,10 +236,13 @@ def mock_bleak(monkeypatch):
 
             Parameters
             ----------
-                address (str | None): BLE device address, if known.
-                name (str | None): Human-readable device name, if known.
-                **_kwargs: Additional keyword arguments are accepted and ignored; if a `details` mapping
-                    is provided it will be preserved on the instance as `self.details`.
+            address : str | None
+                BLE device address, if known.
+            name : str | None
+                Human-readable device name, if known.
+            **_kwargs : dict
+                Additional keyword arguments are accepted and ignored; if a `details` mapping
+                is provided it will be preserved on the instance as `self.details`.
 
             """
             self.address = address
@@ -255,7 +262,6 @@ def mock_bleak(monkeypatch):
                 _kwargs: Keyword arguments passed through for compatibility with the real BleakScanner (ignored).
 
             """
-            pass
 
         @staticmethod
         async def discover(**_kwargs):
@@ -278,17 +284,15 @@ def mock_bleak(monkeypatch):
                 None
 
             """
-            pass
 
         async def stop(self):
             """
             Stop the scanner. This stub method performs no action.
             """
-            pass
 
         def register_detection_callback(self, *_args, **_kwargs):
             """
-            Accepts a detection callback but performs no action.
+            Accept a detection callback but perform no action.
 
             Any positional and keyword arguments are accepted and ignored.
             """

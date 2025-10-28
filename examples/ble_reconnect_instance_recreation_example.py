@@ -16,7 +16,7 @@ import logging
 import threading
 import time
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped]  # pylint: disable=E0401
 
 import meshtastic
 import meshtastic.ble_interface

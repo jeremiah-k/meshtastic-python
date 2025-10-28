@@ -5,18 +5,18 @@ These tests verify the centralized retry logic and backoff behavior
 that was introduced to address async/thread mixing issues.
 """
 
-import pytest
+import pytest  # pylint: disable=E0401
 
 
 # Load policies only after bleak/pubsub/serial/tabulate are mocked by autouse fixtures.
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # pylint: disable=R0917
 def _load_policies_after_mocks(
-    mock_serial,  # ensure ordering
-    mock_pubsub,
-    mock_tabulate,
-    mock_bleak,
-    mock_bleak_exc,
-    mock_publishing_thread,
+    mock_bleak,  # pylint: disable=W0613
+    mock_bleak_exc,  # pylint: disable=W0613
+    mock_publishing_thread,  # pylint: disable=W0613
+    mock_pubsub,  # pylint: disable=W0613
+    mock_serial,  # pylint: disable=W0613
+    mock_tabulate,  # pylint: disable=W0613
 ):
     """
     Ensure meshtastic.ble_interface is imported after specified test mocks and bind its ReconnectPolicy and RetryPolicy into the module globals.
@@ -33,7 +33,7 @@ def _load_policies_after_mocks(
         mock_publishing_thread: Fixture that mocks the publishing thread; included to control import ordering.
 
     """
-    global ReconnectPolicy, RetryPolicy
+    global ReconnectPolicy, RetryPolicy  # pylint: disable=W0601
     import importlib
 
     ble_mod = importlib.import_module("meshtastic.ble_interface")
@@ -119,7 +119,7 @@ class TestReconnectPolicy:
 
     def test_delay_calculation_with_jitter(self):
         """Test delay calculation includes jitter."""
-        import random
+        import random  # pylint: disable=C0415
 
         rnd = random.Random(12345)
         policy = ReconnectPolicy(
