@@ -1056,7 +1056,8 @@ class DiscoveryManager:
                         "Scan found no devices, trying fallback to already-connected devices"
                     )
                     try:
-                        connected_devices = asyncio.run(
+                        # Use the client's event loop for safe async execution
+                        connected_devices = client._run_coroutine_threadsafe(
                             self.connected_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
                         )
                         devices.extend(connected_devices)
@@ -2123,11 +2124,19 @@ class BLEInterface(MeshInterface):
         """
         if hasattr(self, "_discovery_manager"):
             try:
-                return asyncio.run(
-                    self._discovery_manager.connected_strategy.discover(
-                        address, BLEConfig.BLE_SCAN_TIMEOUT
+                # Use client's event loop if available, otherwise fall back to asyncio.run
+                if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
+                    return self.client._run_coroutine_threadsafe(
+                        self._discovery_manager.connected_strategy.discover(
+                            address, BLEConfig.BLE_SCAN_TIMEOUT
+                        )
                     )
-                )
+                else:
+                    return asyncio.run(
+                        self._discovery_manager.connected_strategy.discover(
+                            address, BLEConfig.BLE_SCAN_TIMEOUT
+                        )
+                    )
             except Exception as e:
                 logger.debug("Connected device discovery failed: %s", e)
                 return []
@@ -2152,8 +2161,16 @@ class BLEInterface(MeshInterface):
             ):
                 import inspect
                 getter = scanner._backend.get_devices
+                
+                # Use client's event loop if available, otherwise fall back to asyncio.run
+                def run_async_safely(coro):
+                    if self.client and hasattr(self.client, '_eventLoop') and self.client._eventLoop:
+                        return self.client._run_coroutine_threadsafe(coro)
+                    else:
+                        return asyncio.run(coro)
+                
                 if inspect.iscoroutinefunction(getter):
-                    backend_devices = asyncio.run(
+                    backend_devices = run_async_safely(
                         BLEInterface._with_timeout(
                             getter(),
                             BLEConfig.BLE_SCAN_TIMEOUT,
@@ -2164,7 +2181,7 @@ class BLEInterface(MeshInterface):
                     # Run sync getter off the event loop thread with a timeout
                     async def _get_sync():
                         return await asyncio.to_thread(getter)
-                    backend_devices = asyncio.run(
+                    backend_devices = run_async_safely(
                         BLEInterface._with_timeout(
                             _get_sync(),
                             BLEConfig.BLE_SCAN_TIMEOUT,
