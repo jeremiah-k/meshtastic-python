@@ -324,89 +324,8 @@ class ReconnectPolicy:
         return self._attempt_count
 
 
-class AsyncDispatcher:
-    """
-    Safe async coroutine execution that works in any context.
 
-    This class provides a way to run coroutines safely whether called
-    from an async context (with running event loop) or from a sync context.
-    It prevents deadlocks that can occur when using asyncio.run inside
-    an already running event loop.
-    """
 
-    def __init__(self, event_loop: Optional[asyncio.AbstractEventLoop] = None):
-        """
-        Initialize the dispatcher.
-
-        Args:
-            event_loop: Optional event loop to use for dispatching
-
-        """
-        self._event_loop = event_loop
-
-    def run_coroutine(self, coro):
-        """
-        Run a coroutine safely in any context.
-
-        This method safely executes coroutines whether called from:
-        - Sync context (no running event loop) - uses asyncio.run
-        - Async context (running event loop) - schedules as task
-        - Thread with different event loop - uses thread-safe dispatch
-
-        Args:
-            coro: The coroutine to run
-
-        Returns:
-            The result of the coroutine
-
-        Raises:
-            The same exceptions that the coroutine would raise
-
-        """
-        try:
-            # Check if we're in an async context with a running loop
-            loop = asyncio.get_running_loop()
-
-            if self._event_loop and loop != self._event_loop:
-                # We have a specific loop but we're in a different one
-                # Use run_coroutine_threadsafe to dispatch to the correct loop
-                future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
-                return future.result()
-            else:
-                # We're in the correct (or no specific) loop
-                # Schedule as a task and wait for completion
-                task = loop.create_task(coro)
-                # Use loop.run_until_complete to wait for the task
-                # This is safe because we're already in an async context
-                import concurrent.futures
-
-                # Create a future to bridge sync/async
-                future = concurrent.futures.Future()
-
-                def set_result(task):
-                    try:
-                        future.set_result(task.result())
-                    except Exception as e:
-                        future.set_exception(e)
-
-                task.add_done_callback(set_result)
-                return future.result()
-
-        except RuntimeError:
-            # No running loop - we're in a synchronous context
-            # Create a new event loop to run the coroutine safely
-            new_loop = asyncio.new_event_loop()
-            try:
-                asyncio.set_event_loop(new_loop)
-                return new_loop.run_until_complete(coro)
-            finally:
-                new_loop.close()
-                # Clean up the event loop reference
-                asyncio.set_event_loop(None)
-
-    def set_event_loop(self, loop: asyncio.AbstractEventLoop):
-        """Set the event loop for future dispatches."""
-        self._event_loop = loop
 
 
 """
@@ -1005,7 +924,7 @@ class DiscoveryStrategy(ABC):
     """Abstract base class for device discovery strategies."""
 
     @abstractmethod
-    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+    def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """Discover devices using this strategy."""
         pass
 
@@ -1028,8 +947,8 @@ class ScanStrategy(DiscoveryStrategy):
 class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery using already-connected device enumeration."""
 
-    def __init__(self, async_dispatcher):
-        self.async_dispatcher = async_dispatcher
+    def __init__(self):
+        pass
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """Discover already-connected Meshtastic devices."""
@@ -1108,34 +1027,22 @@ class ConnectedStrategy(DiscoveryStrategy):
 class DiscoveryManager:
     """Orchestrates device discovery using multiple strategies."""
 
-    def __init__(self, async_dispatcher):
-        self.async_dispatcher = async_dispatcher
-        self.scan_strategy = ScanStrategy()
-        self.connected_strategy = ConnectedStrategy(async_dispatcher)
+    def __init__(self):
+        pass
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
-        """Discover devices using appropriate strategy."""
-        # First try scanning
-        try:
-            devices = self.async_dispatcher.run_coroutine(
-                self.scan_strategy.discover(address, BLEConfig.BLE_SCAN_TIMEOUT)
-            )
-
-            # If scan didn't find any devices and we have a specific address, try connected fallback
-            if not devices and address:
-                logger.debug(
-                    "Scan found no devices, trying fallback to already-connected devices"
+        """Discover devices using BLE scanning."""
+        # Use a temporary BLEClient for discovery operations
+        with BLEClient() as client:
+            try:
+                devices = client.discover(
+                    timeout=BLEConfig.BLE_SCAN_TIMEOUT, 
+                    service_uuids=[SERVICE_UUID]
                 )
-                devices = self.async_dispatcher.run_coroutine(
-                    self.connected_strategy.discover(
-                        address, BLEConfig.BLE_SCAN_TIMEOUT
-                    )
-                )
-
-            return devices
-        except Exception as e:
-            logger.debug("Device discovery failed: %s", e)
-            return []
+                return devices
+            except Exception as e:
+                logger.debug("Device discovery failed: %s", e)
+                return []
 
 
 class ConnectionValidator:
@@ -1547,7 +1454,7 @@ class BLEInterface(MeshInterface):
 
     def _initialize_async_infrastructure(self) -> None:
         """Initialize async dispatch infrastructure."""
-        self._async_dispatcher = AsyncDispatcher()
+        pass
 
     def _initialize_reconnection_policy(self) -> None:
         """Initialize reconnection policy with configured parameters."""
@@ -1565,7 +1472,7 @@ class BLEInterface(MeshInterface):
         self._notification_manager = NotificationManager()
 
         # Device discovery manager
-        self._discovery_manager = DiscoveryManager(self._async_dispatcher)
+        self._discovery_manager = DiscoveryManager()
 
         # Thread management infrastructure
         self.thread_coordinator = ThreadCoordinator()
@@ -2194,11 +2101,15 @@ class BLEInterface(MeshInterface):
         use the DiscoveryManager instead.
         """
         if hasattr(self, "_discovery_manager"):
-            return self._async_dispatcher.run_coroutine(
-                self._discovery_manager.connected_strategy.discover(
-                    address, BLEConfig.BLE_SCAN_TIMEOUT
+            try:
+                return asyncio.run(
+                    self._discovery_manager.connected_strategy.discover(
+                        address, BLEConfig.BLE_SCAN_TIMEOUT
+                    )
                 )
-            )
+            except Exception as e:
+                logger.debug("Connected device discovery failed: %s", e)
+                return []
 
         # Legacy implementation for tests that don't call __init__
         if not _bleak_supports_connected_fallback():
@@ -2689,13 +2600,18 @@ class BLEInterface(MeshInterface):
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
+        queued = False
+        def do_queue():
+            nonlocal queued
+            publishingThread.queueWork(flush_event.set)
+            queued = True
         self.error_handler.safe_execute(
-            lambda: publishingThread.queueWork(flush_event.set),
+            do_queue,
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False,
         )
 
-        if not flush_event.wait(timeout=timeout):
+        if queued and not flush_event.wait(timeout=timeout):
             thread = getattr(publishingThread, "thread", None)
             if thread is not None and thread.is_alive():
                 logger.debug("Timed out waiting for publish queue flush")
@@ -2774,13 +2690,8 @@ class BLEClient:
         # Share exception type with BLEInterface for consistent public API.
         self.BLEError = BLEInterface.BLEError
 
-        # Async dispatcher for safe coroutine execution
-        self._async_dispatcher = AsyncDispatcher()
-
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
-        # Configure async dispatcher with the event loop
-        self._async_dispatcher.set_event_loop(self._eventLoop)
         # Start event loop in background thread for async operations
         self._eventThread = Thread(
             target=self._run_event_loop, name="BLEClient", daemon=True

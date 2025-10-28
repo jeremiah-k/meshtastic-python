@@ -175,14 +175,14 @@ def stub_atexit(
     _orig_version = _im.version
 
     def _version_proxy(name: str):
-    """
-    Resolve a distribution's version, using the mocked bleak version when available.
+        """
+        Resolve a distribution's version, using the mocked bleak version when available.
 
-    Parameters
-    ----------
-        name (str): The distribution name to resolve.
+        Parameters
+        ----------
+            name (str): The distribution name to resolve.
 
-    Returns
+        Returns
     -------
         str: The version string for the requested distribution. If `name` is `"bleak"`, returns the mocked bleak module's `__version__`
         when present, otherwise `"0.0.0"`. For other names, returns the version as determined by the original version lookup.
