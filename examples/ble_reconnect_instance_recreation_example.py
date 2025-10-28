@@ -24,6 +24,10 @@ import meshtastic.ble_interface
 # Retry delay in seconds when connection fails
 RETRY_DELAY_SECONDS = 5
 
+# Timeout multiplier and minimum for disconnect event wait
+DISCONNECT_TIMEOUT_MULTIPLIER = 2
+DISCONNECT_TIMEOUT_MIN_SECONDS = 30.0
+
 logger = logging.getLogger(__name__)
 
 # A thread-safe flag to signal disconnection
@@ -102,7 +106,8 @@ def main():
                     logger.info(
                         "Connection successful. Waiting for disconnection event..."
                     )
-                    timeout_s = max(2 * delay, 30.0)
+                    # Timeout is 2x retry delay or 30s minimum to allow for BLE connection establishment
+                    timeout_s = max(DISCONNECT_TIMEOUT_MULTIPLIER * delay, DISCONNECT_TIMEOUT_MIN_SECONDS)
                     if not disconnected_event.wait(timeout=timeout_s):
                         logger.warning(
                             "No disconnect event within %.1fs; proceeding to retry.",

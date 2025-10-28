@@ -18,6 +18,7 @@ def _load_policies_after_mocks(
     mock_serial,  # pylint: disable=W0613
     mock_tabulate,  # pylint: disable=W0613
 ):
+    _ = (mock_bleak, mock_bleak_exc, mock_publishing_thread, mock_pubsub, mock_serial, mock_tabulate)
     """
     Ensure meshtastic.ble_interface is imported after specified test mocks and bind its ReconnectPolicy and RetryPolicy into the module globals.
 
@@ -121,7 +122,7 @@ class TestReconnectPolicy:
         """Test delay calculation includes jitter."""
         import random  # pylint: disable=C0415
 
-        rnd = random.Random(12345)
+        rnd = random.Random(12345)  # noqa: S311 - deterministic jitter for tests
         policy = ReconnectPolicy(
             initial_delay=10.0,
             max_delay=100.0,

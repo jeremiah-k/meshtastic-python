@@ -22,6 +22,7 @@ def _late_imports(
     mock_bleak_exc,  # pylint: disable=W0613
     mock_publishing_thread,  # pylint: disable=W0613
 ):
+    _ = (mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread)
     """
     Import the BLE interface and related symbols after test fixtures install their mocks and expose them as module-level globals for tests.
 
@@ -287,23 +288,12 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         original_close = iface.close
         close_called = threading.Event()
 
-    def mock_close(close_called=close_called, original_close=original_close):
-        """
-        Mark the provided event to indicate close was called, then invoke and return the result
-        of the original close callable.
-
-        Parameters
-        ----------
-            close_called (threading.Event): Event that will be set to signal that close was invoked.
-            original_close (Callable[[], Any]): The original close callable to invoke.
-
-        Returns
-        -------
-            The value returned by `original_close`.
-
-        """
-        close_called.set()
-        return original_close()
+        def mock_close():
+            """
+            Flag close() invocation and delegate to original close.
+            """
+            close_called.set()
+            return original_close()
 
         monkeypatch.setattr(iface, "close", mock_close)
 

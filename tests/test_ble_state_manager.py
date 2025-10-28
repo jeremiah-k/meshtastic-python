@@ -17,6 +17,8 @@ def _load_state_manager_after_mocks(
     mock_bleak_exc,  # pylint: disable=W0613
     mock_publishing_thread,  # pylint: disable=W0613
 ):
+    # Consume fixtures to enforce ordering and silence Ruff (ARG001)
+    _ = (mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread)
     """
     Ensure BLEStateManager and ConnectionState are loaded into module globals for tests.
 
@@ -165,9 +167,7 @@ class TestBLEStateManager:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
                     results.append((worker_id, i, success, manager.state.value))
                     time.sleep(0.001)  # Small delay to increase contention
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - capture any exception for test harness
+            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Start multiple threads
@@ -423,9 +423,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - capture any exception for test harness
+            except Exception as e:  # noqa: BLE001 - capture any exception for test harness
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads

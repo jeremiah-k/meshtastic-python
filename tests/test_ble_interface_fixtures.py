@@ -183,15 +183,15 @@ def stub_atexit(
             name (str): The distribution name to resolve.
 
         Returns
-    -------
-        str: The version string for the requested distribution. If `name` is `"bleak"`, returns the mocked bleak module's `__version__`
-        when present, otherwise `"0.0.0"`. For other names, returns the version as determined by the original version lookup.
+        -------
+            str: The version string for the requested distribution. If `name` is `"bleak"`, returns the mocked bleak module's `__version__`
+            when present, otherwise `"0.0.0"`. For other names, returns the version as determined by the original version lookup.
 
-    """
-    if name == "bleak":
-        # use mocked bleak's __version__ if available; else a benign default
-        return getattr(sys.modules.get("bleak"), "__version__", "0.0.0")
-    return _orig_version(name)
+        """
+        if name == "bleak":
+            # use mocked bleak's __version__ if available; else a benign default
+            return getattr(sys.modules.get("bleak"), "__version__", "0.0.0")
+        return _orig_version(name)
 
     monkeypatch.setattr(_im, "version", _version_proxy)
     ble_mod = importlib.import_module("meshtastic.ble_interface")
