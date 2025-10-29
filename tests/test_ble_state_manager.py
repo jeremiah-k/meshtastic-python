@@ -19,10 +19,19 @@ def _load_state_manager_after_mocks(
 ):
     # Consume fixtures to enforce ordering and silence Ruff (ARG001)
     """
-    Load BLEStateManager and ConnectionState into the module globals after mocks are applied.
+    Load BLEStateManager and ConnectionState into module globals after mocks are applied.
 
-    Dynamically import the meshtastic.ble_interface module and assign its BLEStateManager and ConnectionState attributes to the module-level globals so tests can reference them once mock fixtures have been applied.
+    Dynamically imports meshtastic.ble_interface and assigns BLEStateManager and ConnectionState
+    to module-level globals so tests can reference them after mock fixtures are applied.
     """
+    _ = (
+        mock_serial,
+        mock_pubsub,
+        mock_tabulate,
+        mock_bleak,
+        mock_bleak_exc,
+        mock_publishing_thread,
+    )
     _ = (
         mock_serial,
         mock_pubsub,

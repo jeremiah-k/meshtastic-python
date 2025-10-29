@@ -23,9 +23,9 @@ def _late_imports(
     mock_publishing_thread,  # pylint: disable=W0613
 ):
     """
-    Import the meshtastic BLE interface and related symbols after test fixtures install their mocks and expose them as module-level globals for tests.
+    Import BLE interface symbols after mocks are installed and expose as module-level globals.
 
-    This autouse fixture ensures tests use mocked dependencies by importing the target module at runtime and setting the following globals in the test module namespace: `ble_mod`, `BLEInterface`, `FROMNUM_UUID`, `LEGACY_LOGRADIO_UUID`, `LOGRADIO_UUID`, `BleakError`, and `pub`.
+    Sets: ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub.
     """
     _ = (
         mock_serial,
@@ -35,23 +35,6 @@ def _late_imports(
         mock_bleak_exc,
         mock_publishing_thread,
     )
-    """
-    Import the BLE interface and related symbols after test fixtures install their mocks and expose them as module-level globals for tests.
-
-    Parameters
-    ----------
-        mock_serial: Fixture that mock-patches serial-related imports to avoid real serial I/O.
-        mock_pubsub: Fixture that mock-patches the pubsub module to capture publications.
-        mock_tabulate: Fixture that mock-patches tabulate to prevent formatting dependencies.
-        mock_bleak: Fixture that mock-patches bleak to avoid real BLE interactions.
-        mock_bleak_exc: Fixture that mock-patches bleak.exc to provide a BleakError class.
-        mock_publishing_thread: Fixture that mock-patches any publishing-thread helpers used by the module.
-
-    Side effects:
-        Sets the following globals in the test module namespace:
-        `ble_mod`, `BLEInterface`, `FROMNUM_UUID`, `LEGACY_LOGRADIO_UUID`, `LOGRADIO_UUID`, `BleakError`, and `pub`.
-
-    """
     import importlib  # pylint: disable=C0415
 
     global ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub  # pylint: disable=W0601

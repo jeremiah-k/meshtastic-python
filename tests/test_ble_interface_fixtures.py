@@ -263,10 +263,7 @@ def _build_interface(monkeypatch, client):
         # First transition to CONNECTING to simulate proper connection flow
         _self._state_manager.transition_to(ConnectionState.CONNECTING)
         success = _self._state_manager.transition_to(ConnectionState.CONNECTED, client)
-        if not success:
-            print(
-                f"WARNING: State transition to CONNECTED failed, current state: {_self._state_manager.state}"
-            )
+        assert success, f"State transition to CONNECTED failed, current state: {_self._state_manager.state}"
         # Now fire connected hook to publish after state is CONNECTED
         _self._connected()
         if hasattr(_self, "_reconnected_event"):
