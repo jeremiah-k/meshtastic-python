@@ -3,6 +3,7 @@
 import asyncio
 import atexit
 import contextlib
+import importlib
 import importlib.metadata
 import io
 import logging
@@ -235,7 +236,7 @@ class BLEConfig:
     TRANSIENT_READ_RETRY_DELAY = 0.1
     SEND_PROPAGATION_DELAY = 0.01
     GATT_IO_TIMEOUT = 10.0
-    NOTIFICATION_START_TIMEOUT = 10.0
+    NOTIFICATION_START_TIMEOUT: Optional[float] = None
     CONNECTION_TIMEOUT = 60.0
 
     # Auto-reconnect constants
@@ -2162,7 +2163,7 @@ class BLEInterface(MeshInterface):
 
             Creates safe wrappers that route incoming notifications to the legacy or protobuf log handlers via the BLEErrorHandler,
             subscribes those handlers with the NotificationManager, and starts notifications on any present characteristics
-            (LEGACY_LOGRADIO_UUID and LOGRADIO_UUID) using BLEConfig.NOTIFICATION_START_TIMEOUT.
+            (LEGACY_LOGRADIO_UUID and LOGRADIO_UUID) using BLEConfig.NOTIFICATION_START_TIMEOUT when configured.
             """
 
             def _safe_legacy_handler(sender, data):
@@ -2522,6 +2523,17 @@ class BLEInterface(MeshInterface):
             .replace(" ", "")
             .lower()
         )
+
+    @staticmethod
+    def _refresh_pub_binding() -> None:
+        """
+        Ensure the mesh interface's pub binding reflects the current pubsub module.
+
+        This rebinds `meshtastic.mesh_interface.pub` to the active `pubsub.pub` instance so monkeypatched sendMessage
+        implementations (e.g., in tests) are honored even if the module-level binding was cached earlier.
+        """
+        mesh_iface_module = importlib.import_module("meshtastic.mesh_interface")
+        mesh_iface_module.pub = importlib.import_module("pubsub").pub
 
     def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
@@ -2988,6 +3000,13 @@ class BLEInterface(MeshInterface):
                         exc_info=True,
                     )
                     raise self.BLEError(BLEErrors.ERROR_WRITING_BLE) from e
+                except Exception as e:  # noqa: BLE001 - protect callers from unexpected write failures
+                    logger.debug(
+                        "Error during write operation: %s",
+                        type(e).__name__,
+                        exc_info=True,
+                    )
+                    raise self.BLEError(BLEErrors.ERROR_WRITING_BLE) from e
             else:
                 logger.debug(
                     "Skipping TORADIO write: no BLE client (closing or disconnected)."
@@ -3050,11 +3069,21 @@ class BLEInterface(MeshInterface):
         self._notification_manager.cleanup_all()
 
         # Disconnect client if we have one
+        disconnect_succeeded = True
         if client:
-            self._disconnect_and_close_client(client)
+            disconnect_succeeded = self._disconnect_and_close_client(client)
 
         # Ensure connection status is updated and pubsub message is sent
-        if self.isConnected.is_set():
+        should_publish_disconnect = False
+        logger.debug(
+            "Disconnect notification state before close: %s", self._disconnect_notified
+        )
+        with self._state_lock:
+            if disconnect_succeeded and not self._disconnect_notified:
+                self._disconnect_notified = True
+                should_publish_disconnect = True
+        if should_publish_disconnect:
+            self._refresh_pub_binding()
             self._disconnected()
             # Wait for disconnect notifications to be processed
             self._wait_for_disconnect_notifications(timeout=1.0)
@@ -3129,7 +3158,7 @@ class BLEInterface(MeshInterface):
             else:
                 self._drain_publish_queue(flush_event)
 
-    def _disconnect_and_close_client(self, client: "BLEClient"):
+    def _disconnect_and_close_client(self, client: "BLEClient") -> bool:
         """
         Disconnect the specified BLEClient and ensure its resources are released.
 
@@ -3140,13 +3169,19 @@ class BLEInterface(MeshInterface):
         ----
             client (BLEClient): The BLE client instance to disconnect and close.
 
+        Returns:
+            bool: True if the disconnect call completed without raising, False if it raised an exception.
+
         """
+        disconnect_succeeded = True
         try:
-            self.error_handler.safe_cleanup(
-                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
-            )
+            client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
+        except Exception as e:  # noqa: BLE001 - disconnect failures are expected during shutdown
+            disconnect_succeeded = False
+            logger.debug("Error during disconnect: %s", e)
         finally:
             self._safe_close_client(client)
+        return disconnect_succeeded
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """
@@ -3482,7 +3517,10 @@ class BLEClient:
             return future.result(timeout)
         except FutureTimeoutError as e:
             # Cancel the underlying task directly to avoid callback errors when loop is closing
-            future.cancel()
+            try:
+                future.cancel()
+            except RuntimeError:
+                logger.debug("Unable to cancel BLE task; event loop already closed.")
             raise self.BLEError(BLEErrors.BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116
@@ -3504,14 +3542,9 @@ class BLEClient:
 
     async def _stop_event_loop(self):
         """
-        Request shutdown of the client's internal asyncio event loop and cancel its pending tasks.
+        Request shutdown of the client's internal asyncio event loop.
 
-        Cancels all pending tasks associated with the loop (excluding the currently running task), yields control to allow cancellations to propagate, and then stops the event loop.
+        Stops the event loop and lets the background thread unwind naturally without force-cancelling in-flight tasks.
         """
-        # Cancel all pending tasks on current loop (portable)
-        for task in asyncio.all_tasks():
-            if task is not asyncio.current_task() and not task.done():
-                task.cancel()
-        # Allow cancelled tasks to propagate cancellation
-        await asyncio.sleep(0)
+        # Allow in-flight tasks to settle; loop.stop() is enough because waiters run on run_forever thread.
         self._eventLoop.stop()
