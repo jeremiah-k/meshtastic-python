@@ -16,7 +16,7 @@ import logging
 import threading
 import time
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped]  # pylint: disable=E0401
 
 import meshtastic
 import meshtastic.ble_interface
@@ -32,16 +32,15 @@ disconnected_event = threading.Event()
 
 def on_connection_change(interface, connected):
     """
-    Handle BLE interface connection state changes and signal disconnects to the main loop.
+    Notify the reconnection loop when a BLE interface connects or disconnects.
 
-    Logs the interface label (uses `interface.address` if present, otherwise the object's `repr`)
-    and sets the module-level `disconnected_event` when `connected` is False to notify
-    the reconnection loop.
+    Logs a label for the interface (prefers its `address` attribute when present) and sets the module-level
+    `disconnected_event` when `connected` is False to signal the main retry loop.
 
     Parameters
     ----------
-        interface: A BLE interface object; its `address` attribute is used for logging if available.
-        connected (bool): `True` when the interface is connected, `False` when it is disconnected.
+        interface: BLE interface object whose `address` attribute may be used for logging.
+        connected (bool): `True` when the interface is connected, `False` when disconnected.
 
     """
     iface_label = getattr(interface, "address", repr(interface))
@@ -59,11 +58,10 @@ def main():
     """
     Run a reconnection loop that repeatedly creates a new BLEInterface instance and manages retry attempts.
 
-    Parses a required BLE device address and optional `--retry-delay` from the command line, subscribes to the
-    "meshtastic.connection.status" pubsub topic to detect disconnects, and for each attempt creates a fresh
-    BLEInterface (noProto=True, auto_reconnect=False) inside a context manager. Waits for a disconnection signal,
-    logs BLE-specific and unexpected errors, sleeps for the configured delay before retrying, exits on
-    KeyboardInterrupt, and always unsubscribes from the pubsub topic on shutdown.
+    Parses command-line arguments: a required BLE device address, an optional --retry-delay, and an optional --log-level.
+    Subscribes to the meshtastic.connection.status pubsub topic to detect disconnects, recreates a BLEInterface for each attempt,
+    waits for a disconnection event, retries after the configured delay, and exits cleanly on KeyboardInterrupt while always
+    unsubscribing from the pubsub topic on shutdown.
     """
     parser = argparse.ArgumentParser(
         description="Meshtastic BLE interface reconnection (instance recreation pattern)."
@@ -71,7 +69,7 @@ def main():
     parser.add_argument("address", help="The BLE address of your Meshtastic device.")
     parser.add_argument(
         "--retry-delay",
-        type=int,
+        type=float,
         default=RETRY_DELAY_SECONDS,
         help=f"Seconds to wait before reconnect attempts (default: {RETRY_DELAY_SECONDS}).",
     )
@@ -82,6 +80,8 @@ def main():
         help="Logging level (default: INFO).",
     )
     args = parser.parse_args()
+    if args.retry_delay <= 0:
+        parser.error("--retry-delay must be > 0")
     address = args.address
     delay = args.retry_delay
     logging.basicConfig(level=getattr(logging, args.log_level, logging.INFO))
@@ -102,14 +102,15 @@ def main():
                     logger.info(
                         "Connection successful. Waiting for disconnection event..."
                     )
+                    # Wait indefinitely for disconnect signal from pubsub
                     disconnected_event.wait()
-                    logger.info("Disconnected normally.")
+                    logger.info("Disconnected.")
             except meshtastic.ble_interface.BLEInterface.BLEError:
                 logger.exception("Connection failed")
             except Exception:
                 logger.exception("An unexpected error occurred")
 
-            logger.info("Retrying in %d seconds...", delay)
+            logger.info("Retrying in %s seconds...", delay)
             time.sleep(delay)
     except KeyboardInterrupt:
         logger.info("Exiting...")

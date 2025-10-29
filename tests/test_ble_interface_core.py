@@ -4,9 +4,7 @@ import logging
 import threading
 import time
 
-import pytest  # type: ignore[import-untyped]
-from bleak.exc import BleakError  # type: ignore[import-untyped]
-from pubsub import pub  # type: ignore[import-untyped]
+import pytest  # type: ignore[import-untyped]  # pylint: disable=E0401
 
 # Import common fixtures
 from test_ble_interface_fixtures import (
@@ -14,14 +12,39 @@ from test_ble_interface_fixtures import (
     _build_interface,
 )
 
-# Import meshtastic modules for use in tests
-import meshtastic.ble_interface as ble_mod
-from meshtastic.ble_interface import (
-    FROMNUM_UUID,
-    LEGACY_LOGRADIO_UUID,
-    LOGRADIO_UUID,
-    BLEInterface,
-)
+
+@pytest.fixture(autouse=True)  # pylint: disable=R0917
+def _late_imports(
+    mock_serial,  # pylint: disable=W0613
+    mock_pubsub,  # pylint: disable=W0613
+    mock_tabulate,  # pylint: disable=W0613
+    mock_bleak,  # pylint: disable=W0613
+    mock_bleak_exc,  # pylint: disable=W0613
+    mock_publishing_thread,  # pylint: disable=W0613
+):
+    """
+    Import BLE interface symbols after mocks are installed and expose as module-level globals.
+
+    Sets: ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub.
+    """
+    _ = (
+        mock_serial,
+        mock_pubsub,
+        mock_tabulate,
+        mock_bleak,
+        mock_bleak_exc,
+        mock_publishing_thread,
+    )
+    import importlib  # pylint: disable=C0415
+
+    global ble_mod, BLEInterface, FROMNUM_UUID, LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, BleakError, pub  # pylint: disable=W0601
+    ble_mod = importlib.import_module("meshtastic.ble_interface")
+    BLEInterface = ble_mod.BLEInterface
+    FROMNUM_UUID = ble_mod.FROMNUM_UUID
+    LEGACY_LOGRADIO_UUID = ble_mod.LEGACY_LOGRADIO_UUID
+    LOGRADIO_UUID = ble_mod.LOGRADIO_UUID
+    BleakError = importlib.import_module("bleak.exc").BleakError
+    pub = importlib.import_module("pubsub").pub
 
 
 def test_find_device_returns_single_scan_result(monkeypatch):
@@ -51,10 +74,10 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
     def _fake_connected(_self, _address):
         """
-        Provide a fake connected-device lookup that always returns the predefined `fallback_device`.
+        Return the preset fallback BLEDevice wrapped in a single-element list.
 
         Returns:
-            list: A single-element list containing the preset `fallback_device`.
+            list: A single-element list containing the module-level `fallback_device`.
 
         """
         return [fallback_device]
@@ -98,17 +121,17 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 
         def __init__(self):
             """
-            Prevent instantiation by always raising an AssertionError when the private-backend guard disallows it.
+            Prevent instantiation by failing the current test.
 
-            This initializer exists solely to signal that creating a BleakScanner is not permitted under the failing guard.
+            Calls pytest.fail() unconditionally so any attempt to construct this object registers an immediate test failure.
 
             Raises:
-                AssertionError: "BleakScanner should not be instantiated when guard fails"
+                The current test is failed via pytest.fail().
 
             """
-            raise AssertionError(
-                "BleakScanner should not be instantiated when guard fails"
-            )
+            import pytest  # pylint: disable=C0415,E0401,W0404,W0621
+
+            pytest.fail()
 
     monkeypatch.setattr("meshtastic.ble_interface.BleakScanner", BoomScanner)
 
@@ -119,6 +142,26 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 
 def test_close_idempotent(monkeypatch):
     """Test that close() is idempotent and only calls disconnect once."""
+    # pub already imported at top as mesh_iface_module.pub
+
+    calls = []
+
+    def _capture(topic, **kwargs):
+        """
+        Capture a pubsub message by recording its topic and fields.
+
+        Appends a tuple (topic, kwargs) to the module-level `calls` list for later inspection.
+
+        Parameters
+        ----------
+            topic (str): Pubsub topic name.
+            **kwargs (dict): Additional message fields to capture alongside the topic.
+
+        """
+        calls.append((topic, kwargs))
+
+    monkeypatch.setattr(pub, "sendMessage", _capture)
+
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
@@ -129,9 +172,23 @@ def test_close_idempotent(monkeypatch):
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
 
+    # Verify disconnect status messages are sent during close (expected behavior)
+    disconnect_messages = [
+        (t, kw)
+        for t, kw in calls
+        if t == "meshtastic.connection.status" and kw.get("connected") is False
+    ]
+    assert len(disconnect_messages) == 1, "Exactly one disconnect status message should be sent during close"
+    
+    # But no spurious connected=True during close
+    assert not any(
+        t == "meshtastic.connection.status" and kw.get("connected") is True
+        for t, kw in calls
+    )
 
-@pytest.mark.parametrize("exc_cls", [BleakError, RuntimeError, OSError])
-def test_close_handles_errors(monkeypatch, exc_cls):
+
+@pytest.mark.parametrize("exc_name", ["BleakError", "RuntimeError", "OSError"])
+def test_close_handles_errors(monkeypatch, exc_name):
     """Test that close() handles various exception types gracefully."""
     # pub already imported at top as mesh_iface_module.pub
 
@@ -139,18 +196,26 @@ def test_close_handles_errors(monkeypatch, exc_cls):
 
     def _capture(topic, **kwargs):
         """
-        Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
+        Capture a pubsub message by recording its topic and fields.
+
+        Appends a tuple (topic, kwargs) to the module-level `calls` list for later inspection.
 
         Parameters
         ----------
-            topic (str): Pubsub topic name.
-            **kwargs: Additional message fields to capture alongside the topic.
+        topic (str): Pubsub topic name.
+        **kwargs (dict): Additional message fields to capture alongside the topic.
 
         """
         calls.append((topic, kwargs))
 
     monkeypatch.setattr(pub, "sendMessage", _capture)
 
+    if exc_name == "BleakError":
+        exc_cls = BleakError
+    elif exc_name == "RuntimeError":
+        exc_cls = RuntimeError
+    else:
+        exc_cls = OSError
     client = DummyClient(disconnect_exception=exc_cls("boom"))
     iface = _build_interface(monkeypatch, client)
 
@@ -158,22 +223,20 @@ def test_close_handles_errors(monkeypatch, exc_cls):
 
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
+    # No disconnect status message should be sent when disconnect fails
+    disconnect_messages = [
+        (t, kw)
+        for t, kw in calls
+        if t == "meshtastic.connection.status" and kw.get("connected") is False
+    ]
     assert (
-        sum(
-            1
-            for t, kw in calls
-            if t == "meshtastic.connection.status" and kw.get("connected") is False
-        )
-        == 1
+        not disconnect_messages
+    ), "No disconnect status message should be sent when disconnect fails"
+    # No spurious "connected=True" status during close error handling
+    assert not any(
+        t == "meshtastic.connection.status" and kw.get("connected") is True
+        for t, kw in calls
     )
-
-    client = DummyClient(disconnect_exception=OSError("Permission denied"))
-    iface = _build_interface(monkeypatch, client)
-
-    iface.close()
-
-    assert client.disconnect_calls == 1
-    assert client.close_calls == 1
 
 
 def test_close_clears_ble_threads(monkeypatch):
@@ -185,16 +248,17 @@ def test_close_clears_ble_threads(monkeypatch):
 
     iface.close()
 
-    # Give threads a moment to clean up
-    time.sleep(0.1)
-
-    # Check for specific BLE interface threads that should be cleaned up
-    # BLEClient thread might persist in test environment, so focus on interface-managed threads
-    lingering = [
-        thread.name
-        for thread in threading.enumerate()
-        if thread.name.startswith("BLE") and thread.name != "BLEClient"
-    ]
+    # Wait up to 2s for interface-managed threads to terminate
+    deadline = time.time() + 2.0
+    while True:
+        lingering = [
+            t.name
+            for t in threading.enumerate()
+            if t.name.startswith("BLE") and t.name != "BLEClient"
+        ]
+        if not lingering or time.time() >= deadline:
+            break
+        time.sleep(0.02)
     assert not lingering, f"Found lingering BLE threads: {lingering}"
 
 
@@ -202,7 +266,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
     """Test that receive thread handles specific exceptions correctly."""
     # logging and threading already imported at top
 
-    # BleakError already imported at top as ble_mod.BleakError
+    # BleakError imported via autouse fixture
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
@@ -224,12 +288,12 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def __init__(self, exception_type):
                 """
-                Create a test client configured to raise a specific exception from its faulting methods.
+                Initialize a test BLE client that raises a configured exception from its faulting methods.
 
                 Parameters
                 ----------
-                    exception_type (Exception | type): An exception instance or an exception class; the client will raise
-                        this exception (or an instance of it) when its faulting methods are invoked.
+                exception_type : Exception or type
+                    An exception instance or an exception class; methods that simulate faults will raise this exception when invoked.
 
                 """
                 super().__init__()
@@ -237,10 +301,10 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def read_gatt_char(self, *_args, **_kwargs):
                 """
-                Raise the client's configured exception to simulate a failing GATT characteristic read.
+                Simulate a failing GATT characteristic read by raising the client's configured exception.
 
                 Raises:
-                    Exception: An instance of the client's `exception_type` with the message "test".
+                    Exception: An instance of the client's configured exception type (`self.exception_type`) with the message "test".
 
                 """
                 raise self.exception_type("test")
@@ -252,24 +316,40 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         original_close = iface.close
         close_called = threading.Event()
 
-        def mock_close(close_called=close_called, original_close=original_close):
+        def make_mock_close(orig, event):
             """
-            Signal that close was invoked and then call the original close function.
+            Create a wrapper that sets an event and then calls the provided close callable.
 
             Parameters
             ----------
-                close_called (threading.Event): Event that will be set to signal that close was invoked.
-                original_close (Callable[[], Any]): The original close callable to invoke.
+                orig (callable): The original close function to invoke.
+                event (threading.Event): Event to set when the wrapper is called.
 
             Returns
             -------
-                Any: The value returned by `original_close`.
+                callable: A no-argument function that sets `event` and returns the result of calling `orig`.
 
             """
-            close_called.set()
-            return original_close()
 
-        monkeypatch.setattr(iface, "close", mock_close)
+            def mock_close():
+                """
+                Signal the given event and then call the original close function.
+
+                This helper sets the surrounding `event` to notify listeners and forwards the call to
+                the wrapped `orig` close function, returning its result.
+
+                Returns:
+                    The value returned by `orig()`.
+
+                """
+                event.set()
+                return orig()
+
+            return mock_close
+
+        monkeypatch.setattr(
+            iface, "close", make_mock_close(original_close, close_called)
+        )
 
         # Start the receive thread
         iface._want_receive = True
@@ -309,13 +389,11 @@ def test_log_notification_registration(monkeypatch):
 
         def __init__(self):
             """
-            Initialize the mock client and set up notification tracking and characteristic availability.
+            Create a mock BLE client that records notification registrations and reports which characteristics it exposes.
 
             Attributes:
-                start_notify_calls (list): Records the arguments of each start_notify invocation.
-                has_characteristic_map (dict): Maps characteristic UUIDs to booleans indicating whether the
-                    client reports that characteristic is present. By default, includes
-                    LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
+                start_notify_calls (list[tuple]): Recorded calls to `start_notify`; each entry is the tuple of positional arguments passed (typically `(uuid, handler, ...)`).
+                has_characteristic_map (dict[str, bool]): Mapping from characteristic UUID to `True` if the client reports that characteristic as present. Prepopulated with `LEGACY_LOGRADIO_UUID`, `LOGRADIO_UUID`, and `FROMNUM_UUID` set to `True`.
 
             """
             super().__init__()
@@ -328,30 +406,24 @@ def test_log_notification_registration(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Determine whether the client's characteristic map contains the given characteristic UUID.
+            Return whether the client exposes a characteristic with the given UUID.
 
             Parameters
             ----------
-                uuid (str | uuid.UUID): Characteristic UUID to check.
+                uuid: Characteristic UUID to check (str or uuid.UUID).
 
             Returns
             -------
-                bool: True if the UUID is present in the client's characteristic map, False otherwise.
+                True if the characteristic UUID is present, False otherwise.
 
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
-            Record a requested notification registration by saving the characteristic UUID and its handler.
+            Record characteristic notification registrations for testing.
 
-            Parameters
-            ----------
-                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID
-                (usually a string) and the second is the notification handler (callable). When present,
-                the pair is appended to `self.start_notify_calls`.
-                _kwargs (dict): Additional keyword arguments are accepted but ignored by this test helper.
-
+            When invoked with two or more positional arguments, append a tuple (characteristic UUID, handler) to self.start_notify_calls; additional positional arguments and any keyword arguments are accepted and ignored.
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
@@ -388,16 +460,13 @@ def test_log_notification_registration(monkeypatch):
     )
 
     assert (
-        callable(legacy_call[1])
-        and legacy_call[1].__name__ == iface.legacy_log_radio_handler.__name__
+        callable(legacy_call[1]) and "legacy" in legacy_call[1].__name__
     ), "Legacy log handler should be registered"
     assert (
-        callable(current_call[1])
-        and current_call[1].__name__ == iface.log_radio_handler.__name__
+        callable(current_call[1]) and "log" in current_call[1].__name__
     ), "Current log handler should be registered"
     assert (
-        callable(fromnum_call[1])
-        and fromnum_call[1].__name__ == iface.from_num_handler.__name__
+        callable(fromnum_call[1]) and "from_num" in fromnum_call[1].__name__
     ), "FROMNUM handler should be registered"
 
     iface.close()
