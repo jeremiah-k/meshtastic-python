@@ -48,10 +48,10 @@ def _create_ble_device(address: str, name: str):
     params = {"address": address, "name": name}
     signature = inspect.signature(ble_mod.BLEDevice.__init__)
     if "details" in signature.parameters:
-        params["details"] = {}
+        params["details"] = {}  # type: ignore[assignment]
     if "rssi" in signature.parameters:
-        params["rssi"] = 0
-    return ble_mod.BLEDevice(**params)
+        params["rssi"] = 0  # type: ignore[assignment]
+    return ble_mod.BLEDevice(**params)  # type: ignore[arg-type]
 
 
 def test_find_device_returns_single_scan_result(monkeypatch):
@@ -664,7 +664,7 @@ def test_log_notification_registration(monkeypatch):
     iface = _build_interface(monkeypatch, client)
 
     # Call _register_notifications to test log notification setup
-    iface._register_notifications(client)
+    iface._register_notifications(client)  # type: ignore[arg-type]
 
     # Verify that all three notifications were registered
     registered_uuids = [call[0] for call in client.start_notify_calls]
