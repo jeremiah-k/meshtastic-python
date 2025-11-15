@@ -1867,9 +1867,8 @@ class BLEInterface(MeshInterface):
                 return
             if self.is_connection_closing:
                 logger.debug(
-                    "BLEInterface.close called while another shutdown is in progress; ignoring"
+                    "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                 )
-                return
             # Transition to DISCONNECTING state on close (replaces _closing flag)
             self._state_manager.transition_to(ConnectionState.DISCONNECTING)
         if self._shutdown_event:

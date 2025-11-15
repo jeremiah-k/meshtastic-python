@@ -5,6 +5,8 @@ import threading
 import time
 from unittest.mock import MagicMock, Mock
 
+import pytest
+
 from meshtastic.ble_interface import (  # type: ignore[import-untyped]
     BLEStateManager,
     ConnectionState,
@@ -499,6 +501,7 @@ class TestPhase4PerformanceOptimization:
     """Test Phase 4 performance optimization and validation."""
 
 
+@pytest.mark.slow
 def test_state_transition_performance():
     """Measure performance of state transitions under realistic load."""
     manager = BLEStateManager()
@@ -531,6 +534,7 @@ def test_state_transition_performance():
     )
 
 
+@pytest.mark.slow
 def test_lock_contention_performance():
     """
     Measure BLEStateManager throughput and correctness under lock contention.
@@ -611,6 +615,7 @@ def test_lock_contention_performance():
     print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
 
 
+@pytest.mark.slow
 def test_memory_efficiency():
     """Verify that BLEStateManager does not leak memory during creation and destruction."""
     # Force garbage collection
@@ -643,6 +648,7 @@ def test_memory_efficiency():
     print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 
 
+@pytest.mark.slow
 def test_property_access_performance():
     """Test that state property access is fast."""
 
