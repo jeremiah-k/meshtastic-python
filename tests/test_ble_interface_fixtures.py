@@ -238,8 +238,19 @@ def mock_bleak(monkeypatch):
             self.address = address
             self.name = name
 
+    class _StubBleakScanner:
+        def __init__(self):
+            self._backend = SimpleNamespace(get_devices=lambda: [])
+
+        @staticmethod
+        async def discover(**_kwargs):
+            """
+            Mirror BleakScanner.discover signature by returning an empty mapping.
+            """
+            return {}
+
     bleak_module.BleakClient = _StubBleakClient
-    bleak_module.BleakScanner = SimpleNamespace(discover=_stub_discover)
+    bleak_module.BleakScanner = _StubBleakScanner
     bleak_module.BLEDevice = _StubBLEDevice
 
     monkeypatch.setitem(sys.modules, "bleak", bleak_module)

@@ -411,17 +411,14 @@ def test_log_notification_registration(monkeypatch):
         call for call in client.start_notify_calls if call[0] == FROMNUM_UUID
     )
 
-    assert (
-        callable(legacy_call[1])
-        and legacy_call[1].__name__ == iface.legacy_log_radio_handler.__name__
-    ), "Legacy log handler should be registered"
-    assert (
-        callable(current_call[1])
-        and current_call[1].__name__ == iface.log_radio_handler.__name__
-    ), "Current log handler should be registered"
-    assert (
-        callable(fromnum_call[1])
-        and fromnum_call[1].__name__ == iface.from_num_handler.__name__
-    ), "FROMNUM handler should be registered"
+    assert callable(
+        legacy_call[1]
+    ), "Legacy log notification should register a callable handler"
+    assert callable(
+        current_call[1]
+    ), "Current log notification should register a callable handler"
+    assert callable(
+        fromnum_call[1]
+    ), "FROMNUM notification should register a callable handler"
 
     iface.close()

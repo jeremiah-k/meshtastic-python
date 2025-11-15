@@ -2,9 +2,12 @@
 
 > Working branch: `ble-1114-1` (forked from `master`)
 >
-> Reference implementations:
-> - `ble-refine` → stable, practical behavior used daily within mmrelay
-> - `ble-refine-dev` → experimental architecture with richer modularity but unresolved stability gaps
+> Reference implementations / history:
+> - `master` → upstream baseline (pre-refactor synchronous BLE + limited reconnect).
+> - `ble-1114-1` → current work-in-progress branch (targets upstream submission; mmrelay pins will mirror this soon).
+> - `ble-refine-legacy` (formerly `ble-refine`) → stable branch used daily within mmrelay and now archived for reference.
+> - `ble-refine-dev-legacy` (formerly `ble-refine-dev`) → experimental architecture with richer modularity but unresolved stability gaps; serves as a feature source.
+> - Downstream `ble-refine` (to be recreated from this branch for mmrelay pinning).
 
 ## Current Findings
 
@@ -15,23 +18,30 @@
 - Dependencies still list `bleak >=0.22.3`; the runtime virtualenv confirms 0.22.3 is installed.
 - `mesh_interface.py` is synchronous, lightly typed, and lacks defensive parsing/logging guards requested by mmrelay.
 
-### `ble-refine`
+### `ble-1114-1`
+- Rebased architecture that already includes Phase‑1 goals (state manager, event-driven receive, auto-reconnect, sanitized address handling) and the new `NotificationManager`.
+- Test suite mirrors `ble-refine-legacy` coverage plus new notification/core tests; more suites will be added as we port dev-legacy abstractions.
+- Intended to become the canonical upstreamable BLE implementation; downstream mmrelay branch (`ble-refine`) will soon pin to this work.
+- Ensures warning logs remain truthful (`Exceeded max retries…`) while removing older noise such as “No address provided” scans.
+
+### `ble-refine-legacy`
 - Introduces `BLEStateManager`, `ThreadCoordinator`, `BLEErrorHandler`, and improved auto-reconnect with proper teardown.
 - Adds sanitized address handling, fallback discovery for already-connected devices, and consistent event-driven reads.
 - Logging shows benign but noisy warnings (`Exceeded max retries for empty BLE read`); functionality is reliable.
 - Integrates docstring-rich, defensive parsing in `mesh_interface.py`.
 
-### `ble-refine-dev`
-- Pushes toward desired architecture: NotificationManager, RetryPolicy / ReconnectPolicy abstractions, Discovery strategies, Connection orchestrators, reconnection workers, etc.
-- Adds pytest infrastructure (fixtures, retry policy tests) and reorganizes responsibilities across helper classes.
-- Still unstable in mmrelay; reconnection logic stalls (likely due to aggressive modularization and more async hops).
+### `ble-refine-dev-legacy`
+- Pushes toward desired architecture: `NotificationManager`, `DiscoveryManager`, `ConnectionValidator`, `ConnectionOrchestrator`, `ReconnectWorker`, `RetryPolicy` / `ReconnectPolicy`, etc.
+- Adds pytest infrastructure (fixtures, retry policy tests, discovery/orchestration tests) and reorganizes responsibilities across helper classes.
+- Still unstable in mmrelay; reconnection logic stalls (likely due to aggressive modularization and more async hops). Treat this branch as a feature quarry, not a base.
 - Locks `bleak` to 1.1.1 in `pyproject.toml`/`poetry.lock` but runtime env is not yet upgraded.
+- Includes additional docstrings/logging/instrumentation that we intend to port after stabilizing the reconnection core.
 
 ### mmrelay Logs
-- Persistent warning: `Exceeded max retries for empty BLE read` but service continues and reconnects correctly.
-- Startup shows "No address provided - only discover method will work" because scanner instantiates BLEClient without an address.
+- Persistent warning: `Exceeded max retries for empty BLE read` but service continues and reconnects correctly (we restored the raw warning and removed the “suppressed” annotation to make it obvious when the system is idling vs. reading packets).
+- Startup no longer prints “No address provided…” because scans now instantiate `BLEClient` without logging that hint.
 - Provided BLE address is respected (connection succeeds); mmrelay-specific config likely passes the address correctly.
-- BLE disconnects triggered by mmrelay currently require OS reboot on stock master; `ble-refine` avoids this.
+- BLE disconnects triggered by mmrelay currently require OS reboot on stock master; the ble-refine rewrite (now `-legacy`) avoided this and serves as our baseline.
 
 ### Bleak Considerations
 - Target runtime should move to `bleak 1.1.1`.
@@ -53,18 +63,19 @@
 - [ ] Document adapter-specific requirements (dbus-fast 1.83+, pyobjc 10.3+, etc.) from lockfile for future contributors.
 
 ### Phase 1 – Port Stable Mechanics from `ble-refine`
-- [ ] Introduce `BLEStateManager`, `ThreadCoordinator`, `BLEErrorHandler`, and associated helper constants (timeouts, retry counts).
-- [ ] Replace `should_read` flag with event-driven coordination (`read_trigger`, `reconnected_event`) to reduce busy waiting.
-- [ ] Implement `_handle_disconnect` unification plus auto-reconnect worker with bounded backoff/jitter.
-- [ ] Rework `_receiveFromRadioImpl` to handle empty reads/transient errors gracefully and log at the appropriate level.
-- [ ] Update `BLEClient` wrapper to support timeouts, `await_timeout`, explicit event-loop lifecycle management, and `is_connected`.
-- [ ] Pull in improved address sanitization + connected-device fallback scanning to reduce pairing friction.
+- [x] Introduce `BLEStateManager`, `ThreadCoordinator`, `BLEErrorHandler`, and associated helper constants (timeouts, retry counts).
+- [x] Replace `should_read` flag with event-driven coordination (`read_trigger`, `reconnected_event`) to reduce busy waiting.
+- [x] Implement `_handle_disconnect` unification plus auto-reconnect worker with bounded backoff/jitter.
+- [x] Rework `_receiveFromRadioImpl` to handle empty reads/transient errors gracefully; leave the legitimate warning visible for mmrelay diagnostics.
+- [x] Update `BLEClient` wrapper to support timeouts, `await_timeout`, explicit event-loop lifecycle management, and `is_connected`.
+- [x] Pull in improved address sanitization + connected-device fallback scanning to reduce pairing friction (and suppress the “No address provided” scan noise).
 
 ### Phase 2 – Architect for `ble-refine-dev` Compatibility
-- [ ] Introduce `NotificationManager` abstraction to track subscriptions (safe resubscribe after reconnect).
-- [ ] Factor RetryPolicy/ReconnectionPolicy scaffolding to allow consistent treatment of empty read retries, transient errors, and reconnect loops.
-- [ ] Split discovery/validation/orchestration responsibilities (DiscoveryManager, ConnectionValidator, ReconnectWorker) without regressing the stable behavior.
-- [ ] Incrementally add pytest coverage adopted in `ble-refine-dev` (fixtures, state manager tests, retry policy tests) ensuring they pass on the new branch.
+- [x] Introduce `NotificationManager` abstraction to track subscriptions (safe resubscribe after reconnect).
+- [ ] Factor `RetryPolicy` / `ReconnectPolicy` scaffolding to allow consistent treatment of empty read retries, transient errors, and reconnect loops.
+- [ ] Split discovery/validation/orchestration responsibilities (e.g., `DiscoveryManager`, `ConnectionValidator`, `ConnectionOrchestrator`, `ReconnectWorker`) without regressing the stable behavior.
+- [ ] Confirm `_notification_manager.resubscribe_all()` is idempotent / race-safe (add regression tests around reconnect storms).
+- [ ] Incrementally add pytest coverage adopted in `ble-refine-dev-legacy` (fixtures, retry policy tests, discovery/orchestrator tests) ensuring they pass on the new branch.
 
 ### Phase 3 – Mesh/Stream Interface Enhancements
 - [ ] Port docstring and defensive parsing updates in `mesh_interface.py` (conversion of bytearray to bytes, per-field logging, `DecodeError` guards).
@@ -73,7 +84,7 @@
 - [ ] Draft follow-up tickets for `tcp_interface.py` and `serial_interface.py` modernization so this branch can reference future work without scope creep.
 
 ### Phase 4 – Polishing & Observability
-- [ ] Re-tune logging noise (e.g., demote expected empty-read retries, include BLE addresses in warnings).
+- [x] Re-tune logging noise (scan hint removed; warning is preserved so operators can tell when the radio is idle vs. saturated).
 - [ ] Ensure mmrelay-specific metrics/logging hooks remain intact (no regressions in telemetry or node update pathways).
 - [ ] Write migration notes summarizing new BLE behavior, bleak requirements, and testing expectations.
 
@@ -89,4 +100,4 @@
 - Evaluate whether repeated empty-read warnings stem from mmrelay’s traffic pattern or bleak’s notification timing; may need adaptive thresholds.
 - Keep an eye on `protobufs` working-tree change (already present on master) to avoid accidental edits.
 
-_This file is temporary for coordination; update it as milestones are reached or as design decisions change._
+_This file is temporary for coordination; update it as milestones are reached or as design decisions change. Last updates: branch rename (`ble-refine*` → `*-legacy`), mmrelay log notes, completion of Phase 1 work, and restoration of the empty-read warning._
