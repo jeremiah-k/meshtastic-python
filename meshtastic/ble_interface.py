@@ -129,10 +129,10 @@ class ReconnectPolicy:
     def __init__(
         self,
         *,
-        initial_delay: float,
-        max_delay: float,
-        backoff: float,
-        jitter_ratio: float,
+        initial_delay: float = 1.0,
+        max_delay: float = 30.0,
+        backoff: float = 2.0,
+        jitter_ratio: float = 0.1,
         max_retries: Optional[int] = None,
         random_source=None,
     ):

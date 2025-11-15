@@ -1,9 +1,11 @@
 """Tests for the BLE interface module - Core functionality."""
 
+import asyncio
 import inspect
 import logging
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest  # type: ignore[import-untyped]
 from bleak.exc import BleakError  # type: ignore[import-untyped]
@@ -22,6 +24,13 @@ from meshtastic.ble_interface import (
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
     BLEInterface,
+    SERVICE_UUID,
+    DiscoveryManager,
+    ConnectionValidator,
+    ConnectionState,
+    BLEStateManager,
+    ReconnectScheduler,
+    ReconnectWorker,
 )
 
 
@@ -139,6 +148,152 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
     result = BLEInterface._find_connected_devices(iface, "AA:BB")
 
     assert result == []
+
+
+def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
+    """DiscoveryManager should return only devices advertising the Meshtastic service UUID."""
+
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    other_device = _create_ble_device("11:22:33:44:55:66", "Other")
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def discover(self, **_kwargs):
+            return {
+                "filtered": (
+                    filtered_device,
+                    SimpleNamespace(service_uuids=[SERVICE_UUID]),
+                ),
+                "other": (
+                    other_device,
+                    SimpleNamespace(service_uuids=["some-other-service"]),
+                ),
+            }
+
+        def async_await(self, coro):
+            raise AssertionError("Fallback should not be attempted when scan succeeds")
+
+    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+
+    manager = DiscoveryManager()
+
+    devices = manager.discover_devices(address=None)
+
+    assert len(devices) == 1
+    assert devices[0].address == filtered_device.address
+
+
+def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
+    """When no devices are discovered via BLE scan, DiscoveryManager should fall back to connected strategy."""
+
+    fallback_device = _create_ble_device("AA:BB", "Fallback")
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def discover(self, **_kwargs):
+            return {}
+
+        @staticmethod
+        def async_await(coro):
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+
+    manager = DiscoveryManager()
+
+    async def fake_connected(address, timeout):
+        assert address == "AA:BB"
+        assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
+        return [fallback_device]
+
+    manager.connected_strategy = SimpleNamespace(discover=fake_connected)
+
+    devices = manager.discover_devices(address="AA:BB")
+
+    assert devices == [fallback_device]
+
+
+def test_discovery_manager_skips_fallback_without_address(monkeypatch):
+    """Connected-device fallback should not run when no address filter is provided."""
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def discover(self, **_kwargs):
+            return {}
+
+        @staticmethod
+        def async_await(coro):  # pragma: no cover - fallback should not be hit
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+
+    manager = DiscoveryManager()
+
+    fallback_called = False
+
+    async def fake_connected(address, timeout):  # pragma: no cover - should not run
+        nonlocal fallback_called
+        fallback_called = True
+        return []
+
+    manager.connected_strategy = SimpleNamespace(discover=fake_connected)
+
+    assert manager.discover_devices(address=None) == []
+    assert fallback_called is False
+
+
+def test_connection_validator_enforces_state(monkeypatch):
+    """ConnectionValidator should block connections when interface is closing or already connecting."""
+
+    state_manager = BLEStateManager()
+    validator = ConnectionValidator(state_manager, state_manager._state_lock)
+
+    validator.validate_connection_request()
+
+    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager.transition_to(ConnectionState.CONNECTED) is True
+    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
+    with pytest.raises(BLEInterface.BLEError) as excinfo:
+        validator.validate_connection_request()
+    assert "closing" in str(excinfo.value)
+
+    assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
+    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
+    with pytest.raises(BLEInterface.BLEError) as excinfo:
+        validator.validate_connection_request()
+    assert "connection in progress" in str(excinfo.value)
+
+
+def test_connection_validator_existing_client_checks(monkeypatch):
+    """check_existing_client should allow reuse only when the requested identifier matches."""
+
+    state_manager = BLEStateManager()
+    validator = ConnectionValidator(state_manager, state_manager._state_lock)
+    client = DummyClient()
+    client.is_connected = lambda: True
+
+    assert validator.check_existing_client(client, None, None, None) is True
+    assert (
+        validator.check_existing_client(client, "dummy", "dummy", "dummy") is True
+    )
+    assert (
+        validator.check_existing_client(client, "something-else", None, None) is False
+    )
 
 
 def test_close_idempotent(monkeypatch):
@@ -422,3 +577,185 @@ def test_log_notification_registration(monkeypatch):
     ), "FROMNUM notification should register a callable handler"
 
     iface.close()
+
+
+def test_reconnect_scheduler_tracks_threads(monkeypatch):
+    """ReconnectScheduler should start at most one reconnect thread and respect closing state."""
+
+    state_manager = BLEStateManager()
+    shutdown_event = threading.Event()
+
+    class StubCoordinator:
+        def __init__(self):
+            self.created = []
+
+        def create_thread(self, target, args, name, daemon):
+            thread = SimpleNamespace(
+                target=target,
+                args=args,
+                name=name,
+                daemon=daemon,
+                started=False,
+            )
+            thread.is_alive = lambda: thread.started
+            self.created.append(thread)
+            return thread
+
+        @staticmethod
+        def start_thread(thread):
+            thread.started = True
+
+    worker = SimpleNamespace(attempt_reconnect_loop=lambda *_args, **_kwargs: None)
+    coordinator = StubCoordinator()
+    scheduler = ReconnectScheduler(
+        state_manager, state_manager._state_lock, coordinator, worker
+    )
+
+    assert scheduler.schedule_reconnect(True, shutdown_event) is True
+    assert len(coordinator.created) == 1
+    assert scheduler.schedule_reconnect(True, shutdown_event) is False
+
+    stub_thread = coordinator.created[0]
+    monkeypatch.setattr(ble_mod, "current_thread", lambda: stub_thread)
+    scheduler.clear_thread_reference()
+    assert scheduler._reconnect_thread is None
+
+    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager.transition_to(ConnectionState.CONNECTED) is True
+    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
+    assert scheduler.schedule_reconnect(True, shutdown_event) is False
+
+
+def test_reconnect_worker_successful_attempt(monkeypatch):
+    """ReconnectWorker should clean up, reconnect, resubscribe, and clear thread references on success."""
+
+    class StubPolicy:
+        def __init__(self):
+            self.reset_called = False
+            self._attempt_count = 0
+
+        def reset(self):
+            self.reset_called = True
+            self._attempt_count = 0
+
+        def get_attempt_count(self):
+            return self._attempt_count
+
+        def next_attempt(self):
+            self._attempt_count += 1
+            return 0.1, False
+
+    class StubNotificationManager:
+        def __init__(self):
+            self.cleaned = 0
+            self.resubscribed = []
+
+        def cleanup_all(self):
+            self.cleaned += 1
+
+        def resubscribe_all(self, client, timeout):
+            self.resubscribed.append((client, timeout))
+
+    class StubScheduler:
+        def __init__(self):
+            self.cleared = False
+
+        def clear_thread_reference(self):
+            self.cleared = True
+
+    class DummyInterface:
+        BLEError = RuntimeError
+
+        def __init__(self):
+            self._reconnect_policy = StubPolicy()
+            self._notification_manager = StubNotificationManager()
+            self._state_manager = SimpleNamespace(is_closing=False)
+            self._reconnect_scheduler = StubScheduler()
+            self.auto_reconnect = True
+            self.is_connection_closing = False
+            self.address = "addr"
+            self.client = object()
+            self.connect_calls = []
+
+        def connect(self, address):
+            self.connect_calls.append(address)
+
+    iface = DummyInterface()
+    worker = ReconnectWorker(iface)
+    worker.attempt_reconnect_loop(True, threading.Event())
+
+    assert iface.connect_calls == ["addr"]
+    assert iface._notification_manager.cleaned == 1
+    assert len(iface._notification_manager.resubscribed) == 1
+    timeout_used = iface._notification_manager.resubscribed[0][1]
+    assert timeout_used == ble_mod.BLEConfig.NOTIFICATION_START_TIMEOUT
+    assert iface._reconnect_policy.reset_called is True
+    assert iface._reconnect_scheduler.cleared is True
+
+
+def test_reconnect_worker_respects_retry_limits(monkeypatch):
+    """ReconnectWorker should obey retry policy decisions when connect keeps failing."""
+
+    sleep_calls = []
+    monkeypatch.setattr(ble_mod, "_sleep", lambda delay: sleep_calls.append(delay))
+
+    class LimitedPolicy:
+        def __init__(self):
+            self.reset_called = False
+            self.attempts = 0
+
+        def reset(self):
+            self.reset_called = True
+            self.attempts = 0
+
+        def get_attempt_count(self):
+            return self.attempts
+
+        def next_attempt(self):
+            self.attempts += 1
+            return 0.25, self.attempts < 2
+
+    class StubNotificationManager:
+        def __init__(self):
+            self.cleaned = 0
+
+        def cleanup_all(self):
+            self.cleaned += 1
+
+        def resubscribe_all(self, *_args, **_kwargs):  # pragma: no cover - no client
+            raise AssertionError("Should not resubscribe without a client")
+
+    class StubScheduler:
+        def __init__(self):
+            self.cleared = False
+
+        def clear_thread_reference(self):
+            self.cleared = True
+
+    class FailingInterface:
+        BLEError = RuntimeError
+
+        def __init__(self):
+            self._reconnect_policy = LimitedPolicy()
+            self._notification_manager = StubNotificationManager()
+            self._state_manager = SimpleNamespace(is_closing=False)
+            self._reconnect_scheduler = StubScheduler()
+            self.auto_reconnect = True
+            self.is_connection_closing = False
+            self.address = "addr"
+            self.client = None
+            self.connect_attempts = 0
+
+        def connect(self, *_args, **_kwargs):
+            self.connect_attempts += 1
+            raise self.BLEError("boom")
+
+    iface = FailingInterface()
+    worker = ReconnectWorker(iface)
+    worker.attempt_reconnect_loop(True, threading.Event())
+
+    assert iface.connect_attempts == 2
+    assert iface._notification_manager.cleaned == 2
+    assert sleep_calls == [0.25]
+    assert iface._reconnect_policy.reset_called is True
+    assert iface._reconnect_scheduler.cleared is True
