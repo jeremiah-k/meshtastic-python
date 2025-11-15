@@ -77,6 +77,7 @@ BLE_SCAN_TIMEOUT = 10.0
 RECEIVE_WAIT_TIMEOUT = 0.5
 EMPTY_READ_RETRY_DELAY = 0.1
 EMPTY_READ_MAX_RETRIES = 5
+EMPTY_READ_WARNING_INTERVAL = 60.0
 TRANSIENT_READ_MAX_RETRIES = 3
 TRANSIENT_READ_RETRY_DELAY = 0.1
 SEND_PROPAGATION_DELAY = 0.01
@@ -678,6 +679,7 @@ class BLEInterface(MeshInterface):
         )  # Signals when reconnection occurred
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
         self._reconnect_thread: Optional[Thread] = None
+        self._last_empty_read_warning = 0.0
 
         # Initialize parent interface
         MeshInterface.__init__(
@@ -1132,7 +1134,7 @@ class BLEInterface(MeshInterface):
             List[BLEDevice]: Devices whose advertisements include the Meshtastic service UUID; empty list if none are found.
 
         """
-        with BLEClient() as client:
+        with BLEClient(log_if_no_address=False) as client:
             logger.debug(
                 "Scanning for BLE devices (takes %.0f seconds)...", BLE_SCAN_TIMEOUT
             )
@@ -1650,10 +1652,7 @@ class BLEInterface(MeshInterface):
                                 time.sleep(EMPTY_READ_RETRY_DELAY)
                                 retries += 1
                                 continue
-                            logger.warning(
-                                "Exceeded max retries for empty BLE read from %s",
-                                FROMRADIO_UUID,
-                            )
+                            self._log_empty_read_warning()
                             break  # Too many empty reads, exit to recheck state
                         logger.debug("FROMRADIO read: %s", b.hex())
                         self._handleFromRadio(b)
@@ -1697,6 +1696,22 @@ class BLEInterface(MeshInterface):
                     target=self.close, name="BLECloseOnError", daemon=True
                 )
                 self.thread_coordinator.start_thread(error_close_thread)
+
+    def _log_empty_read_warning(self) -> None:
+        """
+        Emit a rate-limited warning for repeated empty BLE reads to keep logs actionable without flooding.
+        """
+        now = time.monotonic()
+        if now - self._last_empty_read_warning >= EMPTY_READ_WARNING_INTERVAL:
+            logger.warning(
+                "Exceeded max retries for empty BLE read from %s", FROMRADIO_UUID
+            )
+            self._last_empty_read_warning = now
+        else:
+            logger.debug(
+                "Exceeded max retries for empty BLE read from %s (suppressed warning)",
+                FROMRADIO_UUID,
+            )
 
     def _sendToRadioImpl(self, toRadio) -> None:
         """
@@ -1912,7 +1927,7 @@ class BLEClient:
     # Class-level fallback so callers using __new__ still get the right exception type
     BLEError = BLEInterface.BLEError
 
-    def __init__(self, address=None, **kwargs) -> None:
+    def __init__(self, address=None, *, log_if_no_address: bool = True, **kwargs) -> None:
         """
         Create a BLEClient with a dedicated asyncio event loop and, if an address is provided, an underlying Bleak client attached to that address.
 
@@ -1937,7 +1952,8 @@ class BLEClient:
         self._eventThread.start()
 
         if not address:
-            logger.debug("No address provided - only discover method will work.")
+            if log_if_no_address:
+                logger.debug("No address provided - only discover method will work.")
             return
 
         # Create underlying Bleak client for actual BLE communication
