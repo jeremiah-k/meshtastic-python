@@ -9,7 +9,7 @@ from typing import Optional, TYPE_CHECKING
 import pytest  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:  # pragma: no cover - import only for typing
-    from meshtastic.ble_interface import BLEInterface  # noqa: F401
+    from meshtastic.ble_interface import BLEInterface
 
 
 def _get_ble_module():

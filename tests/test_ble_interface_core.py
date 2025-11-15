@@ -425,14 +425,9 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         original_close = iface.close
         close_called = threading.Event()
 
-        def mock_close(close_called=close_called, original_close=original_close):
+        def mock_close():
             """
             Signal that close was invoked and then call the original close function.
-
-            Parameters
-            ----------
-                close_called (threading.Event): Event that will be set to signal that close was invoked.
-                original_close (Callable[[], Any]): The original close callable to invoke.
 
             Returns
             -------
