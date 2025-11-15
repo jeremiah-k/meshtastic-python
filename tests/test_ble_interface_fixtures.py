@@ -14,7 +14,10 @@ if TYPE_CHECKING:  # pragma: no cover - import only for typing
 
 def _get_ble_module():
     """
-    Import and return the meshtastic.ble_interface module on demand.
+    Load the meshtastic.ble_interface module on demand.
+    
+    Returns:
+        ble_module: The imported meshtastic.ble_interface module.
     """
     import meshtastic.ble_interface as ble_mod  # type: ignore[import-untyped]
 
@@ -86,15 +89,12 @@ def mock_pubsub(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_publishing_thread(monkeypatch):
     """
-    Install a mocked publishingThread module whose queueWork executes a provided callback immediately.
-
-    The mock is inserted into sys.modules under the name "publishingThread" to provide a synchronous, deterministic
-    queueWork implementation for tests.
-
-    Returns
-    -------
+    Provide a mocked publishingThread module whose `queueWork` invokes the provided callback immediately.
+    
+    The mock is inserted into sys.modules under "publishingThread" and "meshtastic.publishingThread" to give tests a synchronous, deterministic `queueWork` implementation.
+    
+    Returns:
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
-
     """
     publishing_thread_module = types.ModuleType("publishingThread")
 
@@ -129,9 +129,12 @@ def mock_publishing_thread(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_tabulate(monkeypatch):
     """
-    Provide and register a minimal fake `tabulate` module whose `tabulate()` returns an empty string.
-
-    @returns The fake `tabulate` module object inserted into `sys.modules`.
+    Install a minimal fake `tabulate` module into sys.modules for tests.
+    
+    The fake module exposes a `tabulate(*args, **kwargs)` callable that always returns an empty string.
+    
+    Returns:
+        module: The fake `tabulate` module object inserted into `sys.modules`.
     """
     tabulate_module = types.ModuleType("tabulate")
     tabulate_module.tabulate = lambda *_args, **_kwargs: ""
@@ -161,24 +164,24 @@ def mock_bleak(monkeypatch):
     class _StubBleakClient:
         def __init__(self, address=None, **_kwargs):
             """
-            Minimal test BLE client holding an address and a lightweight services shim.
-
-            Args:
-            ----
+            Create a minimal test BLE client that stores an address and exposes a lightweight services shim.
+            
+            Parameters:
                 address (str | None): BLE device address associated with this client, or None.
                 **_kwargs: Additional keyword arguments are accepted and ignored.
-
+            
             Attributes:
-            ----------
                 services (types.SimpleNamespace): Provides get_characteristic(specifier) which always returns None.
-
             """
             self.address = address
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
 
         async def connect(self, **_kwargs):
             """
-            No-op mock connect used in tests that accepts and ignores any keyword arguments.
+            Accepts and ignores any keyword arguments and performs no action.
+            
+            Returns:
+                None
             """
             return None
 
@@ -192,37 +195,36 @@ def mock_bleak(monkeypatch):
 
         async def start_notify(self, **_kwargs):
             """
-            No-op compatibility shim for a BLE client's start_notify that accepts and ignores any keyword arguments.
+            Compatibility shim for a BLE client's start_notify that accepts and ignores any keyword arguments.
             """
             return None
 
         async def read_gatt_char(self, *_args, **_kwargs):
             """
-            Return an empty value for a GATT characteristic read.
-
-            Returns
-            -------
-                b'' (empty bytes)
-
+            Return an empty bytes value for any GATT characteristic read.
+            
+            Returns:
+                b'': empty bytes
             """
             return b""
 
         async def write_gatt_char(self, *_args, **_kwargs):
             """
-            No-op stub that accepts any arguments to emulate BleakClient.write_gatt_char in tests.
-
-            Performs no action and exists so tests can call a write_gatt_char method without side effects.
+            Stub that accepts any arguments for write_gatt_char and performs no action.
+            
+            Accepts positional and keyword arguments and ignores them; provided to allow tests to call a write_gatt_char method without side effects.
+            
+            Returns:
+                None
             """
             return None
 
         def is_connected(self):
             """
             Report whether the dummy BLE client is connected.
-
-            Returns
-            -------
-                False — the dummy client is never connected.
-
+            
+            Returns:
+                False: The dummy client is never connected.
             """
             return False
 
@@ -246,25 +248,31 @@ def mock_bleak(monkeypatch):
     class _StubBLEDevice:
         def __init__(self, address=None, name=None):
             """
-            Create a minimal BLE device representation with an optional address and name.
-
-            Parameters
-            ----------
+            Initialize a minimal BLE device representation with optional address and name.
+            
+            Parameters:
                 address (str | None): BLE device address, if known.
                 name (str | None): Human-readable device name, if known.
-
             """
             self.address = address
             self.name = name
 
     class _StubBleakScanner:
         def __init__(self):
+            """
+            Initialize a stub Bleak scanner with a backend that reports no devices.
+            
+            Creates a `_backend` attribute whose `get_devices()` callable returns an empty list.
+            """
             self._backend = SimpleNamespace(get_devices=lambda: [])
 
         @staticmethod
         async def discover(**_kwargs):
             """
-            Mirror BleakScanner.discover signature by returning an empty list of devices.
+            Provide an empty list of BLE devices to mirror BleakScanner.discover behavior in tests.
+            
+            Returns:
+                list: Empty list representing no discovered BLE devices.
             """
             return await _stub_discover(**_kwargs)
 
@@ -280,16 +288,9 @@ def mock_bleak(monkeypatch):
 def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-name
     """
     Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
-
-    Args:
-    ----
-        monkeypatch: pytest monkeypatch fixture used to register the fake module.
-        mock_bleak (module): The fake `bleak` module to which the `exc` submodule will be attached.
-
+    
     Returns:
-    -------
-        bleak_exc_module (module): The created `bleak.exc` module containing `BleakError` and `BleakDBusError` exception classes.
-
+        bleak_exc_module (module): The created `bleak.exc` module with `BleakError` and `BleakDBusError` attributes.
     """
     bleak_exc_module = types.ModuleType("bleak.exc")
 
@@ -314,21 +315,18 @@ class DummyClient:
 
     def __init__(self, disconnect_exception: Optional[Exception] = None) -> None:
         """
-        Test double representing a BLE client used by unit tests.
-
-        Parameters
-        ----------
+        Test double for a BLE client used in unit tests.
+        
+        Parameters:
             disconnect_exception (Optional[Exception]): Exception to raise when disconnect() is called; pass None to disable raising.
-
-        Attributes
-        ----------
+        
+        Attributes:
             disconnect_calls (int): Number of times disconnect() has been invoked.
             close_calls (int): Number of times close() has been invoked.
             address (str): Client address identifier, set to "dummy".
             disconnect_exception (Optional[Exception]): Stored exception raised by disconnect(), if any.
             services (types.SimpleNamespace): Provides get_characteristic(specifier) -> None for characteristic lookups.
             bleak_client (types.SimpleNamespace): Minimal mock of a bleak client with an address attribute used for identity checks.
-
         """
         self.disconnect_calls = 0
         self.close_calls = 0
@@ -341,58 +339,49 @@ class DummyClient:
     def has_characteristic(self, _specifier):
         """
         Report whether the mock client exposes a BLE characteristic matching the given specifier.
-
-        Parameters
-        ----------
-            _specifier: Identifier for a characteristic (for example a UUID string or characteristic object).
-
-        Returns
-        -------
-            `False` always for this mock implementation.
-
+        
+        Parameters:
+            _specifier: Identifier of the characteristic to check (e.g., UUID string or characteristic object)
+        
+        Returns:
+            `False`, indicating no matching characteristic (this mock never exposes characteristics).
         """
         return False
 
     def start_notify(self, *_args, **_kwargs):
         """
         Simulate subscribing to a BLE characteristic notification for tests.
-
-        This no-op stub accepts any positional and keyword arguments and ignores them.
+        
+        This no-op stub accepts and ignores any positional and keyword arguments.
         """
         return None
 
     def read_gatt_char(self, *_args, **_kwargs):
         """
-        Return an empty payload for a GATT characteristic read.
-
-        Returns
-        -------
+        Provide an empty payload for a GATT characteristic read.
+        
+        Returns:
             bytes: An empty byte string (`b''`).
-
         """
         return b""
 
     def is_connected(self) -> bool:
         """
-        Report whether the mock BLE client is connected; this stub always reports connected.
-
-        Returns
-        -------
-            `True` if the mock client is connected, `False` otherwise.
-
+        Indicates whether the mock BLE client is connected (stubbed to always return connected).
+        
+        Returns:
+            `true` if the mock client is connected, `false` otherwise.
         """
         return True
 
     def disconnect(self, *_args, **_kwargs):
         """
-        Record a disconnect invocation and optionally raise a preconfigured exception.
-
-        Increments self.disconnect_calls. If self.disconnect_exception is set, that exception is raised.
-
-        Raises
-        ------
+        Record that a disconnect was invoked and raise a preconfigured exception if present.
+        
+        Increments self.disconnect_calls. If self.disconnect_exception is set, raises that exception.
+        
+        Raises:
             Exception: The exception instance stored in `self.disconnect_exception`, if present.
-
         """
         self.disconnect_calls += 1
         if self.disconnect_exception:
@@ -419,12 +408,9 @@ def stub_atexit(
     mock_publishing_thread,  # pylint: disable=redefined-outer-name
 ):
     """
-    Patch meshtastic.ble_interface.atexit.register/unregister to record callbacks and invoke them after the test.
-
-    This pytest fixture replaces the module's atexit.register and atexit.unregister with stubs that append registered
-        callables to an internal list. The fixture yields to the test and, after the test completes, invokes all
-        recorded callbacks (exceptions raised by callbacks are caught and logged at debug level). The additional
-        fixture arguments are accepted only to enforce fixture ordering and are not otherwise used.
+    Replace meshtastic.ble_interface.atexit.register and unregister with test stubs that record callbacks and invoke them after the test.
+    
+    This pytest fixture patches the BLE interface module's atexit.register/unregister so registered callables are appended to an internal list, yields control to the test, and then invokes all recorded callbacks during teardown (exceptions raised by callbacks are caught and logged at debug level). The extra fixture parameters are accepted only to enforce fixture ordering and are not otherwise used.
     """
     registered = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).
@@ -439,16 +425,17 @@ def stub_atexit(
 
     def fake_register(func):
         """
-        Register a callable so it will be invoked later by appending it to the module-level `registered` list.
-
+        Append a callable to the module-level `registered` list so it will be invoked later.
+        
         Parameters
         ----------
-            func (callable): Callable to register; may also be used as a decorator.
-
+        func : callable
+            The callable to register; can also be used as a decorator.
+        
         Returns
         -------
-            callable: The same callable that was registered.
-
+        callable
+            The same callable that was registered.
         """
         registered.append(func)
         return func
@@ -505,23 +492,16 @@ def _build_interface(monkeypatch, client):
         _self: BLEInterface, _address: Optional[str] = None, *args, **kwargs
     ) -> "DummyClient":
         """
-        Return the preconfigured test BLE client and record the connection attempt.
-
-        Parameters
-        ----------
-        _address : str | None
-            Accepted to match the original connect signature; ignored by this stub.
-
-        Returns
-        -------
-        DummyClient
-            The preconfigured test client instance.
-
-        Notes
-        -----
-        As side effects, this stub sets `_self.client` to the test client, clears `_self._disconnect_notified`,
-        appends the provided address (possibly `None`) to `connect_calls`, and sets `_self._reconnected_event` if present.
-
+        Stub implementation of BLEInterface.connect that records the connection attempt and attaches a preconfigured test client to the interface.
+        
+        Parameters:
+            _address (str | None): Address passed to connect; accepted for signature compatibility and recorded in `connect_calls`.
+        
+        Returns:
+            DummyClient: The preconfigured test client instance.
+        
+        Notes:
+            Side effects: appends `_address` to `connect_calls`, sets `self.client` to the test client, clears `self._disconnect_notified`, and calls `self._reconnected_event.set()` if `_reconnected_event` exists.
         """
         _ = (args, kwargs)
         connect_calls.append(_address)
@@ -533,9 +513,9 @@ def _build_interface(monkeypatch, client):
 
     def _stub_start_config(_self: BLEInterface) -> None:
         """
-        No-op startup configuration hook for a BLEInterface used in tests.
-
-        Replaces the real startup configuration to prevent side effects during testing.
+        No-op startup configuration hook used to replace BLEInterface._startConfig in tests.
+        
+        Does nothing; present to avoid running real startup configuration side effects during testing.
         """
         return None
 
