@@ -245,9 +245,9 @@ def mock_bleak(monkeypatch):
         @staticmethod
         async def discover(**_kwargs):
             """
-            Mirror BleakScanner.discover signature by returning an empty mapping.
+            Mirror BleakScanner.discover signature by returning an empty list of devices.
             """
-            return {}
+            return await _stub_discover(**_kwargs)
 
     bleak_module.BleakClient = _StubBleakClient
     bleak_module.BleakScanner = _StubBleakScanner
@@ -451,10 +451,7 @@ def stub_atexit(
     for func in registered:
         try:
             func()
-        except Exception as e:
-            # Keep teardown resilient during tests
-            # logging already imported at top
-
+        except Exception as e:  # noqa: BLE001 - teardown should log but continue
             logging.debug(
                 "atexit callback %r raised during teardown: %s: %s",
                 func,
@@ -482,7 +479,7 @@ def _build_interface(monkeypatch, client):
     connect_calls: list = []
 
     def _stub_connect(
-        _self: BLEInterface, _address: Optional[str] = None
+        _self: BLEInterface, _address: Optional[str] = None, *args, **kwargs
     ) -> "DummyClient":
         """
         Return the preconfigured test BLE client and record the connection attempt.
@@ -503,6 +500,7 @@ def _build_interface(monkeypatch, client):
         appends the provided address (possibly `None`) to `connect_calls`, and sets `_self._reconnected_event` if present.
 
         """
+        _ = (args, kwargs)
         connect_calls.append(_address)
         _self.client = client
         _self._disconnect_notified = False

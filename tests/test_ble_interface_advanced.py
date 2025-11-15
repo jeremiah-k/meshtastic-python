@@ -190,6 +190,11 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
         AUTO_TOPIC=None,
     )
     monkeypatch.setattr(mesh_iface_module, "pub", fresh_pub)
+    monkeypatch.setattr(
+        mesh_iface_module.publishingThread,
+        "queueWork",
+        lambda callback: callback() if callback else None,
+    )
 
     # Create a client that can simulate disconnection
     client = DummyClient()
@@ -252,6 +257,19 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     assert (
         iface.client is client
     ), "client should be restored after successful auto-reconnect"
+
+    # Simulate config completion to publish connected=True and verify it was emitted
+    iface.isConnected.clear()
+    monkeypatch.setattr(iface, "_startHeartbeat", lambda: None)
+    iface._connected()
+    reconnect_events = [
+        (topic, kw)
+        for topic, kw in published_events
+        if topic == "meshtastic.connection.status" and kw.get("connected") is True
+    ]
+    assert (
+        len(reconnect_events) == 1
+    ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"
 
     # 4. Ensure disconnect flag resets for future disconnect handling
     assert (
@@ -679,7 +697,9 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             )
 
     # Verify graceful handling of connection failures
-    assert client3.bleak_client.connect_count >= 0  # Should attempt reconnections
+    assert (
+        len(iface3._connect_stub_calls) >= 1
+    ), "Failure path should still schedule reconnect attempts"
 
     iface3.close()
     iface3._test_patch_stack.close()

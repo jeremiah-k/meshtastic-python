@@ -146,7 +146,7 @@ class TestBLEStateManager:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
                     results.append((worker_id, i, success, manager.state.value))
                     time.sleep(0.001)  # Small delay to increase contention
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - errors collected for assertion
                 errors.append((worker_id, str(e)))
 
         # Start multiple threads
@@ -396,7 +396,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -474,7 +474,7 @@ class TestPhase3LockConsolidation:
                     time.sleep(0.01)
                     manager.transition_to(ConnectionState.CONNECTING)
                     manager.transition_to(ConnectionState.DISCONNECTED)
-            except Exception:
+            except Exception:  # noqa: BLE001 - contention counts any unexpected failure
                 contention_count[0] += 1
 
         # Create multiple contending threads

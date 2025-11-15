@@ -2596,6 +2596,8 @@ class ConnectionOrchestrator:
             if client:
                 self.client_manager._safe_close_client(client)
             self.state_manager.transition_to(ConnectionState.ERROR)
+            # Reset to DISCONNECTED so future connection attempts are permitted
+            self.state_manager.transition_to(ConnectionState.DISCONNECTED)
             raise
 
 
