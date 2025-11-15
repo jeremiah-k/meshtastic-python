@@ -16,12 +16,18 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from enum import Enum
 from queue import Empty
 from threading import Event, RLock, Thread, current_thread
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, cast
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
-from google.protobuf.message import DecodeError  # type: ignore[import-untyped]
+
+if TYPE_CHECKING:
+    class DecodeError(Exception):
+        """Fallback DecodeError type used for static type checking."""
+        pass
+else:  # pragma: no cover - import real exception only at runtime
+    from google.protobuf.message import DecodeError
 
 from meshtastic import publishingThread
 from meshtastic.mesh_interface import MeshInterface
@@ -267,7 +273,10 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     while len(matches) < 3:
         matches.append("0")
     try:
-        return tuple(int(segment) for segment in matches[:3])  # type: ignore[return-value]
+        return cast(
+            Tuple[int, int, int],
+            tuple(int(segment) for segment in matches[:3]),
+        )
     except ValueError:
         return 0, 0, 0
 

@@ -7,11 +7,11 @@ import types
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Iterator, Optional, Tuple, cast
+from typing import Iterator, List, Optional, Tuple, cast
 from unittest.mock import MagicMock, patch
 
-import pytest  # type: ignore[import-untyped]
-from bleak.exc import BleakError  # type: ignore[import-untyped]
+import pytest
+from bleak.exc import BleakError
 
 # Import common fixtures
 from test_ble_interface_fixtures import DummyClient, _build_interface
@@ -27,6 +27,13 @@ from meshtastic.ble_interface import (
     BLEInterface,
 )
 from meshtastic.protobuf import mesh_pb2
+
+
+def _get_connect_stub_calls(iface: BLEInterface) -> List[Optional[str]]:
+    """
+    Retrieve the test-only connect call tracking list attached to an interface.
+    """
+    return cast(List[Optional[str]], getattr(iface, "_connect_stub_calls", []))
 
 
 def test_log_notification_registration_missing_characteristics(monkeypatch):
@@ -80,7 +87,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
     iface = _build_interface(monkeypatch, client)
 
     # Call _register_notifications - should not fail even without log characteristics
-    iface._register_notifications(client)  # type: ignore[arg-type]
+    iface._register_notifications(client)
 
     # Verify that only FROMNUM notification was registered
     registered_uuids = [call[0] for call in client.start_notify_calls]
@@ -144,7 +151,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
 
     # Set up the client
     with iface._state_lock:
-        iface.client = client  # type: ignore[assignment]
+        iface.client = client
 
     # Trigger the receive loop to process the bad data
     iface._read_trigger.set()
@@ -204,7 +211,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     # Build interface with auto_reconnect=True
     iface = _build_interface(monkeypatch, client)
     iface.auto_reconnect = True
-    assert iface._connect_stub_calls == ["dummy"], (  # type: ignore[attr-defined]
+    assert _get_connect_stub_calls(iface) == ["dummy"], (
         "Initial connect should occur on instantiation"
     )
 
@@ -227,11 +234,11 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     # Simulate disconnection by calling _on_ble_disconnect directly
     # This simulates what happens when bleak calls the disconnected callback
     disconnect_client = iface.client
-    iface._on_ble_disconnect(disconnect_client.bleak_client)  # type: ignore[attr-defined]
+    iface._on_ble_disconnect(disconnect_client.bleak_client)
 
     # Allow time for auto-reconnect thread to run
     for _ in range(50):
-        if len(iface._connect_stub_calls) >= 2 and iface.client is client:  # type: ignore[attr-defined]
+        if len(_get_connect_stub_calls(iface)) >= 2 and iface.client is client:
             break
         time.sleep(0.01)
 
@@ -252,8 +259,8 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     )
 
     # 3. Auto-reconnect should have attempted a reconnect and restored the client
-    assert len(iface._connect_stub_calls) >= 2, (  # type: ignore[attr-defined]
-        f"Expected at least 2 connect calls, got {len(iface._connect_stub_calls)}"  # type: ignore[attr-defined]
+    assert len(_get_connect_stub_calls(iface)) >= 2, (
+        f"Expected at least 2 connect calls, got {len(_get_connect_stub_calls(iface))}"
     )
     assert iface.client is client, (
         "client should be restored after successful auto-reconnect"
@@ -598,7 +605,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 noProto=True,
                 auto_reconnect=True,
             )
-            iface._connect_stub_calls = connect_calls  # type: ignore[attr-defined]
+            setattr(iface, "_connect_stub_calls", connect_calls)
             client = cast("StressTestClient", iface.client)
             yield iface, client
         finally:
@@ -623,7 +630,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             Each disconnect notification is delivered approximately 0.01 seconds apart.
             """
             for _ in range(10):
-                iface._on_ble_disconnect(client.bleak_client)  # type: ignore[attr-defined]
+                iface._on_ble_disconnect(client.bleak_client)
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread
@@ -633,9 +640,9 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         # Verify that the interface handled rapid disconnects gracefully
         assert (
-            client.bleak_client.disconnect_count >= 0  # type: ignore[attr-defined]
-        )  # Should not crash  # type: ignore[attr-defined]
-    assert len(iface._connect_stub_calls) >= 2, (  # type: ignore[attr-defined]
+            client.bleak_client.disconnect_count >= 0
+        )  # Should not crash
+    assert len(_get_connect_stub_calls(iface)) >= 2, (
         "Auto-reconnect should continue scheduling during rapid disconnects"
     )
 
@@ -651,7 +658,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             for i in range(5):
                 try:
-                    iface2._on_ble_disconnect(client2.bleak_client)  # type: ignore[attr-defined]
+                    iface2._on_ble_disconnect(client2.bleak_client)
                     time.sleep(0.005)
                 except (RuntimeError, AttributeError, KeyError) as e:
                     logging.debug(
@@ -677,17 +684,17 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             thread.join()
 
         # Verify thread-safety - no exceptions should be raised
-        assert client2.bleak_client.disconnect_count >= 0  # type: ignore[attr-defined]
+        assert client2.bleak_client.disconnect_count >= 0
 
     # Test 3: Stress test with connection failures
     with create_interface_with_auto_reconnect() as (iface3, client3):
-        client3._should_fail_connect = True  # type: ignore[attr-defined]
+        client3._should_fail_connect = True
 
         # Simulate disconnects that trigger reconnection attempts
         # Exceptions are expected and suppressed to continue stress testing
         for _ in range(5):
             try:
-                iface3._on_ble_disconnect(client3.bleak_client)  # type: ignore[attr-defined]
+                iface3._on_ble_disconnect(client3.bleak_client)
                 time.sleep(0.01)
             except Exception as e:  # noqa: BLE001 - expected during failure stress
                 logging.debug(
@@ -697,7 +704,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 )
 
         # Verify graceful handling of connection failures
-        assert len(iface3._connect_stub_calls) >= 1, (  # type: ignore[attr-defined]
+        assert len(_get_connect_stub_calls(iface3)) >= 1, (
             "Failure path should still schedule reconnect attempts"
         )
 
@@ -742,7 +749,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
 
     # Create BLEClient with a mock bleak client that raises exceptions
     ble_client = BLEClient.__new__(BLEClient)
-    ble_client.bleak_client = ExceptionBleakClient(AttributeError)  # type: ignore[assignment]
+    ble_client.bleak_client = ExceptionBleakClient(AttributeError)
     # Initialize error_handler since __new__ bypasses __init__
     # BLEErrorHandler already imported at top as ble_mod.BLEErrorHandler
 
@@ -757,7 +764,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     caplog.clear()
 
     # Test TypeError
-    ble_client.bleak_client = ExceptionBleakClient(TypeError)  # type: ignore[assignment]
+    ble_client.bleak_client = ExceptionBleakClient(TypeError)
     result = ble_client.is_connected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
@@ -766,7 +773,7 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     caplog.clear()
 
     # Test RuntimeError
-    ble_client.bleak_client = ExceptionBleakClient(RuntimeError)  # type: ignore[assignment]
+    ble_client.bleak_client = ExceptionBleakClient(RuntimeError)
     result = ble_client.is_connected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
@@ -838,7 +845,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     if getattr(fake_future, "coro", None) is not None and hasattr(
         fake_future.coro, "close"
     ):
-        fake_future.coro.close()  # type: ignore[attr-defined]
+        fake_future.coro.close()
 
 
 def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):

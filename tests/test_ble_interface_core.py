@@ -6,10 +6,20 @@ import logging
 import threading
 import time
 from types import SimpleNamespace
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    TYPE_CHECKING,
+    cast,
+)
 
-import pytest  # type: ignore[import-untyped]
-from bleak.exc import BleakError  # type: ignore[import-untyped]
-from pubsub import pub  # type: ignore[import-untyped]
+import pytest
+from bleak.exc import BleakError
 
 # Import common fixtures
 from test_ble_interface_fixtures import DummyClient, _build_interface
@@ -21,17 +31,29 @@ from meshtastic.ble_interface import (
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
     SERVICE_UUID,
+    BLEClient,
     BLEInterface,
     BLEStateManager,
+    BLEDevice,
     ConnectionState,
     ConnectionValidator,
+    ConnectedStrategy,
     DiscoveryManager,
     ReconnectScheduler,
     ReconnectWorker,
 )
 
+if TYPE_CHECKING:
+    class _PubProtocol(Protocol):
+        def sendMessage(self, topic: str, **kwargs: Any) -> None:
+            ...
 
-def _create_ble_device(address: str, name: str):
+    pub: _PubProtocol
+else:  # pragma: no cover - import only at runtime
+    from pubsub import pub
+
+
+def _create_ble_device(address: str, name: str) -> BLEDevice:
     """
     Instantiate a BLEDevice while tolerating signature differences across bleak versions.
 
@@ -45,13 +67,28 @@ def _create_ble_device(address: str, name: str):
         BLEDevice: Instance created using whichever keyword arguments the current bleak version expects.
 
     """
-    params = {"address": address, "name": name}
+    params: Dict[str, Any] = {"address": address, "name": name}
     signature = inspect.signature(ble_mod.BLEDevice.__init__)
     if "details" in signature.parameters:
-        params["details"] = {}  # type: ignore[assignment]
+        params["details"] = {}
     if "rssi" in signature.parameters:
-        params["rssi"] = 0  # type: ignore[assignment]
-    return ble_mod.BLEDevice(**params)  # type: ignore[arg-type]
+        params["rssi"] = 0
+    return ble_mod.BLEDevice(**params)
+
+
+class _StrategyOverride(ConnectedStrategy):
+    """
+    Adapt an async callable into a ConnectedStrategy-compatible object for testing.
+    """
+
+    def __init__(
+        self,
+        delegate: Callable[[Optional[str], float], Awaitable[List[BLEDevice]]],
+    ) -> None:
+        self._delegate = delegate
+
+    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        return await self._delegate(address, timeout)
 
 
 def test_find_device_returns_single_scan_result(monkeypatch):
@@ -269,7 +306,7 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     manager = DiscoveryManager()
 
-    async def fake_connected(address, timeout):
+    async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
         Return a list containing the predefined fallback device when invoked with the expected address and timeout.
 
@@ -284,7 +321,7 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
         assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
         return [fallback_device]
 
-    manager.connected_strategy = SimpleNamespace(discover=fake_connected)  # type: ignore[assignment]
+    manager.connected_strategy = _StrategyOverride(fake_connected)
 
     devices = manager.discover_devices(address="AA:BB")
 
@@ -349,7 +386,9 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
 
     fallback_called = False
 
-    async def fake_connected(address, timeout):  # pragma: no cover - should not run
+    async def fake_connected(
+        address: Optional[str], timeout: float
+    ) -> List[BLEDevice]:  # pragma: no cover - should not run
         """
         Test helper coroutine that marks a connected-fallback as invoked and returns no devices.
 
@@ -367,7 +406,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
         fallback_called = True
         return []
 
-    manager.connected_strategy = SimpleNamespace(discover=fake_connected)  # type: ignore[assignment]
+    manager.connected_strategy = _StrategyOverride(fake_connected)
 
     assert manager.discover_devices(address=None) == []
     assert fallback_called is False
@@ -403,8 +442,11 @@ def test_connection_validator_existing_client_checks(monkeypatch):
     client = DummyClient()
     client.is_connected = lambda: True
 
-    assert validator.check_existing_client(client, None, None, None) is True  # type: ignore[arg-type]
-    assert validator.check_existing_client(client, "dummy", "dummy", "dummy") is True  # type: ignore[arg-type]
+    ble_like = cast(BLEClient, client)
+    assert validator.check_existing_client(ble_like, None, None, None) is True
+    assert (
+        validator.check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
+    )
     assert (
         validator.check_existing_client(client, "something-else", None, None) is False
     )
@@ -664,7 +706,7 @@ def test_log_notification_registration(monkeypatch):
     iface = _build_interface(monkeypatch, client)
 
     # Call _register_notifications to test log notification setup
-    iface._register_notifications(client)  # type: ignore[arg-type]
+    iface._register_notifications(cast(BLEClient, client))
 
     # Verify that all three notifications were registered
     registered_uuids = [call[0] for call in client.start_notify_calls]

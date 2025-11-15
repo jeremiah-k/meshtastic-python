@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from meshtastic.ble_interface import BLEStateManager, ConnectionState  # type: ignore[import-untyped]
+from meshtastic.ble_interface import BLEStateManager, ConnectionState
 
 RUN_STATE_MANAGER_PERF = os.getenv("BLE_STATE_MANAGER_PERF") == "1"
 PERF_ONLY = pytest.mark.skipif(

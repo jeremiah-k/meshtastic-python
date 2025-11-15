@@ -6,7 +6,7 @@ import types
 from types import SimpleNamespace
 from typing import Any, Optional, TYPE_CHECKING
 
-import pytest  # type: ignore[import-untyped]
+import pytest
 
 if TYPE_CHECKING:  # pragma: no cover - import only for typing
     from meshtastic.ble_interface import BLEInterface
@@ -19,7 +19,7 @@ def _get_ble_module():
     Returns:
         ble_module: The imported meshtastic.ble_interface module.
     """
-    import meshtastic.ble_interface as ble_mod  # type: ignore[import-untyped]
+    import meshtastic.ble_interface as ble_mod
 
     return ble_mod
 
