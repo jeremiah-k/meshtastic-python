@@ -4,7 +4,7 @@ import logging
 import sys
 import types
 from types import SimpleNamespace
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 import pytest  # type: ignore[import-untyped]
 
@@ -489,7 +489,7 @@ def _build_interface(monkeypatch, client):
     connect_calls: list = []
 
     def _stub_connect(
-        _self: BLEInterface, _address: Optional[str] = None, *args, **kwargs
+        _self: Any, _address: Optional[str] = None, *args, **kwargs
     ) -> "DummyClient":
         """
         Stub implementation of BLEInterface.connect that records the connection attempt and attaches a preconfigured test client to the interface.

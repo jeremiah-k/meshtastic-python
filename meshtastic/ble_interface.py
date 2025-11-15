@@ -1500,18 +1500,26 @@ class BLEInterface(MeshInterface):
                                         sanitized_addr,
                                         sanitized_name,
                                     ):
+                                        metadata = getattr(device, "metadata", None) or {}
+                                        rssi = getattr(device, "rssi", 0)
                                         devices_found.append(
                                             BLEDevice(
                                                 device.address,
                                                 device.name,
-                                                device.metadata,
+                                                metadata,
+                                                rssi,
                                             )
                                         )
                                 else:
                                     # Add all connected Meshtastic devices
+                                    metadata = getattr(device, "metadata", None) or {}
+                                    rssi = getattr(device, "rssi", 0)
                                     devices_found.append(
                                         BLEDevice(
-                                            device.address, device.name, device.metadata
+                                            device.address,
+                                            device.name,
+                                            metadata,
+                                            rssi,
                                         )
                                     )
                 return devices_found
@@ -2422,11 +2430,13 @@ class ConnectedStrategy(DiscoveryStrategy):
                         if sanitized_target not in (sanitized_addr, sanitized_name):
                             continue
 
+                    rssi = getattr(device, "rssi", 0)
                     devices_found.append(
                         BLEDevice(
                             device.address,
                             device.name,
                             metadata,
+                            rssi,
                         )
                     )
             return devices_found
