@@ -72,16 +72,17 @@
 
 ### Phase 2 – Architect for `ble-refine-dev` Compatibility
 - [x] Introduce `NotificationManager` abstraction to track subscriptions (safe resubscribe after reconnect).
-- [ ] Factor `RetryPolicy` / `ReconnectPolicy` scaffolding to allow consistent treatment of empty read retries, transient errors, and reconnect loops.
-- [ ] Split discovery/validation/orchestration responsibilities (e.g., `DiscoveryManager`, `ConnectionValidator`, `ConnectionOrchestrator`, `ReconnectWorker`) without regressing the stable behavior.
-- [ ] Confirm `_notification_manager.resubscribe_all()` is idempotent / race-safe (add regression tests around reconnect storms).
-- [ ] Incrementally add pytest coverage adopted in `ble-refine-dev-legacy` (fixtures, retry policy tests, discovery/orchestrator tests) ensuring they pass on the new branch.
+- [x] Factor `RetryPolicy` / `ReconnectPolicy` scaffolding to allow consistent treatment of empty read retries, transient errors, and reconnect loops.
+- [x] Split discovery/validation/orchestration responsibilities (e.g., `DiscoveryManager`, `ConnectionValidator`, `ConnectionOrchestrator`, `ReconnectWorker`) without regressing the stable behavior.
+- [x] Confirm `_notification_manager.resubscribe_all()` is idempotent / race-safe (add regression tests around reconnect storms).
+- [x] Incrementally add pytest coverage adopted in `ble-refine-dev-legacy` (fixtures, retry policy tests, discovery/orchestrator tests) ensuring they pass on the new branch.
 
 ### Phase 3 – Mesh/Stream Interface Enhancements
 - [ ] Port docstring and defensive parsing updates in `mesh_interface.py` (conversion of bytearray to bytes, per-field logging, `DecodeError` guards).
 - [ ] Review event publishing order to ensure mmrelay receives consistent notifications; ensure `_handleFromRadio` remains backward compatible.
 - [ ] Audit `stream_interface.py` for shared concepts (state flags, logging) and identify where BLE architectural changes can be mirrored later.
 - [ ] Draft follow-up tickets for `tcp_interface.py` and `serial_interface.py` modernization so this branch can reference future work without scope creep.
+- _Action item:_ As soon as Phase 3 kicks off, spin up a dedicated planning doc (mirroring this file’s structure) that outlines mesh/stream/tcp modernization tasks, dependencies, and testing strategy.
 
 ### Phase 4 – Polishing & Observability
 - [x] Re-tune logging noise (scan hint removed; warning is preserved so operators can tell when the radio is idle vs. saturated).
