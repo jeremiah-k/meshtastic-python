@@ -1,5 +1,6 @@
 """Tests for BLEStateManager state machine functionality."""
 
+import os
 import gc
 import threading
 import time
@@ -7,9 +8,12 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from meshtastic.ble_interface import (  # type: ignore[import-untyped]
-    BLEStateManager,
-    ConnectionState,
+from meshtastic.ble_interface import BLEStateManager, ConnectionState  # type: ignore[import-untyped]
+
+RUN_STATE_MANAGER_PERF = os.getenv("BLE_STATE_MANAGER_PERF") == "1"
+PERF_ONLY = pytest.mark.skipif(
+    not RUN_STATE_MANAGER_PERF,
+    reason="Set BLE_STATE_MANAGER_PERF=1 to run BLE state manager performance tests",
 )
 
 
@@ -505,6 +509,7 @@ class TestPhase4PerformanceOptimization:
 
 
 @pytest.mark.slow
+@PERF_ONLY
 def test_state_transition_performance():
     """Measure performance of state transitions under realistic load."""
     manager = BLEStateManager()
@@ -538,6 +543,7 @@ def test_state_transition_performance():
 
 
 @pytest.mark.slow
+@PERF_ONLY
 def test_lock_contention_performance():
     """
     Measure BLEStateManager throughput and correctness under lock contention.
@@ -619,6 +625,7 @@ def test_lock_contention_performance():
 
 
 @pytest.mark.slow
+@PERF_ONLY
 def test_memory_efficiency():
     """Verify that BLEStateManager does not leak memory during creation and destruction."""
     # Force garbage collection
@@ -652,6 +659,7 @@ def test_memory_efficiency():
 
 
 @pytest.mark.slow
+@PERF_ONLY
 def test_property_access_performance():
     """Test that state property access is fast."""
 

@@ -1848,29 +1848,31 @@ class BLEInterface(MeshInterface):
             return
 
         write_successful = False
-        # Use unified state lock
+        # Grab the current client under the shared lock, but perform the blocking write outside
         with self._state_lock:
             client = self.client
-            if client:  # Silently ignore writes while shutting down to avoid errors
-                logger.debug("TORADIO write: %s", b.hex())
-                try:
-                    # Use write-with-response to ensure delivery is acknowledged by the peripheral
-                    client.write_gatt_char(
-                        TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT
-                    )
-                    write_successful = True
-                except (BleakError, RuntimeError, OSError) as e:
-                    # Log detailed error information and wrap in our interface exception
-                    logger.debug(
-                        "Error during write operation: %s",
-                        type(e).__name__,
-                        exc_info=True,
-                    )
-                    raise self.BLEError(ERROR_WRITING_BLE) from e
-            else:
-                logger.debug(
-                    "Skipping TORADIO write: no BLE client (closing or disconnected)."
-                )
+
+        if not client or self.is_connection_closing:
+            logger.debug(
+                "Skipping TORADIO write: no BLE client or interface is closing."
+            )
+            return
+
+        logger.debug("TORADIO write: %s", b.hex())
+        try:
+            # Use write-with-response to ensure delivery is acknowledged by the peripheral
+            client.write_gatt_char(
+                TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT
+            )
+            write_successful = True
+        except (BleakError, RuntimeError, OSError) as e:
+            # Log detailed error information and wrap in our interface exception
+            logger.debug(
+                "Error during write operation: %s",
+                type(e).__name__,
+                exc_info=True,
+            )
+            raise self.BLEError(ERROR_WRITING_BLE) from e
 
         if write_successful:
             # Brief delay to allow write to propagate before triggering read
