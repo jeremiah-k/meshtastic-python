@@ -212,7 +212,7 @@ class TestBLEStateManager:
             # This should work with reentrant lock
             """
             Read the manager's current connection state while acquiring the manager's reentrant state lock.
-            
+
             Returns:
                 ConnectionState: The current connection state.
             """
@@ -345,7 +345,7 @@ class TestBLEInterfaceStateIntegration:
     def test_state_transition_validation(self):
         """
         Verify that BLEStateManager enforces allowed and disallowed transitions from DISCONNECTED.
-        
+
         Asserts that transitions permitted from DISCONNECTED (to CONNECTING and to DISCONNECTING) succeed, that direct transitions to CONNECTED or RECONNECTING are rejected, and that the current implementation allows ERROR from DISCONNECTED.
         """
 
@@ -382,9 +382,9 @@ class TestPhase3LockConsolidation:
         def worker(worker_id):
             """
             Exercise concurrent state transitions on a shared BLEStateManager and record outcomes.
-            
+
             Runs a short loop that alternates transition requests (CONNECTING, CONNECTED with a mock client, DISCONNECTED), appending tuples of (worker_id, iteration, manager.state, success) to a shared `results` list and recording any exceptions as (worker_id, error_message) in a shared `errors` list.
-            
+
             Parameters:
                 worker_id (int | str): Identifier included in recorded result and error entries to distinguish this worker's operations.
             """
@@ -403,9 +403,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - worker errors recorded for debugging
+            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -446,7 +444,7 @@ class TestPhase3LockConsolidation:
             # This should work without deadlock due to reentrant lock
             """
             Exercise nested state transitions under the manager's reentrant lock to ensure no deadlock and preserve state and client consistency.
-            
+
             Performs CONNECTING → CONNECTED with a mock client and verifies the manager sets the client and reports connected.
             """
             assert manager.transition_to(ConnectionState.CONNECTING)
@@ -475,7 +473,7 @@ class TestPhase3LockConsolidation:
         def contending_worker():
             """
             Perform a state-transition workload under the manager's internal state lock to exercise contention.
-            
+
             Acquires the manager's internal lock and transitions the manager to CONNECTING then to DISCONNECTED. If an exception occurs during the operation, increments the shared contention_count[0].
             """
             try:
@@ -531,9 +529,9 @@ def test_state_transition_performance():
     elapsed = end_time - start_time
 
     # Should complete quickly under typical CI conditions (allow headroom)
-    assert (
-        elapsed < 3.0
-    ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+    assert elapsed < 3.0, (
+        f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+    )
 
     # Calculate average transition time
     avg_time = elapsed / (iterations * 3)
@@ -562,12 +560,12 @@ def test_lock_contention_performance():
     def worker(worker_id):
         """
         Run a worker that performs repeated BLE state transition attempts and records throughput.
-        
+
         Performs 100 iterations of attempting CONNECTING, CONNECTED, and DISCONNECTED transitions; each successful transition increments an operation counter. Appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed wall-clock seconds).
-        
+
         Parameters:
             worker_id (int): Identifier used in the appended result to distinguish this worker.
-        
+
         Side effects:
             Calls `manager.transition_to(...)` on the outer-scope `manager` and appends a dict to the outer-scope `results` list.
         """
@@ -617,9 +615,9 @@ def test_lock_contention_performance():
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
     expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
-    assert (
-        total_operations >= expected_operations * 0.8
-    ), f"Too many failed operations: {total_operations}/{expected_operations}"
+    assert total_operations >= expected_operations * 0.8, (
+        f"Too many failed operations: {total_operations}/{expected_operations}"
+    )
 
     print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
 
@@ -651,9 +649,9 @@ def test_memory_efficiency():
 
     # Should not have significant memory growth
     object_growth = final_objects - initial_objects
-    assert (
-        object_growth < 1000
-    ), f"Potential memory leak: {object_growth} objects created"
+    assert object_growth < 1000, (
+        f"Potential memory leak: {object_growth} objects created"
+    )
 
     print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 
