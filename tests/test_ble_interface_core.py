@@ -284,7 +284,7 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
         assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
         return [fallback_device]
 
-    manager.connected_strategy = SimpleNamespace(discover=fake_connected)
+    manager.connected_strategy = SimpleNamespace(discover=fake_connected)  # type: ignore[assignment]
 
     devices = manager.discover_devices(address="AA:BB")
 
@@ -367,7 +367,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
         fallback_called = True
         return []
 
-    manager.connected_strategy = SimpleNamespace(discover=fake_connected)
+    manager.connected_strategy = SimpleNamespace(discover=fake_connected)  # type: ignore[assignment]
 
     assert manager.discover_devices(address=None) == []
     assert fallback_called is False
@@ -403,8 +403,8 @@ def test_connection_validator_existing_client_checks(monkeypatch):
     client = DummyClient()
     client.is_connected = lambda: True
 
-    assert validator.check_existing_client(client, None, None, None) is True
-    assert validator.check_existing_client(client, "dummy", "dummy", "dummy") is True
+    assert validator.check_existing_client(client, None, None, None) is True  # type: ignore[arg-type]
+    assert validator.check_existing_client(client, "dummy", "dummy", "dummy") is True  # type: ignore[arg-type]
     assert (
         validator.check_existing_client(client, "something-else", None, None) is False
     )
