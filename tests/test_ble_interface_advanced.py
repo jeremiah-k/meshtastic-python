@@ -5,7 +5,7 @@ import threading
 import time
 import types
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from queue import Queue
 from typing import Optional
 from unittest.mock import MagicMock, patch
@@ -557,6 +557,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             event-loop side effects or errors during unit tests.
             """
 
+    @contextmanager
     def create_interface_with_auto_reconnect():
         """
         Create a BLEInterface configured for stress testing with auto-reconnect enabled.
@@ -564,11 +565,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         Patches BLEInterface.scan and BLEInterface.connect so the created interface will discover a mock device
         and return a StressTestClient when connecting. The returned interface has auto_reconnect enabled and
         carries a test patch stack on iface._test_patch_stack; connect attempts are recorded in iface._connect_stub_calls.
-
-        Returns
-        -------
-            tuple: (iface, client) where `iface` is a BLEInterface instance configured for testing and
-            `client` is the StressTestClient that iface.connect() will return.
 
         """
         outer_client = StressTestClient()
@@ -611,107 +607,112 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         stack.enter_context(patch.object(BLEInterface, "connect", _patched_connect))
 
-        iface = BLEInterface(
-            address=None,  # Required positional argument
-            noProto=True,
-            auto_reconnect=True,
-        )
-        iface._test_patch_stack = stack
-        iface._connect_stub_calls = connect_calls
-        return iface, iface.client
+        iface = None
+        try:
+            iface = BLEInterface(
+                address=None,  # Required positional argument
+                noProto=True,
+                auto_reconnect=True,
+            )
+            iface._connect_stub_calls = connect_calls
+            yield iface, iface.client
+        finally:
+            if iface is not None:
+                try:
+                    iface.close()
+                except Exception as e:  # noqa: BLE001 - teardown logging only
+                    logging.debug(
+                        "Error closing stress-test interface during cleanup: %s: %s",
+                        type(e).__name__,
+                        e,
+                    )
+            stack.close()
 
     # Test 1: Rapid disconnect callbacks
-    iface, client = create_interface_with_auto_reconnect()
+    with create_interface_with_auto_reconnect() as (iface, client):
 
-    def simulate_rapid_disconnects():
-        """Simulate a burst of BLE disconnection events to exercise reconnect/disconnect handling.
+        def simulate_rapid_disconnects():
+            """Simulate a burst of BLE disconnection events to exercise reconnect/disconnect handling.
 
-        Invokes the interface disconnect handler with the test client's bleak_client ten times
-        with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.
-        """
-        for _ in range(10):
-            iface._on_ble_disconnect(client.bleak_client)
-            time.sleep(0.01)  # Very short delay between disconnects
+            Invokes the interface disconnect handler with the test client's bleak_client ten times
+            with a short pause (~0.01s) between calls to trigger rapid consecutive disconnect behavior.
+            """
+            for _ in range(10):
+                iface._on_ble_disconnect(client.bleak_client)
+                time.sleep(0.01)  # Very short delay between disconnects
 
-    # Start rapid disconnect simulation in a separate thread
-    disconnect_thread = threading.Thread(target=simulate_rapid_disconnects)
-    disconnect_thread.start()
-    disconnect_thread.join()
+        # Start rapid disconnect simulation in a separate thread
+        disconnect_thread = threading.Thread(target=simulate_rapid_disconnects)
+        disconnect_thread.start()
+        disconnect_thread.join()
 
-    # Verify that the interface handled rapid disconnects gracefully
-    assert client.bleak_client.disconnect_count >= 0  # Should not crash
-    assert (
-        len(iface._connect_stub_calls) >= 2
-    ), "Auto-reconnect should continue scheduling during rapid disconnects"
-
-    iface.close()
-    iface._test_patch_stack.close()
+        # Verify that the interface handled rapid disconnects gracefully
+        assert client.bleak_client.disconnect_count >= 0  # Should not crash
+        assert (
+            len(iface._connect_stub_calls) >= 2
+        ), "Auto-reconnect should continue scheduling during rapid disconnects"
 
     # Test 2: Concurrent connect/disconnect operations
-    iface2, client2 = create_interface_with_auto_reconnect()
+    with create_interface_with_auto_reconnect() as (iface2, client2):
 
-    def _stress_test_disconnects():
-        """
-        Trigger a burst of simulated BLE disconnects on iface2 to exercise auto-reconnect and disconnect handling.
+        def _stress_test_disconnects():
+            """
+            Trigger a burst of simulated BLE disconnects on iface2 to exercise auto-reconnect and disconnect handling.
 
-        Calls iface2._on_ble_disconnect(client2.bleak_client) five times with a 5 millisecond pause between calls.
-        Exceptions raised during individual disconnect attempts are suppressed and logged to allow the stress cycle to continue.
-        """
-        for i in range(5):
+            Calls iface2._on_ble_disconnect(client2.bleak_client) five times with a 5 millisecond pause between calls.
+            Exceptions raised during individual disconnect attempts are suppressed and logged to allow the stress cycle to continue.
+            """
+            for i in range(5):
+                try:
+                    iface2._on_ble_disconnect(client2.bleak_client)
+                    time.sleep(0.005)
+                except (RuntimeError, AttributeError, KeyError) as e:
+                    logging.debug(
+                        "Stress test disconnect %d: %s: %s", i, type(e).__name__, e
+                    )
+                except Exception as e:  # noqa: BLE001 - test teardown must be resilient
+                    logging.debug(
+                        "Unexpected stress test disconnect %d: %s: %s",
+                        i,
+                        type(e).__name__,
+                        e,
+                    )
+
+        # Start multiple threads for concurrent operations
+        threads = []
+        for _ in range(3):
+            thread = threading.Thread(target=_stress_test_disconnects)
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # Verify thread-safety - no exceptions should be raised
+        assert client2.bleak_client.disconnect_count >= 0
+
+    # Test 3: Stress test with connection failures
+    with create_interface_with_auto_reconnect() as (iface3, client3):
+        client3._should_fail_connect = True
+
+        # Simulate disconnects that trigger reconnection attempts
+        # Exceptions are expected and suppressed to continue stress testing
+        for _ in range(5):
             try:
-                iface2._on_ble_disconnect(client2.bleak_client)
-                time.sleep(0.005)
-            except (RuntimeError, AttributeError, KeyError) as e:
+                iface3._on_ble_disconnect(client3.bleak_client)
+                time.sleep(0.01)
+            except Exception as e:  # noqa: BLE001 - expected during failure stress
                 logging.debug(
-                    "Stress test disconnect %d: %s: %s", i, type(e).__name__, e
-                )
-            except Exception as e:  # noqa: BLE001 - test teardown must be resilient
-                logging.debug(
-                    "Unexpected stress test disconnect %d: %s: %s",
-                    i,
+                    "Expected failure during stress reconnect: %s: %s",
                     type(e).__name__,
                     e,
                 )
 
-    # Start multiple threads for concurrent operations
-    threads = []
-    for _ in range(3):
-        thread = threading.Thread(target=_stress_test_disconnects)
-        threads.append(thread)
-        thread.start()
-
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
-
-    # Verify thread-safety - no exceptions should be raised
-    assert client2.bleak_client.disconnect_count >= 0
-
-    iface2.close()
-    iface2._test_patch_stack.close()
-
-    # Test 3: Stress test with connection failures
-    iface3, client3 = create_interface_with_auto_reconnect()
-    client3._should_fail_connect = True
-
-    # Simulate disconnects that trigger reconnection attempts
-    # Exceptions are expected and suppressed to continue stress testing
-    for _ in range(5):
-        try:
-            iface3._on_ble_disconnect(client3.bleak_client)
-            time.sleep(0.01)
-        except Exception as e:  # noqa: BLE001 - expected during failure stress
-            logging.debug(
-                "Expected failure during stress reconnect: %s: %s", type(e).__name__, e
-            )
-
-    # Verify graceful handling of connection failures
-    assert (
-        len(iface3._connect_stub_calls) >= 1
-    ), "Failure path should still schedule reconnect attempts"
-
-    iface3.close()
-    iface3._test_patch_stack.close()
+        # Verify graceful handling of connection failures
+        assert (
+            len(iface3._connect_stub_calls) >= 1
+        ), "Failure path should still schedule reconnect attempts"
 
     # Verify no critical errors in logs
     critical = [r for r in caplog.records if r.levelno >= logging.CRITICAL]

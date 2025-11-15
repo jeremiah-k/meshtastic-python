@@ -4,13 +4,21 @@ import logging
 import sys
 import types
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import pytest  # type: ignore[import-untyped]
 
-# Import meshtastic modules for use in tests
-import meshtastic.ble_interface as ble_mod
-from meshtastic.ble_interface import BLEInterface
+if TYPE_CHECKING:  # pragma: no cover - import only for typing
+    from meshtastic.ble_interface import BLEInterface  # noqa: F401
+
+
+def _get_ble_module():
+    """
+    Import and return the meshtastic.ble_interface module on demand.
+    """
+    import meshtastic.ble_interface as ble_mod  # type: ignore[import-untyped]
+
+    return ble_mod
 
 
 @pytest.fixture(autouse=True)
@@ -105,10 +113,16 @@ def mock_publishing_thread(monkeypatch):
     publishing_thread_module.queueWork = queueWork
 
     # Ensure fresh state
-    if "publishingThread" in sys.modules:
-        del sys.modules["publishingThread"]
+    for module_name in ("publishingThread", "meshtastic.publishingThread"):
+        if module_name in sys.modules:
+            del sys.modules[module_name]
 
     monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
+    monkeypatch.setitem(
+        sys.modules,
+        "meshtastic.publishingThread",
+        publishing_thread_module,
+    )
     return publishing_thread_module
 
 
@@ -452,8 +466,7 @@ def stub_atexit(
         """
         registered[:] = [f for f in registered if f is not func]
 
-    # meshtastic.ble_interface already imported at top as ble_mod
-
+    ble_mod = _get_ble_module()
     monkeypatch.setattr(ble_mod.atexit, "register", fake_register, raising=True)
     monkeypatch.setattr(ble_mod.atexit, "unregister", fake_unregister, raising=True)
     yield
@@ -484,8 +497,8 @@ def _build_interface(monkeypatch, client):
         BLEInterface: A test-configured interface whose `connect` returns `client` and whose `_startConfig` performs no configuration.
 
     """
-    # BLEInterface already imported at top as ble_mod.BLEInterface
-
+    ble_mod = _get_ble_module()
+    BLEInterface = ble_mod.BLEInterface
     connect_calls: list = []
 
     def _stub_connect(
