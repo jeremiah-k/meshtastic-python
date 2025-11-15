@@ -7,7 +7,7 @@ import types
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Optional
+from typing import Iterator, Optional, Tuple, cast
 from unittest.mock import MagicMock, patch
 
 import pytest  # type: ignore[import-untyped]
@@ -540,7 +540,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
 
     @contextmanager
-    def create_interface_with_auto_reconnect():
+    def create_interface_with_auto_reconnect() -> Iterator[Tuple[BLEInterface, "StressTestClient"]]:
         """
         Create a BLEInterface configured for stress testing with auto-reconnect enabled.
 
@@ -599,7 +599,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 auto_reconnect=True,
             )
             iface._connect_stub_calls = connect_calls  # type: ignore[attr-defined]
-            yield iface, iface.client
+            client = cast("StressTestClient", iface.client)
+            yield iface, client
         finally:
             if iface is not None:
                 try:

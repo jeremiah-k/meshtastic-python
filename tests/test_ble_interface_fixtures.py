@@ -470,7 +470,7 @@ def stub_atexit(
             )
 
 
-def _build_interface(monkeypatch, client):
+def _build_interface(monkeypatch: Any, client: DummyClient) -> "BLEInterface":
     """
     Create a BLEInterface instance configured for tests with a stubbed `connect` that returns the supplied client and a no-op `_startConfig`.
 
@@ -485,7 +485,7 @@ def _build_interface(monkeypatch, client):
 
     """
     ble_mod = _get_ble_module()
-    BLEInterface = ble_mod.BLEInterface
+    BleInterfaceClass = ble_mod.BLEInterface
     connect_calls: list = []
 
     def _stub_connect(
@@ -511,7 +511,7 @@ def _build_interface(monkeypatch, client):
             _self._reconnected_event.set()
         return client
 
-    def _stub_start_config(_self: BLEInterface) -> None:
+    def _stub_start_config(_self: "BLEInterface") -> None:
         """
         No-op startup configuration hook used to replace BLEInterface._startConfig in tests.
 
@@ -519,8 +519,8 @@ def _build_interface(monkeypatch, client):
         """
         return None
 
-    monkeypatch.setattr(BLEInterface, "connect", _stub_connect)
-    monkeypatch.setattr(BLEInterface, "_startConfig", _stub_start_config)
-    iface = BLEInterface(address="dummy", noProto=True)
+    monkeypatch.setattr(BleInterfaceClass, "connect", _stub_connect)
+    monkeypatch.setattr(BleInterfaceClass, "_startConfig", _stub_start_config)
+    iface = BleInterfaceClass(address="dummy", noProto=True)
     iface._connect_stub_calls = connect_calls
     return iface
