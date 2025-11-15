@@ -676,7 +676,7 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
             self.connect_calls.append(address)
 
     iface = DummyInterface()
-    worker = ReconnectWorker(iface)
+    worker = ReconnectWorker(iface, iface._reconnect_policy)
     worker.attempt_reconnect_loop(True, threading.Event())
 
     assert iface.connect_calls == ["addr"]
@@ -746,7 +746,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             raise self.BLEError("boom")
 
     iface = FailingInterface()
-    worker = ReconnectWorker(iface)
+    worker = ReconnectWorker(iface, iface._reconnect_policy)
     worker.attempt_reconnect_loop(True, threading.Event())
 
     assert iface.connect_attempts == 2

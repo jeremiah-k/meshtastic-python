@@ -89,6 +89,7 @@ class BLEConfig:
     GATT_IO_TIMEOUT = 10.0
     NOTIFICATION_START_TIMEOUT: Optional[float] = 10.0
     CONNECTION_TIMEOUT = 60.0
+    EMPTY_READ_WARNING_COOLDOWN = 10.0
     AUTO_RECONNECT_INITIAL_DELAY = 1.0
     AUTO_RECONNECT_MAX_DELAY = 30.0
     AUTO_RECONNECT_BACKOFF = 2.0
@@ -107,6 +108,7 @@ SEND_PROPAGATION_DELAY = BLEConfig.SEND_PROPAGATION_DELAY
 GATT_IO_TIMEOUT = BLEConfig.GATT_IO_TIMEOUT
 NOTIFICATION_START_TIMEOUT = BLEConfig.NOTIFICATION_START_TIMEOUT
 CONNECTION_TIMEOUT = BLEConfig.CONNECTION_TIMEOUT
+EMPTY_READ_WARNING_COOLDOWN = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
 AUTO_RECONNECT_INITIAL_DELAY = BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
 AUTO_RECONNECT_MAX_DELAY = BLEConfig.AUTO_RECONNECT_MAX_DELAY
 AUTO_RECONNECT_BACKOFF = BLEConfig.AUTO_RECONNECT_BACKOFF
@@ -303,6 +305,11 @@ class BLEStateManager:
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
         self._client: Optional["BLEClient"] = None
+
+    @property
+    def lock(self) -> RLock:
+        """Expose the reentrant lock controlling state transitions."""
+        return self._state_lock
 
     @property
     def state(self) -> ConnectionState:
@@ -759,10 +766,15 @@ class BLEInterface(MeshInterface):
         - Comprehensive state management
 
     Architecture:
-        - ThreadCoordinator: Centralized thread and event management
-        - Module-level constants: Configurable timeouts, UUIDs, and error messages
+        - BLEStateManager: Centralized connection state machine with shared locking
+        - ThreadCoordinator: Thread/event lifecycle and coordination utilities
         - BLEErrorHandler: Standardized error handling patterns
-        - ConnectionState: Enum-based state tracking
+        - NotificationManager: Tracks active notifications for reconnect-safe resubscription
+        - DiscoveryManager: Scans and falls back to connected-device enumeration
+        - ConnectionValidator: Enforces connection preconditions
+        - ClientManager: Owns BLEClient lifecycle and cleanup operations
+        - ConnectionOrchestrator: Coordinates connection establishment
+        - ReconnectScheduler / ReconnectWorker: Policy-driven reconnect attempts
 
     Note: This interface requires appropriate Bluetooth permissions and may
     need platform-specific setup for BLE operations.
@@ -799,9 +811,7 @@ class BLEInterface(MeshInterface):
         # Thread safety and state management
         # Unified state-based lock system replacing multiple locks and boolean flags
         self._state_manager = BLEStateManager()  # Centralized state tracking
-        self._state_lock = (
-            self._state_manager._state_lock
-        )  # Direct access to unified lock
+        self._state_lock = self._state_manager.lock  # Direct access to unified lock
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
@@ -838,19 +848,11 @@ class BLEInterface(MeshInterface):
             self._state_lock,
             self.thread_coordinator,
         )
-        self._reconnect_policy = ReconnectPolicy(
-            initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
-            max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
-            backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
-            jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
-            max_retries=None,
-        )
-        self._reconnect_worker = ReconnectWorker(self)
         self._reconnect_scheduler = ReconnectScheduler(
             self._state_manager,
             self._state_lock,
             self.thread_coordinator,
-            self._reconnect_worker,
+            self,
         )
 
         # Event coordination for reconnection and read operations
@@ -870,6 +872,8 @@ class BLEInterface(MeshInterface):
 
         # Initialize retry counter for transient read errors
         self._read_retry_count = 0
+        self._last_empty_read_warning = 0.0
+        self._suppressed_empty_read_warnings = 0
 
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
@@ -1001,7 +1005,7 @@ class BLEInterface(MeshInterface):
                 self._disconnected()
                 # Close previous client asynchronously
                 close_thread = self.thread_coordinator.create_thread(
-                    target=self._safe_close_client,
+                    target=self._client_manager.safe_close_client,
                     args=(previous_client,),
                     name="BLEClientClose",
                     daemon=True,
@@ -1693,23 +1697,6 @@ class BLEInterface(MeshInterface):
             self._want_receive = False
         return should_continue
 
-    def _safe_close_client(self, c: "BLEClient", event: Optional[Event] = None) -> None:
-        """
-        Close the provided BLEClient and suppress common close-time errors.
-
-        Attempts to close the given BLEClient and ignores BleakError, RuntimeError, and OSError raised during close
-            to avoid propagating shutdown-related exceptions.
-
-        Args:
-        ----
-            c (BLEClient): The BLEClient instance to close; may be None or already-closed.
-            event (Optional[Event]): An optional threading.Event to set after the client is closed.
-
-        """
-        self.error_handler.safe_cleanup(c.close, "client close")
-        if event:
-            event.set()
-
     def _receiveFromRadioImpl(self) -> None:
         """
         Run loop that reads inbound packets from the BLE FROMRADIO characteristic and delivers them to the interface packet handler.
@@ -1732,8 +1719,6 @@ class BLEInterface(MeshInterface):
                     continue
                 self.thread_coordinator.clear_event("read_trigger")
 
-                # Retry loop for handling empty reads and transient BLE issues
-                retries: int = 0
                 while self._want_receive:
                     # Use unified state lock
                     with self._state_lock:
@@ -1753,27 +1738,12 @@ class BLEInterface(MeshInterface):
                         self._want_receive = False
                         break
                     try:
-                        # Read from the FROMRADIO characteristic for incoming packets
-                        b = client.read_gatt_char(
-                            FROMRADIO_UUID, timeout=BLEConfig.GATT_IO_TIMEOUT
-                        )
-                        if not b:
-                            # Handle empty reads with limited retries to avoid busy-looping
-                            if RetryPolicy.EMPTY_READ.should_retry(retries):
-                                _sleep(RetryPolicy.EMPTY_READ.get_delay(retries))
-                                retries += 1
-                                continue
-                            logger.warning(
-                                "Exceeded max retries for empty BLE read from %s",
-                                FROMRADIO_UUID,
-                            )
-                            break  # Too many empty reads, exit to recheck state
-                        logger.debug("FROMRADIO read: %s", b.hex())
-                        self._handleFromRadio(b)
-                        retries = 0  # Reset retry counter on successful read
-                        self._read_retry_count = (
-                            0  # Reset transient error retry counter on successful read
-                        )
+                        payload = self._read_from_radio_with_retries(client)
+                        if not payload:
+                            break  # Too many empty reads; exit to recheck state
+                        logger.debug("FROMRADIO read: %s", payload.hex())
+                        self._handleFromRadio(payload)
+                        self._read_retry_count = 0
                     except BleakDBusError as e:
                         # Handle D-Bus specific BLE errors (common on Linux)
                         if self._handle_read_loop_disconnect(str(e), client):
@@ -1785,28 +1755,8 @@ class BLEInterface(MeshInterface):
                             if self._handle_read_loop_disconnect(str(e), client):
                                 break
                             return
-                        # Client is still connected, this might be a transient error
-                        # Retry a few times before escalating
-                        if RetryPolicy.TRANSIENT_ERROR.should_retry(
-                            self._read_retry_count
-                        ):
-                            self._read_retry_count += 1
-                            logger.debug(
-                                "Transient BLE read error, retrying (%d/%d)",
-                                self._read_retry_count,
-                                BLEConfig.TRANSIENT_READ_MAX_RETRIES,
-                            )
-                            _sleep(
-                                RetryPolicy.TRANSIENT_ERROR.get_delay(
-                                    self._read_retry_count
-                                )
-                            )
-                            continue
-                        self._read_retry_count = 0
-                        logger.debug(
-                            "Persistent BLE read error after retries", exc_info=True
-                        )
-                        raise self.BLEError(ERROR_READING_BLE) from e
+                        self._handle_transient_read_error(e)
+                        continue
         except Exception:
             logger.exception("Fatal error in BLE receive thread, closing interface.")
             # Use state manager instead of boolean flag
@@ -1816,6 +1766,65 @@ class BLEInterface(MeshInterface):
                     target=self.close, name="BLECloseOnError", daemon=True
                 )
                 self.thread_coordinator.start_thread(error_close_thread)
+
+    def _read_from_radio_with_retries(self, client: "BLEClient") -> Optional[bytes]:
+        """
+        Read the FROMRADIO characteristic, tolerating transient empty payloads.
+        """
+        for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
+            payload = client.read_gatt_char(
+                FROMRADIO_UUID, timeout=BLEConfig.GATT_IO_TIMEOUT
+            )
+            if payload:
+                self._suppressed_empty_read_warnings = 0
+                return payload
+            if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
+                _sleep(RetryPolicy.EMPTY_READ.get_delay(attempt))
+        self._log_empty_read_warning()
+        return None
+
+    def _handle_transient_read_error(self, error: BleakError) -> None:
+        """
+        Handle recoverable BleakErrors with the configured retry policy.
+        """
+        if RetryPolicy.TRANSIENT_ERROR.should_retry(self._read_retry_count):
+            self._read_retry_count += 1
+            logger.debug(
+                "Transient BLE read error, retrying (%d/%d)",
+                self._read_retry_count,
+                BLEConfig.TRANSIENT_READ_MAX_RETRIES,
+            )
+            _sleep(RetryPolicy.TRANSIENT_ERROR.get_delay(self._read_retry_count))
+            return
+        self._read_retry_count = 0
+        logger.debug("Persistent BLE read error after retries", exc_info=True)
+        raise self.BLEError(ERROR_READING_BLE) from error
+
+    def _log_empty_read_warning(self) -> None:
+        """
+        Emit a throttled warning when repeated FROMRADIO reads return empty payloads.
+        """
+        now = time.monotonic()
+        cooldown = BLEConfig.EMPTY_READ_WARNING_COOLDOWN
+        if now - self._last_empty_read_warning >= cooldown:
+            suppressed = self._suppressed_empty_read_warnings
+            message = f"Exceeded max retries for empty BLE read from {FROMRADIO_UUID}"
+            if suppressed:
+                message = (
+                    f"{message} (suppressed {suppressed} repeats in the last "
+                    f"{cooldown:.0f}s)"
+                )
+            logger.warning(message)
+            self._last_empty_read_warning = now
+            self._suppressed_empty_read_warnings = 0
+            return
+
+        self._suppressed_empty_read_warnings += 1
+        logger.debug(
+            "Suppressed repeated empty BLE read warning (%d within %.0fs window)",
+            self._suppressed_empty_read_warnings,
+            cooldown,
+        )
 
     def _sendToRadioImpl(self, toRadio) -> None:
         """
@@ -1994,7 +2003,7 @@ class BLEInterface(MeshInterface):
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
             )
         finally:
-            self._safe_close_client(client)
+            self._client_manager.safe_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         """
@@ -2554,15 +2563,22 @@ class ClientManager:
         with self.state_lock:
             if old_client and old_client is not new_client:
                 close_thread = self.thread_coordinator.create_thread(
-                    target=self._safe_close_client,
+                    target=self.safe_close_client,
                     args=(old_client,),
                     name="BLEClientClose",
                     daemon=True,
                 )
                 self.thread_coordinator.start_thread(close_thread)
 
-    def _safe_close_client(self, client: "BLEClient") -> None:
-        self.error_handler.safe_cleanup(client.close)
+    def safe_close_client(
+        self, client: "BLEClient", event: Optional[Event] = None
+    ) -> None:
+        """
+        Close the provided BLEClient and suppress common close-time errors.
+        """
+        self.error_handler.safe_cleanup(client.close, "client close")
+        if event:
+            event.set()
 
 
 class ConnectionOrchestrator:
@@ -2620,7 +2636,7 @@ class ConnectionOrchestrator:
         except Exception:
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
             if client:
-                self.client_manager._safe_close_client(client)
+                self.client_manager.safe_close_client(client)
             self.state_manager.transition_to(ConnectionState.ERROR)
             # Reset to DISCONNECTED so future connection attempts are permitted
             self.state_manager.transition_to(ConnectionState.DISCONNECTED)
@@ -2635,12 +2651,20 @@ class ReconnectScheduler:
         state_manager: BLEStateManager,
         state_lock: RLock,
         thread_coordinator: ThreadCoordinator,
-        reconnect_worker: "ReconnectWorker",
+        interface: "BLEInterface",
     ):
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
-        self.reconnect_worker = reconnect_worker
+        self.interface = interface
+        self._reconnect_policy = ReconnectPolicy(
+            initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
+            max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
+            backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
+            jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
+            max_retries=None,
+        )
+        self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
         self._reconnect_thread: Optional[Thread] = None
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
@@ -2660,7 +2684,7 @@ class ReconnectScheduler:
                 return False
 
             thread = self.thread_coordinator.create_thread(
-                target=self.reconnect_worker.attempt_reconnect_loop,
+                target=self._reconnect_worker.attempt_reconnect_loop,
                 args=(auto_reconnect, shutdown_event),
                 name="BLEAutoReconnect",
                 daemon=True,
@@ -2678,13 +2702,14 @@ class ReconnectScheduler:
 class ReconnectWorker:
     """Perform blocking reconnect attempts with policy-driven backoff."""
 
-    def __init__(self, interface: "BLEInterface"):
+    def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
         self.interface = interface
+        self.reconnect_policy = reconnect_policy
 
     def attempt_reconnect_loop(
         self, auto_reconnect: bool, shutdown_event: Event
     ) -> None:
-        self.interface._reconnect_policy.reset()
+        self.reconnect_policy.reset()
         try:
             while not shutdown_event.is_set():
                 if self.interface._state_manager.is_closing or not auto_reconnect:
@@ -2693,9 +2718,7 @@ class ReconnectWorker:
                     )
                     return
                 try:
-                    attempt_num = (
-                        self.interface._reconnect_policy.get_attempt_count() + 1
-                    )
+                    attempt_num = self.reconnect_policy.get_attempt_count() + 1
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).", attempt_num
                     )
@@ -2723,7 +2746,7 @@ class ReconnectWorker:
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
-                        self.interface._reconnect_policy.get_attempt_count(),
+                        self.reconnect_policy.get_attempt_count(),
                         err,
                     )
                 except Exception:
@@ -2734,7 +2757,7 @@ class ReconnectWorker:
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
-                        self.interface._reconnect_policy.get_attempt_count(),
+                        self.reconnect_policy.get_attempt_count(),
                     )
 
                 if self.interface.is_connection_closing or not auto_reconnect:
@@ -2742,7 +2765,7 @@ class ReconnectWorker:
                 (
                     sleep_delay,
                     should_retry,
-                ) = self.interface._reconnect_policy.next_attempt()
+                ) = self.reconnect_policy.next_attempt()
                 if not should_retry:
                     logger.info("Auto-reconnect reached maximum retry limit.")
                     return
