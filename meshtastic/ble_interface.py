@@ -337,10 +337,12 @@ class BLEStateManager:
         """Thread-safe state transition with validation.
 
         Args:
+        ----
             new_state: Target state to transition to
             client: BLE client associated with this transition (optional)
 
         Returns:
+        -------
             True if transition was valid and applied, False otherwise
 
         """
@@ -369,10 +371,12 @@ class BLEStateManager:
         """Validate if a state transition is allowed.
 
         Args:
+        ----
             from_state: Current state
             to_state: Desired next state
 
         Returns:
+        -------
             True if transition is valid, False otherwise
 
         """
@@ -451,6 +455,7 @@ class ThreadCoordinator:
         Create and register a new Thread with target, name, daemon, args, and kwargs.
 
         Args:
+        ----
             target (callable): The callable to be executed by the thread.
             name (str): The thread's name.
             daemon (bool): Whether the thread should be a daemon thread.
@@ -458,6 +463,7 @@ class ThreadCoordinator:
             kwargs (dict): Keyword arguments to pass to `target`.
 
         Returns:
+        -------
             Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
 
         """
@@ -473,9 +479,11 @@ class ThreadCoordinator:
         Create and register a new Event with the specified name.
 
         Args:
+        ----
             name (str): Key under which the event will be stored and retrievable.
 
         Returns:
+        -------
             Event: The newly created Event instance.
 
         """
@@ -489,9 +497,11 @@ class ThreadCoordinator:
         Retrieve a previously created Event by the specified name.
 
         Args:
+        ----
             name (str): The identifier of the tracked event.
 
         Returns:
+        -------
             Optional[Event]: The Event instance if found, otherwise `None`.
 
         """
@@ -513,6 +523,7 @@ class ThreadCoordinator:
         Join a tracked thread with the specified thread and timeout.
 
         Args:
+        ----
                 thread (Thread): The thread to join; only joined if it is currently tracked and alive.
                 timeout (float | None): Maximum seconds to wait for the thread to finish. If None, wait indefinitely.
 
@@ -530,6 +541,7 @@ class ThreadCoordinator:
         Wait for all tracked threads with the specified timeout.
 
         Args:
+        ----
             timeout (Optional[float]): Maximum number of seconds to wait for each thread to join.
                 If `None`, wait indefinitely for each thread.
 
@@ -547,9 +559,11 @@ class ThreadCoordinator:
         If no event exists with that name, this is a no-op.
 
         Args:
+        ----
             name (str): Name of the tracked event to set.
 
         Returns:
+        -------
             None.
 
         """
@@ -896,7 +910,8 @@ class BLEInterface(MeshInterface):
         """
         Produce a compact textual representation of the BLEInterface including its address and relevant feature flags.
 
-        Returns:
+        Returns
+        -------
             repr_str (str): A string of the form "BLEInterface(...)" that includes the address, `debugOut` if set,
                 and boolean flags for `noProto`, `noNodes`, and `auto_reconnect` when applicable.
 
@@ -1142,7 +1157,9 @@ class BLEInterface(MeshInterface):
                 "Error in FROMNUM notification handler",
             )
 
-        def _get_or_create_handler(uuid: str, factory: Callable[[], Callable[[Any, Any], None]]):
+        def _get_or_create_handler(
+            uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
+        ):
             handler = self._notification_manager.get_callback(uuid)
             if handler is None:
                 handler = factory()
@@ -1235,7 +1252,8 @@ class BLEInterface(MeshInterface):
         """
         Await `awaitable`, enforcing `timeout` seconds if provided.
 
-        Raises:
+        Raises
+        ------
             BLEInterface.BLEError: when the awaitable does not finish before the timeout elapses.
 
         """
@@ -1254,7 +1272,8 @@ class BLEInterface(MeshInterface):
         Performs a timed BLE scan, handles variations in BleakScanner.discover() return formats, and returns devices whose
         advertisements include the Meshtastic service UUID.
 
-        Returns:
+        Returns
+        -------
             List[BLEDevice]: Devices whose advertisements include the Meshtastic service UUID; empty list if none are found.
 
         """
@@ -1426,6 +1445,7 @@ class BLEInterface(MeshInterface):
                 Retrieve connected Meshtastic BLE devices and optionally filter by address or name.
 
                 Args:
+                ----
                     address_to_find (Optional[str]): Bluetooth address or device name to match; separators (":", "-", "_",
                         spaces) are ignored when comparing. If None, returns all connected devices advertising the
                         Meshtastic service.
@@ -2013,7 +2033,9 @@ class BLEClient:
     # Class-level fallback so callers using __new__ still get the right exception type
     BLEError = BLEInterface.BLEError
 
-    def __init__(self, address=None, *, log_if_no_address: bool = True, **kwargs) -> None:
+    def __init__(
+        self, address=None, *, log_if_no_address: bool = True, **kwargs
+    ) -> None:
         """
         Create a BLEClient with a dedicated asyncio event loop and, if an address is provided, an underlying Bleak client attached to that address.
 
@@ -2051,7 +2073,8 @@ class BLEClient:
 
         Keyword arguments are forwarded to BleakScanner.discover (for example, `timeout` or `adapter`).
 
-        Returns:
+        Returns
+        -------
             A list of discovered BLEDevice objects.
 
         """
@@ -2096,7 +2119,8 @@ class BLEClient:
         """
         Determine if the underlying Bleak client is currently connected.
 
-        Returns:
+        Returns
+        -------
             `true` if the underlying Bleak client reports it is connected, `false` otherwise (also `false` when no
                 Bleak client exists or the connection state cannot be read).
 
@@ -2111,7 +2135,8 @@ class BLEClient:
 
             This handles either a boolean `is_connected` attribute or a callable `is_connected()` method on `bleak_client`.
 
-            Returns:
+            Returns
+            -------
                 bool: `True` if the bleak client is connected, `False` otherwise.
 
             """
@@ -2169,7 +2194,8 @@ class BLEClient:
         """
         Write the given bytes to a GATT characteristic on the connected BLE device and wait for completion.
 
-        Raises:
+        Raises
+        ------
             BLEInterface.BLEError: If the write operation fails or times out.
 
         """
@@ -2181,7 +2207,8 @@ class BLEClient:
         """
         Retrieve the discovered GATT services and characteristics for the connected device.
 
-        Returns:
+        Returns
+        -------
             The device's GATT services and their characteristics as returned by the underlying BLE library.
 
         """
@@ -2219,6 +2246,7 @@ class BLEClient:
         Subscribe to notifications for a BLE characteristic on the connected device.
 
         Args:
+        ----
             *args: Additional arguments forwarded to the BLE backend's notification start call.
             timeout (Optional[float]): Timeout for the operation.
             **kwargs: Additional keyword arguments forwarded to the BLE backend's notification start call.
@@ -2247,7 +2275,8 @@ class BLEClient:
         """
         Enter the context manager and provide the BLEClient instance for use within the with-block.
 
-        Returns:
+        Returns
+        -------
             self: The BLEClient instance.
 
         """
@@ -2467,9 +2496,7 @@ class ConnectionValidator:
         if not self.state_manager.can_connect:
             if self.state_manager.is_closing:
                 raise BLEInterface.BLEError("Cannot connect while interface is closing")
-            raise BLEInterface.BLEError(
-                "Already connected or connection in progress"
-            )
+            raise BLEInterface.BLEError("Already connected or connection in progress")
 
     def check_existing_client(
         self,
@@ -2712,9 +2739,10 @@ class ReconnectWorker:
 
                 if self.interface.is_connection_closing or not auto_reconnect:
                     return
-                sleep_delay, should_retry = (
-                    self.interface._reconnect_policy.next_attempt()
-                )
+                (
+                    sleep_delay,
+                    should_retry,
+                ) = self.interface._reconnect_policy.next_attempt()
                 if not should_retry:
                     logger.info("Auto-reconnect reached maximum retry limit.")
                     return

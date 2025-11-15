@@ -10,9 +10,7 @@ import pytest  # type: ignore[import-untyped]
 
 # Import meshtastic modules for use in tests
 import meshtastic.ble_interface as ble_mod
-from meshtastic.ble_interface import (
-    BLEInterface,
-)
+from meshtastic.ble_interface import BLEInterface
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +58,8 @@ def mock_pubsub(monkeypatch):
     """
     Injects a fake `pubsub` module into sys.modules for tests.
 
-    Returns:
+    Returns
+    -------
         module: The injected fake `pubsub` module whose `pub` attribute is a SimpleNamespace with `subscribe`
         and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
 
@@ -84,7 +83,8 @@ def mock_publishing_thread(monkeypatch):
     The mock is inserted into sys.modules under the name "publishingThread" to provide a synchronous, deterministic
     queueWork implementation for tests.
 
-    Returns:
+    Returns
+    -------
         publishing_thread_module (module): The mocked publishingThread module inserted into sys.modules.
 
     """
@@ -136,7 +136,8 @@ def mock_bleak(monkeypatch):
     - `BleakScanner.discover`: an async coroutine that returns an empty list.
     - `BLEDevice`: a lightweight device object with `address` and `name` attributes.
 
-    Returns:
+    Returns
+    -------
         module: The fake `bleak` module object inserted into sys.modules.
 
     """
@@ -149,10 +150,12 @@ def mock_bleak(monkeypatch):
             Minimal test BLE client holding an address and a lightweight services shim.
 
             Args:
+            ----
                 address (str | None): BLE device address associated with this client, or None.
                 **_kwargs: Additional keyword arguments are accepted and ignored.
 
             Attributes:
+            ----------
                 services (types.SimpleNamespace): Provides get_characteristic(specifier) which always returns None.
 
             """
@@ -183,7 +186,8 @@ def mock_bleak(monkeypatch):
             """
             Return an empty value for a GATT characteristic read.
 
-            Returns:
+            Returns
+            -------
                 b'' (empty bytes)
 
             """
@@ -201,7 +205,8 @@ def mock_bleak(monkeypatch):
             """
             Report whether the dummy BLE client is connected.
 
-            Returns:
+            Returns
+            -------
                 False — the dummy client is never connected.
 
             """
@@ -263,10 +268,12 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
     Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
 
     Args:
+    ----
         monkeypatch: pytest monkeypatch fixture used to register the fake module.
         mock_bleak (module): The fake `bleak` module to which the `exc` submodule will be attached.
 
     Returns:
+    -------
         bleak_exc_module (module): The created `bleak.exc` module containing `BleakError` and `BleakDBusError` exception classes.
 
     """
@@ -344,7 +351,8 @@ class DummyClient:
         """
         Return an empty payload for a GATT characteristic read.
 
-        Returns:
+        Returns
+        -------
             bytes: An empty byte string (`b''`).
 
         """
@@ -354,7 +362,8 @@ class DummyClient:
         """
         Report whether the mock BLE client is connected; this stub always reports connected.
 
-        Returns:
+        Returns
+        -------
             `True` if the mock client is connected, `False` otherwise.
 
         """
@@ -366,7 +375,8 @@ class DummyClient:
 
         Increments self.disconnect_calls. If self.disconnect_exception is set, that exception is raised.
 
-        Raises:
+        Raises
+        ------
             Exception: The exception instance stored in `self.disconnect_exception`, if present.
 
         """

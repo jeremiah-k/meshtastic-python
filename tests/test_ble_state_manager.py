@@ -209,7 +209,8 @@ class TestBLEStateManager:
             """
             Read the manager's current connection state while exercising the manager's reentrant state lock.
 
-            Returns:
+            Returns
+            -------
                 ConnectionState: The current connection state.
 
             """
@@ -398,7 +399,9 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 - worker errors recorded for debugging
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads

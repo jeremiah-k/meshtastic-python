@@ -14,10 +14,7 @@ import pytest  # type: ignore[import-untyped]
 from bleak.exc import BleakError  # type: ignore[import-untyped]
 
 # Import common fixtures
-from test_ble_interface_fixtures import (
-    DummyClient,
-    _build_interface,
-)
+from test_ble_interface_fixtures import DummyClient, _build_interface
 
 # Import meshtastic modules for use in tests
 import meshtastic.ble_interface as ble_mod
@@ -116,7 +113,8 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
             """
             Provide raw GATT characteristic bytes for tests; return invalid protobuf bytes for FROMRADIO to trigger a DecodeError.
 
-            Returns:
+            Returns
+            -------
                 bytes: Invalid protobuf payload when `ble_mod.FROMRADIO_UUID` is passed as the first argument, empty bytes otherwise.
 
             """
@@ -214,7 +212,8 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
         """
         Mark that close was invoked and delegate to the original close function.
 
-        Returns:
+        Returns
+        -------
             The value returned by the original close function.
 
         """
@@ -323,7 +322,8 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             """
             Simulate a failed GATT characteristic write by raising the configured exception.
 
-            Raises:
+            Raises
+            ------
                 Exception: An instance of `self.exception_type` with the message "write failed" to emulate a write error.
 
             """
@@ -403,7 +403,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Initialize the test BLE client and its simulation state.
 
-            Attributes:
+            Attributes
+            ----------
                 connect_count (int): Number of times connect() has been invoked.
                 disconnect_count (int): Number of times disconnect() has been invoked.
                 address (str): Mock Bluetooth address identifying the client.
@@ -421,10 +422,12 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             Increments the client's `connect_count` and returns the client instance. May be configured to simulate a connection failure.
 
-            Returns:
+            Returns
+            -------
                 self: The mock client instance with `connect_count` incremented.
 
-            Raises:
+            Raises
+            ------
                 RuntimeError: If the client is configured to fail connecting (`self._should_fail_connect` is True).
 
             """
@@ -437,7 +440,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Indicate whether the mock client is connected.
 
-            Returns:
+            Returns
+            -------
                 `True` indicating the mock client always reports a connected state.
 
             """
@@ -474,7 +478,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             Creates attributes that simulate a Bleak client and track connection activity:
 
-            Attributes:
+            Attributes
+            ----------
                 bleak_client: Mock underlying bleak client instance.
                 connect_count: Number of successful connect attempts.
                 disconnect_count: Number of disconnect attempts.
@@ -498,10 +503,12 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
             Increments the client's `connect_count` and returns the client instance. May be configured to simulate a connection failure.
 
-            Returns:
+            Returns
+            -------
                 self: The mock client instance with `connect_count` incremented.
 
-            Raises:
+            Raises
+            ------
                 RuntimeError: If the client is configured to fail connecting (`self._should_fail_connect` is True).
 
             """
@@ -514,7 +521,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             """
             Indicate whether the mock client is configured as connected.
 
-            Returns:
+            Returns
+            -------
                 True if the mock client is configured as connected, False otherwise.
 
             """
@@ -557,7 +565,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         and return a StressTestClient when connecting. The returned interface has auto_reconnect enabled and
         carries a test patch stack on iface._test_patch_stack; connect attempts are recorded in iface._connect_stub_calls.
 
-        Returns:
+        Returns
+        -------
             tuple: (iface, client) where `iface` is a BLEInterface instance configured for testing and
             `client` is the StressTestClient that iface.connect() will return.
 
@@ -738,7 +747,8 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
             """
             Raise the configured exception to simulate a failing connection-state check.
 
-            Raises:
+            Raises
+            ------
                 Exception: An instance of `self.exception_type` is raised with the message "conn check failed".
 
             """
@@ -799,7 +809,8 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
             """
             Simulate retrieving the result of a future but always raise a timeout error.
 
-            Raises:
+            Raises
+            ------
                 FutureTimeoutError: Raised unconditionally to simulate a future timing out.
 
             """
@@ -932,7 +943,8 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
             """
             Simulate a failing callback by always raising ValueError.
 
-            Raises:
+            Raises
+            ------
                 ValueError: Always raised to indicate the mock callback failed during execution.
 
             """

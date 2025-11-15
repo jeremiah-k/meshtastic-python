@@ -2,13 +2,7 @@
 
 import random
 
-import pytest  # type: ignore[import-untyped]
-
-from meshtastic.ble_interface import (
-    BLEConfig,
-    ReconnectPolicy,
-    RetryPolicy,
-)
+from meshtastic.ble_interface import BLEConfig, ReconnectPolicy, RetryPolicy
 
 
 class TestReconnectPolicy:

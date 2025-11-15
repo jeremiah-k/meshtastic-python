@@ -12,10 +12,7 @@ from bleak.exc import BleakError  # type: ignore[import-untyped]
 from pubsub import pub  # type: ignore[import-untyped]
 
 # Import common fixtures
-from test_ble_interface_fixtures import (
-    DummyClient,
-    _build_interface,
-)
+from test_ble_interface_fixtures import DummyClient, _build_interface
 
 # Import meshtastic modules for use in tests
 import meshtastic.ble_interface as ble_mod
@@ -23,12 +20,12 @@ from meshtastic.ble_interface import (
     FROMNUM_UUID,
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
-    BLEInterface,
     SERVICE_UUID,
-    DiscoveryManager,
-    ConnectionValidator,
-    ConnectionState,
+    BLEInterface,
     BLEStateManager,
+    ConnectionState,
+    ConnectionValidator,
+    DiscoveryManager,
     ReconnectScheduler,
     ReconnectWorker,
 )
@@ -62,9 +59,7 @@ def test_find_device_returns_single_scan_result(monkeypatch):
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    scanned_device = _create_ble_device(
-        address="11:22:33:44:55:66", name="Test Device"
-    )
+    scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [scanned_device])
 
     result = ble_mod.BLEInterface.find_device(iface, None)
@@ -77,16 +72,15 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    fallback_device = _create_ble_device(
-        address="AA:BB:CC:DD:EE:FF", name="Fallback"
-    )
+    fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
     monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
 
     def _fake_connected(_self, _address):
         """
         Provide a fake connected-device lookup that always returns the predefined `fallback_device`.
 
-        Returns:
+        Returns
+        -------
             list: A single-element list containing the preset `fallback_device`.
 
         """
@@ -135,7 +129,8 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 
             This initializer exists solely to signal that creating a BleakScanner is not permitted under the failing guard.
 
-            Raises:
+            Raises
+            ------
                 AssertionError: "BleakScanner should not be instantiated when guard fails"
 
             """
@@ -288,9 +283,7 @@ def test_connection_validator_existing_client_checks(monkeypatch):
     client.is_connected = lambda: True
 
     assert validator.check_existing_client(client, None, None, None) is True
-    assert (
-        validator.check_existing_client(client, "dummy", "dummy", "dummy") is True
-    )
+    assert validator.check_existing_client(client, "dummy", "dummy", "dummy") is True
     assert (
         validator.check_existing_client(client, "something-else", None, None) is False
     )
@@ -418,7 +411,8 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
                 """
                 Raise the client's configured exception to simulate a failing GATT characteristic read.
 
-                Raises:
+                Raises
+                ------
                     Exception: An instance of the client's `exception_type` with the message "test".
 
                 """
@@ -490,7 +484,8 @@ def test_log_notification_registration(monkeypatch):
             """
             Initialize the mock client and set up notification tracking and characteristic availability.
 
-            Attributes:
+            Attributes
+            ----------
                 start_notify_calls (list): Records the arguments of each start_notify invocation.
                 has_characteristic_map (dict): Maps characteristic UUIDs to booleans indicating whether the
                     client reports that characteristic is present. By default, includes
