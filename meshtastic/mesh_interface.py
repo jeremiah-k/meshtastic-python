@@ -1131,7 +1131,11 @@ class MeshInterface:  # pylint: disable=R0902
             return self.currentPacketId
 
     def _disconnected(self):
-        """Called by subclasses to tell clients this interface has disconnected"""
+        """
+        Mark the interface as disconnected and notify subscribers.
+        
+        Clears the interface's connection flag and publishes events to inform listeners that the connection was lost and that the interface is no longer connected.
+        """
         self.isConnected.clear()
         publishingThread.queueWork(
             lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
@@ -1143,7 +1147,9 @@ class MeshInterface:  # pylint: disable=R0902
         )
 
     def sendHeartbeat(self):
-        """Sends a heartbeat to the radio. Can be used to verify the connection is healthy."""
+        """
+        Send a heartbeat message to the radio to maintain or verify connectivity.
+        """
         p = mesh_pb2.ToRadio()
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
         self._sendToRadio(p)
@@ -1162,7 +1168,13 @@ class MeshInterface:  # pylint: disable=R0902
         callback()  # run our periodic callback now, it will make another timer if necessary
 
     def _connected(self):
-        """Called by this class to tell clients we are now fully connected to a node"""
+        """
+        Mark the interface as connected, start the periodic heartbeat timer, and publish connection events.
+        
+        Sets the internal connected flag, starts the heartbeat scheduler, and publishes
+        "meshtastic.connection.established" and "meshtastic.connection.status" (with
+        connected=True) so clients are notified of the active connection.
+        """
         # (because I'm lazy) _connected might be called when remote Node
         # objects complete their config reads, don't generate redundant isConnected
         # for the local interface
@@ -1181,7 +1193,11 @@ class MeshInterface:  # pylint: disable=R0902
             )
 
     def _startConfig(self):
-        """Start device packets flowing"""
+        """
+        Begin configuration exchange with the device and reset local node state.
+        
+        Resets cached myInfo, node maps, and local channel list, chooses a new config ID when none exists or when node discovery is enabled (avoiding the reserved NODELESS_WANT_CONFIG_ID), and sends a ToRadio message requesting configuration from the device.
+        """
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
