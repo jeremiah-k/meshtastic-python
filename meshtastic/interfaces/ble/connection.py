@@ -93,7 +93,9 @@ class ClientManager:
                 )
                 self.thread_coordinator.start_thread(close_thread)
 
-    def safe_close_client(self, client: BLEClient, event: Optional[Event] = None) -> None:
+    def safe_close_client(
+        self, client: BLEClient, event: Optional[Event] = None
+    ) -> None:
         """Close the provided BLEClient and suppress common close-time errors."""
         self.error_handler.safe_cleanup(client.close, "client close")
         if event:
@@ -125,9 +127,7 @@ class ConnectionOrchestrator:
         self,
         address: Optional[str],
         current_address: Optional[str],
-        last_connection_request: Optional[str],
         register_notifications_func,
-        on_connected_func,
         on_disconnect_func,
     ) -> BLEClient:
         self.validator.validate_connection_request()
@@ -145,7 +145,6 @@ class ConnectionOrchestrator:
             self.client_manager.connect_client(client)
             register_notifications_func(client)
             self.state_manager.transition_to(ConnectionState.CONNECTED, client)
-            on_connected_func()
             self.thread_coordinator.set_event("reconnected_event")
             normalized_device_address = sanitize_address(device.address)
             logger.info(

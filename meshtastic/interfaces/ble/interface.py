@@ -18,8 +18,10 @@ from bleak import BleakClient as BleakRootClient
 from bleak.exc import BleakDBusError, BleakError
 
 if TYPE_CHECKING:
+
     class DecodeError(Exception):
         """Fallback DecodeError type used for static type checking."""
+
         pass
 else:  # pragma: no cover - import real exception only at runtime
     from google.protobuf.message import DecodeError
@@ -108,6 +110,7 @@ AUTO_RECONNECT_JITTER_RATIO = BLEConfig.AUTO_RECONNECT_JITTER_RATIO
 BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION = (
     BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
 )
+
 
 class BLEInterface(MeshInterface):
     """
@@ -811,9 +814,7 @@ class BLEInterface(MeshInterface):
         client = self._connection_orchestrator.establish_connection(
             address,
             self.address,
-            self._last_connection_request,
             self._register_notifications,
-            self._connected,
             self._on_ble_disconnect,
         )
 
