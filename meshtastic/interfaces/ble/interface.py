@@ -698,7 +698,7 @@ class BLEInterface(MeshInterface):
 
         if hasattr(self, "_discovery_manager"):
             addressed_devices = self._discovery_manager.discover_devices(address)
-        else:
+        else:  # pragma: no cover - legacy path for partially constructed test doubles
             addressed_devices = BLEInterface.scan()
             if not addressed_devices and address:
                 logger.debug(

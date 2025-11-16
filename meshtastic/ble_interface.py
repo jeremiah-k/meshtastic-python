@@ -9,6 +9,7 @@ from meshtastic.interfaces.ble import (
     __all__ as _INTERFACE_ALL,
     _bleak_supports_connected_fallback as _bleak_supports_connected_fallback,
     _sleep as _sleep,
+    logger as logger,
 )
 
-__all__ = list(_INTERFACE_ALL) + ["_sleep", "_bleak_supports_connected_fallback"]
+__all__ = [*_INTERFACE_ALL, "_sleep", "_bleak_supports_connected_fallback", "logger"]

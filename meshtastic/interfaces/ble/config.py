@@ -125,7 +125,7 @@ class ReconnectPolicy:
 class RetryPolicy:
     """Static retry policy presets for BLE operations.
 
-    These presets are intentionally stateless – call sites pass their own
+    These presets are intentionally stateless - call sites pass their own
     attempt counters into `get_delay()`/`should_retry()` rather than relying on
     the internal counter.
     """

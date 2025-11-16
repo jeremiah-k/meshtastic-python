@@ -79,7 +79,9 @@ class ConnectedStrategy(DiscoveryStrategy):
 
                     if sanitized_target:
                         sanitized_addr = sanitize_address(device.address)
-                        sanitized_name = sanitize_address(device.name)
+                        sanitized_name = (
+                            sanitize_address(device.name) if device.name else None
+                        )
                         if sanitized_target not in (sanitized_addr, sanitized_name):
                             continue
 

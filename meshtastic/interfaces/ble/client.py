@@ -40,6 +40,7 @@ class BLEClient:
         self._eventThread = Thread(target=self._run_event_loop, name="BLEClient", daemon=True)
         self._eventThread.start()
 
+        self.bleak_client: Optional[BleakRootClient] = None
         if not address:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
@@ -87,19 +88,22 @@ class BLEClient:
         )
 
     def get_services(self):
-        """Retrieve the last cached set of services from the underlying Bleak client."""
-        return self.bleak_client.services
+        """Retrieve services from the underlying Bleak client, discovering them if needed."""
+        bleak_client = getattr(self, "bleak_client", None)
+        if bleak_client is None:
+            raise self.BLEError("BLE client not initialized; provide an address when constructing BLEClient.")
+
+        services = getattr(bleak_client, "services", None)
+        if not services or not getattr(services, "get_characteristic", None):
+            getter = getattr(bleak_client, "get_services", None)
+            if getter is None:
+                raise self.BLEError("BLE backend does not expose get_services()")
+            services = self.async_await(getter())
+        return getattr(bleak_client, "services", services)
 
     def has_characteristic(self, specifier):
         """Return True if the characteristic is present."""
-        services = getattr(self.bleak_client, "services", None)
-        if not services or not getattr(services, "get_characteristic", None):
-            self.error_handler.safe_execute(
-                lambda: self.get_services(),
-                error_msg="Unable to populate services before has_characteristic",
-                reraise=False,
-            )
-            services = getattr(self.bleak_client, "services", None)
+        services = self.get_services()
         return bool(services and services.get_characteristic(specifier))
 
     def start_notify(self, *args, timeout: Optional[float] = None, **kwargs):
