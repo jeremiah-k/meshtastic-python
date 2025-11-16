@@ -55,20 +55,21 @@ class ThreadCoordinator:
     def join_thread(self, thread: Thread, timeout: Optional[float] = None) -> None:
         """Join a tracked thread with the specified timeout."""
         with self._lock:
-            if (
+            should_join = (
                 thread in self._threads
                 and thread.is_alive()
                 and thread is not current_thread()
-            ):
-                thread.join(timeout=timeout)
+            )
+        if should_join:
+            thread.join(timeout=timeout)
 
     def join_all(self, timeout: Optional[float] = None) -> None:
         """Join all tracked threads with the specified timeout."""
         with self._lock:
             current = current_thread()
-            for thread in self._threads:
-                if thread.is_alive() and thread is not current:
-                    thread.join(timeout=timeout)
+            to_join = [t for t in self._threads if t.is_alive() and t is not current]
+        for thread in to_join:
+            thread.join(timeout=timeout)
 
     def set_event(self, name: str) -> None:
         """Set the tracked event with the specified name."""
@@ -110,16 +111,16 @@ class ThreadCoordinator:
     def cleanup(self) -> None:
         """Signal all events, join tracked threads, and reset state."""
         with self._lock:
-            for event in self._events.values():
-                event.set()
-
+            events = list(self._events.values())
             current = current_thread()
-            for thread in self._threads:
-                if thread.is_alive() and thread is not current:
-                    thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
-
+            to_join = [t for t in self._threads if t.is_alive() and t is not current]
             self._threads.clear()
             self._events.clear()
+
+        for event in events:
+            event.set()
+        for thread in to_join:
+            thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
 
 
 __all__ = ["ThreadCoordinator"]

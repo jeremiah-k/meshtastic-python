@@ -51,6 +51,10 @@ class ConnectedStrategy(DiscoveryStrategy):
             if hasattr(scanner, "_backend") and hasattr(
                 scanner._backend, "get_devices"
             ):
+                # NOTE: Bleak does not yet expose connected-device enumeration via a
+                # public API, so we rely on the backend's private get_devices()
+                # helper. Keep this guarded and documented so reviewers know the
+                # trade-off is intentional.
                 getter = scanner._backend.get_devices
                 loop = asyncio.get_running_loop()
                 if inspect.iscoroutinefunction(getter):
@@ -89,7 +93,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                         )
                     )
             return devices_found
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - best-effort guard
             logger.debug("Connected device discovery failed: %s", e)
             return []
 
@@ -151,7 +155,7 @@ class DiscoveryManager:
                         logger.debug("Connected device fallback failed: %s", e)
 
                 return devices
-            except Exception as e:
+            except Exception as e:  # pragma: no cover - best-effort guard
                 logger.debug("Device discovery failed: %s", e)
                 return []
 
@@ -189,7 +193,7 @@ def run_connected_device_lookup(
         )
         thread.join(timeout=0.1)
         return []
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - best-effort guard
         logger.debug("Connected device discovery thread failed: %s", exc)
         thread.join(timeout=0.1)
         return []

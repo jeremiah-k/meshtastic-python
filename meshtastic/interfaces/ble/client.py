@@ -73,9 +73,12 @@ class BLEClient:
                 if callable(connected):
                     connected = connected()
                 return bool(connected)
-            except Exception:
+            except (AttributeError, TypeError):
                 logger.debug("Unable to read bleak connection state")
                 return False
+            except Exception:
+                logger.debug("Unable to read bleak connection state")
+                raise
 
         return self.error_handler.safe_execute(
             _check_connection,

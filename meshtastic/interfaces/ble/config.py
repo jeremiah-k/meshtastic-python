@@ -123,7 +123,12 @@ class ReconnectPolicy:
 
 
 class RetryPolicy:
-    """Static retry policy presets for BLE operations."""
+    """Static retry policy presets for BLE operations.
+
+    These presets are intentionally stateless – call sites pass their own
+    attempt counters into `get_delay()`/`should_retry()` rather than relying on
+    the internal counter.
+    """
 
     EMPTY_READ = ReconnectPolicy(
         initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
@@ -217,7 +222,6 @@ __all__ = [
     "RetryPolicy",
     "SERVICE_UUID",
     "TORADIO_UUID",
-    "_sleep",
     "bleak_supports_connected_fallback",
     "logger",
 ]

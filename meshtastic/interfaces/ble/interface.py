@@ -389,7 +389,10 @@ class BLEInterface(MeshInterface):
             self._state_manager.transition_to(ConnectionState.DISCONNECTING)
             # Auto-reconnect disabled - close interface
             logger.debug("Auto-reconnect disabled, closing interface.")
-            self.close()
+            close_thread = self.thread_coordinator.create_thread(
+                target=self.close, name="BLECloseOnDisconnect", daemon=True
+            )
+            self.thread_coordinator.start_thread(close_thread)
             return False
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
@@ -922,7 +925,9 @@ class BLEInterface(MeshInterface):
                             return
                         self._handle_transient_read_error(e)
                         continue
-        except Exception:
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:  # noqa: BLE001 - ensure receive thread can't die silently
             logger.exception("Fatal error in BLE receive thread, closing interface.")
             # Use state manager instead of boolean flag
             if not self._state_manager.is_closing:
