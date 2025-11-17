@@ -16,10 +16,15 @@ ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
-    Extract a three-part integer version tuple from `version_str`.
-
-    This helper is intentionally permissive — non-numeric segments are ignored and
-    missing components are treated as zeros.
+    Extract a three-part integer version tuple from version_str.
+    
+    Non-numeric segments are ignored; the first three numeric groups are converted to integers and missing components are treated as zeros. If conversion fails, returns (0, 0, 0).
+    
+    Parameters:
+        version_str (str): Version string to parse.
+    
+    Returns:
+        Tuple[int, int, int]: A (major, minor, patch) integer triplet parsed from the input.
     """
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
@@ -35,7 +40,10 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
 
 def bleak_supports_connected_fallback() -> bool:
     """
-    Determine whether the installed bleak version supports the connected-device fallback.
+    Determine if the installed Bleak version meets the minimum required for the connected-device fallback.
+    
+    Returns:
+        `true` if the current Bleak version is greater than or equal to BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, `false` otherwise.
     """
     return (
         _parse_version_triplet(BLEAK_VERSION)
@@ -45,12 +53,18 @@ def bleak_supports_connected_fallback() -> bool:
 
 async def with_timeout(awaitable, timeout: Optional[float], label: str):
     """
-    Await `awaitable`, enforcing `timeout` seconds if provided.
-
-    Raises
-    ------
-        BLEError: when the awaitable does not finish before the timeout elapses.
-
+    Await an awaitable and enforce a timeout if provided.
+    
+    Parameters:
+        awaitable: The awaitable to await.
+        timeout (Optional[float]): Maximum time in seconds to wait; if None, wait indefinitely.
+        label (str): Identifier inserted into the timeout error message.
+    
+    Returns:
+        The result produced by the awaitable.
+    
+    Raises:
+        BLEError: if the awaitable does not complete within `timeout` seconds.
     """
     if timeout is None:
         return await awaitable
@@ -62,17 +76,13 @@ async def with_timeout(awaitable, timeout: Optional[float], label: str):
 
 def sanitize_address(address: Optional[str]) -> Optional[str]:
     """
-    Normalize a BLE address by removing common separators and converting to lowercase.
-
-    Args:
-    ----
-        address (Optional[str]): BLE address or identifier; may be None or empty/whitespace.
-
+    Normalize a BLE address or identifier by removing common separators and lowercasing it.
+    
+    Parameters:
+        address (Optional[str]): A BLE address or identifier; may be None or whitespace-only.
+    
     Returns:
-    -------
-        Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace,
-            and lowercased, or `None` if `address` is None or contains only whitespace.
-
+        Optional[str]: The address trimmed, with all '-', '_', ':', and spaces removed and lowercased, or `None` if `address` is None or contains only whitespace.
     """
     if address is None or not address.strip():
         return None
@@ -93,7 +103,16 @@ def build_ble_device(
     address: str, name: Optional[str], details: Dict[str, Any], rssi: int
 ) -> BLEDevice:
     """
-    Instantiate BLEDevice instances while handling bleak signature differences.
+    Create a BLEDevice instance using whichever constructor parameters the installed bleak supports.
+    
+    Parameters:
+        address (str): Device address or identifier.
+        name (Optional[str]): Device name.
+        details (Dict[str, Any]): Backend-specific details; included only if the installed bleak's BLEDevice accepts `details`.
+        rssi (int): Signal strength; included only if the installed bleak's BLEDevice accepts `rssi`.
+    
+    Returns:
+        BLEDevice: A BLEDevice instance constructed with the available fields based on the bleak BLEDevice constructor signature.
     """
     params: Dict[str, Any] = {"address": address, "name": name}
     if "details" in _BLE_DEVICE_SIGNATURE.parameters:

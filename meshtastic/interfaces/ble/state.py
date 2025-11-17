@@ -31,7 +31,12 @@ class BLEStateManager:
     """
 
     def __init__(self):
-        """Initialize state manager with disconnected state."""
+        """
+        Create a BLEStateManager with the initial DISCONNECTED state and a reentrant lock.
+        
+        Initializes a single RLock used to serialize state transitions, sets the internal state to
+        ConnectionState.DISCONNECTED, and initializes the associated client reference to None.
+        """
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
         self._client: Optional["BLEClient"] = None
@@ -43,45 +48,68 @@ class BLEStateManager:
 
     @property
     def state(self) -> ConnectionState:
-        """Get current connection state."""
+        """
+        Retrieve the current BLE connection state.
+        
+        Returns:
+            current_state (ConnectionState): The active connection state.
+        """
         with self._state_lock:
             return self._state
 
     @property
     def is_connected(self) -> bool:
-        """Check if currently connected."""
+        """
+        Indicates whether the manager is in the CONNECTED state.
+        
+        Returns:
+            True if the current state is ConnectionState.CONNECTED, False otherwise.
+        """
         return self.state == ConnectionState.CONNECTED
 
     @property
     def is_closing(self) -> bool:
-        """Check if interface is closing or in error state."""
+        """
+        Indicates whether the connection is closing or in an error state.
+        
+        Returns:
+            bool: `true` if the current state is DISCONNECTING or ERROR, `false` otherwise.
+        """
         return self.state in (ConnectionState.DISCONNECTING, ConnectionState.ERROR)
 
     @property
     def can_connect(self) -> bool:
-        """Check if a new connection can be initiated."""
+        """
+        Indicates whether a new BLE connection may be started.
+        
+        Returns:
+            True if the manager is in the DISCONNECTED state, False otherwise.
+        """
         return self.state == ConnectionState.DISCONNECTED
 
     @property
     def client(self) -> Optional["BLEClient"]:
-        """Get current BLE client."""
+        """
+        Return the BLE client associated with the current connection state.
+        
+        Returns:
+            The associated `BLEClient` instance, or `None` if no client is set.
+        """
         with self._state_lock:
             return self._client
 
     def transition_to(
         self, new_state: ConnectionState, client: Optional["BLEClient"] = None
     ) -> bool:
-        """Thread-safe state transition with validation.
-
-        Args:
-        ----
-            new_state: Target state to transition to
-            client: BLE client associated with this transition (optional)
-
+        """
+        Attempt a thread-safe transition of the manager's connection state to the specified target state.
+        
+        Parameters:
+            new_state (ConnectionState): Target state to transition to.
+            client (Optional[BLEClient]): BLE client to associate with the new state. If omitted and `new_state` is `ConnectionState.DISCONNECTED`, the stored client reference is cleared.
+        
         Returns:
-        -------
-            True if transition was valid and applied, False otherwise
-
+            bool: `True` if the transition was allowed and applied, `False` otherwise.
         """
         with self._state_lock:
             if self._is_valid_transition(self._state, new_state):
@@ -105,17 +133,15 @@ class BLEStateManager:
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
     ) -> bool:
-        """Validate if a state transition is allowed.
-
-        Args:
-        ----
-            from_state: Current state
-            to_state: Desired next state
-
+        """
+        Determine whether a transition between two connection states is allowed.
+        
+        Parameters:
+            from_state (ConnectionState): Current connection state.
+            to_state (ConnectionState): Candidate next connection state.
+        
         Returns:
-        -------
-            True if transition is valid, False otherwise
-
+            bool: `True` if the transition from `from_state` to `to_state` is permitted, `False` otherwise.
         """
         # Define valid transitions based on connection lifecycle
         valid_transitions = {

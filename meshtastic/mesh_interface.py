@@ -1131,7 +1131,12 @@ class MeshInterface:  # pylint: disable=R0902
             return self.currentPacketId
 
     def _disconnected(self):
-        """Called by subclasses to tell clients this interface has disconnected"""
+        """
+        Mark the interface as disconnected and notify subscribers.
+        
+        Clears the internal connected flag and enqueues notifications via the publishing thread:
+        sends `meshtastic.connection.lost` and `meshtastic.connection.status` with `connected=False`.
+        """
         self.isConnected.clear()
         publishingThread.queueWork(
             lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
@@ -1162,7 +1167,13 @@ class MeshInterface:  # pylint: disable=R0902
         callback()  # run our periodic callback now, it will make another timer if necessary
 
     def _connected(self):
-        """Called by this class to tell clients we are now fully connected to a node"""
+        """
+        Mark the interface as fully connected and notify clients.
+        
+        Sets the internal connected state, starts the heartbeat timer, and publishes
+        meshtastic.connection.established and meshtastic.connection.status (connected=True)
+        events so subscribers can react to the connection.
+        """
         # (because I'm lazy) _connected might be called when remote Node
         # objects complete their config reads, don't generate redundant isConnected
         # for the local interface
@@ -1181,7 +1192,11 @@ class MeshInterface:  # pylint: disable=R0902
             )
 
     def _startConfig(self):
-        """Start device packets flowing"""
+        """
+        Initialize configuration state and request device configuration from the radio.
+        
+        Clears cached node and channel state (myInfo, nodes, nodesByNum, and local channels), ensures a configId is assigned, and sends a start-config message to the radio to begin the device configuration flow.
+        """
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
@@ -1300,17 +1315,12 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _handleFromRadio(self, fromRadioBytes):
         """
-        Process a raw FromRadio protobuf message and update interface state and event streams.
-
-        Parses the provided FromRadio bytes, updates internal state (myInfo, metadata, node records, local configuration, and queue status),
-        and enqueues pubsub notifications for node updates, client notifications, MQTT proxy messages, xmodem packets, log records,
-        and other radio events. Malformed or unparseable protobuf payloads are discarded without raising.
-
-        Parameters
-        ----------
-            fromRadioBytes (bytes | bytearray): Raw FromRadio protobuf payload received from the radio. bytearray inputs are accepted and
-                converted to bytes before parsing.
-
+        Process and dispatch a raw FromRadio protobuf payload, updating interface state and publishing related events.
+        
+        Parses the provided bytes into a FromRadio message and, on success, updates myInfo, metadata, node records, local configuration, and queue status. Also enqueues pubsub notifications for node updates, client notifications, MQTT proxy messages, xmodem packets, log records, packet receptions, and other radio events. If protobuf parsing fails with a DecodeError the payload is discarded without raising; other exceptions are re-raised.
+        
+        Parameters:
+            fromRadioBytes (bytes | bytearray): Raw FromRadio protobuf payload; bytearray inputs are accepted and converted to bytes before parsing.
         """
         fromRadio = mesh_pb2.FromRadio()
         # Ensure we have bytes, not bytearray (BLE interface can return bytearray)
