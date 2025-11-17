@@ -2,7 +2,9 @@
 import asyncio
 import inspect
 import logging
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from abc import ABC, abstractmethod
+from threading import Thread
 from typing import List, Optional, TYPE_CHECKING
 
 from bleak import BLEDevice, BleakScanner
@@ -44,77 +46,12 @@ class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery strategy that enumerates already-connected devices."""
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """
-        Discover already-connected BLE devices that advertise the module service UUID, optionally filtering by address or name.
-        
-        This attempts to enumerate devices from the Bleak backend and returns those whose metadata includes SERVICE_UUID. If `address` is provided, only devices whose sanitized address or sanitized name matches the sanitized `address` are returned. If the Bleak backend does not support connected-device enumeration or an error occurs, an empty list is returned.
-        
-        Parameters:
-            address (Optional[str]): Optional target address or name to filter discovered connected devices.
-            timeout (float): Maximum number of seconds to wait for the backend device enumeration.
-        
-        Returns:
-            List[BLEDevice]: A list of connected BLEDevice objects that advertise SERVICE_UUID and match the optional address filter; empty if none found, unsupported, or on error.
-        """
-        if not bleak_supports_connected_fallback():
-            logger.debug(
-                "Skipping fallback connected-device scan; bleak %s < %s",
-                BLEAK_VERSION,
-                ".".join(
-                    str(part)
-                    for part in BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
-                ),
-            )
-            return []
-
+        loop = asyncio.get_running_loop()
         try:
-            scanner = BleakScanner()
-            devices_found: List[BLEDevice] = []
-            if hasattr(scanner, "_backend") and hasattr(
-                scanner._backend, "get_devices"
-            ):
-                getter = scanner._backend.get_devices
-                loop = asyncio.get_running_loop()
-                if inspect.iscoroutinefunction(getter):
-                    backend_devices = await with_timeout(
-                        getter(),
-                        timeout,
-                        "connected-device enumeration",
-                    )
-                else:
-                    backend_devices = await with_timeout(
-                        loop.run_in_executor(None, getter),
-                        timeout,
-                        "connected-device enumeration",
-                    )
-
-                sanitized_target = (
-                    sanitize_address(address) if address else None
-                )
-                for device in backend_devices or []:
-                    metadata = dict(getattr(device, "metadata", None) or {})
-                    uuids = metadata.get("uuids", [])
-                    if SERVICE_UUID not in uuids:
-                        continue
-
-                    if sanitized_target:
-                        sanitized_addr = sanitize_address(device.address)
-                        sanitized_name = sanitize_address(device.name)
-                        if sanitized_target not in (sanitized_addr, sanitized_name):
-                            continue
-
-                    rssi = getattr(device, "rssi", 0)
-                    metadata.setdefault("rssi", rssi)
-                    devices_found.append(
-                        build_ble_device(
-                            device.address,
-                            device.name,
-                            metadata,
-                            rssi,
-                        )
-                    )
-            return devices_found
-        except Exception as e:  # pragma: no cover  # noqa: BLE001 - best-effort fallback
+            return await loop.run_in_executor(
+                None, lambda: _enumerate_connected_devices(address, timeout)
+            )
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             logger.debug("Connected device discovery failed: %s", e)
             return []
 
@@ -191,16 +128,99 @@ class DiscoveryManager:
         """
         Attempt to discover already-connected devices restricted to `address`.
         """
-        return self._discover_connected(address)
-
-    def _discover_connected(self, address: str) -> List[BLEDevice]:
         try:
-            with BLEClient(log_if_no_address=False) as client:
-                return client.async_await(
-                    self.connected_strategy.discover(
-                        address, BLEConfig.BLE_SCAN_TIMEOUT
-                    )
-                )
+            return _enumerate_connected_devices(address, BLEConfig.BLE_SCAN_TIMEOUT)
         except Exception as e:  # pragma: no cover  # noqa: BLE001
             logger.debug("Connected device fallback failed: %s", e)
             return []
+
+
+def _enumerate_connected_devices(
+    address: Optional[str], timeout: float
+) -> List[BLEDevice]:
+    if not bleak_supports_connected_fallback():
+        logger.debug(
+            "Skipping fallback connected-device scan; bleak %s < %s",
+            BLEAK_VERSION,
+            ".".join(
+                str(part)
+                for part in BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
+            ),
+        )
+        return []
+
+    async def _get_devices_async(address_to_find: Optional[str]) -> List[BLEDevice]:
+        scanner = BleakScanner()
+        devices_found: List[BLEDevice] = []
+        if hasattr(scanner, "_backend") and hasattr(scanner._backend, "get_devices"):
+            getter = scanner._backend.get_devices
+            if inspect.iscoroutinefunction(getter):
+                backend_devices = await getter()
+            else:
+                backend_devices = getter()
+
+            sanitized_target = sanitize_address(address_to_find) if address_to_find else None
+            for device in backend_devices or []:
+                metadata = dict(getattr(device, "metadata", None) or {})
+                uuids = metadata.get("uuids", [])
+                if SERVICE_UUID not in uuids:
+                    continue
+
+                if sanitized_target:
+                    sanitized_addr = sanitize_address(device.address)
+                    sanitized_name = sanitize_address(device.name)
+                    if sanitized_target not in (sanitized_addr, sanitized_name):
+                        continue
+
+                rssi = getattr(device, "rssi", 0)
+                metadata.setdefault("rssi", rssi)
+                devices_found.append(
+                    build_ble_device(
+                        device.address,
+                        device.name,
+                        metadata,
+                        rssi,
+                    )
+                )
+        return devices_found
+
+    def _run() -> List[BLEDevice]:
+        return asyncio.run(
+            with_timeout(
+                _get_devices_async(address),
+                timeout,
+                "connected-device fallback",
+            )
+        )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            return _run()
+        except Exception as exc:  # pragma: no cover  # noqa: BLE001
+            logger.debug("Connected device discovery failed: %s", exc)
+            return []
+
+    future: Future[List[BLEDevice]] = Future()
+
+    def _runner():
+        try:
+            future.set_result(_run())
+        except Exception as exc:
+            future.set_exception(exc)
+
+    thread = Thread(target=_runner, name="BLEConnectedFallback", daemon=True)
+    thread.start()
+    try:
+        return future.result(timeout=timeout)
+    except FutureTimeoutError:
+        logger.debug(
+            "Connected-device fallback thread exceeded %.1fs timeout", timeout
+        )
+        future.cancel()
+        thread.join(timeout=0.1)
+        return []
+    except Exception as exc:  # pragma: no cover  # noqa: BLE001
+        logger.debug("Connected device discovery failed: %s", exc)
+        return []
