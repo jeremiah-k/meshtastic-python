@@ -140,28 +140,33 @@ def test_find_device_normalizes_address_filters():
     )
     other_device = _create_ble_device(address="11:22:33:44:55:66", name="Other")
 
-    captured = {}
+    class FakeDiscovery:
+        def __init__(self):
+            self.scan_address = None
+            self.connected_address = None
 
-    def _fake_discover(requested_address):
-        """
-        Capture the address passed to the discovery manager and return a predefined list of devices.
-        
-        Parameters:
-            requested_address (str | None): The address value supplied to the discovery call.
-        
-        Returns:
-            list: A list containing `expected_device` and `other_device`.
-        """
-        captured["address"] = requested_address
-        return [expected_device, other_device]
+        def discover_devices(self, requested_address):
+            """
+            Record the scan address and return a list without the expected target.
+            """
+            self.scan_address = requested_address
+            return [other_device]
 
-    iface._discovery_manager = SimpleNamespace(discover_devices=_fake_discover)
+        def discover_connected_devices(self, requested_address):
+            """
+            Record the connected-device fallback address and return the expected target.
+            """
+            self.connected_address = requested_address
+            return [expected_device]
+
+    iface._discovery_manager = FakeDiscovery()
 
     query = "aa bb cc dd ee ff"
     result = BLEInterface.find_device(iface, query)
 
     assert result is expected_device
-    assert captured["address"] == query
+    assert iface._discovery_manager.scan_address == query
+    assert iface._discovery_manager.connected_address == query
 
 
 def test_find_device_multiple_matches_raises():

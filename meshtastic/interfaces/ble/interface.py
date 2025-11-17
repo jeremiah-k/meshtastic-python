@@ -759,6 +759,14 @@ class BLEInterface(MeshInterface):
                     if sanitized_address in (sanitized_name, sanitized_device_address):
                         filtered_devices.append(device)
                 addressed_devices = filtered_devices
+                if not addressed_devices:
+                    logger.debug(
+                        "No scanned devices matched %s; attempting connected-device fallback",
+                        address,
+                    )
+                    addressed_devices = self._discovery_manager.discover_connected_devices(
+                        address
+                    )
 
         if len(addressed_devices) == 0:
             if address:

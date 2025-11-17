@@ -180,17 +180,27 @@ class DiscoveryManager:
                     logger.debug(
                         "Scan found no devices, trying fallback to already-connected devices"
                     )
-                    try:
-                        fallback = client.async_await(
-                            self.connected_strategy.discover(
-                                address, BLEConfig.BLE_SCAN_TIMEOUT
-                            )
-                        )
-                        devices.extend(fallback)
-                    except Exception as e:  # pragma: no cover  # noqa: BLE001
-                        logger.debug("Connected device fallback failed: %s", e)
+                    devices.extend(self._discover_connected(address))
 
                 return devices
             except Exception as e:  # noqa: BLE001 - discovery must never raise
                 logger.debug("Device discovery failed: %s", e)
                 return []
+
+    def discover_connected_devices(self, address: str) -> List[BLEDevice]:
+        """
+        Attempt to discover already-connected devices restricted to `address`.
+        """
+        return self._discover_connected(address)
+
+    def _discover_connected(self, address: str) -> List[BLEDevice]:
+        try:
+            with BLEClient(log_if_no_address=False) as client:
+                return client.async_await(
+                    self.connected_strategy.discover(
+                        address, BLEConfig.BLE_SCAN_TIMEOUT
+                    )
+                )
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
+            logger.debug("Connected device fallback failed: %s", e)
+            return []
