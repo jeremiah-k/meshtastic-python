@@ -37,29 +37,22 @@ class BLEErrorHandler:
         reraise: bool = False,
     ):
         """
-        Execute a callable and return its result while converting handled exceptions into a default value.
-
-        Args:
-        ----
+        Execute a zero-argument callable and return its result, falling back to a provided default on failure.
+        
+        Handles BLE- and decode-related exceptions (BleakError, BleakDBusError, DecodeError, FutureTimeoutError) as well as other exceptions; handled exceptions are logged when requested.
+        
+        Parameters:
             func (callable): A zero-argument callable to execute.
-            default_return: Value to return if execution fails; defaults to None.
-            log_error (bool): If True, log caught exceptions; defaults to True.
-            error_msg (str): Message used when logging errors; defaults to "Error in operation".
+            default_return: Value to return if execution fails.
+            log_error (bool): If True, log caught exceptions.
+            error_msg (str): Message prefix used when logging errors.
             reraise (bool): If True, re-raise any caught exception instead of returning default_return.
-
+        
         Returns:
-        -------
-            The value returned by `func()` on success, or `default_return` if a handled exception occurs.
-
+            The value returned by `func()` on success, or `default_return` if execution failed.
+        
         Raises:
-        ------
             Exception: Re-raises the original exception if `reraise` is True.
-
-        Notes:
-        -----
-            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError;
-        all other exceptions are also caught and treated the same.
-
         """
         try:
             return func()
@@ -78,7 +71,15 @@ class BLEErrorHandler:
 
     @staticmethod
     def safe_cleanup(func, cleanup_name: str = "cleanup operation"):
-        """Safely execute cleanup operations without raising exceptions."""
+        """
+        Execute a cleanup callable and suppress any exceptions raised during its execution.
+        
+        If the callable raises an exception, the error is caught and logged at debug level with the provided cleanup name; exceptions are not propagated.
+        
+        Parameters:
+            func (Callable[[], Any]): Zero-argument cleanup function to execute.
+            cleanup_name (str): Human-readable name for the cleanup operation used in the log message.
+        """
         try:
             func()
         except Exception as e:  # noqa: BLE001 - cleanup paths must not raise

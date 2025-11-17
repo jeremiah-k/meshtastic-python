@@ -26,13 +26,36 @@ class DiscoveryStrategy(ABC):
 
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """Return a list of BLEDevice entries discovered via this strategy."""
+        """
+        Discover BLE devices currently connected to the system, optionally filtered by address.
+        
+        Attempts to enumerate connected BLE devices via the platform backend and returns devices that advertise the configured service UUID. If the backend does not support connected-device enumeration or an error occurs, an empty list is returned.
+        
+        Parameters:
+            address (Optional[str]): Optional device address or name to filter results; matching is performed against a sanitized form.
+            timeout (float): Maximum time in seconds to wait for the backend enumeration.
+        
+        Returns:
+            List[BLEDevice]: A list of discovered BLEDevice objects that advertise the configured service UUID (may be empty).
+        """
 
 
 class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery strategy that enumerates already-connected devices."""
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """
+        Discover already-connected BLE devices that advertise the module service UUID, optionally filtering by address or name.
+        
+        This attempts to enumerate devices from the Bleak backend and returns those whose metadata includes SERVICE_UUID. If `address` is provided, only devices whose sanitized address or sanitized name matches the sanitized `address` are returned. If the Bleak backend does not support connected-device enumeration or an error occurs, an empty list is returned.
+        
+        Parameters:
+            address (Optional[str]): Optional target address or name to filter discovered connected devices.
+            timeout (float): Maximum number of seconds to wait for the backend device enumeration.
+        
+        Returns:
+            List[BLEDevice]: A list of connected BLEDevice objects that advertise SERVICE_UUID and match the optional address filter; empty if none found, unsupported, or on error.
+        """
         if not bleak_supports_connected_fallback():
             logger.debug(
                 "Skipping fallback connected-device scan; bleak %s < %s",
@@ -100,9 +123,25 @@ class DiscoveryManager:
     """Orchestrates scanning + connected-device fallback logic."""
 
     def __init__(self):
+        """
+        Initialize the DiscoveryManager and its connected-device fallback strategy.
+        
+        Creates a single ConnectedStrategy instance assigned to self.connected_strategy for use when scans yield no devices and a connected-device fallback is needed.
+        """
         self.connected_strategy = ConnectedStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
+        """
+        Discover BLE devices advertising the configured service UUID, optionally falling back to already-connected devices when an address is provided.
+        
+        Performs a BLE scan filtered to SERVICE_UUID and, if no devices are found and an address is supplied, attempts a connected-device enumeration fallback. Any errors during scanning or fallback are caught and result in an empty list or the devices found so far.
+        
+        Parameters:
+            address (Optional[str]): Optional device address or name used to narrow the connected-device fallback; ignored for the initial scan.
+        
+        Returns:
+            List[BLEDevice]: Devices that advertise SERVICE_UUID; returns an empty list if none are found or on error.
+        """
         with BLEClient(log_if_no_address=False) as client:
             try:
                 logger.debug(
