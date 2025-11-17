@@ -1,9 +1,10 @@
 """BLE discovery strategies."""
+import atexit
 import asyncio
 import inspect
 import logging
 from abc import ABC, abstractmethod
-from threading import Thread
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import List, Optional, TYPE_CHECKING
 
 from bleak import BLEDevice, BleakScanner
@@ -196,39 +197,29 @@ def _enumerate_connected_devices(
     )
 
 
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="BLECoroutineRunner")
+atexit.register(lambda: _executor.shutdown(wait=False))
+
+
 def _run_coroutine_factory(func, timeout: float, label: str) -> List[BLEDevice]:
     """
-    Execute `func` (which must return a coroutine) either directly via asyncio.run or in a helper thread when an event loop is already running.
+    Execute `func` (which must return a coroutine) in a dedicated thread with its own asyncio event loop.
     """
 
-    def _run() -> List[BLEDevice]:
-        return asyncio.run(with_timeout(func(), timeout, label))
-
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        try:
-            return _run()
-        except Exception as exc:  # pragma: no cover  # noqa: BLE001
-            logger.debug("%s failed: %s", label, exc)
-            return []
-
-    future: Future[List[BLEDevice]] = Future()
-
     def _runner():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            future.set_result(_run())
-        except Exception as exc:
-            future.set_exception(exc)
+            return loop.run_until_complete(with_timeout(func(), timeout, label))
+        finally:
+            loop.close()
 
-    thread = Thread(target=_runner, name="BLECoroutineRunner", daemon=True)
-    thread.start()
+    future = _executor.submit(_runner)
     try:
         return future.result(timeout=timeout)
     except FutureTimeoutError:
         logger.debug("%s thread exceeded %.1fs timeout", label, timeout)
         future.cancel()
-        thread.join(timeout=0.1)
         return []
     except Exception as exc:  # pragma: no cover  # noqa: BLE001
         logger.debug("%s failed: %s", label, exc)
