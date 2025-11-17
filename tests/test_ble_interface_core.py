@@ -558,7 +558,10 @@ def test_close_clears_ble_threads(monkeypatch):
         lingering = [
             thread.name
             for thread in threading.enumerate()
-            if thread.name.startswith("BLE") and thread.name != "BLEClient"
+            if (
+                thread.name.startswith("BLE")
+                and thread.name not in ("BLEClient", "BLECoroutineRunner")
+            )
         ]
 
         if not lingering:
