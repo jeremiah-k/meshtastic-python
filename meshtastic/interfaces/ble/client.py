@@ -56,6 +56,7 @@ class BLEClient:
             target=self._run_event_loop, name="BLEClient", daemon=True
         )
         self._eventThread.start()
+        self._loop_closed = False
 
         if not address:
             if log_if_no_address:
@@ -275,6 +276,7 @@ class BLEClient:
                     "BLE event thread did not exit within %.1fs",
                     BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
                 )
+        self._loop_closed = True
         self._eventLoop = None
         self._eventThread = None
 
@@ -319,7 +321,11 @@ class BLEClient:
         try:
             return future.result(timeout)
         except FutureTimeoutError as e:
-            future.cancel()  # Clean up pending task to avoid resource leaks
+            try:
+                future.cancel()  # Clean up pending task to avoid resource leaks
+            except RuntimeError:
+                # Event loop may already be closed; in that case cancellation is unnecessary.
+                pass
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116
@@ -332,7 +338,14 @@ class BLEClient:
         Returns:
             concurrent.futures.Future: Future that will contain the coroutine's result once completed.
         """
-        return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
+        event_loop = getattr(self, "_eventLoop", None)
+        if (
+            event_loop is None
+            or getattr(self, "_loop_closed", False)
+            or event_loop.is_closed()
+        ):
+            raise self.BLEError("BLEClient has been closed")
+        return asyncio.run_coroutine_threadsafe(coro, event_loop)
 
     def _run_event_loop(self):
         """
