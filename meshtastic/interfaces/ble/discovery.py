@@ -114,11 +114,17 @@ class DiscoveryManager:
                         if suuids and SERVICE_UUID in suuids:
                             devices.append(device)
 
+                logger.debug(f"Scan discovered {len(devices)} devices.")
+
                 if not devices and address:
                     logger.debug(
-                        "Scan found no devices, trying fallback to already-connected devices"
+                        "Scan found no devices, trying fallback to already-connected devices..."
                     )
-                    devices.extend(self._discover_connected(address))
+                    fallback_devices = self._discover_connected(address)
+                    logger.debug(
+                        f"Fallback discovered {len(fallback_devices)} devices."
+                    )
+                    devices.extend(fallback_devices)
 
                 return devices
             except Exception as e:  # noqa: BLE001 - discovery must never raise
@@ -157,6 +163,7 @@ def _enumerate_connected_devices(
         return []
 
     async def _get_devices_async(address_to_find: Optional[str]) -> List[BLEDevice]:
+        logger.debug("Starting async connected-device enumeration...")
         scanner = BleakScanner()
         devices_found: List[BLEDevice] = []
         if hasattr(scanner, "_backend") and hasattr(scanner._backend, "get_devices"):
@@ -166,10 +173,16 @@ def _enumerate_connected_devices(
             else:
                 backend_devices = getter()
 
-            sanitized_target = sanitize_address(address_to_find) if address_to_find else None
+            logger.debug(f"Enumerated {len(backend_devices or [])} backend devices.")
+            sanitized_target = (
+                sanitize_address(address_to_find) if address_to_find else None
+            )
             for device in backend_devices or []:
                 metadata = dict(getattr(device, "metadata", None) or {})
                 uuids = metadata.get("uuids", [])
+                logger.debug(
+                    f"  - Device: {device.address} ({device.name}), UUIDs: {uuids}"
+                )
                 if SERVICE_UUID not in uuids:
                     continue
 
@@ -177,6 +190,9 @@ def _enumerate_connected_devices(
                     sanitized_addr = sanitize_address(device.address)
                     sanitized_name = sanitize_address(device.name)
                     if sanitized_target not in (sanitized_addr, sanitized_name):
+                        logger.debug(
+                            f"    ... skipping, address/name does not match '{sanitized_target}'"
+                        )
                         continue
 
                 rssi = getattr(device, "rssi", 0)
@@ -189,6 +205,7 @@ def _enumerate_connected_devices(
                         rssi,
                     )
                 )
+        logger.debug(f"Finished async enumeration, found {len(devices_found)} matching devices.")
         return devices_found
 
     return _run_coroutine_factory(

@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 class BLEConfig:
     """Configuration constants for BLE operations."""
 
-    BLE_SCAN_TIMEOUT = 10.0
+    BLE_SCAN_TIMEOUT = 30.0
     RECEIVE_WAIT_TIMEOUT = 0.5
     EMPTY_READ_RETRY_DELAY = 0.1
     EMPTY_READ_MAX_RETRIES = 5
