@@ -3,6 +3,8 @@ import asyncio
 import inspect
 import logging
 from abc import ABC, abstractmethod
+from asyncio import AbstractEventLoop
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from threading import Thread
 from typing import List, Optional, TYPE_CHECKING
 
@@ -200,29 +202,34 @@ def _run_coroutine_factory(func, timeout: float, label: str) -> List[BLEDevice]:
     """
     Execute `func` (which must return a coroutine) either directly via asyncio.run or in a helper thread when an event loop is already running.
     """
-
-    def _run() -> List[BLEDevice]:
-        return asyncio.run(with_timeout(func(), timeout, label))
-
     try:
-        asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         try:
-            return _run()
+            return asyncio.run(with_timeout(func(), timeout, label))
         except Exception as exc:  # pragma: no cover  # noqa: BLE001
             logger.debug("%s failed: %s", label, exc)
             return []
 
-    future: Future[List[BLEDevice]] = Future()
+    future: "Future[List[BLEDevice]]" = Future()
 
-    def _runner():
+    def _runner(loop_to_use: AbstractEventLoop):
         try:
-            future.set_result(_run())
+            # Schedule the coroutine on the provided event loop
+            async_future = asyncio.run_coroutine_threadsafe(
+                with_timeout(func(), timeout, label), loop_to_use
+            )
+            # Wait for the result from the asyncio future
+            result = async_future.result()
+            future.set_result(result)
         except Exception as exc:
             future.set_exception(exc)
 
-    thread = Thread(target=_runner, name="BLECoroutineRunner", daemon=True)
+    thread = Thread(
+        target=_runner, args=(loop,), name="BLECoroutineRunner", daemon=True
+    )
     thread.start()
+
     try:
         return future.result(timeout=timeout)
     except FutureTimeoutError:
