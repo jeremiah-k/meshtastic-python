@@ -4,7 +4,8 @@ import asyncio
 import inspect
 import logging
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from threading import Event, Thread
 from typing import List, Optional, TYPE_CHECKING
 
 from bleak import BLEDevice, BleakScanner
@@ -197,29 +198,49 @@ def _enumerate_connected_devices(
     )
 
 
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="BLECoroutineRunner")
-atexit.register(lambda: _executor.shutdown(wait=False))
+class _BLECoroutineRunner:
+    """A long-lived thread that runs an asyncio event loop to execute BLE coroutines."""
+
+    def __init__(self):
+        self._loop = None
+        self._ready = Event()
+        self._thread = Thread(target=self._run, name="BLECoroutineRunner", daemon=True)
+        self._thread.start()
+        atexit.register(self.shutdown)
+
+    def _run(self):
+        """Thread entry point."""
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._ready.set()
+        self._loop.run_forever()
+
+    def run_coroutine(self, coro, timeout: float) -> List[BLEDevice]:
+        """Submit a coroutine to the event loop and wait for its result."""
+        if not self._ready.wait(timeout=timeout):
+            raise RuntimeError("BLE coroutine runner thread did not start in time.")
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=timeout)
+
+    def shutdown(self):
+        """Stop the event loop and join the thread."""
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=1)
+
+
+_runner_instance = _BLECoroutineRunner()
 
 
 def _run_coroutine_factory(func, timeout: float, label: str) -> List[BLEDevice]:
     """
     Execute `func` (which must return a coroutine) in a dedicated thread with its own asyncio event loop.
     """
-
-    def _runner():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(with_timeout(func(), timeout, label))
-        finally:
-            loop.close()
-
-    future = _executor.submit(_runner)
     try:
-        return future.result(timeout=timeout)
+        coro = with_timeout(func(), timeout, label)
+        return _runner_instance.run_coroutine(coro, timeout)
     except FutureTimeoutError:
         logger.debug("%s thread exceeded %.1fs timeout", label, timeout)
-        future.cancel()
         return []
     except Exception as exc:  # pragma: no cover  # noqa: BLE001
         logger.debug("%s failed: %s", label, exc)
