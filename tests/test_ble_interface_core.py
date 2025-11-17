@@ -89,44 +89,50 @@ class _StrategyOverride(ConnectedStrategy):
         return await self._delegate(address, timeout)
 
 
-def test_find_device_returns_single_scan_result(monkeypatch):
+def test_find_device_returns_single_scan_result():
     """find_device should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
     scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
-    monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [scanned_device])
+    iface._discovery_manager = SimpleNamespace(
+        discover_devices=lambda _address: [scanned_device]
+    )
 
     result = ble_mod.BLEInterface.find_device(iface, None)
 
     assert result is scanned_device
 
 
-def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
-    """find_device should fall back to connected-device lookup when scan is empty."""
+def test_find_device_normalizes_address_filters():
+    """find_device should be able to match addresses regardless of formatting."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
-    fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
-    monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
+    expected_device = _create_ble_device(
+        address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"
+    )
+    other_device = _create_ble_device(address="11:22:33:44:55:66", name="Other")
 
-    def _fake_connected(_self, _address):
+    captured = {}
+
+    def _fake_discover(requested_address):
         """
-        Return a list containing the predefined fallback_device used for connected-device lookups.
-
-        Returns:
-            list: A single-element list with the preset `fallback_device`.
+        Record the address provided to the discovery manager and return the device list.
         """
-        return [fallback_device]
+        captured["address"] = requested_address
+        return [expected_device, other_device]
 
-    monkeypatch.setattr(BLEInterface, "_find_connected_devices", _fake_connected)
+    iface._discovery_manager = SimpleNamespace(discover_devices=_fake_discover)
 
-    result = BLEInterface.find_device(iface, "aa-bb-cc-dd-ee-ff")
+    query = "aa bb cc dd ee ff"
+    result = BLEInterface.find_device(iface, query)
 
-    assert result is fallback_device
+    assert result is expected_device
+    assert captured["address"] == query
 
 
-def test_find_device_multiple_matches_raises(monkeypatch):
+def test_find_device_multiple_matches_raises():
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
@@ -135,44 +141,12 @@ def test_find_device_multiple_matches_raises(monkeypatch):
         _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
         _create_ble_device(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
     ]
-    monkeypatch.setattr(BLEInterface, "scan", lambda: devices)
+    iface._discovery_manager = SimpleNamespace(discover_devices=lambda _addr: devices)
 
     with pytest.raises(BLEInterface.BLEError) as excinfo:
         BLEInterface.find_device(iface, "aa bb cc dd ee ff")
 
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
-
-
-def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypatch):
-    """When the version guard disallows the fallback, the private backend is never touched."""
-    # BLEInterface already imported at top as ble_mod.BLEInterface
-
-    iface = object.__new__(ble_mod.BLEInterface)
-
-    monkeypatch.setattr(
-        "meshtastic.ble_interface.bleak_supports_connected_fallback",
-        lambda: False,
-    )
-
-    class BoomScanner:
-        """Mock scanner that raises an exception when instantiated."""
-
-        def __init__(self):
-            """
-            Prevent instantiation when the private-backend guard disallows it.
-
-            Raises:
-                AssertionError: Always raised with message "BleakScanner should not be instantiated when guard fails".
-            """
-            raise AssertionError(
-                "BleakScanner should not be instantiated when guard fails"
-            )
-
-    monkeypatch.setattr("meshtastic.ble_interface.BleakScanner", BoomScanner)
-
-    result = iface._find_connected_devices("AA:BB")
-
-    assert result == []
 
 
 def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
@@ -417,6 +391,32 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
 
     assert manager.discover_devices(address=None) == []
     assert fallback_called is False
+
+
+@pytest.mark.asyncio
+async def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
+    """ConnectedStrategy should not instantiate BleakScanner when guard disallows fallback."""
+
+    strategy = ConnectedStrategy()
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.bleak_supports_connected_fallback",
+        lambda: False,
+    )
+
+    class BoomScanner:
+        def __init__(self):
+            raise AssertionError(
+                "BleakScanner should not be instantiated when guard fails"
+            )
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.BleakScanner", BoomScanner
+    )
+
+    result = await strategy.discover("AA:BB", timeout=1.0)
+
+    assert result == []
 
 
 def test_connection_validator_enforces_state(monkeypatch):  # noqa: ARG001

@@ -639,10 +639,6 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         disconnect_thread.start()
         disconnect_thread.join()
 
-        # Verify that the interface handled rapid disconnects gracefully
-        assert (
-            client.bleak_client.disconnect_count >= 0
-        )  # Should not crash
     assert len(_get_connect_stub_calls(iface)) >= 2, (
         "Auto-reconnect should continue scheduling during rapid disconnects"
     )
@@ -684,8 +680,9 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         for thread in threads:
             thread.join()
 
-        # Verify thread-safety - no exceptions should be raised
-        assert client2.bleak_client.disconnect_count >= 0
+        assert len(_get_connect_stub_calls(iface2)) >= 1, (
+            "Concurrent disconnects should still trigger reconnect attempts"
+        )
 
     # Test 3: Stress test with connection failures
     with create_interface_with_auto_reconnect() as (iface3, client3):

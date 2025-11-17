@@ -359,14 +359,14 @@ class TestBLEInterfaceStateIntegration:
 
     def test_state_transition_validation(self):
         """
-        Verify that BLEStateManager enforces allowed and disallowed transitions from DISCONNECTED.
+        Verify that BLEStateManager enforces allowed and disallowed transitions starting from DISCONNECTED.
 
-        Asserts that transitions permitted from DISCONNECTED (to CONNECTING and to DISCONNECTING) succeed, that direct transitions to CONNECTED or RECONNECTING are rejected, and that the current implementation allows ERROR from DISCONNECTED.
+        Asserts that a DISCONNECTED → CONNECTING transition followed by CONNECTING → DISCONNECTING succeeds, that direct transitions from DISCONNECTED to CONNECTED or RECONNECTING are rejected, and that the current implementation allows ERROR from DISCONNECTED.
         """
 
         manager = BLEStateManager()
 
-        # Valid transitions from DISCONNECTED
+        # Valid transitions starting from DISCONNECTED
         assert manager.transition_to(ConnectionState.CONNECTING)
         assert manager.transition_to(
             ConnectionState.DISCONNECTING

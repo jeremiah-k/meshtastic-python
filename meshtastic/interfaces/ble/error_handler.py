@@ -69,7 +69,7 @@ class BLEErrorHandler:
             if reraise:
                 raise
             return default_return
-        except Exception:  # noqa: BLE001 - final safety net for unexpected errors
+        except Exception:
             if log_error:
                 logger.exception("%s", error_msg)
             if reraise:

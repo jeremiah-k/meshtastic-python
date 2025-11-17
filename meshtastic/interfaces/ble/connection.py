@@ -158,7 +158,11 @@ class ConnectionOrchestrator:
         except Exception:
             logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
             if client:
-                self.client_manager.safe_close_client(client)
+                try:
+                    self.interface._disconnect_and_close_client(client)
+                except Exception:
+                    # Fall back to safe close if the interface helper raises unexpectedly.
+                    self.client_manager.safe_close_client(client)
             self.state_manager.transition_to(ConnectionState.ERROR)
             # Reset to DISCONNECTED so future connection attempts are permitted
             self.state_manager.transition_to(ConnectionState.DISCONNECTED)

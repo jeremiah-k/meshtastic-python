@@ -1,8 +1,11 @@
 """BLE utility functions."""
 
 import asyncio
+import inspect
 import re
-from typing import Optional, Tuple, cast
+from typing import Any, Dict, Optional, Tuple, cast
+
+from bleak import BLEDevice
 
 from .config import BLEAK_VERSION, BLEConfig
 from .exceptions import BLEError
@@ -81,3 +84,20 @@ def sanitize_address(address: Optional[str]) -> Optional[str]:
         .replace(" ", "")
         .lower()
     )
+
+
+_BLE_DEVICE_SIGNATURE = inspect.signature(BLEDevice.__init__)
+
+
+def build_ble_device(
+    address: str, name: Optional[str], details: Dict[str, Any], rssi: int
+) -> BLEDevice:
+    """
+    Instantiate BLEDevice instances while handling bleak signature differences.
+    """
+    params: Dict[str, Any] = {"address": address, "name": name}
+    if "details" in _BLE_DEVICE_SIGNATURE.parameters:
+        params["details"] = details
+    if "rssi" in _BLE_DEVICE_SIGNATURE.parameters:
+        params["rssi"] = rssi
+    return BLEDevice(**params)

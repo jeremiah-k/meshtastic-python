@@ -235,7 +235,7 @@ class ReconnectWorker:
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
-                        self.reconnect_policy.get_attempt_count(),
+                        attempt_num,
                         err,
                     )
                 except Exception:
@@ -246,7 +246,7 @@ class ReconnectWorker:
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
-                        self.reconnect_policy.get_attempt_count(),
+                        attempt_num,
                     )
 
                 if self.interface.is_connection_closing or not auto_reconnect:

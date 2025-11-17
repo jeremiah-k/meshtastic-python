@@ -11,6 +11,7 @@ from .client import BLEClient
 from .config import BLEAK_VERSION, BLEConfig, SERVICE_UUID
 from .util import (
     bleak_supports_connected_fallback,
+    build_ble_device,
     sanitize_address,
     with_timeout,
 )
@@ -49,8 +50,6 @@ class ConnectedStrategy(DiscoveryStrategy):
             if hasattr(scanner, "_backend") and hasattr(
                 scanner._backend, "get_devices"
             ):
-                import inspect
-
                 getter = scanner._backend.get_devices
                 loop = asyncio.get_running_loop()
                 if inspect.iscoroutinefunction(getter):
@@ -84,10 +83,11 @@ class ConnectedStrategy(DiscoveryStrategy):
                     rssi = getattr(device, "rssi", 0)
                     metadata.setdefault("rssi", rssi)
                     devices_found.append(
-                        BLEDevice(
+                        build_ble_device(
                             device.address,
                             device.name,
                             metadata,
+                            rssi,
                         )
                     )
             return devices_found
