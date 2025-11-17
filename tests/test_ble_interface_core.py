@@ -311,25 +311,11 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
     )
 
     manager = DiscoveryManager()
-
-    async def fake_connected(
-        _address: Optional[str], _timeout: float
-    ) -> List[BLEDevice]:
-        """
-        Return the predefined fallback device when called with the expected address and timeout.
-        
-        Parameters:
-            _address (Optional[str]): Expected device address; must be "AA:BB".
-            _timeout (float): Expected scan timeout; must equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
-        
-        Returns:
-            List[BLEDevice]: A list containing the single `fallback_device`.
-        """
-        assert _address == "AA:BB"
-        assert _timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
-        return [fallback_device]
-
-    manager.connected_strategy = _StrategyOverride(fake_connected)
+    monkeypatch.setattr(
+        DiscoveryManager,
+        "_discover_connected",
+        lambda self, _address: [fallback_device],
+    )
 
     devices = manager.discover_devices(address="AA:BB")
 

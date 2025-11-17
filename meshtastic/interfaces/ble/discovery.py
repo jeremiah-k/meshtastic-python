@@ -2,7 +2,6 @@
 import asyncio
 import inspect
 import logging
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from abc import ABC, abstractmethod
 from threading import Thread
 from typing import List, Optional, TYPE_CHECKING
@@ -128,11 +127,17 @@ class DiscoveryManager:
         """
         Attempt to discover already-connected devices restricted to `address`.
         """
-        try:
-            return _enumerate_connected_devices(address, BLEConfig.BLE_SCAN_TIMEOUT)
-        except Exception as e:  # pragma: no cover  # noqa: BLE001
-            logger.debug("Connected device fallback failed: %s", e)
-            return []
+        return _run_coroutine_factory(
+            lambda: self.connected_strategy.discover(
+                address, BLEConfig.BLE_SCAN_TIMEOUT
+            ),
+            BLEConfig.BLE_SCAN_TIMEOUT,
+            "connected-device fallback",
+        )
+
+    def _discover_connected(self, address: str) -> List[BLEDevice]:
+        """Internal hook used by tests to exercise connected-device fallback."""
+        return self.discover_connected_devices(address)
 
 
 def _enumerate_connected_devices(
@@ -184,14 +189,20 @@ def _enumerate_connected_devices(
                 )
         return devices_found
 
+    return _run_coroutine_factory(
+        lambda: _get_devices_async(address),
+        timeout,
+        "connected-device fallback",
+    )
+
+
+def _run_coroutine_factory(func, timeout: float, label: str) -> List[BLEDevice]:
+    """
+    Execute `func` (which must return a coroutine) either directly via asyncio.run or in a helper thread when an event loop is already running.
+    """
+
     def _run() -> List[BLEDevice]:
-        return asyncio.run(
-            with_timeout(
-                _get_devices_async(address),
-                timeout,
-                "connected-device fallback",
-            )
-        )
+        return asyncio.run(with_timeout(func(), timeout, label))
 
     try:
         asyncio.get_running_loop()
@@ -199,7 +210,7 @@ def _enumerate_connected_devices(
         try:
             return _run()
         except Exception as exc:  # pragma: no cover  # noqa: BLE001
-            logger.debug("Connected device discovery failed: %s", exc)
+            logger.debug("%s failed: %s", label, exc)
             return []
 
     future: Future[List[BLEDevice]] = Future()
@@ -210,17 +221,15 @@ def _enumerate_connected_devices(
         except Exception as exc:
             future.set_exception(exc)
 
-    thread = Thread(target=_runner, name="BLEConnectedFallback", daemon=True)
+    thread = Thread(target=_runner, name="BLECoroutineRunner", daemon=True)
     thread.start()
     try:
         return future.result(timeout=timeout)
     except FutureTimeoutError:
-        logger.debug(
-            "Connected-device fallback thread exceeded %.1fs timeout", timeout
-        )
+        logger.debug("%s thread exceeded %.1fs timeout", label, timeout)
         future.cancel()
         thread.join(timeout=0.1)
         return []
     except Exception as exc:  # pragma: no cover  # noqa: BLE001
-        logger.debug("Connected device discovery failed: %s", exc)
+        logger.debug("%s failed: %s", label, exc)
         return []
