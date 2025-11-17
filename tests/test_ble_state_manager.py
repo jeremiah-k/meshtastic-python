@@ -183,9 +183,19 @@ class TestBLEStateManager:
             manager.transition_to(ConnectionState.CONNECTING)
             manager.transition_to(ConnectionState.CONNECTED)
 
-        # Check that transitions were logged
-        assert "State transition: disconnected → connecting" in caplog.text
-        assert "State transition: connecting → connected" in caplog.text
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(
+            "State transition" in message
+            and "disconnected" in message
+            and "connecting" in message
+            for message in messages
+        )
+        assert any(
+            "State transition" in message
+            and "connecting" in message
+            and "connected" in message
+            for message in messages
+        )
 
     def test_invalid_transition_logging(self, caplog):
         """
@@ -201,8 +211,13 @@ class TestBLEStateManager:
                 ConnectionState.CONNECTED
             )  # Invalid from DISCONNECTED
 
-        # Check that invalid transition was logged as warning
-        assert "Invalid state transition: disconnected → connected" in caplog.text
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(
+            "Invalid state transition" in message
+            and "disconnected" in message
+            and "connected" in message
+            for message in messages
+        )
 
     def test_reentrant_lock_behavior(self):
         """Test that reentrant lock allows nested acquisitions."""

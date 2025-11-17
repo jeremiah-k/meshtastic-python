@@ -67,6 +67,18 @@ class BLEClient:
         # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
 
+    def _require_bleak_client(self) -> BleakRootClient:
+        """
+        Return the underlying Bleak client or raise if this instance was created without one.
+        """
+        bleak_client = getattr(self, "bleak_client", None)
+        if bleak_client is None:
+            raise self.BLEError(
+                "BLEClient was created without an address; this operation "
+                "requires an underlying BLE client"
+            )
+        return bleak_client
+
     def discover(self, **kwargs):  # pylint: disable=C0116
         """
         Discover nearby BLE devices using BleakScanner.
@@ -93,7 +105,8 @@ class BLEClient:
             `True` if pairing succeeded, `False` otherwise.
 
         """
-        return self.async_await(self.bleak_client.pair(**kwargs))
+        bleak_client = self._require_bleak_client()
+        return self.async_await(bleak_client.pair(**kwargs))
 
     def connect(
         self, *, await_timeout: Optional[float] = None, **kwargs
@@ -111,8 +124,9 @@ class BLEClient:
             The value returned by the underlying Bleak client's `connect` call.
 
         """
+        bleak_client = self._require_bleak_client()
         return self.async_await(
-            self.bleak_client.connect(**kwargs), timeout=await_timeout
+            bleak_client.connect(**kwargs), timeout=await_timeout
         )
 
     def is_connected(self) -> bool:
@@ -164,7 +178,8 @@ class BLEClient:
             **kwargs: Additional keyword arguments forwarded to the Bleak client's disconnect method.
 
         """
-        self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
+        bleak_client = self._require_bleak_client()
+        self.async_await(bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(
         self, *args, timeout: Optional[float] = None, **kwargs
@@ -184,8 +199,9 @@ class BLEClient:
             bytes: The raw bytes read from the characteristic.
 
         """
+        bleak_client = self._require_bleak_client()
         return self.async_await(
-            self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
+            bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
 
     def write_gatt_char(
@@ -199,8 +215,9 @@ class BLEClient:
             BLEInterface.BLEError: If the write operation fails or times out.
 
         """
+        bleak_client = self._require_bleak_client()
         self.async_await(
-            self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
+            bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
     def get_services(self):
@@ -212,8 +229,9 @@ class BLEClient:
             The device's GATT services and their characteristics as returned by the underlying BLE library.
 
         """
+        bleak_client = self._require_bleak_client()
         # services is a property, not an async method, so we access it directly
-        return self.bleak_client.services
+        return bleak_client.services
 
     def has_characteristic(self, specifier):
         """
@@ -228,7 +246,8 @@ class BLEClient:
             `true` if the characteristic is present, `false` otherwise.
 
         """
-        services = getattr(self.bleak_client, "services", None)
+        bleak_client = self._require_bleak_client()
+        services = getattr(bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             # Lambda is appropriate here for deferred execution in error handling
             self.error_handler.safe_execute(
@@ -236,7 +255,7 @@ class BLEClient:
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
-            services = getattr(self.bleak_client, "services", None)
+            services = getattr(bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
     def start_notify(
@@ -252,8 +271,9 @@ class BLEClient:
             **kwargs: Additional keyword arguments forwarded to the BLE backend's notification start call.
 
         """
+        bleak_client = self._require_bleak_client()
         self.async_await(
-            self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
+            bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
 
     def close(self):  # pylint: disable=C0116
@@ -263,13 +283,21 @@ class BLEClient:
         Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit,
         and logs a warning if the thread does not terminate within that timeout.
         """
+        event_loop = getattr(self, "_eventLoop", None)
+        if event_loop is None or event_loop.is_closed():
+            return
+
         self.async_run(self._stop_event_loop())
-        self._eventThread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
-        if self._eventThread.is_alive():
-            logger.warning(
-                "BLE event thread did not exit within %.1fs",
-                BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
-            )
+        thread = getattr(self, "_eventThread", None)
+        if thread:
+            thread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
+            if thread.is_alive():
+                logger.warning(
+                    "BLE event thread did not exit within %.1fs",
+                    BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
+                )
+        self._eventLoop = None
+        self._eventThread = None
 
     def __enter__(self):
         """

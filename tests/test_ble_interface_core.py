@@ -225,12 +225,12 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
                 ),
             }
 
-        def async_await(self, coro):
+        def async_await(self, _coro):
             """
             Assert that a connected-device fallback must not be used.
 
             Parameters:
-                coro: The coroutine that would be awaited for a connected-device fallback.
+                _coro: The coroutine that would be awaited for a connected-device fallback.
 
             Raises:
                 AssertionError: Always raised with the message "Fallback should not be attempted when scan succeeds".
@@ -309,7 +309,9 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     manager = DiscoveryManager()
 
-    async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
+    async def fake_connected(
+        _address: Optional[str], _timeout: float
+    ) -> List[BLEDevice]:
         """
         Return a list containing the predefined fallback device when invoked with the expected address and timeout.
 
@@ -320,8 +322,8 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
         Returns:
             list: A list containing the single `fallback_device`.
         """
-        assert address == "AA:BB"
-        assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
+        assert _address == "AA:BB"
+        assert _timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
         return [fallback_device]
 
     manager.connected_strategy = _StrategyOverride(fake_connected)
@@ -371,7 +373,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
             return {}
 
         @staticmethod
-        def async_await(coro):  # pragma: no cover - fallback should not be hit
+        def async_await(_coro):  # pragma: no cover - fallback should not be hit
             """
             Execute a coroutine to completion and return its result.
 
@@ -381,7 +383,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
             Returns:
                 The value produced by the coroutine.
             """
-            return asyncio.run(coro)
+            return asyncio.run(_coro)
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.discovery.BLEClient", lambda **_kwargs: FakeClient()
@@ -392,14 +394,14 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     fallback_called = False
 
     async def fake_connected(
-        address: Optional[str], timeout: float
+        _address: Optional[str], _timeout: float
     ) -> List[BLEDevice]:  # pragma: no cover - should not run
         """
         Test helper coroutine that marks a connected-fallback as invoked and returns no devices.
 
         Parameters:
-            address (str): Address to search for; used only for signaling in tests.
-            timeout (float): Maximum time to wait in seconds; not used by this stub.
+            _address (str): Address to search for; used only for signaling in tests.
+            _timeout (float): Maximum time to wait in seconds; not used by this stub.
 
         Returns:
             list: An empty list indicating no connected devices were found.
@@ -417,7 +419,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     assert fallback_called is False
 
 
-def test_connection_validator_enforces_state(monkeypatch):
+def test_connection_validator_enforces_state(monkeypatch):  # noqa: ARG001
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 
     state_manager = BLEStateManager()
@@ -439,7 +441,7 @@ def test_connection_validator_enforces_state(monkeypatch):
     assert "connection in progress" in str(excinfo.value)
 
 
-def test_connection_validator_existing_client_checks(monkeypatch):
+def test_connection_validator_existing_client_checks(monkeypatch):  # noqa: ARG001
     """check_existing_client should allow reuse only when the requested identifier matches."""
 
     state_manager = BLEStateManager()
@@ -749,7 +751,7 @@ def test_log_notification_registration(monkeypatch):
     iface.close()
 
 
-def test_reconnect_scheduler_tracks_threads(monkeypatch):
+def test_reconnect_scheduler_tracks_threads(monkeypatch):  # noqa: ARG001
     """ReconnectScheduler should start at most one reconnect thread and respect closing state."""
 
     state_manager = BLEStateManager()
@@ -806,7 +808,6 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     assert len(coordinator.created) == 1
     assert scheduler.schedule_reconnect(True, shutdown_event) is False
 
-    stub_thread = coordinator.created[0]
     scheduler._reconnect_thread = None
 
     assert state_manager.transition_to(ConnectionState.CONNECTING) is True
@@ -815,7 +816,7 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     assert scheduler.schedule_reconnect(True, shutdown_event) is False
 
 
-def test_reconnect_worker_successful_attempt(monkeypatch):
+def test_reconnect_worker_successful_attempt(monkeypatch):  # noqa: ARG001
     """ReconnectWorker should clean up, reconnect, resubscribe, and clear thread references on success."""
 
     class StubPolicy:

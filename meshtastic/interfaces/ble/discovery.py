@@ -70,7 +70,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                     sanitize_address(address) if address else None
                 )
                 for device in backend_devices or []:
-                    metadata = getattr(device, "metadata", None) or {}
+                    metadata = dict(getattr(device, "metadata", None) or {})
                     uuids = metadata.get("uuids", [])
                     if SERVICE_UUID not in uuids:
                         continue
@@ -82,16 +82,16 @@ class ConnectedStrategy(DiscoveryStrategy):
                             continue
 
                     rssi = getattr(device, "rssi", 0)
+                    metadata.setdefault("rssi", rssi)
                     devices_found.append(
                         BLEDevice(
                             device.address,
                             device.name,
                             metadata,
-                            rssi,
                         )
                     )
             return devices_found
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001 - best-effort fallback
             logger.debug("Connected device discovery failed: %s", e)
             return []
 
@@ -148,10 +148,10 @@ class DiscoveryManager:
                             )
                         )
                         devices.extend(fallback)
-                    except Exception as e:  # pragma: no cover - best effort logging
+                    except Exception as e:  # pragma: no cover  # noqa: BLE001
                         logger.debug("Connected device fallback failed: %s", e)
 
                 return devices
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - discovery must never raise
                 logger.debug("Device discovery failed: %s", e)
                 return []

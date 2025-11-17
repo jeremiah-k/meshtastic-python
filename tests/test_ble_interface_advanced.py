@@ -333,7 +333,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             Raises:
                 Exception: An instance of `self.exception_type` with the message "write failed".
             """
-            raise self.exception_type("write failed")
+            raise self.exception_type("write failed")  # noqa: TRY003 - aids targeted assertions
 
     # Test BleakError specifically
     client = ExceptionClient(BleakError)
@@ -606,7 +606,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 noProto=True,
                 auto_reconnect=True,
             )
-            setattr(iface, "_connect_stub_calls", connect_calls)
+            iface._connect_stub_calls = connect_calls
             client = cast("StressTestClient", iface.client)
             yield iface, client
         finally:

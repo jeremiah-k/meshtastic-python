@@ -94,6 +94,19 @@ class ReconnectPolicy:
         """Sleep for the jittered delay associated with the supplied attempt."""
         _sleep(self.get_delay(attempt))
 
+    def clone(self, *, random_source=None) -> "ReconnectPolicy":
+        """
+        Create a new ReconnectPolicy with the same configuration values.
+        """
+        return ReconnectPolicy(
+            initial_delay=self.initial_delay,
+            max_delay=self.max_delay,
+            backoff=self.backoff,
+            jitter_ratio=self.jitter_ratio,
+            max_retries=self.max_retries,
+            random_source=random_source or self._random,
+        )
+
 
 class RetryPolicy:
     """
@@ -139,13 +152,7 @@ class ReconnectScheduler:
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
         self.interface = interface
-        self._reconnect_policy = ReconnectPolicy(
-            initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
-            max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
-            backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
-            jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
-            max_retries=None,
-        )
+        self._reconnect_policy = RetryPolicy.AUTO_RECONNECT.clone()
         self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
         self._reconnect_thread: Optional[Thread] = None
 

@@ -534,5 +534,9 @@ def _build_interface(monkeypatch: Any, client: DummyClient) -> "BLEInterface":
         original_close()
 
     monkeypatch.setattr(iface, "close", _patched_close)
+    exit_handler = getattr(iface, "_exit_handler", None)
+    if exit_handler is not None:
+        ble_mod.atexit.unregister(exit_handler)
+        iface._exit_handler = ble_mod.atexit.register(_patched_close)
 
     return iface

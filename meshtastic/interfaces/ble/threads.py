@@ -115,13 +115,16 @@ class ThreadCoordinator:
                 timeout (float | None): Maximum seconds to wait for the thread to finish. If None, wait indefinitely.
 
         """
+        thread_to_join: Optional[Thread] = None
         with self._lock:
             if (
                 thread in self._threads
                 and thread.is_alive()
                 and thread is not current_thread()
             ):
-                thread.join(timeout=timeout)
+                thread_to_join = thread
+        if thread_to_join:
+            thread_to_join.join(timeout=timeout)
 
     def join_all(self, timeout: Optional[float] = None):
         """
@@ -133,11 +136,14 @@ class ThreadCoordinator:
                 If `None`, wait indefinitely for each thread.
 
         """
+        threads_to_join: List[Thread] = []
         with self._lock:
             current = current_thread()
             for thread in self._threads:
                 if thread.is_alive() and thread is not current:
-                    thread.join(timeout=timeout)
+                    threads_to_join.append(thread)
+        for thread in threads_to_join:
+            thread.join(timeout=timeout)
 
     def set_event(self, name: str):
         """
@@ -242,6 +248,7 @@ class ThreadCoordinator:
         Sets every tracked Event, joins each tracked Thread (except current) with a short timeout,
         then clears internal thread and event registries so the coordinator no longer tracks them.
         """
+        threads_to_join: List[Thread] = []
         with self._lock:
             # Signal all events
             for event in self._events.values():
@@ -251,8 +258,11 @@ class ThreadCoordinator:
             current = current_thread()
             for thread in self._threads:
                 if thread.is_alive() and thread is not current:
-                    thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
+                    threads_to_join.append(thread)
 
             # Clear tracking
             self._threads.clear()
             self._events.clear()
+
+        for thread in threads_to_join:
+            thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)

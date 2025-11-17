@@ -26,10 +26,11 @@ class ConnectionValidator:
         self.state_lock = state_lock
 
     def validate_connection_request(self) -> None:
-        if not self.state_manager.can_connect:
-            if self.state_manager.is_closing:
-                raise BLEError("Cannot connect while interface is closing")
-            raise BLEError("Already connected or connection in progress")
+        with self.state_lock:
+            if not self.state_manager.can_connect:
+                if self.state_manager.is_closing:
+                    raise BLEError("Cannot connect while interface is closing")
+                raise BLEError("Already connected or connection in progress")
 
     def check_existing_client(
         self,
@@ -131,7 +132,6 @@ class ConnectionOrchestrator:
         self,
         address: Optional[str],
         current_address: Optional[str],
-        last_connection_request: Optional[str],
         register_notifications_func,
         on_connected_func,
         on_disconnect_func,

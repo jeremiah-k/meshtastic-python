@@ -69,7 +69,7 @@ class BLEErrorHandler:
             if reraise:
                 raise
             return default_return
-        except Exception:
+        except Exception:  # noqa: BLE001 - final safety net for unexpected errors
             if log_error:
                 logger.exception("%s", error_msg)
             if reraise:
@@ -81,5 +81,5 @@ class BLEErrorHandler:
         """Safely execute cleanup operations without raising exceptions."""
         try:
             func()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cleanup paths must not raise
             logger.debug("Error during %s: %s", cleanup_name, e)

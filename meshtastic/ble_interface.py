@@ -4,6 +4,7 @@ import asyncio
 import atexit
 import contextlib
 import importlib.metadata
+import inspect
 import io
 import logging
 import random
@@ -348,22 +349,11 @@ class BLEInterface(MeshInterface):
 
         # Determine which client we're dealing with
         target_client = client
-        if not target_client and bleak_client:
-            # Find the BLEClient that contains this bleak_client
-            target_client = self.client
-            if (
-                target_client
-                and getattr(target_client, "bleak_client", None) is not bleak_client
-            ):
-                target_client = None
+        resolved_client = target_client
 
-        address = "unknown"
-        if target_client:
-            address = getattr(target_client, "address", repr(target_client))
-        elif bleak_client:
-            address = getattr(bleak_client, "address", repr(bleak_client))
-
-        logger.debug("BLE client %s disconnected (source: %s).", address, source)
+        duplicate_disconnect = False
+        stale_bleak_callback = False
+        stale_client_disconnect = False
 
         if self.auto_reconnect:
             previous_client = None
@@ -371,22 +361,58 @@ class BLEInterface(MeshInterface):
             with self._state_lock:
                 # Prevent duplicate disconnect notifications
                 if self._disconnect_notified:
-                    logger.debug("Ignoring duplicate disconnect from %s.", source)
-                    return True
+                    duplicate_disconnect = True
+                else:
+                    current_client = self.client
 
-                current_client = self.client
-                # Ignore stale client disconnects (from previous connections)
-                if (
-                    target_client
-                    and current_client
-                    and target_client is not current_client
-                ):
+                    if (
+                        not resolved_client
+                        and bleak_client
+                        and current_client
+                    ):
+                        current_bleak = getattr(
+                            current_client, "bleak_client", None
+                        )
+                        if current_bleak is bleak_client:
+                            resolved_client = current_client
+                        else:
+                            stale_bleak_callback = True
+
+                    # Ignore stale client disconnects (from previous connections)
+                    if (
+                        not stale_bleak_callback
+                        and resolved_client
+                        and current_client
+                        and resolved_client is not current_client
+                    ):
+                        stale_client_disconnect = True
+                    elif not stale_bleak_callback:
+                        previous_client = current_client
+                        self.client = None
+                        self._disconnect_notified = True
+
+        address = "unknown"
+        if resolved_client:
+            address = getattr(resolved_client, "address", repr(resolved_client))
+        elif bleak_client:
+            address = getattr(bleak_client, "address", repr(bleak_client))
+
+        logger.debug("BLE client %s disconnected (source: %s).", address, source)
+
+        if self.auto_reconnect:
+            if duplicate_disconnect:
+                logger.debug("Ignoring duplicate disconnect from %s.", source)
+                return True
+
+            if stale_bleak_callback or stale_client_disconnect:
+                if stale_bleak_callback:
+                    logger.debug(
+                        "Ignoring stale disconnect from %s (mismatched Bleak client).",
+                        source,
+                    )
+                else:
                     logger.debug("Ignoring stale disconnect from %s.", source)
-                    return True
-
-                previous_client = current_client
-                self.client = None
-                self._disconnect_notified = True
+                return True
 
             # Transition to DISCONNECTED state on disconnect
             if previous_client:
@@ -813,11 +839,20 @@ class BLEInterface(MeshInterface):
                 if hasattr(scanner, "_backend") and hasattr(
                     scanner._backend, "get_devices"
                 ):
-                    backend_devices = await with_timeout(
-                        scanner._backend.get_devices(),
-                        BLEConfig.BLE_SCAN_TIMEOUT,
-                        "connected-device enumeration",
-                    )
+                    getter = scanner._backend.get_devices
+                    loop = asyncio.get_running_loop()
+                    if inspect.iscoroutinefunction(getter):
+                        backend_devices = await with_timeout(
+                            getter(),
+                            BLEConfig.BLE_SCAN_TIMEOUT,
+                            "connected-device enumeration",
+                        )
+                    else:
+                        backend_devices = await with_timeout(
+                            loop.run_in_executor(None, getter),
+                            BLEConfig.BLE_SCAN_TIMEOUT,
+                            "connected-device enumeration",
+                        )
 
                     # Performance optimization: Calculate sanitized_target once before loop
                     sanitized_target = None
@@ -846,26 +881,30 @@ class BLEInterface(MeshInterface):
                                         sanitized_addr,
                                         sanitized_name,
                                     ):
-                                        metadata = getattr(device, "metadata", None) or {}
+                                        metadata = dict(
+                                            getattr(device, "metadata", None) or {}
+                                        )
                                         rssi = getattr(device, "rssi", 0)
+                                        metadata.setdefault("rssi", rssi)
                                         devices_found.append(
                                             BLEDevice(
                                                 device.address,
                                                 device.name,
                                                 metadata,
-                                                rssi,
                                             )
                                         )
                                 else:
                                     # Add all connected Meshtastic devices
-                                    metadata = getattr(device, "metadata", None) or {}
+                                    metadata = dict(
+                                        getattr(device, "metadata", None) or {}
+                                    )
                                     rssi = getattr(device, "rssi", 0)
+                                    metadata.setdefault("rssi", rssi)
                                     devices_found.append(
                                         BLEDevice(
                                             device.address,
                                             device.name,
                                             metadata,
-                                            rssi,
                                         )
                                     )
                 return devices_found
@@ -997,7 +1036,6 @@ class BLEInterface(MeshInterface):
         client = self._connection_orchestrator.establish_connection(
             address,
             self.address,
-            self._last_connection_request,
             self._register_notifications,
             self._connected,
             self._on_ble_disconnect,
@@ -1384,5 +1422,3 @@ class BLEInterface(MeshInterface):
             self.error_handler.safe_execute(
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
-
-

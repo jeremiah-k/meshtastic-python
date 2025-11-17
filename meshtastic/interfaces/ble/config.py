@@ -27,7 +27,11 @@ class BLEConfig:
 
 
 # Get bleak version using importlib.metadata (reliable method)
-BLEAK_VERSION = importlib.metadata.version("bleak")
+try:
+    BLEAK_VERSION = importlib.metadata.version("bleak")
+except importlib.metadata.PackageNotFoundError:
+    # Fallback for environments where bleak is optional/not installed.
+    BLEAK_VERSION = "unknown"
 
 SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
 TORADIO_UUID = "f75c76d2-129e-4dad-a1dd-7866124401e7"
