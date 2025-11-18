@@ -371,7 +371,7 @@ class BLEErrorHandler:
         - Cleanup operations that never raise exceptions
     """
 
-https://github.com/meshtastic/python/issues/new
+
     @staticmethod
     def safe_execute(
         func,
