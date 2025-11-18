@@ -28,8 +28,8 @@ class ConnectionValidator:
     def validate_connection_request(self) -> None:
         if not self.state_manager.can_connect:
             if self.state_manager.is_closing:
-                raise BLEInterface.BLEError("Cannot connect while interface is closing")
-            raise BLEInterface.BLEError("Already connected or connection in progress")
+                raise RuntimeError("Cannot connect while interface is closing")
+            raise RuntimeError("Already connected or connection in progress")
 
     def check_existing_client(
         self,

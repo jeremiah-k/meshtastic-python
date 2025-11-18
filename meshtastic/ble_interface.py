@@ -1,4 +1,4 @@
-# ruff: noqa: F401, F403
+# ruff: noqa: F401
 """The public API for the Meshtastic BLE interface."""
 from typing import TYPE_CHECKING
 
@@ -9,11 +9,19 @@ if TYPE_CHECKING:
 else:  # pragma: no cover - import real exception only at runtime
     from google.protobuf.message import DecodeError
 
-from .interfaces.ble.config import *
-from .interfaces.ble.state import *
-from .interfaces.ble.reconnect import *
-from .interfaces.ble.core import *
-from .interfaces.ble.client import *
-from .interfaces.ble.discovery import *
-from .interfaces.ble.gatt import *
-from .interfaces.ble.util import *
+from .interfaces.ble.config import BLEConfig
+from .interfaces.ble.core import BLEInterface
+from .interfaces.ble.reconnect import ReconnectPolicy, RetryPolicy
+from .interfaces.ble.state import BLEStateManager, ConnectionState
+from .interfaces.ble.client import BLEClient
+
+__all__ = [
+    "BLEInterface",
+    "BLEStateManager",
+    "ConnectionState",
+    "BLEConfig",
+    "ReconnectPolicy",
+    "RetryPolicy",
+    "BLEClient",
+    "DecodeError",
+]

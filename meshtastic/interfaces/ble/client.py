@@ -4,11 +4,12 @@ import logging
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Thread
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
-from meshtastic.ble_interface import BLEInterface
+if TYPE_CHECKING:
+    from meshtastic.ble_interface import BLEInterface
 from .util import BLEErrorHandler
 
 logger = logging.getLogger(__name__)
