@@ -192,40 +192,12 @@ class BLEClient:
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services
 
-    def discover_services(self):
-        """
-        DEPRECATED: Use ensure_services_available() instead.
-
-        This method name is misleading. In bleak, services are automatically
-        discovered during connection. This method simply polls the services property
-        with a brief sleep as a defensive measure to ensure services are populated.
-
-        This is defensive polling, not explicit service discovery.
-
-        Returns
-        -------
-            The device's GATT services and their characteristics as returned by the underlying BLE library.
-
-        """
-        import warnings
-
-        warnings.warn(
-            "discover_services() is deprecated and will be removed in a future version. "
-            "Use ensure_services_available() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.ensure_services_available()
-
     def ensure_services_available(self):
         """
         Ensure services are available for the connected device.
 
-        This is the preferred method that accurately reflects the behavior.
         In bleak, services are automatically discovered during connection.
         This method polls the services property to ensure they are populated.
-
-        Note: Use this method instead of the deprecated discover_services().
 
         Returns
         -------
