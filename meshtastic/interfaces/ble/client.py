@@ -46,6 +46,9 @@ class BLEClient:
         self.error_handler = BLEErrorHandler()
         # Share exception type with BLEInterface for consistent public API.
         self.BLEError = BLEError
+        # Track service-discovery support and warning state for the underlying bleak client.
+        self._service_discovery_method = None
+        self._service_discovery_warning_logged = False
 
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
@@ -63,6 +66,15 @@ class BLEClient:
 
         # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
+        get_services = getattr(self.bleak_client, "get_services", None)
+        if callable(get_services):
+            self._service_discovery_method = get_services
+        else:
+            logger.debug(
+                "Underlying BleakClient %s does not expose get_services(); "
+                "falling back to cached services when available.",
+                getattr(self.bleak_client, "address", "unknown"),
+            )
 
     def pair(self, **kwargs):  # pylint: disable=C0116
         """
@@ -175,13 +187,37 @@ class BLEClient:
 
     def ensure_services_available(self):
         """
-        Trigger discovery and return the device's populated GATT services.
-        
+        Ensure the connected device has populated GATT services available.
+
+        Bleak 0.22+ requires explicitly awaiting `get_services()` while some
+        downstream environments still ship older bleak versions that omit that
+        coroutine. This helper works with both styles by attempting the async
+        discovery first and falling back to the cached `services` attribute when
+        a discovery coroutine is unavailable.
+
         Returns:
-            The device's GATT services object as provided by the underlying BLE library.
+            The device's GATT services object as provided by the underlying BLE library, or None when the backend cannot populate it.
         """
-        # Explicitly trigger service discovery via bleak's API
-        return self.async_await(self.bleak_client.get_services())
+        bleak_client = getattr(self, "bleak_client", None)
+        if bleak_client is None:
+            logger.debug(
+                "ensure_services_available called without an underlying bleak client."
+            )
+            return None
+
+        discovery = self._service_discovery_method
+        if callable(discovery):
+            return self.async_await(discovery())
+
+        services = getattr(bleak_client, "services", None)
+        if not self._service_discovery_warning_logged:
+            logger.debug(
+                "Bleak backend for %s does not export get_services(); "
+                "returning cached services without explicit discovery.",
+                getattr(bleak_client, "address", "unknown"),
+            )
+            self._service_discovery_warning_logged = True
+        return services
 
     def has_characteristic(self, specifier):
         """

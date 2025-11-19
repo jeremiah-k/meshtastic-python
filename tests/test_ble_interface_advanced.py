@@ -1,5 +1,6 @@
 """Tests for the BLE interface module - Advanced functionality."""
 
+import asyncio
 import logging
 import threading
 import time
@@ -780,6 +781,70 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
     result = ble_client.is_connected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
+
+
+def test_ble_client_ensure_services_awaits_discovery():
+    """BLEClient.ensure_services_available should await explicit discovery when supported."""
+
+    # BLEClient already imported at top as ble_mod.BLEClient
+
+    class _DiscoverableBleakClient:
+        """Minimal bleak client exposing an async get_services()."""
+
+        def __init__(self):
+            self.address = "11:22:33:44:55:66"
+            self.services = types.SimpleNamespace(name="discovered")
+
+        async def get_services(self):
+            """Return the services namespace."""
+            return self.services
+
+    client = BLEClient.__new__(BLEClient)
+    client.error_handler = ble_mod.BLEErrorHandler()
+    client.bleak_client = _DiscoverableBleakClient()
+    client._service_discovery_method = client.bleak_client.get_services
+    client._service_discovery_warning_logged = False
+
+    awaited = {"called": False, "coro": None}
+
+    def _fake_async_await(coro):
+        awaited["called"] = True
+        awaited["coro"] = coro
+        return asyncio.run(coro)
+
+    client.async_await = _fake_async_await
+    result = client.ensure_services_available()
+
+    assert awaited["called"] is True
+    assert awaited["coro"] is not None
+    assert result is client.bleak_client.services
+
+
+def test_ble_client_ensure_services_handles_missing_discovery(caplog):
+    """BLEClient.ensure_services_available should fall back when get_services is absent."""
+
+    class _LegacyBleakClient:
+        """Legacy bleak client lacking get_services()."""
+
+        def __init__(self):
+            self.address = "AA:BB:CC:DD:EE:FF"
+            self.services = types.SimpleNamespace(source="cached")
+
+    caplog.set_level(logging.DEBUG, logger="meshtastic.interfaces.ble.client")
+
+    client = BLEClient.__new__(BLEClient)
+    client.error_handler = ble_mod.BLEErrorHandler()
+    client.bleak_client = _LegacyBleakClient()
+    client._service_discovery_method = None
+    client._service_discovery_warning_logged = False
+    client.async_await = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("async_await should not be called")
+    )
+
+    services = client.ensure_services_available()
+
+    assert services is client.bleak_client.services
+    assert "does not export get_services()" in caplog.text
 
 
 def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
