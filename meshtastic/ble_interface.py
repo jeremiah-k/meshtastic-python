@@ -73,3 +73,6 @@ publishingThread = publishingThread
 current_thread = current_thread
 _sleep = _sleep
 _bleak_supports_connected_fallback = _bleak_supports_connected_fallback
+
+# Also expose BleakScanner for tests that expect it at module level
+from bleak import BleakScanner
