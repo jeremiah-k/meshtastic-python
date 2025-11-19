@@ -734,7 +734,7 @@ def test_connection_orchestrator_reuses_known_address(monkeypatch):
 
 
 def test_connection_orchestrator_falls_back_after_direct_failure(monkeypatch):
-    """Direct reconnect failures should trigger discovery fallback."""
+    """Direct reconnect failures should propagate so the scheduler can retry later."""
 
     known_address = "DD:DD:13:27:74:29"
     fallback_device = SimpleNamespace(address=known_address, name="Relay")
@@ -763,19 +763,19 @@ def test_connection_orchestrator_falls_back_after_direct_failure(monkeypatch):
         thread_coordinator,
     )
 
-    client = orchestrator.establish_connection(
-        known_address,
-        known_address,
-        lambda *_args, **_kwargs: None,
-        lambda: None,
-        lambda *_args, **_kwargs: None,
-    )
+    with pytest.raises(RuntimeError):
+        orchestrator.establish_connection(
+            known_address,
+            known_address,
+            lambda *_args, **_kwargs: None,
+            lambda: None,
+            lambda *_args, **_kwargs: None,
+        )
 
-    assert len(client_manager.created) == 2  # direct + discovery attempts
-    assert client_manager.closed  # direct attempt cleaned up
-    assert find_calls == [known_address]
-    assert client_manager.connected == [client]
-    assert thread_coordinator.events == ["reconnected_event"]
+    # Direct attempt should have been the only work; no fallback discovery.
+    assert client_manager.created == [known_address]
+    assert len(client_manager.closed) == 1
+    assert find_calls == []
     assert validator.calls == 1
 
 

@@ -254,24 +254,12 @@ class ConnectionOrchestrator:
                     "Attempting direct connection to cached BLE address %s",
                     reuse_address,
                 )
-                try:
-                    client = self.client_manager.create_client(
-                        reuse_address, on_disconnect_func
-                    )
-                    self.client_manager.connect_client(client)
-                    resolved_address = reuse_address
-                except Exception:
-                    logger.debug(
-                        "Direct connection to %s failed; falling back to discovery.",
-                        reuse_address,
-                        exc_info=True,
-                    )
-                    if client:
-                        self.client_manager.safe_close_client(client)
-                        client = None
-                    resolved_address = None
-
-            if client is None:
+                client = self.client_manager.create_client(
+                    reuse_address, on_disconnect_func
+                )
+                self.client_manager.connect_client(client)
+                resolved_address = reuse_address
+            else:
                 fallback_devices: List[BLEDevice] = []
                 if normalized_target:
                     try:
@@ -280,7 +268,7 @@ class ConnectionOrchestrator:
                         )
                     except Exception:  # pragma: no cover - defensive logging
                         logger.debug(
-                            "Connected-device enumeration during reconnect failed.",
+                            "Connected-device enumeration during discovery failed.",
                             exc_info=True,
                         )
                 if fallback_devices:
@@ -292,7 +280,6 @@ class ConnectionOrchestrator:
                     resolved_address, on_disconnect_func
                 )
                 self.client_manager.connect_client(client)
-
             register_notifications_func(client)
             self.state_manager.transition_to(ConnectionState.CONNECTED, client)
             on_connected_func()
