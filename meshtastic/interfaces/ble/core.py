@@ -180,6 +180,12 @@ class BLEInterface(MeshInterface):
             parts.append("auto_reconnect=False")
         return f"BLEInterface({', '.join(parts)})"
 
+    @staticmethod
+    def scan() -> List[BLEDevice]:
+        """Scan for BLE devices."""
+        discovery_manager = DiscoveryManager()
+        return discovery_manager.discover_devices(address=None)
+
     def _handle_disconnect(
         self,
         source: str,

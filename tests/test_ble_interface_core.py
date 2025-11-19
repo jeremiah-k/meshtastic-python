@@ -41,6 +41,7 @@ from meshtastic.ble_interface import (
     DiscoveryManager,
     ReconnectScheduler,
     ReconnectWorker,
+    BLEError,
 )
 
 if TYPE_CHECKING:
@@ -139,7 +140,7 @@ def test_find_device_multiple_matches_raises(monkeypatch):
     ]
     monkeypatch.setattr(BLEInterface, "scan", lambda: devices)
 
-    with pytest.raises(BLEInterface.BLEError) as excinfo:
+    with pytest.raises(BLEError) as excinfo:
         BLEInterface.find_device(iface, "aa bb cc dd ee ff")
 
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
@@ -423,13 +424,13 @@ def test_connection_validator_enforces_state(monkeypatch):
     assert state_manager.transition_to(ConnectionState.CONNECTING) is True
     assert state_manager.transition_to(ConnectionState.CONNECTED) is True
     assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
-    with pytest.raises(BLEInterface.BLEError) as excinfo:
+    with pytest.raises(BLEError) as excinfo:
         validator.validate_connection_request()
     assert "closing" in str(excinfo.value)
 
     assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
     assert state_manager.transition_to(ConnectionState.CONNECTING) is True
-    with pytest.raises(BLEInterface.BLEError) as excinfo:
+    with pytest.raises(BLEError) as excinfo:
         validator.validate_connection_request()
     assert "connection in progress" in str(excinfo.value)
 

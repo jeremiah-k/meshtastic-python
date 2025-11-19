@@ -51,6 +51,7 @@ class ReconnectPolicy:
         self.max_delay = max_delay
         self.backoff = backoff
         self.jitter_ratio = jitter_ratio
+        self.max_retries = max_retries
         self._random = random_source or random
         self._attempt_count = 0
 

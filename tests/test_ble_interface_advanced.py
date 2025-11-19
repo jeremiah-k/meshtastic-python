@@ -25,6 +25,7 @@ from meshtastic.ble_interface import (
     LOGRADIO_UUID,
     BLEClient,
     BLEInterface,
+    BLEError,
 )
 from meshtastic.protobuf import mesh_pb2
 
@@ -345,7 +346,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     to_radio.packet.decoded.payload = b"test_data"
 
     # This should raise BLEInterface.BLEError
-    with pytest.raises(BLEInterface.BLEError) as exc_info:
+    with pytest.raises(BLEError) as exc_info:
         iface._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
@@ -362,7 +363,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     client2 = ExceptionClient(RuntimeError)
     iface2 = _build_interface(monkeypatch, client2)
 
-    with pytest.raises(BLEInterface.BLEError) as exc_info:
+    with pytest.raises(BLEError) as exc_info:
         iface2._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
@@ -376,7 +377,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     client3 = ExceptionClient(OSError)
     iface3 = _build_interface(monkeypatch, client3)
 
-    with pytest.raises(BLEInterface.BLEError) as exc_info:
+    with pytest.raises(BLEError) as exc_info:
         iface3._sendToRadioImpl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
