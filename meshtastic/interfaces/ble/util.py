@@ -184,15 +184,19 @@ def enumerate_connected_devices(
                 if sanitized_target not in (sanitized_addr, sanitized_name):
                     continue
 
-            metadata: Dict[str, Any] = {"uuids": uuids, "path": path}
-            if "RSSI" in device_props:
-                metadata["rssi"] = device_props["RSSI"]
+                    metadata: Dict[str, Any] = {"uuids": uuids, "path": path}
+                    rssi = device_props.get("RSSI", 0)
+                    metadata["rssi"] = rssi
 
-            ble_device = BLEDevice(address_value, name_value, path)
-            setattr(ble_device, "metadata", metadata)
-            setattr(ble_device, "rssi", metadata.get("rssi", 0))
-            devices_found.append(ble_device)
-        return devices_found
+                    ble_device = _ConnectedBLEDevice(
+                        address_value,
+                        name_value,
+                        path,
+                        metadata,
+                        rssi,
+                    )
+                    devices_found.append(ble_device)
+                return devices_found
 
     async def _collect() -> List[BLEDevice]:
         return await _with_timeout(
@@ -465,6 +469,24 @@ class ThreadCoordinator:
 
         for thread in to_join:
             thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
+
+
+class _ConnectedBLEDevice(BLEDevice):
+    """BLEDevice shim that exposes metadata/rssi like legacy bleak versions."""
+
+    __slots__ = ("metadata", "rssi")
+
+    def __init__(
+        self,
+        address: str,
+        name: Optional[str],
+        details: Any,
+        metadata: Dict[str, Any],
+        rssi: int,
+    ):
+        super().__init__(address, name, details)
+        self.metadata = metadata
+        self.rssi = rssi
 
 
 class BLEErrorHandler:
