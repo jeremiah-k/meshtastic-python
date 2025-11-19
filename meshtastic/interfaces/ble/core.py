@@ -427,11 +427,6 @@ class BLEInterface(MeshInterface):
             self.address = None
         if not hasattr(self, "debugOut"):
             self.debugOut = None
-        # Ensure address attribute exists for tests
-        if not hasattr(self, "address"):
-            self.address = None
-        if not hasattr(self, "debugOut"):
-            self.debugOut = None
 
         if address:
             sanitized_address = _sanitize_address(address)

@@ -49,7 +49,7 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     This helper is intentionally permissive — non-numeric segments are ignored and
     missing components are treated as zeros.
     """
-    matches = re.findall(r"\\d+", version_str or "")
+    matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
         matches.append("0")
     try:

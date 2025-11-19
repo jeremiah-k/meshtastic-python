@@ -67,12 +67,7 @@ __all__ = [
     "ReconnectWorker",
 ]
 
-# Expose module-level attributes for backward compatibility with tests
-BLEErrorHandler = BLEErrorHandler
-publishingThread = publishingThread
-current_thread = current_thread
-_sleep = _sleep
-_bleak_supports_connected_fallback = _bleak_supports_connected_fallback
+# Module-level attributes are available from imports above for backward compatibility with tests
 
 # Also expose BleakScanner for tests that expect it at module level
 from bleak import BleakScanner
