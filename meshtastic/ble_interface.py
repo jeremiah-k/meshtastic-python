@@ -2,6 +2,9 @@
 """The public API for the Meshtastic BLE interface."""
 from typing import TYPE_CHECKING
 
+from bleak import BLEDevice
+from .interfaces.ble.connection import ConnectionValidator
+
 if TYPE_CHECKING:
     class DecodeError(Exception):
         """Fallback DecodeError type used for static type checking."""
@@ -40,4 +43,6 @@ __all__ = [
     "LOGRADIO_UUID",
     "SERVICE_UUID",
     "TORADIO_UUID",
+    "BLEDevice",
+    "ConnectionValidator",
 ]
