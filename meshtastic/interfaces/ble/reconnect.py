@@ -44,11 +44,11 @@ def _get_current_thread():
 
 
 if TYPE_CHECKING:
-    from ..core import BLEInterface
-    from ..state import BLEStateManager
-    from ..util import ThreadCoordinator
-    from ..gatt import NotificationManager
-    from ..client import BLEClient
+    from ..core import BLEInterface  # noqa: F401
+    from ..state import BLEStateManager  # noqa: F401
+    from ..util import ThreadCoordinator  # noqa: F401
+    from ..gatt import NotificationManager  # noqa: F401
+    from ..client import BLEClient  # noqa: F401
 
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ class RetryPolicy:
 class ReconnectScheduler:
     """Manage lifecycle of the reconnect worker thread."""
 
-    def __init__(
+    def __init__(  # type: ignore
         self,
         state_manager: "BLEStateManager",
         state_lock: RLock,
@@ -253,8 +253,8 @@ class ReconnectWorker:
                         "Auto-reconnect aborted because interface is closing or disabled."
                     )
                     return
+                attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
-                    attempt_num = self.reconnect_policy.get_attempt_count() + 1
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).", attempt_num
                     )
@@ -273,7 +273,7 @@ class ReconnectWorker:
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
-                        attempt_num,
+                        attempt_num,  # noqa: F821
                         err,
                     )
                 except Exception:
@@ -284,7 +284,7 @@ class ReconnectWorker:
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
-                        attempt_num,
+                        attempt_num,  # noqa: F821
                     )
 
                 if self.interface.is_connection_closing or not auto_reconnect:
