@@ -32,13 +32,34 @@ class DiscoveryStrategy(ABC):
 
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """Return a list of BLEDevice entries discovered via this strategy."""
+        """
+        Discover BLE devices that are already connected and advertise the configured service UUID.
+        
+        If `address` is provided, only devices whose sanitized address or name matches the sanitized `address` are returned. The `timeout` is used when querying backend device getters that may be asynchronous.
+        
+        Parameters:
+            address (Optional[str]): Optional address or name filter to narrow results.
+            timeout (float): Maximum time, in seconds, to wait for backend device enumeration.
+        
+        Returns:
+            List[BLEDevice]: BLEDevice entries that advertise the configured service UUID and match the optional address filter.
+        """
 
 
 class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery strategy that enumerates already-connected devices."""
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """
+        Discover BLE devices that are already connected and expose the service UUID used by this application.
+        
+        Parameters:
+            address (Optional[str]): Optional device address or name to filter results; comparison is performed against a sanitized form of the device address and name.
+            timeout (float): Maximum seconds to wait for backend connected-device enumeration.
+        
+        Returns:
+            List[BLEDevice]: Devices that advertise the configured SERVICE_UUID and match the optional address filter. Returns an empty list if scanning fails due to BLE/Bleak timeouts or OS errors; unexpected exceptions are re-raised.
+        """
         if not _bleak_supports_connected_fallback(
             BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
         ):
@@ -118,16 +139,39 @@ class DiscoveryManager:
         *,
         ble_client_factory: Optional[Callable[[], "BLEClient"]] = None,
     ):
+        """
+        Initialize a DiscoveryManager with an optional BLE client factory and a ConnectedStrategy.
+        
+        Parameters:
+            ble_client_factory (Optional[Callable[[], BLEClient]]): Optional factory that returns a BLE client instance; if omitted, an internal factory that creates a default BLE client is used.
+        """
         self.connected_strategy = ConnectedStrategy()
         self._ble_client_factory = ble_client_factory or self._create_ble_client
 
     @staticmethod
     def _create_ble_client() -> "BLEClient":
+        """
+        Create and return a BLEClient instance configured for internal use.
+        
+        Returns:
+            BLEClient: A newly constructed BLEClient with `log_if_no_address` set to False.
+        """
         from .client import BLEClient
 
         return BLEClient(log_if_no_address=False)
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
+        """
+        Orchestrates BLE device discovery using an appropriate execution strategy and handles retries on event-loop conflicts.
+        
+        Attempts discovery using an async runner when a running event loop is present, otherwise uses the provided executor. On detection of an event-loop conflict it retries discovery with an async runner. Known BLE-related errors result in an empty result; unexpected exceptions are re-raised.
+        
+        Parameters:
+            address (Optional[str]): Optional device address or name to filter discovery results.
+        
+        Returns:
+            List[BLEDevice]: List of discovered BLEDevice objects (may be empty).
+        """
         use_runner = self._should_use_async_runner()
         try:
             if use_runner:
@@ -167,6 +211,15 @@ class DiscoveryManager:
             raise
 
     def _discover_with_async_runner(self, address: Optional[str]) -> List[BLEDevice]:
+        """
+        Perform device discovery using an asynchronous BLE client runner.
+        
+        Parameters:
+            address (Optional[str]): Optional target device address to filter discovery results.
+        
+        Returns:
+            List[BLEDevice]: Discovered BLEDevice entries matching the configured service UUID and optional address filter.
+        """
         with self._ble_client_factory() as runner:
             return self._discover_with_executor(address, runner.async_await)
 
@@ -175,6 +228,21 @@ class DiscoveryManager:
         address: Optional[str],
         executor: AsyncExecutor,
     ) -> List[BLEDevice]:
+        """
+        Perform a BLE scan for devices advertising the configured service UUID and return matching devices, with an optional fallback to already-connected devices when none are found.
+        
+        Performs a scan via the given executor using BleakScanner.discover filtered by SERVICE_UUID, filters the discovered devices to those that advertise SERVICE_UUID, and if no devices are found and `address` is provided, invokes the connected-device fallback discovery and includes any returned devices.
+        
+        Parameters:
+            address (Optional[str]): If provided and the initial scan yields no results, used to restrict the connected-device fallback to a specific device address.
+            executor (AsyncExecutor): Callable that accepts an awaitable and returns its result (used to run the BleakScanner.discover call and the connected-device fallback).
+        
+        Returns:
+            List[BLEDevice]: Devices that advertise SERVICE_UUID, possibly including devices returned by the connected-device fallback.
+        
+        Raises:
+            Exception: Re-raises unexpected exceptions originating from the scan or fallback operations; known scan/fallback errors (BLEError, BleakError, TimeoutError, asyncio.TimeoutError, OSError) are handled and do not propagate.
+        """
         logger.debug(
             "Scanning for BLE devices (takes %.0f seconds)...",
             BLEConfig.BLE_SCAN_TIMEOUT,
@@ -250,6 +318,12 @@ class DiscoveryManager:
 
     @staticmethod
     def _should_use_async_runner() -> bool:
+        """
+        Determine whether the current thread has an active asyncio event loop.
+        
+        Returns:
+            `True` if an event loop is currently running, `False` otherwise.
+        """
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -258,6 +332,15 @@ class DiscoveryManager:
 
     @staticmethod
     def _is_event_loop_conflict(error: RuntimeError) -> bool:
+        """
+        Detects whether a RuntimeError indicates an event-loop conflict (attempt to run an asyncio loop while another is running).
+        
+        Parameters:
+            error (RuntimeError): The runtime error to inspect.
+        
+        Returns:
+            bool: `True` if the error message matches known asyncio event-loop conflict signatures, `False` otherwise.
+        """
         message = str(error)
         conflict_signatures = (
             "asyncio.run() cannot be called from a running event loop",

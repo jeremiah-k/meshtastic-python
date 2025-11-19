@@ -47,7 +47,16 @@ from meshtastic.ble_interface import (
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
-        def sendMessage(self, topic: str, **kwargs: Any) -> None: ...
+        def sendMessage(self, topic: str, **kwargs: Any) -> None: """
+Publish a message on the coordinator's pubsub under the given topic.
+
+The provided keyword arguments are forwarded as the message payload to subscribers.
+
+Parameters:
+    topic (str): Pub/sub topic name to publish to.
+    **kwargs: Arbitrary message fields forwarded to subscribers.
+"""
+...
 
     pub: _PubProtocol
 else:  # pragma: no cover - import only at runtime
@@ -86,9 +95,28 @@ class _StrategyOverride(ConnectedStrategy):
         self,
         delegate: Callable[[Optional[str], float], Awaitable[List[BLEDevice]]],
     ) -> None:
+        """
+        Initialize the strategy wrapper with a delegate discovery coroutine.
+        
+        Parameters:
+            delegate (Callable[[Optional[str], float], Awaitable[List[BLEDevice]]]):
+                Async callable that performs connected-device discovery. It receives
+                an optional device address and a timeout (seconds) and returns a list
+                of discovered BLEDevice instances.
+        """
         self._delegate = delegate
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """
+        Perform device discovery using the configured delegate strategy.
+        
+        Parameters:
+            address (Optional[str]): If provided, restrict returned devices to those matching this address; pass None to return all discovered devices.
+            timeout (float): Scan timeout in seconds.
+        
+        Returns:
+            List[BLEDevice]: Discovered BLEDevice objects that match the optional address filter.
+        """
         return await self._delegate(address, timeout)
 
 
@@ -98,23 +126,60 @@ class _BackgroundAsyncRunner:
     """
 
     def __init__(self):
+        """
+        Initialize the runner and prepare storage for scheduled awaitables.
+        
+        The instance attribute `calls` holds a list of awaitable objects (coroutines or awaitables) that have been scheduled for background execution; each entry represents a task whose result or exception will be captured when run.
+        """
         self.calls: List[Awaitable[Any]] = []
 
     def __enter__(self):
+        """
+        Enter the context manager for the background async runner.
+        
+        Returns:
+            The same BackgroundAsyncRunner instance to be used as the context manager.
+        """
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        """
+        Indicates the context manager does not suppress exceptions.
+        
+        Parameters:
+            exc_type (Optional[type]): The exception class raised in the context, or None if no exception.
+            exc (Optional[BaseException]): The exception instance raised in the context, or None if no exception.
+            tb (Optional[types.TracebackType]): The traceback object for the exception, or None if no exception.
+        
+        Returns:
+            bool: `False` to allow any exception raised in the with-block to propagate.
+        """
         return False
 
     def async_await(self, coro):
         """
-        Run `coro` on a dedicated event loop thread and return its result.
+        Execute a coroutine on a dedicated background event-loop thread and return its result.
+        
+        Parameters:
+            coro (coroutine): The coroutine to run on the background event loop.
+        
+        Returns:
+            The value returned by the coroutine.
+        
+        Raises:
+            Exception: Re-raises any exception raised by the coroutine.
         """
 
         self.calls.append(coro)
         result: Dict[str, Any] = {"error": None, "value": None}
 
         def _worker():
+            """
+            Run the coroutine and record its outcome in the shared `result` dictionary.
+            
+            If the coroutine completes successfully, store its return value under `result["value"]`.
+            If it raises, store the raised exception under `result["error"]`.
+            """
             try:
                 result["value"] = asyncio.run(coro)
             except BaseException as exc:  # noqa: BLE001 # pragma: no cover - test helper
@@ -136,6 +201,17 @@ def test_find_device_returns_single_scan_result(monkeypatch):
     scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
 
     def mock_discover_devices(self, address):
+        """
+        Return a fixed single-device list for discovery mocks.
+        
+        This mock ignores the provided `address` and always returns the prebound `scanned_device` in a list.
+        
+        Parameters:
+            address: Ignored address filter.
+        
+        Returns:
+            list: A list containing the single `scanned_device` object.
+        """
         return [scanned_device]
 
     monkeypatch.setattr(DiscoveryManager, "discover_devices", mock_discover_devices)
@@ -155,10 +231,10 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
     def _fake_connected(_self, _address):
         """
-        Return a list containing the predefined fallback_device used for connected-device lookups.
-
+        Provide the predefined fallback device as a single-item list.
+        
         Returns:
-            list: A single-element list with the preset `fallback_device`.
+            list: A single-element list containing the module-level `fallback_device`.
         """
         return [fallback_device]
 
@@ -223,6 +299,14 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
     """DiscoveryManager should return only devices advertising the Meshtastic service UUID."""
 
     async def mock_discover(**_kwargs):
+        """
+        Return a list of two fake BLEDevice objects for testing discovery behavior.
+        
+        The first device advertises Meshtastic's SERVICE_UUID and the second advertises a different UUID.
+        
+        Returns:
+            list[BLEDevice]: Two BLEDevice instances — the first with `SERVICE_UUID` in its advertised UUIDs, the second with a non-matching service UUID.
+        """
         from bleak.backends.device import BLEDevice
 
         filtered_device = BLEDevice(
@@ -256,6 +340,15 @@ def test_discovery_manager_handles_running_loop_scan(monkeypatch):
     )
 
     async def mock_discover(**_kwargs):
+        """
+        Provide a mocked discovery result containing a single filtered device.
+        
+        Parameters:
+            _kwargs: Arbitrary keyword arguments accepted and ignored; present to match discovery call signature.
+        
+        Returns:
+            A list containing the single filtered BLE device.
+        """
         return [filtered_device]
 
     monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
@@ -263,6 +356,14 @@ def test_discovery_manager_handles_running_loop_scan(monkeypatch):
     runners: List[_BackgroundAsyncRunner] = []
 
     def _factory():
+        """
+        Create a new _BackgroundAsyncRunner and register it in the surrounding runners list.
+        
+        The new runner is appended to the outer-scope `runners` list as a side effect.
+        
+        Returns:
+            _BackgroundAsyncRunner: The newly created background async runner.
+        """
         runner = _BackgroundAsyncRunner()
         runners.append(runner)
         return runner
@@ -270,6 +371,16 @@ def test_discovery_manager_handles_running_loop_scan(monkeypatch):
     manager = DiscoveryManager(ble_client_factory=_factory)  # type: ignore[arg-type]  # type: ignore[arg-type]
 
     async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """
+        Provide a fake connected-device fallback that yields a single BLEDevice for the address "AA:BB".
+        
+        Parameters:
+            address (Optional[str]): Expected to be "AA:BB".
+            timeout (float): Expected to match ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
+        
+        Returns:
+            List[BLEDevice]: A list containing the predefined `filtered_device`.
+        """
         assert address == "AA:BB"
         assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
         return [cast("BLEDevice", filtered_device)]
@@ -277,6 +388,12 @@ def test_discovery_manager_handles_running_loop_scan(monkeypatch):
     manager.connected_strategy = _StrategyOverride(fake_connected)
 
     async def _invoke():
+        """
+        Call the discovery manager to find devices matching the address "AA:BB".
+        
+        Returns:
+            A list of discovered devices that match the address "AA:BB".
+        """
         return manager.discover_devices(address="AA:BB")
 
     devices = asyncio.run(_invoke())
@@ -290,6 +407,15 @@ def test_discovery_manager_handles_running_loop_fallback(monkeypatch):
     """Connected-device fallback should also execute via the async runner when an event loop is active."""
 
     async def mock_discover(**_kwargs):
+        """
+        Provide an async discovery stub that always returns an empty list of devices.
+        
+        Parameters:
+            **_kwargs: Ignored keyword arguments kept for compatibility with discovery call signatures.
+        
+        Returns:
+            An empty list representing no discovered devices.
+        """
         return []
 
     monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
@@ -298,6 +424,14 @@ def test_discovery_manager_handles_running_loop_fallback(monkeypatch):
     runners: List[_BackgroundAsyncRunner] = []
 
     def _factory():
+        """
+        Create a new _BackgroundAsyncRunner and register it in the surrounding runners list.
+        
+        The new runner is appended to the outer-scope `runners` list as a side effect.
+        
+        Returns:
+            _BackgroundAsyncRunner: The newly created background async runner.
+        """
         runner = _BackgroundAsyncRunner()
         runners.append(runner)
         return runner
@@ -305,6 +439,19 @@ def test_discovery_manager_handles_running_loop_fallback(monkeypatch):
     manager = DiscoveryManager(ble_client_factory=_factory)  # type: ignore[arg-type]
 
     async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """
+        Test helper that returns a predefined connected BLE device when given the expected address and timeout.
+        
+        Parameters:
+            address (Optional[str]): Expected device address; must equal "AA:BB".
+            timeout (float): Expected scan timeout; must equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
+        
+        Returns:
+            List[BLEDevice]: A single-element list containing the predefined fallback device.
+        
+        Raises:
+            AssertionError: If `address` is not "AA:BB" or `timeout` does not match the expected scan timeout.
+        """
         assert address == "AA:BB"
         assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
         return [fallback_device]
@@ -312,6 +459,12 @@ def test_discovery_manager_handles_running_loop_fallback(monkeypatch):
     manager.connected_strategy = _StrategyOverride(fake_connected)
 
     async def _invoke():
+        """
+        Call the discovery manager to find devices matching the address "AA:BB".
+        
+        Returns:
+            A list of discovered devices that match the address "AA:BB".
+        """
         return manager.discover_devices(address="AA:BB")
 
     devices = asyncio.run(_invoke())
@@ -330,14 +483,14 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
-        Return a list containing the predefined fallback device when invoked with the expected address and timeout.
-
+        Provide a predetermined connected-device fallback when invoked with the expected address and timeout.
+        
         Parameters:
-            address (str): Expected device address; must be "AA:BB".
-            timeout (float|int): Expected scan timeout; must equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
-
+            address (Optional[str]): Expected device address; must equal "AA:BB".
+            timeout (float): Expected scan timeout; must equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
+        
         Returns:
-            list: A list containing the single `fallback_device`.
+            List[BLEDevice]: A list containing the single `fallback_device`.
         """
         assert address == "AA:BB"
         assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
@@ -356,8 +509,8 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     class FakeClient:
         def __enter__(self):
             """
-            Enter the context manager and provide the context object.
-
+            Enter the context and return this context manager instance.
+            
             Returns:
                 self: The context manager instance.
             """
@@ -365,38 +518,32 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
 
         def __exit__(self, exc_type, exc, tb):
             """
-            Indicates that the context manager does not suppress exceptions raised inside the with-block.
-
-            Parameters:
-                exc_type (type | None): The exception class raised in the with-block, or None if no exception occurred.
-                exc (BaseException | None): The exception instance raised in the with-block, or None.
-                tb (types.TracebackType | None): The traceback object for the exception, or None.
-
+            Indicates exit of the context manager and that exceptions raised inside the with-block are not suppressed.
+            
             Returns:
-                bool: `False` to signal that any exception should be propagated (not suppressed).
+                bool: False to signal that any exception raised in the with-block should be propagated (not suppressed).
             """
             return False
 
         def discover(self, **_kwargs):
             """
-            Return an empty device discovery mapping.
-
-            This stubbed discover method accepts and ignores any keyword arguments and always
-            returns an empty dict representing no discovered BLE devices.
-
+            Return an empty discovery mapping of BLE devices.
+            
+            Accepts and ignores any keyword arguments.
+            
             Returns:
-                dict: An empty mapping of discovered device addresses to metadata.
+                dict: Empty mapping of discovered device addresses to metadata.
             """
             return {}
 
         @staticmethod
         def async_await(coro):  # pragma: no cover - fallback should not be hit
             """
-            Execute a coroutine to completion and return its result.
-
+            Run a coroutine to completion and return its result.
+            
             Parameters:
-                coro (coroutine): The coroutine to execute.
-
+                coro (coroutine): The coroutine to run.
+            
             Returns:
                 The value produced by the coroutine.
             """
@@ -412,17 +559,17 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
         address: Optional[str], timeout: float
     ) -> List[BLEDevice]:  # pragma: no cover - should not run
         """
-        Test helper coroutine that marks a connected-fallback as invoked and returns no devices.
-
+        Test helper coroutine that records that the connected-device fallback was invoked and returns no devices.
+        
         Parameters:
-            address (str): Address to search for; used only for signaling in tests.
-            timeout (float): Maximum time to wait in seconds; not used by this stub.
-
+            address (Optional[str]): Address to search for; present so callers can pass an address filter but not used to find devices.
+            timeout (float): Maximum time to wait in seconds; accepted for API compatibility but ignored by this stub.
+        
         Returns:
-            list: An empty list indicating no connected devices were found.
-
+            List[BLEDevice]: An empty list indicating no connected devices were found.
+        
         Side effects:
-            Sets the enclosing `fallback_called` variable to True to indicate the fallback was exercised.
+            Sets the enclosing `fallback_called` variable to True to signal that the fallback path was exercised in tests.
         """
         nonlocal fallback_called
         fallback_called = True
@@ -497,13 +644,11 @@ def test_close_handles_errors(monkeypatch, exc_cls):
 
     def _capture(topic, **kwargs):
         """
-        Record a pubsub message invocation by appending a (topic, kwargs) tuple to the module-level `calls` list.
-
-        Parameters
-        ----------
+        Record a pubsub message invocation for test capture by appending (topic, kwargs) to the module-level `calls` list.
+        
+        Parameters:
             topic (str): Pubsub topic name.
             **kwargs: Additional message fields to capture alongside the topic.
-
         """
         calls.append((topic, kwargs))
 
@@ -599,13 +744,10 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
             def __init__(self, exception_type):
                 """
-                Create a test client configured to raise a specific exception from its faulting methods.
-
-                Parameters
-                ----------
-                    exception_type (Exception | type): An exception instance or an exception class; the client will raise
-                        this exception (or an instance of it) when its faulting methods are invoked.
-
+                Create a test client that raises the provided exception from its faulting methods.
+                
+                Parameters:
+                    exception_type (Exception | type): An exception instance or exception class; the client will raise the instance as-is if given an instance, or will instantiate and raise it when given a class.
                 """
                 super().__init__()
                 self.exception_type = exception_type
@@ -628,12 +770,12 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         def mock_close(original_close=original_close, close_called=close_called):
             """
-            Mark the close event and invoke the original close function.
-
-            Sets the `close_called` event to signal that close was invoked, then calls and returns the result of `original_close()`.
-
+            Signal that close was invoked and delegate to the provided close function.
+            
+            Sets the `close_called` event to indicate a close was requested, then calls and returns the result of `original_close()`.
+            
             Returns:
-                Any: The value returned by `original_close()`.
+                The result returned by `original_close()`.
             """
             close_called.set()
             return original_close()
@@ -678,15 +820,13 @@ def test_log_notification_registration(monkeypatch):
 
         def __init__(self):
             """
-            Initialize the mock client and set up notification tracking and characteristic availability.
-
-            Attributes
-            ----------
-                start_notify_calls (list): Records the arguments of each start_notify invocation.
-                has_characteristic_map (dict): Maps characteristic UUIDs to booleans indicating whether the
-                    client reports that characteristic is present. By default, includes
+            Create a mock BLE client that tracks notification registrations and reports available characteristics.
+            
+            Attributes:
+                start_notify_calls (list): Recorded arguments for each start_notify invocation.
+                has_characteristic_map (dict): Mapping of characteristic UUID -> bool indicating whether the
+                    client reports that characteristic is present. Initially contains
                     LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID set to True.
-
             """
             super().__init__()
             self.start_notify_calls = []
@@ -698,27 +838,24 @@ def test_log_notification_registration(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Check if the client's characteristic map contains the given characteristic UUID.
-
+            Determine whether the client has a characteristic with the given UUID.
+            
             Parameters:
-                uuid (str | uuid.UUID): Characteristic UUID to check.
-
+                uuid: Characteristic UUID to check (string or uuid.UUID).
+            
             Returns:
-                bool: True if the UUID is present in the client's characteristic map, False otherwise.
+                `True` if the UUID is present in the client's characteristic map, `False` otherwise.
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
             Record a requested notification registration by saving the characteristic UUID and its handler.
-
-            Parameters
-            ----------
-                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID
-                (usually a string) and the second is the notification handler (callable). When present,
-                the pair is appended to `self.start_notify_calls`.
-                _kwargs (dict): Additional keyword arguments are accepted but ignored by this test helper.
-
+            
+            Parameters:
+                _args (tuple): If two or more positional arguments are provided, the first is the characteristic UUID (usually a string)
+                    and the second is the notification handler (callable). When present, the pair is appended to `self.start_notify_calls`.
+                _kwargs (dict): Additional keyword arguments are accepted and ignored.
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
@@ -776,7 +913,9 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     class StubCoordinator:
         def __init__(self):
             """
-            Initialize the instance and create an empty `created` list for recording created items.
+            Create a new instance and initialize an empty list for tracking created items.
+            
+            The instance attribute `created` is set to an empty list and is intended to record items produced by this object.
             """
             self.created = []
 
@@ -807,10 +946,10 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
         @staticmethod
         def start_thread(thread):
             """
-            Set the thread's `started` attribute to True.
-
+            Mark a thread-like object as started by setting its `started` attribute.
+            
             Parameters:
-                thread: A thread-like object; its `started` attribute will be set to `True`.
+                thread: Thread-like object whose `started` attribute will be set.
             """
             thread.started = True
 
@@ -855,30 +994,32 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
 
         def reset(self):
             """
-            Reset the policy state for retry attempts.
-
-            Sets the internal attempt counter to zero and records that a reset occurred by setting `reset_called` to True.
+            Reset the retry policy to its initial state.
+            
+            Sets the attempt counter to zero and records that a reset occurred by setting `reset_called` to True.
             """
             self.reset_called = True
             self._attempt_count = 0
 
         def get_attempt_count(self):
             """
-            Get the number of reconnect attempts recorded by the policy.
-
+            Return the number of reconnect attempts recorded by the policy.
+            
             Returns:
-                attempt_count (int): The number of reconnect attempts that have been made.
+                int: The number of reconnect attempts.
             """
             return self._attempt_count
 
         def next_attempt(self):
             """
-            Provide the next retry delay and whether to continue retry attempts; increments the internal attempt counter.
-
+            Advance the retry state and provide the next retry delay and whether further attempts should be made.
+            
+            Increments the internal attempt counter as a side effect.
+            
             Returns:
-                tuple: (delay_seconds, continue_retry)
-                delay_seconds (float): Seconds to wait before the next attempt.
-                continue_retry (bool): True to perform another attempt, False to stop.
+                tuple: (`delay_seconds`, `continue_retry`)
+                `delay_seconds` (float): Seconds to wait before the next attempt.
+                `continue_retry` (bool): `True` to perform another attempt, `False` to stop.
             """
             self._attempt_count += 1
             return 0.1, False
@@ -898,8 +1039,8 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
         def cleanup_all(self):
             """
             Mark all notifications as cleaned.
-
-            Increments an internal counter that tracks how many times cleanup has been performed.
+            
+            Increments the internal cleanup counter (self.cleaned) to record that a cleanup run occurred.
             """
             self.cleaned += 1
 
@@ -916,18 +1057,17 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
     class StubScheduler:
         def __init__(self):
             """
-            Initialize the instance and set its cleared state.
-
-            Attributes:
-                cleared (bool): Indicates whether the instance has been cleared; initially False.
+            Create a new instance and mark it as not cleared.
+            
+            Initializes the instance attribute `cleared` to False; this flag indicates whether the instance has been cleared.
             """
             self.cleared = False
 
         def clear_thread_reference(self):
             """
-            Mark that the reconnect thread reference has been cleared.
-
-            Sets an internal flag indicating the scheduler no longer holds a reference to an active reconnect thread, allowing a new reconnect thread to be created.
+            Record that the scheduler no longer holds a reconnect thread reference.
+            
+            Sets an internal flag allowing the scheduler to start a new reconnect thread.
             """
             self.cleared = True
 
@@ -961,10 +1101,7 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
 
         def connect(self, address):
             """
-            Record a connection attempt for the given address.
-
-            Parameters:
-                address (str): Bluetooth address or identifier to connect to.
+            Record a connection attempt for the specified Bluetooth address.
             """
             self.connect_calls.append(address)
 
@@ -995,11 +1132,11 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     class LimitedPolicy:
         def __init__(self):
             """
-            Initialize the stub policy used in tests and set initial counters.
-
+            Initialize the stub retry policy for tests and set initial counters.
+            
             Attributes:
-                reset_called (bool): Indicates whether `reset()` has been called.
-                attempts (int): Count of connection attempts recorded by the stub.
+                reset_called (bool): True after `reset()` is invoked.
+                attempts (int): Number of connection attempts recorded by the stub.
             """
             self.reset_called = False
             self.attempts = 0
@@ -1015,19 +1152,19 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
         def get_attempt_count(self):
             """
-            Report the number of reconnect attempts recorded by the policy.
-
+            Get the number of reconnect attempts recorded by the policy.
+            
             Returns:
-                int: Number of attempts made so far.
+                int: The number of attempts made so far.
             """
             return self.attempts
 
         def next_attempt(self):
             """
-            Compute the next retry delay and whether another attempt should be made.
-
+            Calculate the next retry delay and indicate whether another attempt should be performed.
+            
             Returns:
-                (delay_seconds, continue_flag): A tuple where `delay_seconds` is 0.25 and `continue_flag` is `True` if the internal attempt count after incrementing is less than 2, `False` otherwise.
+                (delay_seconds, continue_flag): Tuple where `delay_seconds` is 0.25, and `continue_flag` is `True` if the internal attempt count after incrementing is less than 2, `False` otherwise.
             """
             self.attempts += 1
             return 0.25, self.attempts < 2
@@ -1035,18 +1172,17 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     class StubNotificationManager:
         def __init__(self):
             """
-            Initialize the instance and set the cleaned counter.
-
-            Attributes:
-                cleaned (int): Number of cleanup operations performed, initialized to 0.
+            Create a new instance and initialize the cleanup counter.
+            
+            Initializes the instance attribute `cleaned` to 0, the number of cleanup operations performed.
             """
             self.cleaned = 0
 
         def cleanup_all(self):
             """
             Mark all notifications as cleaned.
-
-            Increments an internal counter that tracks how many times cleanup has been performed.
+            
+            Increments the internal cleanup counter (self.cleaned) to record that a cleanup run occurred.
             """
             self.cleaned += 1
 
@@ -1065,18 +1201,17 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     class StubScheduler:
         def __init__(self):
             """
-            Initialize the instance and set its cleared state.
-
-            Attributes:
-                cleared (bool): Indicates whether the instance has been cleared; initially False.
+            Create a new instance and mark it as not cleared.
+            
+            Initializes the instance attribute `cleared` to False; this flag indicates whether the instance has been cleared.
             """
             self.cleared = False
 
         def clear_thread_reference(self):
             """
-            Mark that the reconnect thread reference has been cleared.
-
-            Sets an internal flag indicating the scheduler no longer holds a reference to an active reconnect thread, allowing a new reconnect thread to be created.
+            Record that the scheduler no longer holds a reconnect thread reference.
+            
+            Sets an internal flag allowing the scheduler to start a new reconnect thread.
             """
             self.cleared = True
 
@@ -1086,14 +1221,14 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
         def __init__(self):
             """
             Create a minimal stub interface used by reconnect tests.
-
+            
             Attributes:
-                _reconnect_policy: Policy object controlling reconnect attempts (LimitedPolicy instance).
-                _notification_manager: Notification manager used to cleanup/resubscribe (StubNotificationManager instance).
-                _state_manager: SimpleNamespace with runtime state flags (contains `is_closing`).
-                _reconnect_scheduler: Scheduler responsible for managing reconnect threads (StubScheduler instance).
+                _reconnect_policy: ReconnectPolicy controlling retry behaviour (LimitedPolicy instance).
+                _notification_manager: Notification manager used to cleanup and resubscribe (StubNotificationManager instance).
+                _state_manager: SimpleNamespace with runtime state flags; provides `is_closing`.
+                _reconnect_scheduler: Scheduler that tracks reconnect thread references (StubScheduler instance).
                 auto_reconnect (bool): Whether automatic reconnect attempts are enabled.
-                is_connection_closing (bool): Flag indicating an in-progress connection close.
+                is_connection_closing (bool): True while a connection close is in progress.
                 address (str): Remote device address used for connection attempts.
                 client: Placeholder for the BLE client instance (initially None).
                 connect_attempts (int): Counter of connect() invocation attempts.
@@ -1110,10 +1245,10 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
         def connect(self, *_args, **_kwargs):
             """
-            Simulated failing connect method that records a connection attempt and then raises a BLEError.
-
-            Increments the instance attribute `connect_attempts` by one as a side effect, then raises `self.BLEError("boom")`.
-
+            Record a connection attempt by incrementing `connect_attempts`, then raise a BLEError.
+            
+            Increments the instance attribute `connect_attempts` by one as a side effect.
+            
             Raises:
                 self.BLEError: Always raised with the message "boom".
             """

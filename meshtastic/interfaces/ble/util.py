@@ -30,6 +30,12 @@ def _bleak_supports_connected_fallback(
 ) -> bool:
     """
     Determine whether the installed bleak version supports the connected-device fallback.
+    
+    Parameters:
+        bleak_connected_device_fallback_min_version (Tuple[int, int, int]): Minimum required Bleak version as a (major, minor, patch) triplet.
+    
+    Returns:
+        bool: `True` if the installed Bleak version is greater than or equal to the provided triplet, `False` otherwise.
     """
     return (
         _parse_version_triplet(BLEAK_VERSION)
@@ -38,16 +44,26 @@ def _bleak_supports_connected_fallback(
 
 
 def _sleep(delay: float) -> None:
-    """Allow callsites to throttle activity (wrapped for easier testing)."""
+    """
+    Pause execution for the given number of seconds.
+    
+    Parameters:
+        delay (float): Number of seconds to sleep; may be fractional.
+    """
     time.sleep(delay)
 
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
-    Extract a three-part integer version tuple from `version_str`.
-
-    This helper is intentionally permissive — non-numeric segments are ignored and
-    missing components are treated as zeros.
+    Return a normalized three-part integer version tuple extracted from the input string.
+    
+    Parses up to three numeric components from the provided version string, ignoring non-numeric segments; missing components are treated as zero. If numeric conversion fails, returns (0, 0, 0).
+    
+    Parameters:
+        version_str (str): Version string to parse; may include non-numeric characters.
+    
+    Returns:
+        Tuple[int, int, int]: (major, minor, patch) integers extracted from the string, with absent parts set to 0.
     """
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
@@ -63,12 +79,18 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
 
 async def _with_timeout(awaitable, timeout: Optional[float], label: str):
     """
-    Await `awaitable`, enforcing `timeout` seconds if provided.
-
-    Raises
-    ------
-        BLEError: when the awaitable does not finish before the timeout elapses.
-
+    Waits for the given awaitable to complete, enforcing an optional timeout.
+    
+    Parameters:
+        awaitable: An awaitable or coroutine to wait on.
+        timeout (float | None): Timeout in seconds; if None, wait indefinitely.
+        label (str): Label used in the timeout error message.
+    
+    Returns:
+        The result produced by the awaitable.
+    
+    Raises:
+        BLEError: If the awaitable does not complete before the specified timeout.
     """
     if timeout is None:
         return await awaitable
@@ -80,17 +102,14 @@ async def _with_timeout(awaitable, timeout: Optional[float], label: str):
 
 def _sanitize_address(address: Optional[str]) -> Optional[str]:
     """
-    Normalize a BLE address by removing common separators and converting to lowercase.
-
-    Args:
-    ----
-        address (Optional[str]): BLE address or identifier; may be None or empty/whitespace.
-
+    Normalize a BLE address by removing common separators and lowercasing the result.
+    
+    Parameters:
+        address (Optional[str]): BLE address or identifier; may be None or only whitespace.
+    
     Returns:
-    -------
-        Optional[str]: The normalized address with all "-", "_", ":" removed, trimmed of surrounding whitespace,
-            and lowercased, or `None` if `address` is None or contains only whitespace.
-
+        Optional[str]: The address with "-", "_", ":", and spaces removed and converted to lowercase,
+        or `None` if `address` is None or contains only whitespace.
     """
     if address is None or not address.strip():
         return None
@@ -122,12 +141,12 @@ class ThreadCoordinator:
 
     def __init__(self):
         """
-        Create a ThreadCoordinator used to track and manage threads and events.
-
-        Initializes:
-            _lock (RLock): reentrant lock protecting internal state.
-            _threads (List[Thread]): list of tracked Thread objects.
-            _events (dict[str, Event]): mapping of event names to threading.Event objects for coordination.
+        Initialize a ThreadCoordinator for tracking threads and coordinating events.
+        
+        Creates an internal reentrant lock and initializes empty containers used by the coordinator:
+        - _lock: reentrant lock protecting internal state.
+        - _threads: list of tracked Thread objects.
+        - _events: mapping from event name to threading.Event instances.
         """
         self._lock = RLock()
         self._threads: List[Thread] = []
@@ -137,20 +156,17 @@ class ThreadCoordinator:
         self, target, name: str, *, daemon: bool = True, args=(), kwargs=None
     ) -> Thread:
         """
-        Create and register a new Thread with target, name, daemon, args, and kwargs.
-
-        Args:
-        ----
-            target (callable): The callable to be executed by the thread.
-            name (str): The thread's name.
-            daemon (bool): Whether the thread should be a daemon thread.
-            args (tuple): Positional arguments to pass to `target`.
-            kwargs (dict): Keyword arguments to pass to `target`.
-
+        Create and register a new Thread with the coordinator without starting it.
+        
+        Parameters:
+            target: Callable to run in the thread.
+            name (str): Thread name.
+            daemon (bool): If True, mark the thread as a daemon.
+            args (tuple): Positional arguments for `target`.
+            kwargs (dict | None): Keyword arguments for `target`; may be None.
+        
         Returns:
-        -------
-            Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
-
+            Thread: The created Thread instance added to the coordinator's tracked threads (not started).
         """
         with self._lock:
             thread = Thread(
@@ -179,25 +195,25 @@ class ThreadCoordinator:
 
     def get_event(self, name: str) -> Optional[Event]:
         """
-        Retrieve a previously created Event by the specified name.
-
-        Args:
-        ----
-            name (str): The identifier of the tracked event.
-
+        Get a tracked Event by name.
+        
+        Parameters:
+            name (str): The name identifier of the tracked event.
+        
         Returns:
-        -------
-            Optional[Event]: The Event instance if found, otherwise `None`.
-
+            Optional[Event]: The Event if found, `None` otherwise.
         """
         with self._lock:
             return self._events.get(name)
 
     def start_thread(self, thread: Thread):
         """
-        Start the given thread if it is tracked by this coordinator.
-
-        Only threads previously added to the coordinator's tracking list will be started; otherwise the call has no effect.
+        Start a tracked thread managed by this coordinator.
+        
+        If the provided thread is among the coordinator's tracked threads, start it; otherwise the call has no effect.
+        
+        Parameters:
+            thread (threading.Thread): The thread to start if it is tracked by the coordinator.
         """
         with self._lock:
             if thread in self._threads:
@@ -205,13 +221,13 @@ class ThreadCoordinator:
 
     def join_thread(self, thread: Thread, timeout: Optional[float] = None):
         """
-        Join a tracked thread with the specified thread and timeout.
-
-        Args:
-        ----
-                thread (Thread): The thread to join; only joined if it is currently tracked and alive.
-                timeout (float | None): Maximum seconds to wait for the thread to finish. If None, wait indefinitely.
-
+        Join a tracked thread if it is alive, tracked, and not the current thread.
+        
+        If the provided thread is currently being tracked and is alive (and is not the calling thread), wait up to `timeout` seconds for it to finish.
+        
+        Parameters:
+        	thread (Thread): The thread to join.
+        	timeout (float | None): Maximum seconds to wait for the thread to finish; `None` to wait indefinitely.
         """
         with self._lock:
             if (
@@ -223,13 +239,10 @@ class ThreadCoordinator:
 
     def join_all(self, timeout: Optional[float] = None):
         """
-        Wait for all tracked threads with the specified timeout.
-
-        Args:
-        ----
-            timeout (Optional[float]): Maximum number of seconds to wait for each thread to join.
-                If `None`, wait indefinitely for each thread.
-
+        Wait for all tracked threads to finish, joining each with an optional per-thread timeout.
+        
+        Parameters:
+            timeout (Optional[float]): Maximum seconds to wait for each thread to join; if `None`, wait indefinitely for each tracked thread. The current thread (caller) is never joined.
         """
         with self._lock:
             current = current_thread()
@@ -239,18 +252,9 @@ class ThreadCoordinator:
 
     def set_event(self, name: str):
         """
-        Set the tracked event with the specified name.
-
-        If no event exists with that name, this is a no-op.
-
-        Args:
-        ----
-            name (str): Name of the tracked event to set.
-
-        Returns:
-        -------
-            None.
-
+        Set the tracked event with the given name.
+        
+        If no event is tracked under that name, this is a no-op.
         """
         with self._lock:
             if name in self._events:
@@ -273,17 +277,14 @@ class ThreadCoordinator:
 
     def wait_for_event(self, name: str, timeout: Optional[float] = None) -> bool:
         """
-        Wait until the named tracked event is set or until the timeout elapses.
-
-        Args:
-        ----
-            name (str): Name of the tracked event to wait for.
-            timeout (Optional[float]): Maximum time in seconds to wait; None means wait indefinitely.
-
+        Block until the named tracked event is set or the optional timeout elapses.
+        
+        Parameters:
+            name (str): Name of the tracked event.
+            timeout (Optional[float]): Maximum seconds to wait; None to wait indefinitely.
+        
         Returns:
-        -------
-            bool: True if the event was set before the timeout, False otherwise or if the event is not tracked.
-
+            `true` if the event was set before the timeout, `false` otherwise (including when the event is not tracked).
         """
         event = self.get_event(name)
         if event:
@@ -292,16 +293,10 @@ class ThreadCoordinator:
 
     def check_and_clear_event(self, name: str) -> bool:
         """
-        Check whether a tracked event is set and clear it if set.
-
-        Args:
-        ----
-            name (str): The tracked event's name.
-
+        Check whether the named tracked event is set and clear it if set.
+        
         Returns:
-        -------
-            bool: `True` if the event was set (and was cleared), `False` otherwise.
-
+            `True` if the event was set (and was cleared), `False` otherwise.
         """
         event = self.get_event(name)
         if event and event.is_set():
@@ -311,24 +306,20 @@ class ThreadCoordinator:
 
     def wake_waiting_threads(self, *event_names: str):
         """
-        Set the named events so any threads waiting on them are woken.
-
-        Args:
-        ----
-            event_names (str): One or more names of events previously created via create_event; each named event will be set.
-
+        Wake threads waiting on one or more named events.
+        
+        Parameters:
+            event_names (str): One or more event names previously created with `create_event`. Each specified event will be set if it is tracked, which will wake any threads waiting on it.
         """
         for name in event_names:
             self.set_event(name)
 
     def clear_events(self, *event_names: str):
         """
-        Clear multiple tracked events by name.
-
-        Args:
-        ----
-            event_names (str): One or more event names to clear; names that are not tracked are ignored.
-
+        Clear multiple tracked events.
+        
+        Parameters:
+            event_names (str): One or more event names to clear; names not tracked are ignored.
         """
         for name in event_names:
             self.clear_event(name)
@@ -378,29 +369,23 @@ class BLEErrorHandler:
         reraise: bool = False,
     ):
         """
-        Execute a callable and return its result while converting handled exceptions into a default value.
-
-        Args:
-        ----
-            func (callable): A zero-argument callable to execute.
-            default_return: Value to return if execution fails; defaults to None.
+        Execute a zero-argument callable and return its result, substituting a default value if an exception is handled.
+        
+        Parameters:
+            func (callable): Zero-argument callable to execute.
+            default_return: Value to return when execution fails; defaults to None.
             log_error (bool): If True, log caught exceptions; defaults to True.
             error_msg (str): Message used when logging errors; defaults to "Error in operation".
-            reraise (bool): If True, re-raise any caught exception instead of returning default_return.
-
+            reraise (bool): If True, re-raise any caught exception instead of returning `default_return`.
+        
         Returns:
-        -------
-            The value returned by `func()` on success, or `default_return` if a handled exception occurs.
-
+            The value returned by `func()` on success, or `default_return` if an exception is caught.
+        
         Raises:
-        ------
             Exception: Re-raises the original exception if `reraise` is True.
-
+        
         Notes:
-        -----
-            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError;
-        all other exceptions are also caught and treated the same.
-
+            The function treats BleakError, BleakDBusError, DecodeError, FutureTimeoutError, and any other Exception as handled for the purpose of returning `default_return` (unless `reraise` is set).
         """
         try:
             return func()
@@ -419,7 +404,13 @@ class BLEErrorHandler:
 
     @staticmethod
     def safe_cleanup(func, cleanup_name: str = "cleanup operation"):
-        """Safely execute cleanup operations without raising exceptions."""
+        """
+        Execute a cleanup callable and suppress any exceptions, logging failures at debug level.
+        
+        Parameters:
+            func (callable): Zero-argument cleanup function to execute.
+            cleanup_name (str): Human-readable name for the cleanup used in debug logging.
+        """
         try:
             func()
         except Exception as e:  # noqa: BLE001

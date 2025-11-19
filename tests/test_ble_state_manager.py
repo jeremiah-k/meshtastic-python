@@ -106,7 +106,11 @@ class TestBLEStateManager:
         assert manager.state == ConnectionState.CONNECTED
 
     def test_client_management(self):
-        """Test client reference management during transitions."""
+        """
+        Verify client reference lifecycle across state transitions.
+        
+        Sets a client when transitioning to CONNECTING, ensures the client remains after transitioning to CONNECTED, and ensures the client is cleared when transitioning to DISCONNECTED.
+        """
         manager = BLEStateManager()
         mock_client = Mock()
 
@@ -211,8 +215,8 @@ class TestBLEStateManager:
         def nested_operation():
             # This should work with reentrant lock
             """
-            Read the manager's current connection state while acquiring the manager's reentrant state lock.
-
+            Read the manager's current connection state while holding the reentrant state lock.
+            
             Returns:
                 ConnectionState: The current connection state.
             """
@@ -382,11 +386,11 @@ class TestPhase3LockConsolidation:
         def worker(worker_id):
             """
             Exercise concurrent state transitions on a shared BLEStateManager and record outcomes.
-
-            Runs a short loop that alternates transition requests (CONNECTING, CONNECTED with a mock client, DISCONNECTED), appending tuples of (worker_id, iteration, manager.state, success) to a shared `results` list and recording any exceptions as (worker_id, error_message) in a shared `errors` list.
-
+            
+            Runs a short loop that alternates transition requests (CONNECTING, CONNECTED with a mock client, DISCONNECTED), appending tuples of (worker_id, iteration, manager.state, success) to the shared `results` list and recording exceptions as (worker_id, error_message) in the shared `errors` list.
+            
             Parameters:
-                worker_id (int | str): Identifier included in recorded result and error entries to distinguish this worker's operations.
+                worker_id: Identifier included in recorded result and error entries to distinguish this worker's operations.
             """
             try:
                 for i in range(10):
@@ -443,9 +447,9 @@ class TestPhase3LockConsolidation:
         def nested_operation():
             # This should work without deadlock due to reentrant lock
             """
-            Exercise nested state transitions under the manager's reentrant lock to ensure no deadlock and preserve state and client consistency.
-
-            Performs CONNECTING → CONNECTED with a mock client and verifies the manager sets the client and reports connected.
+            Perform nested state transitions under the manager's reentrant lock to ensure no deadlock and to preserve state and client consistency.
+            
+            Performs a CONNECTING → CONNECTED transition using a mock client and asserts that the manager stores the client and reports connected.
             """
             assert manager.transition_to(ConnectionState.CONNECTING)
             assert manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
@@ -472,9 +476,9 @@ class TestPhase3LockConsolidation:
 
         def contending_worker():
             """
-            Perform a state-transition workload under the manager's internal state lock to exercise contention.
-
-            Acquires the manager's internal lock and transitions the manager to CONNECTING then to DISCONNECTED. If an exception occurs during the operation, increments the shared contention_count[0].
+            Exercise the manager's internal state lock by transitioning it to CONNECTING then DISCONNECTED.
+            
+            Runs a short workload that acquires the manager's internal state lock, performs the transitions CONNECTING → DISCONNECTED, and records failures by incrementing contention_count[0] if an exception occurs.
             """
             try:
                 # Try to acquire lock and perform operation
@@ -559,15 +563,12 @@ def test_lock_contention_performance():
 
     def worker(worker_id):
         """
-        Run a worker that performs repeated BLE state transition attempts and records throughput.
-
-        Performs 100 iterations of attempting CONNECTING, CONNECTED, and DISCONNECTED transitions; each successful transition increments an operation counter. Appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed wall-clock seconds).
-
+        Run a worker that performs repeated BLE state transitions and records its operation count and elapsed time.
+        
+        Performs 100 iterations attempting transitions to CONNECTING, CONNECTED, and DISCONNECTED; increments an operation counter for each successful transition and, on completion, appends a dict to the surrounding `results` list containing `worker_id`, `operations`, and elapsed `time` in seconds. This function calls the outer-scope `manager.transition_to(...)` and mutates the outer-scope `results` list.
+        
         Parameters:
             worker_id (int): Identifier used in the appended result to distinguish this worker.
-
-        Side effects:
-            Calls `manager.transition_to(...)` on the outer-scope `manager` and appends a dict to the outer-scope `results` list.
         """
         start_time = time.perf_counter()
         operations = 0
