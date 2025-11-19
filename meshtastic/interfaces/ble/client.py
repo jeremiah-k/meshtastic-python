@@ -298,7 +298,7 @@ class BLEClient:
         """
         Wait for the given coroutine to complete on the client's event loop and return its result.
 
-        If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEInterface.BLEError is raised.
+        If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEError is raised.
 
         Args:
         ----
@@ -311,11 +311,11 @@ class BLEClient:
 
         Raises:
         ------
-            BLEInterface.BLEError: If the wait times out.
+            BLEError: If the wait times out.
 
         """
         # Exception mapping contract:
-        #   - FutureTimeoutError -> BLEInterface.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
+        #   - FutureTimeoutError -> BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so BLEInterface wrappers can convert them consistently.
         future = self.async_run(coro)
         try:

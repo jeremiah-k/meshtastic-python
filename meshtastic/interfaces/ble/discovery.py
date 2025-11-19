@@ -97,10 +97,16 @@ class ConnectedStrategy(DiscoveryStrategy):
                         )
                     )
             return devices_found
-        except (BLEError, BleakError, TimeoutError, asyncio.TimeoutError, OSError) as exc:
+        except (
+            BLEError,
+            BleakError,
+            TimeoutError,
+            asyncio.TimeoutError,
+            OSError,
+        ) as exc:
             logger.warning("Connected device discovery failed: %s", exc)
             return []
-        except Exception as exc:  # pragma: no cover - unexpected failures
+        except Exception:  # pragma: no cover - unexpected failures
             logger.exception("Unexpected error during connected-device discovery")
             raise
 
@@ -148,7 +154,13 @@ class DiscoveryManager:
                     )
                     return []
             raise
-        except (BLEError, BleakError, TimeoutError, asyncio.TimeoutError, OSError) as exc:
+        except (
+            BLEError,
+            BleakError,
+            TimeoutError,
+            asyncio.TimeoutError,
+            OSError,
+        ) as exc:
             logger.warning("Device discovery failed: %s", exc)
             return []
         except Exception:

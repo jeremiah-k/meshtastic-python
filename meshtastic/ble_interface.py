@@ -43,6 +43,12 @@ from meshtastic import publishingThread
 from threading import current_thread
 
 __all__ = [
+    "FROMNUM_UUID",
+    "FROMRADIO_UUID",
+    "LEGACY_LOGRADIO_UUID",
+    "LOGRADIO_UUID",
+    "SERVICE_UUID",
+    "TORADIO_UUID",
     "BLEClient",
     "BLEConfig",
     "BLEDevice",
@@ -54,16 +60,10 @@ __all__ = [
     "ConnectionValidator",
     "DecodeError",
     "DiscoveryManager",
-    "FROMNUM_UUID",
-    "FROMRADIO_UUID",
-    "LEGACY_LOGRADIO_UUID",
-    "LOGRADIO_UUID",
     "ReconnectPolicy",
     "ReconnectScheduler",
     "ReconnectWorker",
     "RetryPolicy",
-    "SERVICE_UUID",
-    "TORADIO_UUID",
 ]
 
 # Module-level attributes are available from imports above for backward compatibility with tests

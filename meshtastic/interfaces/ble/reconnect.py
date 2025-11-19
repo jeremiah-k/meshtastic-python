@@ -108,6 +108,10 @@ class ReconnectPolicy:
     def should_retry(self, attempt: Optional[int] = None) -> bool:
         """
         Determine whether another retry should be attempted.
+
+        Returns True if max_retries is None (unlimited retries) or if the given
+        attempt count is less than max_retries. Note that when used with next_attempt(),
+        this allows max_retries + 1 total attempts due to the increment after checking.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -116,6 +120,10 @@ class ReconnectPolicy:
     def next_attempt(self) -> Tuple[float, bool]:
         """
         Advance the attempt counter and return (delay, should_retry).
+
+        Note: This method increments the attempt count after checking should_retry,
+        so callers using only next_attempt() will effectively allow max_retries + 1 attempts.
+        This behavior is intentional for the current AUTO_RECONNECT implementation.
         """
         delay = self.get_delay()
         should_retry = self.should_retry()

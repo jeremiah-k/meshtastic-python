@@ -7,7 +7,7 @@ import io
 import logging
 import struct
 import time
-from threading import Event, RLock, Thread, current_thread
+from threading import Event, Thread
 from typing import Any, Callable, Optional, List
 
 from bleak import BleakClient as BleakRootClient
@@ -465,7 +465,7 @@ class BLEInterface(MeshInterface):
             raise BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         return addressed_devices[0]
 
-    def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
+    def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:  # noqa: ARG002
         """
         Find currently connected devices matching the given address.
 
@@ -779,12 +779,14 @@ class BLEInterface(MeshInterface):
             self._client_manager.safe_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
-        queue = getattr(publishingThread, "queue", None)
-        if queue is None:
+        import queue
+
+        queue_obj = getattr(publishingThread, "queue", None)
+        if queue_obj is None:
             return
         while not flush_event.is_set():
             try:
-                runnable = queue.get_nowait()
+                runnable = queue_obj.get_nowait()
                 logger.debug("Got runnable from queue: %r", runnable)
                 self.error_handler.safe_execute(
                     runnable,
@@ -792,9 +794,6 @@ class BLEInterface(MeshInterface):
                     reraise=False,
                 )
                 logger.debug("Deferred publish callback processed")
-            except Exception as exc:
-                logger.debug(
-                    "Exception while draining publish queue (likely empty): %s", exc
-                )
-                # Handle both asyncio.QueueEmpty and queue.Empty
+            except (asyncio.QueueEmpty, queue.Empty) as exc:
+                logger.debug("Queue empty while draining publish queue: %s", exc)
                 break
