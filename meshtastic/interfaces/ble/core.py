@@ -759,12 +759,7 @@ class BLEInterface(MeshInterface):
         logger.debug("Disconnect notification flush completed")
 
     def _disconnect_and_close_client(self, client: "BLEClient"):
-        try:
-            self.error_handler.safe_cleanup(
-                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
-            )
-        finally:
-            self._client_manager.safe_close_client(client)
+        self._client_manager.safe_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
         queue_obj = getattr(publishingThread, "queue", None)

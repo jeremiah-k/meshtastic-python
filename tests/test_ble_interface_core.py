@@ -117,7 +117,7 @@ class _BackgroundAsyncRunner:
         def _worker():
             try:
                 result["value"] = asyncio.run(coro)
-            except BaseException as exc:  # pragma: no cover - test helper
+            except BaseException as exc:  # noqa: BLE001 # pragma: no cover - test helper
                 result["error"] = exc
 
         thread = threading.Thread(target=_worker, name="TestAsyncRunner", daemon=True)

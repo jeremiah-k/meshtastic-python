@@ -98,8 +98,13 @@ class ClientManager:
         self, client: "BLEClient", event: Optional[Event] = None
     ) -> None:
         """
-        Close the provided BLEClient and suppress common close-time errors.
+        Best-effort disconnect and close of the provided BLEClient, suppressing
+        close-time errors.
         """
+        self.error_handler.safe_cleanup(
+            lambda: client.disconnect(await_timeout=BLEConfig.CONNECTION_TIMEOUT),
+            "client disconnect",
+        )
         self.error_handler.safe_cleanup(client.close, "client close")
         if event:
             event.set()

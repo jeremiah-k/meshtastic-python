@@ -260,6 +260,16 @@ class ReconnectWorker:
                     )
                     self.interface._notification_manager.cleanup_all()
                     self.interface.connect(self.interface.address)
+                    if getattr(self.interface, "client", None) is not None:
+                        timeout = (
+                            BLEConfig.NOTIFICATION_START_TIMEOUT
+                            if BLEConfig.NOTIFICATION_START_TIMEOUT is not None
+                            else BLEConfig.GATT_IO_TIMEOUT
+                        )
+                        self.interface._notification_manager.resubscribe_all(
+                            self.interface.client,
+                            timeout,
+                        )
 
                     logger.info(
                         "BLE auto-reconnect succeeded after %d attempts.", attempt_num
