@@ -5,7 +5,7 @@ import logging
 import time
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from threading import Thread
+from threading import Thread, current_thread
 from typing import Optional, TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
@@ -193,27 +193,20 @@ class BLEClient:
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services
 
-    def ensure_services_available(self):
+def ensure_services_available(self):
         """
         Ensure services are available for the connected device.
-
-        In bleak, services are automatically discovered during connection.
-        This method polls the services property to ensure they are populated.
-
+        
+        In bleak, services must be explicitly discovered via get_services().
+        This method triggers service discovery and returns the populated services object.
+        
         Returns
         -------
             The device's GATT services and their characteristics as returned by the underlying BLE library.
         """
-        # In bleak, services are auto-discovered during connect.
-        # We'll access the services property which should be populated.
-        # If services are not yet available, we'll wait a brief moment.
-        services = getattr(self.bleak_client, "services", None)
-        if not services:
-            # Services might not be immediately available after connection
-            # Give a brief moment for them to populate
-            time.sleep(0.1)
-            services = getattr(self.bleak_client, "services", None)
-        return services
+        # Explicitly trigger service discovery via bleak's API
+        return self.async_await(self.bleak_client.get_services())
+
 
     def has_characteristic(self, specifier):
         """
@@ -265,7 +258,8 @@ class BLEClient:
             return
         self._closed = True
         self.async_run(self._stop_event_loop())
-        self._eventThread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
+        if current_thread() is not self._eventThread:
+            self._eventThread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():
             logger.warning(
                 "BLE event thread did not exit within %.1fs",

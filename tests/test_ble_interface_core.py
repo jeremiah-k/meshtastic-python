@@ -326,57 +326,6 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     fallback_device = _create_ble_device("AA:BB", "Fallback")
 
-    class FakeClient:
-        def __enter__(self):
-            """
-            Enter the context manager and provide the context object.
-
-            Returns:
-                self: The context manager instance.
-            """
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            """
-            Indicates that the context manager does not suppress exceptions raised inside the with-block.
-
-            Parameters:
-                exc_type (type | None): The exception class raised in the with-block, or None if no exception occurred.
-                exc (BaseException | None): The exception instance raised in the with-block, or None.
-                tb (types.TracebackType | None): The traceback object for the exception, or None.
-
-            Returns:
-                bool: `False` to signal that any exception should be propagated (not suppressed).
-            """
-            return False
-
-        def discover(self, **_kwargs):
-            """
-            Return an empty device discovery mapping.
-
-            This stubbed discover method accepts and ignores any keyword arguments and always
-            returns an empty dict representing no discovered BLE devices.
-
-            Returns:
-                dict: An empty mapping of discovered device addresses to metadata.
-            """
-            return {}
-
-        @staticmethod
-        def async_await(coro):
-            """
-            Execute a coroutine until completion and return its result.
-
-            Parameters:
-                coro (Awaitable): The coroutine or awaitable to run to completion.
-
-            Returns:
-                Any: The value returned by the coroutine.
-            """
-            return asyncio.run(coro)
-
-    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
-
     manager = DiscoveryManager()
 
     async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
