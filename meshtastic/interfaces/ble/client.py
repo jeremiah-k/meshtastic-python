@@ -194,10 +194,13 @@ class BLEClient:
 
     def discover_services(self):
         """
-        Discover services and characteristics for the connected device.
+        Ensure services are available for the connected device.
 
-        In bleak, services are automatically discovered during connection.
-        This method ensures services are available and returns them.
+        Note: This method name is misleading. In bleak, services are automatically
+        discovered during connection. This method simply polls the services property
+        with a brief sleep as a defensive measure to ensure services are populated.
+
+        This is defensive polling, not explicit service discovery.
 
         Returns
         -------
@@ -216,6 +219,15 @@ class BLEClient:
             time.sleep(0.1)
             services = getattr(self.bleak_client, "services", None)
         return services
+
+    def _ensure_services_available(self):
+        """
+        Ensure services are available for the connected device.
+
+        This is the preferred method name that accurately reflects the behavior.
+        The discover_services method is kept for backward compatibility.
+        """
+        return self.discover_services()
 
     def has_characteristic(self, specifier):
         """

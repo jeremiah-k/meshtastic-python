@@ -452,7 +452,7 @@ class BLEInterface(MeshInterface):
             raise BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         return addressed_devices[0]
 
-    def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:  # noqa: ARG002
+    def _find_connected_devices(self, _address: Optional[str]) -> List[BLEDevice]:  # noqa: ARG002
         """
         Find currently connected devices matching the given address.
 
