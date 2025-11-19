@@ -12,6 +12,14 @@ else:  # pragma: no cover - import real exception only at runtime
 from .interfaces.ble.config import BLEConfig
 from .interfaces.ble.core import BLEInterface
 from .interfaces.ble.exceptions import BLEError
+from .interfaces.ble.gatt import (
+    FROMNUM_UUID,
+    FROMRADIO_UUID,
+    LEGACY_LOGRADIO_UUID,
+    LOGRADIO_UUID,
+    SERVICE_UUID,
+    TORADIO_UUID,
+)
 from .interfaces.ble.reconnect import ReconnectPolicy, RetryPolicy
 from .interfaces.ble.state import BLEStateManager, ConnectionState
 from .interfaces.ble.client import BLEClient
@@ -26,4 +34,10 @@ __all__ = [
     "BLEClient",
     "DecodeError",
     "BLEError",
+    "FROMNUM_UUID",
+    "FROMRADIO_UUID",
+    "LEGACY_LOGRADIO_UUID",
+    "LOGRADIO_UUID",
+    "SERVICE_UUID",
+    "TORADIO_UUID",
 ]
