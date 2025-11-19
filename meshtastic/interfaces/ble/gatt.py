@@ -70,7 +70,9 @@ class NotificationManager:
                     )
                 except Exception as exc:  # pragma: no cover - defensive logging
                     logger.exception(
-                        "Unexpected error while resubscribing %s", characteristic
+                        "Unexpected error while resubscribing %s: %s",
+                        characteristic,
+                        exc,
                     )
 
     def __len__(self) -> int:
