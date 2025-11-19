@@ -34,6 +34,7 @@ from .gatt import (
     NotificationManager,
     TORADIO_UUID,
 )
+from .exceptions import BLEError
 from .reconnect import ReconnectPolicy, RetryPolicy
 from .state import BLEStateManager, ConnectionState
 from .util import (
@@ -74,9 +75,6 @@ class BLEInterface(MeshInterface):
     """
     MeshInterface using BLE to connect to Meshtastic devices.
     """
-
-    class BLEError(Exception):
-        """An exception class for BLE errors."""
 
     def __init__(  # pylint: disable=R0917
         self,
@@ -166,9 +164,9 @@ class BLEInterface(MeshInterface):
             self._exit_handler = atexit.register(self.close)
         except Exception as e:
             self.close()
-            if isinstance(e, BLEInterface.BLEError):
+            if isinstance(e, BLEError):
                 raise
-            raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
+            raise BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
     def __repr__(self):
         parts = [f"address={self.address!r}"]
@@ -410,15 +408,15 @@ class BLEInterface(MeshInterface):
 
         if len(addressed_devices) == 0:
             if address:
-                raise self.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
-            raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
+                raise BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
+            raise BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
         if address and len(addressed_devices) > 1:
             device_list = "\n".join(
                 [f"- {d.name} ({d.address})" for d in addressed_devices]
             )
-            raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
+            raise BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         return addressed_devices[0]
 
     @property
@@ -833,7 +831,7 @@ class ReconnectWorker:
                         "BLE auto-reconnect succeeded after %d attempts.", attempt_num
                     )
                     return
-                except self.interface.BLEError as err:
+                except BLEError as err:
                     if self.interface._state_manager.is_closing or not auto_reconnect:
                         logger.debug(
                             "Auto-reconnect cancelled after failure due to shutdown/disable."

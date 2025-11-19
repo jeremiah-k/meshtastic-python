@@ -11,7 +11,7 @@ from typing import Any, List, Optional, Tuple, cast, Callable, Dict
 
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic.ble_interface import DecodeError, BLEInterface
+from .exceptions import BLEError
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ async def _with_timeout(awaitable, timeout: Optional[float], label: str):
 
     Raises
     ------
-        BLEInterface.BLEError: when the awaitable does not finish before the timeout elapses.
+        BLEError: when the awaitable does not finish before the timeout elapses.
 
     """
     if timeout is None:
@@ -72,7 +72,7 @@ async def _with_timeout(awaitable, timeout: Optional[float], label: str):
     try:
         return await asyncio.wait_for(awaitable, timeout=timeout)
     except asyncio.TimeoutError as exc:
-        raise BLEInterface.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
+        raise BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
 
 def _sanitize_address(address: Optional[str]) -> Optional[str]:
     """

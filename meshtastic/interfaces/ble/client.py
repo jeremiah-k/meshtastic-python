@@ -8,8 +8,7 @@ from typing import Optional, TYPE_CHECKING
 
 from bleak import BleakClient as BleakRootClient
 
-if TYPE_CHECKING:
-    from meshtastic.ble_interface import BLEInterface
+from .exceptions import BLEError
 from .util import BLEErrorHandler
 
 logger = logging.getLogger(__name__)
@@ -30,9 +29,6 @@ class BLEClient:
     asyncio-to-thread synchronization while providing a simple API for BLE operations.
     """
 
-    # Class-level fallback so callers using __new__ still get the right exception type
-    BLEError = BLEInterface.BLEError
-
     def __init__(
         self, address=None, *, log_if_no_address: bool = True, **kwargs
     ) -> None:
@@ -49,7 +45,7 @@ class BLEClient:
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
         # Share exception type with BLEInterface for consistent public API.
-        self.BLEError = BLEInterface.BLEError
+        self.BLEError = BLEError
 
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
@@ -185,7 +181,7 @@ class BLEClient:
 
         Raises
         ------
-            BLEInterface.BLEError: If the write operation fails or times out.
+            BLEError: If the write operation fails or times out.
 
         """
         self.async_await(
@@ -308,7 +304,7 @@ class BLEClient:
             return future.result(timeout)
         except FutureTimeoutError as e:
             future.cancel()  # Clean up pending task to avoid resource leaks
-            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+            raise BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro) -> Future:  # pylint: disable=C0116
         """
