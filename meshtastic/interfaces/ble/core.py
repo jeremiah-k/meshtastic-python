@@ -5,6 +5,7 @@ import atexit
 import contextlib
 import io
 import logging
+import queue
 import struct
 import time
 from threading import Event, Thread
@@ -766,8 +767,6 @@ class BLEInterface(MeshInterface):
             self._client_manager.safe_close_client(client)
 
     def _drain_publish_queue(self, flush_event: Event) -> None:
-        import queue
-
         queue_obj = getattr(publishingThread, "queue", None)
         if queue_obj is None:
             return

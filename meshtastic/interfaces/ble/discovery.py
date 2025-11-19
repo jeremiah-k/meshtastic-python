@@ -1,6 +1,7 @@
 """BLE discovery strategies"""
 
 import asyncio
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Awaitable, Callable, List, Optional, TYPE_CHECKING
@@ -57,8 +58,6 @@ class ConnectedStrategy(DiscoveryStrategy):
             if hasattr(scanner, "_backend") and hasattr(
                 scanner._backend, "get_devices"
             ):
-                import inspect
-
                 getter = scanner._backend.get_devices
                 loop = asyncio.get_running_loop()
                 if inspect.iscoroutinefunction(getter):

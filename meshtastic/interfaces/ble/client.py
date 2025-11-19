@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Thread
@@ -210,8 +211,6 @@ class BLEClient:
         if not services:
             # Services might not be immediately available after connection
             # Give a brief moment for them to populate
-            import time
-
             time.sleep(0.1)
             services = getattr(self.bleak_client, "services", None)
         return services
