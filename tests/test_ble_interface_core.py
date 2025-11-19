@@ -92,6 +92,42 @@ class _StrategyOverride(ConnectedStrategy):
         return await self._delegate(address, timeout)
 
 
+class _BackgroundAsyncRunner:
+    """
+    Minimal async runner that executes coroutines on a background thread for testing.
+    """
+
+    def __init__(self):
+        self.calls: List[Awaitable[Any]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def async_await(self, coro):
+        """
+        Run `coro` on a dedicated event loop thread and return its result.
+        """
+
+        self.calls.append(coro)
+        result: Dict[str, Any] = {"error": None, "value": None}
+
+        def _worker():
+            try:
+                result["value"] = asyncio.run(coro)
+            except BaseException as exc:  # pragma: no cover - test helper
+                result["error"] = exc
+
+        thread = threading.Thread(target=_worker, name="TestAsyncRunner", daemon=True)
+        thread.start()
+        thread.join()
+        if result["error"]:
+            raise result["error"]
+        return result["value"]
+
+
 def test_find_device_returns_single_scan_result(monkeypatch):
     """find_device should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
@@ -270,6 +306,74 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
 
         assert len(devices) == 1
         assert devices[0].address == "AA:BB:CC:DD:EE:FF"
+
+
+def test_discovery_manager_handles_running_loop_scan(monkeypatch):
+    """DiscoveryManager should run scan coroutines via the async runner when an event loop is active."""
+
+    filtered_device = SimpleNamespace(
+        address="AA:BB:CC:DD:EE:FF",
+        name="Filtered",
+        metadata={"uuids": [SERVICE_UUID]},
+    )
+
+    async def mock_discover(**_kwargs):
+        return [filtered_device]
+
+    monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
+
+    runners: List[_BackgroundAsyncRunner] = []
+
+    def _factory():
+        runner = _BackgroundAsyncRunner()
+        runners.append(runner)
+        return runner
+
+    manager = DiscoveryManager(ble_client_factory=_factory)
+
+    async def _invoke():
+        return manager.discover_devices(address=None)
+
+    devices = asyncio.run(_invoke())
+
+    assert devices == [filtered_device]
+    assert len(runners) == 1
+    assert len(runners[0].calls) == 1
+
+
+def test_discovery_manager_handles_running_loop_fallback(monkeypatch):
+    """Connected-device fallback should also execute via the async runner when an event loop is active."""
+
+    async def mock_discover(**_kwargs):
+        return []
+
+    monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
+
+    fallback_device = _create_ble_device("AA:BB", "Fallback")
+    runners: List[_BackgroundAsyncRunner] = []
+
+    def _factory():
+        runner = _BackgroundAsyncRunner()
+        runners.append(runner)
+        return runner
+
+    manager = DiscoveryManager(ble_client_factory=_factory)
+
+    async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
+        assert address == "AA:BB"
+        assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
+        return [fallback_device]
+
+    manager.connected_strategy = _StrategyOverride(fake_connected)
+
+    async def _invoke():
+        return manager.discover_devices(address="AA:BB")
+
+    devices = asyncio.run(_invoke())
+
+    assert devices == [fallback_device]
+    assert len(runners) == 1
+    assert len(runners[0].calls) == 2
 
 
 def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
