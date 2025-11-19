@@ -2,38 +2,12 @@
 
 import random
 import logging
-from threading import Event, RLock, Thread
+from threading import Event, RLock, Thread, current_thread
 from typing import Optional, Tuple, TYPE_CHECKING
 
 from .config import BLEConfig
 from .util import _sleep
 from .exceptions import BLEError
-
-
-# Runtime accessor for _sleep to ensure mocking works
-def _get_sleep():
-    """Get _sleep function that can be mocked in tests."""
-    try:
-        from ...ble_interface import _sleep
-
-        return _sleep
-    except ImportError:
-        from .util import _sleep
-
-        return _sleep
-
-
-# Runtime accessor for current_thread to ensure mocking works
-def _get_current_thread():
-    """Get current_thread function that can be mocked in tests."""
-    try:
-        from ...ble_interface import current_thread
-
-        return current_thread
-    except ImportError:
-        from threading import current_thread
-
-        return current_thread
 
 
 if TYPE_CHECKING:
@@ -129,7 +103,7 @@ class ReconnectPolicy:
 
     def sleep_with_backoff(self, attempt: int) -> None:
         """Sleep for the jittered delay associated with the supplied attempt."""
-        _get_sleep()(self.get_delay(attempt))
+        _sleep(self.get_delay(attempt))
 
 
 class _PolicyFactory:
@@ -224,7 +198,7 @@ class ReconnectScheduler:
 
     def clear_thread_reference(self) -> None:
         with self.state_lock:
-            if self._reconnect_thread is _get_current_thread()():
+            if self._reconnect_thread is current_thread():
                 self._reconnect_thread = None
 
 
@@ -302,7 +276,7 @@ class ReconnectWorker:
                 logger.debug(
                     "Waiting %.2f seconds before next reconnect attempt.", sleep_delay
                 )
-                _get_sleep()(sleep_delay)
+                _sleep(sleep_delay)
         finally:
             if hasattr(self.interface, "_reconnect_scheduler"):
                 self.interface._reconnect_scheduler.clear_thread_reference()

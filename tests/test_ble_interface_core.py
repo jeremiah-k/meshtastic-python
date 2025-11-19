@@ -825,7 +825,10 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     assert scheduler.schedule_reconnect(True, shutdown_event) is False
 
     stub_thread = coordinator.created[0]
-    monkeypatch.setattr(ble_mod, "current_thread", lambda: stub_thread)
+    # Mock current_thread in the reconnect module where it's actually used
+    import meshtastic.interfaces.ble.reconnect as reconnect_mod
+
+    monkeypatch.setattr(reconnect_mod, "current_thread", lambda: stub_thread)
     scheduler.clear_thread_reference()
     assert scheduler._reconnect_thread is None
 
@@ -982,7 +985,12 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     """ReconnectWorker should obey retry policy decisions when connect keeps failing."""
 
     sleep_calls = []
-    monkeypatch.setattr(ble_mod, "_sleep", lambda delay: sleep_calls.append(delay))
+    # Mock _sleep in the reconnect module where it's actually used
+    import meshtastic.interfaces.ble.reconnect as reconnect_mod
+
+    monkeypatch.setattr(
+        reconnect_mod, "_sleep", lambda delay: sleep_calls.append(delay)
+    )
 
     class LimitedPolicy:
         def __init__(self):
