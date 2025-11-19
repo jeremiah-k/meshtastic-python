@@ -23,13 +23,6 @@ def _get_sleep():
         return _sleep
 
 
-# Import current_thread from parent module for testability
-try:
-    from ...ble_interface import current_thread
-except ImportError:
-    from threading import current_thread
-
-
 # Runtime accessor for current_thread to ensure mocking works
 def _get_current_thread():
     """Get current_thread function that can be mocked in tests."""
@@ -44,11 +37,11 @@ def _get_current_thread():
 
 
 if TYPE_CHECKING:
-    from ..core import BLEInterface  # noqa: F401
-    from ..state import BLEStateManager  # noqa: F401
-    from ..util import ThreadCoordinator  # noqa: F401
-    from ..gatt import NotificationManager  # noqa: F401
-    from ..client import BLEClient  # noqa: F401
+    from ..core import BLEInterface
+    from ..state import BLEStateManager
+    from ..util import ThreadCoordinator
+    from ..gatt import NotificationManager
+    from ..client import BLEClient
 
 
 logger = logging.getLogger(__name__)
@@ -283,7 +276,7 @@ class ReconnectWorker:
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
-                        attempt_num,  # noqa: F821
+                        attempt_num,
                         err,
                     )
                 except Exception:
@@ -294,7 +287,7 @@ class ReconnectWorker:
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
-                        attempt_num,  # noqa: F821
+                        attempt_num,
                     )
 
                 if self.interface.is_connection_closing or not auto_reconnect:
