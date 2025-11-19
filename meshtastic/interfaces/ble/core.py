@@ -12,7 +12,7 @@ from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from threading import Event, Thread
 from typing import Any, Callable, Optional, List
 
-from bleak import BleakClient as BleakRootClient, BleakScanner
+from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError
@@ -607,35 +607,59 @@ class BLEInterface(MeshInterface):
         async def _get_devices_async_and_filter(
             target: Optional[str],
         ) -> List[BLEDevice]:
-            scanner = BleakScanner()
-            devices_found: List[BLEDevice] = []
-            backend = getattr(scanner, "_backend", None)
-            if backend and hasattr(backend, "get_devices"):
-                backend_devices = await _with_timeout(
-                    backend.get_devices(),
-                    BLEConfig.BLE_SCAN_TIMEOUT,
-                    "connected-device enumeration",
+            try:
+                from bleak.backends.bluezdbus import defs as bluez_defs
+                from bleak.backends.bluezdbus.manager import get_global_bluez_manager
+            except ImportError:
+                logger.debug(
+                    "BlueZ D-Bus integrations unavailable; cannot enumerate connected devices."
                 )
-                sanitized_target = _sanitize_address(target) if target else None
-                for device in backend_devices or []:
-                    metadata = getattr(device, "metadata", None) or {}
-                    uuids = metadata.get("uuids", [])
-                    if SERVICE_UUID not in uuids:
+                return []
+
+            try:
+                manager = await get_global_bluez_manager()
+            except Exception as exc:  # pragma: no cover - best-effort fallback
+                logger.debug(
+                    "Unable to obtain BlueZ manager for connected-device fallback: %s",
+                    exc,
+                )
+                return []
+
+            properties = getattr(manager, "_properties", {})
+            if not properties:
+                return []
+
+            sanitized_target = _sanitize_address(target) if target else None
+            devices_found: List[BLEDevice] = []
+            for path, interfaces in properties.items():
+                device_props = interfaces.get(bluez_defs.DEVICE_INTERFACE)
+                if not device_props:
+                    continue
+                uuids = device_props.get("UUIDs") or []
+                if SERVICE_UUID not in uuids:
+                    continue
+                if not device_props.get("Connected", False):
+                    continue
+
+                address_value = device_props.get("Address")
+                name_value = device_props.get("Name")
+                if not address_value:
+                    continue
+
+                if sanitized_target:
+                    sanitized_addr = _sanitize_address(address_value)
+                    sanitized_name = _sanitize_address(name_value)
+                    if sanitized_target not in (sanitized_addr, sanitized_name):
                         continue
-                    if sanitized_target:
-                        sanitized_addr = _sanitize_address(device.address)
-                        sanitized_name = _sanitize_address(device.name)
-                        if sanitized_target not in (sanitized_addr, sanitized_name):
-                            continue
-                    rssi = getattr(device, "rssi", 0)
-                    devices_found.append(
-                        BLEDevice(
-                            device.address,
-                            device.name,
-                            metadata,
-                            rssi,
-                        )
-                    )
+
+                metadata = {"uuids": uuids, "path": path}
+                rssi = device_props.get("RSSI", 0)
+                metadata["rssi"] = rssi
+
+                ble_device = BLEDevice(address_value, name_value, path)
+                setattr(ble_device, "metadata", metadata)
+                setattr(ble_device, "rssi", rssi)
+                devices_found.append(ble_device)
             return devices_found
 
         async def _perform_lookup() -> List[BLEDevice]:
