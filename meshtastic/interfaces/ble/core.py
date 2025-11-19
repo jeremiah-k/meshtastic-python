@@ -399,8 +399,9 @@ class BLEInterface(MeshInterface):
 
     def find_device(self, address: Optional[str]) -> BLEDevice:
         # Handle case where interface is not properly initialized (e.g., in tests)
-        addressed_devices: List[BLEDevice]
+        addressed_devices: List[BLEDevice] = []
         if not hasattr(self, "_discovery_manager"):
+            run_discovery_manager = False
             scan = getattr(self.__class__, "scan", None)
             if callable(scan):
                 try:
@@ -409,10 +410,10 @@ class BLEInterface(MeshInterface):
                     logger.debug(
                         "scan() failed, falling back to DiscoveryManager: %s", exc
                     )
-                    from .discovery import DiscoveryManager
-
-                    addressed_devices = DiscoveryManager().discover_devices(address)
+                    run_discovery_manager = True
             else:
+                run_discovery_manager = True
+            if run_discovery_manager:
                 from .discovery import DiscoveryManager
 
                 addressed_devices = DiscoveryManager().discover_devices(address)
@@ -747,6 +748,7 @@ class BLEInterface(MeshInterface):
 
         self.thread_coordinator.cleanup()
         with self._state_lock:
+            self._state_manager.transition_to(ConnectionState.DISCONNECTED)
             self._closed = True
 
     def _wait_for_disconnect_notifications(

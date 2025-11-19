@@ -1,4 +1,5 @@
 """BLE client wrapper"""
+
 import asyncio
 import logging
 from concurrent.futures import Future
@@ -64,8 +65,6 @@ class BLEClient:
         # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
 
-
-
     def pair(self, **kwargs):  # pylint: disable=C0116
         """
         Pair the underlying BLE client with the remote device.
@@ -81,9 +80,7 @@ class BLEClient:
         """
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(
-        self, *, await_timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def connect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Initiate a connection using the underlying Bleak client and its internal event loop.
 
@@ -138,9 +135,7 @@ class BLEClient:
             reraise=False,
         )
 
-    def disconnect(
-        self, *, await_timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def disconnect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Disconnect the underlying Bleak client and wait for the operation to finish.
 
@@ -152,9 +147,7 @@ class BLEClient:
         """
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
-    def read_gatt_char(
-        self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def read_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """Read a GATT characteristic from the connected BLE device.
 
         Forwards all arguments to the underlying Bleak client's `read_gatt_char`.
@@ -174,9 +167,7 @@ class BLEClient:
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def write_gatt_char(
-        self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def write_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Write the given bytes to a GATT characteristic on the connected BLE device and wait for completion.
 
@@ -201,6 +192,31 @@ class BLEClient:
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services
 
+    def discover_services(self):
+        """
+        Discover services and characteristics for the connected device.
+
+        In bleak, services are automatically discovered during connection.
+        This method ensures services are available and returns them.
+
+        Returns
+        -------
+            The device's GATT services and their characteristics as returned by the underlying BLE library.
+
+        """
+        # In bleak, services are auto-discovered during connect.
+        # We'll access the services property which should be populated.
+        # If services are not yet available, we'll wait a brief moment.
+        services = getattr(self.bleak_client, "services", None)
+        if not services:
+            # Services might not be immediately available after connection
+            # Give a brief moment for them to populate
+            import time
+
+            time.sleep(0.1)
+            services = getattr(self.bleak_client, "services", None)
+        return services
+
     def has_characteristic(self, specifier):
         """
         Check whether the connected BLE device exposes the characteristic identified by `specifier`.
@@ -216,18 +232,16 @@ class BLEClient:
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
-            # Lambda is appropriate here for deferred execution in error handling
+            # Call discover_services directly since it's safe
             self.error_handler.safe_execute(
-                lambda: self.get_services(),
+                self.discover_services,
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
             services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
-    def start_notify(
-        self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def start_notify(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Subscribe to notifications for a BLE characteristic on the connected device.
 

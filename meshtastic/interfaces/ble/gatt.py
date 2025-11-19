@@ -1,4 +1,5 @@
 """BLE GATT constants and NotificationManager"""
+
 import asyncio
 import logging
 from threading import RLock
@@ -62,17 +63,22 @@ class NotificationManager:
                         callback,
                         timeout=timeout,
                     )
-                except (BLEError, BleakError, TimeoutError, OSError, asyncio.TimeoutError) as exc:
+                except (
+                    BLEError,
+                    BleakError,
+                    TimeoutError,
+                    OSError,
+                    asyncio.TimeoutError,
+                ) as exc:
                     logger.warning(
                         "Resubscribe of %s failed during reconnect: %s",
                         characteristic,
                         exc,
                     )
-                except Exception as exc:  # pragma: no cover - defensive logging
+                except Exception:  # pragma: no cover - defensive logging
                     logger.exception(
-                        "Unexpected error while resubscribing %s: %s",
+                        "Unexpected error while resubscribing %s",
                         characteristic,
-                        exc,
                     )
 
     def __len__(self) -> int:

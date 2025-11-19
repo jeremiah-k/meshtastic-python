@@ -77,12 +77,7 @@ class ClientManager:
 
     def connect_client(self, client: "BLEClient") -> None:
         client.connect(await_timeout=BLEConfig.CONNECTION_TIMEOUT)
-        services = getattr(client.bleak_client, "services", None)
-        if not services or not getattr(services, "get_characteristic", None):
-            logger.debug(
-                "BLE services not available immediately after connect; getting services"
-            )
-            client.get_services()
+        client.discover_services()
 
     def update_client_reference(
         self,
