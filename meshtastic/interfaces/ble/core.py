@@ -8,7 +8,7 @@ import logging
 import queue
 import struct
 import time
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Event, Thread
 from typing import Any, Callable, Optional, List
 
@@ -49,6 +49,7 @@ from .util import (
     _sanitize_address,
     _sleep,
     _with_timeout,
+    enumerate_connected_devices,
 )
 
 logger = logging.getLogger(__name__)
@@ -604,110 +605,9 @@ class BLEInterface(MeshInterface):
             )
             return []
 
-        async def _get_devices_async_and_filter(
-            target: Optional[str],
-        ) -> List[BLEDevice]:
-            try:
-                from bleak.backends.bluezdbus import defs as bluez_defs
-                from bleak.backends.bluezdbus.manager import get_global_bluez_manager
-            except ImportError:
-                logger.debug(
-                    "BlueZ D-Bus integrations unavailable; cannot enumerate connected devices."
-                )
-                return []
-
-            try:
-                manager = await get_global_bluez_manager()
-            except Exception as exc:  # pragma: no cover - best-effort fallback
-                logger.debug(
-                    "Unable to obtain BlueZ manager for connected-device fallback: %s",
-                    exc,
-                )
-                return []
-
-            properties = getattr(manager, "_properties", {})
-            if not properties:
-                return []
-
-            sanitized_target = _sanitize_address(target) if target else None
-            devices_found: List[BLEDevice] = []
-            for path, interfaces in properties.items():
-                device_props = interfaces.get(bluez_defs.DEVICE_INTERFACE)
-                if not device_props:
-                    continue
-                uuids = device_props.get("UUIDs") or []
-                if SERVICE_UUID not in uuids:
-                    continue
-                if not device_props.get("Connected", False):
-                    continue
-
-                address_value = device_props.get("Address")
-                name_value = device_props.get("Name")
-                if not address_value:
-                    continue
-
-                if sanitized_target:
-                    sanitized_addr = _sanitize_address(address_value)
-                    sanitized_name = _sanitize_address(name_value)
-                    if sanitized_target not in (sanitized_addr, sanitized_name):
-                        continue
-
-                metadata = {"uuids": uuids, "path": path}
-                rssi = device_props.get("RSSI", 0)
-                metadata["rssi"] = rssi
-
-                ble_device = BLEDevice(address_value, name_value, path)
-                setattr(ble_device, "metadata", metadata)
-                setattr(ble_device, "rssi", rssi)
-                devices_found.append(ble_device)
-            return devices_found
-
-        async def _perform_lookup() -> List[BLEDevice]:
-            return await _with_timeout(
-                _get_devices_async_and_filter(address),
-                BLEConfig.BLE_SCAN_TIMEOUT,
-                "connected-device fallback",
-            )
-
         try:
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                return asyncio.run(_perform_lookup())
-
-            future: Future[List[BLEDevice]] = Future()
-
-            def _run_async():
-                try:
-                    future.set_result(asyncio.run(_perform_lookup()))
-                except Exception as exc:
-                    future.set_exception(exc)
-
-            thread = Thread(
-                target=_run_async, name="BLEConnectedFallback", daemon=True
-            )
-            thread.start()
-            try:
-                return future.result(timeout=BLEConfig.BLE_SCAN_TIMEOUT)
-            except FutureTimeoutError:
-                logger.debug(
-                    "Fallback connected-device discovery thread exceeded %.1fs timeout",
-                    BLEConfig.BLE_SCAN_TIMEOUT,
-                )
-                return []
-            except Exception as exc:
-                logger.debug(
-                    "Fallback device discovery thread failed with exception: %s", exc
-                )
-                return []
-        except (
-            BleakError,
-            BleakDBusError,
-            AttributeError,
-            RuntimeError,
-            asyncio.TimeoutError,
-            BLEError,
-        ) as exc:
+            return enumerate_connected_devices(SERVICE_UUID, address)
+        except BLEError as exc:
             logger.debug("Fallback device discovery failed: %s", exc)
             return []
 

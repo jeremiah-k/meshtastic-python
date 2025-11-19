@@ -17,6 +17,7 @@ from .util import (
     _bleak_supports_connected_fallback,
     _sanitize_address,
     _with_timeout,
+    enumerate_connected_devices,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - imported only for type checking
@@ -73,62 +74,7 @@ class ConnectedStrategy(DiscoveryStrategy):
             )
             return []
 
-        try:
-            scanner = BleakScanner()
-            devices_found: List[BLEDevice] = []
-            if hasattr(scanner, "_backend") and hasattr(
-                scanner._backend, "get_devices"
-            ):
-                getter = scanner._backend.get_devices
-                loop = asyncio.get_running_loop()
-                if inspect.iscoroutinefunction(getter):
-                    backend_devices = await _with_timeout(
-                        getter(),
-                        timeout,
-                        "connected-device enumeration",
-                    )
-                else:
-                    backend_devices = await _with_timeout(
-                        loop.run_in_executor(None, getter),
-                        timeout,
-                        "connected-device enumeration",
-                    )
-
-                sanitized_target = _sanitize_address(address) if address else None
-                for device in backend_devices or []:
-                    metadata = getattr(device, "metadata", None) or {}
-                    uuids = metadata.get("uuids", [])
-                    if SERVICE_UUID not in uuids:
-                        continue
-
-                    if sanitized_target:
-                        sanitized_addr = _sanitize_address(device.address)
-                        sanitized_name = _sanitize_address(device.name)
-                        if sanitized_target not in (sanitized_addr, sanitized_name):
-                            continue
-
-                    rssi = getattr(device, "rssi", 0)
-                    devices_found.append(
-                        BLEDevice(
-                            device.address,
-                            device.name,
-                            metadata,
-                            rssi,
-                        )
-                    )
-            return devices_found
-        except (
-            BLEError,
-            BleakError,
-            TimeoutError,
-            asyncio.TimeoutError,
-            OSError,
-        ) as exc:
-            logger.warning("Connected device discovery failed: %s", exc)
-            return []
-        except Exception:  # pragma: no cover - unexpected failures
-            logger.exception("Unexpected error during connected-device discovery")
-            raise
+        return enumerate_connected_devices(SERVICE_UUID, address)
 
 
 class DiscoveryManager:

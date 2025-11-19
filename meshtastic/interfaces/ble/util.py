@@ -5,15 +5,17 @@ import importlib.metadata
 import logging
 import re
 import time
+from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Event, RLock, Thread, current_thread
 from typing import Any, List, Optional, Tuple, cast, Callable, Dict
 
-from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError
 
 from .exceptions import BLEError
+from .config import BLEConfig
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +124,116 @@ def _sanitize_address(address: Optional[str]) -> Optional[str]:
         .replace(" ", "")
         .lower()
     )
+
+
+def enumerate_connected_devices(
+    service_uuid: str, target: Optional[str]
+) -> List[BLEDevice]:
+    """
+    Enumerate currently connected BLE devices advertising `service_uuid`.
+
+    This helper uses backend-specific inspection (BlueZ on Linux) to locate
+    devices that may not be actively advertising, enabling reconnect logic to
+    find paired radios even when regular scans are empty.
+    """
+
+    sanitized_target = _sanitize_address(target) if target else None
+
+    async def _bluez_collect() -> List[BLEDevice]:
+        try:
+            from bleak.backends.bluezdbus import defs as bluez_defs
+            from bleak.backends.bluezdbus.manager import get_global_bluez_manager
+        except ImportError:
+            logger.debug(
+                "BlueZ backend not available; skipping connected-device enumeration."
+            )
+            return []
+
+        try:
+            manager = await get_global_bluez_manager()
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            logger.debug(
+                "Unable to obtain BlueZ manager for connected-device enumeration: %s",
+                exc,
+            )
+            return []
+
+        properties = getattr(manager, "_properties", {})
+        if not properties:
+            return []
+
+        devices_found: List[BLEDevice] = []
+        for path, interfaces in properties.items():
+            device_props = interfaces.get(bluez_defs.DEVICE_INTERFACE)
+            if not device_props:
+                continue
+            uuids = device_props.get("UUIDs") or []
+            if service_uuid not in uuids:
+                continue
+            if not device_props.get("Connected", False):
+                continue
+
+            address_value = device_props.get("Address")
+            name_value = device_props.get("Name")
+            if not address_value:
+                continue
+
+            if sanitized_target:
+                sanitized_addr = _sanitize_address(address_value)
+                sanitized_name = _sanitize_address(name_value)
+                if sanitized_target not in (sanitized_addr, sanitized_name):
+                    continue
+
+            metadata: Dict[str, Any] = {"uuids": uuids, "path": path}
+            if "RSSI" in device_props:
+                metadata["rssi"] = device_props["RSSI"]
+
+            ble_device = BLEDevice(address_value, name_value, path)
+            setattr(ble_device, "metadata", metadata)
+            setattr(ble_device, "rssi", metadata.get("rssi", 0))
+            devices_found.append(ble_device)
+        return devices_found
+
+    async def _collect() -> List[BLEDevice]:
+        return await _with_timeout(
+            _bluez_collect(),
+            BLEConfig.BLE_SCAN_TIMEOUT,
+            "connected-device fallback",
+        )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            return asyncio.run(_collect())
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            logger.debug(
+                "Connected-device enumeration failed outside event loop: %s", exc
+            )
+            return []
+
+    future: Future[List[BLEDevice]] = Future()
+
+    def _thread_worker():
+        try:
+            future.set_result(asyncio.run(_collect()))
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            future.set_exception(exc)
+
+    thread = Thread(target=_thread_worker, name="BLEConnectedEnum", daemon=True)
+    thread.start()
+
+    try:
+        return future.result(timeout=BLEConfig.BLE_SCAN_TIMEOUT)
+    except FutureTimeoutError:
+        logger.debug(
+            "Connected-device enumeration thread exceeded %.1fs timeout",
+            BLEConfig.BLE_SCAN_TIMEOUT,
+        )
+        return []
+    except Exception as exc:  # pragma: no cover - best-effort logging
+        logger.debug("Connected-device enumeration failed: %s", exc)
+        return []
 
 
 class ThreadCoordinator:
