@@ -401,22 +401,9 @@ class BLEInterface(MeshInterface):
         # Handle case where interface is not properly initialized (e.g., in tests)
         addressed_devices: List[BLEDevice] = []
         if not hasattr(self, "_discovery_manager"):
-            run_discovery_manager = False
-            scan = getattr(self.__class__, "scan", None)
-            if callable(scan):
-                try:
-                    addressed_devices = scan()
-                except BLEError as exc:
-                    logger.debug(
-                        "scan() failed, falling back to DiscoveryManager: %s", exc
-                    )
-                    run_discovery_manager = True
-            else:
-                run_discovery_manager = True
-            if run_discovery_manager:
-                from .discovery import DiscoveryManager
+            from .discovery import DiscoveryManager
 
-                addressed_devices = DiscoveryManager().discover_devices(address)
+            addressed_devices = DiscoveryManager().discover_devices(address)
         else:
             addressed_devices = self._discovery_manager.discover_devices(address)
 

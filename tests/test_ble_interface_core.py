@@ -129,12 +129,16 @@ class _BackgroundAsyncRunner:
 
 
 def test_find_device_returns_single_scan_result(monkeypatch):
-    """find_device should return the lone scanned device."""
+    """find_device should return lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     iface = object.__new__(ble_mod.BLEInterface)
     scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
-    monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [scanned_device])
+
+    def mock_discover_devices(self, address):
+        return [scanned_device]
+
+    monkeypatch.setattr(DiscoveryManager, "discover_devices", mock_discover_devices)
 
     result = ble_mod.BLEInterface.find_device(iface, None)
 
@@ -147,7 +151,7 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
 
     iface = object.__new__(ble_mod.BLEInterface)
     fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
-    monkeypatch.setattr(ble_mod.BLEInterface, "scan", lambda: [])
+    monkeypatch.setattr(DiscoveryManager, "discover_devices", lambda self, address: [])
 
     def _fake_connected(_self, _address):
         """
@@ -174,7 +178,9 @@ def test_find_device_multiple_matches_raises(monkeypatch):
         _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
         _create_ble_device(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
     ]
-    monkeypatch.setattr(BLEInterface, "scan", lambda: devices)
+    monkeypatch.setattr(
+        DiscoveryManager, "discover_devices", lambda self, address: devices
+    )
 
     with pytest.raises(BLEError) as excinfo:
         BLEInterface.find_device(iface, "aa bb cc dd ee ff")
