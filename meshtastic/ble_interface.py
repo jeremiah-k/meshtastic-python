@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from bleak import BLEDevice
 from .interfaces.ble.connection import ConnectionValidator
+from .interfaces.ble.discovery import ConnectedStrategy, DiscoveryManager
 
 if TYPE_CHECKING:
     class DecodeError(Exception):
@@ -23,7 +24,7 @@ from .interfaces.ble.gatt import (
     SERVICE_UUID,
     TORADIO_UUID,
 )
-from .interfaces.ble.reconnect import ReconnectPolicy, RetryPolicy
+from .interfaces.ble.reconnect import ReconnectPolicy, RetryPolicy, ReconnectScheduler, ReconnectWorker
 from .interfaces.ble.state import BLEStateManager, ConnectionState
 from .interfaces.ble.client import BLEClient
 
@@ -45,4 +46,8 @@ __all__ = [
     "TORADIO_UUID",
     "BLEDevice",
     "ConnectionValidator",
+    "ConnectedStrategy",
+    "DiscoveryManager",
+    "ReconnectScheduler",
+    "ReconnectWorker",
 ]
