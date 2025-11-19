@@ -267,10 +267,17 @@ def test_discovery_manager_handles_running_loop_scan(monkeypatch):
         runners.append(runner)
         return runner
 
-    manager = DiscoveryManager(ble_client_factory=_factory)
+    manager = DiscoveryManager(ble_client_factory=_factory)  # type: ignore[arg-type]  # type: ignore[arg-type]
+
+    async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
+        assert address == "AA:BB"
+        assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
+        return [cast("BLEDevice", filtered_device)]
+
+    manager.connected_strategy = _StrategyOverride(fake_connected)
 
     async def _invoke():
-        return manager.discover_devices(address=None)
+        return manager.discover_devices(address="AA:BB")
 
     devices = asyncio.run(_invoke())
 
@@ -295,7 +302,7 @@ def test_discovery_manager_handles_running_loop_fallback(monkeypatch):
         runners.append(runner)
         return runner
 
-    manager = DiscoveryManager(ble_client_factory=_factory)
+    manager = DiscoveryManager(ble_client_factory=_factory)  # type: ignore[arg-type]
 
     async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
         assert address == "AA:BB"
@@ -512,7 +519,10 @@ def test_connection_validator_existing_client_checks(monkeypatch):
     assert validator.check_existing_client(ble_like, None, None, None) is True
     assert validator.check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
     assert (
-        validator.check_existing_client(client, "something-else", None, None) is False
+        validator.check_existing_client(
+            cast("BLEClient", client), "something-else", None, None
+        )
+        is False
     )
 
 
@@ -686,7 +696,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         # Phase 3: Use unified state lock instead of _client_lock
         with iface._state_lock:
-            iface.client = client
+            iface.client = cast("BLEClient", client)
 
         # Trigger the receive loop
         iface._read_trigger.set()
@@ -987,7 +997,7 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
                 client: Placeholder for a BLE client object.
                 connect_calls (list): Records addresses passed to `connect` for assertion in tests.
             """
-            self._reconnect_policy = StubPolicy()
+            self._reconnect_policy = cast(ble_mod.ReconnectPolicy, StubPolicy())
             self._notification_manager = StubNotificationManager()
             self._state_manager = SimpleNamespace(is_closing=False)
             self._reconnect_scheduler = StubScheduler()
@@ -1015,7 +1025,7 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
     assert len(iface._notification_manager.resubscribed) == 1
     timeout_used = iface._notification_manager.resubscribed[0][1]
     assert timeout_used == ble_mod.BLEConfig.NOTIFICATION_START_TIMEOUT
-    assert iface._reconnect_policy.reset_called is True
+    assert cast("StubPolicy", iface._reconnect_policy).reset_called is True
     assert iface._reconnect_scheduler.cleared is True
 
 
@@ -1131,7 +1141,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
                 client: Placeholder for the BLE client instance (initially None).
                 connect_attempts (int): Counter of connect() invocation attempts.
             """
-            self._reconnect_policy = LimitedPolicy()
+            self._reconnect_policy = cast(ble_mod.ReconnectPolicy, LimitedPolicy())
             self._notification_manager = StubNotificationManager()
             self._state_manager = SimpleNamespace(is_closing=False)
             self._reconnect_scheduler = StubScheduler()
@@ -1160,5 +1170,5 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     assert iface.connect_attempts == 2
     assert iface._notification_manager.cleaned == 2
     assert sleep_calls == [0.25]
-    assert iface._reconnect_policy.reset_called is True
+    assert cast("LimitedPolicy", iface._reconnect_policy).reset_called is True
     assert iface._reconnect_scheduler.cleared is True
