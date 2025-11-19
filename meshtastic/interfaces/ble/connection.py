@@ -231,18 +231,57 @@ class ConnectionOrchestrator:
             logger.info("Attempting to connect to %s", target_address or "any")
             self.state_manager.transition_to(ConnectionState.CONNECTING)
 
+        known_address = getattr(self.interface, "_known_device_address", None)
+        normalized_target = _sanitize_address(
+            address if address is not None else current_address
+        )
+        normalized_known = _sanitize_address(known_address)
+        reuse_address = (
+            known_address
+            if normalized_target
+            and normalized_known
+            and normalized_target == normalized_known
+            else None
+        )
+
         client: Optional["BLEClient"] = None
+        resolved_address: Optional[str] = None
         try:
-            device = self.interface.find_device(address or current_address)
-            client = self.client_manager.create_client(
-                device.address, on_disconnect_func
-            )
-            self.client_manager.connect_client(client)
+            if reuse_address:
+                logger.debug(
+                    "Attempting direct connection to cached BLE address %s",
+                    reuse_address,
+                )
+                try:
+                    client = self.client_manager.create_client(
+                        reuse_address, on_disconnect_func
+                    )
+                    self.client_manager.connect_client(client)
+                    resolved_address = reuse_address
+                except Exception:
+                    logger.debug(
+                        "Direct connection to %s failed; falling back to discovery.",
+                        reuse_address,
+                        exc_info=True,
+                    )
+                    if client:
+                        self.client_manager.safe_close_client(client)
+                        client = None
+                    resolved_address = None
+
+            if client is None:
+                device = self.interface.find_device(address or current_address)
+                resolved_address = device.address
+                client = self.client_manager.create_client(
+                    resolved_address, on_disconnect_func
+                )
+                self.client_manager.connect_client(client)
+
             register_notifications_func(client)
             self.state_manager.transition_to(ConnectionState.CONNECTED, client)
             on_connected_func()
             self.thread_coordinator.set_event("reconnected_event")
-            normalized_device_address = _sanitize_address(device.address)
+            normalized_device_address = _sanitize_address(resolved_address)
             logger.info(
                 "Connection successful to %s", normalized_device_address or "unknown"
             )

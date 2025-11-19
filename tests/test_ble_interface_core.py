@@ -43,20 +43,12 @@ from meshtastic.ble_interface import (
     ReconnectWorker,
     BLEError,
 )
+from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
 
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
-        def sendMessage(self, topic: str, **kwargs: Any) -> None: """
-Publish a message on the coordinator's pubsub under the given topic.
-
-The provided keyword arguments are forwarded as the message payload to subscribers.
-
-Parameters:
-    topic (str): Pub/sub topic name to publish to.
-    **kwargs: Arbitrary message fields forwarded to subscribers.
-"""
-...
+        def sendMessage(self, topic: str, **kwargs: Any) -> None: ...
 
     pub: _PubProtocol
 else:  # pragma: no cover - import only at runtime
@@ -620,6 +612,169 @@ def test_connection_validator_existing_client_checks(monkeypatch):
         )
         is False
     )
+
+
+class _StubStateManager:
+    """Minimal state manager stub for ConnectionOrchestrator tests."""
+
+    def __init__(self):
+        self.state = ConnectionState.DISCONNECTED
+        self.transitions = []
+
+    def transition_to(self, new_state, client=None):
+        self.transitions.append((self.state, new_state, client))
+        self.state = new_state
+        return True
+
+
+class _StubThreadCoordinator:
+    """Track set_event calls for ConnectionOrchestrator tests."""
+
+    def __init__(self):
+        self.events: List[str] = []
+
+    def set_event(self, name: str):
+        self.events.append(name)
+
+
+class _StubClientManager:
+    """ClientManager stand-in that records lifecycle operations."""
+
+    def __init__(self, *, fail_on: Optional[Dict[str, int]] = None):
+        self.fail_on = dict(fail_on or {})
+        self.created: List[str] = []
+        self.connected = []
+        self.closed = []
+
+    def create_client(self, address, _callback):
+        self.created.append(address)
+        return SimpleNamespace(
+            bleak_client=SimpleNamespace(address=address),
+        )
+
+    def connect_client(self, client):
+        address = getattr(client.bleak_client, "address", None)
+        remaining = self.fail_on.get(address, 0)
+        if remaining > 0:
+            self.fail_on[address] = remaining - 1
+            raise RuntimeError(f"connect failure for {address}")
+        self.connected.append(client)
+
+    def safe_close_client(self, client, event=None):
+        self.closed.append(client)
+        if event:
+            event.set()
+
+
+class _StubValidator:
+    """Track validate_connection_request invocations."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def validate_connection_request(self):
+        self.calls += 1
+
+
+def test_connection_orchestrator_reuses_known_address(monkeypatch):
+    """ConnectionOrchestrator should skip discovery when cached address matches the target."""
+
+    known_address = "DD:DD:13:27:74:29"
+    def _fail_find_device(*_args, **_kwargs):
+        raise AssertionError("find_device should not be called for cached address")
+
+    interface = SimpleNamespace(
+        _known_device_address=known_address,
+        find_device=_fail_find_device,
+    )
+    validator = _StubValidator()
+    state_manager = _StubStateManager()
+    thread_coordinator = _StubThreadCoordinator()
+    client_manager = _StubClientManager()
+
+    orchestrator = ConnectionOrchestrator(
+        interface,
+        validator,
+        client_manager,
+        DiscoveryManager(),
+        state_manager,
+        threading.RLock(),
+        thread_coordinator,
+    )
+
+    notifications: List[SimpleNamespace] = []
+
+    def _register(client):
+        notifications.append(client)
+
+    connected_calls = []
+
+    def _connected():
+        connected_calls.append(True)
+
+    client = orchestrator.establish_connection(
+        known_address,
+        known_address,
+        _register,
+        _connected,
+        lambda *_args, **_kwargs: None,
+    )
+
+    assert client in notifications
+    assert client_manager.created == [known_address]
+    assert client_manager.connected == [client]
+    assert client_manager.closed == []
+    assert thread_coordinator.events == ["reconnected_event"]
+    assert validator.calls == 1
+    # State manager should transition through CONNECTING -> CONNECTED
+    assert state_manager.transitions[0][1] == ConnectionState.CONNECTING
+    assert state_manager.transitions[-1][1] == ConnectionState.CONNECTED
+
+
+def test_connection_orchestrator_falls_back_after_direct_failure(monkeypatch):
+    """Direct reconnect failures should trigger discovery fallback."""
+
+    known_address = "DD:DD:13:27:74:29"
+    fallback_device = SimpleNamespace(address=known_address, name="Relay")
+    find_calls: List[Optional[str]] = []
+
+    def _find_device(address):
+        find_calls.append(address)
+        return fallback_device
+
+    interface = SimpleNamespace(
+        _known_device_address=known_address,
+        find_device=_find_device,
+    )
+    validator = _StubValidator()
+    state_manager = _StubStateManager()
+    thread_coordinator = _StubThreadCoordinator()
+    client_manager = _StubClientManager(fail_on={known_address: 1})
+
+    orchestrator = ConnectionOrchestrator(
+        interface,
+        validator,
+        client_manager,
+        DiscoveryManager(),
+        state_manager,
+        threading.RLock(),
+        thread_coordinator,
+    )
+
+    client = orchestrator.establish_connection(
+        known_address,
+        known_address,
+        lambda *_args, **_kwargs: None,
+        lambda: None,
+        lambda *_args, **_kwargs: None,
+    )
+
+    assert len(client_manager.created) == 2  # direct + discovery attempts
+    assert client_manager.closed  # direct attempt cleaned up
+    assert find_calls == [known_address]
+    assert client_manager.connected == [client]
+    assert thread_coordinator.events == ["reconnected_event"]
+    assert validator.calls == 1
 
 
 def test_close_idempotent(monkeypatch):

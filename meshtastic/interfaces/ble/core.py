@@ -114,6 +114,7 @@ class BLEInterface(MeshInterface):
         self._last_connection_request: Optional[str] = _sanitize_address(address)
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False
+        self._known_device_address: Optional[str] = None
 
         self.error_handler = BLEErrorHandler()
         self.thread_coordinator = ThreadCoordinator()
@@ -682,6 +683,7 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             previous_client = self.client
             self.address = device_address
+            self._known_device_address = device_address
             self.client = client
             self._disconnect_notified = False
             normalized_device_address = _sanitize_address(device_address or "")
