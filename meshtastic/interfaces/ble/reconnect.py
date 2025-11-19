@@ -36,6 +36,23 @@ class ReconnectPolicy:
         max_retries: Optional[int] = None,
         random_source=None,
     ):
+        """
+        Initialize a ReconnectPolicy that produces jittered exponential backoff delays and controls retry counts.
+        
+        Parameters:
+            initial_delay (float): Base delay in seconds for the first retry; must be greater than 0.
+            max_delay (float): Maximum delay in seconds to cap exponential growth; must be >= initial_delay.
+            backoff (float): Multiplicative backoff factor applied each attempt; must be greater than 1.0.
+            jitter_ratio (float): Fractional jitter to apply to the computed delay, between 0.0 and 1.0 inclusive.
+            max_retries (Optional[int]): Maximum number of retry attempts, or None for unlimited retries; if provided must be >= 0.
+            random_source: Optional random number source providing a .random() method; defaults to the module-level random.
+        
+        Raises:
+            ValueError: If any parameter is out of its allowed range.
+        
+        Initial state:
+            Sets internal attempt count to 0 and stores provided configuration for delay calculations.
+        """
         if initial_delay <= 0:
             raise ValueError(f"initial_delay must be > 0, got {initial_delay}")
         if max_delay < initial_delay:
@@ -64,7 +81,15 @@ class ReconnectPolicy:
 
     def get_delay(self, attempt: Optional[int] = None) -> float:
         """
-        Compute the jittered delay for the provided attempt (defaults to current attempt count).
+        Compute the jittered delay for a reconnect attempt.
+        
+        If `attempt` is None, the policy's current attempt count is used.
+        
+        Parameters:
+            attempt (Optional[int]): Zero-based attempt index; when omitted, uses the current attempt count.
+        
+        Returns:
+            float: Delay in seconds for the given attempt, including jitter.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -74,11 +99,13 @@ class ReconnectPolicy:
 
     def should_retry(self, attempt: Optional[int] = None) -> bool:
         """
-        Determine whether another retry should be attempted.
-
-        Returns True if max_retries is None (unlimited retries) or if the given
-        attempt count is less than max_retries. Note that when used with next_attempt(),
-        this allows max_retries + 1 total attempts due to the increment after checking.
+        Determine if another reconnect attempt is allowed under the current retry policy.
+        
+        Parameters:
+            attempt (Optional[int]): Attempt index to evaluate; if omitted, the policy's current attempt count is used.
+        
+        Returns:
+            `True` if retries are unlimited or the provided attempt is less than `max_retries`, `False` otherwise.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -86,11 +113,13 @@ class ReconnectPolicy:
 
     def next_attempt(self) -> Tuple[float, bool]:
         """
-        Advance the attempt counter and return (delay, should_retry).
-
-        Note: This method increments the attempt count after checking should_retry,
-        so callers using only next_attempt() will effectively allow max_retries + 1 attempts.
-        This behavior is intentional for the current AUTO_RECONNECT implementation.
+        Compute the delay for the current attempt and indicate whether further retries are permitted.
+        
+        This evaluates the jittered backoff delay and retry allowance for the current attempt, then increments the internal attempt counter. The increment occurs after determining `should_retry`, which makes it possible to perform up to `max_retries + 1` total attempts when callers rely solely on this method.
+        
+        Returns:
+            delay (float): Jittered backoff delay for the current attempt.
+            should_retry (bool): `true` if additional retry attempts are allowed, `false` otherwise.
         """
         delay = self.get_delay()
         should_retry = self.should_retry()
@@ -98,11 +127,21 @@ class ReconnectPolicy:
         return delay, should_retry
 
     def get_attempt_count(self) -> int:
-        """Expose the current attempt count (primarily for logging)."""
+        """
+        Return the current reconnect attempt count.
+        
+        Returns:
+            attempt_count (int): Number of reconnect attempts recorded by this policy.
+        """
         return self._attempt_count
 
     def sleep_with_backoff(self, attempt: int) -> None:
-        """Sleep for the jittered delay associated with the supplied attempt."""
+        """
+        Sleep for the jittered exponential-backoff delay corresponding to the given attempt number.
+        
+        Parameters:
+            attempt (int): Attempt index where 0 represents the first attempt; the delay is computed using the policy's backoff, max_delay, and jitter_ratio.
+        """
         _sleep(self.get_delay(attempt))
 
 
@@ -110,9 +149,20 @@ class _PolicyFactory:
     """Descriptor that creates a fresh ReconnectPolicy on each access."""
 
     def __init__(self, **kwargs):
+        """
+        Store keyword arguments for the factory so each access can create a new ReconnectPolicy with the same configuration.
+        
+        Parameters:
+            **kwargs (dict): Keyword arguments that will be forwarded to each ReconnectPolicy created by this factory.
+        """
         self._kwargs = kwargs
 
     def __get__(self, instance, owner):
+        """
+        Return a fresh ReconnectPolicy instance configured with the factory's stored keyword arguments.
+        
+        @returns A new ReconnectPolicy instantiated with the factory's stored `kwargs`.
+        """
         return ReconnectPolicy(**self._kwargs)
 
 
@@ -156,6 +206,15 @@ class ReconnectScheduler:
         thread_coordinator: "ThreadCoordinator",
         interface: "BLEInterface",
     ):
+        """
+        Initialize the ReconnectScheduler and prepare its reconnect policy, worker, and thread reference.
+        
+        Parameters:
+            state_manager (BLEStateManager): Manager for BLE connection state.
+            state_lock (RLock): Lock protecting access to shared BLE state.
+            thread_coordinator (ThreadCoordinator): Utility used to create and start threads.
+            interface (BLEInterface): BLE interface used by the reconnect worker for connection attempts.
+        """
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
@@ -171,6 +230,18 @@ class ReconnectScheduler:
         self._reconnect_thread: Optional[Thread] = None
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
+        """
+        Schedule and start a daemon worker thread to perform auto-reconnect attempts when appropriate.
+        
+        If auto_reconnect is enabled and the interface is not closing and no reconnect thread is already running, this creates, stores, and starts a new daemon reconnect thread that runs the reconnect worker loop. The thread reference is kept on the scheduler so callers can detect an active reconnect attempt.
+        
+        Parameters:
+            auto_reconnect (bool): Whether automatic reconnects are enabled.
+            shutdown_event (Event): Event that signals the worker to stop.
+        
+        Returns:
+            bool: `True` if a new reconnect thread was created and started, `False` otherwise.
+        """
         if not auto_reconnect:
             return False
         if self.state_manager.is_closing:
@@ -197,6 +268,11 @@ class ReconnectScheduler:
             return True
 
     def clear_thread_reference(self) -> None:
+        """
+        Clear the stored reconnect thread reference if it matches the currently executing thread.
+        
+        Acquires the scheduler's state_lock and sets `_reconnect_thread` to `None` when it equals the current thread; leaves it unchanged otherwise.
+        """
         with self.state_lock:
             if self._reconnect_thread is current_thread():
                 self._reconnect_thread = None
@@ -206,12 +282,28 @@ class ReconnectWorker:
     """Perform blocking reconnect attempts with policy-driven backoff."""
 
     def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
+        """
+        Create a ReconnectWorker bound to a BLE interface and a reconnect policy.
+        
+        Parameters:
+            interface (BLEInterface): The BLE interface used to perform connect attempts, manage notifications, and inspect connection state.
+            reconnect_policy (ReconnectPolicy): Policy that governs backoff, jitter, and retry limits for reconnect attempts.
+        """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
     def attempt_reconnect_loop(
         self, auto_reconnect: bool, shutdown_event: Event
     ) -> None:
+        """
+        Run a blocking loop that attempts to reconnect the BLE interface using the configured reconnect policy.
+        
+        This method resets the reconnect policy and repeatedly attempts to re-establish the interface connection until one of the following occurs: the reconnect succeeds, the provided shutdown_event is set, the interface is closing, auto_reconnect is disabled, or the reconnect policy indicates no more retries. Each failed attempt will trigger the policy to produce a jittered exponential backoff delay before the next attempt. On a successful reconnect, notifications are cleaned up and resubscribed as appropriate. The reconnect scheduler's thread reference is cleared when the loop finishes.
+        
+        Parameters:
+        	auto_reconnect (bool): If False, the loop will exit immediately without attempting reconnection.
+        	shutdown_event (threading.Event): Event that, when set, causes the loop to stop and return.
+        """
         self.reconnect_policy.reset()
         try:
             while not shutdown_event.is_set():

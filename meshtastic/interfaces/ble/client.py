@@ -35,14 +35,12 @@ class BLEClient:
         self, address=None, *, log_if_no_address: bool = True, **kwargs
     ) -> None:
         """
-        Create a BLEClient with a dedicated asyncio event loop and, if an address is provided, an underlying Bleak client attached to that address.
-
-        Args:
-        ----
-            address (Optional[str]): BLE device address to attach a Bleak client to. If None, the instance is created for
-                discovery-only use and will not instantiate an underlying Bleak client.
-            **kwargs: Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
-
+        Initialize the BLEClient, creating a dedicated asyncio event loop and background thread; if `address` is provided, also create an underlying Bleak client bound to that address.
+        
+        Parameters:
+            address (Optional[str]): BLE device address to connect to. If `None`, no underlying Bleak client is created and the instance is suitable for discovery-only operations.
+            log_if_no_address (bool): If `True`, log a debug message when no `address` is provided.
+            **kwargs: Forwarded to the underlying Bleak client constructor when `address` is supplied.
         """
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -68,16 +66,13 @@ class BLEClient:
 
     def pair(self, **kwargs):  # pylint: disable=C0116
         """
-        Pair the underlying BLE client with the remote device.
-
-        Args:
-        ----
-            kwargs: Backend-specific pairing options forwarded to the underlying BLE client.
-
+        Initiates pairing with the remote BLE device.
+        
+        Parameters:
+            kwargs: Backend-specific pairing options forwarded to the BLE backend.
+        
         Returns:
-        -------
-            `True` if pairing succeeded, `False` otherwise.
-
+            True if pairing succeeded, False otherwise.
         """
         return self.async_await(self.bleak_client.pair(**kwargs))
 
@@ -101,13 +96,10 @@ class BLEClient:
 
     def is_connected(self) -> bool:
         """
-        Determine if the underlying Bleak client is currently connected.
-
-        Returns
-        -------
-            `true` if the underlying Bleak client reports it is connected, `false` otherwise (also `false` when no
-                Bleak client exists or the connection state cannot be read).
-
+        Determine whether the underlying Bleak client is connected.
+        
+        Returns:
+            True if the underlying Bleak client reports it is connected, False otherwise (also False when no Bleak client exists or the connection state cannot be read).
         """
         bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
@@ -115,14 +107,10 @@ class BLEClient:
 
         def _check_connection():
             """
-            Determine whether the current `bleak_client` reports an active connection.
-
-            This handles either a boolean `is_connected` attribute or a callable `is_connected()` method on `bleak_client`.
-
-            Returns
-            -------
-                bool: `True` if the bleak client is connected, `False` otherwise.
-
+            Determine whether the current `bleak_client` reports an active connection; accepts either a boolean `is_connected` attribute or a callable `is_connected()`.
+            
+            Returns:
+                `True` if the bleak client is connected, `False` otherwise.
             """
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
@@ -138,31 +126,25 @@ class BLEClient:
 
     def disconnect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
-        Disconnect the underlying Bleak client and wait for the operation to finish.
-
-        Args:
-        ----
-            await_timeout (float | None): Maximum seconds to wait for disconnect completion; if None, wait indefinitely.
-            **kwargs: Additional keyword arguments forwarded to the Bleak client's disconnect method.
-
+        Disconnect the underlying Bleak client and wait for completion.
+        
+        Parameters:
+            await_timeout (float | None): Maximum seconds to wait for the disconnect to complete; if None, wait indefinitely.
+            **kwargs: Additional keyword arguments passed to the underlying client's disconnect method.
         """
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
-        """Read a GATT characteristic from the connected BLE device.
-
-        Forwards all arguments to the underlying Bleak client's `read_gatt_char`.
-
-        Args:
-        ----
-            *args: Positional arguments forwarded to `read_gatt_char` (typically the characteristic UUID or handle).
+        """
+        Read a GATT characteristic from the connected BLE device.
+        
+        Parameters:
+            *args: Characteristic identifier (commonly a UUID string or handle).
             timeout (float | None): Maximum seconds to wait for the read to complete.
-            **kwargs: Keyword arguments forwarded to `read_gatt_char`.
-
+            **kwargs: Additional options passed to the underlying read operation.
+        
         Returns:
-        -------
-            bytes: The raw bytes read from the characteristic.
-
+            bytes: Raw bytes read from the characteristic.
         """
         return self.async_await(
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
@@ -170,12 +152,10 @@ class BLEClient:
 
     def write_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
-        Write the given bytes to a GATT characteristic on the connected BLE device and wait for completion.
-
-        Raises
-        ------
+        Write bytes to a GATT characteristic on the connected BLE device and wait for the operation to complete.
+        
+        Raises:
             BLEError: If the write operation fails or times out.
-
         """
         self.async_await(
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
@@ -195,30 +175,23 @@ class BLEClient:
 
     def ensure_services_available(self):
         """
-        Ensure services are available for the connected device.
-
-        In bleak, services must be explicitly discovered via get_services().
-        This method triggers service discovery and returns the populated services object.
-
-        Returns
-        -------
-            The device's GATT services and their characteristics as returned by the underlying BLE library.
+        Trigger discovery and return the device's populated GATT services.
+        
+        Returns:
+            The device's GATT services object as provided by the underlying BLE library.
         """
         # Explicitly trigger service discovery via bleak's API
         return self.async_await(self.bleak_client.get_services())
 
     def has_characteristic(self, specifier):
         """
-        Check whether the connected BLE device exposes the characteristic identified by `specifier`.
-
-        Args:
-        ----
+        Determine whether the connected BLE device exposes the characteristic identified by `specifier`.
+        
+        Parameters:
             specifier (str | UUID): UUID string or UUID object identifying the characteristic to check.
-
+        
         Returns:
-        -------
-            `true` if the characteristic is present, `false` otherwise.
-
+            True if the characteristic is present, False otherwise.
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
@@ -234,13 +207,9 @@ class BLEClient:
     def start_notify(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Subscribe to notifications for a BLE characteristic on the connected device.
-
-        Args:
-        ----
-            *args: Additional arguments forwarded to the BLE backend's notification start call.
-            timeout (Optional[float]): Timeout for the operation.
-            **kwargs: Additional keyword arguments forwarded to the BLE backend's notification start call.
-
+        
+        Parameters:
+            timeout (Optional[float]): Maximum seconds to wait for the operation to complete.
         """
         self.async_await(
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
@@ -248,10 +217,9 @@ class BLEClient:
 
     def close(self):  # pylint: disable=C0116
         """
-        Shuts down the client's asyncio event loop and its background thread.
-
-        Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit,
-        and logs a warning if the thread does not terminate within that timeout.
+        Shuts down the internal asyncio event loop and background thread for this client.
+        
+        If the client is already closed this is a no-op. Otherwise schedules the loop to stop, then joins the event thread waiting up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT; if the thread remains alive after the timeout a warning is logged.
         """
         if getattr(self, "_closed", False):
             return
@@ -267,12 +235,10 @@ class BLEClient:
 
     def __enter__(self):
         """
-        Enter the context manager and provide the BLEClient instance for use within the with-block.
-
-        Returns
-        -------
-            self: The BLEClient instance.
-
+        Support use as a context manager by returning the BLEClient instance.
+        
+        Returns:
+            self: The BLEClient instance to be used inside the with-block.
         """
         return self
 
@@ -287,23 +253,17 @@ class BLEClient:
 
     def async_await(self, coro, timeout=None):  # pylint: disable=C0116
         """
-        Wait for the given coroutine to complete on the client's event loop and return its result.
-
-        If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEError is raised.
-
-        Args:
-        ----
+        Wait for a coroutine scheduled on the client's event loop to complete and return its result.
+        
+        Parameters:
             coro: The coroutine to run on the client's internal event loop.
             timeout (float | None): Maximum seconds to wait for completion; `None` means wait indefinitely.
-
+        
         Returns:
-        -------
             The value produced by the completed coroutine.
-
+        
         Raises:
-        ------
             BLEError: If the wait times out.
-
         """
         # Exception mapping contract:
         #   - FutureTimeoutError -> BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
@@ -331,7 +291,9 @@ class BLEClient:
         return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
 
     def _run_event_loop(self):
-        """Run the event loop in the dedicated thread until stopped."""
+        """
+        Run the client's internal asyncio event loop in the background thread until it is stopped, then close the loop to release resources.
+        """
         self.error_handler.safe_execute(
             self._eventLoop.run_forever, error_msg="Error in event loop", reraise=False
         )
