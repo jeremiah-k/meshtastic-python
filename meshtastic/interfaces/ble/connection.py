@@ -2,7 +2,9 @@
 
 import logging
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
+
+from bleak.backends.device import BLEDevice
 
 if TYPE_CHECKING:
     from meshtastic.ble_interface import BLEInterface
@@ -270,7 +272,21 @@ class ConnectionOrchestrator:
                     resolved_address = None
 
             if client is None:
-                device = self.interface.find_device(address or current_address)
+                fallback_devices: List[BLEDevice] = []
+                if normalized_target:
+                    try:
+                        fallback_devices = self.interface._find_connected_devices(
+                            address or current_address
+                        )
+                    except Exception:  # pragma: no cover - defensive logging
+                        logger.debug(
+                            "Connected-device enumeration during reconnect failed.",
+                            exc_info=True,
+                        )
+                if fallback_devices:
+                    device = fallback_devices[0]
+                else:
+                    device = self.interface.find_device(address or current_address)
                 resolved_address = device.address
                 client = self.client_manager.create_client(
                     resolved_address, on_disconnect_func

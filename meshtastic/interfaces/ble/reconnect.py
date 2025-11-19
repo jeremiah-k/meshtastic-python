@@ -327,7 +327,7 @@ class ReconnectWorker:
                         )
                         self.interface._notification_manager.resubscribe_all(
                             self.interface.client,
-                            timeout,
+                            timeout=timeout,
                         )
 
                     logger.info(
