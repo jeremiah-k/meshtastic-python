@@ -194,9 +194,9 @@ class BLEClient:
 
     def discover_services(self):
         """
-        Ensure services are available for the connected device.
+        DEPRECATED: Use ensure_services_available() instead.
 
-        Note: This method name is misleading. In bleak, services are automatically
+        This method name is misleading. In bleak, services are automatically
         discovered during connection. This method simply polls the services property
         with a brief sleep as a defensive measure to ensure services are populated.
 
@@ -206,6 +206,30 @@ class BLEClient:
         -------
             The device's GATT services and their characteristics as returned by the underlying BLE library.
 
+        """
+        import warnings
+
+        warnings.warn(
+            "discover_services() is deprecated and will be removed in a future version. "
+            "Use ensure_services_available() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.ensure_services_available()
+
+    def ensure_services_available(self):
+        """
+        Ensure services are available for the connected device.
+
+        This is the preferred method that accurately reflects the behavior.
+        In bleak, services are automatically discovered during connection.
+        This method polls the services property to ensure they are populated.
+
+        Note: Use this method instead of the deprecated discover_services().
+
+        Returns
+        -------
+            The device's GATT services and their characteristics as returned by the underlying BLE library.
         """
         # In bleak, services are auto-discovered during connect.
         # We'll access the services property which should be populated.
@@ -219,15 +243,6 @@ class BLEClient:
             time.sleep(0.1)
             services = getattr(self.bleak_client, "services", None)
         return services
-
-    def _ensure_services_available(self):
-        """
-        Ensure services are available for the connected device.
-
-        This is the preferred method name that accurately reflects the behavior.
-        The discover_services method is kept for backward compatibility.
-        """
-        return self.discover_services()
 
     def has_characteristic(self, specifier):
         """
@@ -244,9 +259,9 @@ class BLEClient:
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
-            # Call discover_services directly since it's safe
+            # Use ensure_services_available to populate services
             self.error_handler.safe_execute(
-                self.discover_services,
+                self.ensure_services_available,
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )

@@ -77,7 +77,7 @@ class ClientManager:
 
     def connect_client(self, client: "BLEClient") -> None:
         client.connect(await_timeout=BLEConfig.CONNECTION_TIMEOUT)
-        client.discover_services()
+        client.ensure_services_available()
 
     def update_client_reference(
         self,
