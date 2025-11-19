@@ -8,10 +8,11 @@ import logging
 import queue
 import struct
 import time
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from threading import Event, Thread
 from typing import Any, Callable, Optional, List
 
-from bleak import BleakClient as BleakRootClient
+from bleak import BleakClient as BleakRootClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError
@@ -35,6 +36,7 @@ from .gatt import (
     LOGRADIO_UUID,
     MALFORMED_NOTIFICATION_THRESHOLD,
     NotificationManager,
+    SERVICE_UUID,
     TORADIO_UUID,
 )
 from .exceptions import BLEError
@@ -43,6 +45,7 @@ from .state import BLEStateManager, ConnectionState
 from .util import (
     BLEErrorHandler,
     ThreadCoordinator,
+    _bleak_supports_connected_fallback,
     _sanitize_address,
     _sleep,
     _with_timeout,
@@ -587,16 +590,102 @@ class BLEInterface(MeshInterface):
             raise BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         return addressed_devices[0]
 
-    def _find_connected_devices(self, _address: Optional[str]) -> List[BLEDevice]:
+    def _find_connected_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
-        Find currently connected devices matching the given address.
+        Fallback method for finding already-connected Meshtastic devices when active scanning fails.
 
-        This is a legacy method for backward compatibility with tests.
-        In the current architecture, this functionality is handled by the DiscoveryManager.
+        Uses Bleak's private backend API to enumerate devices currently connected to the adapter.
         """
-        # For backward compatibility, return empty list
-        # The actual connected device logic is handled by DiscoveryManager
-        return []
+        min_version = BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
+        if not _bleak_supports_connected_fallback(min_version):
+            logger.debug(
+                "Skipping fallback connected-device scan; bleak is below %s",
+                ".".join(str(part) for part in min_version),
+            )
+            return []
+
+        async def _get_devices_async_and_filter(
+            target: Optional[str],
+        ) -> List[BLEDevice]:
+            scanner = BleakScanner()
+            devices_found: List[BLEDevice] = []
+            backend = getattr(scanner, "_backend", None)
+            if backend and hasattr(backend, "get_devices"):
+                backend_devices = await _with_timeout(
+                    backend.get_devices(),
+                    BLEConfig.BLE_SCAN_TIMEOUT,
+                    "connected-device enumeration",
+                )
+                sanitized_target = _sanitize_address(target) if target else None
+                for device in backend_devices or []:
+                    metadata = getattr(device, "metadata", None) or {}
+                    uuids = metadata.get("uuids", [])
+                    if SERVICE_UUID not in uuids:
+                        continue
+                    if sanitized_target:
+                        sanitized_addr = _sanitize_address(device.address)
+                        sanitized_name = _sanitize_address(device.name)
+                        if sanitized_target not in (sanitized_addr, sanitized_name):
+                            continue
+                    rssi = getattr(device, "rssi", 0)
+                    devices_found.append(
+                        BLEDevice(
+                            device.address,
+                            device.name,
+                            metadata,
+                            rssi,
+                        )
+                    )
+            return devices_found
+
+        async def _perform_lookup() -> List[BLEDevice]:
+            return await _with_timeout(
+                _get_devices_async_and_filter(address),
+                BLEConfig.BLE_SCAN_TIMEOUT,
+                "connected-device fallback",
+            )
+
+        try:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(_perform_lookup())
+
+            future: Future[List[BLEDevice]] = Future()
+
+            def _run_async():
+                try:
+                    future.set_result(asyncio.run(_perform_lookup()))
+                except Exception as exc:
+                    future.set_exception(exc)
+
+            thread = Thread(
+                target=_run_async, name="BLEConnectedFallback", daemon=True
+            )
+            thread.start()
+            try:
+                return future.result(timeout=BLEConfig.BLE_SCAN_TIMEOUT)
+            except FutureTimeoutError:
+                logger.debug(
+                    "Fallback connected-device discovery thread exceeded %.1fs timeout",
+                    BLEConfig.BLE_SCAN_TIMEOUT,
+                )
+                return []
+            except Exception as exc:
+                logger.debug(
+                    "Fallback device discovery thread failed with exception: %s", exc
+                )
+                return []
+        except (
+            BleakError,
+            BleakDBusError,
+            AttributeError,
+            RuntimeError,
+            asyncio.TimeoutError,
+            BLEError,
+        ) as exc:
+            logger.debug("Fallback device discovery failed: %s", exc)
+            return []
 
     @property
     def connection_state(self) -> ConnectionState:

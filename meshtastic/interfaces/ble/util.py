@@ -9,6 +9,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Event, RLock, Thread, current_thread
 from typing import Any, List, Optional, Tuple, cast, Callable, Dict
 
+from bleak import BleakScanner
 from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import DecodeError
 
@@ -230,12 +231,13 @@ class ThreadCoordinator:
         	timeout (float | None): Maximum seconds to wait for the thread to finish; `None` to wait indefinitely.
         """
         with self._lock:
-            if (
+            should_join = (
                 thread in self._threads
                 and thread.is_alive()
                 and thread is not current_thread()
-            ):
-                thread.join(timeout=timeout)
+            )
+        if should_join:
+            thread.join(timeout=timeout)
 
     def join_all(self, timeout: Optional[float] = None):
         """
@@ -246,9 +248,13 @@ class ThreadCoordinator:
         """
         with self._lock:
             current = current_thread()
-            for thread in self._threads:
-                if thread.is_alive() and thread is not current:
-                    thread.join(timeout=timeout)
+            to_join = [
+                thread
+                for thread in self._threads
+                if thread.is_alive() and thread is not current
+            ]
+        for thread in to_join:
+            thread.join(timeout=timeout)
 
     def set_event(self, name: str):
         """
@@ -332,19 +338,21 @@ class ThreadCoordinator:
         then clears internal thread and event registries so the coordinator no longer tracks them.
         """
         with self._lock:
-            # Signal all events
             for event in self._events.values():
                 event.set()
 
-            # Join threads with timeout (except current thread)
             current = current_thread()
-            for thread in self._threads:
-                if thread.is_alive() and thread is not current:
-                    thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
+            to_join = [
+                thread
+                for thread in self._threads
+                if thread.is_alive() and thread is not current
+            ]
 
-            # Clear tracking
             self._threads.clear()
             self._events.clear()
+
+        for thread in to_join:
+            thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
 
 
 class BLEErrorHandler:
@@ -395,7 +403,7 @@ class BLEErrorHandler:
             if reraise:
                 raise
             return default_return
-        except Exception:  # noqa: BLE001
+        except Exception:
             if log_error:
                 logger.exception("%s", error_msg)
             if reraise:
@@ -413,5 +421,5 @@ class BLEErrorHandler:
         """
         try:
             func()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.debug("Error during %s: %s", cleanup_name, e)

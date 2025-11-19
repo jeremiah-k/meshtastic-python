@@ -48,7 +48,9 @@ from meshtastic.interfaces.ble.connection import ConnectionOrchestrator
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
-        def sendMessage(self, topic: str, **kwargs: Any) -> None: ...
+        def sendMessage(self, topic: str, **kwargs: Any) -> None:
+            """Publish a pubsub message."""
+            ...
 
     pub: _PubProtocol
 else:  # pragma: no cover - import only at runtime
