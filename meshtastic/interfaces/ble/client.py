@@ -193,20 +193,19 @@ class BLEClient:
         # services is a property, not an async method, so we access it directly
         return self.bleak_client.services
 
-def ensure_services_available(self):
+    def ensure_services_available(self):
         """
         Ensure services are available for the connected device.
-        
+
         In bleak, services must be explicitly discovered via get_services().
         This method triggers service discovery and returns the populated services object.
-        
+
         Returns
         -------
             The device's GATT services and their characteristics as returned by the underlying BLE library.
         """
         # Explicitly trigger service discovery via bleak's API
         return self.async_await(self.bleak_client.get_services())
-
 
     def has_characteristic(self, specifier):
         """
