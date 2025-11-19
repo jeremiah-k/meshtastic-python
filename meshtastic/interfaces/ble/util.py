@@ -10,6 +10,7 @@ from threading import Event, RLock, Thread, current_thread
 from typing import Any, List, Optional, Tuple, cast, Callable, Dict
 
 from bleak.exc import BleakDBusError, BleakError
+from google.protobuf.message import DecodeError
 
 from .exceptions import BLEError
 
@@ -25,7 +26,7 @@ BLEAK_VERSION = importlib.metadata.version("bleak")
 
 
 def _bleak_supports_connected_fallback(
-    bleak_connected_device_fallback_min_version: Tuple[int, int, int]
+    bleak_connected_device_fallback_min_version: Tuple[int, int, int],
 ) -> bool:
     """
     Determine whether the installed bleak version supports the connected-device fallback.
@@ -35,9 +36,11 @@ def _bleak_supports_connected_fallback(
         >= bleak_connected_device_fallback_min_version
     )
 
+
 def _sleep(delay: float) -> None:
     """Allow callsites to throttle activity (wrapped for easier testing)."""
     time.sleep(delay)
+
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
@@ -73,6 +76,7 @@ async def _with_timeout(awaitable, timeout: Optional[float], label: str):
         return await asyncio.wait_for(awaitable, timeout=timeout)
     except asyncio.TimeoutError as exc:
         raise BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
+
 
 def _sanitize_address(address: Optional[str]) -> Optional[str]:
     """
@@ -130,13 +134,7 @@ class ThreadCoordinator:
         self._events: dict[str, Event] = {}
 
     def create_thread(
-        self,
-        target,
-        name: str,
-        *, 
-        daemon: bool = True,
-        args=(),
-        kwargs=None
+        self, target, name: str, *, daemon: bool = True, args=(), kwargs=None
     ) -> Thread:
         """
         Create and register a new Thread with target, name, daemon, args, and kwargs.
@@ -370,7 +368,6 @@ class BLEErrorHandler:
         - Consistent error logging and classification
         - Cleanup operations that never raise exceptions
     """
-
 
     @staticmethod
     def safe_execute(

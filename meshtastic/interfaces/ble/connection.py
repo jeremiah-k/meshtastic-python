@@ -1,4 +1,5 @@
 """BLE connection management"""
+
 import logging
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Optional
@@ -10,6 +11,7 @@ from .state import BLEStateManager, ConnectionState
 from .util import BLEErrorHandler, ThreadCoordinator, _sanitize_address
 from .config import BLEConfig
 from .discovery import DiscoveryManager
+from .exceptions import BLEError
 
 if TYPE_CHECKING:
     from .client import BLEClient
@@ -28,8 +30,8 @@ class ConnectionValidator:
     def validate_connection_request(self) -> None:
         if not self.state_manager.can_connect:
             if self.state_manager.is_closing:
-                raise RuntimeError("Cannot connect while interface is closing")
-            raise RuntimeError("Already connected or connection in progress")
+                raise BLEError("Cannot connect while interface is closing")
+            raise BLEError("Already connected or connection in progress")
 
     def check_existing_client(
         self,
@@ -70,6 +72,7 @@ class ClientManager:
     def create_client(self, device_address: str, disconnect_callback) -> "BLEClient":
         # We need to import BLEClient here to avoid circular dependencies
         from .client import BLEClient
+
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
     def connect_client(self, client: "BLEClient") -> None:

@@ -45,9 +45,9 @@ from meshtastic.ble_interface import (
 )
 
 if TYPE_CHECKING:
+
     class _PubProtocol(Protocol):
-        def sendMessage(self, topic: str, **kwargs: Any) -> None:
-            ...
+        def sendMessage(self, topic: str, **kwargs: Any) -> None: ...
 
     pub: _PubProtocol
 else:  # pragma: no cover - import only at runtime
@@ -239,14 +239,37 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
             """
             raise AssertionError("Fallback should not be attempted when scan succeeds")
 
-    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+        # Mock BleakScanner.discover to return our test devices
+        async def mock_discover(**kwargs):
+            print(f"mock_discover called with kwargs: {kwargs}")
+            print(f"SERVICE_UUID: {SERVICE_UUID}")
+            # Create BLEDevice objects with proper metadata
+            from bleak.backends.device import BLEDevice
 
-    manager = DiscoveryManager()
+            filtered_device_with_metadata = BLEDevice(
+                "AA:BB:CC:DD:EE:FF", "Filtered", {"props": {"UUIDs": [SERVICE_UUID]}}
+            )
 
-    devices = manager.discover_devices(address=None)
+            other_device_with_metadata = BLEDevice(
+                "11:22:33:44:55:66",
+                "Other",
+                {"props": {"UUIDs": ["some-other-service"]}},
+            )
 
-    assert len(devices) == 1
-    assert devices[0].address == filtered_device.address
+            print(
+                f"Created devices: {filtered_device_with_metadata.details}, {other_device_with_metadata.details}"
+            )
+
+            return [filtered_device_with_metadata, other_device_with_metadata]
+
+        monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
+
+        manager = DiscoveryManager()
+
+        devices = manager.discover_devices(address=None)
+
+        assert len(devices) == 1
+        assert devices[0].address == "AA:BB:CC:DD:EE:FF"
 
 
 def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
@@ -445,9 +468,7 @@ def test_connection_validator_existing_client_checks(monkeypatch):
 
     ble_like = cast(BLEClient, client)
     assert validator.check_existing_client(ble_like, None, None, None) is True
-    assert (
-        validator.check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
-    )
+    assert validator.check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
     assert (
         validator.check_existing_client(client, "something-else", None, None) is False
     )

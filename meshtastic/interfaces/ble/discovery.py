@@ -1,12 +1,12 @@
 """BLE discovery strategies"""
+
 import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from bleak import BleakScanner, BLEDevice
-
-from bleak import BleakScanner, BLEDevice
+from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
 from .config import BLEConfig
 from .gatt import SERVICE_UUID
 from .util import (
@@ -121,8 +121,22 @@ class DiscoveryManager:
                 logger.warning("BleakScanner.discover returned None")
             else:
                 for device in response:
-                    if SERVICE_UUID in device.metadata.get("uuids", []):
+                    # Handle different bleak versions
+                    uuids = []
+                    if hasattr(device, "metadata"):
+                        uuids = device.metadata.get("uuids", [])
+                    elif hasattr(device, "details") and isinstance(
+                        device.details, dict
+                    ):
+                        props = device.details.get("props", {})
+                        uuids = props.get("UUIDs", [])
+
+                    logger.debug(f"Device {device.name} has UUIDs: {uuids}")
+                    if SERVICE_UUID in uuids:
+                        logger.debug(f"Adding device {device.name} to results")
                         devices.append(device)
+                    else:
+                        logger.debug(f"Skipping device {device.name} - no SERVICE_UUID")
 
             if not devices and address:
                 logger.debug(
