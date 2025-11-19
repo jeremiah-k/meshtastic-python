@@ -1,4 +1,3 @@
-# ruff: noqa: F401
 """The public API for the Meshtastic BLE interface."""
 
 from typing import TYPE_CHECKING
@@ -44,27 +43,27 @@ from meshtastic import publishingThread
 from threading import current_thread
 
 __all__ = [
+    "BLEClient",
+    "BLEConfig",
+    "BLEDevice",
+    "BLEError",
     "BLEInterface",
     "BLEStateManager",
+    "ConnectedStrategy",
     "ConnectionState",
-    "BLEConfig",
-    "ReconnectPolicy",
-    "RetryPolicy",
-    "BLEClient",
+    "ConnectionValidator",
     "DecodeError",
-    "BLEError",
+    "DiscoveryManager",
     "FROMNUM_UUID",
     "FROMRADIO_UUID",
     "LEGACY_LOGRADIO_UUID",
     "LOGRADIO_UUID",
-    "SERVICE_UUID",
-    "TORADIO_UUID",
-    "BLEDevice",
-    "ConnectionValidator",
-    "ConnectedStrategy",
-    "DiscoveryManager",
+    "ReconnectPolicy",
     "ReconnectScheduler",
     "ReconnectWorker",
+    "RetryPolicy",
+    "SERVICE_UUID",
+    "TORADIO_UUID",
 ]
 
 # Module-level attributes are available from imports above for backward compatibility with tests

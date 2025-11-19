@@ -135,16 +135,15 @@ class ConnectionOrchestrator:
         self,
         address: Optional[str],
         current_address: Optional[str],
-        last_connection_request: Optional[str],
         register_notifications_func,
         on_connected_func,
         on_disconnect_func,
     ) -> "BLEClient":
-        self.validator.validate_connection_request()
-
-        target_address = address if address is not None else current_address
-        logger.info("Attempting to connect to %s", target_address or "any")
-        self.state_manager.transition_to(ConnectionState.CONNECTING)
+        with self.state_lock:
+            self.validator.validate_connection_request()
+            target_address = address if address is not None else current_address
+            logger.info("Attempting to connect to %s", target_address or "any")
+            self.state_manager.transition_to(ConnectionState.CONNECTING)
 
         client: Optional["BLEClient"] = None
         try:

@@ -7,8 +7,10 @@ from typing import Any, Awaitable, Callable, List, Optional, TYPE_CHECKING
 
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
 from .config import BLEConfig
 from .gatt import SERVICE_UUID
+from .exceptions import BLEError
 from .util import (
     BLEAK_VERSION,
     _bleak_supports_connected_fallback,
@@ -95,9 +97,12 @@ class ConnectedStrategy(DiscoveryStrategy):
                         )
                     )
             return devices_found
-        except Exception as e:
-            logger.debug("Connected device discovery failed: %s", e)
+        except (BLEError, BleakError, TimeoutError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning("Connected device discovery failed: %s", exc)
             return []
+        except Exception as exc:  # pragma: no cover - unexpected failures
+            logger.exception("Unexpected error during connected-device discovery")
+            raise
 
 
 class DiscoveryManager:
@@ -130,17 +135,25 @@ class DiscoveryManager:
                 )
                 try:
                     return self._discover_with_async_runner(address)
-                except Exception as fallback_error:
-                    logger.debug(
+                except (
+                    BLEError,
+                    BleakError,
+                    TimeoutError,
+                    asyncio.TimeoutError,
+                    OSError,
+                ) as exc:
+                    logger.warning(
                         "Device discovery failed after retrying on async runner: %s",
-                        fallback_error,
+                        exc,
                     )
                     return []
-            logger.debug("Device discovery failed: %s", runtime_error)
+            raise
+        except (BLEError, BleakError, TimeoutError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning("Device discovery failed: %s", exc)
             return []
-        except Exception as e:
-            logger.debug("Device discovery failed: %s", e)
-            return []
+        except Exception:
+            logger.exception("Unexpected error during BLE discovery")
+            raise
 
     def _discover_with_async_runner(self, address: Optional[str]) -> List[BLEDevice]:
         with self._ble_client_factory() as runner:
@@ -165,9 +178,18 @@ class DiscoveryManager:
             )
         except RuntimeError:
             raise
-        except Exception as scan_error:
-            logger.debug("BLE scan failed: %s", scan_error)
+        except (
+            BLEError,
+            BleakError,
+            TimeoutError,
+            asyncio.TimeoutError,
+            OSError,
+        ) as scan_error:
+            logger.warning("BLE scan failed: %s", scan_error)
             response = None
+        except Exception:
+            logger.exception("Unexpected error while scanning for BLE devices")
+            raise
 
         devices: List[BLEDevice] = []
         if response is None:
@@ -201,8 +223,17 @@ class DiscoveryManager:
                 )
                 if fallback:
                     devices.extend(fallback)
-            except Exception as e:  # pragma: no cover - best effort logging
-                logger.debug("Connected device fallback failed: %s", e)
+            except (
+                BLEError,
+                BleakError,
+                TimeoutError,
+                asyncio.TimeoutError,
+                OSError,
+            ) as exc:
+                logger.warning("Connected device fallback failed: %s", exc)
+            except Exception:
+                logger.exception("Unexpected error in connected-device fallback")
+                raise
 
         return devices
 

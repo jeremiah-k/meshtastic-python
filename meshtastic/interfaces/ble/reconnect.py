@@ -131,12 +131,22 @@ class ReconnectPolicy:
         _get_sleep()(self.get_delay(attempt))
 
 
+class _PolicyFactory:
+    """Descriptor that creates a fresh ReconnectPolicy on each access."""
+
+    def __init__(self, **kwargs):
+        self._kwargs = kwargs
+
+    def __get__(self, instance, owner):
+        return ReconnectPolicy(**self._kwargs)
+
+
 class RetryPolicy:
     """
     Static retry policy presets for BLE operations.
     """
 
-    EMPTY_READ = ReconnectPolicy(
+    EMPTY_READ = _PolicyFactory(
         initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
         max_delay=1.0,
         backoff=1.5,
@@ -144,7 +154,7 @@ class RetryPolicy:
         max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
     )
 
-    TRANSIENT_ERROR = ReconnectPolicy(
+    TRANSIENT_ERROR = _PolicyFactory(
         initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
         max_delay=2.0,
         backoff=1.5,
@@ -152,7 +162,7 @@ class RetryPolicy:
         max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,
     )
 
-    AUTO_RECONNECT = ReconnectPolicy(
+    AUTO_RECONNECT = _PolicyFactory(
         initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
         max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
         backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
@@ -264,7 +274,7 @@ class ReconnectWorker:
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
-                        self.reconnect_policy.get_attempt_count(),
+                        attempt_num,
                         err,
                     )
                 except Exception:
@@ -275,7 +285,7 @@ class ReconnectWorker:
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
-                        self.reconnect_policy.get_attempt_count(),
+                        attempt_num,
                     )
 
                 if self.interface.is_connection_closing or not auto_reconnect:

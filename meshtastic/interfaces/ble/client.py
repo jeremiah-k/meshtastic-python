@@ -54,6 +54,7 @@ class BLEClient:
             target=self._run_event_loop, name="BLEClient", daemon=True
         )
         self._eventThread.start()
+        self._closed = False
 
         if not address:
             if log_if_no_address:
@@ -248,6 +249,9 @@ class BLEClient:
         Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit,
         and logs a warning if the thread does not terminate within that timeout.
         """
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
         self.async_run(self._stop_event_loop())
         self._eventThread.join(timeout=BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():

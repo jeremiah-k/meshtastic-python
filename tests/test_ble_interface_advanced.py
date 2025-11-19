@@ -608,7 +608,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 noProto=True,
                 auto_reconnect=True,
             )
-            setattr(iface, "_connect_stub_calls", connect_calls)
+            iface._connect_stub_calls = connect_calls
             client = cast("StressTestClient", iface.client)
             yield iface, client
         finally:
@@ -834,6 +834,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
         fake_future.coro = coro
         return fake_future
 
+    original_async_run = client.async_run
     monkeypatch.setattr(client, "async_run", _fake_async_run)
 
     with pytest.raises(BLEInterface.BLEError) as excinfo:
@@ -842,6 +843,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     assert "Async operation timed out" in str(excinfo.value)
     assert fake_future.cancelled is True
 
+    client.async_run = original_async_run
     client.close()
     if getattr(fake_future, "coro", None) is not None and hasattr(
         fake_future.coro, "close"
@@ -985,8 +987,8 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
     flush_event = threading.Event()
     iface._drain_publish_queue(flush_event)
     assert (
-        "Error in deferred publish callback" in caplog.text
-        or "Exception in drain queue:" in caplog.text
+        "Deferred publish callback processed" in caplog.text
+        or "Exception while draining publish queue" in caplog.text
     )
 
     iface.close()

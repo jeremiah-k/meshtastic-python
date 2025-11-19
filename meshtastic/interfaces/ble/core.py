@@ -399,30 +399,26 @@ class BLEInterface(MeshInterface):
 
     def find_device(self, address: Optional[str]) -> BLEDevice:
         # Handle case where interface is not properly initialized (e.g., in tests)
+        addressed_devices: List[BLEDevice]
         if not hasattr(self, "_discovery_manager"):
-            # Fallback for tests that create interface with object.__new__
-            # Try to use the interface's scan method if it's mocked
-            if hasattr(self.__class__, "scan") and callable(
-                getattr(self.__class__, "scan")
-            ):
+            scan = getattr(self.__class__, "scan", None)
+            if callable(scan):
                 try:
-                    addressed_devices = self.__class__.scan()
-                except Exception:
-                    # If scan fails, fall back to discovery manager
+                    addressed_devices = scan()
+                except BLEError as exc:
+                    logger.debug(
+                        "scan() failed, falling back to DiscoveryManager: %s", exc
+                    )
                     from .discovery import DiscoveryManager
 
-                    discovery_manager = DiscoveryManager()
-                    addressed_devices = discovery_manager.discover_devices(address)
+                    addressed_devices = DiscoveryManager().discover_devices(address)
             else:
-                # Use discovery manager directly
                 from .discovery import DiscoveryManager
 
-                discovery_manager = DiscoveryManager()
-                addressed_devices = discovery_manager.discover_devices(address)
+                addressed_devices = DiscoveryManager().discover_devices(address)
         else:
             addressed_devices = self._discovery_manager.discover_devices(address)
 
-        # Ensure address attribute exists for tests
         if not hasattr(self, "address"):
             self.address = None
         if not hasattr(self, "debugOut"):
@@ -444,18 +440,18 @@ class BLEInterface(MeshInterface):
                 addressed_devices = filtered_devices
 
         if len(addressed_devices) == 0:
-            # If scan returned empty and we have _find_connected_devices method, try it
-            if hasattr(self, "_find_connected_devices") and callable(
-                getattr(self, "_find_connected_devices")
-            ):
+            finder = getattr(self, "_find_connected_devices", None)
+            if callable(finder):
                 try:
-                    connected_devices = self._find_connected_devices(address)
+                    connected_devices = finder(address)
                     if connected_devices:
                         addressed_devices = connected_devices
-                except Exception:
-                    pass  # Fall through to error if connected devices lookup fails
+                except BLEError as exc:
+                    logger.debug(
+                        "Connected device lookup failed, continuing to error: %s", exc
+                    )
 
-            if len(addressed_devices) == 0:
+            if not addressed_devices:
                 if address:
                     raise BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
                 raise BLEError(ERROR_NO_PERIPHERALS_FOUND)
@@ -517,7 +513,6 @@ class BLEInterface(MeshInterface):
         client = self._connection_orchestrator.establish_connection(
             address,
             self.address,
-            self._last_connection_request,
             self._register_notifications,
             self._connected,
             self._on_ble_disconnect,
@@ -765,13 +760,13 @@ class BLEInterface(MeshInterface):
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False,
         )
-        logger.debug("Disconnect notification flush completed")
         if not flush_event.wait(timeout=timeout):
             thread = getattr(publishingThread, "thread", None)
             if thread is not None and thread.is_alive():
                 logger.debug("Timed out waiting for publish queue flush")
             else:
                 self._drain_publish_queue(flush_event)
+        logger.debug("Disconnect notification flush completed")
 
     def _disconnect_and_close_client(self, client: "BLEClient"):
         try:
@@ -788,15 +783,16 @@ class BLEInterface(MeshInterface):
         while not flush_event.is_set():
             try:
                 runnable = queue.get_nowait()
-                logger.debug(f"Got runnable from queue: {runnable}")
+                logger.debug("Got runnable from queue: %r", runnable)
                 self.error_handler.safe_execute(
                     runnable,
                     error_msg="Error in deferred publish callback",
                     reraise=False,
                 )
-                logger.debug("Error in deferred publish callback processed")
-            except Exception as e:
-                logger.debug(f"Exception in drain queue: {e}")
+                logger.debug("Deferred publish callback processed")
+            except Exception as exc:
+                logger.debug(
+                    "Exception while draining publish queue (likely empty): %s", exc
+                )
                 # Handle both asyncio.QueueEmpty and queue.Empty
                 break
-            logger.debug("Error in deferred publish callback processed")

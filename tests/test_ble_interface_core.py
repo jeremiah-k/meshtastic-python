@@ -216,96 +216,28 @@ def test_find_connected_devices_skips_private_backend_when_guard_fails(monkeypat
 def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
     """DiscoveryManager should return only devices advertising the Meshtastic service UUID."""
 
-    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
-    other_device = _create_ble_device("11:22:33:44:55:66", "Other")
+    async def mock_discover(**_kwargs):
+        from bleak.backends.device import BLEDevice
 
-    class FakeClient:
-        def __enter__(self):
-            """
-            Enter the context manager and provide the context object.
+        filtered_device = BLEDevice(
+            "AA:BB:CC:DD:EE:FF",
+            "Filtered",
+            {"props": {"UUIDs": [SERVICE_UUID]}},
+        )
+        other_device = BLEDevice(
+            "11:22:33:44:55:66",
+            "Other",
+            {"props": {"UUIDs": ["some-other-service"]}},
+        )
+        return [filtered_device, other_device]
 
-            Returns:
-                self: The context manager instance.
-            """
-            return self
+    monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
 
-        def __exit__(self, exc_type, exc, tb):
-            """
-            Indicates that the context manager does not suppress exceptions raised inside the with-block.
+    manager = DiscoveryManager()
+    devices = manager.discover_devices(address=None)
 
-            Parameters:
-                exc_type (type | None): The exception class raised in the with-block, or None if no exception occurred.
-                exc (BaseException | None): The exception instance raised in the with-block, or None.
-                tb (types.TracebackType | None): The traceback object for the exception, or None.
-
-            Returns:
-                bool: `False` to signal that any exception should be propagated (not suppressed).
-            """
-            return False
-
-        def discover(self, **_kwargs):
-            """
-            Provide a fake discovery result used by tests that maps labels to (device, advertisement) pairs.
-
-            Returns:
-                dict: A mapping with two entries:
-                    - "filtered": tuple(device, advertisement) where `advertisement.service_uuids` includes `SERVICE_UUID`.
-                    - "other": tuple(device, advertisement) where `advertisement.service_uuids` contains a non-Meshtastic service identifier.
-            """
-            return {
-                "filtered": (
-                    filtered_device,
-                    SimpleNamespace(service_uuids=[SERVICE_UUID]),
-                ),
-                "other": (
-                    other_device,
-                    SimpleNamespace(service_uuids=["some-other-service"]),
-                ),
-            }
-
-        def async_await(self, coro):
-            """
-            Assert that a connected-device fallback must not be used.
-
-            Parameters:
-                coro: The coroutine that would be awaited for a connected-device fallback.
-
-            Raises:
-                AssertionError: Always raised with the message "Fallback should not be attempted when scan succeeds".
-            """
-            raise AssertionError("Fallback should not be attempted when scan succeeds")
-
-        # Mock BleakScanner.discover to return our test devices
-        async def mock_discover(**kwargs):
-            print(f"mock_discover called with kwargs: {kwargs}")
-            print(f"SERVICE_UUID: {SERVICE_UUID}")
-            # Create BLEDevice objects with proper metadata
-            from bleak.backends.device import BLEDevice
-
-            filtered_device_with_metadata = BLEDevice(
-                "AA:BB:CC:DD:EE:FF", "Filtered", {"props": {"UUIDs": [SERVICE_UUID]}}
-            )
-
-            other_device_with_metadata = BLEDevice(
-                "11:22:33:44:55:66",
-                "Other",
-                {"props": {"UUIDs": ["some-other-service"]}},
-            )
-
-            print(
-                f"Created devices: {filtered_device_with_metadata.details}, {other_device_with_metadata.details}"
-            )
-
-            return [filtered_device_with_metadata, other_device_with_metadata]
-
-        monkeypatch.setattr("bleak.BleakScanner.discover", mock_discover)
-
-        manager = DiscoveryManager()
-
-        devices = manager.discover_devices(address=None)
-
-        assert len(devices) == 1
-        assert devices[0].address == "AA:BB:CC:DD:EE:FF"
+    assert len(devices) == 1
+    assert devices[0].address == "AA:BB:CC:DD:EE:FF"
 
 
 def test_discovery_manager_handles_running_loop_scan(monkeypatch):
