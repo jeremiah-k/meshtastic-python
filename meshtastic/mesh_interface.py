@@ -1134,8 +1134,8 @@ class MeshInterface:  # pylint: disable=R0902
         )
         # extend timeout based on number of nodes, limit by configured hopLimit
         with self._node_db_lock:
-            nodeCount = len(self.nodes) if self.nodes else 0
-        waitFactor = min(max(nodeCount - 1, 0), hopLimit)
+            node_count = len(self.nodes) if self.nodes else 0
+        waitFactor = min(max(node_count - 1, 0), hopLimit + 1)
         self.waitForTraceRoute(waitFactor)
 
     def onResponseTraceRoute(self, p: dict[str, Any]) -> None:
