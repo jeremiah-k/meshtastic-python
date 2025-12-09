@@ -2,8 +2,12 @@
 
 import importlib.metadata
 import logging
-import re
-from typing import Optional, Tuple, cast
+from typing import Optional, Tuple
+
+from meshtastic.interfaces.ble.utils import (
+    _bleak_supports_connected_fallback,
+    _parse_version_triplet,
+)
 
 logger = logging.getLogger("meshtastic.ble")
 
@@ -89,38 +93,3 @@ ERROR_NO_PERIPHERALS_FOUND = (
 # Alias preserves legacy access while sourcing value from BLEConfig
 BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
-
-def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
-    """
-    Extract a three-part integer version tuple from a version string.
-    
-    Non-numeric segments are ignored and missing components are treated as zeros.
-    
-    Parameters:
-        version_str (str): Version string to parse (may contain non-digit characters).
-    
-    Returns:
-        Tuple[int, int, int]: (major, minor, patch) integers parsed from the string; elements default to 0 when absent or unparseable.
-    """
-    matches = re.findall(r"\d+", version_str or "")
-    while len(matches) < 3:
-        matches.append("0")
-    try:
-        return cast(
-            Tuple[int, int, int],
-            tuple(int(segment) for segment in matches[:3]),
-        )
-    except ValueError:
-        return 0, 0, 0
-
-def _bleak_supports_connected_fallback() -> bool:
-    """
-    Check whether the installed bleak version meets the minimum required version for the connected-device fallback.
-    
-    Returns:
-        `true` if the installed bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, `false` otherwise.
-    """
-    return (
-        _parse_version_triplet(BLEAK_VERSION)
-        >= BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
-    )

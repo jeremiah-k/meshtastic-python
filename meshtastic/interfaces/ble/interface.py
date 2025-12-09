@@ -1044,7 +1044,7 @@ class BLEInterface(MeshInterface):
                 TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT
             )
             write_successful = True
-        except (BleakError, RuntimeError, OSError) as e:
+        except (BleakError, BLEClient.BLEError, RuntimeError, OSError) as e:
             # Log detailed error information and wrap in our interface exception
             logger.debug(
                 "Error during write operation: %s",

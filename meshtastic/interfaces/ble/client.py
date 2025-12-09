@@ -345,8 +345,8 @@ class BLEClient:
 
         """
         # Exception mapping contract:
-        #   - FutureTimeoutError -> BLEInterface.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
-        #   - Bleak* exceptions propagate so BLEInterface wrappers can convert them consistently.
+        #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
+        #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
         future = self.async_run(coro)
         try:
             return future.result(timeout)
