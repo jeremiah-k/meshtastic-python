@@ -54,7 +54,7 @@ class ReconnectPolicy:
             attempt = self._attempt_count
         delay = min(self.initial_delay * (self.backoff**attempt), self.max_delay)
         jitter = delay * self.jitter_ratio * (self._random.random() * 2.0 - 1.0)
-        return delay + jitter
+        return max(0.001, delay + jitter)  # Ensure a small positive delay
 
     def should_retry(self, attempt: Optional[int] = None) -> bool:
         """

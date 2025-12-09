@@ -1,9 +1,8 @@
 """Thread coordination utilities for BLE operations."""
 
 import logging
-from queue import Empty
 from threading import Event, RLock, Thread, current_thread
-from typing import Any, Callable, Dict, List, Optional
+from typing import List, Optional
 
 from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 
@@ -119,12 +118,13 @@ class ThreadCoordinator:
 
         """
         with self._lock:
-            if (
+            should_join = (
                 thread in self._threads
                 and thread.is_alive()
                 and thread is not current_thread()
-            ):
-                thread.join(timeout=timeout)
+            )
+        if should_join:
+            thread.join(timeout=timeout)
 
     def join_all(self, timeout: Optional[float] = None):
         """
@@ -138,9 +138,13 @@ class ThreadCoordinator:
         """
         with self._lock:
             current = current_thread()
-            for thread in self._threads:
-                if thread.is_alive() and thread is not current:
-                    thread.join(timeout=timeout)
+            threads_to_join = [
+                thread
+                for thread in self._threads
+                if thread.is_alive() and thread is not current
+            ]
+        for thread in threads_to_join:
+            thread.join(timeout=timeout)
 
     def set_event(self, name: str):
         """

@@ -86,9 +86,8 @@ ERROR_NO_PERIPHERALS_FOUND = (
 )
 
 # BLEClient-specific constants
-BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = (
-    2.0  # Ensures client.close() does not block shutdown indefinitely
-)
+# Alias preserves legacy access while sourcing value from BLEConfig
+BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:

@@ -159,7 +159,7 @@ def mock_bleak(monkeypatch):
 
     """
     bleak_module = types.ModuleType("bleak")
-    bleak_module.__version__ = "1.1.1"
+    bleak_module.__version__ = "2.0.0"
 
     class _StubBleakClient:
         def __init__(self, address=None, **_kwargs):

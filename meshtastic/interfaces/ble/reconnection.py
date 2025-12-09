@@ -1,9 +1,8 @@
 """BLE reconnection logic and scheduling."""
 
-import importlib
 import logging
 from threading import Event, RLock, Thread
-from typing import Optional, TYPE_CHECKING, Any
+from typing import Optional, TYPE_CHECKING
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -84,7 +83,7 @@ class ReconnectWorker:
         self.reconnect_policy.reset()
         try:
             while not shutdown_event.is_set():
-                if self.interface._state_manager.is_closing or not auto_reconnect:
+                if self.interface.is_connection_closing or not auto_reconnect:
                     logger.debug(
                         "Auto-reconnect aborted because interface is closing or disabled."
                     )
@@ -95,17 +94,12 @@ class ReconnectWorker:
                         "Attempting BLE auto-reconnect (attempt %d).", attempt_num
                     )
                     self.interface.connect(self.interface.address)
-                    timeout = (
-                        BLEConfig.NOTIFICATION_START_TIMEOUT
-                        if BLEConfig.NOTIFICATION_START_TIMEOUT is not None
-                        else BLEConfig.GATT_IO_TIMEOUT
-                    )
                     logger.info(
                         "BLE auto-reconnect succeeded after %d attempts.", attempt_num
                     )
                     return
                 except self.interface.BLEError as err:
-                    if self.interface._state_manager.is_closing or not auto_reconnect:
+                    if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
                             "Auto-reconnect cancelled after failure due to shutdown/disable."
                         )
@@ -116,7 +110,7 @@ class ReconnectWorker:
                         err,
                     )
                 except Exception:
-                    if self.interface._state_manager.is_closing or not auto_reconnect:
+                    if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
                             "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
                         )
@@ -138,21 +132,9 @@ class ReconnectWorker:
                 logger.debug(
                     "Waiting %.2f seconds before next reconnect attempt.", sleep_delay
                 )
-                ble_mod: Any = None
-                for module_name in (
-                    "meshtastic.interfaces.ble",
-                    "meshtastic.ble_interface",
-                ):
-                    try:
-                        ble_mod = importlib.import_module(module_name)  # type: ignore[assignment]
-                        break
-                    except ImportError:  # pragma: no cover - defensive fallback
-                        continue
+                from meshtastic.interfaces.ble.utils import get_sleep_fn
 
-                sleep_fn = getattr(ble_mod, "_sleep", None) if ble_mod else None
-                if sleep_fn is None:  # pragma: no cover - fallback to utils
-                    from meshtastic.interfaces.ble.utils import _sleep as sleep_fn  # type: ignore[no-redef]
-                assert sleep_fn is not None
+                sleep_fn = get_sleep_fn()
                 sleep_fn(sleep_delay)
         finally:
             self.interface._reconnect_scheduler.clear_thread_reference()

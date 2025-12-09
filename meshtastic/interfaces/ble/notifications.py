@@ -43,19 +43,21 @@ class NotificationManager:
         Re-register every tracked subscription on the provided client.
         """
         with self._lock:
-            for characteristic, callback in self._active_subscriptions.values():
-                try:
-                    client.start_notify(
-                        characteristic,
-                        callback,
-                        timeout=timeout,
-                    )
-                except Exception as e:  # pragma: no cover - best effort
-                    logger.debug(
-                        "Failed to resubscribe %s during reconnect: %s",
-                        characteristic,
-                        e,
-                    )
+            subscriptions = list(self._active_subscriptions.values())
+
+        for characteristic, callback in subscriptions:
+            try:
+                client.start_notify(
+                    characteristic,
+                    callback,
+                    timeout=timeout,
+                )
+            except Exception as e:  # pragma: no cover - best effort
+                logger.debug(
+                    "Failed to resubscribe %s during reconnect: %s",
+                    characteristic,
+                    e,
+                )
 
     def __len__(self) -> int:
         with self._lock:

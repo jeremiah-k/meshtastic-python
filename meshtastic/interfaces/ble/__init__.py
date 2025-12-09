@@ -44,16 +44,26 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from bleak import BleakScanner, BLEDevice
-from meshtastic.interfaces.ble.state import *
-from meshtastic.interfaces.ble.coordination import *
-from meshtastic.interfaces.ble.errors import *
-from meshtastic.interfaces.ble.policies import *
-from meshtastic.interfaces.ble.client import *
-from meshtastic.interfaces.ble.discovery import *
-from meshtastic.interfaces.ble.connection import *
-from meshtastic.interfaces.ble.reconnection import *
-from meshtastic.interfaces.ble.notifications import *
-from meshtastic.interfaces.ble.interface import *
+from threading import current_thread
+
+from meshtastic.interfaces.ble.state import ConnectionState, BLEStateManager
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.policies import ReconnectPolicy, RetryPolicy
+from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.discovery import (
+    DiscoveryStrategy,
+    ConnectedStrategy,
+    DiscoveryManager,
+)
+from meshtastic.interfaces.ble.connection import (
+    ConnectionValidator,
+    ClientManager,
+    ConnectionOrchestrator,
+)
+from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
+from meshtastic.interfaces.ble.notifications import NotificationManager
+from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.interfaces.ble.utils import _sleep
 
 __all__ = [
@@ -78,6 +88,7 @@ __all__ = [
     "BLEInterface",
     "BleakScanner",
     "BLEDevice",
+    "current_thread",
     # Constants/helpers
     "SERVICE_UUID",
     "TORADIO_UUID",
@@ -114,6 +125,7 @@ __all__ = [
     "BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION",
     "BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT",
     "BLECLIENT_ERROR_ASYNC_TIMEOUT",
+    # Private helpers (exported for backwards compatibility)
     "_parse_version_triplet",
     "_bleak_supports_connected_fallback",
     "_sleep",

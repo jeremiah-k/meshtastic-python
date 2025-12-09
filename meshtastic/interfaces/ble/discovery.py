@@ -1,7 +1,6 @@
 """BLE device discovery strategies."""
 
 import asyncio
-import importlib
 import inspect
 import logging
 from abc import ABC, abstractmethod
@@ -105,13 +104,9 @@ class DiscoveryManager:
         self.connected_strategy = ConnectedStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
-        ble_mod = None
-        for module_name in ("meshtastic.interfaces.ble", "meshtastic.ble_interface"):
-            try:
-                ble_mod = importlib.import_module(module_name)  # type: ignore[assignment]
-                break
-            except ImportError:  # pragma: no cover - defensive fallback
-                continue
+        from meshtastic.interfaces.ble.utils import resolve_ble_module
+
+        ble_mod = resolve_ble_module()
         client_factory: Callable[..., Any] = cast(
             Callable[..., Any],
             self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
@@ -174,7 +169,7 @@ class DiscoveryManager:
                     address, BLEConfig.BLE_SCAN_TIMEOUT
                 )
                 try:
-                    async_await_fn = getattr(client, "async_await")
+                    async_await_fn = client.async_await
                     async_await_sig = inspect.signature(async_await_fn)
                     if "timeout" in async_await_sig.parameters:
                         fallback = async_await_fn(

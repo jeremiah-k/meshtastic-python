@@ -425,7 +425,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     assert fallback_called is False
 
 
-def test_connection_validator_enforces_state(monkeypatch):
+def test_connection_validator_enforces_state():
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 
     state_manager = BLEStateManager()
@@ -447,7 +447,7 @@ def test_connection_validator_enforces_state(monkeypatch):
     assert "connection in progress" in str(excinfo.value)
 
 
-def test_connection_validator_existing_client_checks(monkeypatch):
+def test_connection_validator_existing_client_checks():
     """check_existing_client should allow reuse only when the requested identifier matches."""
 
     state_manager = BLEStateManager()
@@ -579,36 +579,36 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         BleakError,  # Should be fatal if not a disconnect
     ]
 
+    class ExceptionClient(DummyClient):
+        """Mock client that raises specific exceptions for testing."""
+
+        def __init__(self, exception_type):
+            """
+            Create a test client configured to raise a specific exception from its faulting methods.
+
+            Parameters
+            ----------
+                exception_type (Exception | type): An exception instance or an exception class; the client will raise
+                    this exception (or an instance of it) when its faulting methods are invoked.
+
+            """
+            super().__init__()
+            self.exception_type = exception_type
+
+        def read_gatt_char(self, *_args, **_kwargs):
+            """
+            Simulate a failing GATT characteristic read by raising the configured exception.
+
+            Raises:
+                Exception: An instance of `self.exception_type` constructed with the message "test".
+            """
+            raise self.exception_type("test")
+
     for exc_type in handled_exceptions:
         # Clear caplog for each test
         caplog.clear()
 
         # Create a mock client that raises the specific exception
-        class ExceptionClient(DummyClient):
-            """Mock client that raises specific exceptions for testing."""
-
-            def __init__(self, exception_type):
-                """
-                Create a test client configured to raise a specific exception from its faulting methods.
-
-                Parameters
-                ----------
-                    exception_type (Exception | type): An exception instance or an exception class; the client will raise
-                        this exception (or an instance of it) when its faulting methods are invoked.
-
-                """
-                super().__init__()
-                self.exception_type = exception_type
-
-            def read_gatt_char(self, *_args, **_kwargs):
-                """
-                Simulate a failing GATT characteristic read by raising the configured exception.
-
-                Raises:
-                    Exception: An instance of `self.exception_type` constructed with the message "test".
-                """
-                raise self.exception_type("test")
-
         client = ExceptionClient(exc_type)
         iface = _build_interface(monkeypatch, client)
 
@@ -825,7 +825,7 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     assert scheduler.schedule_reconnect(True, shutdown_event) is False
 
 
-def test_reconnect_worker_successful_attempt(monkeypatch):
+def test_reconnect_worker_successful_attempt():
     """ReconnectWorker should clean up, reconnect, resubscribe, and clear thread references on success."""
 
     class StubPolicy:

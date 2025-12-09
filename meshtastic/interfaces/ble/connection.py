@@ -25,13 +25,13 @@ class ConnectionValidator:
         self.state_lock = state_lock
 
     def validate_connection_request(self) -> None:
+        from meshtastic import ble_interface as ble_mod
+
         if not self.state_manager.can_connect:
             if self.state_manager.is_closing:
-                from meshtastic import ble_interface as ble_mod
                 raise ble_mod.BLEInterface.BLEError(
                     "Cannot connect while interface is closing"
                 )
-            from meshtastic import ble_interface as ble_mod
             raise ble_mod.BLEInterface.BLEError(
                 "Already connected or connection in progress"
             )
@@ -158,12 +158,13 @@ class ConnectionOrchestrator:
             logger.info(
                 "Connection successful to %s", normalized_device_address or "unknown"
             )
-            return client
         except Exception:
-            logger.debug("Failed to connect, closing BLEClient thread.", exc_info=True)
+            logger.warning("Failed to connect, closing BLEClient thread.", exc_info=True)
             if client:
                 self.client_manager.safe_close_client(client)
             self.state_manager.transition_to(ConnectionState.ERROR)
             # Reset to DISCONNECTED so future connection attempts are permitted
             self.state_manager.transition_to(ConnectionState.DISCONNECTED)
             raise
+        else:
+            return client

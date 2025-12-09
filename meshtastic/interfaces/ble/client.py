@@ -101,7 +101,11 @@ class BLEClient:
         self._eventThread = Thread(
             target=self._run_event_loop, name="BLEClient", daemon=True
         )
-        self._eventThread.start()
+        try:
+            self._eventThread.start()
+        except RuntimeError:
+            self._eventLoop.close()
+            raise
 
         if not address:
             if log_if_no_address:
@@ -270,6 +274,10 @@ class BLEClient:
         Returns:
         -------
             `true` if the characteristic is present, `false` otherwise.
+
+        Note
+        ----
+            If services are not yet populated, this method will attempt to fetch them.
 
         """
         services = getattr(self.bleak_client, "services", None)

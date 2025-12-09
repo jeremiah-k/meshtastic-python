@@ -649,6 +649,7 @@ def test_memory_efficiency():
 
     # Should not have significant memory growth
     object_growth = final_objects - initial_objects
+    # Heuristic check: gc timing can vary slightly between runs, so allow a generous threshold.
     assert object_growth < 1000, (
         f"Potential memory leak: {object_growth} objects created"
     )
