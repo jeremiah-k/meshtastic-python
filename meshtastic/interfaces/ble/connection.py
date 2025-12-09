@@ -133,7 +133,6 @@ class ConnectionOrchestrator:
         self,
         address: Optional[str],
         current_address: Optional[str],
-        last_connection_request: Optional[str],
         register_notifications_func,
         on_connected_func,
         on_disconnect_func,

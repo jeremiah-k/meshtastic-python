@@ -5,10 +5,6 @@ import logging
 import re
 from typing import Optional, Tuple, cast
 
-from bleak import BleakClient as BleakRootClient
-from bleak import BleakScanner, BLEDevice
-from meshtastic.interfaces.ble.utils import _sleep
-
 logger = logging.getLogger("meshtastic.ble")
 
 # Get bleak version using importlib.metadata (reliable method)

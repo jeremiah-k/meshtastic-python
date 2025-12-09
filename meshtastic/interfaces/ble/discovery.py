@@ -45,8 +45,6 @@ class ConnectedStrategy(DiscoveryStrategy):
             devices_found: List[BLEDevice] = []
             backend = getattr(scanner, "_backend", None)
             if backend and hasattr(backend, "get_devices"):
-                import inspect
-
                 getter = backend.get_devices
                 loop = asyncio.get_running_loop()
                 if inspect.iscoroutinefunction(getter):
@@ -77,15 +75,18 @@ class ConnectedStrategy(DiscoveryStrategy):
                         if sanitized_target not in (sanitized_addr, sanitized_name):
                             continue
 
-                    rssi = getattr(device, "rssi", 0)
-                    devices_found.append(
-                        BLEDevice(
-                            address=device.address,
-                            name=device.name,
-                            details=metadata,
-                            rssi=rssi,
-                        )
+                    device_copy = BLEDevice(
+                        address=device.address,
+                        name=device.name,
+                        details=metadata,
                     )
+                    # Preserve RSSI if provided by backend
+                    if hasattr(device, "rssi"):
+                        try:
+                            device_copy.rssi = getattr(device, "rssi")  # type: ignore[attr-defined]
+                        except Exception:  # pragma: no cover - best effort
+                            pass
+                    devices_found.append(device_copy)
             else:
                 logger.debug(
                     "Connected-device enumeration not supported on this bleak backend."

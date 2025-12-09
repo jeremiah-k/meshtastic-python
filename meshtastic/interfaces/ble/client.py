@@ -240,7 +240,7 @@ class BLEClient:
 
         Raises
         ------
-            BLEInterface.BLEError: If the write operation fails or times out.
+            BLEClient.BLEError: If the write operation fails or times out.
 
         """
         self.async_await(
@@ -339,7 +339,7 @@ class BLEClient:
         """
         Wait for the given coroutine to complete on the client's event loop and return its result.
 
-        If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEInterface.BLEError is raised.
+        If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEClient.BLEError is raised.
 
         Args:
         ----
@@ -352,7 +352,7 @@ class BLEClient:
 
         Raises:
         ------
-            BLEInterface.BLEError: If the wait times out.
+            BLEClient.BLEError: If the wait times out.
 
         """
         # Exception mapping contract:

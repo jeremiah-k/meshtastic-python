@@ -824,16 +824,18 @@ class BLEInterface(MeshInterface):
                                 ):
                                     continue
 
-                            rssi = getattr(device, "rssi", 0)
                             metadata = getattr(device, "metadata", None) or {}
-                            devices_found.append(
-                                BLEDevice(
-                                    address=device.address,
-                                    name=device.name,
-                                    details=metadata,
-                                    rssi=rssi,
-                                )
+                            device_copy = BLEDevice(
+                                address=device.address,
+                                name=device.name,
+                                details=metadata,
                             )
+                            if hasattr(device, "rssi"):
+                                try:
+                                    device_copy.rssi = getattr(device, "rssi")  # type: ignore[attr-defined]
+                                except Exception:  # pragma: no cover - best effort
+                                    pass
+                            devices_found.append(device_copy)
                 else:
                     logger.debug(
                         "Connected-device enumeration not supported on this bleak backend."
@@ -967,7 +969,6 @@ class BLEInterface(MeshInterface):
         client = self._connection_orchestrator.establish_connection(
             address,
             self.address,
-            self._last_connection_request,
             self._register_notifications,
             self._connected,
             self._on_ble_disconnect,
@@ -1099,6 +1100,7 @@ class BLEInterface(MeshInterface):
         """
         Read the FROMRADIO characteristic, tolerating transient empty payloads.
         """
+        empty_read_policy = RetryPolicy.empty_read()
         for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
             payload = client.read_gatt_char(
                 FROMRADIO_UUID, timeout=BLEConfig.GATT_IO_TIMEOUT
@@ -1107,7 +1109,7 @@ class BLEInterface(MeshInterface):
                 self._suppressed_empty_read_warnings = 0
                 return payload
             if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
-                _sleep(RetryPolicy.EMPTY_READ.get_delay(attempt))
+                _sleep(empty_read_policy.get_delay(attempt))
         self._log_empty_read_warning()
         return None
 
@@ -1115,14 +1117,15 @@ class BLEInterface(MeshInterface):
         """
         Handle recoverable BleakErrors with the configured retry policy.
         """
-        if RetryPolicy.TRANSIENT_ERROR.should_retry(self._read_retry_count):
+        transient_policy = RetryPolicy.transient_error()
+        if transient_policy.should_retry(self._read_retry_count):
             self._read_retry_count += 1
             logger.debug(
                 "Transient BLE read error, retrying (%d/%d)",
                 self._read_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
-            _sleep(RetryPolicy.TRANSIENT_ERROR.get_delay(self._read_retry_count))
+            _sleep(transient_policy.get_delay(self._read_retry_count))
             return
         self._read_retry_count = 0
         logger.debug("Persistent BLE read error after retries", exc_info=True)

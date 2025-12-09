@@ -79,7 +79,8 @@ class ReconnectPolicy:
 
     def sleep_with_backoff(self, attempt: int) -> None:
         """Sleep for the jittered delay associated with the supplied attempt."""
-        from meshtastic.interfaces.ble.constants import _sleep
+        from meshtastic.interfaces.ble.utils import _sleep
+
         _sleep(self.get_delay(attempt))
 
 class RetryPolicy:
@@ -87,26 +88,35 @@ class RetryPolicy:
     Static retry policy presets for BLE operations.
     """
 
-    EMPTY_READ = ReconnectPolicy(
-        initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
-        max_delay=1.0,
-        backoff=1.5,
-        jitter_ratio=0.1,
-        max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
-    )
+    @staticmethod
+    def empty_read() -> ReconnectPolicy:
+        """Factory for empty-read retry policy."""
+        return ReconnectPolicy(
+            initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
+            max_delay=1.0,
+            backoff=1.5,
+            jitter_ratio=0.1,
+            max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
+        )
 
-    TRANSIENT_ERROR = ReconnectPolicy(
-        initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
-        max_delay=2.0,
-        backoff=1.5,
-        jitter_ratio=0.1,
-        max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,
-    )
+    @staticmethod
+    def transient_error() -> ReconnectPolicy:
+        """Factory for transient BLE error retry policy."""
+        return ReconnectPolicy(
+            initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
+            max_delay=2.0,
+            backoff=1.5,
+            jitter_ratio=0.1,
+            max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,
+        )
 
-    AUTO_RECONNECT = ReconnectPolicy(
-        initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
-        max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
-        backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
-        jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
-        max_retries=None,
-    )
+    @staticmethod
+    def auto_reconnect() -> ReconnectPolicy:
+        """Factory for auto-reconnect backoff policy."""
+        return ReconnectPolicy(
+            initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
+            max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,
+            backoff=BLEConfig.AUTO_RECONNECT_BACKOFF,
+            jitter_ratio=BLEConfig.AUTO_RECONNECT_JITTER_RATIO,
+            max_retries=None,
+        )
