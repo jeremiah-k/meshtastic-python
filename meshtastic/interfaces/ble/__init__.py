@@ -126,6 +126,7 @@ __all__ = [
     "BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION",
     "BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT",
     "BLECLIENT_ERROR_ASYNC_TIMEOUT",
+    "BLEAK_VERSION",
     # Private helpers (exported for backwards compatibility)
     "_parse_version_triplet",
     "_bleak_supports_connected_fallback",

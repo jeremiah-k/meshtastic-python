@@ -189,11 +189,12 @@ class ThreadCoordinator:
         Returns:
             bool: `True` if the event was set and cleared, `False` otherwise.
         """
-        event = self.get_event(name)
-        if event and event.is_set():
-            event.clear()
-            return True
-        return False
+        with self._lock:
+            event = self._events.get(name)
+            if event and event.is_set():
+                event.clear()
+                return True
+            return False
 
     def wake_waiting_threads(self, *event_names: str):
         """

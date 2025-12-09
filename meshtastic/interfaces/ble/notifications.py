@@ -26,6 +26,7 @@ class NotificationManager:
         self._active_subscriptions: Dict[
             int, Tuple[str, Callable[[Any, Any], None]]
         ] = {}
+        self._characteristic_to_callback: Dict[str, Callable[[Any, Any], None]] = {}
         self._subscription_counter = 0
         self._lock = RLock()
 
@@ -46,6 +47,7 @@ class NotificationManager:
             token = self._subscription_counter
             self._subscription_counter += 1
             self._active_subscriptions[token] = (characteristic, callback)
+            self._characteristic_to_callback[characteristic] = callback
             return token
 
     def cleanup_all(self) -> None:
@@ -54,6 +56,7 @@ class NotificationManager:
         """
         with self._lock:
             self._active_subscriptions.clear()
+            self._characteristic_to_callback.clear()
 
     def resubscribe_all(self, client: "BLEClient", *, timeout: float) -> None:
         """
@@ -103,7 +106,4 @@ class NotificationManager:
             Optional[Callable[[Any, Any], None]]: The registered callback for the characteristic if present, `None` otherwise.
         """
         with self._lock:
-            for registered_char, callback in self._active_subscriptions.values():
-                if registered_char == characteristic:
-                    return callback
-        return None
+            return self._characteristic_to_callback.get(characteristic)

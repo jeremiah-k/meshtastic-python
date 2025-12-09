@@ -151,6 +151,9 @@ class DiscoveryManager:
             devices: List[BLEDevice] = []
             sanitized_target = BLEClient._sanitize_address(address) if address else None
             try:
+                import time
+
+                scan_start = time.monotonic()
                 logger.debug(
                     "Scanning for BLE devices (takes %.0f seconds)...",
                     BLEConfig.BLE_SCAN_TIMEOUT,
@@ -160,6 +163,7 @@ class DiscoveryManager:
                     return_adv=True,
                     service_uuids=[SERVICE_UUID],
                 )
+                logger.debug("Scan completed in %.2f seconds", time.monotonic() - scan_start)
 
                 if response is None:
                     logger.warning("BleakScanner.discover returned None")

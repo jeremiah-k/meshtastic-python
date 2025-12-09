@@ -431,7 +431,7 @@ def test_connection_validator_enforces_state():
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 
     state_manager = BLEStateManager()
-    validator = ConnectionValidator(state_manager, state_manager._state_lock)
+    validator = ConnectionValidator(state_manager, state_manager.lock)
 
     validator.validate_connection_request()
 
@@ -652,6 +652,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         # Clean up
         iface._want_receive = False
+        caplog.clear()
         try:
             iface.close()
         except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
