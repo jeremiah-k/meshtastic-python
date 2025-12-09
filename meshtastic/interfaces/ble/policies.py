@@ -1,7 +1,7 @@
 """Retry and reconnection policies for BLE operations."""
 
 import random
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 
@@ -83,10 +83,26 @@ class ReconnectPolicy:
 
         _sleep(self.get_delay(attempt))
 
+
+class _PolicyDescriptor:
+    """Descriptor that returns a fresh policy instance on each access."""
+
+    def __init__(self, factory_name: str):
+        self.factory_name = factory_name
+
+    def __get__(self, _obj, cls):
+        factory: Callable[[], ReconnectPolicy] = getattr(cls, self.factory_name)
+        return factory()
+
 class RetryPolicy:
     """
     Static retry policy presets for BLE operations.
     """
+
+    # Backwards-compatible attribute accessors that return fresh instances
+    EMPTY_READ = _PolicyDescriptor("empty_read")
+    TRANSIENT_ERROR = _PolicyDescriptor("transient_error")
+    AUTO_RECONNECT = _PolicyDescriptor("auto_reconnect")
 
     @staticmethod
     def empty_read() -> ReconnectPolicy:
