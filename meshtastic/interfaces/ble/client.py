@@ -11,7 +11,6 @@ from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     BLEConfig,

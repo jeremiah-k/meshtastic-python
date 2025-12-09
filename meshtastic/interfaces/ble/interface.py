@@ -528,7 +528,7 @@ class BLEInterface(MeshInterface):
                     log_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
-        except (BleakError, BleakDBusError, RuntimeError) as e:
+        except (BleakError, BleakDBusError, RuntimeError, self.BLEError) as e:
             logger.debug("Failed to start optional log notifications: %s", e)
 
         # Critical notification for packet ingress
@@ -1075,6 +1075,8 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called on already closed interface; ignoring"
                 )
                 return
+            # Mark closed immediately to prevent overlapping cleanup in concurrent calls
+            self._closed = True
             if self.is_connection_closing:
                 logger.debug(
                     "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
@@ -1134,7 +1136,6 @@ class BLEInterface(MeshInterface):
         self.thread_coordinator.cleanup()
         # Use unified state lock
         with self._state_lock:
-            self._closed = True
             # Reset state to DISCONNECTED so future reconnects with this instance are permitted.
             self._state_manager.transition_to(ConnectionState.DISCONNECTED)
 
