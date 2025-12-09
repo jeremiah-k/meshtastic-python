@@ -1131,7 +1131,13 @@ class MeshInterface:  # pylint: disable=R0902
             return self.currentPacketId
 
     def _disconnected(self):
-        """Called by subclasses to tell clients this interface has disconnected"""
+        """
+        Mark the interface as disconnected and notify subscribers.
+        
+        Clears the internal connection flag and enqueues publication of
+        "meshtastic.connection.lost" and "meshtastic.connection.status" (with connected=False)
+        to inform listeners of the disconnection.
+        """
         self.isConnected.clear()
         publishingThread.queueWork(
             lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
@@ -1143,7 +1149,9 @@ class MeshInterface:  # pylint: disable=R0902
         )
 
     def sendHeartbeat(self):
-        """Sends a heartbeat to the radio. Can be used to verify the connection is healthy."""
+        """
+        Send a heartbeat message to the radio to maintain or verify the connection.
+        """
         p = mesh_pb2.ToRadio()
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
         self._sendToRadio(p)
@@ -1162,7 +1170,13 @@ class MeshInterface:  # pylint: disable=R0902
         callback()  # run our periodic callback now, it will make another timer if necessary
 
     def _connected(self):
-        """Called by this class to tell clients we are now fully connected to a node"""
+        """
+        Mark the interface as connected and notify subscribers.
+        
+        Sets the internal connected flag, starts the heartbeat timer, and publishes
+        meshtastic.connection.established and meshtastic.connection.status (with
+        connected=True) to notify listeners.
+        """
         # (because I'm lazy) _connected might be called when remote Node
         # objects complete their config reads, don't generate redundant isConnected
         # for the local interface
@@ -1181,7 +1195,13 @@ class MeshInterface:  # pylint: disable=R0902
             )
 
     def _startConfig(self):
-        """Start device packets flowing"""
+        """
+        Initialize local configuration state and request configuration from the radio.
+        
+        Resets cached device and node information (myInfo, nodes, nodesByNum, and local channel list),
+        ensures a configuration identifier exists (generating a new one when needed), and sends a
+        config request to the radio so the device will begin (re)publishing its configuration and node data.
+        """
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum

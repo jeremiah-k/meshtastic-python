@@ -22,12 +22,31 @@ class DiscoveryStrategy(ABC):
 
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
-        """Return a list of BLEDevice entries discovered via this strategy."""
+        """
+        Discover BLE devices already connected to the system via the Bleak backend.
+        
+        Parameters:
+            address (Optional[str]): Optional target address or device name to filter results; comparisons use sanitized forms.
+            timeout (float): Maximum time in seconds to wait for backend device enumeration.
+        
+        Returns:
+            List[BLEDevice]: Discovered devices that advertise the module's SERVICE_UUID and, if `address` is provided, match the sanitized address or name. Returns an empty list if the backend does not support connected-device enumeration or on error.
+        """
 
 class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery strategy that enumerates already-connected devices."""
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+        """
+        Enumerates already-connected BLE devices via the Bleak backend (when supported) and returns those advertising the configured service UUID, optionally filtered by address or name.
+        
+        Parameters:
+            address (Optional[str]): Target BLE address or device name to filter results; comparison uses the same sanitation applied by the BLE client. If None, no address/name filtering is applied.
+            timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
+        
+        Returns:
+            List[BLEDevice]: Connected devices that advertise SERVICE_UUID and match the optional address/name filter. Returns an empty list if the Bleak backend does not support connected-device enumeration or if an error occurs.
+        """
         if not _bleak_supports_connected_fallback():
             logger.debug(
                 "Skipping fallback connected-device scan; bleak %s < %s",
@@ -102,10 +121,25 @@ class DiscoveryManager:
 
     def __init__(self, client_factory=None):
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
+        """
+        Initialize the DiscoveryManager.
+        
+        Parameters:
+            client_factory (optional): Callable or class used to construct BLE client instances; primarily provided for testing or to override the default BLE client.
+        """
         self.client_factory = client_factory
         self.connected_strategy = ConnectedStrategy()
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
+        """
+        Discover BLE devices advertising the configured service UUID, and if a target address or name is provided and the scan finds no matches, attempt a fallback enumeration of already-connected devices.
+        
+        Parameters:
+            address (Optional[str]): Bluetooth address or device name to filter results; when provided, triggers a connected-device fallback if the scan yields no matching devices.
+        
+        Returns:
+            List[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
+        """
         from meshtastic.interfaces.ble.utils import resolve_ble_module
 
         ble_mod = resolve_ble_module()

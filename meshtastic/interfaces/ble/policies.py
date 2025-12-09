@@ -20,6 +20,20 @@ class ReconnectPolicy:
         max_retries: Optional[int] = None,
         random_source=None,
     ):
+        """
+        Create a jittered exponential-backoff retry policy instance.
+        
+        Parameters:
+        	initial_delay (float): Starting delay in seconds; must be greater than 0.
+        	max_delay (float): Maximum delay in seconds; must be greater than or equal to `initial_delay`.
+        	backoff (float): Exponential multiplication factor applied to the delay between attempts; must be greater than 1.0.
+        	jitter_ratio (float): Fractional jitter to apply to the computed delay (0.0 to 1.0).
+        	max_retries (Optional[int]): Maximum number of retry attempts; `None` means unlimited.
+        	random_source: Optional random-number generator used to apply jitter; defaults to the module-level `random`.
+        
+        Raises:
+        	ValueError: If any parameter is outside its valid range (invalid `initial_delay`, `max_delay`, `backoff`, `jitter_ratio`, or `max_retries`).
+        """
         if initial_delay <= 0:
             raise ValueError(f"initial_delay must be > 0, got {initial_delay}")
         if max_delay < initial_delay:
@@ -48,7 +62,13 @@ class ReconnectPolicy:
 
     def get_delay(self, attempt: Optional[int] = None) -> float:
         """
-        Compute the jittered delay for the provided attempt (defaults to current attempt count).
+        Compute the jittered backoff delay for a given retry attempt.
+        
+        Parameters:
+        	attempt (Optional[int]): Zero-based attempt index to compute the delay for; if omitted, uses the policy's current attempt count.
+        
+        Returns:
+        	delay (float): Delay in seconds with exponential backoff and symmetric jitter applied, clamped to at least 0.001 and not exceeding the policy's max_delay.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -58,7 +78,13 @@ class ReconnectPolicy:
 
     def should_retry(self, attempt: Optional[int] = None) -> bool:
         """
-        Determine whether another retry should be attempted.
+        Decides if another retry attempt is allowed under the current policy.
+        
+        Parameters:
+            attempt (Optional[int]): Attempt index to evaluate; when omitted, the policy's current attempt count is used.
+        
+        Returns:
+            `true` if another retry is allowed by `max_retries`, `false` otherwise.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -66,7 +92,12 @@ class ReconnectPolicy:
 
     def next_attempt(self) -> Tuple[float, bool]:
         """
-        Advance the attempt counter and return (delay, should_retry).
+        Compute the delay for the upcoming attempt, determine whether another retry is allowed, and increment the internal attempt counter.
+        
+        Returns:
+            tuple: (delay, should_retry)
+                delay (float): Jittered backoff delay to use for this attempt.
+                should_retry (bool): `True` if another retry is permitted, `False` otherwise.
         """
         delay = self.get_delay()
         should_retry = self.should_retry()
@@ -74,11 +105,21 @@ class ReconnectPolicy:
         return delay, should_retry
 
     def get_attempt_count(self) -> int:
-        """Expose the current attempt count (primarily for logging)."""
+        """
+        Return the number of attempts recorded by this policy.
+        
+        Returns:
+            int: The current attempt count.
+        """
         return self._attempt_count
 
     def sleep_with_backoff(self, attempt: int) -> None:
-        """Sleep for the jittered delay associated with the supplied attempt."""
+        """
+        Block execution for the jittered delay corresponding to the given attempt.
+        
+        Parameters:
+            attempt (int): Attempt index used to compute the delay (0-based).
+        """
         from meshtastic.interfaces.ble.utils import _sleep
 
         _sleep(self.get_delay(attempt))
@@ -88,9 +129,24 @@ class _PolicyDescriptor:
     """Descriptor that returns a fresh policy instance on each access."""
 
     def __init__(self, factory_name: str):
+        """
+        Initialize the descriptor with the name of the factory method used to create policy instances.
+        
+        Parameters:
+            factory_name (str): Name of the factory method on the owner class that returns a fresh policy instance.
+        """
         self.factory_name = factory_name
 
     def __get__(self, _obj, cls):
+        """
+        Descriptor getter that returns a fresh ReconnectPolicy instance by invoking the named factory on the owning class.
+        
+        Parameters:
+            cls (type): The owner class from which the factory method (stored in `factory_name`) is retrieved.
+        
+        Returns:
+            ReconnectPolicy: A new policy instance produced by the factory method.
+        """
         factory: Callable[[], ReconnectPolicy] = getattr(cls, self.factory_name)
         return factory()
 
@@ -106,7 +162,12 @@ class RetryPolicy:
 
     @staticmethod
     def empty_read() -> ReconnectPolicy:
-        """Factory for empty-read retry policy."""
+        """
+        Create a ReconnectPolicy configured for handling empty BLE read responses.
+        
+        Returns:
+            policy (ReconnectPolicy): A ReconnectPolicy preset for empty-read retries, configured with a short initial delay, small maximum delay, modest backoff, jitter, and a limited number of retries.
+        """
         return ReconnectPolicy(
             initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
             max_delay=1.0,
@@ -117,7 +178,12 @@ class RetryPolicy:
 
     @staticmethod
     def transient_error() -> ReconnectPolicy:
-        """Factory for transient BLE error retry policy."""
+        """
+        Provide a retry policy configured for transient BLE read errors.
+        
+        Returns:
+            ReconnectPolicy: A policy configured with initial delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay 2.0, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
+        """
         return ReconnectPolicy(
             initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
             max_delay=2.0,
@@ -128,7 +194,12 @@ class RetryPolicy:
 
     @staticmethod
     def auto_reconnect() -> ReconnectPolicy:
-        """Factory for auto-reconnect backoff policy."""
+        """
+        Create a ReconnectPolicy configured for automatic BLE reconnection.
+        
+        Returns:
+            ReconnectPolicy: Policy initialized with auto-reconnect parameters from BLEConfig and unlimited retries.
+        """
         return ReconnectPolicy(
             initial_delay=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
             max_delay=BLEConfig.AUTO_RECONNECT_MAX_DELAY,

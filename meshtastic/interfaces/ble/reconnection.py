@@ -24,6 +24,18 @@ class ReconnectScheduler:
         thread_coordinator: ThreadCoordinator,
         interface: "BLEInterface",
     ):
+        """
+        Initialize the ReconnectScheduler with BLE state, threading utilities, and a reconnect policy.
+        
+        Parameters:
+        	state_manager (BLEStateManager): Manages BLE connection state and lifecycle checks.
+        	state_lock (RLock): Re-entrant lock protecting shared BLE state and thread reference updates.
+        	thread_coordinator (ThreadCoordinator): Factory/manager for creating and starting threads.
+        	interface (BLEInterface): BLE interface used to perform connection attempts.
+        
+        Detailed behavior:
+        	Creates a ReconnectPolicy configured from BLEConfig, constructs a ReconnectWorker using the provided interface and policy, and initializes the internal reconnect thread reference to `None`.
+        """
         self.state_manager = state_manager
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
@@ -39,6 +51,16 @@ class ReconnectScheduler:
         self._reconnect_thread: Optional[Thread] = None
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
+        """
+        Schedule a background BLE reconnect worker when auto-reconnect is enabled and no reconnect is already active.
+        
+        Parameters:
+            auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
+            shutdown_event (Event): Event used by the worker to detect shutdown and stop retrying.
+        
+        Returns:
+            bool: `true` if a new reconnect worker thread was created and started; `false` if scheduling was skipped because `auto_reconnect` is False, the interface is closing, or a reconnect thread is already running.
+        """
         if not auto_reconnect:
             return False
         # Use state manager instead of boolean flag
@@ -66,6 +88,12 @@ class ReconnectScheduler:
             return True
 
     def clear_thread_reference(self) -> None:
+        """
+        Clear the stored reconnect thread reference while holding the state lock.
+        
+        Sets the internal reconnect thread reference to None to indicate the worker has exited;
+        operation is performed under self.state_lock to ensure thread-safe state updates.
+        """
         with self.state_lock:
             # Always clear the reference once the worker loop exits to match legacy behavior.
             self._reconnect_thread = None
@@ -74,12 +102,32 @@ class ReconnectWorker:
     """Perform blocking reconnect attempts with policy-driven backoff."""
 
     def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
+        """
+        Initialize the ReconnectWorker with the BLE interface and backoff policy.
+        
+        Parameters:
+            interface (BLEInterface): BLE interface used to perform connection attempts and to check/modify connection state.
+            reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
+        """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
     def attempt_reconnect_loop(
         self, auto_reconnect: bool, shutdown_event: Event
     ) -> None:
+        """
+        Run the blocking BLE auto-reconnect loop using the configured backoff policy.
+        
+        The loop attempts to reconnect the interface until a connection succeeds, the provided
+        shutdown_event is set, auto_reconnect is disabled, or the reconnect policy indicates no
+        further retries. Between failed attempts the loop observes the policy's computed delay
+        and sleeps using the environment's sleep function. On exit the scheduler's thread
+        reference is cleared.
+        
+        Parameters:
+            auto_reconnect (bool): If False, the loop exits immediately without attempting reconnects.
+            shutdown_event (Event): An event whose being set causes the loop to stop as soon as possible.
+        """
         self.reconnect_policy.reset()
         from meshtastic.interfaces.ble.utils import get_sleep_fn
 

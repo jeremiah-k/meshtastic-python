@@ -15,6 +15,14 @@ class NotificationManager:
     """
 
     def __init__(self):
+        """
+        Initialize a NotificationManager instance and its thread-safe subscription state.
+        
+        Creates internal attributes used to track BLE notification subscriptions:
+        - _active_subscriptions: mapping from token (int) to (characteristic, callback) tuples.
+        - _subscription_counter: monotonic counter used to allocate unique subscription tokens.
+        - _lock: RLock to synchronize access to the subscription state across threads.
+        """
         self._active_subscriptions: Dict[
             int, Tuple[str, Callable[[Any, Any], None]]
         ] = {}
@@ -25,7 +33,14 @@ class NotificationManager:
         self, characteristic: str, callback: Callable[[Any, Any], None]
     ) -> int:
         """
-        Track a subscription for later cleanup or resubscription.
+        Register a BLE characteristic notification callback for tracking so it can be cleaned up or re-registered later.
+        
+        Parameters:
+        	characteristic (str): Identifier of the BLE characteristic (e.g., UUID or handle) being subscribed to.
+        	callback (Callable[[Any, Any], None]): Function invoked when a notification arrives; typically called with (sender, data).
+        
+        Returns:
+        	token (int): Opaque token that identifies the tracked subscription.
         """
         with self._lock:
             token = self._subscription_counter
@@ -35,14 +50,20 @@ class NotificationManager:
 
     def cleanup_all(self) -> None:
         """
-        Forget all tracked subscriptions.
+        Clear all tracked BLE notification subscriptions so the manager no longer remembers them.
         """
         with self._lock:
             self._active_subscriptions.clear()
 
     def resubscribe_all(self, client: "BLEClient", *, timeout: float) -> None:
         """
-        Re-register every tracked subscription on the provided client.
+        Attempt to re-register all tracked BLE notification subscriptions on the given client.
+        
+        Attempts to start notifications for each tracked (characteristic, callback) pair using the provided client. Each subscription is attempted independently on a best-effort basis; failures for individual characteristics are caught and logged at debug level.
+        
+        Parameters:
+            client (BLEClient): BLE client used to start notifications.
+            timeout (float): Per-subscription timeout passed to the client's start_notify method.
         """
         with self._lock:
             subscriptions = list(self._active_subscriptions.values())
@@ -62,12 +83,24 @@ class NotificationManager:
                 )
 
     def __len__(self) -> int:
+        """
+        Return the number of tracked BLE notification subscriptions.
+        
+        Returns:
+            int: Number of active subscriptions currently being tracked.
+        """
         with self._lock:
             return len(self._active_subscriptions)
 
     def get_callback(self, characteristic: str) -> Optional[Callable[[Any, Any], None]]:
         """
-        Fetch the callback registered for a given characteristic if present.
+        Retrieve the callback registered for a BLE characteristic.
+        
+        Parameters:
+            characteristic (str): Identifier of the characteristic (e.g., UUID or name) to look up.
+        
+        Returns:
+            Optional[Callable[[Any, Any], None]]: The registered callback for the characteristic if present, `None` otherwise.
         """
         with self._lock:
             for registered_char, callback in self._active_subscriptions.values():
