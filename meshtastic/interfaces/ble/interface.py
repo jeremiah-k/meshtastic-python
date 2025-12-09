@@ -18,13 +18,6 @@ from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner, BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
-if TYPE_CHECKING:
-    class DecodeError(Exception):
-        """Fallback DecodeError type used for static type checking."""
-        pass
-else:  # pragma: no cover - import real exception only at runtime
-    from google.protobuf.message import DecodeError
-
 from meshtastic import publishingThread
 from meshtastic.mesh_interface import MeshInterface
 
@@ -61,7 +54,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.discovery import DiscoveryManager
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
@@ -389,7 +382,7 @@ class BLEInterface(MeshInterface):
         Increment and track malformed FROMNUM notification occurrences and emit a warning when a threshold is reached.
 
         Increments the internal malformed-notification counter, logs the provided reason (optionally with exception info),
-        and when the counter reaches MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
+        and when the counter reaches the fixed MALFORMED_NOTIFICATION_THRESHOLD logs a warning and resets the counter to zero.
 
         Args:
         ----
@@ -412,7 +405,7 @@ class BLEInterface(MeshInterface):
 
         Parses a 4-byte little-endian unsigned integer from the notification payload `b`. On a successful parse, resets the
         malformed-notification counter and logs the parsed value. On parse failure, increments the malformed-notification
-        counter and logs; if the counter reaches config.malformed_notification_threshold, emits a warning and resets the
+        counter and logs; if the counter reaches MALFORMED_NOTIFICATION_THRESHOLD, emits a warning and resets the
         counter. Always sets self._read_trigger to signal the read loop.
 
         Args:
@@ -832,9 +825,11 @@ class BLEInterface(MeshInterface):
                             )
                             if hasattr(device, "rssi"):
                                 try:
-                                    device_copy.rssi = getattr(device, "rssi")  # type: ignore[attr-defined]
-                                except Exception:  # pragma: no cover - best effort
-                                    pass
+                                    cast(Any, device_copy).rssi = getattr(device, "rssi")
+                                except (AttributeError, TypeError) as e:  # pragma: no cover - best effort
+                                    logger.debug(
+                                        "Failed to copy RSSI from backend device: %s", e
+                                    )
                             devices_found.append(device_copy)
                 else:
                     logger.debug(

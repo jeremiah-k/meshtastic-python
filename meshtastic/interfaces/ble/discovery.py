@@ -42,6 +42,8 @@ class ConnectedStrategy(DiscoveryStrategy):
         try:
             scanner = BleakScanner()
             devices_found: List[BLEDevice] = []
+            # Bleak lacks a public API for enumerating already-connected devices; use
+            # the private backend hook until upstream provides an official method.
             backend = getattr(scanner, "_backend", None)
             if backend and hasattr(backend, "get_devices"):
                 getter = backend.get_devices

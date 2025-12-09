@@ -81,6 +81,9 @@ class ReconnectWorker:
         self, auto_reconnect: bool, shutdown_event: Event
     ) -> None:
         self.reconnect_policy.reset()
+        from meshtastic.interfaces.ble.utils import get_sleep_fn
+
+        sleep_fn = get_sleep_fn()
         try:
             while not shutdown_event.is_set():
                 if self.interface.is_connection_closing or not auto_reconnect:
@@ -132,9 +135,6 @@ class ReconnectWorker:
                 logger.debug(
                     "Waiting %.2f seconds before next reconnect attempt.", sleep_delay
                 )
-                from meshtastic.interfaces.ble.utils import get_sleep_fn
-
-                sleep_fn = get_sleep_fn()
                 sleep_fn(sleep_delay)
         finally:
             self.interface._reconnect_scheduler.clear_thread_reference()

@@ -254,12 +254,17 @@ class ThreadCoordinator:
             for event in self._events.values():
                 event.set()
 
-            # Join threads with timeout (except current thread)
             current = current_thread()
-            for thread in self._threads:
-                if thread.is_alive() and thread is not current:
-                    thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
+            threads_to_join = [
+                thread
+                for thread in self._threads
+                if thread.is_alive() and thread is not current
+            ]
 
             # Clear tracking
             self._threads.clear()
             self._events.clear()
+
+        # Join threads outside the lock to avoid deadlocks if threads touch the coordinator during shutdown
+        for thread in threads_to_join:
+            thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)

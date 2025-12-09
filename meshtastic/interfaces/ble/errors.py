@@ -16,9 +16,10 @@ else:
     except ImportError:
         class DecodeError(Exception):
             """Fallback DecodeError type used for static type checking."""
+
             pass
 
-__all__ = ["BLEErrorHandler"]
+__all__ = ["BLEErrorHandler", "DecodeError"]
 
 class BLEErrorHandler:
     """Helper class for consistent error handling in BLE operations.
@@ -80,9 +81,11 @@ class BLEErrorHandler:
             return default_return
 
     @staticmethod
-    def safe_cleanup(func, cleanup_name: str = "cleanup operation"):
+    def safe_cleanup(func, cleanup_name: str = "cleanup operation") -> bool:
         """Safely execute cleanup operations without raising exceptions."""
         try:
             func()
+            return True
         except Exception as e:
             logger.debug("Error during %s: %s", cleanup_name, e)
+            return False

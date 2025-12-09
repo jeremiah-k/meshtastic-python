@@ -1,4 +1,5 @@
 """BLE interface package for Meshtastic."""
+# ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
 
 # Explicit imports to preserve backwards-compatible surface (including private helpers).
 from meshtastic.interfaces.ble.constants import (

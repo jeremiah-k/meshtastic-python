@@ -21,7 +21,9 @@ class NotificationManager:
         self._subscription_counter = 0
         self._lock = RLock()
 
-    def subscribe(self, characteristic: str, callback) -> int:
+    def subscribe(
+        self, characteristic: str, callback: Callable[[Any, Any], None]
+    ) -> int:
         """
         Track a subscription for later cleanup or resubscription.
         """
