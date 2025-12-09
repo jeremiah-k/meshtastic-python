@@ -41,29 +41,24 @@ class BLEErrorHandler:
         error_msg: str = "Error in operation",
         reraise: bool = False,
     ):
-        """Execute a callable and return its result while converting handled exceptions into a default value.
-
-        Args:
-        ----
-            func (callable): A zero-argument callable to execute.
-            default_return: Value to return if execution fails; defaults to None.
-            log_error (bool): If True, log caught exceptions; defaults to True.
-            error_msg (str): Message used when logging errors; defaults to "Error in operation".
-            reraise (bool): If True, re-raise any caught exception instead of returning default_return.
-
+        """
+        Execute a zero-argument callable and return its result, falling back to a default value on error.
+        
+        Parameters:
+            func (callable): Zero-argument callable to execute.
+            default_return: Value returned when execution fails.
+            log_error (bool): If True, log caught exceptions.
+            error_msg (str): Message prefix used when logging errors.
+            reraise (bool): If True, re-raise the caught exception instead of returning `default_return`.
+        
         Returns:
-        -------
-            The value returned by `func()` on success, or `default_return` if a handled exception occurs.
-
+            The value returned by `func()` on success, or `default_return` if execution fails.
+        
         Raises:
-        ------
             Exception: Re-raises the original exception if `reraise` is True.
-
+        
         Notes:
-        -----
-            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError;
-        all other exceptions are also caught and treated the same.
-
+            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated the same.
         """
         try:
             return func()
@@ -82,7 +77,16 @@ class BLEErrorHandler:
 
     @staticmethod
     def safe_cleanup(func, cleanup_name: str = "cleanup operation") -> bool:
-        """Safely execute cleanup operations without raising exceptions."""
+        """
+        Perform a cleanup callable and suppress any exceptions.
+        
+        Parameters:
+        	func (callable): Cleanup operation to execute; called with no arguments.
+        	cleanup_name (str): Descriptive name included in debug log messages.
+        
+        Returns:
+        	success (bool): True if the cleanup completed without raising an exception, False otherwise.
+        """
         try:
             func()
             return True

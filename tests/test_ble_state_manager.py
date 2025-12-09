@@ -130,18 +130,12 @@ class TestBLEStateManager:
 
         def worker(worker_id):
             """
-            Perform repeated state transition attempts in a worker thread and record outcomes.
-
-            This worker runs 100 iterations; on even iterations it attempts to transition the shared
-            manager to ConnectionState.CONNECTING, and on odd iterations to ConnectionState.DISCONNECTED.
-            Each attempt's result is appended to the shared `results` list as a tuple
-            (worker_id, iteration_index, success, current_state_value). Any exception raised during
-            execution is appended to the shared `errors` list as (worker_id, error_message).
-
-            Parameters
-            ----------
-                worker_id (int): Identifier for this worker used when recording results and errors.
-
+            Run a worker thread that repeatedly attempts state transitions and records outcomes.
+            
+            On each iteration the worker attempts ConnectionState.CONNECTING for even indices and ConnectionState.DISCONNECTED for odd indices, appending (worker_id, iteration_index, success, current_state_value) to the shared `results` list. Any exception raised during execution is caught and appended to the shared `errors` list as (worker_id, error_message).
+            
+            Parameters:
+                worker_id (int): Identifier used when recording results and errors.
             """
             try:
                 for i in range(100):
@@ -211,8 +205,8 @@ class TestBLEStateManager:
         def nested_operation():
             # This should work with reentrant lock
             """
-            Read the manager's current connection state while acquiring the manager's reentrant state lock.
-
+            Read the manager's current connection state while acquiring its reentrant state lock.
+            
             Returns:
                 ConnectionState: The current connection state.
             """
@@ -381,12 +375,12 @@ class TestPhase3LockConsolidation:
 
         def worker(worker_id):
             """
-            Exercise concurrent state transitions on a shared BLEStateManager and record outcomes.
-
-            Runs a short loop that alternates transition requests (CONNECTING, CONNECTED with a mock client, DISCONNECTED), appending tuples of (worker_id, iteration, manager.state, success) to a shared `results` list and recording any exceptions as (worker_id, error_message) in a shared `errors` list.
-
+            Perform a short sequence of state transitions on a shared BLEStateManager and record outcomes.
+            
+            For each of 10 iterations this worker requests CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order, appends (worker_id, iteration, manager.state, success) to the shared `results` list, and on exception appends (worker_id, error_message) to the shared `errors` list.
+            
             Parameters:
-                worker_id (int | str): Identifier included in recorded result and error entries to distinguish this worker's operations.
+                worker_id (int | str): Identifier used in entries added to `results` and `errors` to distinguish this worker's recordings.
             """
             try:
                 for i in range(10):
@@ -472,9 +466,9 @@ class TestPhase3LockConsolidation:
 
         def contending_worker():
             """
-            Perform a state-transition workload under the manager's internal state lock to exercise contention.
-
-            Acquires the manager's internal lock and transitions the manager to CONNECTING then to DISCONNECTED. If an exception occurs during the operation, increments the shared contention_count[0].
+            Perform a short workload of state transitions while holding the manager's internal lock to exercise contention.
+            
+            This acquires the manager's internal lock, performs a brief simulated workload, transitions the manager to CONNECTING and then to DISCONNECTED, and increments the shared contention_count[0] if an unexpected exception occurs.
             """
             try:
                 # Try to acquire lock and perform operation
@@ -559,15 +553,12 @@ def test_lock_contention_performance():
 
     def worker(worker_id):
         """
-        Run a worker that performs repeated BLE state transition attempts and records throughput.
-
-        Performs 100 iterations of attempting CONNECTING, CONNECTED, and DISCONNECTED transitions; each successful transition increments an operation counter. Appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed wall-clock seconds).
-
+        Perform repeated BLE state transitions and record this worker's operation count and elapsed time.
+        
+        Runs 100 iterations attempting CONNECTING, CONNECTED, and DISCONNECTED transitions on the outer-scope `manager`; counts each successful transition as an operation and appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed seconds).
+        
         Parameters:
             worker_id (int): Identifier used in the appended result to distinguish this worker.
-
-        Side effects:
-            Calls `manager.transition_to(...)` on the outer-scope `manager` and appends a dict to the outer-scope `results` list.
         """
         start_time = time.perf_counter()
         operations = 0

@@ -6,12 +6,24 @@ from typing import Any, Optional
 
 
 def _sleep(delay: float) -> None:
-    """Allow callsites to throttle activity (wrapped for easier testing)."""
+    """
+    Throttle execution for the given duration in seconds.
+    
+    Parameters:
+        delay (float): Duration to sleep, in seconds.
+    """
     time.sleep(delay)
 
 
 def resolve_ble_module() -> Optional[Any]:
-    """Return the loaded BLE module (interfaces.ble or back-compat shim) if available."""
+    """
+    Locate a loaded BLE module used by the package.
+    
+    Searches known module names ("meshtastic.interfaces.ble" then "meshtastic.ble_interface") and returns the first successfully imported module.
+    
+    Returns:
+        The imported BLE module if found, `None` otherwise.
+    """
     for module_name in (
         "meshtastic.interfaces.ble",
         "meshtastic.ble_interface",
@@ -24,7 +36,12 @@ def resolve_ble_module() -> Optional[Any]:
 
 
 def get_sleep_fn():
-    """Resolve the BLE sleep function, defaulting to the local implementation."""
+    """
+    Select the sleep function to use, preferring a BLE module-provided `_sleep` when available.
+    
+    Returns:
+        sleep_fn (Callable[[float], None]): The BLE module's `_sleep` function if present; otherwise the local `_sleep` implementation.
+    """
     ble_mod = resolve_ble_module()
     sleep_fn = getattr(ble_mod, "_sleep", None) if ble_mod else None
     return sleep_fn or _sleep
