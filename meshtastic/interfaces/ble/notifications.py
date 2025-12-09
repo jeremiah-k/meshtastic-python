@@ -79,6 +79,7 @@ class NotificationManager:
                     timeout=timeout,
                 )
             except Exception as e:  # pragma: no cover - best effort
+                # Keep broad for safety, but log to surface unexpected failures.
                 logger.debug(
                     "Failed to resubscribe %s during reconnect: %s",
                     characteristic,

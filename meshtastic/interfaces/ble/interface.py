@@ -679,23 +679,6 @@ class BLEInterface(MeshInterface):
 
         addressed_devices = self._discovery_manager.discover_devices(address)
 
-        if address:
-            sanitized_address = BLEInterface._sanitize_address(address)
-            if sanitized_address is None:
-                logger.debug(
-                    "Empty/whitespace address provided; treating as 'any device'"
-                )
-            else:
-                filtered_devices = []
-                for device in addressed_devices:
-                    sanitized_name = BLEInterface._sanitize_address(device.name)
-                    sanitized_device_address = BLEInterface._sanitize_address(
-                        device.address
-                    )
-                    if sanitized_address in (sanitized_name, sanitized_device_address):
-                        filtered_devices.append(device)
-                addressed_devices = filtered_devices
-
         if len(addressed_devices) == 0:
             if address:
                 raise self.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))

@@ -179,7 +179,8 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
     """ConnectedStrategy should not touch private backend when guard disallows it."""
 
     monkeypatch.setattr(
-        "meshtastic.ble_interface._bleak_supports_connected_fallback", lambda: False
+        "meshtastic.interfaces.ble.discovery._bleak_supports_connected_fallback",
+        lambda: False,
     )
 
     class BoomScanner:
@@ -190,7 +191,9 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
                 "BleakScanner should not be instantiated when guard fails"
             )
 
-    monkeypatch.setattr("meshtastic.ble_interface.BleakScanner", BoomScanner)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.discovery.BleakScanner", BoomScanner
+    )
 
     strategy = ble_mod.ConnectedStrategy()
     result = asyncio.run(strategy.discover(address="AA:BB", timeout=1.0))
