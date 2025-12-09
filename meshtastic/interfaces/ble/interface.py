@@ -1287,6 +1287,8 @@ class BLEInterface(MeshInterface):
         # Use unified state lock
         with self._state_lock:
             self._closed = True
+            # Reset state to DISCONNECTED so future reconnects with this instance are permitted.
+            self._state_manager.transition_to(ConnectionState.DISCONNECTED)
 
     def _wait_for_disconnect_notifications(
         self, timeout: Optional[float] = None

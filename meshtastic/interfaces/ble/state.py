@@ -50,8 +50,8 @@ class BLEStateManager:
 
     @property
     def is_closing(self) -> bool:
-        """Check if interface is actively closing (disconnect in progress)."""
-        return self.state == ConnectionState.DISCONNECTING
+        """Check if interface is actively closing (disconnect in progress or error)."""
+        return self.state in (ConnectionState.DISCONNECTING, ConnectionState.ERROR)
 
     @property
     def can_connect(self) -> bool:

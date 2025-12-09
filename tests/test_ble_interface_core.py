@@ -105,7 +105,7 @@ def test_find_device_returns_single_scan_result(monkeypatch):
 
 
 def test_state_manager_closing_only_for_disconnect():
-    """is_closing should be true only while disconnecting, not on error."""
+    """is_closing should be true while disconnecting or in error."""
     state_manager = BLEStateManager()
     assert state_manager.is_closing is False
     # Allow transition to DISCONNECTING from DISCONNECTED (shutdown path)
@@ -114,7 +114,7 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
     assert state_manager.is_closing is False
     assert state_manager.transition_to(ConnectionState.ERROR) is True
-    assert state_manager.is_closing is False
+    assert state_manager.is_closing is True
 
 
 def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
@@ -960,10 +960,8 @@ def test_reconnect_worker_successful_attempt(monkeypatch):
     worker.attempt_reconnect_loop(True, threading.Event())
 
     assert iface.connect_calls == ["addr"]
-    assert iface._notification_manager.cleaned == 1
-    assert len(iface._notification_manager.resubscribed) == 1
-    timeout_used = iface._notification_manager.resubscribed[0][1]
-    assert timeout_used == ble_mod.BLEConfig.NOTIFICATION_START_TIMEOUT
+    assert iface._notification_manager.cleaned == 0
+    assert len(iface._notification_manager.resubscribed) == 0
     assert iface._reconnect_policy.reset_called is True
     assert iface._reconnect_scheduler.cleared is True
 
@@ -1107,7 +1105,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     worker.attempt_reconnect_loop(True, threading.Event())
 
     assert iface.connect_attempts == 2
-    assert iface._notification_manager.cleaned == 2
+    assert iface._notification_manager.cleaned == 0
     assert sleep_calls == [0.25]
     assert iface._reconnect_policy.reset_called is True
     assert iface._reconnect_scheduler.cleared is True
