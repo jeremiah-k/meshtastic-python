@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Callable, Any, cast
 
 from bleak import BleakScanner, BLEDevice
+from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
@@ -17,6 +18,35 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.constants import _bleak_supports_connected_fallback
+
+
+def parse_scan_response(response: Any) -> List[BLEDevice]:
+    """
+    Convert a BleakScanner.discover(return_adv=True) response into a list of BLEDevice instances that advertise SERVICE_UUID.
+    """
+    devices: List[BLEDevice] = []
+    if response is None:
+        logger.warning("BleakScanner.discover returned None")
+        return devices
+    if not isinstance(response, dict):
+        logger.warning(
+            "BleakScanner.discover returned unexpected type: %s",
+            type(response),
+        )
+        return devices
+    for _, value in response.items():
+        if isinstance(value, tuple):
+            device, adv = value
+        else:
+            logger.warning(
+                "Unexpected return type from BleakScanner.discover: %s",
+                type(value),
+            )
+            continue
+        suuids = getattr(adv, "service_uuids", None)
+        if suuids and SERVICE_UUID in suuids:
+            devices.append(device)
+    return devices
 
 class DiscoveryStrategy(ABC):
     """Abstract base class for device discovery strategies."""
@@ -114,8 +144,11 @@ class ConnectedStrategy(DiscoveryStrategy):
                     "Connected-device enumeration not supported on this bleak backend."
                 )
             return devices_found
-        except Exception as e:
-            logger.debug("Connected device discovery failed: %s", e)
+        except (BleakError, BleakDBusError, RuntimeError) as e:
+            logger.warning("Connected device discovery failed: %s", e, exc_info=True)
+            return []
+        except Exception as e:  # pragma: no cover - defensive last resort
+            logger.warning("Unexpected error during connected device discovery: %s", e, exc_info=True)
             return []
 
 class DiscoveryManager:
@@ -165,29 +198,13 @@ class DiscoveryManager:
                 )
                 logger.debug("Scan completed in %.2f seconds", time.monotonic() - scan_start)
 
-                if response is None:
-                    logger.warning("BleakScanner.discover returned None")
-                    response = {}
-                elif not isinstance(response, dict):
-                    logger.warning(
-                        "BleakScanner.discover returned unexpected type: %s",
-                        type(response),
-                    )
-                    response = {}
-                for _, value in response.items():
-                    if isinstance(value, tuple):
-                        device, adv = value
-                    else:
-                        logger.warning(
-                            "Unexpected return type from BleakScanner.discover: %s",
-                            type(value),
-                        )
-                        continue
-                    suuids = getattr(adv, "service_uuids", None)
-                    if suuids and SERVICE_UUID in suuids:
-                        devices.append(device)
-            except Exception as e:
+                devices = parse_scan_response(response)
+            except (BleakError, BleakDBusError, RuntimeError) as e:
                 logger.warning("Device discovery failed: %s", e, exc_info=True)
+                devices = []
+            except Exception as e:  # pragma: no cover - defensive last resort
+                logger.warning("Unexpected error during device discovery: %s", e, exc_info=True)
+                devices = []
 
             # If caller requested a specific address/name, filter here so we can
             # fall back to connected-device enumeration when no match is found.

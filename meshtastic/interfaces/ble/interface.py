@@ -53,7 +53,7 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
-from meshtastic.interfaces.ble.discovery import DiscoveryManager
+from meshtastic.interfaces.ble.discovery import DiscoveryManager, parse_scan_response
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -635,36 +635,19 @@ class BLEInterface(MeshInterface):
                 "Scanning for BLE devices (takes %.0f seconds)...",
                 BLEConfig.BLE_SCAN_TIMEOUT,
             )
-            response = client.discover(
-                timeout=BLEConfig.BLE_SCAN_TIMEOUT,
-                return_adv=True,
-                service_uuids=[SERVICE_UUID],
-            )
-
-            devices: List[BLEDevice] = []
-            # With return_adv=True, BleakScanner.discover() returns a dict
-            if response is None:
-                logger.warning("BleakScanner.discover returned None")
-                return devices
-            if not isinstance(response, dict):
-                logger.warning(
-                    "BleakScanner.discover returned unexpected type: %s",
-                    type(response),
+            try:
+                response = client.discover(
+                    timeout=BLEConfig.BLE_SCAN_TIMEOUT,
+                    return_adv=True,
+                    service_uuids=[SERVICE_UUID],
                 )
-                return devices
-            for _, value in response.items():
-                if isinstance(value, tuple):
-                    device, adv = value
-                else:
-                    logger.warning(
-                        "Unexpected return type from BleakScanner.discover: %s",
-                        type(value),
-                    )
-                    continue
-                suuids = getattr(adv, "service_uuids", None)
-                if suuids and SERVICE_UUID in suuids:
-                    devices.append(device)
-            return devices
+                return parse_scan_response(response)
+            except (BleakError, BleakDBusError, RuntimeError) as e:
+                logger.warning("Device scan failed: %s", e, exc_info=True)
+                return []
+            except Exception as e:  # pragma: no cover - defensive last resort
+                logger.warning("Unexpected error during device scan: %s", e, exc_info=True)
+                return []
 
     def find_device(self, address: Optional[str]) -> BLEDevice:
         """
