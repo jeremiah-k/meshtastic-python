@@ -24,14 +24,14 @@ class DiscoveryStrategy(ABC):
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
-        Discover BLE devices already connected to the system via the Bleak backend.
+        Discover BLE devices using the strategy's underlying mechanism (scan, connected enumeration, cache, etc.).
         
         Parameters:
             address (Optional[str]): Optional target address or device name to filter results; comparisons use sanitized forms.
             timeout (float): Maximum time in seconds to wait for backend device enumeration.
         
         Returns:
-            List[BLEDevice]: Discovered devices that advertise the module's SERVICE_UUID and, if `address` is provided, match the sanitized address or name. Returns an empty list if the backend does not support connected-device enumeration or on error.
+            List[BLEDevice]: Discovered devices that advertise the module's SERVICE_UUID and, if `address` is provided, match the sanitized address or name. Returns an empty list on error.
         """
 
 class ConnectedStrategy(DiscoveryStrategy):
@@ -187,7 +187,7 @@ class DiscoveryManager:
                     if suuids and SERVICE_UUID in suuids:
                         devices.append(device)
             except Exception as e:
-                logger.debug("Device discovery failed: %s", e)
+                logger.warning("Device discovery failed: %s", e, exc_info=True)
 
             # If caller requested a specific address/name, filter here so we can
             # fall back to connected-device enumeration when no match is found.
@@ -215,7 +215,7 @@ class DiscoveryManager:
                     )
                     devices.extend(fallback)
                 except Exception as e:  # pragma: no cover - best effort logging
-                    logger.debug("Connected device fallback failed: %s", e)
+                    logger.warning("Connected device fallback failed: %s", e, exc_info=True)
                     if inspect.iscoroutine(connected_coro):
                         connected_coro.close()
 

@@ -36,6 +36,7 @@ class BLEClient:
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
         """
         Normalize a BLE address or identifier by removing common separators and lowercasing.
+        TODO: consider consolidating with BLEInterface._sanitize_address to avoid drift.
         
         Parameters:
             address: Address or identifier to normalize; may be None or consist only of whitespace.
@@ -143,6 +144,8 @@ class BLEClient:
             `True` if pairing succeeded, `False` otherwise.
 
         """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot pair: BLE client not initialized")
         return self.async_await(self.bleak_client.pair(**kwargs))
 
     def connect(
