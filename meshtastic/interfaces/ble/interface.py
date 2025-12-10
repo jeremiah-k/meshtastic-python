@@ -7,6 +7,7 @@ import io
 import logging
 import struct
 import time
+import threading
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from queue import Empty
