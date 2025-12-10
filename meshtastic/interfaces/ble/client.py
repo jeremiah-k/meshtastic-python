@@ -8,8 +8,6 @@ from threading import Thread
 from typing import Any, Optional, Type
 
 from bleak import BleakClient as BleakRootClient
-from bleak import BleakScanner, BLEDevice
-from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,

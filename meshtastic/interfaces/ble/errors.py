@@ -1,8 +1,7 @@
 """Error handling utilities for BLE operations."""
 
-from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from bleak.exc import BleakDBusError, BleakError
 
