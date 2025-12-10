@@ -77,9 +77,7 @@ class BLEClient:
         except asyncio.TimeoutError as exc:
             raise BLEClient.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
 
-    def __init__(
-        self, address=None, *, log_if_no_address: bool = True, **kwargs
-    ) -> None:
+    def __init__(self, address=None, *, log_if_no_address: bool = True, **kwargs) -> None:
         """
         Initialize the BLEClient, creating a dedicated asyncio event loop and background thread and optionally attaching a Bleak client for a specific device address.
         
@@ -98,6 +96,7 @@ class BLEClient:
         # Share exception type with BLEInterface for consistent public API.
         self.BLEError: Type[BLEClient.BLEError] = BLEClient.BLEError  # type: ignore[misc]
 
+        self.bleak_client: Optional[BleakRootClient] = None
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
         # Start event loop in background thread for async operations
@@ -113,6 +112,8 @@ class BLEClient:
         if not address:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
+            # Discovery-only instances won't have a connected bleak_client
+            self.bleak_client = None
             return
 
         # Create underlying Bleak client for actual BLE communication
@@ -157,6 +158,8 @@ class BLEClient:
         Returns:
             The value returned by the underlying Bleak client's `connect` call.
         """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot connect: BLE client not initialized")
         return self.async_await(
             self.bleak_client.connect(**kwargs), timeout=await_timeout
         )
@@ -203,6 +206,8 @@ class BLEClient:
             await_timeout (float | None): Maximum seconds to wait for disconnect to complete; if None, wait indefinitely.
             **kwargs: Additional keyword arguments forwarded to the underlying Bleak client's `disconnect` method.
         """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot disconnect: BLE client not initialized")
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(
@@ -219,6 +224,8 @@ class BLEClient:
         Returns:
             bytes: Raw bytes read from the characteristic.
         """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot read: BLE client not initialized")
         return self.async_await(
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
@@ -235,6 +242,8 @@ class BLEClient:
         Raises:
             BLEClient.BLEError: If the write operation fails or the wait times out.
         """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot write: BLE client not initialized")
         self.async_await(
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
@@ -281,6 +290,8 @@ class BLEClient:
             timeout (Optional[float]): Maximum seconds to wait for the operation; if None, no timeout is applied.
             **kwargs: Keyword arguments forwarded to the BLE backend's `start_notify` call.
         """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot start notify: BLE client not initialized")
         self.async_await(
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )

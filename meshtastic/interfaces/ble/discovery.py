@@ -68,6 +68,7 @@ class ConnectedStrategy(DiscoveryStrategy):
             if backend and hasattr(backend, "get_devices"):
                 getter = backend.get_devices
                 loop = asyncio.get_running_loop()
+                # TODO: Replace this private backend access if bleak adds a public API for enumerating connected devices.
                 if inspect.iscoroutinefunction(getter):
                     backend_devices = await BLEClient._with_timeout(
                         getter(),
@@ -166,24 +167,25 @@ class DiscoveryManager:
 
                 if response is None:
                     logger.warning("BleakScanner.discover returned None")
+                    response = {}
                 elif not isinstance(response, dict):
                     logger.warning(
                         "BleakScanner.discover returned unexpected type: %s",
                         type(response),
                     )
-                else:
-                    for _, value in response.items():
-                        if isinstance(value, tuple):
-                            device, adv = value
-                        else:
-                            logger.warning(
-                                "Unexpected return type from BleakScanner.discover: %s",
-                                type(value),
-                            )
-                            continue
-                        suuids = getattr(adv, "service_uuids", None)
-                        if suuids and SERVICE_UUID in suuids:
-                            devices.append(device)
+                    response = {}
+                for _, value in response.items():
+                    if isinstance(value, tuple):
+                        device, adv = value
+                    else:
+                        logger.warning(
+                            "Unexpected return type from BleakScanner.discover: %s",
+                            type(value),
+                        )
+                        continue
+                    suuids = getattr(adv, "service_uuids", None)
+                    if suuids and SERVICE_UUID in suuids:
+                        devices.append(device)
             except Exception as e:
                 logger.debug("Device discovery failed: %s", e)
 

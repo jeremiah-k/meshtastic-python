@@ -800,9 +800,7 @@ class BLEInterface(MeshInterface):
             self._on_ble_disconnect,
         )
 
-        device_address = (
-            client.bleak_client.address if hasattr(client, "bleak_client") else None
-        )
+        device_address = getattr(getattr(client, "bleak_client", None), "address", None)
         previous_client = None
         with self._state_lock:
             previous_client = self.client
