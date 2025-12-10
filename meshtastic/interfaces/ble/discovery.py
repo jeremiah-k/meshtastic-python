@@ -210,14 +210,9 @@ class DiscoveryManager:
                     address, BLEConfig.BLE_SCAN_TIMEOUT
                 )
                 try:
-                    async_await_fn = client.async_await
-                    async_await_sig = inspect.signature(async_await_fn)
-                    if "timeout" in async_await_sig.parameters:
-                        fallback = async_await_fn(
-                            connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
-                        )
-                    else:
-                        fallback = async_await_fn(connected_coro)
+                    fallback = client.async_await(
+                        connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
+                    )
                     devices.extend(fallback)
                 except Exception as e:  # pragma: no cover - best effort logging
                     logger.debug("Connected device fallback failed: %s", e)

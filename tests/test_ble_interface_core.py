@@ -250,7 +250,7 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
                 ),
             }
 
-        def async_await(self, coro):
+        def async_await(self, coro, timeout=None):
             """
             Assert that a connected-device fallback must not be invoked.
             
@@ -311,7 +311,7 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
             return {}
 
         @staticmethod
-        def async_await(coro):
+        def async_await(coro, timeout=None):
             """
             Run an awaitable to completion and return its result.
             
@@ -386,7 +386,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
             return {}
 
         @staticmethod
-        def async_await(coro):  # pragma: no cover - fallback should not be hit
+        def async_await(coro, timeout=None):  # pragma: no cover - fallback should not be hit
             """
             Run a coroutine until completion and return its result.
             
