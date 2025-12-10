@@ -105,8 +105,8 @@ class ConnectedStrategy(DiscoveryStrategy):
                     # Preserve RSSI if provided by backend
                     if hasattr(device, "rssi"):
                         try:
-                            device_copy.rssi = getattr(device, "rssi")  # type: ignore[attr-defined]
-                        except Exception:  # pragma: no cover - best effort
+                            device_copy.rssi = device.rssi  # type: ignore[attr-defined]
+                        except AttributeError:  # pragma: no cover - best effort
                             pass
                     devices_found.append(device_copy)
             else:
