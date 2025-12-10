@@ -645,6 +645,9 @@ class BLEInterface(MeshInterface):
                     service_uuids=[SERVICE_UUID],
                 )
                 return parse_scan_response(response)
+            except BleakDBusError:
+                # Propagate DBus-level failures so callers can back off appropriately
+                raise
             except (BleakError, BleakDBusError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []

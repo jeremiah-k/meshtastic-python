@@ -144,7 +144,10 @@ class ConnectedStrategy(DiscoveryStrategy):
                     "Connected-device enumeration not supported on this bleak backend."
                 )
             return devices_found
-        except (BleakError, BleakDBusError, RuntimeError) as e:
+        except BleakDBusError as e:
+            logger.warning("Connected device discovery failed due to DBus error: %s", e, exc_info=True)
+            raise
+        except (BleakError, RuntimeError) as e:
             logger.warning("Connected device discovery failed: %s", e, exc_info=True)
             return []
         except Exception as e:  # pragma: no cover - defensive last resort
@@ -200,7 +203,11 @@ class DiscoveryManager:
                 logger.debug("Scan completed in %.2f seconds", time.monotonic() - scan_start)
 
                 devices = parse_scan_response(response)
-            except (BleakError, BleakDBusError, RuntimeError) as e:
+            except BleakDBusError as e:
+                # Bubble up BlueZ/DBus failures so callers can back off more aggressively
+                logger.warning("Device discovery failed due to DBus error: %s", e, exc_info=True)
+                raise
+            except (BleakError, RuntimeError) as e:
                 logger.warning("Device discovery failed: %s", e, exc_info=True)
                 devices = []
             except Exception as e:  # pragma: no cover - defensive last resort

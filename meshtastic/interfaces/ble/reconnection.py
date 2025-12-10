@@ -132,6 +132,7 @@ class ReconnectWorker:
         from meshtastic.interfaces.ble.utils import get_sleep_fn
 
         sleep_fn = get_sleep_fn()
+        override_delay: Optional[float] = None
         try:
             while not shutdown_event.is_set():
                 if self.interface.is_connection_closing or not auto_reconnect:
@@ -160,6 +161,18 @@ class ReconnectWorker:
                         attempt_num,
                         err,
                     )
+                except BleakDBusError as err:
+                    if self.interface.is_connection_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
+                        )
+                        return
+                    logger.error(
+                        "DBus error during auto-reconnect attempt %d: %s",
+                        attempt_num,
+                        err,
+                    )
+                    override_delay = max(override_delay or 0, 30.0)
                 except Exception:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
@@ -177,6 +190,8 @@ class ReconnectWorker:
                     sleep_delay,
                     should_retry,
                 ) = self.reconnect_policy.next_attempt()
+                if override_delay is not None:
+                    sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:
                     logger.info("Auto-reconnect reached maximum retry limit.")
                     return
