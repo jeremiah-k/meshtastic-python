@@ -2,7 +2,8 @@
 
 import importlib
 import time
-from typing import Any, Optional
+from types import ModuleType
+from typing import Any, Callable, Optional
 
 
 def sanitize_address(address: Optional[str]) -> Optional[str]:
@@ -39,7 +40,7 @@ def _sleep(delay: float) -> None:
     time.sleep(delay)
 
 
-def resolve_ble_module() -> Optional[Any]:
+def resolve_ble_module() -> Optional[ModuleType]:
     """
     Locate a loaded BLE module used by the package.
     
@@ -59,7 +60,7 @@ def resolve_ble_module() -> Optional[Any]:
     return None
 
 
-def get_sleep_fn():
+def get_sleep_fn() -> Callable[[float], None]:
     """
     Select the sleep function to use, preferring a BLE module-provided `_sleep` when available.
     

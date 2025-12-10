@@ -89,6 +89,7 @@ class BLEClient:
         self.BLEError: Type[BLEClient.BLEError] = BLEClient.BLEError  # type: ignore[misc]
 
         self.bleak_client: Optional[BleakRootClient] = None
+        self.address = address
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
         # Start event loop in background thread for async operations
@@ -263,6 +264,9 @@ class BLEClient:
         Returns:
             `true` if the characteristic is present, `false` otherwise.
         """
+        if self.bleak_client is None:
+            return False
+
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             services = self.error_handler.safe_execute(

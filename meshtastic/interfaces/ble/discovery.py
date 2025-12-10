@@ -148,6 +148,7 @@ class ConnectedStrategy(DiscoveryStrategy):
             logger.warning("Connected device discovery failed: %s", e, exc_info=True)
             return []
         except Exception as e:  # pragma: no cover - defensive last resort
+            # Defensive last resort to keep discovery best-effort
             logger.warning("Unexpected error during connected device discovery: %s", e, exc_info=True)
             return []
 
@@ -203,6 +204,7 @@ class DiscoveryManager:
                 logger.warning("Device discovery failed: %s", e, exc_info=True)
                 devices = []
             except Exception as e:  # pragma: no cover - defensive last resort
+                # Defensive last resort to keep discovery best-effort
                 logger.warning("Unexpected error during device discovery: %s", e, exc_info=True)
                 devices = []
 
