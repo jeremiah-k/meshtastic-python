@@ -248,15 +248,16 @@ class BLEClient:
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def get_services(self):
+    def get_services(self, **kwargs):
         """
-        Return the client's discovered GATT services and characteristics.
-        
+        Actively retrieve the client's discovered GATT services and characteristics.
+
         Returns:
-            The services collection object provided by the underlying BLE client, containing discovered GATT services and their characteristics (may be `None` if unavailable).
+            The services collection object provided by the underlying BLE client, containing discovered GATT services and their characteristics.
         """
-        # services is a property, not an async method, so we access it directly
-        return self.bleak_client.services
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot get services: BLE client not initialized")
+        return self.async_await(self.bleak_client.get_services(**kwargs))
 
     def has_characteristic(self, specifier):
         """
@@ -270,13 +271,13 @@ class BLEClient:
         """
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
-            # Lambda is appropriate here for deferred execution in error handling
-            self.error_handler.safe_execute(
+            services = self.error_handler.safe_execute(
                 lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
-            services = getattr(self.bleak_client, "services", None)
+            if not services:
+                services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
     def start_notify(

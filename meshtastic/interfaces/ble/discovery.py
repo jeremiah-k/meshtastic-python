@@ -122,13 +122,13 @@ class DiscoveryManager:
     """Orchestrates scanning + connected-device fallback logic."""
 
     def __init__(self, client_factory=None):
-        # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         """
         Initialize the DiscoveryManager.
         
         Parameters:
             client_factory (optional): Callable or class used to construct BLE client instances; primarily provided for testing or to override the default BLE client.
         """
+        # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
         self.connected_strategy = ConnectedStrategy()
 

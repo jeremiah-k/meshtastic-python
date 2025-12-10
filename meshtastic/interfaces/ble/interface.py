@@ -529,7 +529,13 @@ class BLEInterface(MeshInterface):
                     log_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
-        except (BleakError, BleakDBusError, RuntimeError, self.BLEError) as e:
+        except (
+            BleakError,
+            BleakDBusError,
+            RuntimeError,
+            BLEClient.BLEError,
+            self.BLEError,
+        ) as e:
             logger.debug("Failed to start optional log notifications: %s", e)
 
         # Critical notification for packet ingress
