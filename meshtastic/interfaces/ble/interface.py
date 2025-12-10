@@ -720,6 +720,7 @@ class BLEInterface(MeshInterface):
             .lower()
         )
 
+    @property
     def connection_state(self) -> ConnectionState:
         """
         Retrieve the current connection state.
@@ -1081,15 +1082,21 @@ class BLEInterface(MeshInterface):
                 "read_trigger", "reconnected_event"
             )  # Wake all waiting threads
             if self._receiveThread:
-                self.thread_coordinator.join_thread(
-                    self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
-                )
-                if self._receiveThread.is_alive():
-                    logger.warning(
-                        "BLE receive thread did not exit within %.1fs",
-                        RECEIVE_THREAD_JOIN_TIMEOUT,
+                import threading
+
+                if self._receiveThread is threading.current_thread():
+                    logger.debug("close() called from receive thread; skipping self-join")
+                    self._receiveThread = None
+                else:
+                    self.thread_coordinator.join_thread(
+                        self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
                     )
-                self._receiveThread = None
+                    if self._receiveThread.is_alive():
+                        logger.warning(
+                            "BLE receive thread did not exit within %.1fs",
+                            RECEIVE_THREAD_JOIN_TIMEOUT,
+                        )
+                    self._receiveThread = None
 
         if self._exit_handler:
             with contextlib.suppress(ValueError):

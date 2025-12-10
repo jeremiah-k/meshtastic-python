@@ -78,8 +78,7 @@ class NotificationManager:
                     callback,
                     timeout=timeout,
                 )
-            except Exception as e:  # pragma: no cover - best effort
-                # Keep broad for safety, but log to surface unexpected failures.
+            except Exception as e:  # pragma: no cover - best effort; noqa: BLE001
                 logger.debug(
                     "Failed to resubscribe %s during reconnect: %s",
                     characteristic,

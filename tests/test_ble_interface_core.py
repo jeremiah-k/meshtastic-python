@@ -821,7 +821,7 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
 
 
 def test_reconnect_worker_successful_attempt():
-    """ReconnectWorker should clean up, reconnect, resubscribe, and clear thread references on success."""
+    """ReconnectWorker should reconnect and clear thread references on success (cleanup/resubscribe handled elsewhere)."""
 
     class StubPolicy:
         def __init__(self):

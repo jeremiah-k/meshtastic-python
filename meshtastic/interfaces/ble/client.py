@@ -271,8 +271,11 @@ class BLEClient:
             if services is not None:
                 try:
                     self.bleak_client.services = services  # type: ignore[attr-defined]
-                except Exception:  # pragma: no cover - best effort cache
-                    pass
+                except Exception:  # pragma: no cover - best-effort cache
+                    logger.debug(
+                        "Unable to cache services on bleak client; continuing without cache",
+                        exc_info=True,
+                    )
         return bool(services and services.get_characteristic(specifier))
 
     def start_notify(
