@@ -17,6 +17,7 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.utils import sanitize_address
 
 class BLEClient:
     """
@@ -36,7 +37,6 @@ class BLEClient:
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
         """
         Normalize a BLE address or identifier by removing common separators and lowercasing.
-        TODO: consider consolidating with BLEInterface._sanitize_address to avoid drift.
         
         Parameters:
             address: Address or identifier to normalize; may be None or consist only of whitespace.
@@ -44,16 +44,7 @@ class BLEClient:
         Returns:
             The normalized address with dashes, underscores, colons, and spaces removed and converted to lowercase, or None if the input is None or only whitespace.
         """
-        if address is None or not address.strip():
-            return None
-        return (
-            address.strip()
-            .replace("-", "")
-            .replace("_", "")
-            .replace(":", "")
-            .replace(" ", "")
-            .lower()
-        )
+        return sanitize_address(address)
 
     @staticmethod
     async def _with_timeout(awaitable, timeout: Optional[float], label: str):

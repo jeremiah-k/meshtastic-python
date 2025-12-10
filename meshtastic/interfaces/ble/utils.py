@@ -5,6 +5,30 @@ import time
 from typing import Any, Optional
 
 
+def sanitize_address(address: Optional[str]) -> Optional[str]:
+    """
+    Normalize BLE addresses or identifiers by removing common separators and lowercasing.
+
+    Parameters:
+        address (Optional[str]): Address or identifier to normalize; may be None or consist only of whitespace.
+
+    Returns:
+        Optional[str]: Normalized address string, or None if the input is None or only whitespace.
+    """
+    if address is None:
+        return None
+    stripped = address.strip()
+    if not stripped:
+        return None
+    return (
+        stripped.replace("-", "")
+        .replace("_", "")
+        .replace(":", "")
+        .replace(" ", "")
+        .lower()
+    )
+
+
 def _sleep(delay: float) -> None:
     """
     Throttle execution for the given duration in seconds.

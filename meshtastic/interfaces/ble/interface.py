@@ -59,6 +59,7 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.utils import sanitize_address
 from meshtastic.interfaces.ble.utils import _sleep
 
 from meshtastic.protobuf import mesh_pb2
@@ -716,16 +717,7 @@ class BLEInterface(MeshInterface):
                 and lowercased, or `None` if `address` is None or contains only whitespace.
 
         """
-        if address is None or not address.strip():
-            return None
-        return (
-            address.strip()
-            .replace("-", "")
-            .replace("_", "")
-            .replace(":", "")
-            .replace(" ", "")
-            .lower()
-        )
+        return sanitize_address(address)
 
     @property
     def connection_state(self) -> ConnectionState:
