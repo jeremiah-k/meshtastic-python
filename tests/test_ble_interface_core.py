@@ -434,7 +434,9 @@ def test_connection_validator_enforces_state():
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 
     state_manager = BLEStateManager()
-    validator = ConnectionValidator(state_manager, state_manager.lock)
+    validator = ConnectionValidator(
+        state_manager, state_manager.lock, BLEInterface.BLEError
+    )
 
     validator.validate_connection_request()
 
@@ -456,7 +458,9 @@ def test_connection_validator_existing_client_checks():
     """check_existing_client should allow reuse only when the requested identifier matches."""
 
     state_manager = BLEStateManager()
-    validator = ConnectionValidator(state_manager, state_manager._state_lock)
+    validator = ConnectionValidator(
+        state_manager, state_manager._state_lock, BLEInterface.BLEError
+    )
     client = DummyClient()
     client.is_connected = lambda: True
 

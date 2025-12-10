@@ -90,6 +90,7 @@ class BLEClient:
 
         self.bleak_client: Optional[BleakRootClient] = None
         self.address = address
+        self._closed = False
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
         # Start event loop in background thread for async operations
@@ -302,7 +303,15 @@ class BLEClient:
         Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit,
         and logs a warning if the thread does not terminate within that timeout.
         """
-        self.async_run(self._stop_event_loop())
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+
+        try:
+            self.async_run(self._stop_event_loop())
+        except RuntimeError:
+            # Event loop may already be closed; treat as best-effort shutdown.
+            return
         self._eventThread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():
             logger.warning(

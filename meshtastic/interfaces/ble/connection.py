@@ -20,16 +20,20 @@ logger = logging.getLogger("meshtastic.ble")
 class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
 
-    def __init__(self, state_manager: BLEStateManager, state_lock: RLock):
+    def __init__(
+        self, state_manager: BLEStateManager, state_lock: RLock, error_class: type
+    ):
         """
         Initialize the ConnectionValidator with the BLE state manager and its lock.
         
         Parameters:
             state_manager (BLEStateManager): Manager responsible for BLE connection state and transitions.
             state_lock (RLock): Reentrant lock used to synchronize access to the shared state.
+            error_class (type): Exception type to raise when validation fails.
         """
         self.state_manager = state_manager
         self.state_lock = state_lock
+        self.BLEError = error_class
 
     def validate_connection_request(self) -> None:
         """
@@ -39,16 +43,10 @@ class ConnectionValidator:
             BLEInterface.BLEError: If the interface is closing (message: "Cannot connect while interface is closing")
                 or if a connection is already established or in progress (message: "Already connected or connection in progress").
         """
-        from meshtastic import ble_interface as ble_mod
-
         if not self.state_manager.can_connect:
             if self.state_manager.is_closing:
-                raise ble_mod.BLEInterface.BLEError(
-                    "Cannot connect while interface is closing"
-                )
-            raise ble_mod.BLEInterface.BLEError(
-                "Already connected or connection in progress"
-            )
+                raise self.BLEError("Cannot connect while interface is closing")
+            raise self.BLEError("Already connected or connection in progress")
 
     def check_existing_client(
         self,

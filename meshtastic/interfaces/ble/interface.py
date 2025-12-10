@@ -144,7 +144,7 @@ class BLEInterface(MeshInterface):
         self._notification_manager = NotificationManager()
         self._discovery_manager = DiscoveryManager()
         self._connection_validator = ConnectionValidator(
-            self._state_manager, self._state_lock
+            self._state_manager, self._state_lock, self.BLEError
         )
         self._client_manager = ClientManager(
             self._state_manager,
@@ -217,6 +217,9 @@ class BLEInterface(MeshInterface):
             # and future connection attempts will fail.  (BlueZ kinda sucks)
             # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
             self._exit_handler = atexit.register(self.close)
+        except BaseException:
+            # Allow system-exiting exceptions to propagate
+            raise
         except Exception as e:
             self.close()
             if isinstance(e, BLEInterface.BLEError):
@@ -890,11 +893,28 @@ class BLEInterface(MeshInterface):
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
-        except Exception:
-            logger.exception("Fatal error in BLE receive thread, closing interface.")
+        except (
+            RuntimeError,
+            OSError,
+            BleakError,
+            BleakDBusError,
+            BLEClient.BLEError,
+            BLEInterface.BLEError,
+        ) as e:
+            logger.exception("Fatal error in BLE receive thread, closing interface: %s", e)
             # Use state manager instead of boolean flag
             if not self._state_manager.is_closing:
                 # Use a thread to avoid deadlocks if close() waits for this thread
+                error_close_thread = self.thread_coordinator.create_thread(
+                    target=self.close, name="BLECloseOnError", daemon=True
+                )
+                self.thread_coordinator.start_thread(error_close_thread)
+        except BaseException:
+            # Propagate system-level exceptions
+            raise
+        except Exception:
+            logger.exception("Fatal error in BLE receive thread, closing interface.")
+            if not self._state_manager.is_closing:
                 error_close_thread = self.thread_coordinator.create_thread(
                     target=self.close, name="BLECloseOnError", daemon=True
                 )
