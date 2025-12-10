@@ -152,8 +152,6 @@ class DiscoveryManager:
             devices: List[BLEDevice] = []
             sanitized_target = BLEClient._sanitize_address(address) if address else None
             try:
-                import time
-
                 scan_start = time.monotonic()
                 logger.debug(
                     "Scanning for BLE devices (takes %.0f seconds)...",

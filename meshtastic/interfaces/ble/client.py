@@ -8,6 +8,7 @@ from threading import Thread
 from typing import Any, Optional, Type
 
 from bleak import BleakClient as BleakRootClient
+from bleak import BleakScanner
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
@@ -267,15 +268,6 @@ class BLEClient:
                 reraise=False,
             )
             services = getattr(self.bleak_client, "services", None)
-            # Cache fetched services on the bleak client to avoid redundant lookups
-            if services is not None:
-                try:
-                    self.bleak_client.services = services  # type: ignore[attr-defined]
-                except Exception:  # pragma: no cover - best-effort cache
-                    logger.debug(
-                        "Unable to cache services on bleak client; continuing without cache",
-                        exc_info=True,
-                    )
         return bool(services and services.get_characteristic(specifier))
 
     def start_notify(
