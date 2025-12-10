@@ -675,7 +675,11 @@ class BLEInterface(MeshInterface):
 
         if len(addressed_devices) == 0:
             if address:
-                raise self.BLEError(ERROR_NO_PERIPHERAL_FOUND.format(address))
+                logger.warning(
+                    "No peripherals found for %s via scan; attempting direct address connect",
+                    address,
+                )
+                return BLEDevice(address=address, name=address, details=None)
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
