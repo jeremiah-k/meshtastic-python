@@ -323,6 +323,15 @@ class BLEClient:
                 if not future.done():
                     future.cancel()
 
+        # Attempt to cancel all tasks and stop the loop cleanly
+        if self._eventLoop and not self._eventLoop.is_closed():
+            def _shutdown_loop(loop):
+                for task in asyncio.all_tasks(loop):
+                    task.cancel()
+                loop.stop()
+
+            self._eventLoop.call_soon_threadsafe(_shutdown_loop, self._eventLoop)
+
         try:
             self.async_run(self._stop_event_loop())
         except RuntimeError:
@@ -330,10 +339,13 @@ class BLEClient:
             return
         self._eventThread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():
-            logger.warning(
-                "BLE event thread did not exit within %.1fs",
+            logger.error(
+                "BLE event thread did not exit within %.1fs and may leak resources",
                 BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
             )
+        elif self._eventLoop and not self._eventLoop.is_closed():
+            # Ensure loop resources are released when the thread exits normally
+            self._eventLoop.call_soon_threadsafe(self._eventLoop.close)
 
     def __enter__(self):
         """

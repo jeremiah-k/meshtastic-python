@@ -19,6 +19,7 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.constants import _bleak_supports_connected_fallback
+from meshtastic.interfaces.ble.utils import resolve_ble_module
 
 
 def parse_scan_response(
@@ -200,6 +201,7 @@ class DiscoveryManager:
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
         self.connected_strategy = ConnectedStrategy()
+        self._client: Optional[BLEClient] = None
 
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
@@ -211,95 +213,90 @@ class DiscoveryManager:
         Returns:
             List[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
         """
-        from meshtastic.interfaces.ble.utils import resolve_ble_module
-
-        ble_mod = resolve_ble_module()
-        client_factory: Callable[..., Any] = cast(
-            Callable[..., Any],
-            self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
-        )
-        with client_factory(log_if_no_address=False) as client:
-            devices: List[BLEDevice] = []
-            sanitized_target = BLEClient._sanitize_address(address) if address else None
-            try:
-                scan_start = time.monotonic()
-                logger.debug(
-                    "Scanning for BLE devices (takes %.0f seconds)...",
-                    BLEConfig.BLE_SCAN_TIMEOUT,
-                )
-
-                # If we are looking for a specific address, scan everything to ensure we find it
-                # even if the Service UUID is missing from the advertisement.
-                scan_uuids = [SERVICE_UUID] if not sanitized_target else None
-
-                response = client.discover(
-                    timeout=BLEConfig.BLE_SCAN_TIMEOUT,
-                    return_adv=True,
-                    service_uuids=scan_uuids,
-                )
-                logger.debug(
-                    "Scan completed in %.2f seconds", time.monotonic() - scan_start
-                )
-
-                devices = parse_scan_response(
-                    response, whitelist_address=sanitized_target
-                )
-                # Targeted fallback: ask Bleak to find the device by address even if the
-                # advertisement did not include the Meshtastic service UUID.
-                if not devices and address:
-                    try:
-                        targeted_device = client.async_await(
-                            BleakScanner.find_device_by_address(
-                                address, timeout=BLEConfig.BLE_SCAN_TIMEOUT
-                            ),
-                            timeout=BLEConfig.BLE_SCAN_TIMEOUT,
-                        )
-                        if targeted_device:
-                            devices.append(targeted_device)
-                    except BleakDBusError as e:
-                        logger.warning(
-                            "Device discovery failed due to DBus error: %s",
-                            e,
-                            exc_info=True,
-                        )
-                        raise
-                    except (BleakError, RuntimeError) as e:
-                        logger.warning(
-                            "Direct address discovery failed: %s", e, exc_info=True
-                        )
-            except BleakDBusError as e:
-                # Bubble up BlueZ/DBus failures so callers can back off more aggressively
-                logger.warning(
-                    "Device discovery failed due to DBus error: %s", e, exc_info=True
-                )
-                raise
-            except (BleakError, RuntimeError) as e:
-                logger.warning("Device discovery failed: %s", e, exc_info=True)
-                devices = []
-            except Exception as e:  # pragma: no cover - defensive last resort
-                # Defensive last resort to keep discovery best-effort
-                logger.warning(
-                    "Unexpected error during device discovery: %s", e, exc_info=True
-                )
-                devices = []
-
-            if not devices and address:
-                logger.debug(
-                    "Scan found no devices, trying fallback to already-connected devices"
-                )
-                connected_coro = self.connected_strategy.discover(
-                    address, BLEConfig.BLE_SCAN_TIMEOUT
-                )
+        if self._client:
+            event_thread = getattr(self._client, "_eventThread", None)
+            if getattr(self._client, "_closed", False) or (
+                event_thread and not event_thread.is_alive()
+            ):
                 try:
-                    fallback = client.async_await(
-                        connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
+                    self._client.close()
+                except Exception:  # pragma: no cover - best effort cleanup
+                    logger.debug(
+                        "Error closing stale discovery client", exc_info=True
                     )
-                    devices.extend(fallback)
-                except Exception as e:  # pragma: no cover - best effort logging
-                    logger.warning(
-                        "Connected device fallback failed: %s", e, exc_info=True
-                    )
-                    if inspect.iscoroutine(connected_coro):
-                        connected_coro.close()
+                finally:
+                    self._client = None
+        if self._client is None:
+            ble_mod = resolve_ble_module()
+            client_factory: Callable[..., Any] = cast(
+                Callable[..., Any],
+                self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
+            )
+            self._client = client_factory(log_if_no_address=False)
 
-            return devices
+        client = self._client
+        devices: List[BLEDevice] = []
+        sanitized_target = BLEClient._sanitize_address(address) if address else None
+        try:
+            scan_start = time.monotonic()
+            logger.debug(
+                "Scanning for BLE devices (takes %.0f seconds)...",
+                BLEConfig.BLE_SCAN_TIMEOUT,
+            )
+
+            # If we are looking for a specific address, scan everything to ensure we find it
+            # even if the Service UUID is missing from the advertisement.
+            scan_uuids = [SERVICE_UUID] if not sanitized_target else None
+
+            response = client.discover(
+                timeout=BLEConfig.BLE_SCAN_TIMEOUT,
+                return_adv=True,
+                service_uuids=scan_uuids,
+            )
+            logger.debug("Scan completed in %.2f seconds", time.monotonic() - scan_start)
+
+            devices = parse_scan_response(response, whitelist_address=sanitized_target)
+        except BleakDBusError as e:
+            # Bubble up BlueZ/DBus failures so callers can back off more aggressively
+            logger.warning(
+                "Device discovery failed due to DBus error: %s", e, exc_info=True
+            )
+            raise
+        except (BleakError, RuntimeError) as e:
+            logger.warning("Device discovery failed: %s", e, exc_info=True)
+            devices = []
+        except Exception as e:  # pragma: no cover - defensive last resort
+            # Defensive last resort to keep discovery best-effort
+            logger.warning(
+                "Unexpected error during device discovery: %s", e, exc_info=True
+            )
+            devices = []
+
+        if not devices and address:
+            logger.debug(
+                "Scan found no devices, trying fallback to already-connected devices"
+            )
+            connected_coro = self.connected_strategy.discover(
+                address, BLEConfig.BLE_SCAN_TIMEOUT
+            )
+            try:
+                fallback = client.async_await(
+                    connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
+                )
+                devices.extend(fallback)
+            except Exception as e:  # pragma: no cover - best effort logging
+                logger.warning(
+                    "Connected device fallback failed: %s", e, exc_info=True
+                )
+                if inspect.iscoroutine(connected_coro):
+                    connected_coro.close()
+
+        return devices
+
+    def close(self) -> None:
+        """Release persistent discovery client resources."""
+        if self._client:
+            try:
+                self._client.close()
+            finally:
+                self._client = None
