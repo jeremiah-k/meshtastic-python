@@ -4,7 +4,8 @@ import logging
 from threading import Event, RLock, Thread
 from typing import Optional, TYPE_CHECKING
 
-from meshtastic.interfaces.ble.constants import BLEConfig
+from bleak.exc import BleakDBusError
+from meshtastic.interfaces.ble.constants import BLEConfig, DBUS_ERROR_RECONNECT_DELAY
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
+
 
 class ReconnectScheduler:
     """Manage lifecycle of the reconnect worker thread."""
@@ -26,15 +28,15 @@ class ReconnectScheduler:
     ):
         """
         Initialize the ReconnectScheduler with BLE state, threading utilities, and a reconnect policy.
-        
+
         Parameters:
-        	state_manager (BLEStateManager): Manages BLE connection state and lifecycle checks.
-        	state_lock (RLock): Re-entrant lock protecting shared BLE state and thread reference updates.
-        	thread_coordinator (ThreadCoordinator): Factory/manager for creating and starting threads.
-        	interface (BLEInterface): BLE interface used to perform connection attempts.
-        
+                state_manager (BLEStateManager): Manages BLE connection state and lifecycle checks.
+                state_lock (RLock): Re-entrant lock protecting shared BLE state and thread reference updates.
+                thread_coordinator (ThreadCoordinator): Factory/manager for creating and starting threads.
+                interface (BLEInterface): BLE interface used to perform connection attempts.
+
         Detailed behavior:
-        	Creates a ReconnectPolicy configured from BLEConfig, constructs a ReconnectWorker using the provided interface and policy, and initializes the internal reconnect thread reference to `None`.
+                Creates a ReconnectPolicy configured from BLEConfig, constructs a ReconnectWorker using the provided interface and policy, and initializes the internal reconnect thread reference to `None`.
         """
         self.state_manager = state_manager
         self.state_lock = state_lock
@@ -53,11 +55,11 @@ class ReconnectScheduler:
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """
         Schedule a background BLE reconnect worker when auto-reconnect is enabled and no reconnect is already active.
-        
+
         Parameters:
             auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
             shutdown_event (Event): Event used by the worker to detect shutdown and stop retrying.
-        
+
         Returns:
             bool: `true` if a new reconnect worker thread was created and started; `false` if scheduling was skipped because `auto_reconnect` is False, the interface is closing, or a reconnect thread is already running.
         """
@@ -90,7 +92,7 @@ class ReconnectScheduler:
     def clear_thread_reference(self) -> None:
         """
         Clear the stored reconnect thread reference while holding the state lock.
-        
+
         Sets the internal reconnect thread reference to None to indicate the worker has exited;
         operation is performed under self.state_lock to ensure thread-safe state updates.
         """
@@ -98,13 +100,14 @@ class ReconnectScheduler:
             # Always clear the reference once the worker loop exits to match legacy behavior.
             self._reconnect_thread = None
 
+
 class ReconnectWorker:
     """Perform blocking reconnect attempts with policy-driven backoff."""
 
     def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
         """
         Initialize the ReconnectWorker with the BLE interface and backoff policy.
-        
+
         Parameters:
             interface (BLEInterface): BLE interface used to perform connection attempts and to check/modify connection state.
             reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
@@ -117,13 +120,13 @@ class ReconnectWorker:
     ) -> None:
         """
         Run the blocking BLE auto-reconnect loop using the configured backoff policy.
-        
+
         The loop attempts to reconnect the interface until a connection succeeds, the provided
         shutdown_event is set, auto_reconnect is disabled, or the reconnect policy indicates no
         further retries. Between failed attempts the loop observes the policy's computed delay
         and sleeps using the environment's sleep function. On exit the scheduler's thread
         reference is cleared.
-        
+
         Parameters:
             auto_reconnect (bool): If False, the loop exits immediately without attempting reconnects.
             shutdown_event (Event): An event whose being set causes the loop to stop as soon as possible.
@@ -141,15 +144,18 @@ class ReconnectWorker:
                     )
                     return
                 state_mgr = getattr(self.interface, "_state_manager", None)
-                if state_mgr is not None and getattr(state_mgr, "can_connect", True) is False:
+                if (
+                    state_mgr is not None
+                    and getattr(state_mgr, "can_connect", True) is False
+                ):
                     # Another connect in progress; wait briefly without consuming a retry
                     logger.debug(
                         "Auto-reconnect waiting: connection already in progress."
                     )
                     sleep_fn(BLEConfig.SEND_PROPAGATION_DELAY)
                     continue
+                attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
-                    attempt_num = self.reconnect_policy.get_attempt_count() + 1
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).", attempt_num
                     )
@@ -180,7 +186,10 @@ class ReconnectWorker:
                         attempt_num,
                         err,
                     )
-                    override_delay = max(override_delay or 0, 30.0)
+                    # Use longer delay for DBus errors to allow system Bluetooth stack to recover
+                    override_delay = max(
+                        override_delay or 0, DBUS_ERROR_RECONNECT_DELAY
+                    )
                 except Exception:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
