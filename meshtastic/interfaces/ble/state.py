@@ -69,9 +69,9 @@ class BLEStateManager:
         Indicates whether the BLE interface is in a closing state.
         
         Returns:
-            True if the current state is DISCONNECTING or ERROR, False otherwise.
+            True if the current state is DISCONNECTING, False otherwise.
         """
-        return self.state in (ConnectionState.DISCONNECTING, ConnectionState.ERROR)
+        return self.state == ConnectionState.DISCONNECTING
 
     @property
     def can_connect(self) -> bool:

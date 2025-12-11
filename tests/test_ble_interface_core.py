@@ -129,7 +129,7 @@ def test_find_device_returns_single_scan_result(monkeypatch):
 
 
 def test_state_manager_closing_only_for_disconnect():
-    """is_closing should be true while disconnecting or in error."""
+    """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()
     assert state_manager.is_closing is False
     # Allow transition to DISCONNECTING from DISCONNECTED (shutdown path)
@@ -138,7 +138,7 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
     assert state_manager.is_closing is False
     assert state_manager.transition_to(ConnectionState.ERROR) is True
-    assert state_manager.is_closing is True
+    assert state_manager.is_closing is False
 
 
 def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):

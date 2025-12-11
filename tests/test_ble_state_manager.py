@@ -54,7 +54,7 @@ class TestBLEStateManager:
         # Test ERROR state
         manager._state = ConnectionState.ERROR
         assert not manager.is_connected
-        assert manager.is_closing
+        assert not manager.is_closing
         assert not manager.can_connect
 
     def test_valid_transitions(self):
@@ -242,7 +242,7 @@ class TestBLEStateManager:
 
         assert manager.state == ConnectionState.ERROR
         assert not manager.is_connected
-        assert manager.is_closing
+        assert not manager.is_closing
         assert not manager.can_connect
 
         # Should be able to recover from error
@@ -311,7 +311,7 @@ class TestBLEInterfaceStateIntegration:
         manager.transition_to(ConnectionState.ERROR)
         assert manager.state == ConnectionState.ERROR
         assert not manager.is_connected
-        assert manager.is_closing
+        assert not manager.is_closing
         assert not manager.can_connect
 
     def test_client_management_with_states(self):
