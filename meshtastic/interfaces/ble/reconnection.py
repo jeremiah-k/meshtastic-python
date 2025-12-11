@@ -149,9 +149,8 @@ class ReconnectWorker:
                 attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
                     with gate:
-                        if (
-                            getattr(self.interface, "_state_manager", None)
-                            and getattr(self.interface._state_manager, "is_connected", False)
+                        if getattr(self.interface, "_state_manager", None) and getattr(
+                            self.interface._state_manager, "is_connected", False
                         ):
                             return
                         logger.info(
@@ -159,7 +158,8 @@ class ReconnectWorker:
                         )
                         self.interface.connect(self.interface.address)
                         logger.info(
-                            "BLE auto-reconnect succeeded after %d attempts.", attempt_num
+                            "BLE auto-reconnect succeeded after %d attempts.",
+                            attempt_num,
                         )
                         return
                 except self.interface.BLEError as err:
@@ -173,7 +173,7 @@ class ReconnectWorker:
                         attempt_num,
                         err,
                     )
-                except BleakDBusError as err:
+                except BleakDBusError:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
                             "Auto-reconnect cancelled after DBus failure due to shutdown/disable."

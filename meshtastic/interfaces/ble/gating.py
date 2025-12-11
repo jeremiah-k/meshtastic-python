@@ -1,6 +1,5 @@
 """Process-wide BLE connection gating utilities."""
 
-import time
 from threading import RLock
 from typing import Dict, Optional, Set
 
@@ -9,9 +8,6 @@ from meshtastic.interfaces.ble.utils import sanitize_address
 _REGISTRY_LOCK = RLock()
 _ADDR_LOCKS: Dict[str, RLock] = {}
 _CONNECTED_ADDRS: Set[str] = set()
-_RECENTLY_CONNECTED_TS: Dict[str, float] = {}
-
-POST_CONNECT_GRACE_SECONDS = 60.0
 
 
 def _addr_key(addr: Optional[str]) -> str:
@@ -37,10 +33,8 @@ def _mark_connected(key: str) -> None:
     """
     Track that the given normalized address is currently connected.
     """
-    now = time.time()
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.add(key)
-        _RECENTLY_CONNECTED_TS[key] = now
 
 
 def _mark_disconnected(key: str) -> None:
@@ -49,10 +43,9 @@ def _mark_disconnected(key: str) -> None:
     """
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.discard(key)
-        _RECENTLY_CONNECTED_TS.pop(key, None)
 
 
-def _is_recently_connected_elsewhere(key: str) -> bool:
+def _is_currently_connected_elsewhere(key: str) -> bool:
     """
     Return True when the address is currently connected by another interface.
     """

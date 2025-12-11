@@ -56,10 +56,9 @@ from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.discovery import DiscoveryManager, parse_scan_response
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
-    POST_CONNECT_GRACE_SECONDS,
     _addr_key,
     _get_addr_lock,
-    _is_recently_connected_elsewhere,
+    _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
 )
@@ -188,7 +187,9 @@ class BLEInterface(MeshInterface):
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator.create_event("shutdown_event")
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
-        self._ever_connected = False  # Track first successful connection to tune logging
+        self._ever_connected = (
+            False  # Track first successful connection to tune logging
+        )
 
         # Initialize parent interface
         MeshInterface.__init__(
@@ -348,7 +349,9 @@ class BLEInterface(MeshInterface):
                     self.thread_coordinator.start_thread(close_thread)
 
                 # Event coordination for reconnection
-                self.thread_coordinator.clear_events("read_trigger", "reconnected_event")
+                self.thread_coordinator.clear_events(
+                    "read_trigger", "reconnected_event"
+                )
                 self._schedule_auto_reconnect()
                 return True
             else:
@@ -812,7 +815,10 @@ class BLEInterface(MeshInterface):
         addr_key = _addr_key(requested_identifier)
 
         # Fast suppression if a recent connect happened elsewhere.
-        if _is_recently_connected_elsewhere(addr_key) and not self._state_manager.is_connected:
+        if (
+            _is_currently_connected_elsewhere(addr_key)
+            and not self._state_manager.is_connected
+        ):
             logger.info(
                 "Suppressing duplicate connect to %s: recently connected elsewhere.",
                 addr_key or "unknown",
@@ -822,11 +828,17 @@ class BLEInterface(MeshInterface):
         addr_lock = _get_addr_lock(addr_key)
         with addr_lock:
             # Re-check under the gate to avoid races.
-            if _is_recently_connected_elsewhere(addr_key) and not self._state_manager.is_connected:
+            if (
+                _is_currently_connected_elsewhere(addr_key)
+                and not self._state_manager.is_connected
+            ):
                 logger.info(
-                    "Duplicate connect to %s suppressed under gate.", addr_key or "unknown"
+                    "Duplicate connect to %s suppressed under gate.",
+                    addr_key or "unknown",
                 )
-                raise self.BLEError("Connection suppressed: recently connected elsewhere")
+                raise self.BLEError(
+                    "Connection suppressed: recently connected elsewhere"
+                )
 
             with self._connect_lock:
                 if self._closed or self.is_connection_closing:
@@ -873,9 +885,14 @@ class BLEInterface(MeshInterface):
                         self._last_connection_request = normalized_device_address
 
                 if previous_client and previous_client is not client:
-                    self._client_manager.update_client_reference(client, previous_client)
+                    self._client_manager.update_client_reference(
+                        client, previous_client
+                    )
 
-                _mark_connected(addr_key)
+                # Use the actual device address for gating to avoid permanent empty-key entries
+                device_key = _addr_key(device_address)
+                if device_key:
+                    _mark_connected(device_key)
                 # Mark that at least one successful connection has been established
                 self._ever_connected = True
                 self._read_retry_count = 0
@@ -976,7 +993,7 @@ class BLEInterface(MeshInterface):
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
-        except Exception as e:
+        except Exception:
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
             logger.exception("Unexpected fatal error in BLE receive thread")
             if not self._state_manager.is_closing:
