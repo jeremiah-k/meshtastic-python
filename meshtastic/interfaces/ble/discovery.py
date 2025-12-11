@@ -7,7 +7,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import List, Optional, Callable, Any, cast
 
-from bleak import BleakScanner, BLEDevice
+from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
@@ -134,17 +135,25 @@ class ConnectedStrategy(DiscoveryStrategy):
                         name=device.name,
                         details=metadata,
                     )
-                    # Preserve RSSI if provided by backend
+                    # Preserve RSSI if provided by backend and supported by BLEDevice constructor
                     if hasattr(device, "rssi"):
                         try:
-                            device_copy.rssi = device.rssi  # type: ignore[attr-defined]
-                        except AttributeError:  # pragma: no cover - best effort
+                            import inspect
+
+                            signature = inspect.signature(BLEDevice.__init__)
+                            if "rssi" in signature.parameters:
+                                device_copy.rssi = device.rssi  # type: ignore[attr-defined]
+                        except (
+                            AttributeError,
+                            TypeError,
+                        ):  # pragma: no cover - best effort
                             pass
                     devices_found.append(device_copy)
             else:
                 logger.debug(
                     "Connected-device enumeration not supported on this bleak backend."
                 )
+                return []
         except BleakDBusError as e:
             logger.warning(
                 "Connected device discovery failed due to DBus error: %s",
