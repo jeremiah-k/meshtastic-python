@@ -135,6 +135,7 @@ class BLEInterface(MeshInterface):
         self._state_manager = BLEStateManager()  # Centralized state tracking
         self._state_lock = self._state_manager.lock  # Direct access to unified lock
         self._connect_lock = threading.RLock()  # Serializes connection attempts
+        self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
@@ -272,86 +273,96 @@ class BLEInterface(MeshInterface):
         Returns:
             bool: `True` if the interface remains active and will attempt auto-reconnect, `False` if the interface has begun shutdown.
         """
-        # Use state manager for disconnect validation
-        current_state = self._state_manager.state
-        if current_state == ConnectionState.CONNECTING:
-            logger.debug(
-                "Ignoring disconnect from %s while a connection is in progress.", source
-            )
+        if not self._disconnect_lock.acquire(blocking=False):
+            logger.debug("Disconnect from %s ignored: already being handled.", source)
             return True
-        if self.is_connection_closing:
-            logger.debug("Ignoring disconnect from %s during shutdown.", source)
-            return False
+        try:
+            # Use state manager for disconnect validation
+            current_state = self._state_manager.state
+            if current_state == ConnectionState.CONNECTING:
+                logger.debug(
+                    "Ignoring disconnect from %s while a connection is in progress.",
+                    source,
+                )
+                return True
+            if self.is_connection_closing:
+                logger.debug("Ignoring disconnect from %s during shutdown.", source)
+                return False
 
-        # Determine which client we're dealing with
-        target_client = client
-        if not target_client and bleak_client:
-            # Find the BLEClient that contains this bleak_client
-            target_client = self.client
-            if (
-                target_client
-                and getattr(target_client, "bleak_client", None) is not bleak_client
-            ):
-                target_client = None
-
-        address = "unknown"
-        if target_client:
-            address = getattr(target_client, "address", repr(target_client))
-        elif bleak_client:
-            address = getattr(bleak_client, "address", repr(bleak_client))
-
-        logger.debug("BLE client %s disconnected (source: %s).", address, source)
-
-        if self.auto_reconnect:
-            previous_client = None
-            # Use unified state lock
-            with self._state_lock:
-                # Prevent duplicate disconnect notifications
-                if self._disconnect_notified:
-                    logger.debug("Ignoring duplicate disconnect from %s.", source)
-                    return True
-
-                current_client = self.client
-                # Ignore stale client disconnects (from previous connections)
+            # Determine which client we're dealing with
+            target_client = client
+            if not target_client and bleak_client:
+                # Find the BLEClient that contains this bleak_client
+                target_client = self.client
                 if (
                     target_client
-                    and current_client
-                    and target_client is not current_client
+                    and getattr(target_client, "bleak_client", None) is not bleak_client
                 ):
-                    logger.debug("Ignoring stale disconnect from %s.", source)
-                    return True
+                    target_client = None
 
-                previous_client = current_client
-                self.client = None
-                self._disconnect_notified = True
+            address = "unknown"
+            if target_client:
+                address = getattr(target_client, "address", repr(target_client))
+            elif bleak_client:
+                address = getattr(bleak_client, "address", repr(bleak_client))
 
-            # Transition to DISCONNECTED state on disconnect
-            if previous_client:
+            logger.debug("BLE client %s disconnected (source: %s).", address, source)
+
+            if self.auto_reconnect:
+                previous_client = None
+                # Use unified state lock
+                with self._state_lock:
+                    # Prevent duplicate disconnect notifications
+                    if self._disconnect_notified:
+                        logger.debug("Ignoring duplicate disconnect from %s.", source)
+                        return True
+
+                    current_client = self.client
+                    # Ignore stale client disconnects (from previous connections)
+                    if (
+                        target_client
+                        and current_client
+                        and target_client is not current_client
+                    ):
+                        logger.debug("Ignoring stale disconnect from %s.", source)
+                        return True
+
+                    previous_client = current_client
+                    self.client = None
+                    self._disconnect_notified = True
+
+                # Transition to DISCONNECTED state on disconnect
+                if previous_client:
+                    self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                    _mark_disconnected(
+                        _addr_key(getattr(previous_client, "address", self.address))
+                    )
+                    self._disconnected()
+                    # Close previous client asynchronously
+                    close_thread = self.thread_coordinator.create_thread(
+                        target=self._client_manager.safe_close_client,
+                        args=(previous_client,),
+                        name="BLEClientClose",
+                        daemon=True,
+                    )
+                    self.thread_coordinator.start_thread(close_thread)
+
+                # Event coordination for reconnection
+                self.thread_coordinator.clear_events("read_trigger", "reconnected_event")
+                self._schedule_auto_reconnect()
+                return True
+            else:
+                with self._state_lock:
+                    if not self._disconnect_notified:
+                        self._disconnect_notified = True
+                    self.client = None
                 self._state_manager.transition_to(ConnectionState.DISCONNECTED)
-                _mark_disconnected(
-                    _addr_key(getattr(previous_client, "address", self.address))
-                )
+                _mark_disconnected(_addr_key(address))
+                logger.debug("Auto-reconnect disabled, staying disconnected.")
                 self._disconnected()
-                # Close previous client asynchronously
-                close_thread = self.thread_coordinator.create_thread(
-                    target=self._client_manager.safe_close_client,
-                    args=(previous_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                )
-                self.thread_coordinator.start_thread(close_thread)
-
-            # Event coordination for reconnection
-            self.thread_coordinator.clear_events("read_trigger", "reconnected_event")
-            self._schedule_auto_reconnect()
-            return True
-        else:
-            # Transition to DISCONNECTING state when closing
-            self._state_manager.transition_to(ConnectionState.DISCONNECTING)
-            # Auto-reconnect disabled - close interface
-            logger.debug("Auto-reconnect disabled, closing interface.")
-            self.close()
-            return False
+                return False
+        finally:
+            self._disconnect_lock.release()
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """

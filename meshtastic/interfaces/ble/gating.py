@@ -11,7 +11,7 @@ _ADDR_LOCKS: Dict[str, RLock] = {}
 _CONNECTED_ADDRS: Set[str] = set()
 _RECENTLY_CONNECTED_TS: Dict[str, float] = {}
 
-POST_CONNECT_GRACE_SECONDS = 20.0
+POST_CONNECT_GRACE_SECONDS = 60.0
 
 
 def _addr_key(addr: Optional[str]) -> str:
