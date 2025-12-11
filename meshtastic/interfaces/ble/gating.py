@@ -47,16 +47,14 @@ def _mark_disconnected(key: str) -> None:
     """
     Track that the given normalized address has disconnected.
     """
-    now = time.time()
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.discard(key)
-        _RECENTLY_CONNECTED_TS[key] = now
+        _RECENTLY_CONNECTED_TS.pop(key, None)
 
 
 def _is_recently_connected_elsewhere(key: str) -> bool:
     """
-    Return True when the address was connected in the recent past.
+    Return True when the address is currently connected by another interface.
     """
     with _REGISTRY_LOCK:
-        ts = _RECENTLY_CONNECTED_TS.get(key, 0.0)
-    return (time.time() - ts) < POST_CONNECT_GRACE_SECONDS
+        return key in _CONNECTED_ADDRS
