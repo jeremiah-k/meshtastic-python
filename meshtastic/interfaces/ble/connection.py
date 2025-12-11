@@ -123,7 +123,7 @@ class ClientManager:
         """
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
-    def connect_client(self, client: "BLEClient") -> None:
+    def connect_client(self, client: "BLEClient", timeout: Optional[float] = None) -> None:
         """
         Connect the given BLE client and ensure its GATT services are available.
 
@@ -132,9 +132,10 @@ class ClientManager:
         Parameters:
             client (BLEClient): BLE client to connect and prepare for use.
         """
+        connect_timeout = timeout or BLEConfig.CONNECTION_TIMEOUT
         client.connect(
-            await_timeout=BLEConfig.CONNECTION_TIMEOUT,
-            timeout=BLEConfig.CONNECTION_TIMEOUT,
+            await_timeout=connect_timeout,
+            timeout=connect_timeout,
         )
         services = getattr(client.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
@@ -255,10 +256,15 @@ class ConnectionOrchestrator:
         try:
             if normalized_target:
                 client = self.client_manager.create_client(
-                    normalized_target, on_disconnect_func
+                    target_address, on_disconnect_func
                 )
                 try:
-                    self.client_manager.connect_client(client)
+                    direct_timeout = min(
+                        12.0, BLEConfig.CONNECTION_TIMEOUT
+                    )  # keep direct attempts short for known targets
+                    self.client_manager.connect_client(
+                        client, timeout=direct_timeout
+                    )
                     register_notifications_func(client)
                     if self.state_manager.state == ConnectionState.DISCONNECTED:
                         self.state_manager.transition_to(

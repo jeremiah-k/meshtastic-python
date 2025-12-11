@@ -978,13 +978,10 @@ class BLEInterface(MeshInterface):
                         return
         except Exception as e:
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
-            logger.exception("Fatal error in BLE receive thread, closing interface")
+            logger.exception("Unexpected fatal error in BLE receive thread")
             if not self._state_manager.is_closing:
-                # Use a thread to avoid deadlocks if close() waits for this thread
-                error_close_thread = self.thread_coordinator.create_thread(
-                    target=self.close, name="BLECloseOnError", daemon=True
-                )
-                self.thread_coordinator.start_thread(error_close_thread)
+                # Mark disconnected so auto-reconnect can proceed without forcing close().
+                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
         except BaseException:
             # Propagate system-level exceptions
             raise
