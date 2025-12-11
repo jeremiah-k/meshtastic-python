@@ -52,7 +52,7 @@ def parse_scan_response(
                 type(value),
             )
             continue
-        
+
         # Check for Service UUID
         suuids = getattr(adv, "service_uuids", None)
         has_service = suuids and SERVICE_UUID in suuids
@@ -158,8 +158,6 @@ class ConnectedStrategy(DiscoveryStrategy):
                     # Preserve RSSI if provided by backend and supported by BLEDevice constructor
                     if hasattr(device, "rssi"):
                         try:
-                            import inspect
-
                             signature = inspect.signature(BLEDevice.__init__)
                             if "rssi" in signature.parameters:
                                 device_copy.rssi = device.rssi  # type: ignore[attr-defined]
@@ -236,11 +234,11 @@ class DiscoveryManager:
                     "Scanning for BLE devices (takes %.0f seconds)...",
                     BLEConfig.BLE_SCAN_TIMEOUT,
                 )
-                
+
                 # If we are looking for a specific address, scan everything to ensure we find it
                 # even if the Service UUID is missing from the advertisement.
                 scan_uuids = [SERVICE_UUID] if not sanitized_target else None
-                
+
                 response = client.discover(
                     timeout=BLEConfig.BLE_SCAN_TIMEOUT,
                     return_adv=True,
@@ -250,7 +248,9 @@ class DiscoveryManager:
                     "Scan completed in %.2f seconds", time.monotonic() - scan_start
                 )
 
-                devices = parse_scan_response(response, whitelist_address=sanitized_target)
+                devices = parse_scan_response(
+                    response, whitelist_address=sanitized_target
+                )
             except BleakDBusError as e:
                 # Bubble up BlueZ/DBus failures so callers can back off more aggressively
                 logger.warning(
@@ -266,19 +266,6 @@ class DiscoveryManager:
                     "Unexpected error during device discovery: %s", e, exc_info=True
                 )
                 devices = []
-
-            # If caller requested a specific address/name, filter here so we can
-            # fall back to connected-device enumeration when no match is found.
-            if sanitized_target:
-                devices = [
-                    d
-                    for d in devices
-                    if sanitized_target
-                    in (
-                        BLEClient._sanitize_address(d.address),
-                        BLEClient._sanitize_address(d.name),
-                    )
-                ]
 
             if not devices and address:
                 logger.debug(

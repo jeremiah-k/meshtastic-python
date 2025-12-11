@@ -265,7 +265,9 @@ class BLEInterface(MeshInterface):
         # Use state manager for disconnect validation
         current_state = self._state_manager.state
         if current_state == ConnectionState.CONNECTING:
-            logger.debug("Ignoring disconnect from %s while a connection is in progress.", source)
+            logger.debug(
+                "Ignoring disconnect from %s while a connection is in progress.", source
+            )
             return True
         if self.is_connection_closing:
             logger.debug("Ignoring disconnect from %s during shutdown.", source)
@@ -677,11 +679,8 @@ class BLEInterface(MeshInterface):
             BLEInterface.BLEError: If no Meshtastic devices are found, or if `address` was provided and multiple matching devices are found.
         """
 
-        try:
-            addressed_devices = self._discovery_manager.discover_devices(address)
-        except BleakDBusError:
-            # Surface DBus failures to allow higher-level backoff
-            raise
+        # Surface DBus failures to allow higher-level backoff
+        addressed_devices = self._discovery_manager.discover_devices(address)
 
         if len(addressed_devices) == 0:
             if address:
