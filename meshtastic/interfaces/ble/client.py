@@ -406,7 +406,7 @@ class BLEClient:
             else:
                 logger.debug("Event loop already closed; skipping future cancellation")
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
-        except CancelledError as e:
+        except (CancelledError, asyncio.CancelledError) as e:
             # Propagate as timeout-style BLEError so callers handle uniformly
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         finally:

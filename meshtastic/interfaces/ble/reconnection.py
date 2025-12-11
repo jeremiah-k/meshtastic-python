@@ -8,7 +8,7 @@ from bleak.exc import BleakDBusError
 from meshtastic.interfaces.ble.constants import BLEConfig, DBUS_ERROR_RECONNECT_DELAY
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
-from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface

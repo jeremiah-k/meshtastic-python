@@ -55,7 +55,7 @@ def parse_scan_response(
 
         # Check for Service UUID
         suuids = getattr(adv, "service_uuids", None)
-        has_service = suuids and SERVICE_UUID in suuids
+        has_service = SERVICE_UUID in (suuids or [])
 
         # Check for whitelist match if provided
         matches_whitelist = False

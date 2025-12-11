@@ -3,7 +3,6 @@
 import asyncio
 import atexit
 import contextlib
-from concurrent.futures import CancelledError
 import io
 import logging
 import struct
@@ -689,7 +688,7 @@ class BLEInterface(MeshInterface):
                     "No peripherals found for %s via scan; attempting direct address connect",
                     address,
                 )
-                return BLEDevice(address=address, name=address, details=None)
+                return BLEDevice(address=address, name=address, details={})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
@@ -907,9 +906,8 @@ class BLEInterface(MeshInterface):
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
-                    except CancelledError as e:
-                        # Future cancelled during read; treat as disconnect and exit loop gracefully
-                        if self._handle_read_loop_disconnect("cancelled read", client):
+                    except asyncio.CancelledError as e:  # pragma: no cover - defensive
+                        if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
         except Exception as e:
