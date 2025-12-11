@@ -64,9 +64,9 @@ class ReconnectScheduler:
         if not auto_reconnect:
             return False
         # Use state manager instead of boolean flag
-        if self.state_manager.is_closing:
+        if self.state_manager.is_closing or not self.state_manager.can_connect:
             logger.debug(
-                "Skipping auto-reconnect scheduling because interface is closing."
+                "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
             )
             return False
 
@@ -140,6 +140,14 @@ class ReconnectWorker:
                         "Auto-reconnect aborted because interface is closing or disabled."
                     )
                     return
+                state_mgr = getattr(self.interface, "_state_manager", None)
+                if state_mgr is not None and getattr(state_mgr, "can_connect", True) is False:
+                    # Another connect in progress; wait briefly without consuming a retry
+                    logger.debug(
+                        "Auto-reconnect waiting: connection already in progress."
+                    )
+                    sleep_fn(BLEConfig.SEND_PROPAGATION_DELAY)
+                    continue
                 try:
                     attempt_num = self.reconnect_policy.get_attempt_count() + 1
                     logger.info(
