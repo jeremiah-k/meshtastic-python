@@ -22,6 +22,9 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.utils import sanitize_address
 
+_zombie_thread_count = 0
+_ZOMBIE_THREAD_WARN_THRESHOLD = 5
+
 
 class BLEClient:
     """
@@ -30,6 +33,9 @@ class BLEClient:
     This class provides a synchronous interface to Bleak's async operations by running
     an internal event loop in a dedicated thread. It handles the complexity of
     asyncio-to-thread synchronization while providing a simple API for BLE operations.
+    When the underlying BLE stack blocks indefinitely the event thread may fail to exit;
+    such occurrences are counted via get_zombie_thread_count() so operators can decide
+    when a process restart is needed to reclaim BLE/DBus resources.
     """
 
     # Class-level fallback so callers using __new__ still get the right exception type
@@ -352,10 +358,18 @@ class BLEClient:
         if thread:
             thread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():
+            global _zombie_thread_count
+            _zombie_thread_count += 1
             logger.error(
-                "BLE event thread did not exit within %.1fs and may leak resources",
+                "BLE event thread did not exit within %.1fs and may leak resources (total zombies: %d)",
                 BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
+                _zombie_thread_count,
             )
+            if _zombie_thread_count >= _ZOMBIE_THREAD_WARN_THRESHOLD:
+                logger.warning(
+                    "Multiple zombie BLE threads detected (%d). Consider restarting the process to recover resources.",
+                    _zombie_thread_count,
+                )
         elif loop and not loop.is_closed():
             # Ensure loop resources are released when the thread exits normally
             loop.close()
@@ -480,3 +494,10 @@ class BLEClient:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         loop.stop()
+
+
+def get_zombie_thread_count() -> int:
+    """
+    Return the number of BLE event threads that failed to stop cleanly.
+    """
+    return _zombie_thread_count

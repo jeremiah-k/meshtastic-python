@@ -239,7 +239,11 @@ class ConnectionOrchestrator:
 
         target_address = address if address is not None else current_address
         logger.info("Attempting to connect to %s", target_address or "any")
-        self.state_manager.transition_to(ConnectionState.CONNECTING)
+        with self.state_lock:
+            if not self.state_manager.transition_to(ConnectionState.CONNECTING):
+                raise self.interface.BLEError(
+                    "Already connected or connection in progress"
+                )
 
         client: Optional["BLEClient"] = None
         try:

@@ -143,17 +143,6 @@ class ReconnectWorker:
                         "Auto-reconnect aborted because interface is closing or disabled."
                     )
                     return
-                state_mgr = getattr(self.interface, "_state_manager", None)
-                if (
-                    state_mgr is not None
-                    and getattr(state_mgr, "can_connect", True) is False
-                ):
-                    # Another connect in progress; wait briefly without consuming a retry
-                    logger.debug(
-                        "Auto-reconnect waiting: connection already in progress."
-                    )
-                    sleep_fn(max(1.0, BLEConfig.SEND_PROPAGATION_DELAY))
-                    continue
                 attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
                     logger.info(

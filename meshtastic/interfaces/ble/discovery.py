@@ -130,7 +130,6 @@ class ConnectedStrategy(DiscoveryStrategy):
                         "connected-device enumeration",
                     )
                 else:
-                    loop = asyncio.get_running_loop()
                     backend_devices = await BLEClient._with_timeout(
                         loop.run_in_executor(None, getter),
                         timeout,
@@ -221,7 +220,7 @@ class DiscoveryManager:
                 try:
                     self._client.close()
                 except Exception:  # pragma: no cover - best effort cleanup
-                    logger.debug(
+                    logger.warning(
                         "Error closing stale discovery client", exc_info=True
                     )
                 finally:
