@@ -4,6 +4,8 @@ import logging
 from threading import Event, RLock
 from typing import Optional
 
+from bleak.exc import BleakDBusError
+
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
@@ -244,6 +246,10 @@ class ConnectionOrchestrator:
             )
             self.client_manager.connect_client(client)
             register_notifications_func(client)
+            # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
+            # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
+            if self.state_manager.state == ConnectionState.DISCONNECTED:
+                self.state_manager.transition_to(ConnectionState.CONNECTING, client)
             self.state_manager.transition_to(ConnectionState.CONNECTED, client)
             on_connected_func()
             self.thread_coordinator.set_event("reconnected_event")
