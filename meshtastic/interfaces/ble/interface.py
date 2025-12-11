@@ -3,6 +3,7 @@
 import asyncio
 import atexit
 import contextlib
+from concurrent.futures import CancelledError
 import io
 import logging
 import struct
@@ -904,6 +905,11 @@ class BLEInterface(MeshInterface):
                         continue
                     except BLEClient.BLEError as e:
                         if self._handle_read_loop_disconnect(str(e), client):
+                            break
+                        return
+                    except CancelledError as e:
+                        # Future cancelled during read; treat as disconnect and exit loop gracefully
+                        if self._handle_read_loop_disconnect("cancelled read", client):
                             break
                         return
         except Exception as e:

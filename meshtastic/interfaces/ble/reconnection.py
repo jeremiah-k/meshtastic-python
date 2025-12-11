@@ -181,7 +181,7 @@ class ReconnectWorker:
                             "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
                         )
                         return
-                    logger.exception(
+                    logger.error(
                         "DBus error during auto-reconnect attempt %d: %s",
                         attempt_num,
                         err,
@@ -189,6 +189,10 @@ class ReconnectWorker:
                     # Use longer delay for DBus errors to allow system Bluetooth stack to recover
                     override_delay = max(
                         override_delay or 0, DBUS_ERROR_RECONNECT_DELAY
+                    )
+                    # Transition to DISCONNECTED to ensure clean retry after backoff
+                    self.interface._state_manager.transition_to(
+                        ConnectionState.DISCONNECTED
                     )
                 except Exception:
                     if self.interface.is_connection_closing or not auto_reconnect:

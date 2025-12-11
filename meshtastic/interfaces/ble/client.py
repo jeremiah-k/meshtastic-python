@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import weakref
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Thread
 from typing import Any, Optional, Type
@@ -405,6 +405,9 @@ class BLEClient:
                     )
             else:
                 logger.debug("Event loop already closed; skipping future cancellation")
+            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+        except CancelledError as e:
+            # Propagate as timeout-style BLEError so callers handle uniformly
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         finally:
             if hasattr(self, "_pending_futures"):
