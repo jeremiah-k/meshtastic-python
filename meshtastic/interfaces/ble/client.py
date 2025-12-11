@@ -7,7 +7,9 @@ import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Thread
-from typing import Any, Optional, Type
+from typing import Awaitable, Coroutine, Optional, Union
+from uuid import UUID
+
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
@@ -81,7 +83,7 @@ class BLEClient:
             raise BLEClient.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
 
     def __init__(
-        self, address=None, *, log_if_no_address: bool = True, **kwargs
+        self, address: Optional[str] = None, *, log_if_no_address: bool = True, **kwargs
     ) -> None:
         """
         Initialize the BLEClient, creating a dedicated asyncio event loop and background thread and optionally attaching a Bleak client for a specific device address.
@@ -102,7 +104,7 @@ class BLEClient:
         self.bleak_client: Optional[BleakRootClient] = None
         self.address = address
         self._closed = False
-        self._pending_futures = weakref.WeakSet()
+        self._pending_futures: weakref.WeakSet[Future] = weakref.WeakSet()
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
         self._eventLoop.set_exception_handler(self._handle_loop_exception)
@@ -260,7 +262,7 @@ class BLEClient:
             raise self.BLEError("Cannot get services: BLE client not initialized")
         return self.async_await(self.bleak_client.get_services(**kwargs))
 
-    def has_characteristic(self, specifier):
+    def has_characteristic(self, specifier: "Union[str, 'UUID']"):
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -391,7 +393,7 @@ class BLEClient:
         """
         self.close()
 
-    def async_await(self, coro, timeout=None):  # pylint: disable=C0116
+    def async_await(self, coro: "Awaitable", timeout: Optional[float] = None):  # pylint: disable=C0116
         """
         Wait for the given coroutine to complete on the client's event loop and return its result.
 
@@ -414,7 +416,7 @@ class BLEClient:
         # Exception mapping contract:
         #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
-        future = self.async_run(coro)
+        future = self.async_run(coro)  # type: ignore[arg-type]
         if hasattr(self, "_pending_futures"):
             self._pending_futures.add(future)
         try:
@@ -452,7 +454,7 @@ class BLEClient:
             if hasattr(self, "_pending_futures"):
                 self._pending_futures.discard(future)
 
-    def async_run(self, coro):  # pylint: disable=C0116
+    def async_run(self, coro: "Coroutine") -> "Future":  # pylint: disable=C0116
         """
         Schedule a coroutine on the client's internal asyncio event loop.
 
@@ -465,7 +467,7 @@ class BLEClient:
             concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
 
         """
-        return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
+        return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)  # type: ignore[arg-type]
 
     def _run_event_loop(self):
         """
@@ -488,7 +490,9 @@ class BLEClient:
         """
         Cancel pending tasks on the given loop and stop it once they are drained.
         """
-        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop)]
+        tasks = [
+            t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop)
+        ]
         for task in tasks:
             task.cancel()
         if tasks:

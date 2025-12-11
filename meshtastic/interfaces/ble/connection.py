@@ -2,7 +2,7 @@
 
 import logging
 from threading import Event, RLock
-from typing import Optional
+from typing import Callable, Optional
 
 from bleak.exc import BleakDBusError
 
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("meshtastic.ble")
 
+
 class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
 
@@ -27,7 +28,7 @@ class ConnectionValidator:
     ):
         """
         Initialize the ConnectionValidator with the BLE state manager and its lock.
-        
+
         Parameters:
             state_manager (BLEStateManager): Manager responsible for BLE connection state and transitions.
             state_lock (RLock): Reentrant lock used to synchronize access to the shared state.
@@ -40,7 +41,7 @@ class ConnectionValidator:
     def validate_connection_request(self) -> None:
         """
         Validate that initiating a new BLE connection is permitted.
-        
+
         Raises:
             BLEInterface.BLEError: If the interface is closing (message: "Cannot connect while interface is closing")
                 or if a connection is already established or in progress (message: "Already connected or connection in progress").
@@ -59,13 +60,13 @@ class ConnectionValidator:
     ) -> bool:
         """
         Check whether the provided client is connected and corresponds to the requested or known target address.
-        
+
         Parameters:
             client (Optional[BLEClient]): The client to check.
             normalized_request (Optional[str]): A sanitized identifier for the desired target; if None the function treats any connected client as matching.
             last_connection_request (Optional[str]): The last-sent sanitized connection request to include among known targets.
             address (Optional[str]): The address originally requested for connection; included among known targets after normalization.
-        
+
         Returns:
             `True` if the client is connected and its address matches `normalized_request` or one of the known targets, `False` otherwise.
         """
@@ -82,6 +83,7 @@ class ConnectionValidator:
             normalized_request is None or normalized_request in normalized_known_targets
         )
 
+
 class ClientManager:
     """Helper for creating, connecting, and closing BLEClient instances."""
 
@@ -94,7 +96,7 @@ class ClientManager:
     ):
         """
         Initialize the ClientManager with the objects required to manage BLE client lifecycle.
-        
+
         Parameters:
             state_manager (BLEStateManager): Manager that tracks BLE connection state and current client.
             state_lock (RLock): Reentrant lock protecting access to shared BLE state.
@@ -106,14 +108,16 @@ class ClientManager:
         self.thread_coordinator = thread_coordinator
         self.error_handler = error_handler
 
-    def create_client(self, device_address: str, disconnect_callback) -> "BLEClient":
+    def create_client(
+        self, device_address: str, disconnect_callback: "Callable"
+    ) -> "BLEClient":
         """
         Create a BLEClient configured for the specified device address and disconnect callback.
-        
+
         Parameters:
             device_address (str): The BLE device address to connect to.
             disconnect_callback (callable): Function to be called when the client disconnects.
-        
+
         Returns:
             ble_client (BLEClient): A new BLEClient instance bound to the given address with the provided disconnect callback.
         """
@@ -122,9 +126,9 @@ class ClientManager:
     def connect_client(self, client: "BLEClient") -> None:
         """
         Connect the given BLE client and ensure its GATT services are available.
-        
+
         If services are not immediately present on the underlying bleak client, this will request service discovery so the client has usable service/characteristic information.
-        
+
         Parameters:
             client (BLEClient): BLE client to connect and prepare for use.
         """
@@ -146,9 +150,9 @@ class ClientManager:
     ) -> None:
         """
         Schedule safe closure of a previous BLE client when it is being replaced.
-        
+
         If `old_client` is provided and is not the same object as `new_client`, this schedules a background daemon thread to invoke safe closure of `old_client`.
-        
+
         Parameters:
             new_client (BLEClient): The client that will become the active client.
             old_client (Optional[BLEClient]): The previous client to close if it differs from `new_client`.
@@ -168,9 +172,9 @@ class ClientManager:
     ) -> None:
         """
         Close the given BLE client and suppress errors raised during shutdown.
-        
+
         If provided, sets the given event after attempting to close the client to signal completion.
-        
+
         Parameters:
             client (BLEClient): The client to close.
             event (Optional[Event]): Event to set after closing to indicate the operation finished.
@@ -178,6 +182,7 @@ class ClientManager:
         self.error_handler.safe_cleanup(client.close, "client close")
         if event:
             event.set()
+
 
 class ConnectionOrchestrator:
     """Coordinate discovery, validation, and notification setup for new connections."""
@@ -194,7 +199,7 @@ class ConnectionOrchestrator:
     ):
         """
         Initialize a ConnectionOrchestrator with its required BLE components and coordination helpers.
-        
+
         Parameters:
             interface (BLEInterface): BLE interface used for device discovery and low-level operations.
             validator (ConnectionValidator): Performs pre-connection validation checks.
@@ -216,22 +221,22 @@ class ConnectionOrchestrator:
         self,
         address: Optional[str],
         current_address: Optional[str],
-        register_notifications_func,
-        on_connected_func,
-        on_disconnect_func,
+        register_notifications_func: "Callable",
+        on_connected_func: "Callable",
+        on_disconnect_func: "Callable",
     ) -> "BLEClient":
         """
         Establishes a BLE connection to a target device, registers notifications, and invokes lifecycle callbacks.
-        
+
         If `address` is provided it is used as the connection target; otherwise `current_address` is used. Transitions the connection state through CONNECTING to CONNECTED on success, sets the "reconnected_event" on the thread coordinator, and invokes `on_connected_func`. On failure the method closes any partially created client, transitions the state to ERROR and then DISCONNECTED, and re-raises the exception.
-        
+
         Parameters:
             address (Optional[str]): Explicit device address to connect to; if None `current_address` will be used.
             current_address (Optional[str]): Fallback device address when `address` is None.
             register_notifications_func (callable): Function called with the connected `BLEClient` to register notification handlers.
             on_connected_func (callable): Callback invoked once the connection is established and state is updated to CONNECTED.
             on_disconnect_func (callable): Callback passed to the `BLEClient` to be invoked when the client disconnects.
-        
+
         Returns:
             BLEClient: The connected BLE client instance.
         """
@@ -250,7 +255,7 @@ class ConnectionOrchestrator:
         try:
             if normalized_target:
                 client = self.client_manager.create_client(
-                    target_address, on_disconnect_func
+                    normalized_target, on_disconnect_func
                 )
                 try:
                     self.client_manager.connect_client(client)
@@ -259,9 +264,7 @@ class ConnectionOrchestrator:
                         self.state_manager.transition_to(
                             ConnectionState.CONNECTING, client
                         )
-                    self.state_manager.transition_to(
-                        ConnectionState.CONNECTED, client
-                    )
+                    self.state_manager.transition_to(ConnectionState.CONNECTED, client)
                     on_connected_func()
                     if getattr(self.interface, "_ever_connected", False):
                         self.thread_coordinator.set_event("reconnected_event")
@@ -309,7 +312,9 @@ class ConnectionOrchestrator:
             self.state_manager.transition_to(ConnectionState.DISCONNECTED)
             raise
         except Exception:
-            logger.warning("Failed to connect, closing BLEClient thread.", exc_info=True)
+            logger.warning(
+                "Failed to connect, closing BLEClient thread.", exc_info=True
+            )
             if client:
                 self.client_manager.safe_close_client(client)
             self.state_manager.transition_to(ConnectionState.ERROR)
