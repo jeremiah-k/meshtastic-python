@@ -1,6 +1,7 @@
 """BLE client management and async operations."""
 
 import asyncio
+import contextlib
 import logging
 import weakref
 from concurrent.futures import CancelledError, Future
@@ -323,29 +324,41 @@ class BLEClient:
                 if not future.done():
                     future.cancel()
 
+        loop = getattr(self, "_eventLoop", None)
+        thread = getattr(self, "_eventThread", None)
+
         # Attempt to cancel all tasks and stop the loop cleanly
-        if self._eventLoop and not self._eventLoop.is_closed():
-            def _shutdown_loop(loop):
-                for task in asyncio.all_tasks(loop):
-                    task.cancel()
-                loop.stop()
+        if loop and not loop.is_closed() and loop.is_running():
+            shutdown_coro = self._shutdown_event_loop(loop)
+            try:
+                fut = asyncio.run_coroutine_threadsafe(shutdown_coro, loop)
+                fut.result(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
+            except (RuntimeError, FutureTimeoutError):
+                # Loop is already stopping/closed or did not respond in time; fall back to stop request.
+                shutdown_coro.close()
+                with contextlib.suppress(Exception):
+                    loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                shutdown_coro.close()
+                logger.debug(
+                    "Error scheduling BLE loop shutdown; forcing stop", exc_info=True
+                )
+                with contextlib.suppress(Exception):
+                    loop.call_soon_threadsafe(loop.stop)
+        elif loop and not loop.is_closed():
+            with contextlib.suppress(Exception):
+                loop.call_soon_threadsafe(loop.stop)
 
-            self._eventLoop.call_soon_threadsafe(_shutdown_loop, self._eventLoop)
-
-        try:
-            self.async_run(self._stop_event_loop())
-        except RuntimeError:
-            # Event loop may already be closed; treat as best-effort shutdown.
-            return
-        self._eventThread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
+        if thread:
+            thread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if self._eventThread.is_alive():
             logger.error(
                 "BLE event thread did not exit within %.1fs and may leak resources",
                 BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
             )
-        elif self._eventLoop and not self._eventLoop.is_closed():
+        elif loop and not loop.is_closed():
             # Ensure loop resources are released when the thread exits normally
-            self._eventLoop.call_soon_threadsafe(self._eventLoop.close)
+            loop.close()
 
     def __enter__(self):
         """
@@ -456,3 +469,14 @@ class BLEClient:
         Request the internal event loop to stop.
         """
         self._eventLoop.stop()
+
+    async def _shutdown_event_loop(self, loop: asyncio.AbstractEventLoop):
+        """
+        Cancel pending tasks on the given loop and stop it once they are drained.
+        """
+        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop)]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        loop.stop()
