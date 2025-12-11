@@ -181,7 +181,7 @@ class ReconnectWorker:
                             "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
                         )
                         return
-                    logger.error(
+                    logger.exception(
                         "DBus error during auto-reconnect attempt %d: %s",
                         attempt_num,
                         err,

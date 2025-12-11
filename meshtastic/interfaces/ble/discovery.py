@@ -48,6 +48,7 @@ def parse_scan_response(response: Any) -> List[BLEDevice]:
             devices.append(device)
     return devices
 
+
 class DiscoveryStrategy(ABC):
     """Abstract base class for device discovery strategies."""
 
@@ -55,14 +56,15 @@ class DiscoveryStrategy(ABC):
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
         Discover BLE devices using the strategy's underlying mechanism (scan, connected enumeration, cache, etc.).
-        
+
         Parameters:
             address (Optional[str]): Optional target address or device name to filter results; comparisons use sanitized forms.
             timeout (float): Maximum time in seconds to wait for backend device enumeration.
-        
+
         Returns:
             List[BLEDevice]: Discovered devices that advertise the module's SERVICE_UUID and, if `address` is provided, match the sanitized address or name. Returns an empty list on error.
         """
+
 
 class ConnectedStrategy(DiscoveryStrategy):
     """Device discovery strategy that enumerates already-connected devices."""
@@ -70,11 +72,11 @@ class ConnectedStrategy(DiscoveryStrategy):
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
         Enumerates already-connected BLE devices via the Bleak backend (when supported) and returns those advertising the configured service UUID, optionally filtered by address or name.
-        
+
         Parameters:
             address (Optional[str]): Target BLE address or device name to filter results; comparison uses the same sanitation applied by the BLE client. If None, no address/name filtering is applied.
             timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
-        
+
         Returns:
             List[BLEDevice]: Connected devices that advertise SERVICE_UUID and match the optional address/name filter. Returns an empty list if the Bleak backend does not support connected-device enumeration or if an error occurs.
         """
@@ -143,17 +145,27 @@ class ConnectedStrategy(DiscoveryStrategy):
                 logger.debug(
                     "Connected-device enumeration not supported on this bleak backend."
                 )
-            return devices_found
         except BleakDBusError as e:
-            logger.warning("Connected device discovery failed due to DBus error: %s", e, exc_info=True)
+            logger.warning(
+                "Connected device discovery failed due to DBus error: %s",
+                e,
+                exc_info=True,
+            )
             raise
         except (BleakError, RuntimeError) as e:
             logger.warning("Connected device discovery failed: %s", e, exc_info=True)
             return []
         except Exception as e:  # pragma: no cover - defensive last resort
             # Defensive last resort to keep discovery best-effort
-            logger.warning("Unexpected error during connected device discovery: %s", e, exc_info=True)
+            logger.warning(
+                "Unexpected error during connected device discovery: %s",
+                e,
+                exc_info=True,
+            )
             return []
+        else:
+            return devices_found
+
 
 class DiscoveryManager:
     """Orchestrates scanning + connected-device fallback logic."""
@@ -161,7 +173,7 @@ class DiscoveryManager:
     def __init__(self, client_factory=None):
         """
         Initialize the DiscoveryManager.
-        
+
         Parameters:
             client_factory (optional): Callable or class used to construct BLE client instances; primarily provided for testing or to override the default BLE client.
         """
@@ -172,10 +184,10 @@ class DiscoveryManager:
     def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
         """
         Discover BLE devices advertising the configured service UUID, and if a target address or name is provided and the scan finds no matches, attempt a fallback enumeration of already-connected devices.
-        
+
         Parameters:
             address (Optional[str]): Bluetooth address or device name to filter results; when provided, triggers a connected-device fallback if the scan yields no matching devices.
-        
+
         Returns:
             List[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
         """
@@ -200,19 +212,25 @@ class DiscoveryManager:
                     return_adv=True,
                     service_uuids=[SERVICE_UUID],
                 )
-                logger.debug("Scan completed in %.2f seconds", time.monotonic() - scan_start)
+                logger.debug(
+                    "Scan completed in %.2f seconds", time.monotonic() - scan_start
+                )
 
                 devices = parse_scan_response(response)
             except BleakDBusError as e:
                 # Bubble up BlueZ/DBus failures so callers can back off more aggressively
-                logger.warning("Device discovery failed due to DBus error: %s", e, exc_info=True)
+                logger.warning(
+                    "Device discovery failed due to DBus error: %s", e, exc_info=True
+                )
                 raise
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device discovery failed: %s", e, exc_info=True)
                 devices = []
             except Exception as e:  # pragma: no cover - defensive last resort
                 # Defensive last resort to keep discovery best-effort
-                logger.warning("Unexpected error during device discovery: %s", e, exc_info=True)
+                logger.warning(
+                    "Unexpected error during device discovery: %s", e, exc_info=True
+                )
                 devices = []
 
             # If caller requested a specific address/name, filter here so we can
@@ -241,7 +259,9 @@ class DiscoveryManager:
                     )
                     devices.extend(fallback)
                 except Exception as e:  # pragma: no cover - best effort logging
-                    logger.warning("Connected device fallback failed: %s", e, exc_info=True)
+                    logger.warning(
+                        "Connected device fallback failed: %s", e, exc_info=True
+                    )
                     if inspect.iscoroutine(connected_coro):
                         connected_coro.close()
 
