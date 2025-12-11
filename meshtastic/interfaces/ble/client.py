@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import weakref
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import Thread
@@ -9,6 +10,7 @@ from typing import Any, Optional, Type
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
+from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
@@ -91,8 +93,10 @@ class BLEClient:
         self.bleak_client: Optional[BleakRootClient] = None
         self.address = address
         self._closed = False
+        self._pending_futures = weakref.WeakSet()
         # Create dedicated event loop for this client instance
         self._eventLoop = asyncio.new_event_loop()
+        self._eventLoop.set_exception_handler(self._handle_loop_exception)
         # Start event loop in background thread for async operations
         self._eventThread = Thread(
             target=self._run_event_loop, name="BLEClient", daemon=True
@@ -296,6 +300,20 @@ class BLEClient:
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
 
+    def _handle_loop_exception(self, loop, context):
+        """
+        Custom exception handler for the asyncio event loop to suppress benign errors during shutdown/disconnect.
+        """
+        exception = context.get("exception")
+        if exception and isinstance(exception, BleakDBusError):
+            # Suppress DBus errors that happen as unretrieved task exceptions,
+            # especially "Operation failed with ATT error: 0x0e" which happens on disconnect.
+            logger.debug("Suppressing BleakDBusError in BLE event loop: %s", exception)
+            return
+
+        # Default behavior for other exceptions
+        loop.default_exception_handler(context)
+
     def close(self):  # pylint: disable=C0116
         """
         Shuts down the client's asyncio event loop and its background thread.
@@ -306,6 +324,12 @@ class BLEClient:
         if getattr(self, "_closed", False):
             return
         self._closed = True
+
+        # Cancel any pending futures to unblock waiting threads immediately
+        if hasattr(self, "_pending_futures"):
+            for future in list(self._pending_futures):
+                if not future.done():
+                    future.cancel()
 
         try:
             self.async_run(self._stop_event_loop())
@@ -360,6 +384,8 @@ class BLEClient:
         #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
         future = self.async_run(coro)
+        if hasattr(self, "_pending_futures"):
+            self._pending_futures.add(future)
         try:
             return future.result(timeout)
         except (FutureTimeoutError, RuntimeError) as e:
@@ -385,6 +411,9 @@ class BLEClient:
             else:
                 logger.debug("Event loop already closed; skipping future cancellation")
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+        finally:
+            if hasattr(self, "_pending_futures"):
+                self._pending_futures.discard(future)
 
     def async_run(self, coro):  # pylint: disable=C0116
         """
