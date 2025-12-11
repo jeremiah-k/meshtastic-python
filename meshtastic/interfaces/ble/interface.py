@@ -263,6 +263,10 @@ class BLEInterface(MeshInterface):
             bool: `True` if the interface remains active and will attempt auto-reconnect, `False` if the interface has begun shutdown.
         """
         # Use state manager for disconnect validation
+        current_state = self._state_manager.state
+        if current_state == ConnectionState.CONNECTING:
+            logger.debug("Ignoring disconnect from %s while a connection is in progress.", source)
+            return True
         if self.is_connection_closing:
             logger.debug("Ignoring disconnect from %s during shutdown.", source)
             return False
