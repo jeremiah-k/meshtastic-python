@@ -4,7 +4,7 @@ import logging
 from threading import Event, RLock, Thread
 from typing import Optional, TYPE_CHECKING
 
-from bleak.exc import BleakDBusError
+from bleak.exc import BleakDBusError, BleakError
 from meshtastic.interfaces.ble.constants import BLEConfig, DBUS_ERROR_RECONNECT_DELAY
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
@@ -194,6 +194,19 @@ class ReconnectWorker:
                     self.interface._state_manager.transition_to(
                         ConnectionState.DISCONNECTED
                     )
+                except BleakError as err:
+                    if self.interface.is_connection_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after bleak failure due to shutdown/disable."
+                        )
+                        return
+                    logger.warning(
+                        "Auto-reconnect attempt %d failed with BLE error: %s",
+                        attempt_num,
+                        err,
+                    )
+                    # Give the adapter a brief respite before retrying other errors
+                    override_delay = max(override_delay or 0, BLEConfig.SEND_PROPAGATION_DELAY)
                 except Exception:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
