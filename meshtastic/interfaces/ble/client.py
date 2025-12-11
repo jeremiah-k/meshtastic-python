@@ -368,11 +368,16 @@ class BLEClient:
             except Exception:  # pragma: no cover - defensive
                 logger.debug("Failed to cancel BLE future after timeout/loop-close", exc_info=True)
             # Consume any late exceptions to avoid "Task exception was never retrieved"
-            future.add_done_callback(
-                lambda f: f.exception()
-                if not f.cancelled()
-                else None  # pragma: no cover - best effort suppression
-            )
+            if not self._eventLoop.is_closed():
+                try:
+                    future.add_done_callback(
+                        lambda f: f.exception()
+                        if not f.cancelled()
+                        else None  # pragma: no cover - best effort suppression
+                    )
+                except RuntimeError:
+                    # Event loop may be closing; ignore best-effort callback registration
+                    pass
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
 
     def async_run(self, coro):  # pylint: disable=C0116

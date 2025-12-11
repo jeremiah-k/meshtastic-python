@@ -251,6 +251,12 @@ class ConnectionOrchestrator:
             logger.info(
                 "Connection successful to %s", normalized_device_address or "unknown"
             )
+        except BleakDBusError:
+            if client:
+                self.client_manager.safe_close_client(client)
+            self.state_manager.transition_to(ConnectionState.ERROR)
+            self.state_manager.transition_to(ConnectionState.DISCONNECTED)
+            raise
         except Exception:
             logger.warning("Failed to connect, closing BLEClient thread.", exc_info=True)
             if client:

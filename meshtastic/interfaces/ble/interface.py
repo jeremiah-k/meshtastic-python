@@ -677,7 +677,11 @@ class BLEInterface(MeshInterface):
             # Defensive: allow tests or legacy usage that bypasses __init__
             self._discovery_manager = DiscoveryManager()
 
-        addressed_devices = self._discovery_manager.discover_devices(address)
+        try:
+            addressed_devices = self._discovery_manager.discover_devices(address)
+        except BleakDBusError:
+            # Surface DBus failures to allow higher-level backoff
+            raise
 
         if len(addressed_devices) == 0:
             if address:
