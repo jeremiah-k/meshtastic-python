@@ -84,7 +84,7 @@ class ReconnectPolicy:
             attempt (Optional[int]): Attempt index to evaluate; when omitted, the policy's current attempt count is used.
         
         Returns:
-            `true` if another retry is allowed by `max_retries`, `false` otherwise.
+            `True` if another retry is allowed by `max_retries`, `False` otherwise.
         """
         if attempt is None:
             attempt = self._attempt_count

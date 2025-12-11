@@ -931,17 +931,13 @@ class BLEInterface(MeshInterface):
                             break
                         return
                     except Exception as e:  # pragma: no cover - defensive catch-all
-                        logger.exception(
-                            "Unexpected error in BLE read loop: %s", e, exc_info=True
-                        )
+                        logger.exception("Unexpected error in BLE read loop")
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
         except Exception as e:
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
-            logger.exception(
-                "Fatal error in BLE receive thread, closing interface: %s", e
-            )
+            logger.exception("Fatal error in BLE receive thread, closing interface")
             if not self._state_manager.is_closing:
                 # Use a thread to avoid deadlocks if close() waits for this thread
                 error_close_thread = self.thread_coordinator.create_thread(
@@ -1167,7 +1163,7 @@ class BLEInterface(MeshInterface):
         self.thread_coordinator.cleanup()
         # Use unified state lock
         with self._state_lock:
-            # Reset state to DISCONNECTED so future reconnects with this instance are permitted.
+            # Record final state as DISCONNECTED for observers; instance remains closed.
             self._state_manager.transition_to(ConnectionState.DISCONNECTED)
 
     def _wait_for_disconnect_notifications(

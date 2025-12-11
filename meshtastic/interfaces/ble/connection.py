@@ -67,7 +67,7 @@ class ConnectionValidator:
             address (Optional[str]): The address originally requested for connection; included among known targets after normalization.
         
         Returns:
-            `true` if the client is connected and its address matches `normalized_request` or one of the known targets, `false` otherwise.
+            `True` if the client is connected and its address matches `normalized_request` or one of the known targets, `False` otherwise.
         """
         if not client or not client.is_connected():
             return False

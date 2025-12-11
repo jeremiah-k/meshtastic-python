@@ -261,7 +261,7 @@ class BLEClient:
             specifier (str | UUID): UUID string or UUID object identifying the characteristic to check. If services are not yet discovered, this method will attempt to populate them before checking.
 
         Returns:
-            `true` if the characteristic is present, `false` otherwise.
+            `True` if the characteristic is present, `False` otherwise.
         """
         if self.bleak_client is None:
             return False

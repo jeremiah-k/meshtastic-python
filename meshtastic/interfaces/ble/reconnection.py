@@ -182,9 +182,8 @@ class ReconnectWorker:
                         )
                         return
                     logger.exception(
-                        "DBus error during auto-reconnect attempt %d: %s",
+                        "DBus error during auto-reconnect attempt %d",
                         attempt_num,
-                        err,
                     )
                     # Use longer delay for DBus errors to allow system Bluetooth stack to recover
                     override_delay = max(
