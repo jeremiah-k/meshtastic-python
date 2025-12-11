@@ -1091,7 +1091,6 @@ class BLEInterface(MeshInterface):
                     logger.debug(
                         "close() called from receive thread; skipping self-join"
                     )
-                    self._receiveThread = None
                 else:
                     self.thread_coordinator.join_thread(
                         self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
@@ -1101,7 +1100,7 @@ class BLEInterface(MeshInterface):
                             "BLE receive thread did not exit within %.1fs",
                             RECEIVE_THREAD_JOIN_TIMEOUT,
                         )
-                    self._receiveThread = None
+                self._receiveThread = None
 
         if self._exit_handler:
             with contextlib.suppress(ValueError):

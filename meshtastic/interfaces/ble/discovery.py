@@ -155,17 +155,9 @@ class ConnectedStrategy(DiscoveryStrategy):
                         name=device.name,
                         details=metadata,
                     )
-                    # Preserve RSSI if provided by backend and supported by BLEDevice constructor
+                    # Preserve RSSI if provided by backend
                     if hasattr(device, "rssi"):
-                        try:
-                            signature = inspect.signature(BLEDevice.__init__)
-                            if "rssi" in signature.parameters:
-                                device_copy.rssi = device.rssi  # type: ignore[attr-defined]
-                        except (
-                            AttributeError,
-                            TypeError,
-                        ):  # pragma: no cover - best effort
-                            pass
+                        device_copy.rssi = device.rssi  # type: ignore[attr-defined]
                     devices_found.append(device_copy)
             else:
                 logger.debug(

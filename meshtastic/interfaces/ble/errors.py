@@ -7,18 +7,18 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.constants import logger
 
-if TYPE_CHECKING:
+try:
     from google.protobuf.message import DecodeError
-else:
-    try:
-        from google.protobuf.message import DecodeError  # type: ignore
-    except ImportError:
-        class DecodeError(Exception):
-            """Fallback DecodeError type used for static type checking."""
+except ImportError:
 
-            pass
+    class DecodeError(Exception):  # type: ignore
+        """Fallback for when google.protobuf is not available."""
+
+        pass
+
 
 __all__ = ["BLEErrorHandler", "DecodeError"]
+
 
 class BLEErrorHandler:
     """Helper class for consistent error handling in BLE operations.
@@ -42,20 +42,20 @@ class BLEErrorHandler:
     ):
         """
         Execute a zero-argument callable and return its result, falling back to a default value on error.
-        
+
         Parameters:
             func (callable): Zero-argument callable to execute.
             default_return: Value returned when execution fails.
             log_error (bool): If True, log caught exceptions.
             error_msg (str): Message prefix used when logging errors.
             reraise (bool): If True, re-raise the caught exception instead of returning `default_return`.
-        
+
         Returns:
             The value returned by `func()` on success, or `default_return` if execution fails.
-        
+
         Raises:
             Exception: Re-raises the original exception if `reraise` is True.
-        
+
         Notes:
             Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated the same.
         """
@@ -78,13 +78,13 @@ class BLEErrorHandler:
     def safe_cleanup(func, cleanup_name: str = "cleanup operation") -> bool:
         """
         Perform a cleanup callable and suppress any exceptions.
-        
+
         Parameters:
-        	func (callable): Cleanup operation to execute; called with no arguments.
-        	cleanup_name (str): Descriptive name included in debug log messages.
-        
+                func (callable): Cleanup operation to execute; called with no arguments.
+                cleanup_name (str): Descriptive name included in debug log messages.
+
         Returns:
-        	success (bool): True if the cleanup completed without raising an exception, False otherwise.
+                success (bool): True if the cleanup completed without raising an exception, False otherwise.
         """
         try:
             func()
