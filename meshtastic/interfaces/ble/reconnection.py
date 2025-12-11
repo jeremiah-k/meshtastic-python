@@ -152,7 +152,7 @@ class ReconnectWorker:
                     logger.debug(
                         "Auto-reconnect waiting: connection already in progress."
                     )
-                    sleep_fn(BLEConfig.SEND_PROPAGATION_DELAY)
+                    sleep_fn(max(1.0, BLEConfig.SEND_PROPAGATION_DELAY))
                     continue
                 attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:

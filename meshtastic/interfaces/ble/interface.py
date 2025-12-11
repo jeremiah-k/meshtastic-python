@@ -126,6 +126,7 @@ class BLEInterface(MeshInterface):
         # Unified state-based lock system replacing multiple locks and boolean flags
         self._state_manager = BLEStateManager()  # Centralized state tracking
         self._state_lock = self._state_manager.lock  # Direct access to unified lock
+        self._connect_lock = threading.RLock()  # Serializes connection attempts
         self._closed: bool = (
             False  # Tracks completion of shutdown for idempotent close()
         )
@@ -680,6 +681,17 @@ class BLEInterface(MeshInterface):
             BLEInterface.BLEError: If no Meshtastic devices are found, or if `address` was provided and multiple matching devices are found.
         """
 
+        target = address or getattr(self, "address", None)
+        sanitized_target = BLEInterface._sanitize_address(target)
+
+        # If we've connected before and have a concrete target, skip the scan to reduce DBus load.
+        if sanitized_target and getattr(self, "_ever_connected", False):
+            logger.debug(
+                "Using cached target %s for reconnect without active scan",
+                sanitized_target,
+            )
+            return BLEDevice(address=target, name=target, details={})
+
         # Surface DBus failures to allow higher-level backoff
         addressed_devices = self._discovery_manager.discover_devices(address)
 
@@ -776,51 +788,57 @@ class BLEInterface(MeshInterface):
         requested_identifier = address if address is not None else self.address
         normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
-        with self._state_lock:
-            existing_client = self.client
-            if (
-                existing_client
-                and existing_client.is_connected()
-                and self._connection_validator.check_existing_client(
-                    existing_client,
-                    normalized_request,
-                    self._last_connection_request,
-                    self.address,
-                )
-            ):
-                logger.debug("Already connected, skipping connect call.")
-                return existing_client
+        with self._connect_lock:
+            if self._closed or self.is_connection_closing:
+                raise self.BLEError("Cannot connect while interface is closing")
 
-        client = self._connection_orchestrator.establish_connection(
-            address,
-            self.address,
-            self._register_notifications,
-            self._connected,
-            self._on_ble_disconnect,
-        )
+            with self._state_lock:
+                existing_client = self.client
+                if (
+                    existing_client
+                    and existing_client.is_connected()
+                    and self._connection_validator.check_existing_client(
+                        existing_client,
+                        normalized_request,
+                        self._last_connection_request,
+                        self.address,
+                    )
+                ):
+                    logger.debug("Already connected, skipping connect call.")
+                    return existing_client
 
-        device_address = getattr(getattr(client, "bleak_client", None), "address", None)
-        previous_client = None
-        with self._state_lock:
-            previous_client = self.client
-            self.address = device_address
-            self.client = client
-            self._disconnect_notified = False
-            normalized_device_address = BLEInterface._sanitize_address(
-                device_address or ""
+            client = self._connection_orchestrator.establish_connection(
+                address,
+                self.address,
+                self._register_notifications,
+                self._connected,
+                self._on_ble_disconnect,
             )
-            if normalized_request is not None:
-                self._last_connection_request = normalized_request
-            else:
-                self._last_connection_request = normalized_device_address
 
-        if previous_client and previous_client is not client:
-            self._client_manager.update_client_reference(client, previous_client)
+            device_address = getattr(
+                getattr(client, "bleak_client", None), "address", None
+            )
+            previous_client = None
+            with self._state_lock:
+                previous_client = self.client
+                self.address = device_address
+                self.client = client
+                self._disconnect_notified = False
+                normalized_device_address = BLEInterface._sanitize_address(
+                    device_address or ""
+                )
+                if normalized_request is not None:
+                    self._last_connection_request = normalized_request
+                else:
+                    self._last_connection_request = normalized_device_address
 
-        # Mark that at least one successful connection has been established
-        self._ever_connected = True
-        self._read_retry_count = 0
-        return client
+            if previous_client and previous_client is not client:
+                self._client_manager.update_client_reference(client, previous_client)
+
+            # Mark that at least one successful connection has been established
+            self._ever_connected = True
+            self._read_retry_count = 0
+            return client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: "BLEClient"
