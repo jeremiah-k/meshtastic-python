@@ -912,10 +912,6 @@ class BLEInterface(MeshInterface):
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
-                    except asyncio.CancelledError as e:  # pragma: no cover - defensive
-                        if self._handle_read_loop_disconnect(str(e), client):
-                            break
-                        return
         except Exception as e:
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
             logger.exception(

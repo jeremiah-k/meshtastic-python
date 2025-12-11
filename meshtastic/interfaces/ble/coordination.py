@@ -71,6 +71,8 @@ class ThreadCoordinator:
             event (Event): The created Event instance.
         """
         with self._lock:
+            if name in self._events:
+                logger.warning("Replacing existing event: %s", name)
             event = Event()
             self._events[name] = event
             return event

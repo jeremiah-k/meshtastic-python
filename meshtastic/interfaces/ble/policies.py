@@ -68,7 +68,7 @@ class ReconnectPolicy:
         	attempt (Optional[int]): Zero-based attempt index to compute the delay for; if omitted, uses the policy's current attempt count.
         
         Returns:
-        	delay (float): Delay in seconds with exponential backoff and symmetric jitter applied, clamped to at least 0.001 and not exceeding the policy's max_delay.
+        	delay (float): Delay in seconds with exponential backoff and symmetric jitter applied, clamped to at least 0.001s (to cover extreme jitter) and not exceeding the policy's max_delay.
         """
         if attempt is None:
             attempt = self._attempt_count

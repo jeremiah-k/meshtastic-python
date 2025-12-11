@@ -42,6 +42,11 @@ class NotificationManager:
         
         Returns:
         	token (int): Opaque token that identifies the tracked subscription.
+
+        Note:
+            Multiple subscriptions to the same characteristic are allowed; the most recently
+            registered callback is the one returned by `get_callback()` while all tracked
+            subscriptions are attempted during resubscribe.
         """
         with self._lock:
             token = self._subscription_counter

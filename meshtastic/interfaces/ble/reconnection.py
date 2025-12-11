@@ -181,7 +181,7 @@ class ReconnectWorker:
                             "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
                         )
                         return
-                    logger.error(
+                    logger.exception(
                         "DBus error during auto-reconnect attempt %d: %s",
                         attempt_num,
                         err,
@@ -207,7 +207,7 @@ class ReconnectWorker:
                     )
                     # Give the adapter a respite before retrying and avoid thrashing scans.
                     delay_hint = (
-                        BLEConfig.BLE_SCAN_TIMEOUT
+                        DBUS_ERROR_RECONNECT_DELAY
                         if isinstance(err, BleakDeviceNotFoundError)
                         else BLEConfig.SEND_PROPAGATION_DELAY
                     )

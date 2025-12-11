@@ -255,7 +255,8 @@ class ConnectionOrchestrator:
                 self.state_manager.transition_to(ConnectionState.CONNECTING, client)
             self.state_manager.transition_to(ConnectionState.CONNECTED, client)
             on_connected_func()
-            self.thread_coordinator.set_event("reconnected_event")
+            if getattr(self.interface, "_ever_connected", False):
+                self.thread_coordinator.set_event("reconnected_event")
             normalized_device_address = BLEClient._sanitize_address(device.address)
             logger.info(
                 "Connection successful to %s", normalized_device_address or "unknown"
