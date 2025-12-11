@@ -6,6 +6,7 @@ from typing import Optional, TYPE_CHECKING
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 from meshtastic.interfaces.ble.constants import BLEConfig, DBUS_ERROR_RECONNECT_DELAY
+from meshtastic.interfaces.ble.gating import _addr_key, _get_addr_lock
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
@@ -136,6 +137,8 @@ class ReconnectWorker:
 
         sleep_fn = get_sleep_fn()
         override_delay: Optional[float] = None
+        addr_key = _addr_key(getattr(self.interface, "address", None))
+        gate = _get_addr_lock(addr_key)
         try:
             while not shutdown_event.is_set():
                 if self.interface.is_connection_closing or not auto_reconnect:
@@ -145,14 +148,20 @@ class ReconnectWorker:
                     return
                 attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
-                    logger.info(
-                        "Attempting BLE auto-reconnect (attempt %d).", attempt_num
-                    )
-                    self.interface.connect(self.interface.address)
-                    logger.info(
-                        "BLE auto-reconnect succeeded after %d attempts.", attempt_num
-                    )
-                    return
+                    with gate:
+                        if (
+                            getattr(self.interface, "_state_manager", None)
+                            and getattr(self.interface._state_manager, "is_connected", False)
+                        ):
+                            return
+                        logger.info(
+                            "Attempting BLE auto-reconnect (attempt %d).", attempt_num
+                        )
+                        self.interface.connect(self.interface.address)
+                        logger.info(
+                            "BLE auto-reconnect succeeded after %d attempts.", attempt_num
+                        )
+                        return
                 except self.interface.BLEError as err:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
