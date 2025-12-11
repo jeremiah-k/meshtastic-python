@@ -21,9 +21,17 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.constants import _bleak_supports_connected_fallback
 
 
-def parse_scan_response(response: Any) -> List[BLEDevice]:
+def parse_scan_response(
+    response: Any, whitelist_address: Optional[str] = None
+) -> List[BLEDevice]:
     """
-    Convert a BleakScanner.discover(return_adv=True) response into a list of BLEDevice instances that advertise SERVICE_UUID.
+    Convert a BleakScanner.discover(return_adv=True) response into a list of BLEDevice instances.
+
+    Filters devices that advertise SERVICE_UUID, unless they match the optional `whitelist_address`.
+
+    Parameters:
+        response: The dictionary returned by BleakScanner.discover.
+        whitelist_address: Optional sanitized address/name to include regardless of UUIDs.
     """
     devices: List[BLEDevice] = []
     if response is None:
@@ -44,8 +52,20 @@ def parse_scan_response(response: Any) -> List[BLEDevice]:
                 type(value),
             )
             continue
+        
+        # Check for Service UUID
         suuids = getattr(adv, "service_uuids", None)
-        if suuids and SERVICE_UUID in suuids:
+        has_service = suuids and SERVICE_UUID in suuids
+
+        # Check for whitelist match if provided
+        matches_whitelist = False
+        if whitelist_address:
+            sanitized_addr = BLEClient._sanitize_address(device.address)
+            sanitized_name = BLEClient._sanitize_address(device.name)
+            if whitelist_address in (sanitized_addr, sanitized_name):
+                matches_whitelist = True
+
+        if has_service or matches_whitelist:
             devices.append(device)
     return devices
 
@@ -216,16 +236,21 @@ class DiscoveryManager:
                     "Scanning for BLE devices (takes %.0f seconds)...",
                     BLEConfig.BLE_SCAN_TIMEOUT,
                 )
+                
+                # If we are looking for a specific address, scan everything to ensure we find it
+                # even if the Service UUID is missing from the advertisement.
+                scan_uuids = [SERVICE_UUID] if not sanitized_target else None
+                
                 response = client.discover(
                     timeout=BLEConfig.BLE_SCAN_TIMEOUT,
                     return_adv=True,
-                    service_uuids=[SERVICE_UUID],
+                    service_uuids=scan_uuids,
                 )
                 logger.debug(
                     "Scan completed in %.2f seconds", time.monotonic() - scan_start
                 )
 
-                devices = parse_scan_response(response)
+                devices = parse_scan_response(response, whitelist_address=sanitized_target)
             except BleakDBusError as e:
                 # Bubble up BlueZ/DBus failures so callers can back off more aggressively
                 logger.warning(
