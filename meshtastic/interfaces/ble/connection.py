@@ -128,7 +128,10 @@ class ClientManager:
         Parameters:
             client (BLEClient): BLE client to connect and prepare for use.
         """
-        client.connect(await_timeout=BLEConfig.CONNECTION_TIMEOUT)
+        client.connect(
+            await_timeout=BLEConfig.CONNECTION_TIMEOUT,
+            timeout=BLEConfig.CONNECTION_TIMEOUT,
+        )
         services = getattr(client.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             logger.debug(

@@ -243,6 +243,29 @@ class DiscoveryManager:
                 devices = parse_scan_response(
                     response, whitelist_address=sanitized_target
                 )
+                # Targeted fallback: ask Bleak to find the device by address even if the
+                # advertisement did not include the Meshtastic service UUID.
+                if not devices and address:
+                    try:
+                        targeted_device = client.async_await(
+                            BleakScanner.find_device_by_address(
+                                address, timeout=BLEConfig.BLE_SCAN_TIMEOUT
+                            ),
+                            timeout=BLEConfig.BLE_SCAN_TIMEOUT,
+                        )
+                        if targeted_device:
+                            devices.append(targeted_device)
+                    except BleakDBusError as e:
+                        logger.warning(
+                            "Device discovery failed due to DBus error: %s",
+                            e,
+                            exc_info=True,
+                        )
+                        raise
+                    except (BleakError, RuntimeError) as e:
+                        logger.warning(
+                            "Direct address discovery failed: %s", e, exc_info=True
+                        )
             except BleakDBusError as e:
                 # Bubble up BlueZ/DBus failures so callers can back off more aggressively
                 logger.warning(

@@ -4,7 +4,7 @@ import logging
 from threading import Event, RLock, Thread
 from typing import Optional, TYPE_CHECKING
 
-from bleak.exc import BleakDBusError, BleakError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 from meshtastic.interfaces.ble.constants import BLEConfig, DBUS_ERROR_RECONNECT_DELAY
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
@@ -205,8 +205,13 @@ class ReconnectWorker:
                         attempt_num,
                         err,
                     )
-                    # Give the adapter a brief respite before retrying other errors
-                    override_delay = max(override_delay or 0, BLEConfig.SEND_PROPAGATION_DELAY)
+                    # Give the adapter a respite before retrying and avoid thrashing scans.
+                    delay_hint = (
+                        BLEConfig.BLE_SCAN_TIMEOUT
+                        if isinstance(err, BleakDeviceNotFoundError)
+                        else BLEConfig.SEND_PROPAGATION_DELAY
+                    )
+                    override_delay = max(override_delay or 0, delay_hint)
                 except Exception:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(

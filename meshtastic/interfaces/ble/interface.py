@@ -178,6 +178,7 @@ class BLEInterface(MeshInterface):
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator.create_event("shutdown_event")
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
+        self._ever_connected = False  # Track first successful connection to tune logging
 
         # Initialize parent interface
         MeshInterface.__init__(
@@ -816,6 +817,8 @@ class BLEInterface(MeshInterface):
         if previous_client and previous_client is not client:
             self._client_manager.update_client_reference(client, previous_client)
 
+        # Mark that at least one successful connection has been established
+        self._ever_connected = True
         self._read_retry_count = 0
         return client
 
@@ -860,7 +863,10 @@ class BLEInterface(MeshInterface):
                     if self.thread_coordinator.check_and_clear_event(
                         "reconnected_event"
                     ):
-                        logger.debug("Detected reconnection, resuming normal operation")
+                        if self._ever_connected:
+                            logger.debug(
+                                "Detected reconnection, resuming normal operation"
+                            )
                     continue
                 self.thread_coordinator.clear_event("read_trigger")
 
