@@ -673,10 +673,6 @@ class BLEInterface(MeshInterface):
             BLEInterface.BLEError: If no Meshtastic devices are found, or if `address` was provided and multiple matching devices are found.
         """
 
-        if not hasattr(self, "_discovery_manager"):
-            # Defensive: allow tests or legacy usage that bypasses __init__
-            self._discovery_manager = DiscoveryManager()
-
         try:
             addressed_devices = self._discovery_manager.discover_devices(address)
         except BleakDBusError:
