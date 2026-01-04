@@ -361,14 +361,14 @@ class Node:
             p.get_config_request = configType  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
 
         else:
-            msgIndex = configType.index
+            msg_index = configType.index
             if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = (
-                    msgIndex  # pyright: ignore[reportAttributeAccessIssue]
+                p.get_config_request = admin_pb2.AdminMessage.ConfigType.Value(
+                    f"{configType.name.upper()}_CONFIG"
                 )
             else:
                 p.get_module_config_request = (
-                    msgIndex  # pyright: ignore[reportAttributeAccessIssue]
+                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
                 )
 
         self._send_admin(p, wantResponse=True, onResponse=onResponse)
