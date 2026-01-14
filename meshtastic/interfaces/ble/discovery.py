@@ -63,7 +63,16 @@ def parse_scan_response(
         if whitelist_address:
             sanitized_addr = BLEClient._sanitize_address(device.address)
             sanitized_name = BLEClient._sanitize_address(device.name)
-            if whitelist_address in (sanitized_addr, sanitized_name):
+            # CRITICAL FIX: Use exact equality matching instead of substring matching to prevent
+            # connecting to wrong device when device name/address contains target address as substring.
+            # This is essential for scenarios where multiple BLE devices are present and user has
+            # pre-bonded the target device via bluetoothctl/blueman before starting the relay.
+            # Example vulnerability: if whitelist_address is "AA:BB:CC:DD:EE:FF" and device.name
+            # contains that string as a substring, it would incorrectly match and connect to wrong device.
+            if (
+                whitelist_address == sanitized_addr
+                or whitelist_address == sanitized_name
+            ):
                 matches_whitelist = True
 
         if has_service or matches_whitelist:
@@ -252,7 +261,9 @@ class DiscoveryManager:
                 return_adv=True,
                 service_uuids=scan_uuids,
             )
-            logger.debug("Scan completed in %.2f seconds", time.monotonic() - scan_start)
+            logger.debug(
+                "Scan completed in %.2f seconds", time.monotonic() - scan_start
+            )
 
             devices = parse_scan_response(response, whitelist_address=sanitized_target)
         except BleakDBusError as e:
@@ -284,9 +295,7 @@ class DiscoveryManager:
                 )
                 devices.extend(fallback)
             except Exception as e:  # pragma: no cover - best effort logging
-                logger.warning(
-                    "Connected device fallback failed: %s", e, exc_info=True
-                )
+                logger.warning("Connected device fallback failed: %s", e, exc_info=True)
                 if inspect.iscoroutine(connected_coro):
                     connected_coro.close()
 
