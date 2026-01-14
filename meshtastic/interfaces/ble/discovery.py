@@ -157,7 +157,10 @@ class ConnectedStrategy(DiscoveryStrategy):
                     if sanitized_target:
                         sanitized_addr = BLEClient._sanitize_address(device.address)
                         sanitized_name = BLEClient._sanitize_address(device.name)
-                        if sanitized_target not in (sanitized_addr, sanitized_name):
+                        if (
+                            sanitized_target != sanitized_addr
+                            and sanitized_target != sanitized_name
+                        ):
                             continue
 
                     device_copy = BLEDevice(
