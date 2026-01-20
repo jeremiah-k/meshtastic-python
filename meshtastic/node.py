@@ -481,6 +481,10 @@ class Node:
                 self.moduleConfig.ambient_lighting,
             ),
             "paxcounter": ("set_module_config", self.moduleConfig.paxcounter),
+            "traffic_management": (
+                "set_module_config",
+                self.moduleConfig.traffic_management,
+            ),
         }
         config_entry = config_dispatch.get(config_name)
         if config_entry is None:
