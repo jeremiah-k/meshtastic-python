@@ -2,12 +2,13 @@
 
 from enum import Enum
 from threading import RLock
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from meshtastic.interfaces.ble.constants import logger
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
+
 
 class ConnectionState(Enum):
     """Enum for managing BLE connection states."""
@@ -18,6 +19,7 @@ class ConnectionState(Enum):
     DISCONNECTING = "disconnecting"
     RECONNECTING = "reconnecting"
     ERROR = "error"
+
 
 class BLEStateManager:
     """Thread-safe state management for BLE connections.
@@ -36,8 +38,9 @@ class BLEStateManager:
     def lock(self) -> RLock:
         """
         Provide the reentrant lock used to synchronize BLE state transitions.
-        
-        Returns:
+
+        Returns
+        -------
             RLock: The internal reentrant lock protecting state changes.
         """
         return self._state_lock
@@ -46,8 +49,9 @@ class BLEStateManager:
     def state(self) -> ConnectionState:
         """
         Return the current BLE connection state.
-        
-        Returns:
+
+        Returns
+        -------
             ConnectionState: The current connection state (read under the manager's internal lock).
         """
         with self._state_lock:
@@ -57,8 +61,9 @@ class BLEStateManager:
     def is_connected(self) -> bool:
         """
         Indicates whether the BLE interface is in the connected state.
-        
-        Returns:
+
+        Returns
+        -------
             `true` if the current state is CONNECTED, `false` otherwise.
         """
         return self.state == ConnectionState.CONNECTED
@@ -67,8 +72,9 @@ class BLEStateManager:
     def is_closing(self) -> bool:
         """
         Indicates whether the BLE interface is in a closing state.
-        
-        Returns:
+
+        Returns
+        -------
             True if the current state is DISCONNECTING, False otherwise.
         """
         return self.state == ConnectionState.DISCONNECTING
@@ -77,18 +83,20 @@ class BLEStateManager:
     def can_connect(self) -> bool:
         """
         Determine if a new BLE connection may be initiated.
-        
-        Returns:
-            `true` if the current state is DISCONNECTED, `false` otherwise.
+
+        Returns
+        -------
+            `true` if the current state is DISCONNECTED or ERROR, `false` otherwise.
         """
-        return self.state == ConnectionState.DISCONNECTED
+        return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
     @property
     def client(self) -> Optional["BLEClient"]:
         """
         Get the currently associated BLE client, if any; access is protected by the manager's lock.
-        
-        Returns:
+
+        Returns
+        -------
             Optional[BLEClient]: The current BLE client, or `None` if no client is set.
         """
         with self._state_lock:
@@ -99,22 +107,22 @@ class BLEStateManager:
     ) -> bool:
         """
         Attempt to change the manager's BLE connection state to the given target state.
-        
+
         If the transition is allowed, updates the internal state and sets the stored client when a `client` is provided; when transitioning to `DISCONNECTED` with no `client`, the stored client is cleared.
-        
-        Parameters:
+
+        Parameters
+        ----------
             new_state (ConnectionState): Target state to transition to.
             client (Optional[BLEClient]): BLE client to associate with the new state. If omitted and `new_state` is `ConnectionState.DISCONNECTED`, the stored client is cleared.
-        
-        Returns:
+
+        Returns
+        -------
             bool: `True` if the transition was valid and applied, `False` otherwise.
         """
         with self._state_lock:
             if new_state == self._state:
                 # Idempotent no-op: avoid warning noise for redundant transitions
-                logger.debug(
-                    "State transition noop: already in %s", self._state.value
-                )
+                logger.debug("State transition noop: already in %s", self._state.value)
                 return False
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
@@ -139,12 +147,14 @@ class BLEStateManager:
     ) -> bool:
         """
         Determine whether changing from one ConnectionState to another is permitted.
-        
-        Parameters:
+
+        Parameters
+        ----------
             from_state (ConnectionState): Current connection state.
             to_state (ConnectionState): Proposed next connection state.
-        
-        Returns:
+
+        Returns
+        -------
             bool: True if the transition from from_state to to_state is allowed, False otherwise.
         """
         # Define valid transitions based on connection lifecycle

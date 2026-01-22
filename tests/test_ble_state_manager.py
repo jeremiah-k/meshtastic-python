@@ -1,7 +1,7 @@
 """Tests for BLEStateManager state machine functionality."""
 
-import os
 import gc
+import os
 import threading
 import time
 from unittest.mock import MagicMock, Mock
@@ -55,7 +55,8 @@ class TestBLEStateManager:
         manager._state = ConnectionState.ERROR
         assert not manager.is_connected
         assert not manager.is_closing
-        assert not manager.can_connect
+        # ERROR state allows reconnection attempts
+        assert manager.can_connect
 
     def test_valid_transitions(self):
         """Test all valid state transitions."""
@@ -134,7 +135,8 @@ class TestBLEStateManager:
 
             On each iteration the worker attempts ConnectionState.CONNECTING for even indices and ConnectionState.DISCONNECTED for odd indices, appending (worker_id, iteration_index, success, current_state_value) to the shared `results` list. Any exception raised during execution is caught and appended to the shared `errors` list as (worker_id, error_message).
 
-            Parameters:
+            Parameters
+            ----------
                 worker_id (int): Identifier used when recording results and errors.
             """
             try:
@@ -207,7 +209,8 @@ class TestBLEStateManager:
             """
             Read the manager's current connection state while acquiring its reentrant state lock.
 
-            Returns:
+            Returns
+            -------
                 ConnectionState: The current connection state.
             """
             with manager._state_lock:
@@ -243,7 +246,7 @@ class TestBLEStateManager:
         assert manager.state == ConnectionState.ERROR
         assert not manager.is_connected
         assert not manager.is_closing
-        assert not manager.can_connect
+        assert manager.can_connect  # ERROR state allows reconnection
 
         # Should be able to recover from error
         manager.transition_to(ConnectionState.DISCONNECTED)
@@ -307,12 +310,12 @@ class TestBLEInterfaceStateIntegration:
         assert manager.is_closing
         assert not manager.can_connect
 
-        # Test ERROR state also counts as closing
+        # Test ERROR state allows reconnection attempts
         manager.transition_to(ConnectionState.ERROR)
         assert manager.state == ConnectionState.ERROR
         assert not manager.is_connected
         assert not manager.is_closing
-        assert not manager.can_connect
+        assert manager.can_connect  # ERROR state allows reconnection
 
     def test_client_management_with_states(self):
         """Test client management works correctly with state transitions."""
@@ -379,7 +382,8 @@ class TestPhase3LockConsolidation:
 
             For each of 10 iterations this worker requests CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order, appends (worker_id, iteration, manager.state, success) to the shared `results` list, and on exception appends (worker_id, error_message) to the shared `errors` list.
 
-            Parameters:
+            Parameters
+            ----------
                 worker_id (int | str): Identifier used in entries added to `results` and `errors` to distinguish this worker's recordings.
             """
             try:
@@ -397,7 +401,9 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
+            except (
+                Exception
+            ) as e:  # noqa: BLE001 - worker errors recorded for debugging
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -519,9 +525,9 @@ def test_state_transition_performance():
     elapsed = end_time - start_time
 
     # Should complete quickly under typical CI conditions (allow headroom)
-    assert elapsed < 3.0, (
-        f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
-    )
+    assert (
+        elapsed < 3.0
+    ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
 
     # Calculate average transition time
     avg_time = elapsed / (iterations * 3)
@@ -553,7 +559,8 @@ def test_lock_contention_performance():
 
         Runs 100 iterations attempting CONNECTING, CONNECTED, and DISCONNECTED transitions on the outer-scope `manager`; counts each successful transition as an operation and appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed seconds).
 
-        Parameters:
+        Parameters
+        ----------
             worker_id (int): Identifier used in the appended result to distinguish this worker.
         """
         start_time = time.perf_counter()
@@ -602,9 +609,9 @@ def test_lock_contention_performance():
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
     expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
-    assert total_operations >= expected_operations * 0.8, (
-        f"Too many failed operations: {total_operations}/{expected_operations}"
-    )
+    assert (
+        total_operations >= expected_operations * 0.8
+    ), f"Too many failed operations: {total_operations}/{expected_operations}"
 
     print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
 
@@ -637,9 +644,9 @@ def test_memory_efficiency():
     # Should not have significant memory growth
     object_growth = final_objects - initial_objects
     # Heuristic check: gc timing can vary slightly between runs, so allow a generous threshold.
-    assert object_growth < 1000, (
-        f"Potential memory leak: {object_growth} objects created"
-    )
+    assert (
+        object_growth < 1000
+    ), f"Potential memory leak: {object_growth} objects created"
 
     print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 

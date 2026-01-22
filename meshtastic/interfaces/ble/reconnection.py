@@ -2,14 +2,15 @@
 
 import logging
 from threading import Event, RLock, Thread
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
-from meshtastic.interfaces.ble.constants import BLEConfig, DBUS_ERROR_RECONNECT_DELAY
-from meshtastic.interfaces.ble.gating import _addr_key, _get_addr_lock
+
+from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.gating import _addr_key, _get_addr_lock
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
-from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.state import BLEStateManager
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -30,7 +31,8 @@ class ReconnectScheduler:
         """
         Initialize the ReconnectScheduler with BLE state, threading utilities, and a reconnect policy.
 
-        Parameters:
+        Parameters
+        ----------
                 state_manager (BLEStateManager): Manages BLE connection state and lifecycle checks.
                 state_lock (RLock): Re-entrant lock protecting shared BLE state and thread reference updates.
                 thread_coordinator (ThreadCoordinator): Factory/manager for creating and starting threads.
@@ -57,11 +59,13 @@ class ReconnectScheduler:
         """
         Schedule a background BLE reconnect worker when auto-reconnect is enabled and no reconnect is already active.
 
-        Parameters:
+        Parameters
+        ----------
             auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
             shutdown_event (Event): Event used by the worker to detect shutdown and stop retrying.
 
-        Returns:
+        Returns
+        -------
             bool: `true` if a new reconnect worker thread was created and started; `false` if scheduling was skipped because `auto_reconnect` is False, the interface is closing, or a reconnect thread is already running.
         """
         if not auto_reconnect:
@@ -86,9 +90,12 @@ class ReconnectScheduler:
                 name="BLEAutoReconnect",
                 daemon=True,
             )
+            # Set the thread reference before starting to prevent race conditions
             self._reconnect_thread = thread
-            self.thread_coordinator.start_thread(thread)
-            return True
+
+        # Start the thread outside the lock to avoid holding the lock during thread start
+        self.thread_coordinator.start_thread(thread)
+        return True
 
     def clear_thread_reference(self) -> None:
         """
@@ -109,7 +116,8 @@ class ReconnectWorker:
         """
         Initialize the ReconnectWorker with the BLE interface and backoff policy.
 
-        Parameters:
+        Parameters
+        ----------
             interface (BLEInterface): BLE interface used to perform connection attempts and to check/modify connection state.
             reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
         """
@@ -128,7 +136,8 @@ class ReconnectWorker:
         and sleeps using the environment's sleep function. On exit the scheduler's thread
         reference is cleared.
 
-        Parameters:
+        Parameters
+        ----------
             auto_reconnect (bool): If False, the loop exits immediately without attempting reconnects.
             shutdown_event (Event): An event whose being set causes the loop to stop as soon as possible.
         """
@@ -187,10 +196,8 @@ class ReconnectWorker:
                     override_delay = max(
                         override_delay or 0, DBUS_ERROR_RECONNECT_DELAY
                     )
-                    # Transition to DISCONNECTED to ensure clean retry after backoff
-                    self.interface._state_manager.transition_to(
-                        ConnectionState.DISCONNECTED
-                    )
+                    # State transition to ERROR and DISCONNECTED is already handled by
+                    # the connection orchestrator, so we don't need to do it here
                 except BleakError as err:
                     if self.interface.is_connection_closing or not auto_reconnect:
                         logger.debug(
