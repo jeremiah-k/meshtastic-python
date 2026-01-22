@@ -634,7 +634,7 @@ class BLEInterface(MeshInterface):
             bytearray Serialized `mesh_pb2.LogRecord` payload from the BLE notification.
 
         """
-        log_record = mesh_pb2.LogRecord()
+        log_record = mesh_pb2.LogRecord()  # type: ignore[attr-defined]
         try:
             log_record.ParseFromString(bytes(b))
 
