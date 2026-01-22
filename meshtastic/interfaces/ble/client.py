@@ -51,7 +51,8 @@ class BLEClient:
 
         Parameters
         ----------
-            address: Address or identifier to normalize; may be None or consist only of whitespace.
+        address : Any
+            Address or identifier to normalize; may be None or consist only of whitespace.
 
         Returns
         -------
@@ -66,9 +67,12 @@ class BLEClient:
 
         Parameters
         ----------
-            awaitable: An awaitable to execute.
-            timeout (Optional[float]): Maximum seconds to wait; if None, wait indefinitely.
-            label (str): Short description used in the timeout error message.
+        awaitable : Any
+            An awaitable to execute.
+        timeout : Any
+            Maximum seconds to wait; if None, wait indefinitely.
+        label : Any
+            Short description used in the timeout error message.
 
         Returns
         -------
@@ -93,9 +97,12 @@ class BLEClient:
 
         Parameters
         ----------
-            address (Optional[str]): BLE device address to attach a Bleak client to. If None, no Bleak client is created and the instance operates in discovery-only mode.
-            log_if_no_address (bool): If True and `address` is None, emit a debug message indicating discovery-only mode.
-            **kwargs: Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
+        address : Any
+            BLE device address to attach a Bleak client to. If None, no Bleak client is created and the instance operates in discovery-only mode.
+        log_if_no_address : Any
+            If True and `address` is None, emit a debug message indicating discovery-only mode.
+        **kwargs : dict
+            Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
 
         Side effects:
             - Starts a background thread running an internal asyncio event loop for scheduling coroutines.
@@ -138,6 +145,11 @@ class BLEClient:
 
         Keyword arguments are forwarded to BleakScanner.discover (for example, `timeout` or `adapter`).
 
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments forwarded to BleakScanner.discover (e.g., `timeout` or `adapter`).
+
         Returns
         -------
             A list of discovered Bleak `BLEDevice` objects.
@@ -148,11 +160,12 @@ class BLEClient:
         """
         Pair the underlying BLE client with the remote device.
 
-        Args:
-        ----
-            kwargs: Backend-specific pairing options forwarded to the underlying BLE client.
+        Parameters
+        ----------
+        **kwargs : dict
+            Backend-specific pairing options forwarded to the underlying BLE client.
 
-        Returns:
+        Returns
         -------
             `True` if pairing succeeded, `False` otherwise.
 
@@ -169,8 +182,10 @@ class BLEClient:
 
         Parameters
         ----------
-            await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; `None` to wait indefinitely.
-            **kwargs: Forwarded to the underlying Bleak client's `connect` call.
+        await_timeout : Any
+            | None Maximum seconds to wait for the connect operation to complete; `None` to wait indefinitely.
+        **kwargs : dict
+            Forwarded to the underlying Bleak client's `connect` call.
 
         Returns
         -------
@@ -202,7 +217,7 @@ class BLEClient:
 
             Returns
             -------
-                bool: `True` if the bleak client reports an active connection, `False` otherwise.
+        bool: `True` if the bleak client reports an active connection, `False` otherwise.
             """
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
@@ -224,8 +239,10 @@ class BLEClient:
 
         Parameters
         ----------
-            await_timeout (float | None): Maximum seconds to wait for disconnect to complete; if None, wait indefinitely.
-            **kwargs: Additional keyword arguments forwarded to the underlying Bleak client's `disconnect` method.
+        await_timeout : Any
+            | None Maximum seconds to wait for disconnect to complete; if None, wait indefinitely.
+        **kwargs : dict
+            Additional keyword arguments forwarded to the underlying Bleak client's `disconnect` method.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
@@ -239,13 +256,16 @@ class BLEClient:
 
         Parameters
         ----------
-            *args: Positional arguments identifying the characteristic (typically a UUID string or handle).
-            timeout (float | None): Maximum seconds to wait for the read to complete; if None, no timeout is applied.
-            **kwargs: Additional keyword arguments passed to the read operation.
+        *args : tuple
+            Positional arguments identifying the characteristic (typically a UUID string or handle).
+        timeout : Any
+            | None Maximum seconds to wait for the read to complete; if None, no timeout is applied.
+        **kwargs : dict
+            Additional keyword arguments passed to the read operation.
 
         Returns
         -------
-            bytes: Raw bytes read from the characteristic.
+        bytes: Raw bytes read from the characteristic.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot read: BLE client not initialized")
@@ -261,7 +281,12 @@ class BLEClient:
 
         Parameters
         ----------
-            timeout (Optional[float]): Maximum seconds to wait for the write to complete; None for no timeout.
+        *args : tuple
+            Positional arguments identifying the characteristic and payload (typically UUID and data bytes).
+        timeout : Any
+            Maximum seconds to wait for the write to complete; None for no timeout.
+        **kwargs : dict
+            Additional keyword arguments passed to the write operation.
 
         Raises
         ------
@@ -277,6 +302,11 @@ class BLEClient:
         """
         Actively retrieve the client's discovered GATT services and characteristics.
 
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments forwarded to the underlying BLE client's `get_services` call.
+
         Returns
         -------
             The services collection object provided by the underlying BLE client, containing discovered GATT services and their characteristics.
@@ -291,7 +321,8 @@ class BLEClient:
 
         Parameters
         ----------
-            specifier (str | UUID): UUID string or UUID object identifying the characteristic to check. If services are not yet discovered, this method will attempt to populate them before checking.
+        specifier : Any
+            | UUID UUID string or UUID object identifying the characteristic to check. If services are not yet discovered, this method will attempt to populate them before checking.
 
         Returns
         -------
@@ -303,7 +334,7 @@ class BLEClient:
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             services = self.error_handler.safe_execute(
-                lambda: self.get_services(),
+        lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
@@ -319,9 +350,12 @@ class BLEClient:
 
         Parameters
         ----------
-            *args: Positional arguments forwarded to the BLE backend's `start_notify` call (e.g., characteristic UUID and callback).
-            timeout (Optional[float]): Maximum seconds to wait for the operation; if None, no timeout is applied.
-            **kwargs: Keyword arguments forwarded to the BLE backend's `start_notify` call.
+        *args : tuple
+            Positional arguments forwarded to the BLE backend's `start_notify` call (e.g., characteristic UUID and callback).
+        timeout : Any
+            Maximum seconds to wait for the operation; if None, no timeout is applied.
+        **kwargs : dict
+            Keyword arguments forwarded to the BLE backend's `start_notify` call.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot start notify: BLE client not initialized")
@@ -331,7 +365,7 @@ class BLEClient:
 
     def _handle_loop_exception(self, loop, context):
         """
-        Custom exception handler for the asyncio event loop to suppress benign errors during shutdown/disconnect.
+        Handle asyncio event loop exceptions and suppress benign errors during shutdown/disconnect.
         """
         exception = context.get("exception")
         if exception and isinstance(exception, BleakDBusError):
@@ -410,7 +444,7 @@ class BLEClient:
 
         Returns
         -------
-            self: The BLEClient instance.
+        self: The BLEClient instance.
         """
         return self
 
@@ -430,16 +464,18 @@ class BLEClient:
 
         If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEClient.BLEError is raised.
 
-        Args:
-        ----
-            coro: The coroutine to run on the client's internal event loop.
-            timeout (float | None): Maximum seconds to wait for completion; `None` means wait indefinitely.
+        Parameters
+        ----------
+        coro : Any
+            The coroutine to run on the client's internal event loop.
+        timeout : Any
+            | None Maximum seconds to wait for completion; `None` means wait indefinitely.
 
-        Returns:
+        Returns
         -------
             The value produced by the completed coroutine.
 
-        Raises:
+        Raises
         ------
             BLEClient.BLEError: If the wait times out.
 
@@ -493,11 +529,12 @@ class BLEClient:
         """
         Schedule a coroutine on the client's internal asyncio event loop.
 
-        Args:
-        ----
-            coro (coroutine): The coroutine to schedule.
+        Parameters
+        ----------
+        coro : Any
+            coroutine The coroutine to schedule.
 
-        Returns:
+        Returns
         -------
             concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
 

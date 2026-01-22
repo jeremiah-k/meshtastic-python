@@ -50,15 +50,22 @@ class ThreadCoordinator:
         """
         Create and register a Thread tracked by this coordinator without starting it.
 
-        Parameters:
-            target (callable): Callable to be executed by the thread.
-            name (str): Name assigned to the thread.
-            daemon (bool): Whether the thread should run as a daemon.
-            args (tuple): Positional arguments to pass to `target`.
-            kwargs (dict | None): Keyword arguments to pass to `target`.
+        Parameters
+        ----------
+        target : Any
+            callable Callable to be executed by the thread.
+        name : Any
+            Name assigned to the thread.
+        daemon : Any
+            Whether the thread should run as a daemon.
+        args : Any
+            Positional arguments to pass to `target`.
+        kwargs : Any
+            | None Keyword arguments to pass to `target`.
 
-        Returns:
-            Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
+        Returns
+        -------
+        Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
         """
         with self._lock:
             thread = Thread(
@@ -71,10 +78,13 @@ class ThreadCoordinator:
         """
         Create and register an Event under the given name.
 
-        Parameters:
-            name (str): Name to register the event under.
+        Parameters
+        ----------
+        name : Any
+            Name to register the event under.
 
-        Returns:
+        Returns
+        -------
             event (Event): The created Event instance.
         """
         with self._lock:
@@ -88,10 +98,13 @@ class ThreadCoordinator:
         """
         Retrieve a tracked Event by name.
 
-        Parameters:
-            name (str): The event's identifier.
+        Parameters
+        ----------
+        name : Any
+            The event's identifier.
 
-        Returns:
+        Returns
+        -------
             Optional[Event]: `Event` if an event with the given name exists, `None` otherwise.
         """
         with self._lock:
@@ -111,9 +124,12 @@ class ThreadCoordinator:
         """
         Join the specified tracked thread if it is alive, tracked by this coordinator, and not the current thread.
 
-        Parameters:
-            thread (Thread): Thread to join; no-op if the thread is not tracked, not alive, or is the current thread.
-            timeout (Optional[float]): Maximum seconds to wait for the thread to finish; use `None` to wait indefinitely.
+        Parameters
+        ----------
+        thread : Any
+            Thread to join; no-op if the thread is not tracked, not alive, or is the current thread.
+        timeout : Any
+            Maximum seconds to wait for the thread to finish; use `None` to wait indefinitely.
         """
         with self._lock:
             should_join = (
@@ -128,10 +144,10 @@ class ThreadCoordinator:
         """
         Wait for all tracked threads with the specified timeout.
 
-        Args:
-        ----
-            timeout (Optional[float]): Maximum number of seconds to wait for each thread to join.
-                If `None`, wait indefinitely for each thread.
+        Parameters
+        ----------
+        timeout : Any
+            If `None`, wait indefinitely for each thread.
 
         """
         with self._lock:
@@ -150,8 +166,10 @@ class ThreadCoordinator:
 
         If no event is registered under the given name, this method does nothing.
 
-        Parameters:
-                name (str): Name of the event to set.
+        Parameters
+        ----------
+        name : Any
+            Name of the event to set.
         """
         with self._lock:
             if name in self._events:
@@ -163,9 +181,10 @@ class ThreadCoordinator:
 
         If an event with `name` is being tracked, clear its internal flag; otherwise do nothing.
 
-        Args:
-        ----
-            name (str): The identifier of the tracked event to clear.
+        Parameters
+        ----------
+        name : Any
+            The identifier of the tracked event to clear.
 
         """
         with self._lock:
@@ -176,12 +195,16 @@ class ThreadCoordinator:
         """
         Wait for the tracked event with the given name to become set or for the timeout to elapse.
 
-        Parameters:
-            name (str): Name of the tracked event to wait for.
-            timeout (Optional[float]): Maximum time in seconds to wait; None means wait indefinitely.
+        Parameters
+        ----------
+        name : Any
+            Name of the tracked event to wait for.
+        timeout : Any
+            Maximum time in seconds to wait; None means wait indefinitely.
 
-        Returns:
-            bool: True if the event was set before the timeout, False otherwise (including when the event is not tracked).
+        Returns
+        -------
+        bool: True if the event was set before the timeout, False otherwise (including when the event is not tracked).
         """
         event = self.get_event(name)
         if event:
@@ -192,11 +215,14 @@ class ThreadCoordinator:
         """
         Clear the named tracked event if it is currently set.
 
-        Parameters:
-            name (str): Name of the tracked event.
+        Parameters
+        ----------
+        name : Any
+            Name of the tracked event.
 
-        Returns:
-            bool: `True` if the event was set and cleared, `False` otherwise.
+        Returns
+        -------
+        bool: `True` if the event was set and cleared, `False` otherwise.
         """
         with self._lock:
             event = self._events.get(name)
@@ -209,8 +235,10 @@ class ThreadCoordinator:
         """
         Wake threads waiting on the given coordinator-managed events by setting each named event.
 
-        Parameters:
-            event_names (str): One or more event names previously registered with `create_event`. Names not tracked by the coordinator are ignored.
+        Parameters
+        ----------
+        event_names : Any
+            One or more event names previously registered with `create_event`. Names not tracked by the coordinator are ignored.
         """
         for name in event_names:
             self.set_event(name)
@@ -221,8 +249,10 @@ class ThreadCoordinator:
 
         Clears each named event stored in the coordinator; names not tracked are ignored.
 
-        Parameters:
-            event_names (str): One or more event names to clear.
+        Parameters
+        ----------
+        event_names : Any
+            One or more event names to clear.
         """
         for name in event_names:
             self.clear_event(name)

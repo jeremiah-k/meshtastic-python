@@ -60,7 +60,7 @@ class BLEStateManager:
     @property
     def is_connected(self) -> bool:
         """
-        Indicates whether the BLE interface is in the connected state.
+        Indicate whether the BLE interface is in the connected state.
 
         Returns
         -------
@@ -71,7 +71,7 @@ class BLEStateManager:
     @property
     def is_closing(self) -> bool:
         """
-        Indicates whether the BLE interface is in a closing state.
+        Indicate whether the BLE interface is in a closing state.
 
         Returns
         -------
@@ -112,12 +112,14 @@ class BLEStateManager:
 
         Parameters
         ----------
-            new_state (ConnectionState): Target state to transition to.
-            client (Optional[BLEClient]): BLE client to associate with the new state. If omitted and `new_state` is `ConnectionState.DISCONNECTED`, the stored client is cleared.
+        new_state : Any
+            ConnectionState Target state to transition to.
+        client : Any
+            BLE client to associate with the new state. If omitted and `new_state` is `ConnectionState.DISCONNECTED`, the stored client is cleared.
 
         Returns
         -------
-            bool: `True` if the transition was valid and applied, `False` otherwise.
+        bool: `True` if the transition was valid and applied, `False` otherwise.
         """
         with self._state_lock:
             if new_state == self._state:
@@ -150,12 +152,14 @@ class BLEStateManager:
 
         Parameters
         ----------
-            from_state (ConnectionState): Current connection state.
-            to_state (ConnectionState): Proposed next connection state.
+        from_state : Any
+            ConnectionState Current connection state.
+        to_state : Any
+            ConnectionState Proposed next connection state.
 
         Returns
         -------
-            bool: True if the transition from from_state to to_state is allowed, False otherwise.
+        bool: True if the transition from from_state to to_state is allowed, False otherwise.
         """
         # Define valid transitions based on connection lifecycle
         valid_transitions = {

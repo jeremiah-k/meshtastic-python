@@ -137,7 +137,8 @@ class TestBLEStateManager:
 
             Parameters
             ----------
-                worker_id (int): Identifier used when recording results and errors.
+            worker_id : Any
+                Identifier used when recording results and errors.
             """
             try:
                 for i in range(100):
@@ -211,7 +212,7 @@ class TestBLEStateManager:
 
             Returns
             -------
-                ConnectionState: The current connection state.
+            ConnectionState: The current connection state.
             """
             with manager._state_lock:
                 with manager._state_lock:
@@ -384,7 +385,8 @@ class TestPhase3LockConsolidation:
 
             Parameters
             ----------
-                worker_id (int | str): Identifier used in entries added to `results` and `errors` to distinguish this worker's recordings.
+            worker_id : Any
+                | str Identifier used in entries added to `results` and `errors` to distinguish this worker's recordings.
             """
             try:
                 for i in range(10):
@@ -561,7 +563,8 @@ def test_lock_contention_performance():
 
         Parameters
         ----------
-            worker_id (int): Identifier used in the appended result to distinguish this worker.
+        worker_id : Any
+            Identifier used in the appended result to distinguish this worker.
         """
         start_time = time.perf_counter()
         operations = 0

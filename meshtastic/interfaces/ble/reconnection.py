@@ -33,10 +33,14 @@ class ReconnectScheduler:
 
         Parameters
         ----------
-                state_manager (BLEStateManager): Manages BLE connection state and lifecycle checks.
-                state_lock (RLock): Re-entrant lock protecting shared BLE state and thread reference updates.
-                thread_coordinator (ThreadCoordinator): Factory/manager for creating and starting threads.
-                interface (BLEInterface): BLE interface used to perform connection attempts.
+        state_manager : Any
+            BLEStateManager Manages BLE connection state and lifecycle checks.
+        state_lock : Any
+            Re-entrant lock protecting shared BLE state and thread reference updates.
+        thread_coordinator : Any
+            ThreadCoordinator Factory/manager for creating and starting threads.
+        interface : Any
+            BLE interface used to perform connection attempts.
 
         Detailed behavior:
                 Creates a ReconnectPolicy configured from BLEConfig, constructs a ReconnectWorker using the provided interface and policy, and initializes the internal reconnect thread reference to `None`.
@@ -61,12 +65,14 @@ class ReconnectScheduler:
 
         Parameters
         ----------
-            auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
-            shutdown_event (Event): Event used by the worker to detect shutdown and stop retrying.
+        auto_reconnect : Any
+            Whether automatic reconnection is enabled; scheduling is skipped when False.
+        shutdown_event : Any
+            Event used by the worker to detect shutdown and stop retrying.
 
         Returns
         -------
-            bool: `true` if a new reconnect worker thread was created and started; `false` if scheduling was skipped because `auto_reconnect` is False, the interface is closing, or a reconnect thread is already running.
+        bool: `true` if a new reconnect worker thread was created and started; `false` if scheduling was skipped because `auto_reconnect` is False, the interface is closing, or a reconnect thread is already running.
         """
         if not auto_reconnect:
             return False
@@ -118,8 +124,10 @@ class ReconnectWorker:
 
         Parameters
         ----------
-            interface (BLEInterface): BLE interface used to perform connection attempts and to check/modify connection state.
-            reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
+        interface : Any
+            BLE interface used to perform connection attempts and to check/modify connection state.
+        reconnect_policy : Any
+            ReconnectPolicy Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
         """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
@@ -138,8 +146,10 @@ class ReconnectWorker:
 
         Parameters
         ----------
-            auto_reconnect (bool): If False, the loop exits immediately without attempting reconnects.
-            shutdown_event (Event): An event whose being set causes the loop to stop as soon as possible.
+        auto_reconnect : Any
+            If False, the loop exits immediately without attempting reconnects.
+        shutdown_event : Any
+            An event whose being set causes the loop to stop as soon as possible.
         """
         self.reconnect_policy.reset()
         from meshtastic.interfaces.ble.utils import get_sleep_fn

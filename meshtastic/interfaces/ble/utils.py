@@ -3,17 +3,20 @@
 import importlib
 import time
 from types import ModuleType
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 
 def sanitize_address(address: Optional[str]) -> Optional[str]:
     """
     Normalize BLE addresses or identifiers by removing common separators and lowercasing.
 
-    Parameters:
-        address (Optional[str]): Address or identifier to normalize; may be None or consist only of whitespace.
+    Parameters
+    ----------
+    address : Any
+        Address or identifier to normalize; may be None or consist only of whitespace.
 
-    Returns:
+    Returns
+    -------
         Optional[str]: Normalized address string, or None if the input is None or only whitespace.
     """
     if address is None:
@@ -33,9 +36,11 @@ def sanitize_address(address: Optional[str]) -> Optional[str]:
 def _sleep(delay: float) -> None:
     """
     Throttle execution for the given duration in seconds.
-    
-    Parameters:
-        delay (float): Duration to sleep, in seconds.
+
+    Parameters
+    ----------
+    delay : Any
+        Duration to sleep, in seconds.
     """
     time.sleep(delay)
 
@@ -43,10 +48,11 @@ def _sleep(delay: float) -> None:
 def resolve_ble_module() -> Optional[ModuleType]:
     """
     Locate a loaded BLE module used by the package.
-    
+
     Searches known module names ("meshtastic.interfaces.ble" then "meshtastic.ble_interface") and returns the first successfully imported module.
-    
-    Returns:
+
+    Returns
+    -------
         The imported BLE module if found, `None` otherwise.
     """
     for module_name in (
@@ -63,8 +69,9 @@ def resolve_ble_module() -> Optional[ModuleType]:
 def get_sleep_fn() -> Callable[[float], None]:
     """
     Select the sleep function to use, preferring a BLE module-provided `_sleep` when available.
-    
-    Returns:
+
+    Returns
+    -------
         sleep_fn (Callable[[float], None]): The BLE module's `_sleep` function if present; otherwise the local `_sleep` implementation.
     """
     ble_mod = resolve_ble_module()
