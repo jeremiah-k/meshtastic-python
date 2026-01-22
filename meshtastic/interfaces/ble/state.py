@@ -144,7 +144,9 @@ class BLEStateManager:
         """
         Attempt to change the manager's BLE connection state to the given target state.
 
-        If the transition is allowed, updates the internal state and sets the stored client when a `client` is provided; when transitioning to `DISCONNECTED` with no `client`, the stored client is cleared.
+        If the transition is allowed, updates the internal state and sets the stored
+        client when a `client` is provided; when transitioning to `DISCONNECTED`
+        with no `client`, the stored client is cleared.
 
         Parameters
         ----------

@@ -148,7 +148,8 @@ class ClientManager:
         """
         Connect the given BLE client and ensure its GATT services are available.
 
-        If services are not immediately present on the underlying bleak client, this will request service discovery so the client has usable service/characteristic information.
+        If services are not immediately present on the underlying bleak client, this will
+        request service discovery so the client has usable service/characteristic information.
 
         Parameters
         ----------
@@ -177,7 +178,8 @@ class ClientManager:
         """
         Schedule safe closure of a previous BLE client when it is being replaced.
 
-        If `old_client` is provided and is not the same object as `new_client`, this schedules a background daemon thread to invoke safe closure of `old_client`.
+        If `old_client` is provided and is not the same object as `new_client`,
+        this schedules a background daemon thread to invoke safe closure of `old_client`.
 
         Parameters
         ----------
@@ -275,9 +277,15 @@ class ConnectionOrchestrator:
         on_disconnect_func: "Callable",
     ) -> "BLEClient":
         """
-        Establish a BLE connection to a target device, register notifications, and invoke lifecycle callbacks.
+        Establish a BLE connection to a target device, register notifications,
+        and invoke lifecycle callbacks.
 
-        If `address` is provided it is used as the connection target; otherwise `current_address` is used. Transitions the connection state through CONNECTING to CONNECTED on success, sets the "reconnected_event" on the thread coordinator, and invokes `on_connected_func`. On failure the method closes any partially created client, transitions the state to ERROR and then DISCONNECTED, and re-raises the exception.
+        If `address` is provided it is used as the connection target; otherwise
+        `current_address` is used. Transitions the connection state through
+        CONNECTING to CONNECTED on success, sets the "reconnected_event" on the
+        thread coordinator, and invokes `on_connected_func`. On failure the method
+        closes any partially created client, transitions the state to ERROR and then
+        DISCONNECTED, and re-raises the exception.
 
         Parameters
         ----------

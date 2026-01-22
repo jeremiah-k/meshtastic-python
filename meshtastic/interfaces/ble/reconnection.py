@@ -11,6 +11,7 @@ from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.gating import _addr_key, _get_addr_lock
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
+from meshtastic.interfaces.ble.utils import get_sleep_fn
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
@@ -43,7 +44,9 @@ class ReconnectScheduler:
             BLE interface used to perform connection attempts.
 
         Detailed behavior:
-                Creates a ReconnectPolicy configured from BLEConfig, constructs a ReconnectWorker using the provided interface and policy, and initializes the internal reconnect thread reference to `None`.
+                Creates a ReconnectPolicy configured from BLEConfig, constructs a
+                ReconnectWorker using the provided interface and policy, and initializes
+                the internal reconnect thread reference to `None`.
         """
         self.state_manager = state_manager
         self.state_lock = state_lock
@@ -72,7 +75,9 @@ class ReconnectScheduler:
 
         Returns
         -------
-        bool: `true` if a new reconnect worker thread was created and started; `false` if scheduling was skipped because `auto_reconnect` is False, the interface is closing, or a reconnect thread is already running.
+        bool: `true` if a new reconnect worker thread was created and started;
+        `false` if scheduling was skipped because `auto_reconnect` is False, the
+        interface is closing, or a reconnect thread is already running.
         """
         if not auto_reconnect:
             return False
@@ -132,7 +137,7 @@ class ReconnectWorker:
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
-    def attempt_reconnect_loop(
+    def attempt_reconnect_loop(  # pylint: disable=R0911
         self, auto_reconnect: bool, shutdown_event: Event
     ) -> None:
         """
@@ -152,7 +157,6 @@ class ReconnectWorker:
             An event whose being set causes the loop to stop as soon as possible.
         """
         self.reconnect_policy.reset()
-        from meshtastic.interfaces.ble.utils import get_sleep_fn
 
         sleep_fn = get_sleep_fn()
         override_delay: Optional[float] = None
