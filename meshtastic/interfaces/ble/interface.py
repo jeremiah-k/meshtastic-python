@@ -494,7 +494,7 @@ class BLEInterface(MeshInterface):
                 Message used by the error handler if the handler raises an exception.
             """
             self.error_handler.safe_execute(
-            lambda: handler(sender, data),
+                lambda: handler(sender, data),
                 error_msg=error_msg,
             )
 
@@ -753,12 +753,12 @@ class BLEInterface(MeshInterface):
         """
 
         target = address or getattr(self, "address", None)
-        BLEInterface._sanitize_address(target)
+        sanitized = BLEInterface._sanitize_address(target)
 
         # Surface DBus failures to allow higher-level backoff
         if self._discovery_manager is None:
             raise self.BLEError("Discovery manager not available")
-        addressed_devices = self._discovery_manager.discover_devices(address)
+        addressed_devices = self._discovery_manager.discover_devices(sanitized)
 
         if len(addressed_devices) == 0:
             if address:
@@ -768,9 +768,11 @@ class BLEInterface(MeshInterface):
                 )
                 # Create a synthetic BLEDevice only for direct address connection attempts
                 # This allows the connection logic to attempt direct connect without verification
-                if address is None:
-                    raise self.BLEError("Address is None, cannot create device")
-                return BLEDevice(address=address, name=address, details={})
+                if not sanitized:
+                    raise self.BLEError(
+                        "Address resolution failed, cannot create device"
+                    )
+                return BLEDevice(address=sanitized, name=sanitized, details={})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
@@ -1212,7 +1214,7 @@ class BLEInterface(MeshInterface):
 
         # Close parent interface (stops publishing thread, etc.)
         self.error_handler.safe_execute(
-        lambda: MeshInterface.close(self), error_msg="Error closing mesh interface"
+            lambda: MeshInterface.close(self), error_msg="Error closing mesh interface"
         )
 
         if self._want_receive:
@@ -1294,7 +1296,7 @@ class BLEInterface(MeshInterface):
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
         self.error_handler.safe_execute(
-        lambda: publishingThread.queueWork(flush_event.set),
+            lambda: publishingThread.queueWork(flush_event.set),
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False,
         )
@@ -1320,7 +1322,7 @@ class BLEInterface(MeshInterface):
         """
         try:
             self.error_handler.safe_cleanup(
-        lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
+                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS)
             )
         finally:
             self._client_manager.safe_close_client(client)

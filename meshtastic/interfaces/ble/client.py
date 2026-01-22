@@ -174,9 +174,7 @@ class BLEClient:
             raise self.BLEError("Cannot pair: BLE client not initialized")
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(
-        self, *, await_timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def connect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Establish a connection to the remote BLE device using the underlying Bleak client.
 
@@ -211,13 +209,13 @@ class BLEClient:
 
         def _check_connection():
             """
-            Check whether the current `bleak_client` reports an active connection.
+                Check whether the current `bleak_client` reports an active connection.
 
-            This accepts either a boolean `is_connected` attribute or a callable `is_connected()` method on the `bleak_client` and returns the interpreted boolean result.
+                This accepts either a boolean `is_connected` attribute or a callable `is_connected()` method on the `bleak_client` and returns the interpreted boolean result.
 
-            Returns
-            -------
-        bool: `True` if the bleak client reports an active connection, `False` otherwise.
+                Returns
+                -------
+            bool: `True` if the bleak client reports an active connection, `False` otherwise.
             """
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
@@ -231,9 +229,7 @@ class BLEClient:
             reraise=False,
         )
 
-    def disconnect(
-        self, *, await_timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def disconnect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Disconnect from the remote BLE device and wait for completion.
 
@@ -248,9 +244,7 @@ class BLEClient:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
-    def read_gatt_char(
-        self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def read_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Read a GATT characteristic from the connected BLE device.
 
@@ -273,9 +267,7 @@ class BLEClient:
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def write_gatt_char(
-        self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def write_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Write bytes to a GATT characteristic on the connected device and wait for completion.
 
@@ -334,7 +326,7 @@ class BLEClient:
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             services = self.error_handler.safe_execute(
-        lambda: self.get_services(),
+                lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
@@ -342,9 +334,7 @@ class BLEClient:
                 services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
-    def start_notify(
-        self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    def start_notify(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
         Subscribe to notifications for a BLE characteristic on the connected device.
 
@@ -421,7 +411,7 @@ class BLEClient:
 
         if thread:
             thread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
-        if self._eventThread.is_alive():
+        if thread and thread.is_alive():
             global _zombie_thread_count
             _zombie_thread_count += 1
             logger.error(
@@ -456,9 +446,7 @@ class BLEClient:
         """
         self.close()
 
-    def async_await(
-        self, coro: "Awaitable", timeout: Optional[float] = None
-    ):  # pylint: disable=C0116
+    def async_await(self, coro: "Awaitable", timeout: Optional[float] = None):  # pylint: disable=C0116
         """
         Wait for the given coroutine to complete on the client's event loop and return its result.
 

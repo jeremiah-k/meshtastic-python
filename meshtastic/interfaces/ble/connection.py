@@ -217,7 +217,7 @@ class ClientManager:
             client, "bleak_client", None
         ):
             self.error_handler.safe_cleanup(
-        lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
+                lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
         self.error_handler.safe_cleanup(client.close, "client close")
@@ -307,48 +307,45 @@ class ConnectionOrchestrator:
                     "Already connected or connection in progress"
                 )
 
+        if not normalized_target:
+            raise self.interface.BLEError("Cannot connect: address resolution failed")
+
+        assert target_address is not None
         client: Optional["BLEClient"] = None
         try:
-            if normalized_target:
-                if target_address is None:
-                    raise self.interface.BLEError(
-                        "Cannot connect: address resolution failed"
-                    )
-                client = self.client_manager.create_client(
-                    target_address, on_disconnect_func
+            client = self.client_manager.create_client(
+                target_address, on_disconnect_func
+            )
+            try:
+                direct_timeout = min(
+                    12.0, BLEConfig.CONNECTION_TIMEOUT
+                )  # keep direct attempts short for known targets
+                self.client_manager.connect_client(client, timeout=direct_timeout)
+                register_notifications_func(client)
+                # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
+                # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
+                if self.state_manager.state == ConnectionState.DISCONNECTED:
+                    self.state_manager.transition_to(ConnectionState.CONNECTING)
+                self.state_manager.transition_to(ConnectionState.CONNECTED, client)
+                on_connected_func()
+                if getattr(self.interface, "_ever_connected", False):
+                    self.thread_coordinator.set_event("reconnected_event")
+                normalized_device_address = BLEClient._sanitize_address(target_address)
+                logger.info(
+                    "Connection successful to %s",
+                    normalized_device_address or "unknown",
                 )
-                try:
-                    direct_timeout = min(
-                        12.0, BLEConfig.CONNECTION_TIMEOUT
-                    )  # keep direct attempts short for known targets
-                    self.client_manager.connect_client(client, timeout=direct_timeout)
-                    register_notifications_func(client)
-                    # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
-                    # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
-                    if self.state_manager.state == ConnectionState.DISCONNECTED:
-                        self.state_manager.transition_to(ConnectionState.CONNECTING)
-                    self.state_manager.transition_to(ConnectionState.CONNECTED, client)
-                    on_connected_func()
-                    if getattr(self.interface, "_ever_connected", False):
-                        self.thread_coordinator.set_event("reconnected_event")
-                    normalized_device_address = BLEClient._sanitize_address(
-                        target_address
-                    )
-                    logger.info(
-                        "Connection successful to %s",
-                        normalized_device_address or "unknown",
-                    )
-                    return client
-                except Exception as direct_err:
-                    logger.debug(
-                        "Direct connect to %s failed; falling back to discovery: %s",
-                        normalized_target,
-                        direct_err,
-                        exc_info=True,
-                    )
-                    if client:
-                        self.client_manager.safe_close_client(client)
-                    client = None
+                return client
+            except Exception as direct_err:
+                logger.debug(
+                    "Direct connect to %s failed; falling back to discovery: %s",
+                    normalized_target,
+                    direct_err,
+                    exc_info=True,
+                )
+                if client:
+                    self.client_manager.safe_close_client(client)
+                client = None
 
             device = self.interface.find_device(address or current_address)
             client = self.client_manager.create_client(

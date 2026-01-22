@@ -160,6 +160,7 @@ class ReconnectWorker:
         gate = _get_addr_lock(addr_key)
         try:
             while not shutdown_event.is_set():
+                override_delay = None
                 if self.interface.is_connection_closing or not auto_reconnect:
                     logger.debug(
                         "Auto-reconnect aborted because interface is closing or disabled."

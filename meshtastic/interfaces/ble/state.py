@@ -28,6 +28,42 @@ class BLEStateManager:
     for clearer connection management and reduced complexity.
     """
 
+    _VALID_TRANSITIONS = {
+        ConnectionState.DISCONNECTED: {
+            ConnectionState.CONNECTING,
+            ConnectionState.ERROR,
+            ConnectionState.DISCONNECTING,
+        },
+        ConnectionState.CONNECTING: {
+            ConnectionState.CONNECTED,
+            ConnectionState.DISCONNECTING,
+            ConnectionState.ERROR,
+            ConnectionState.DISCONNECTED,
+        },
+        ConnectionState.CONNECTED: {
+            ConnectionState.DISCONNECTING,
+            ConnectionState.RECONNECTING,
+            ConnectionState.DISCONNECTED,
+            ConnectionState.ERROR,
+        },
+        ConnectionState.DISCONNECTING: {
+            ConnectionState.DISCONNECTED,
+            ConnectionState.ERROR,
+        },
+        ConnectionState.RECONNECTING: {
+            ConnectionState.CONNECTED,
+            ConnectionState.DISCONNECTING,
+            ConnectionState.CONNECTING,
+            ConnectionState.ERROR,
+            ConnectionState.DISCONNECTED,
+        },
+        ConnectionState.ERROR: {
+            ConnectionState.DISCONNECTED,
+            ConnectionState.CONNECTING,
+            ConnectionState.RECONNECTING,
+        },
+    }
+
     def __init__(self):
         """Initialize state manager with disconnected state."""
         self._state_lock = RLock()  # Single reentrant lock for all state changes
@@ -161,41 +197,4 @@ class BLEStateManager:
         -------
         bool: True if the transition from from_state to to_state is allowed, False otherwise.
         """
-        # Define valid transitions based on connection lifecycle
-        valid_transitions = {
-            ConnectionState.DISCONNECTED: {
-                ConnectionState.CONNECTING,
-                ConnectionState.ERROR,
-                ConnectionState.DISCONNECTING,
-            },
-            ConnectionState.CONNECTING: {
-                ConnectionState.CONNECTED,
-                ConnectionState.DISCONNECTING,
-                ConnectionState.ERROR,
-                ConnectionState.DISCONNECTED,
-            },
-            ConnectionState.CONNECTED: {
-                ConnectionState.DISCONNECTING,
-                ConnectionState.RECONNECTING,
-                ConnectionState.DISCONNECTED,
-                ConnectionState.ERROR,
-            },
-            ConnectionState.DISCONNECTING: {
-                ConnectionState.DISCONNECTED,
-                ConnectionState.ERROR,
-            },
-            ConnectionState.RECONNECTING: {
-                ConnectionState.CONNECTED,
-                ConnectionState.DISCONNECTING,
-                ConnectionState.CONNECTING,
-                ConnectionState.ERROR,
-                ConnectionState.DISCONNECTED,
-            },
-            ConnectionState.ERROR: {
-                ConnectionState.DISCONNECTED,
-                ConnectionState.CONNECTING,
-                ConnectionState.RECONNECTING,
-            },
-        }
-
-        return to_state in valid_transitions.get(from_state, set())
+        return to_state in self._VALID_TRANSITIONS.get(from_state, set())

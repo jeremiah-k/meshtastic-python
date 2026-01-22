@@ -35,13 +35,15 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
         return lock
 
 
-def _cleanup_addr_lock(key: str) -> None:
+def _cleanup_addr_lock(key: Optional[str]) -> None:
     """
     Remove the lock for the given address from the registry.
 
     This prevents unbounded lock accumulation in long-running processes.
     The lock is removed when the address is marked as disconnected.
     """
+    if key is None:
+        return
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.pop(key, None)
 

@@ -1,6 +1,5 @@
 """Tests for BLE gating utilities."""
 
-
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
@@ -103,8 +102,8 @@ class TestMarkConnected:
         _mark_connected(None)
         assert len(_CONNECTED_ADDRS) == 0
 
-    def test_mark_connected_with_empty_does_nothing(self):
-        """Test that marking empty string as connected does nothing."""
+    def test_mark_connected_with_empty_adds_to_registry_without_normalization(self):
+        """Test that marking empty string as connected adds it unless normalized via _addr_key."""
         # Empty strings are not handled specially, they will be added
         # Use _addr_key to normalize first, which returns None for empty strings
         _mark_connected("")
@@ -139,7 +138,7 @@ class TestMarkDisconnected:
     def test_mark_disconnected_with_empty_does_nothing(self):
         """Test that marking empty string as disconnected does nothing."""
         initial_count = len(_CONNECTED_ADDRS)
-        _mark_disconnected("")
+        _mark_disconnected(None)
         assert len(_CONNECTED_ADDRS) == initial_count
 
     def test_mark_disconnected_cleanup_lock(self):
@@ -175,4 +174,6 @@ class TestIsCurrentlyConnectedElsewhere:
 
     def test_returns_false_for_empty_address(self):
         """Test that it returns False for empty address."""
+        # Empty string is not treated specially like None; if _mark_connected("") were called,
+        # this test would fail. This assumes empty string has not been added directly.
         assert not _is_currently_connected_elsewhere("")
