@@ -12,7 +12,7 @@ from threading import Event, Thread
 from typing import Any, Callable, List, Optional
 
 from bleak import BleakClient as BleakRootClient
-from bleak import BLEDevice
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic import publishingThread
@@ -98,7 +98,7 @@ class BLEInterface(MeshInterface):
     class BLEError(Exception):
         """An exception class for BLE errors."""
 
-    def __init__(  # pylint: disable=R0917
+    def __init__(
         self,
         address: Optional[str],
         noProto: bool = False,
@@ -233,9 +233,6 @@ class BLEInterface(MeshInterface):
             if isinstance(e, BLEInterface.BLEError):
                 raise
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
-        except BaseException:
-            # Allow system-exiting exceptions to propagate
-            raise
 
     def __repr__(self):
         """
@@ -1046,9 +1043,6 @@ class BLEInterface(MeshInterface):
             if not self._state_manager.is_closing:
                 # Mark disconnected so auto-reconnect can proceed without forcing close().
                 self._state_manager.transition_to(ConnectionState.DISCONNECTED)
-        except BaseException:
-            # Propagate system-level exceptions
-            raise
 
     def _read_from_radio_with_retries(self, client: "BLEClient") -> Optional[bytes]:
         """

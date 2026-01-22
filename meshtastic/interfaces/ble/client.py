@@ -42,8 +42,6 @@ class BLEClient:
     class BLEError(Exception):
         """An exception class for BLE errors in the client."""
 
-        pass
-
     @staticmethod
     def _sanitize_address(address: Optional[str]) -> Optional[str]:
         """
@@ -219,15 +217,16 @@ class BLEClient:
             """
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
-                connected = connected()
+                connected = connected()  # pylint: disable=E1102
             return bool(connected)
 
-        return self.error_handler.safe_execute(
+        result = self.error_handler.safe_execute(
             _check_connection,
             default_return=False,
             error_msg="Unable to read bleak connection state",
             reraise=False,
         )
+        return bool(result)  # type: ignore[arg-type]
 
     def disconnect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
         """
@@ -305,9 +304,9 @@ class BLEClient:
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot get services: BLE client not initialized")
-        return self.async_await(self.bleak_client.get_services(**kwargs))
+        return self.async_await(self.bleak_client.get_services(**kwargs))  # type: ignore[attr-defined]
 
-    def has_characteristic(self, specifier: "Union[str, 'UUID']"):
+    def has_characteristic(self, specifier: Union[str, UUID]):  # pylint: disable=C0116
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -412,7 +411,7 @@ class BLEClient:
         if thread:
             thread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if thread and thread.is_alive():
-            global _zombie_thread_count
+            global _zombie_thread_count  # pylint: disable=W0603
             _zombie_thread_count += 1
             logger.error(
                 "BLE event thread did not exit within %.1fs and may leak resources (total zombies: %d)",
@@ -476,9 +475,9 @@ class BLEClient:
             self._pending_futures.add(future)
         try:
             return future.result(timeout)
-        except SystemExit:
+        except SystemExit:  # pylint: disable=W0706
             raise
-        except KeyboardInterrupt:
+        except KeyboardInterrupt:  # pylint: disable=W0706
             raise
         except (FutureTimeoutError, RuntimeError) as e:
             loop_closed = self._eventLoop.is_closed()
