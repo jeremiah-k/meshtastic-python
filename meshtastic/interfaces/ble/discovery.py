@@ -197,6 +197,8 @@ class ConnectedStrategy(DiscoveryStrategy):
         except (BleakError, RuntimeError) as e:
             logger.warning("Connected device discovery failed: %s", e, exc_info=True)
             return []
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            raise
         except Exception as e:  # pragma: no cover - defensive last resort
             # Defensive last resort to keep discovery best-effort
             logger.warning(
@@ -261,6 +263,8 @@ class DiscoveryManager:
             self._client = client_factory(log_if_no_address=False)
 
         client = self._client
+        if client is None:
+            raise RuntimeError("Discovery client failed to initialize")
         devices: List[BLEDevice] = []
         sanitized_target = BLEClient._sanitize_address(address) if address else None
         try:
@@ -312,6 +316,10 @@ class DiscoveryManager:
                     connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
                 )
                 devices.extend(fallback)
+            except (SystemExit, KeyboardInterrupt):
+                if inspect.iscoroutine(connected_coro):
+                    connected_coro.close()
+                raise
             except Exception as e:  # pragma: no cover - best effort logging
                 logger.warning("Connected device fallback failed: %s", e, exc_info=True)
                 if inspect.iscoroutine(connected_coro):

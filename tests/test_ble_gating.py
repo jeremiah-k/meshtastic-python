@@ -138,7 +138,7 @@ class TestMarkDisconnected:
     def test_mark_disconnected_with_empty_does_nothing(self):
         """Test that marking empty string as disconnected does nothing."""
         initial_count = len(_CONNECTED_ADDRS)
-        _mark_disconnected(None)
+        _mark_disconnected("")
         assert len(_CONNECTED_ADDRS) == initial_count
 
     def test_mark_disconnected_cleanup_lock(self):

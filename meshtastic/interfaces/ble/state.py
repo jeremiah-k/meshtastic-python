@@ -2,7 +2,7 @@
 
 from enum import Enum
 from threading import RLock
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Dict, Optional, Set
 
 from meshtastic.interfaces.ble.constants import logger
 
@@ -28,7 +28,7 @@ class BLEStateManager:
     for clearer connection management and reduced complexity.
     """
 
-    _VALID_TRANSITIONS = {
+    _VALID_TRANSITIONS: ClassVar[Dict[ConnectionState, Set[ConnectionState]]] = {
         ConnectionState.DISCONNECTED: {
             ConnectionState.CONNECTING,
             ConnectionState.ERROR,

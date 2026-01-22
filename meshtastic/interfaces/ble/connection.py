@@ -308,17 +308,16 @@ class ConnectionOrchestrator:
 
         target_address = address if address is not None else current_address
         normalized_target = BLEClient._sanitize_address(target_address)
+        if not normalized_target:
+            raise self.interface.BLEError("Cannot connect: address resolution failed")
+
+        assert target_address is not None
         logger.info("Attempting to connect to %s", target_address or "any")
         with self.state_lock:
             if not self.state_manager.transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(
                     "Already connected or connection in progress"
                 )
-
-        if not normalized_target:
-            raise self.interface.BLEError("Cannot connect: address resolution failed")
-
-        assert target_address is not None
         client: Optional["BLEClient"] = None
         try:
             client = self.client_manager.create_client(
@@ -344,6 +343,8 @@ class ConnectionOrchestrator:
                     normalized_device_address or "unknown",
                 )
                 return client
+            except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+                raise
             except Exception as direct_err:
                 logger.debug(
                     "Direct connect to %s failed; falling back to discovery: %s",
@@ -378,6 +379,8 @@ class ConnectionOrchestrator:
                 self.client_manager.safe_close_client(client)
             self.state_manager.transition_to(ConnectionState.ERROR)
             self.state_manager.transition_to(ConnectionState.DISCONNECTED)
+            raise
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
         except Exception:
             logger.warning(

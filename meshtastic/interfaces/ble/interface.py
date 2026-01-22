@@ -1032,11 +1032,15 @@ class BLEInterface(MeshInterface):
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
+                    except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+                        raise
                     except Exception as e:  # pragma: no cover - defensive catch-all
                         logger.exception("Unexpected error in BLE read loop")
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            raise
         except Exception:
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
             logger.exception("Unexpected fatal error in BLE receive thread")
@@ -1054,9 +1058,7 @@ class BLEInterface(MeshInterface):
         """
         empty_read_policy = RetryPolicy.empty_read()
         for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
-            payload = client.read_gatt_char(
-                FROMRADIO_UUID, timeout=BLEConfig.GATT_IO_TIMEOUT
-            )
+            payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
             if payload:
                 self._suppressed_empty_read_warnings = 0
                 return payload

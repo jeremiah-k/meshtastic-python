@@ -7,13 +7,11 @@ from bleak.exc import BleakDBusError, BleakError
 from meshtastic.interfaces.ble.constants import logger
 
 try:
-    from google.protobuf.message import DecodeError
+    from google.protobuf.message import DecodeError as _DecodeError  # type: ignore
+
+    DecodeError = _DecodeError
 except ImportError:
-
-    class DecodeError(Exception):  # type: ignore
-        """Fallback for when google.protobuf is not available."""
-
-        pass
+    DecodeError = type("DecodeError", (Exception,), {})
 
 
 __all__ = ["BLEErrorHandler", "DecodeError"]
@@ -75,6 +73,8 @@ class BLEErrorHandler:
             if reraise:
                 raise
             return default_return
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            raise
         except Exception:
             if log_error:
                 logger.exception("%s", error_msg)

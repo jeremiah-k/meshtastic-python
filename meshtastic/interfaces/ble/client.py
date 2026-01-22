@@ -172,7 +172,9 @@ class BLEClient:
             raise self.BLEError("Cannot pair: BLE client not initialized")
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
+    def connect(
+        self, *, await_timeout: Optional[float] = None, **kwargs
+    ):  # pylint: disable=C0116
         """
         Establish a connection to the remote BLE device using the underlying Bleak client.
 
@@ -228,7 +230,9 @@ class BLEClient:
         )
         return bool(result)  # type: ignore[arg-type]
 
-    def disconnect(self, *, await_timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
+    def disconnect(
+        self, *, await_timeout: Optional[float] = None, **kwargs
+    ):  # pylint: disable=C0116
         """
         Disconnect from the remote BLE device and wait for completion.
 
@@ -243,7 +247,9 @@ class BLEClient:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
         self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
-    def read_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
+    def read_gatt_char(
+        self, *args, timeout: Optional[float] = None, **kwargs
+    ):  # pylint: disable=C0116
         """
         Read a GATT characteristic from the connected BLE device.
 
@@ -266,7 +272,9 @@ class BLEClient:
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def write_gatt_char(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
+    def write_gatt_char(
+        self, *args, timeout: Optional[float] = None, **kwargs
+    ):  # pylint: disable=C0116
         """
         Write bytes to a GATT characteristic on the connected device and wait for completion.
 
@@ -333,7 +341,9 @@ class BLEClient:
                 services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
-    def start_notify(self, *args, timeout: Optional[float] = None, **kwargs):  # pylint: disable=C0116
+    def start_notify(
+        self, *args, timeout: Optional[float] = None, **kwargs
+    ):  # pylint: disable=C0116
         """
         Subscribe to notifications for a BLE characteristic on the connected device.
 
@@ -445,7 +455,9 @@ class BLEClient:
         """
         self.close()
 
-    def async_await(self, coro: "Awaitable", timeout: Optional[float] = None):  # pylint: disable=C0116
+    def async_await(
+        self, coro: "Awaitable", timeout: Optional[float] = None
+    ):  # pylint: disable=C0116
         """
         Wait for the given coroutine to complete on the client's event loop and return its result.
 
