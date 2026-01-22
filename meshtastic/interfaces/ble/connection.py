@@ -7,7 +7,7 @@ from typing import Callable, Optional
 from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.constants import BLEConfig
+from meshtastic.interfaces.ble.constants import BLEConfig, DISCONNECT_TIMEOUT_SECONDS
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
@@ -175,11 +175,22 @@ class ClientManager:
         Close the given BLE client and suppress errors raised during shutdown.
 
         If provided, sets the given event after attempting to close the client to signal completion.
+        Attempts a best-effort disconnect before closing to release adapter resources
+        after failed or timed-out connection attempts.
 
         Parameters:
             client (BLEClient): The client to close.
             event (Optional[Event]): Event to set after closing to indicate the operation finished.
         """
+        if not getattr(client, "_closed", False) and getattr(
+            client, "bleak_client", None
+        ):
+            self.error_handler.safe_cleanup(
+                lambda: client.disconnect(
+                    await_timeout=DISCONNECT_TIMEOUT_SECONDS
+                ),
+                "client disconnect",
+            )
         self.error_handler.safe_cleanup(client.close, "client close")
         if event:
             event.set()
