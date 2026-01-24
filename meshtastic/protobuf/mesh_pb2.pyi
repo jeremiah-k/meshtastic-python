@@ -168,9 +168,9 @@ class _HardwareModelEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._
     Less common/prototype boards listed here (needs one more byte over the air)
     ---------------------------------------------------------------------------
     """
-    NRF52840DK: _HardwareModel.ValueType  # 33
+    T_ECHO_PLUS: _HardwareModel.ValueType  # 33
     """
-    TODO: REPLACE
+    T-Echo Plus device from LilyGo
     """
     PPR: _HardwareModel.ValueType  # 34
     """
@@ -535,6 +535,18 @@ class _HardwareModelEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._
     """
     Elecrow ThinkNode M6
     """
+    MESHSTICK_1262: _HardwareModel.ValueType  # 121
+    """
+    Elecrow Meshstick 1262
+    """
+    TBEAM_1_WATT: _HardwareModel.ValueType  # 122
+    """
+    LilyGo T-Beam 1W
+    """
+    T5_S3_EPAPER_PRO: _HardwareModel.ValueType  # 123
+    """
+    LilyGo T5 S3 ePaper Pro (V1 and V2)
+    """
     PRIVATE_HW: _HardwareModel.ValueType  # 255
     """
     ------------------------------------------------------------------------------------------------------------------------------------------
@@ -686,9 +698,9 @@ LORA_RELAY_V1: HardwareModel.ValueType  # 32
 Less common/prototype boards listed here (needs one more byte over the air)
 ---------------------------------------------------------------------------
 """
-NRF52840DK: HardwareModel.ValueType  # 33
+T_ECHO_PLUS: HardwareModel.ValueType  # 33
 """
-TODO: REPLACE
+T-Echo Plus device from LilyGo
 """
 PPR: HardwareModel.ValueType  # 34
 """
@@ -1052,6 +1064,18 @@ Elecrow ThinkNode M4
 THINKNODE_M6: HardwareModel.ValueType  # 120
 """
 Elecrow ThinkNode M6
+"""
+MESHSTICK_1262: HardwareModel.ValueType  # 121
+"""
+Elecrow Meshstick 1262
+"""
+TBEAM_1_WATT: HardwareModel.ValueType  # 122
+"""
+LilyGo T-Beam 1W
+"""
+T5_S3_EPAPER_PRO: HardwareModel.ValueType  # 123
+"""
+LilyGo T5 S3 ePaper Pro (V1 and V2)
 """
 PRIVATE_HW: HardwareModel.ValueType  # 255
 """
@@ -1972,6 +1996,11 @@ class Routing(google.protobuf.message.Message):
         Airtime fairness rate limit exceeded for a packet
         This typically enforced per portnum and is used to prevent a single node from monopolizing airtime
         """
+        PKI_SEND_FAIL_PUBLIC_KEY: Routing._Error.ValueType  # 39
+        """
+        PKI encryption failed, due to no public key for the remote node
+        This is different from PKI_UNKNOWN_PUBKEY which indicates a failure upon receiving a packet
+        """
 
     class Error(_Error, metaclass=_ErrorEnumTypeWrapper):
         """
@@ -2049,6 +2078,11 @@ class Routing(google.protobuf.message.Message):
     """
     Airtime fairness rate limit exceeded for a packet
     This typically enforced per portnum and is used to prevent a single node from monopolizing airtime
+    """
+    PKI_SEND_FAIL_PUBLIC_KEY: Routing.Error.ValueType  # 39
+    """
+    PKI encryption failed, due to no public key for the remote node
+    This is different from PKI_UNKNOWN_PUBKEY which indicates a failure upon receiving a packet
     """
 
     ROUTE_REQUEST_FIELD_NUMBER: builtins.int
@@ -2281,6 +2315,7 @@ class StoreForwardPlusPlus(google.protobuf.message.Message):
     ENCAPSULATED_TO_FIELD_NUMBER: builtins.int
     ENCAPSULATED_FROM_FIELD_NUMBER: builtins.int
     ENCAPSULATED_RXTIME_FIELD_NUMBER: builtins.int
+    CHAIN_COUNT_FIELD_NUMBER: builtins.int
     sfpp_message_type: global___StoreForwardPlusPlus.SFPP_message_type.ValueType
     """
     Which message type is this
@@ -2317,6 +2352,10 @@ class StoreForwardPlusPlus(google.protobuf.message.Message):
     """
     The receive time of the message in question
     """
+    chain_count: builtins.int
+    """
+    Used in a LINK_REQUEST to specify the message X spots back from head
+    """
     def __init__(
         self,
         *,
@@ -2329,8 +2368,9 @@ class StoreForwardPlusPlus(google.protobuf.message.Message):
         encapsulated_to: builtins.int = ...,
         encapsulated_from: builtins.int = ...,
         encapsulated_rxtime: builtins.int = ...,
+        chain_count: builtins.int = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["commit_hash", b"commit_hash", "encapsulated_from", b"encapsulated_from", "encapsulated_id", b"encapsulated_id", "encapsulated_rxtime", b"encapsulated_rxtime", "encapsulated_to", b"encapsulated_to", "message", b"message", "message_hash", b"message_hash", "root_hash", b"root_hash", "sfpp_message_type", b"sfpp_message_type"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["chain_count", b"chain_count", "commit_hash", b"commit_hash", "encapsulated_from", b"encapsulated_from", "encapsulated_id", b"encapsulated_id", "encapsulated_rxtime", b"encapsulated_rxtime", "encapsulated_to", b"encapsulated_to", "message", b"message", "message_hash", b"message_hash", "root_hash", b"root_hash", "sfpp_message_type", b"sfpp_message_type"]) -> None: ...
 
 global___StoreForwardPlusPlus = StoreForwardPlusPlus
 
@@ -2403,6 +2443,25 @@ class Waypoint(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal["_longitude_i", b"_longitude_i"]) -> typing.Literal["longitude_i"] | None: ...
 
 global___Waypoint = Waypoint
+
+@typing.final
+class StatusMessage(google.protobuf.message.Message):
+    """
+    Message for node status
+    """
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    STATUS_FIELD_NUMBER: builtins.int
+    status: builtins.str
+    def __init__(
+        self,
+        *,
+        status: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["status", b"status"]) -> None: ...
+
+global___StatusMessage = StatusMessage
 
 @typing.final
 class MqttClientProxyMessage(google.protobuf.message.Message):
@@ -2895,6 +2954,7 @@ class NodeInfo(google.protobuf.message.Message):
     IS_FAVORITE_FIELD_NUMBER: builtins.int
     IS_IGNORED_FIELD_NUMBER: builtins.int
     IS_KEY_MANUALLY_VERIFIED_FIELD_NUMBER: builtins.int
+    IS_MUTED_FIELD_NUMBER: builtins.int
     num: builtins.int
     """
     The node number
@@ -2942,6 +3002,11 @@ class NodeInfo(google.protobuf.message.Message):
     Persists between NodeDB internal clean ups
     LSB 0 of the bitfield
     """
+    is_muted: builtins.bool
+    """
+    True if node has been muted
+    Persistes between NodeDB internal clean ups
+    """
     @property
     def user(self) -> global___User:
         """
@@ -2976,9 +3041,10 @@ class NodeInfo(google.protobuf.message.Message):
         is_favorite: builtins.bool = ...,
         is_ignored: builtins.bool = ...,
         is_key_manually_verified: builtins.bool = ...,
+        is_muted: builtins.bool = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_hops_away", b"_hops_away", "device_metrics", b"device_metrics", "hops_away", b"hops_away", "position", b"position", "user", b"user"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_hops_away", b"_hops_away", "channel", b"channel", "device_metrics", b"device_metrics", "hops_away", b"hops_away", "is_favorite", b"is_favorite", "is_ignored", b"is_ignored", "is_key_manually_verified", b"is_key_manually_verified", "last_heard", b"last_heard", "num", b"num", "position", b"position", "snr", b"snr", "user", b"user", "via_mqtt", b"via_mqtt"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_hops_away", b"_hops_away", "channel", b"channel", "device_metrics", b"device_metrics", "hops_away", b"hops_away", "is_favorite", b"is_favorite", "is_ignored", b"is_ignored", "is_key_manually_verified", b"is_key_manually_verified", "is_muted", b"is_muted", "last_heard", b"last_heard", "num", b"num", "position", b"position", "snr", b"snr", "user", b"user", "via_mqtt", b"via_mqtt"]) -> None: ...
     def WhichOneof(self, oneof_group: typing.Literal["_hops_away", b"_hops_away"]) -> typing.Literal["hops_away"] | None: ...
 
 global___NodeInfo = NodeInfo

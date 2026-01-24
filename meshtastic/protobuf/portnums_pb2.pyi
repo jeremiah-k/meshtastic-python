@@ -124,6 +124,13 @@ class _PortNumEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTy
     This module is specifically for Native Linux nodes, and provides a Git-style
     chain of messages.
     """
+    NODE_STATUS_APP: _PortNum.ValueType  # 36
+    """
+    Node Status module
+    ENCODING: protobuf
+    This module allows setting an extra string of status for a node.
+    Broadcasts on change and on a timer, possibly once a day.
+    """
     SERIAL_APP: _PortNum.ValueType  # 64
     """
     Provides a hardware serial interface to send and receive from the Meshtastic network.
@@ -334,6 +341,13 @@ Store and Forward++ module included in the firmware
 ENCODING: protobuf
 This module is specifically for Native Linux nodes, and provides a Git-style
 chain of messages.
+"""
+NODE_STATUS_APP: PortNum.ValueType  # 36
+"""
+Node Status module
+ENCODING: protobuf
+This module allows setting an extra string of status for a node.
+Broadcasts on change and on a timer, possibly once a day.
 """
 SERIAL_APP: PortNum.ValueType  # 64
 """
