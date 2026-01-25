@@ -4,9 +4,10 @@ import asyncio
 import atexit
 import logging
 import struct
+import sys
 import time
 import io
-from threading import Thread
+from threading import Thread, Event
 from typing import List, Optional
 
 import google.protobuf
@@ -258,11 +259,13 @@ class BLEClient:
     """Client for managing connection to a BLE device"""
 
     def __init__(self, address=None, **kwargs) -> None:
+        self._loop_ready = Event()
         self._eventLoop = asyncio.new_event_loop()
         self._eventThread = Thread(
             target=self._run_event_loop, name="BLEClient", daemon=True
         )
         self._eventThread.start()
+        self._loop_ready.wait()  # Wait for event loop to be running
 
         if not address:
             logger.debug("No address provided - only discover method will work.")
@@ -306,13 +309,28 @@ class BLEClient:
         self.close()
 
     def async_await(self, coro, timeout=None):  # pylint: disable=C0116
-        return self.async_run(coro).result(timeout)
+        """Wait for async operation to complete.
+
+        On macOS, CoreBluetooth requires occasional I/O operations for
+        callbacks to be properly delivered. The debug logging provides this
+        I/O when enabled, allowing the system to process pending callbacks.
+        """
+        logger.debug(f"async_await: waiting for {coro}")
+        future = self.async_run(coro)
+        # On macOS without debug logging, callbacks may not be delivered
+        # unless we trigger some I/O. This is a known quirk of CoreBluetooth.
+        sys.stdout.flush()
+        result = future.result(timeout)
+        logger.debug("async_await: complete")
+        return result
 
     def async_run(self, coro):  # pylint: disable=C0116
         return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)
 
     def _run_event_loop(self):
         try:
+            # Signal ready from WITHIN the loop to guarantee it's actually running
+            self._eventLoop.call_soon(self._loop_ready.set)
             self._eventLoop.run_forever()
         finally:
             self._eventLoop.close()
