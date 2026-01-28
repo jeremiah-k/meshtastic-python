@@ -1397,6 +1397,39 @@ class Node:
             onResponse = self.onAckNak
         return self._send_admin(p, onResponse=onResponse)
 
+    def startOTA(
+        self,
+        mode: admin_pb2.OTAMode.ValueType,
+        hash: bytes,
+    ) -> mesh_pb2.MeshPacket | None:
+        """Request OTA mode for local node firmware that supports ota_request.
+
+        Parameters
+        ----------
+        mode : admin_pb2.OTAMode.ValueType
+            OTA transport mode to use after reboot (for example, ``admin_pb2.OTA_WIFI``).
+        hash : bytes
+            Firmware hash bytes used by the node to validate OTA payload consistency.
+
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent Admin message packet, or ``None`` if no packet was produced.
+
+        Raises
+        ------
+        MeshInterfaceError
+            If called for a non-local node.
+        """
+        if self != self.iface.localNode:
+            self._raise_interface_error("startOTA only possible on local node")
+
+        self.ensureSessionKey()
+        p = admin_pb2.AdminMessage()
+        p.ota_request.reboot_ota_mode = mode
+        p.ota_request.ota_hash = hash
+        return self._send_admin(p)
+
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to enter DFU (NRF52) mode.
 

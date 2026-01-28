@@ -20,6 +20,8 @@ import yaml
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub  # type: ignore[import-untyped]
 
+import meshtastic.ota
+import meshtastic.util
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
@@ -27,6 +29,7 @@ from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
+    admin_pb2,
     channel_pb2,
     config_pb2,
     localonly_pb2,
@@ -788,6 +791,41 @@ def onConnected(interface: MeshInterface) -> None:
             waitForAckNak = True
             interface.getNode(args.dest, False, **getNode_kwargs).rebootOTA()
 
+        if args.ota_update:
+            closeNow = True
+            waitForAckNak = True
+
+            if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
+                meshtastic.util.our_exit(
+                    "Error: OTA update currently requires a TCP connection to the node (use --host)."
+                )
+
+            ota = meshtastic.ota.ESP32WiFiOTA(args.ota_update, interface.hostname)
+
+            print(f"Triggering OTA update on {interface.hostname}...")
+            interface.getNode(args.dest, False, **getNode_kwargs).startOTA(
+                mode=admin_pb2.OTA_WIFI,
+                hash=ota.hash_bytes()
+            )
+
+            print("Waiting for device to reboot into OTA mode...")
+            time.sleep(5)
+
+            retries = 5
+            while retries > 0:
+                try:
+                    ota.update()
+                    break
+
+                except Exception as e:
+                    retries -= 1
+                    if retries == 0:
+                        meshtastic.util.our_exit(f"\nOTA update failed: {e}")
+
+                    time.sleep(2)
+
+            print("\nOTA update completed successfully!")
+                
         if args.enter_dfu:
             closeNow = True
             waitForAckNak = True
@@ -2808,8 +2846,15 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
     group.add_argument(
         "--reboot-ota",
-        help="Tell the destination node to reboot into factory firmware (ESP32)",
+        help="Tell the destination node to reboot into factory firmware (ESP32, firmware version <2.7.18)",
         action="store_true",
+    )
+
+    group.add_argument(
+        "--ota-update",
+        help="Perform a OTA update on the destination node (ESP32, firmware version >=2.7.18, WiFi/TCP only for now). Specify the path to the firmware file.",
+        metavar="FIRMWARE_FILE",
+        action="store",
     )
 
     group.add_argument(
