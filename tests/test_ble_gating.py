@@ -102,15 +102,14 @@ class TestMarkConnected:
         _mark_connected(None)
         assert len(_CONNECTED_ADDRS) == 0
 
-    def test_mark_connected_with_empty_adds_to_registry_without_normalization(self):
-        """Test that marking empty string as connected adds it unless normalized via _addr_key."""
-        # Empty strings are not handled specially, they will be added
-        # Use _addr_key to normalize first, which returns None for empty strings
+    def test_mark_connected_with_empty_string_does_nothing(self):
+        """Test that marking empty string as connected does nothing (normalizes to None)."""
+        # Empty strings are now normalized internally, so they are not added
         _mark_connected("")
-        assert len(_CONNECTED_ADDRS) == 1
-        # But with _addr_key, empty string becomes None and is not added
-        _mark_connected(_addr_key(""))
-        assert len(_CONNECTED_ADDRS) == 1
+        assert len(_CONNECTED_ADDRS) == 0
+        # Same behavior as passing None directly
+        _mark_connected(None)
+        assert len(_CONNECTED_ADDRS) == 0
 
 
 class TestMarkDisconnected:

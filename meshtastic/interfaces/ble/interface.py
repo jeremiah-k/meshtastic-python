@@ -334,8 +334,8 @@ class BLEInterface(MeshInterface):
                     self._disconnect_notified = True
 
                 # Transition to DISCONNECTED state on disconnect
+                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                 if previous_client:
-                    self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                     _mark_disconnected(
                         _addr_key(getattr(previous_client, "address", self.address))
                     )

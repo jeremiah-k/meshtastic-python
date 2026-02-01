@@ -8,7 +8,11 @@ from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
-from meshtastic.interfaces.ble.gating import _addr_key, _get_addr_lock
+from meshtastic.interfaces.ble.gating import (
+    _addr_key,
+    _get_addr_lock,
+    _is_currently_connected_elsewhere,
+)
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
 from meshtastic.interfaces.ble.utils import get_sleep_fn
@@ -176,6 +180,14 @@ class ReconnectWorker:
                         if getattr(self.interface, "_state_manager", None) and getattr(
                             self.interface._state_manager, "is_connected", False
                         ):
+                            return
+                        # Check if already connected elsewhere before attempting
+                        if _is_currently_connected_elsewhere(addr_key):
+                            logger.debug(
+                                "Skipping reconnect attempt %d: address %s already connected elsewhere",
+                                attempt_num,
+                                addr_key or "unknown",
+                            )
                             return
                         logger.info(
                             "Attempting BLE auto-reconnect (attempt %d).", attempt_num

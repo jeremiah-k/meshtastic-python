@@ -18,13 +18,13 @@ from meshtastic.interfaces.ble import BLEInterface
 from pubsub import pub
 
 # Create a single long-lived interface for the process
+# Note: BLEInterface automatically attempts connection during construction
 iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
 
 # Subscribe once for the life of the process
 pub.subscribe(lambda packet, interface: print(packet), "meshtastic.receive")
 
-# Connect (auto-reconnect will take over after disconnects)
-iface.connect()
+# Connection is already established; auto-reconnect will take over after disconnects
 ```
 
 Avoid creating new `BLEInterface` instances on every reconnect attempt. Reuse the same instance so the per-address gate and state manager can coordinate cleanly.
@@ -36,10 +36,12 @@ If you enable `auto_reconnect=True` (default), do not layer an application-level
 If your application manages reconnects itself, disable the built-in loop:
 
 ```python
+# Note: With auto_reconnect=False, initial connection still happens in __init__
 iface = BLEInterface(address="AA:BB:CC:DD:EE:FF", auto_reconnect=False)
-iface.connect()
 # on disconnect: call iface.connect() again using the same instance
 ```
+
+**When to call `connect()` manually:** The BLEInterface constructor automatically calls `connect()`. You only need to call it manually after `close()` or when handling a disconnect with `auto_reconnect=False`.
 
 ### Respect the address gate
 
@@ -69,10 +71,9 @@ from pubsub import pub
 def on_packet(packet, interface):
     print("Packet:", packet)
 
+# BLEInterface automatically connects during construction
 iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
 pub.subscribe(on_packet, "meshtastic.receive")
-
-iface.connect()
 
 try:
     # Keep your application alive; work is driven by callbacks

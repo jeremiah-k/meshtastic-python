@@ -48,20 +48,26 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
         _ADDR_LOCKS.pop(key, None)
 
 
-def _mark_connected(key: Optional[str]) -> None:
+def _mark_connected(addr: Optional[str]) -> None:
     """
-    Track that the given normalized address is currently connected.
+    Track that the given address is currently connected.
+
+    The address is normalized internally using _addr_key.
     """
+    key = _addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.add(key)
 
 
-def _mark_disconnected(key: Optional[str]) -> None:
+def _mark_disconnected(addr: Optional[str]) -> None:
     """
-    Track that the given normalized address has disconnected.
+    Track that the given address has disconnected.
+
+    The address is normalized internally using _addr_key.
     """
+    key = _addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
@@ -69,10 +75,13 @@ def _mark_disconnected(key: Optional[str]) -> None:
         _cleanup_addr_lock(key)
 
 
-def _is_currently_connected_elsewhere(key: Optional[str]) -> bool:
+def _is_currently_connected_elsewhere(addr: Optional[str]) -> bool:
     """
     Return True when the address is currently connected by another interface.
+
+    The address is normalized internally using _addr_key.
     """
+    key = _addr_key(addr)
     if key is None:
         return False
     with _REGISTRY_LOCK:
