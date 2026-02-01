@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import google.protobuf.json_format
+from google.protobuf.message import DecodeError  # type: ignore[import-untyped]
 
 try:
     import print_color  # type: ignore[import-untyped]
@@ -1138,6 +1139,11 @@ class MeshInterface:  # pylint: disable=R0902
         publishingThread.queueWork(
             lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
         )
+        publishingThread.queueWork(
+            lambda: pub.sendMessage(
+                "meshtastic.connection.status", interface=self, connected=False
+            )
+        )
 
     def sendHeartbeat(self):
         """Sends a heartbeat to the radio. Can be used to verify the connection is healthy."""
@@ -1169,6 +1175,11 @@ class MeshInterface:  # pylint: disable=R0902
             publishingThread.queueWork(
                 lambda: pub.sendMessage(
                     "meshtastic.connection.established", interface=self
+                )
+            )
+            publishingThread.queueWork(
+                lambda: pub.sendMessage(
+                    "meshtastic.connection.status", interface=self, connected=True
                 )
             )
 
@@ -1292,21 +1303,36 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _handleFromRadio(self, fromRadioBytes):
         """
-        Handle a packet that arrived from the radio(update model and publish events)
+        Process a raw FromRadio protobuf message and update interface state and event streams.
 
-        Called by subclasses."""
+        Parses the provided FromRadio bytes, updates internal state (myInfo, metadata, node records, local configuration, and queue status),
+        and enqueues pubsub notifications for node updates, client notifications, MQTT proxy messages, xmodem packets, log records,
+        and other radio events. Malformed or unparseable protobuf payloads are discarded without raising.
+
+        Parameters
+        ----------
+            fromRadioBytes (bytes | bytearray): Raw FromRadio protobuf payload received from the radio. bytearray inputs are accepted and
+                converted to bytes before parsing.
+
+        """
         fromRadio = mesh_pb2.FromRadio()
+        # Ensure we have bytes, not bytearray (BLE interface can return bytearray)
+        if isinstance(fromRadioBytes, bytearray):
+            fromRadioBytes = bytes(fromRadioBytes)
         logger.debug(
             f"in mesh_interface.py _handleFromRadio() fromRadioBytes: {fromRadioBytes}"
         )
         try:
             fromRadio.ParseFromString(fromRadioBytes)
-        except Exception as ex:
-            logger.error(
-                    f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}"
+        except DecodeError:
+            # Handle protobuf parsing errors gracefully - discard corrupted packet
+            logger.warning(
+                "Failed to parse FromRadio packet, discarding: %r", fromRadioBytes
             )
-            traceback.print_exc()
-            raise ex
+            return
+        except Exception:
+            logger.exception("Error while parsing FromRadio bytes: %r", fromRadioBytes)
+            raise
         asDict = google.protobuf.json_format.MessageToDict(fromRadio)
         logger.debug(f"Received from radio: {fromRadio}")
         if fromRadio.HasField("my_info"):

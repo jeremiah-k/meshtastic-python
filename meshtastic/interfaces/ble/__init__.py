@@ -1,27 +1,29 @@
-"""Backwards compatibility layer for BLE interface."""
+"""BLE interface package for Meshtastic."""
+# ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
 
-from meshtastic.interfaces.ble import (
+from threading import current_thread
+
+from bleak import BleakScanner, BLEDevice
+
+from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.connection import (
+    ClientManager,
+    ConnectionOrchestrator,
+    ConnectionValidator,
+)
+
+# Explicit imports to preserve backwards-compatible surface (including private helpers).
+from meshtastic.interfaces.ble.constants import (
     AUTO_RECONNECT_BACKOFF,
     AUTO_RECONNECT_INITIAL_DELAY,
     AUTO_RECONNECT_JITTER_RATIO,
     AUTO_RECONNECT_MAX_DELAY,
+    BLE_SCAN_TIMEOUT,
     BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION,
+    BLEAK_VERSION,
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
-    BLE_SCAN_TIMEOUT,
-    BLEConfig,
-    BLEClient,
-    BLEErrorHandler,
-    BLEInterface,
-    BLEStateManager,
     CONNECTION_TIMEOUT,
-    ClientManager,
-    ConnectedStrategy,
-    ConnectionOrchestrator,
-    ConnectionState,
-    ConnectionValidator,
-    DiscoveryManager,
-    DiscoveryStrategy,
     DISCONNECT_TIMEOUT_SECONDS,
     EMPTY_READ_MAX_RETRIES,
     EMPTY_READ_RETRY_DELAY,
@@ -40,28 +42,35 @@ from meshtastic.interfaces.ble import (
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
     MALFORMED_NOTIFICATION_THRESHOLD,
-    NotificationManager,
     NOTIFICATION_START_TIMEOUT,
     RECEIVE_THREAD_JOIN_TIMEOUT,
     RECEIVE_WAIT_TIMEOUT,
-    ReconnectPolicy,
-    ReconnectScheduler,
-    ReconnectWorker,
-    RetryPolicy,
     SEND_PROPAGATION_DELAY,
     SERVICE_UUID,
-    ThreadCoordinator,
     TORADIO_UUID,
     TRANSIENT_READ_MAX_RETRIES,
     TRANSIENT_READ_RETRY_DELAY,
+    BLEConfig,
     _bleak_supports_connected_fallback,
     _parse_version_triplet,
-    _sleep,
     logger,
 )
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.discovery import (
+    ConnectedStrategy,
+    DiscoveryManager,
+    DiscoveryStrategy,
+)
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.interface import BLEInterface
+from meshtastic.interfaces.ble.notifications import NotificationManager
+from meshtastic.interfaces.ble.policies import ReconnectPolicy, RetryPolicy
+from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.utils import _sleep
 
-# Ensure all the expected classes and functions are available
 __all__ = [
+    # Core classes
     "BLEConfig",
     "ConnectionState",
     "BLEStateManager",
@@ -80,7 +89,10 @@ __all__ = [
     "ReconnectWorker",
     "NotificationManager",
     "BLEInterface",
-    # Constants
+    "BleakScanner",
+    "BLEDevice",
+    "current_thread",
+    # Constants/helpers
     "SERVICE_UUID",
     "TORADIO_UUID",
     "FROMRADIO_UUID",
@@ -91,6 +103,13 @@ __all__ = [
     "DISCONNECT_TIMEOUT_SECONDS",
     "RECEIVE_THREAD_JOIN_TIMEOUT",
     "EVENT_THREAD_JOIN_TIMEOUT",
+    "ERROR_TIMEOUT",
+    "ERROR_MULTIPLE_DEVICES",
+    "ERROR_READING_BLE",
+    "ERROR_NO_PERIPHERAL_FOUND",
+    "ERROR_WRITING_BLE",
+    "ERROR_CONNECTION_FAILED",
+    "ERROR_NO_PERIPHERALS_FOUND",
     "BLE_SCAN_TIMEOUT",
     "RECEIVE_WAIT_TIMEOUT",
     "EMPTY_READ_RETRY_DELAY",
@@ -108,18 +127,11 @@ __all__ = [
     "AUTO_RECONNECT_JITTER_RATIO",
     "BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION",
     "BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT",
-    # Error messages
-    "ERROR_TIMEOUT",
-    "ERROR_MULTIPLE_DEVICES",
-    "ERROR_READING_BLE",
-    "ERROR_NO_PERIPHERAL_FOUND",
-    "ERROR_WRITING_BLE",
-    "ERROR_CONNECTION_FAILED",
-    "ERROR_NO_PERIPHERALS_FOUND",
     "BLECLIENT_ERROR_ASYNC_TIMEOUT",
-    # Utility functions
-    "_sleep",
+    "BLEAK_VERSION",
+    # Private helpers (exported for backwards compatibility)
     "_parse_version_triplet",
     "_bleak_supports_connected_fallback",
+    "_sleep",
     "logger",
 ]
