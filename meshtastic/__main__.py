@@ -24,7 +24,6 @@ import meshtastic.ota
 import meshtastic.util
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
-import meshtastic.util
 from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
@@ -804,8 +803,8 @@ def onConnected(interface: MeshInterface) -> None:
 
             print(f"Triggering OTA update on {interface.hostname}...")
             interface.getNode(args.dest, False, **getNode_kwargs).startOTA(
-                mode=admin_pb2.OTA_WIFI,
-                hash=ota.hash_bytes()
+                ota_mode=admin_pb2.OTAMode.OTA_WIFI,
+                ota_file_hash=ota.hash_bytes()
             )
 
             print("Waiting for device to reboot into OTA mode...")
@@ -825,7 +824,7 @@ def onConnected(interface: MeshInterface) -> None:
                     time.sleep(2)
 
             print("\nOTA update completed successfully!")
-                
+
         if args.enter_dfu:
             closeNow = True
             waitForAckNak = True
@@ -2852,7 +2851,8 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
     group.add_argument(
         "--ota-update",
-        help="Perform an OTA update on the destination node (ESP32, firmware version >=2.7.18, WiFi/TCP only for now). Specify the path to the firmware file.",
+        help="Perform an OTA update on the local node (ESP32, firmware version >=2.7.18, WiFi/TCP only for now). "
+        "Specify the path to the firmware file.",
         metavar="FIRMWARE_FILE",
         action="store",
     )
