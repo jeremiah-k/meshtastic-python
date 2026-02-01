@@ -177,9 +177,7 @@ class ReconnectWorker:
                 attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
                     with gate:
-                        if getattr(self.interface, "_state_manager", None) and getattr(
-                            self.interface._state_manager, "is_connected", False
-                        ):
+                        if self.interface.is_connection_connected:
                             return
                         # Check if already connected elsewhere before attempting
                         if _is_currently_connected_elsewhere(addr_key):

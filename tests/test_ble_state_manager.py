@@ -27,7 +27,6 @@ class TestBLEStateManager:
         assert not manager.is_connected
         assert not manager.is_closing
         assert manager.can_connect
-        assert manager.client is None
 
     def test_state_properties(self):
         """Test state-based property methods."""
@@ -105,23 +104,6 @@ class TestBLEStateManager:
             ConnectionState.CONNECTING
         )  # Can't go back to CONNECTING
         assert manager.state == ConnectionState.CONNECTED
-
-    def test_client_management(self):
-        """Test client reference management during transitions."""
-        manager = BLEStateManager()
-        mock_client = Mock()
-
-        # Client should be set when provided in transition
-        assert manager.transition_to(ConnectionState.CONNECTING, mock_client)
-        assert manager.client == mock_client
-
-        # Client should be preserved through transitions
-        assert manager.transition_to(ConnectionState.CONNECTED)
-        assert manager.client == mock_client
-
-        # Client should be cleared when transitioning to DISCONNECTED
-        assert manager.transition_to(ConnectionState.DISCONNECTED)
-        assert manager.client is None
 
     def test_thread_safety(self):
         """Test concurrent state access is thread-safe."""
@@ -274,7 +256,6 @@ class TestBLEInterfaceStateIntegration:
         assert manager.can_connect
         assert not manager.is_connected
         assert not manager.is_closing
-        assert manager.client is None
 
         # Test state transitions work
         assert manager.transition_to(ConnectionState.CONNECTING)
@@ -321,24 +302,18 @@ class TestBLEInterfaceStateIntegration:
     def test_client_management_with_states(self):
         """Test client management works correctly with state transitions."""
         manager = BLEStateManager()
-        mock_client = MagicMock()
 
         # Should be able to set client when transitioning to CONNECTED (via CONNECTING)
         assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
-        assert manager.client is mock_client
+        assert manager.transition_to(ConnectionState.CONNECTED)
         assert manager.is_connected
 
         # Client should be cleared when transitioning to DISCONNECTED
         assert manager.transition_to(ConnectionState.DISCONNECTED)
-        assert manager.client is None
         assert manager.state == ConnectionState.DISCONNECTED
 
         # Should not be able to set client for invalid states
-        assert not manager.transition_to(
-            ConnectionState.DISCONNECTED, client=mock_client
-        )
-        assert manager.client is None
+        assert not manager.transition_to(ConnectionState.DISCONNECTED)
 
     def test_state_transition_validation(self):
         """
@@ -394,10 +369,7 @@ class TestPhase3LockConsolidation:
                     if i % 3 == 0:
                         success = manager.transition_to(ConnectionState.CONNECTING)
                     elif i % 3 == 1:
-                        mock_client = MagicMock()
-                        success = manager.transition_to(
-                            ConnectionState.CONNECTED, client=mock_client
-                        )
+                        success = manager.transition_to(ConnectionState.CONNECTED)
                     else:
                         success = manager.transition_to(ConnectionState.DISCONNECTED)
 
@@ -426,18 +398,9 @@ class TestPhase3LockConsolidation:
         # Verify final state is valid
         assert manager.state in ConnectionState
 
-        # Verify client consistency
-        if manager.state == ConnectionState.CONNECTED:
-            assert manager.client is not None
-        else:
-            assert manager.client is None
-
     def test_reentrant_lock_behavior(self):
         """Test that unified lock supports reentrancy for nested operations."""
-        from unittest.mock import MagicMock
-
         manager = BLEStateManager()
-        mock_client = MagicMock()
 
         # Test nested lock acquisition through state manager methods
         def nested_operation():
@@ -448,8 +411,7 @@ class TestPhase3LockConsolidation:
             Performs CONNECTING → CONNECTED with a mock client and verifies the manager sets the client and reports connected.
             """
             assert manager.transition_to(ConnectionState.CONNECTING)
-            assert manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
-            assert manager.client is mock_client
+            assert manager.transition_to(ConnectionState.CONNECTED)
             assert manager.is_connected
 
         # Acquire lock manually then call nested operation
@@ -458,7 +420,6 @@ class TestPhase3LockConsolidation:
 
         # Verify state is consistent
         assert manager.state == ConnectionState.CONNECTED
-        assert manager.client is mock_client
 
     def test_lock_contention_resolution(self):
         """
@@ -509,7 +470,6 @@ class TestPhase3LockConsolidation:
 def test_state_transition_performance():
     """Measure performance of state transitions under realistic load."""
     manager = BLEStateManager()
-    mock_client = MagicMock()
 
     # Measure state transition performance
     iterations = 1000
@@ -518,7 +478,7 @@ def test_state_transition_performance():
     for _i in range(iterations):
         # Cycle through states
         manager.transition_to(ConnectionState.CONNECTING)
-        manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+        manager.transition_to(ConnectionState.CONNECTED)
         manager.transition_to(ConnectionState.DISCONNECTED)
 
     end_time = time.perf_counter()
@@ -628,11 +588,10 @@ def test_memory_efficiency():
     # Create and destroy many state managers
     for _i in range(100):
         manager = BLEStateManager()
-        mock_client = MagicMock()
 
         # Perform state operations
         manager.transition_to(ConnectionState.CONNECTING)
-        manager.transition_to(ConnectionState.CONNECTED, client=mock_client)
+        manager.transition_to(ConnectionState.CONNECTED)
         manager.transition_to(ConnectionState.DISCONNECTED)
 
         # Delete reference
@@ -669,15 +628,14 @@ def test_property_access_performance():
         _ = manager.is_connected
         _ = manager.is_closing
         _ = manager.can_connect
-        _ = manager.client
 
     end_time = time.perf_counter()
     elapsed = end_time - start_time
 
     # Property access should be very fast
-    avg_time = elapsed / (iterations * 5)  # 5 properties per iteration
+    avg_time = elapsed / (iterations * 4)  # 4 properties per iteration
     assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
 
     print(
-        f"Property access: {iterations * 5} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
+        f"Property access: {iterations * 4} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
     )

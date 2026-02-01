@@ -268,6 +268,45 @@ class ConnectionOrchestrator:
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
 
+    def _finalize_connection(
+        self,
+        client: "BLEClient",
+        device_address: str,
+        register_notifications_func: "Callable",
+        on_connected_func: "Callable",
+    ) -> None:
+        """
+        Finalize a successful BLE connection and update state.
+
+        Registers notifications, transitions state to CONNECTED, invokes the
+        connected callback, sets reconnected event if applicable, and logs success.
+
+        Parameters
+        ----------
+        client : BLEClient
+            The connected BLE client instance.
+        device_address : str
+            The device address for logging purposes.
+        register_notifications_func : Callable
+            Function to register notification handlers with the client.
+        on_connected_func : Callable
+            Callback invoked after successful connection finalization.
+        """
+        register_notifications_func(client)
+        # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
+        # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
+        if self.state_manager.state == ConnectionState.DISCONNECTED:
+            self.state_manager.transition_to(ConnectionState.CONNECTING)
+        self.state_manager.transition_to(ConnectionState.CONNECTED)
+        on_connected_func()
+        if getattr(self.interface, "_ever_connected", False):
+            self.thread_coordinator.set_event("reconnected_event")
+        normalized_device_address = BLEClient._sanitize_address(device_address)
+        logger.info(
+            "Connection successful to %s",
+            normalized_device_address or "unknown",
+        )
+
     def establish_connection(
         self,
         address: Optional[str],
@@ -330,19 +369,11 @@ class ConnectionOrchestrator:
                     12.0, BLEConfig.CONNECTION_TIMEOUT
                 )  # keep direct attempts short for known targets
                 self.client_manager.connect_client(client, timeout=direct_timeout)
-                register_notifications_func(client)
-                # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
-                # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
-                if self.state_manager.state == ConnectionState.DISCONNECTED:
-                    self.state_manager.transition_to(ConnectionState.CONNECTING)
-                self.state_manager.transition_to(ConnectionState.CONNECTED, client)
-                on_connected_func()
-                if getattr(self.interface, "_ever_connected", False):
-                    self.thread_coordinator.set_event("reconnected_event")
-                normalized_device_address = BLEClient._sanitize_address(target_address)
-                logger.info(
-                    "Connection successful to %s",
-                    normalized_device_address or "unknown",
+                self._finalize_connection(
+                    client,
+                    target_address,
+                    register_notifications_func,
+                    on_connected_func,
                 )
                 return client
             except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -363,18 +394,8 @@ class ConnectionOrchestrator:
                 device.address, on_disconnect_func
             )
             self.client_manager.connect_client(client)
-            register_notifications_func(client)
-            # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
-            # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
-            if self.state_manager.state == ConnectionState.DISCONNECTED:
-                self.state_manager.transition_to(ConnectionState.CONNECTING)
-            self.state_manager.transition_to(ConnectionState.CONNECTED, client)
-            on_connected_func()
-            if getattr(self.interface, "_ever_connected", False):
-                self.thread_coordinator.set_event("reconnected_event")
-            normalized_device_address = BLEClient._sanitize_address(device.address)
-            logger.info(
-                "Connection successful to %s", normalized_device_address or "unknown"
+            self._finalize_connection(
+                client, device.address, register_notifications_func, on_connected_func
             )
         except BleakDBusError:
             if client:

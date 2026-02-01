@@ -618,9 +618,9 @@ def test_close_clears_ble_threads(monkeypatch):
         time.sleep(poll_interval)
         elapsed_time += poll_interval
 
-    assert (
-        not lingering
-    ), f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
+    assert not lingering, (
+        f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
+    )
 
 
 def test_receive_thread_specific_exceptions(monkeypatch, caplog):
@@ -711,9 +711,9 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
 
         # Check that appropriate logging occurred
         assert "Fatal error in BLE receive thread" in caplog.text
-        assert (
-            close_called.is_set()
-        ), f"Expected close() to be called for {exc_type.__name__}"
+        assert close_called.is_set(), (
+            f"Expected close() to be called for {exc_type.__name__}"
+        )
 
         # Clean up
         iface._want_receive = False
@@ -791,12 +791,12 @@ def test_log_notification_registration(monkeypatch):
     registered_uuids = [call[0] for call in client.start_notify_calls]
 
     # Should have registered both log notifications and the critical FROMNUM notification
-    assert (
-        LEGACY_LOGRADIO_UUID in registered_uuids
-    ), "Legacy log notification should be registered"
-    assert (
-        LOGRADIO_UUID in registered_uuids
-    ), "Current log notification should be registered"
+    assert LEGACY_LOGRADIO_UUID in registered_uuids, (
+        "Legacy log notification should be registered"
+    )
+    assert LOGRADIO_UUID in registered_uuids, (
+        "Current log notification should be registered"
+    )
     assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should be registered"
 
     # Verify handlers are correctly associated
@@ -810,15 +810,15 @@ def test_log_notification_registration(monkeypatch):
         call for call in client.start_notify_calls if call[0] == FROMNUM_UUID
     )
 
-    assert callable(
-        legacy_call[1]
-    ), "Legacy log notification should register a callable handler"
-    assert callable(
-        current_call[1]
-    ), "Current log notification should register a callable handler"
-    assert callable(
-        fromnum_call[1]
-    ), "FROMNUM notification should register a callable handler"
+    assert callable(legacy_call[1]), (
+        "Legacy log notification should register a callable handler"
+    )
+    assert callable(current_call[1]), (
+        "Current log notification should register a callable handler"
+    )
+    assert callable(fromnum_call[1]), (
+        "FROMNUM notification should register a callable handler"
+    )
 
     iface.close()
 
@@ -1022,6 +1022,7 @@ def test_reconnect_worker_successful_attempt():
             self._reconnect_scheduler = StubScheduler()
             self.auto_reconnect = True
             self.is_connection_closing = False
+            self.is_connection_connected = False
             self.address = "addr"
             self.client = object()
             self.connect_calls = []
@@ -1172,6 +1173,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self._reconnect_scheduler = StubScheduler()
             self.auto_reconnect = True
             self.is_connection_closing = False
+            self.is_connection_connected = False
             self.address = "addr"
             self.client = None
             self.connect_attempts = 0

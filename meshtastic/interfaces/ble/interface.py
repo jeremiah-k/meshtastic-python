@@ -772,7 +772,7 @@ class BLEInterface(MeshInterface):
                     raise self.BLEError(
                         "Address resolution failed, cannot create device"
                     )
-                return BLEDevice(address=sanitized, name=sanitized, details={})
+                return BLEDevice(address=address, name=address, details={})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]

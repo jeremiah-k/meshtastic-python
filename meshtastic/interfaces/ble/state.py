@@ -68,7 +68,6 @@ class BLEStateManager:
         """Initialize state manager with disconnected state."""
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
-        self._client: Optional["BLEClient"] = None
 
     @property
     def lock(self) -> RLock:
@@ -126,34 +125,14 @@ class BLEStateManager:
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
-    @property
-    def client(self) -> Optional["BLEClient"]:
-        """
-        Get the currently associated BLE client, if any; access is protected by the manager's lock.
-
-        Returns
-        -------
-            Optional[BLEClient]: The current BLE client, or `None` if no client is set.
-        """
-        with self._state_lock:
-            return self._client
-
-    def transition_to(
-        self, new_state: ConnectionState, client: Optional["BLEClient"] = None
-    ) -> bool:
+    def transition_to(self, new_state: ConnectionState) -> bool:
         """
         Attempt to change the manager's BLE connection state to the given target state.
-
-        If the transition is allowed, updates the internal state and sets the stored
-        client when a `client` is provided; when transitioning to `DISCONNECTED`
-        with no `client`, the stored client is cleared.
 
         Parameters
         ----------
         new_state : Any
             ConnectionState Target state to transition to.
-        client : Any
-            BLE client to associate with the new state. If omitted and `new_state` is `ConnectionState.DISCONNECTED`, the stored client is cleared.
 
         Returns
         -------
@@ -167,13 +146,6 @@ class BLEStateManager:
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
                 self._state = new_state
-
-                # Update client reference if provided
-                if client is not None:
-                    self._client = client
-                elif new_state == ConnectionState.DISCONNECTED:
-                    self._client = None
-
                 logger.debug(f"State transition: {old_state.value} → {new_state.value}")
                 return True
             else:
