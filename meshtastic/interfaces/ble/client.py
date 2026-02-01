@@ -481,7 +481,8 @@ class BLEClient:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
             # was happening, causing callbacks to never be processed.
-            sys.stdout.flush()
+            with contextlib.suppress(ValueError, OSError):
+                sys.stdout.flush()
             return future.result(timeout)
         except SystemExit:  # pylint: disable=W0706
             raise

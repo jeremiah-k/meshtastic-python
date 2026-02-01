@@ -403,9 +403,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - worker errors recorded for debugging
+            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -527,9 +525,9 @@ def test_state_transition_performance():
     elapsed = end_time - start_time
 
     # Should complete quickly under typical CI conditions (allow headroom)
-    assert (
-        elapsed < 3.0
-    ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+    assert elapsed < 3.0, (
+        f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
+    )
 
     # Calculate average transition time
     avg_time = elapsed / (iterations * 3)
@@ -612,9 +610,9 @@ def test_lock_contention_performance():
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
     expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
-    assert (
-        total_operations >= expected_operations * 0.8
-    ), f"Too many failed operations: {total_operations}/{expected_operations}"
+    assert total_operations >= expected_operations * 0.8, (
+        f"Too many failed operations: {total_operations}/{expected_operations}"
+    )
 
     print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
 
@@ -647,9 +645,9 @@ def test_memory_efficiency():
     # Should not have significant memory growth
     object_growth = final_objects - initial_objects
     # Heuristic check: gc timing can vary slightly between runs, so allow a generous threshold.
-    assert (
-        object_growth < 1000
-    ), f"Potential memory leak: {object_growth} objects created"
+    assert object_growth < 1000, (
+        f"Potential memory leak: {object_growth} objects created"
+    )
 
     print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
 

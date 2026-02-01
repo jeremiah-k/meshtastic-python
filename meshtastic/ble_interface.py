@@ -61,6 +61,7 @@ from meshtastic.interfaces.ble import (
 )
 
 # Ensure all the expected classes and functions are available
+# noqa: RUF022 - grouped by logical categories (classes, constants, errors, utilities)
 __all__ = [
     "BLEConfig",
     "ConnectionState",

@@ -25,6 +25,7 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
     """
     Return a process-wide lock associated with the given normalized address.
     """
+    key = _addr_key(key)
     if key is None:
         return _REGISTRY_LOCK
     with _REGISTRY_LOCK:

@@ -53,9 +53,12 @@ class TestAddrLock:
         lock1 = _get_addr_lock("aabbccddeeff")
         assert lock1 is not None
         # Check that it's a reentrant lock by attempting to acquire twice
-        with lock1:
-            # If we can acquire it twice without blocking, it's a reentrant lock
-            pass
+        lock1.acquire()
+        try:
+            assert lock1.acquire(blocking=False)
+        finally:
+            lock1.release()
+            lock1.release()
 
     def test_get_lock_for_none_address(self):
         """Test that None address returns registry lock."""

@@ -340,7 +340,6 @@ class BLEInterface(MeshInterface):
                     _mark_disconnected(
                         _addr_key(getattr(previous_client, "address", self.address))
                     )
-                    self._disconnected()
                     # Close previous client asynchronously
                     close_thread = self.thread_coordinator.create_thread(
                         target=self._client_manager.safe_close_client,
@@ -349,6 +348,9 @@ class BLEInterface(MeshInterface):
                         daemon=True,
                     )
                     self.thread_coordinator.start_thread(close_thread)
+                else:
+                    _mark_disconnected(_addr_key(self.address))
+                self._disconnected()
 
                 # Event coordination for reconnection
                 self.thread_coordinator.clear_events(
@@ -1220,26 +1222,23 @@ class BLEInterface(MeshInterface):
             lambda: MeshInterface.close(self), error_msg="Error closing mesh interface"
         )
 
-        if self._want_receive:
-            self._want_receive = False  # Tell the thread we want it to stop
-            self.thread_coordinator.wake_waiting_threads(
-                "read_trigger", "reconnected_event"
-            )  # Wake all waiting threads
-            if self._receiveThread:
-                if self._receiveThread is threading.current_thread():
-                    logger.debug(
-                        "close() called from receive thread; skipping self-join"
+        self._want_receive = False  # Tell the thread we want it to stop
+        self.thread_coordinator.wake_waiting_threads(
+            "read_trigger", "reconnected_event"
+        )  # Wake all waiting threads
+        if self._receiveThread:
+            if self._receiveThread is threading.current_thread():
+                logger.debug("close() called from receive thread; skipping self-join")
+            else:
+                self.thread_coordinator.join_thread(
+                    self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
+                )
+                if self._receiveThread.is_alive():
+                    logger.warning(
+                        "BLE receive thread did not exit within %.1fs",
+                        RECEIVE_THREAD_JOIN_TIMEOUT,
                     )
-                else:
-                    self.thread_coordinator.join_thread(
-                        self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
-                    )
-                    if self._receiveThread.is_alive():
-                        logger.warning(
-                            "BLE receive thread did not exit within %.1fs",
-                            RECEIVE_THREAD_JOIN_TIMEOUT,
-                        )
-                self._receiveThread = None
+            self._receiveThread = None
 
         if self._exit_handler:
             with contextlib.suppress(ValueError):
