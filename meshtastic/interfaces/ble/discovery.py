@@ -180,7 +180,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                     )
                     # Preserve RSSI if provided by backend
                     if hasattr(device, "rssi"):
-                        device_copy.rssi = device.rssi  # type: ignore[attr-defined]
+                        device_copy.rssi = device.rssi  # type: ignore[attr-defined]  # pylint: disable=assigning-non-slot
                     devices_found.append(device_copy)
             else:
                 logger.debug(
