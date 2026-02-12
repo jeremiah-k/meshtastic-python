@@ -7,38 +7,38 @@ import threading
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from threading import Event, Thread
 from typing import Awaitable, Coroutine, Optional, Union
 from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
-from bleak.exc import BleakDBusError
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     ERROR_TIMEOUT,
-    BLEConfig,
     logger,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
+from meshtastic.interfaces.ble.runner import BLECoroutineRunner
 from meshtastic.interfaces.ble.utils import sanitize_address
-
-_zombie_lock = threading.Lock()
-_zombie_thread_count = 0
-_ZOMBIE_THREAD_WARN_THRESHOLD = 5
 
 
 class BLEClient:
     """
     Client wrapper for managing BLE device connections with thread-safe async operations.
 
-    This class provides a synchronous interface to Bleak's async operations by running
-    an internal event loop in a dedicated thread. It handles the complexity of
-    asyncio-to-thread synchronization while providing a simple API for BLE operations.
-    When the underlying BLE stack blocks indefinitely the event thread may fail to exit;
-    such occurrences are counted via get_zombie_thread_count() so operators can decide
-    when a process restart is needed to reclaim BLE/DBus resources.
+    This class provides a synchronous interface to Bleak's async operations by using
+    a shared singleton event loop (BLECoroutineRunner) for all BLE operations. This
+    approach:
+
+    - Reduces resource usage by sharing one event loop thread across all clients
+    - Eliminates per-instance thread/loop creation overhead
+    - Simplifies cleanup and prevents "zombie thread" accumulation
+    - Provides consistent async operation handling
+
+    Thread Safety:
+        All methods are thread-safe. The underlying singleton runner manages all
+        async-to-thread synchronization.
     """
 
     # Class-level fallback so callers using __new__ still get the right exception type
@@ -94,21 +94,24 @@ class BLEClient:
         self, address: Optional[str] = None, *, log_if_no_address: bool = True, **kwargs
     ) -> None:
         """
-        Initialize the BLEClient, creating a dedicated asyncio event loop and background thread and optionally attaching a Bleak client for a specific device address.
+        Initialize the BLEClient using the singleton BLECoroutineRunner.
 
         Parameters
         ----------
-        address : Any
-            BLE device address to attach a Bleak client to. If None, no Bleak client is created and the instance operates in discovery-only mode.
-        log_if_no_address : Any
-            If True and `address` is None, emit a debug message indicating discovery-only mode.
+        address : Optional[str]
+            BLE device address to attach a Bleak client to. If None, no Bleak client
+            is created and the instance operates in discovery-only mode.
+        log_if_no_address : bool
+            If True and `address` is None, emit a debug message indicating
+            discovery-only mode.
         **kwargs : dict
-            Keyword arguments forwarded to the underlying Bleak client constructor when `address` is provided.
+            Keyword arguments forwarded to the underlying Bleak client constructor
+            when `address` is provided.
 
-        Side effects:
-            - Starts a background thread running an internal asyncio event loop for scheduling coroutines.
-            - Creates an error handler and exposes the BLEError exception type on the instance.
-            - Instantiates a Bleak client bound to `address` when `address` is provided.
+        Side Effects:
+            - Obtains the singleton BLECoroutineRunner instance (creating it if needed)
+            - Creates an error handler and exposes the BLEError exception type
+            - Instantiates a Bleak client bound to `address` when `address` is provided
         """
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -117,21 +120,9 @@ class BLEClient:
         self.address = address
         self._closed = False
         self._pending_futures: weakref.WeakSet[Future] = weakref.WeakSet()
-        # Event to signal when the event loop is running (prevents race conditions)
-        self._loop_ready = Event()
-        # Create dedicated event loop for this client instance
-        self._eventLoop = asyncio.new_event_loop()
-        self._eventLoop.set_exception_handler(self._handle_loop_exception)
-        # Start event loop in background thread for async operations
-        self._eventThread = Thread(
-            target=self._run_event_loop, name="BLEClient", daemon=True
-        )
-        try:
-            self._eventThread.start()
-            self._loop_ready.wait()  # Wait for event loop to be running
-        except RuntimeError:
-            self._eventLoop.close()
-            raise
+
+        # Use singleton runner for all BLE operations
+        self._runner = BLECoroutineRunner()
 
         if not address:
             if log_if_no_address:
@@ -358,26 +349,16 @@ class BLEClient:
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
 
-    def _handle_loop_exception(self, loop, context):
-        """
-        Handle asyncio event loop exceptions and suppress benign errors during shutdown/disconnect.
-        """
-        exception = context.get("exception")
-        if exception and isinstance(exception, BleakDBusError):
-            # Suppress DBus errors that happen as unretrieved task exceptions,
-            # especially "Operation failed with ATT error: 0x0e" which happens on disconnect.
-            logger.debug("Suppressing BleakDBusError in BLE event loop: %s", exception)
-            return
-
-        # Default behavior for other exceptions
-        loop.default_exception_handler(context)
-
     def close(self):  # pylint: disable=C0116
         """
-        Shuts down the client's asyncio event loop and its background thread.
+        Close the BLEClient and cancel any pending operations.
 
-        Signals the internal event loop to stop, waits up to BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT for the thread to exit,
-        and logs a warning if the thread does not terminate within that timeout.
+        Since the event loop is now managed by a singleton runner, this method
+        primarily cancels pending futures for this instance. The shared event
+        loop continues running for other clients.
+
+        This method is idempotent - calling it multiple times has no additional
+        effect after the first call.
         """
         if getattr(self, "_closed", False):
             return
@@ -388,52 +369,6 @@ class BLEClient:
             for future in list(self._pending_futures):
                 if not future.done():
                     future.cancel()
-
-        loop = getattr(self, "_eventLoop", None)
-        thread = getattr(self, "_eventThread", None)
-
-        # Attempt to cancel all tasks and stop the loop cleanly
-        if loop and not loop.is_closed() and loop.is_running():
-            shutdown_coro = self._shutdown_event_loop(loop)
-            try:
-                fut = asyncio.run_coroutine_threadsafe(shutdown_coro, loop)
-                fut.result(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
-            except (RuntimeError, FutureTimeoutError):
-                # Loop is already stopping/closed or did not respond in time; fall back to stop request.
-                shutdown_coro.close()
-                with contextlib.suppress(Exception):
-                    loop.call_soon_threadsafe(loop.stop)
-            except Exception:
-                shutdown_coro.close()
-                logger.debug(
-                    "Error scheduling BLE loop shutdown; forcing stop", exc_info=True
-                )
-                with contextlib.suppress(Exception):
-                    loop.call_soon_threadsafe(loop.stop)
-        elif loop and not loop.is_closed():
-            with contextlib.suppress(Exception):
-                loop.call_soon_threadsafe(loop.stop)
-
-        if thread:
-            thread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
-        if thread and thread.is_alive():
-            with _zombie_lock:
-                global _zombie_thread_count  # pylint: disable=W0603
-                _zombie_thread_count += 1
-                current_count = _zombie_thread_count
-            logger.error(
-                "BLE event thread did not exit within %.1fs and may leak resources (total zombies: %d)",
-                BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
-                current_count,
-            )
-            if current_count >= _ZOMBIE_THREAD_WARN_THRESHOLD:
-                logger.warning(
-                    "Multiple zombie BLE threads detected (%d). Consider restarting the process to recover resources.",
-                    current_count,
-                )
-        elif loop and not loop.is_closed():
-            # Ensure loop resources are released when the thread exits normally
-            loop.close()
 
     def __enter__(self):
         """
@@ -455,25 +390,27 @@ class BLEClient:
 
     def async_await(self, coro: "Awaitable", timeout: Optional[float] = None):  # pylint: disable=C0116
         """
-        Wait for the given coroutine to complete on the client's event loop and return its result.
+        Wait for the given coroutine to complete and return its result.
 
-        If the coroutine does not finish within `timeout` seconds the pending task is cancelled and a BLEClient.BLEError is raised.
+        If the coroutine does not finish within `timeout` seconds the pending
+        task is cancelled and a BLEClient.BLEError is raised.
 
         Parameters
         ----------
-        coro : Any
-            The coroutine to run on the client's internal event loop.
-        timeout : Any
-            | None Maximum seconds to wait for completion; `None` means wait indefinitely.
+        coro : Awaitable
+            The coroutine to run on the shared BLE event loop.
+        timeout : Optional[float]
+            Maximum seconds to wait for completion; `None` means wait indefinitely.
 
         Returns
         -------
+        Any
             The value produced by the completed coroutine.
 
         Raises
         ------
-            BLEClient.BLEError: If the wait times out or the client is closed.
-
+        BLEClient.BLEError
+            If the wait times out or the client is closed.
         """
         # Check if client is closed before scheduling work
         if self._closed:
@@ -497,30 +434,26 @@ class BLEClient:
         except KeyboardInterrupt:  # pylint: disable=W0706
             raise
         except (FutureTimeoutError, RuntimeError) as e:
-            loop_closed = self._eventLoop.is_closed()
-            if not loop_closed:
-                try:
-                    future.cancel()  # Clean up pending task to avoid resource leaks
-                except Exception:  # pragma: no cover - defensive
-                    logger.debug(
-                        "Failed to cancel BLE future after timeout/loop-close",
-                        exc_info=True,
-                    )
-                # Consume any late exceptions to avoid "Task exception was never retrieved"
-                try:
-                    future.add_done_callback(
-                        lambda f: f.exception()
-                        if not f.cancelled()
-                        else None  # pragma: no cover - best effort suppression
-                    )
-                except Exception:
-                    # Event loop may be closing; ignore best-effort callback registration
-                    logger.debug(
-                        "Skipping callback registration after timeout; event loop may be closing",
-                        exc_info=True,
-                    )
-            else:
-                logger.debug("Event loop already closed; skipping future cancellation")
+            try:
+                future.cancel()  # Clean up pending task to avoid resource leaks
+            except Exception:  # pragma: no cover - defensive
+                logger.debug(
+                    "Failed to cancel BLE future after timeout",
+                    exc_info=True,
+                )
+            # Consume any late exceptions to avoid "Task exception was never retrieved"
+            try:
+                future.add_done_callback(
+                    lambda f: f.exception()
+                    if not f.cancelled()
+                    else None  # pragma: no cover - best effort suppression
+                )
+            except Exception:
+                # Event loop may be closing; ignore best-effort callback registration
+                logger.debug(
+                    "Skipping callback registration after timeout",
+                    exc_info=True,
+                )
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         except (CancelledError, asyncio.CancelledError) as e:
             # Propagate as timeout-style BLEError so callers handle uniformly
@@ -531,64 +464,38 @@ class BLEClient:
 
     def async_run(self, coro: "Coroutine") -> "Future":  # pylint: disable=C0116
         """
-        Schedule a coroutine on the client's internal asyncio event loop.
+        Schedule a coroutine on the shared BLE event loop.
 
         Parameters
         ----------
-        coro : Any
-            coroutine The coroutine to schedule.
+        coro : Coroutine
+            The coroutine to schedule.
 
         Returns
         -------
-            concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
+        concurrent.futures.Future
+            Future representing the scheduled coroutine's eventual result.
 
         Raises
         ------
-            BLEClient.BLEError: If the client is closed or the event loop is not running.
-
+        BLEClient.BLEError
+            If the client is closed or the runner is not available.
         """
         if self._closed:
             raise self.BLEError("Cannot schedule operation: BLE client is closed")
-        if not self._eventLoop.is_running():
-            raise self.BLEError("Cannot schedule operation: event loop is not running")
-        return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)  # type: ignore[arg-type]
-
-    def _run_event_loop(self):
-        """
-        Run the client's asyncio event loop in the background thread until it is stopped.
-
-        When the loop exits it is closed to release resources; runtime errors raised while the loop runs are captured and not re-raised.
-        """
-        # Signal ready from WITHIN the loop to guarantee it's actually running
-        self._eventLoop.call_soon(self._loop_ready.set)
-        self.error_handler.safe_execute(
-            self._eventLoop.run_forever, error_msg="Error in event loop", reraise=False
-        )
-        self._eventLoop.close()  # Clean up resources when loop stops
-
-    async def _stop_event_loop(self):
-        """
-        Request the internal event loop to stop.
-        """
-        self._eventLoop.stop()
-
-    async def _shutdown_event_loop(self, loop: asyncio.AbstractEventLoop):
-        """
-        Cancel pending tasks on the given loop and stop it once they are drained.
-        """
-        tasks = [
-            t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop)
-        ]
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        loop.stop()
+        try:
+            return self._runner.run_coroutine_threadsafe(coro)
+        except RuntimeError as e:
+            raise self.BLEError(f"Failed to schedule operation: {e}") from e
 
 
+# Expose zombie tracking from runner module for backwards compatibility
 def get_zombie_thread_count() -> int:
     """
     Return the number of BLE event threads that failed to stop cleanly.
+
+    Note: With the singleton runner architecture, this should typically be 0 or 1.
     """
-    with _zombie_lock:
-        return _zombie_thread_count
+    from meshtastic.interfaces.ble.runner import get_zombie_runner_count
+
+    return get_zombie_runner_count()
