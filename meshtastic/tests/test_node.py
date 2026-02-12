@@ -380,6 +380,32 @@ def test_writeChannel_with_no_channels_raises_mesh_error(
     ):
         anode.writeChannel(0)
 
+@pytest.mark.unit
+def test_writeConfig_traffic_management(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Test writeConfig writes traffic_management module config through set_module_config."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    anode.moduleConfig.traffic_management.enabled = True
+    anode.moduleConfig.traffic_management.rate_limit_enabled = True
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        sent_messages=sent_messages
+    )
+
+    anode.writeConfig("traffic_management")
+
+    assert len(sent_messages) == 1
+    sent_message = sent_messages[0]
+    assert sent_message.HasField("set_module_config")
+    assert sent_message.set_module_config.HasField("traffic_management")
+    assert sent_message.set_module_config.traffic_management.enabled is True
+    assert (
+        sent_message.set_module_config.traffic_management.rate_limit_enabled is True
+    )
+
 
 @pytest.mark.unit
 def test_requestChannel_not_localNode(
