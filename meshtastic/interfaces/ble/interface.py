@@ -1090,7 +1090,19 @@ class BLEInterface(MeshInterface):
                         return
                     except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                         raise
-                    except (RuntimeError, OSError, BleakError) as e:
+                    except BleakError as e:
+                        # Try to recover from transient BLE errors via retry policy
+                        try:
+                            self._handle_transient_read_error(e)
+                            # If handler returns, retry is allowed - continue the read loop
+                            continue
+                        except self.BLEError:
+                            # Retry policy exhausted, treat as fatal
+                            logger.error("Fatal BLE read error after retries: %s", e)
+                            if not self._state_manager.is_closing:
+                                self.close()
+                            return
+                    except (RuntimeError, OSError) as e:
                         # Treat these as fatal errors that should close the interface
                         logger.error("Fatal error in BLE receive thread: %s", e)
                         if not self._state_manager.is_closing:

@@ -625,22 +625,21 @@ def test_close_clears_ble_threads(monkeypatch):
 
 def test_receive_thread_specific_exceptions(monkeypatch, caplog):
     """
-    Verify that the BLE receive thread treats specific exceptions as fatal: it logs a "Fatal error in BLE receive thread" message and invokes the interface's close().
+    Verify that the BLE receive thread treats specific exceptions as fatal: it logs a fatal error message and invokes the interface's close().
 
-    The test iterates over RuntimeError, OSError, and BleakError by injecting a client whose read_gatt_char raises the exception, triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
+    The test iterates over RuntimeError and OSError by injecting a client whose read_gatt_char raises the exception,
+    triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
     """
     # logging and threading already imported at top
-
-    # BleakError already imported at top as ble_mod.BleakError
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
 
-    # The exceptions that should be caught and handled as fatal
+    # The exceptions that should be caught and handled as immediately fatal
+    # Note: BleakError now goes through transient retry logic first, tested separately
     handled_exceptions = [
         RuntimeError,
         OSError,
-        BleakError,  # Should be fatal if not a disconnect
     ]
 
     class ExceptionClient(DummyClient):
@@ -723,6 +722,66 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
         except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
             # Log for visibility; still allow test to proceed with cleanup.
             logging.warning("Cleanup error in iface.close(): %r", exc)
+
+
+def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
+    """
+    Verify that BleakError in the receive thread goes through transient retry logic.
+
+    The interface should retry on transient BleakError before giving up and closing.
+    """
+    caplog.set_level(logging.DEBUG)
+
+    class BleakErrorClient(DummyClient):
+        """Mock client that raises BleakError for testing retry logic."""
+
+        def __init__(self):
+            super().__init__()
+            self.read_count = 0
+
+        def read_gatt_char(self, *_args, **_kwargs):
+            """Raise BleakError on every read to test retry logic."""
+            self.read_count += 1
+            raise BleakError("transient error")
+
+    client = BleakErrorClient()
+    iface = _build_interface(monkeypatch, client)
+
+    # Mock the close method to track if it's called
+    original_close = iface.close
+    close_called = threading.Event()
+
+    def mock_close(original_close=original_close, close_called=close_called):
+        close_called.set()
+        return original_close()
+
+    monkeypatch.setattr(iface, "close", mock_close)
+
+    # Start the receive thread
+    iface._want_receive = True
+
+    with iface._state_lock:
+        iface.client = client
+
+    # Trigger the receive loop
+    iface._read_trigger.set()
+
+    # Wait for the retry logic to exhaust and close to be called
+    close_called.wait(timeout=5.0)
+
+    # Verify retry attempts were logged
+    assert "Transient BLE read error, retrying" in caplog.text
+    assert "Fatal BLE read error after retries" in caplog.text
+
+    # Verify close was called
+    assert close_called.is_set()
+
+    # Clean up
+    iface._want_receive = False
+    try:
+        iface.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def test_log_notification_registration(monkeypatch):
