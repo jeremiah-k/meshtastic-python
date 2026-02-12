@@ -277,7 +277,12 @@ class BLEInterface(MeshInterface):
         bool: `True` if the interface remains active and will attempt auto-reconnect, `False` if the interface has begun shutdown.
         """
         if not self._disconnect_lock.acquire(blocking=False):
-            logger.debug("Disconnect from %s ignored: already being handled.", source)
+            # Another disconnect handler is active; this is expected during concurrent
+            # disconnect callbacks. The active handler will process the disconnect.
+            logger.debug(
+                "Disconnect from %s skipped: another disconnect handler is active.",
+                source,
+            )
             return True
         try:
             # Use state manager for disconnect validation
@@ -337,9 +342,12 @@ class BLEInterface(MeshInterface):
                 # Transition to DISCONNECTED state on disconnect
                 self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                 if previous_client:
-                    _mark_disconnected(
-                        _addr_key(getattr(previous_client, "address", self.address))
+                    previous_address = getattr(previous_client, "address", self.address)
+                    device_key = (
+                        _addr_key(previous_address) if previous_address else None
                     )
+                    if device_key:
+                        _mark_disconnected(device_key)
                     # Close previous client asynchronously
                     close_thread = self.thread_coordinator.create_thread(
                         target=self._client_manager.safe_close_client,
@@ -867,14 +875,18 @@ class BLEInterface(MeshInterface):
 
         requested_identifier = address if address is not None else self.address
         normalized_request = BLEInterface._sanitize_address(requested_identifier)
-        addr_key = _addr_key(requested_identifier)
+
+        # Only use address registry for explicit addresses, not discovery mode (None)
+        addr_key = _addr_key(requested_identifier) if requested_identifier else None
 
         addr_lock = _get_addr_lock(addr_key)
         with addr_lock:
             # Fast suppression if a recent connect happened elsewhere.
             # Check is performed inside addr_lock to ensure consistent lock ordering.
+            # Skip suppression check for discovery mode (addr_key is None)
             if (
-                _is_currently_connected_elsewhere(addr_key)
+                addr_key
+                and _is_currently_connected_elsewhere(addr_key)
                 and not self._state_manager.is_connected
             ):
                 logger.info(
@@ -934,8 +946,9 @@ class BLEInterface(MeshInterface):
                         client, previous_client
                     )
 
-                # Use the actual device address for gating to avoid permanent empty-key entries
-                device_key = _addr_key(device_address)
+                # Use actual device address for gating to avoid empty-key entries
+                # Only use address registry for explicit addresses, not discovery mode (None)
+                device_key = _addr_key(device_address) if device_address else None
                 if device_key:
                     _mark_connected(device_key)
                 # Mark that at least one successful connection has been established
@@ -1213,6 +1226,9 @@ class BLEInterface(MeshInterface):
                 ConnectionState.DISCONNECTING,
             ):
                 self._state_manager.transition_to(ConnectionState.DISCONNECTING)
+
+        # Release lock before calling MeshInterface.close() to avoid deadlock
+        # If MeshInterface.close() acquires locks that other paths also acquire, holding state_lock would cause lock inversion
         if self._shutdown_event:
             self._shutdown_event.set()
         self._notification_manager.cleanup_all()
@@ -1248,8 +1264,13 @@ class BLEInterface(MeshInterface):
         # Use unified state lock
         with self._state_lock:
             client = self.client
-            self.client = None
-        if client:
+            # Don't close client if it was already replaced (race condition)
+            # Only close if it's still the current client
+            if client is not None:
+                self.client = None
+        # Only close the client if we were the one who replaced it
+        # If it was replaced by a reconnection, the new connection path will clean it up
+        if client is not None:
             self._disconnect_and_close_client(client)
 
         # Use unified state lock

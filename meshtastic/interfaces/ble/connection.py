@@ -291,12 +291,27 @@ class ConnectionOrchestrator:
             Function to register notification handlers with the client.
         on_connected_func : Callable
             Callback invoked after successful connection finalization.
+
+        Raises
+        ------
+        BLEInterface.BLEError: If connection was invalidated by a concurrent disconnect.
         """
+        # If a disconnect callback raced and moved us away from CONNECTING, abort finalization.
+        # Check before registering notifications to avoid operating on a disconnected client.
+        current_state = self.state_manager.state
+        if current_state not in (
+            ConnectionState.CONNECTING,
+            ConnectionState.DISCONNECTING,
+        ):
+            logger.debug(
+                "Connection finalization aborted: state changed to %s during connect",
+                current_state,
+            )
+            raise self.interface.BLEError(
+                "Connection invalidated by concurrent disconnect"
+            )
+
         register_notifications_func(client)
-        # If a disconnect callback raced and moved us back to DISCONNECTED during connect,
-        # reassert CONNECTING before marking CONNECTED to avoid invalid transition warnings.
-        if self.state_manager.state == ConnectionState.DISCONNECTED:
-            self.state_manager.transition_to(ConnectionState.CONNECTING)
         self.state_manager.transition_to(ConnectionState.CONNECTED)
         on_connected_func()
         if getattr(self.interface, "_ever_connected", False):

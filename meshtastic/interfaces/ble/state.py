@@ -136,13 +136,14 @@ class BLEStateManager:
 
         Returns
         -------
-        bool: `True` if the transition was valid and applied, `False` otherwise.
+        bool: `True` if the transition was valid and applied, or if already in the
+            target state (idempotent success). `False` only for invalid transitions.
         """
         with self._state_lock:
             if new_state == self._state:
-                # Idempotent no-op: avoid warning noise for redundant transitions
+                # Idempotent success: already in target state
                 logger.debug("State transition noop: already in %s", self._state.value)
-                return False
+                return True
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
                 self._state = new_state

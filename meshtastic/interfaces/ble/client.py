@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import sys
+import threading
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -23,6 +24,7 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.utils import sanitize_address
 
+_zombie_lock = threading.Lock()
 _zombie_thread_count = 0
 _ZOMBIE_THREAD_WARN_THRESHOLD = 5
 
@@ -415,17 +417,19 @@ class BLEClient:
         if thread:
             thread.join(timeout=BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT)
         if thread and thread.is_alive():
-            global _zombie_thread_count  # pylint: disable=W0603
-            _zombie_thread_count += 1
+            with _zombie_lock:
+                global _zombie_thread_count  # pylint: disable=W0603
+                _zombie_thread_count += 1
+                current_count = _zombie_thread_count
             logger.error(
                 "BLE event thread did not exit within %.1fs and may leak resources (total zombies: %d)",
                 BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT,
-                _zombie_thread_count,
+                current_count,
             )
-            if _zombie_thread_count >= _ZOMBIE_THREAD_WARN_THRESHOLD:
+            if current_count >= _ZOMBIE_THREAD_WARN_THRESHOLD:
                 logger.warning(
                     "Multiple zombie BLE threads detected (%d). Consider restarting the process to recover resources.",
-                    _zombie_thread_count,
+                    current_count,
                 )
         elif loop and not loop.is_closed():
             # Ensure loop resources are released when the thread exits normally
@@ -574,4 +578,5 @@ def get_zombie_thread_count() -> int:
     """
     Return the number of BLE event threads that failed to stop cleanly.
     """
-    return _zombie_thread_count
+    with _zombie_lock:
+        return _zombie_thread_count
