@@ -1,8 +1,19 @@
-"""BLE connection state management."""
+"""BLE connection state management.
+
+Lock Ordering Note:
+    When acquiring multiple locks in the BLE subsystem, always acquire in this order:
+    1. Global registry lock (_REGISTRY_LOCK in gating.py)
+    2. Per-address locks (_ADDR_LOCKS in gating.py)
+    3. Interface state lock (_state_lock)
+    4. Interface connect lock (_connect_lock)
+    5. Interface disconnect lock (_disconnect_lock)
+
+    This ordering prevents deadlocks in concurrent connection scenarios.
+"""
 
 from enum import Enum
 from threading import RLock
-from typing import TYPE_CHECKING, ClassVar, Dict, Optional, Set
+from typing import TYPE_CHECKING, ClassVar, Dict, Set
 
 from meshtastic.interfaces.ble.constants import logger
 
@@ -125,6 +136,33 @@ class BLEStateManager:
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
+    @property
+    def is_connecting(self) -> bool:
+        """
+        Indicate whether the BLE interface is in a connecting state.
+
+        Returns
+        -------
+            True if the current state is CONNECTING or RECONNECTING, False otherwise.
+        """
+        return self.state in (ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
+
+    @property
+    def is_active(self) -> bool:
+        """
+        Indicate whether the BLE interface has an active or pending connection.
+
+        Returns
+        -------
+            True if the current state is CONNECTING, RECONNECTING, or CONNECTED,
+            False otherwise.
+        """
+        return self.state in (
+            ConnectionState.CONNECTING,
+            ConnectionState.RECONNECTING,
+            ConnectionState.CONNECTED,
+        )
+
     def transition_to(self, new_state: ConnectionState) -> bool:
         """
         Attempt to change the manager's BLE connection state to the given target state.
@@ -136,14 +174,15 @@ class BLEStateManager:
 
         Returns
         -------
-        bool: `True` if the transition was valid and applied, or if already in the
-            target state (idempotent success). `False` only for invalid transitions.
+        bool: `True` if the transition was valid and applied. `False` for invalid
+            transitions, including transitions to the same state (no-op transitions
+            are considered invalid to help detect potential bugs in calling code).
         """
         with self._state_lock:
             if new_state == self._state:
-                # Idempotent success: already in target state
-                logger.debug("State transition noop: already in %s", self._state.value)
-                return True
+                # No-op transition: considered invalid to help detect bugs
+                logger.debug("State transition no-op: already in %s", self._state.value)
+                return False
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
                 self._state = new_state
@@ -173,3 +212,51 @@ class BLEStateManager:
         bool: True if the transition from from_state to to_state is allowed, False otherwise.
         """
         return to_state in self._VALID_TRANSITIONS.get(from_state, set())
+
+    def transition_if_in(
+        self, expected_states: Set[ConnectionState], new_state: ConnectionState
+    ) -> bool:
+        """
+        Atomically check current state and transition if in expected states.
+
+        This is a convenience method that combines state checking and transition
+        into a single atomic operation, preventing TOCTOU race conditions.
+
+        Parameters
+        ----------
+        expected_states : Set[ConnectionState]
+            Set of states from which the transition is allowed.
+        new_state : ConnectionState
+            Target state to transition to.
+
+        Returns
+        -------
+        bool: True if the current state was in expected_states and the transition
+            succeeded, False otherwise.
+        """
+        with self._state_lock:
+            if self._state not in expected_states:
+                logger.debug(
+                    "State check failed: expected one of %s, got %s",
+                    {s.value for s in expected_states},
+                    self._state.value,
+                )
+                return False
+            return self.transition_to(new_state)
+
+    def reset_to_disconnected(self) -> bool:
+        """
+        Force transition to DISCONNECTED state from any state.
+
+        This is useful for error recovery and cleanup scenarios where
+        the connection needs to be reset regardless of current state.
+
+        Returns
+        -------
+        bool: True if successfully transitioned to DISCONNECTED.
+        """
+        with self._state_lock:
+            old_state = self._state
+            self._state = ConnectionState.DISCONNECTED
+            logger.debug(f"State reset: {old_state.value} → disconnected")
+            return True

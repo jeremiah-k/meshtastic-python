@@ -54,6 +54,7 @@ from meshtastic.interfaces.ble.gating import (
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
+    _release_addr_lock,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -889,6 +890,8 @@ class BLEInterface(MeshInterface):
                 and _is_currently_connected_elsewhere(addr_key)
                 and not self._state_manager.is_connected
             ):
+                # Release the holder count since we're not actually using the lock for connection
+                _release_addr_lock(addr_key)
                 logger.info(
                     "Suppressing duplicate connect to %s: recently connected elsewhere.",
                     addr_key or "unknown",
@@ -899,6 +902,8 @@ class BLEInterface(MeshInterface):
 
             with self._connect_lock:
                 if self._closed or self.is_connection_closing:
+                    # Release the holder count since we're not actually connecting
+                    _release_addr_lock(addr_key)
                     raise self.BLEError("Cannot connect while interface is closing")
 
                 with self._state_lock:
@@ -913,6 +918,8 @@ class BLEInterface(MeshInterface):
                             self.address,
                         )
                     ):
+                        # Release the holder count since we're reusing existing connection
+                        _release_addr_lock(addr_key)
                         logger.debug("Already connected, skipping connect call.")
                         return existing_client
 

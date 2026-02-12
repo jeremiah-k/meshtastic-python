@@ -79,10 +79,16 @@ class TestAddrLock:
         assert lock1 is not lock2
 
     def test_lock_cleanup_removes_from_registry(self):
-        """Test that _cleanup_addr_lock removes the lock from registry."""
+        """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
         _ADDR_LOCKS.clear()
-        _get_addr_lock("testaddress")
+        from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS, _release_addr_lock
+        _LOCK_HOLDERS.clear()
+        
+        lock = _get_addr_lock("testaddress")
         assert "testaddress" in _ADDR_LOCKS
+        # Release the holder count that was incremented by _get_addr_lock
+        _release_addr_lock("testaddress")
+        # Now cleanup should work since no holders remain
         _cleanup_addr_lock("testaddress")
         assert "testaddress" not in _ADDR_LOCKS
 

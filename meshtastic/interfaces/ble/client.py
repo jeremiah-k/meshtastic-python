@@ -472,9 +472,13 @@ class BLEClient:
 
         Raises
         ------
-            BLEClient.BLEError: If the wait times out.
+            BLEClient.BLEError: If the wait times out or the client is closed.
 
         """
+        # Check if client is closed before scheduling work
+        if self._closed:
+            raise self.BLEError("Cannot schedule operation: BLE client is closed")
+
         # Exception mapping contract:
         #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
@@ -538,7 +542,15 @@ class BLEClient:
         -------
             concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
 
+        Raises
+        ------
+            BLEClient.BLEError: If the client is closed or the event loop is not running.
+
         """
+        if self._closed:
+            raise self.BLEError("Cannot schedule operation: BLE client is closed")
+        if not self._eventLoop.is_running():
+            raise self.BLEError("Cannot schedule operation: event loop is not running")
         return asyncio.run_coroutine_threadsafe(coro, self._eventLoop)  # type: ignore[arg-type]
 
     def _run_event_loop(self):

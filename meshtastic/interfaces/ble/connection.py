@@ -298,21 +298,26 @@ class ConnectionOrchestrator:
         """
         # If a disconnect callback raced and moved us away from CONNECTING, abort finalization.
         # Check before registering notifications to avoid operating on a disconnected client.
-        current_state = self.state_manager.state
-        if current_state not in (
-            ConnectionState.CONNECTING,
-            ConnectionState.DISCONNECTING,
-        ):
-            logger.debug(
-                "Connection finalization aborted: state changed to %s during connect",
-                current_state,
-            )
-            raise self.interface.BLEError(
-                "Connection invalidated by concurrent disconnect"
-            )
+        # We hold the state_lock during this check to prevent TOCTOU race conditions.
+        with self.state_lock:
+            current_state = self.state_manager.state
+            if current_state not in (
+                ConnectionState.CONNECTING,
+                ConnectionState.DISCONNECTING,
+            ):
+                logger.debug(
+                    "Connection finalization aborted: state changed to %s during connect",
+                    current_state,
+                )
+                raise self.interface.BLEError(
+                    "Connection invalidated by concurrent disconnect"
+                )
 
-        register_notifications_func(client)
-        self.state_manager.transition_to(ConnectionState.CONNECTED)
+            # Register notifications while holding the lock to ensure we don't
+            # race with a disconnect callback
+            register_notifications_func(client)
+            self.state_manager.transition_to(ConnectionState.CONNECTED)
+
         on_connected_func()
         if getattr(self.interface, "_ever_connected", False):
             self.thread_coordinator.set_event("reconnected_event")
