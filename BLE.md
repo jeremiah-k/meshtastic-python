@@ -7,7 +7,7 @@ This document summarizes the current BLE implementation, common pitfalls seen in
 - **Single connection gate per address.** A process-wide registry prevents overlapping connects to the same normalized BLE address. When another interface instance already owns the address you will see `Connection suppressed: recently connected elsewhere`.
 - **Short direct connect, then discovery.** When an address is known we try a short direct connect (~12s). If that fails we run a 10s scan and then perform a full connect using the configured `BLEConfig.CONNECTION_TIMEOUT` (default 60s).
 - **Disconnect handling is serialized.** A per-interface lock drops stale duplicate disconnect callbacks and marks the address as disconnected before scheduling auto-reconnect.
-- **Threaded BLE client.** Each `BLEClient` runs an asyncio loop in a daemon thread. If the loop will not exit within `BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT`, the thread is counted as a zombie (see `get_zombie_thread_count()`).
+- **Singleton BLE runner.** All BLE operations are managed by a singleton `BLECoroutineRunner` with a shared background thread and asyncio event loop. This reduces resource usage from N threads to 1 thread regardless of how many clients exist and simplifies cleanup.
 
 ## Recommended usage
 
@@ -31,7 +31,7 @@ Avoid creating new `BLEInterface` instances on every reconnect attempt. Reuse th
 
 ### Let auto-reconnect run alone
 
-If you enable `auto_reconnect=True` (default), do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause “suppressed duplicate connect” logs and can leave BLE client threads behind if they time out.
+If you enable `auto_reconnect=True` (default), do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause "suppressed duplicate connect" logs and can interfere with the built-in recovery.
 
 If your application manages reconnects itself, disable the built-in loop:
 
@@ -49,12 +49,8 @@ When you see `Connection suppressed: recently connected elsewhere`, another inte
 
 ### Keep retries bounded
 
-- Direct connect is already short; the discovery fallback can block up to `BLEConfig.CONNECTION_TIMEOUT` (60s). After a failed scan + connect cycle, wait at least 30–60s before retrying to avoid piling up event-loop threads on Linux/BlueZ.
+- Direct connect is already short; the discovery fallback can block up to `BLEConfig.CONNECTION_TIMEOUT` (60s). After a failed scan + connect cycle, wait at least 30–60s before retrying to avoid overwhelming Linux/BlueZ.
 - If you cannot enumerate connected devices on your backend (common on Linux), a scan returning zero devices is expected when the peripheral is already connected elsewhere. Rely on the address gate rather than repeated scans in that case.
-
-### Monitor for leaked BLE threads
-
-`meshtastic.interfaces.ble.client.get_zombie_thread_count()` reports how many BLE event threads failed to stop cleanly. If this count grows, restart the process to reclaim BLE/DBus resources.
 
 ### Log interpretation
 
@@ -88,14 +84,13 @@ except KeyboardInterrupt:
 
 - **Multiple interface instances per address:** reuse one instance; otherwise you will collide with the address gate and slow down recovery.
 - **Layered reconnect loops:** pick either the library’s auto-reconnect or your own, not both.
-- **Aggressive retry cadence:** back off after a failed scan + connect cycle; long blocking calls during teardown can leave zombie BLE threads if hammered repeatedly.
+- **Aggressive retry cadence:** back off after a failed scan + connect cycle; long blocking calls during teardown can exhaust resources on Linux/BlueZ.
 - **Skipping notification re-registration:** use the same interface instance so built-in notification tracking can resubscribe after reconnects.
 
 ## When to restart the process
 
 Restart if you observe any of:
 
-- `get_zombie_thread_count()` steadily increasing,
 - repeated `Cannot connect while interface is closing` for minutes,
 - repeated scan+connect cycles timing out on Linux/BlueZ despite the device being powered and advertising.
 
