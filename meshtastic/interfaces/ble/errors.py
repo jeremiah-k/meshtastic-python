@@ -2,7 +2,7 @@
 
 from concurrent.futures import TimeoutError as FutureTimeoutError
 
-from bleak.exc import BleakDBusError, BleakError
+from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.constants import logger
 
@@ -41,22 +41,29 @@ class BLEErrorHandler:
         """
         Safely execute a zero-argument callable and return its result, falling back to a default on error.
 
-        Parameters:
+        Parameters
+        ----------
             func: Zero-argument callable to execute.
             default_return: Value returned if execution fails.
             log_error (bool): If True, log caught exceptions.
             error_msg (str): Message prefix used when logging errors.
             reraise (bool): If True, re-raise caught exceptions instead of returning default_return.
 
-        Returns:
+        Returns
+        -------
             The value returned by func() on success, or default_return if execution fails.
 
-        Notes:
-            Catches BleakError, BleakDBusError, DecodeError, FutureTimeoutError, and other Exceptions; SystemExit and KeyboardInterrupt are re-raised.
+        Notes
+        -----
+            Catches BleakError (including BleakDBusError), DecodeError, FutureTimeoutError, and other Exceptions; SystemExit and KeyboardInterrupt are re-raised.
         """
         try:
             return func()
-        except (BleakError, BleakDBusError, DecodeError, FutureTimeoutError) as e:
+        except (
+            BleakError,
+            DecodeError,
+            FutureTimeoutError,
+        ) as e:  # BleakError includes BleakDBusError
             if log_error:
                 logger.debug("%s: %s", error_msg, e)
             if reraise:
@@ -78,11 +85,13 @@ class BLEErrorHandler:
 
         Calls the provided zero-argument callable and suppresses any exception raised, logging a debug message that includes `cleanup_name` when an exception occurs.
 
-        Parameters:
+        Parameters
+        ----------
             func (Callable[[], Any]): Cleanup operation to execute with no arguments.
             cleanup_name (str): Human-readable name included in debug messages (default: "cleanup operation").
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the cleanup completed without raising an exception, `False` otherwise.
         """
         try:

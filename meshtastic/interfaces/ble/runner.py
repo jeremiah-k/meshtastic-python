@@ -37,7 +37,8 @@ def get_zombie_runner_count() -> int:
     """
     Get the current count of runner threads that failed to stop cleanly.
 
-    Returns:
+    Returns
+    -------
         int: The number of zombie runner threads.
     """
     with _zombie_lock:
@@ -64,6 +65,7 @@ class BLECoroutineRunner:
         - If the loop crashes, it will be automatically restarted on next use
 
     Example:
+    -------
         >>> runner = BLECoroutineRunner()  # Gets singleton instance
         >>> future = runner.run_coroutine_threadsafe(some_ble_operation())
         >>> result = future.result(timeout=10.0)
@@ -78,7 +80,8 @@ class BLECoroutineRunner:
 
         On first instantiation, allocates the single instance and sets its `_initialized` flag to False.
 
-        Returns:
+        Returns
+        -------
             BLECoroutineRunner: The singleton BLECoroutineRunner instance.
         """
         with cls._singleton_lock:
@@ -123,7 +126,8 @@ class BLECoroutineRunner:
         """
         Return the reentrant lock used to synchronize this instance's internal state.
 
-        Returns:
+        Returns
+        -------
             threading.RLock: The instance's reentrant lock for protecting internal attributes.
         """
         # Lock is always initialized in __init__, but keep property for access
@@ -134,7 +138,8 @@ class BLECoroutineRunner:
         """
         Indicates whether the runner's background thread and event loop are active.
 
-        Returns:
+        Returns
+        -------
             `true` if the background thread exists and is alive and the event loop exists and is running, `false` otherwise.
         """
         return (
@@ -157,7 +162,8 @@ class BLECoroutineRunner:
         running this is a no-op. Raises RuntimeError if the loop does not signal readiness
         within 5 seconds.
 
-        Raises:
+        Raises
+        ------
             RuntimeError: If the event loop fails to start within 5 seconds.
         """
         # Check if already running
@@ -231,7 +237,7 @@ class BLECoroutineRunner:
     def run_coroutine_threadsafe(
         self,
         coro: Coroutine[None, None, T],
-        _timeout: Optional[float] = None,  # noqa: ARG002
+        _timeout: Optional[float] = None,
     ) -> Future[T]:
         """
         Submit a coroutine to be run in the singleton event loop thread.
@@ -307,10 +313,12 @@ class BLECoroutineRunner:
         """
         Stop the runner's event loop and wait for the background thread to exit.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (float): Maximum number of seconds to wait for the thread to join.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the background thread exited within `timeout`, `False` if it did not (thread considered a zombie).
         """
         # Capture state and schedule stop under lock, but join OUTSIDE the lock
@@ -387,7 +395,8 @@ class BLECoroutineRunner:
         """
         Restart the singleton runner if it is not currently running.
 
-        Returns:
+        Returns
+        -------
             bool: True if restart was initiated, False if the runner was already running.
         """
         with self._instance_lock:

@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -27,11 +27,13 @@ def parse_scan_response(
     """
     Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects, including devices that advertise SERVICE_UUID or that exactly match an optional whitelist address or name.
 
-    Parameters:
+    Parameters
+    ----------
         response (Any): The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
         whitelist_address (Optional[str]): A sanitized address or device name to include regardless of advertised services; must match device address or name exactly.
 
-    Returns:
+    Returns
+    -------
         List[BLEDevice]: Devices that advertise SERVICE_UUID or match the provided whitelist_address.
     """
     devices: List[BLEDevice] = []
@@ -86,14 +88,17 @@ class DiscoveryStrategy(ABC):
         """
         Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by a sanitized address or name.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): Optional target device address or name; comparisons are performed on sanitized forms.
             timeout (float): Maximum time in seconds to wait for backend device enumeration.
 
-        Returns:
+        Returns
+        -------
             List[BLEDevice]: Devices that advertise SERVICE_UUID and, if `address` is provided, whose sanitized address or name equals the sanitized target. Returns an empty list on error.
 
-        Raises:
+        Raises
+        ------
             BleakDBusError: Re-raised when the underlying backend reports a DBus-specific error.
         """
 
@@ -117,11 +122,13 @@ class ConnectedStrategy(DiscoveryStrategy):
         """
         Enumerate already-connected BLE devices via the Bleak backend and return those advertising the configured service UUID, optionally filtered by address or name.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): Target BLE address or device name to filter results; comparison uses the same sanitation applied by the BLE client. If None, no address/name filtering is applied.
             timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
 
-        Returns:
+        Returns
+        -------
             List[BLEDevice]: Connected devices that advertise SERVICE_UUID and, if `address` is provided, whose sanitized address or sanitized name exactly matches the sanitized target. Returns an empty list if the backend does not support connected-device enumeration or if an error occurs.
         """
         if not _bleak_supports_connected_fallback():
@@ -175,7 +182,7 @@ class ConnectedStrategy(DiscoveryStrategy):
 
                     # Use inspect to handle different BLEDevice constructor signatures across Bleak versions
                     sig = inspect.signature(BLEDevice.__init__)
-                    params: dict[str, Any] = {
+                    params: Dict[str, Any] = {
                         "address": device.address,
                         "name": device.name,
                     }
@@ -228,7 +235,8 @@ class DiscoveryManager:
         """
         Create a DiscoveryManager that orchestrates BLE scanning and connected-device fallback.
 
-        Parameters:
+        Parameters
+        ----------
             client_factory (Optional[Callable[..., BLEClient]]): Optional factory (callable or class) used to construct BLE client instances; primarily provided for testing or to override the default BLE client.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
@@ -240,13 +248,16 @@ class DiscoveryManager:
         """
         Discover BLE devices advertising the configured service UUID and, if a target address or name is provided and the scan yields no matches, attempt a fallback enumeration of already-connected devices.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
 
-        Returns:
+        Returns
+        -------
             List[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
 
-        Raises:
+        Raises
+        ------
             BleakDBusError: If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
         """
         if self._client and getattr(self._client, "_closed", False):
