@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import warnings
 
 import pytest
 
@@ -10,6 +11,22 @@ from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
     get_zombie_runner_count,
 )
+
+
+@pytest.fixture(autouse=True)
+def ensure_runner_running():
+    """
+    Ensure BLECoroutineRunner is running before and after each test.
+
+    This prevents singleton state leakage between tests, particularly
+    when a test calls stop() which would leave subsequent tests with
+    a non-functional runner.
+    """
+    runner = BLECoroutineRunner()
+    runner._ensure_running()
+    yield
+    # Ensure runner is still running after test for subsequent tests
+    runner._ensure_running()
 
 
 class TestBLECoroutineRunner:
@@ -172,8 +189,10 @@ class TestBLEClientWithRunner:
         async def dummy():
             return 42
 
-        with pytest.raises(BLEClient.BLEError) as exc_info:
-            client.async_await(dummy())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with pytest.raises(BLEClient.BLEError) as exc_info:
+                client.async_await(dummy())
 
         assert "closed" in str(exc_info.value).lower()
 
@@ -185,8 +204,10 @@ class TestBLEClientWithRunner:
         async def dummy():
             return 42
 
-        with pytest.raises(BLEClient.BLEError) as exc_info:
-            client.async_run(dummy())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with pytest.raises(BLEClient.BLEError) as exc_info:
+                client.async_run(dummy())
 
         assert "closed" in str(exc_info.value).lower()
 

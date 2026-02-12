@@ -270,6 +270,9 @@ class ReconnectWorker:
                         "Waiting %.2f seconds before next reconnect attempt.",
                         sleep_delay,
                     )
-                    sleep_fn(sleep_delay)
+                    # Allow prompt shutdown without waiting the full backoff.
+                    if shutdown_event.wait(timeout=sleep_delay):
+                        logger.debug("Reconnect wait interrupted by shutdown signal.")
+                        return
             finally:
                 self.interface._reconnect_scheduler.clear_thread_reference()

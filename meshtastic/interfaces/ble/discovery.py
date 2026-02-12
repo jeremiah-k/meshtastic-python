@@ -173,10 +173,16 @@ class ConnectedStrategy(DiscoveryStrategy):
                         ):
                             continue
 
-                    device_copy = BLEDevice(
-                        address=device.address,
-                        name=device.name,
-                    )
+                    # Use inspect to handle different BLEDevice constructor signatures across Bleak versions
+                    sig = inspect.signature(BLEDevice.__init__)
+                    params: dict[str, Any] = {
+                        "address": device.address,
+                        "name": device.name,
+                    }
+                    # Add details if the constructor accepts it (Bleak 1.1.0+)
+                    if "details" in sig.parameters:
+                        params["details"] = device
+                    device_copy = BLEDevice(**params)
                     # Preserve RSSI if provided by backend
                     if hasattr(device, "rssi"):
                         device_copy.rssi = device.rssi  # type: ignore[attr-defined]  # pylint: disable=assigning-non-slot

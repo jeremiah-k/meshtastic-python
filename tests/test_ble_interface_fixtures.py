@@ -280,8 +280,22 @@ def mock_bleak(monkeypatch):
     bleak_module.BleakClient = _StubBleakClient
     bleak_module.BleakScanner = _StubBleakScanner
     bleak_module.BLEDevice = _StubBLEDevice
+    # Mark as package so submodules work
+    bleak_module.__path__ = []
+
+    # Provide bleak.backends.device.BLEDevice for production imports
+    bleak_backends_module = types.ModuleType("bleak.backends")
+    bleak_backends_module.__path__ = []
+    bleak_backends_device_module = types.ModuleType("bleak.backends.device")
+    bleak_backends_device_module.BLEDevice = _StubBLEDevice
+    bleak_backends_module.device = bleak_backends_device_module
+    bleak_module.backends = bleak_backends_module
 
     monkeypatch.setitem(sys.modules, "bleak", bleak_module)
+    monkeypatch.setitem(sys.modules, "bleak.backends", bleak_backends_module)
+    monkeypatch.setitem(
+        sys.modules, "bleak.backends.device", bleak_backends_device_module
+    )
     return bleak_module
 
 
@@ -501,7 +515,7 @@ def _build_interface(monkeypatch: Any, client: DummyClient) -> "BLEInterface":
     connect_calls: list = []
 
     def _stub_connect(
-    _self: Any, _address: Optional[str] = None, *args, **kwargs
+        _self: Any, _address: Optional[str] = None, *args, **kwargs
     ) -> "DummyClient":
         """
         Record a connect attempt and attach a preconfigured test client to the interface.

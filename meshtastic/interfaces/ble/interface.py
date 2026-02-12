@@ -3,6 +3,7 @@
 import asyncio
 import atexit
 import contextlib
+import inspect
 import io
 import struct
 import threading
@@ -387,11 +388,12 @@ class BLEInterface(MeshInterface):
                     _mark_disconnected(_addr_key(self.address))
                 self._disconnected()
 
-                # Event coordination for reconnection
-                self.thread_coordinator.clear_events(
-                    "read_trigger", "reconnected_event"
-                )
-                self._schedule_auto_reconnect()
+                # Event coordination for reconnection (only if not closed)
+                if not self._closed:
+                    self.thread_coordinator.clear_events(
+                        "read_trigger", "reconnected_event"
+                    )
+                    self._schedule_auto_reconnect()
                 return True
             else:
                 # ALL STATE CHANGES INSIDE _state_lock FOR ATOMICITY (Fix Race #2)
@@ -426,10 +428,16 @@ class BLEInterface(MeshInterface):
         """
         Schedule an auto-reconnect worker to repeatedly attempt BLE reconnection until a connection succeeds or the interface shuts down.
 
-        This is a no-op when auto-reconnect is disabled or the interface is closing. Clears the internal shutdown event and delegates the actual scheduling to the reconnect scheduler.
+        This is a no-op when auto-reconnect is disabled or the interface is closing/closed. Clears the internal shutdown event and delegates the actual scheduling to the reconnect scheduler.
         """
 
         if not self.auto_reconnect:
+            return
+        # Never schedule reconnect once shutdown has started
+        if self._closed:
+            logger.debug(
+                "Skipping auto-reconnect scheduling because interface is closed."
+            )
             return
         # Use state manager instead of boolean flag
         if self._state_manager.is_closing:
@@ -810,7 +818,12 @@ class BLEInterface(MeshInterface):
                     raise self.BLEError(
                         "Address resolution failed, cannot create device"
                     )
-                return BLEDevice(address=address, name=address, details={})
+                # Use signature inspection for Bleak version compatibility
+                sig = inspect.signature(BLEDevice.__init__)
+                params: dict[str, Any] = {"address": address, "name": address}
+                if "details" in sig.parameters:
+                    params["details"] = {}  # Empty details for synthetic device
+                return BLEDevice(**params)
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]

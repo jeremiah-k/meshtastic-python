@@ -168,9 +168,11 @@ def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
     This is the preferred way to acquire an address lock. It ensures the holder
     count is properly managed even if exceptions occur or early returns happen.
 
-    Usage:
+    IMPORTANT: This context manager yields the lock WITHOUT acquiring it.
+    Callers MUST wrap the yielded lock in an inner `with lock:` block:
+
         with addr_lock_context(address) as lock:
-            with lock:
+            with lock:  # <-- MANDATORY: acquire the lock
                 # Connection logic here
                 if should_fail:
                     return  # Holder count released automatically
@@ -189,6 +191,9 @@ def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
     """
     lock = _get_addr_lock(addr)
     try:
+        # NOTE: We intentionally yield WITHOUT acquiring the lock.
+        # The caller must explicitly acquire it with `with lock:` to ensure
+        # proper lock ordering discipline is visible in the code.
         yield lock
     finally:
         _release_addr_lock(addr)

@@ -2,7 +2,7 @@
 
 import logging
 from threading import Event, RLock, Thread, current_thread
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 
@@ -35,7 +35,7 @@ class ThreadCoordinator:
             _events (dict[str, Event]): mapping of event names to threading.Event objects for coordination.
         """
         self._lock = RLock()
-        self._threads: List[Thread] = []
+        self._threads: list[Thread] = []
         self._events: dict[str, Event] = {}
 
     def create_thread(

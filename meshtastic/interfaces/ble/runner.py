@@ -181,8 +181,8 @@ class BLECoroutineRunner:
                 # Run one iteration to process cancellations
                 self._loop.stop()
                 self._loop.run_forever()
-        except Exception:
-            pass  # Best effort cleanup
+        except Exception as e:
+            logger.debug("Exception during task cancellation: %s", e)
 
     def run_coroutine_threadsafe(
         self, coro: Coroutine[None, None, T], timeout: Optional[float] = None
@@ -213,7 +213,9 @@ class BLECoroutineRunner:
             raise RuntimeError("BLECoroutineRunner loop is not available")
 
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        self._pending_futures.add(future)
+        # Protect concurrent access to _pending_futures WeakSet
+        with self._instance_lock:
+            self._pending_futures.add(future)
         return future
 
     def _handle_loop_exception(
@@ -239,14 +241,18 @@ class BLECoroutineRunner:
         # Use default handler for additional processing
         try:
             loop.default_exception_handler(context)
-        except Exception:
-            pass  # Don't let exception handler errors propagate
+        except Exception as e:
+            logger.debug("Exception in default exception handler: %s", e)
 
     def cancel_pending_futures(self) -> None:
         """Cancel all pending futures for cleanup."""
-        for future in list(self._pending_futures):
-            if not future.done():
-                future.cancel()
+        with self._instance_lock:
+            for future in list(self._pending_futures):
+                if not future.done():
+                    try:
+                        future.cancel()
+                    except Exception as e:
+                        logger.debug("Exception cancelling future: %s", e)
 
     def stop(self, timeout: float = 2.0) -> bool:
         """
@@ -303,8 +309,8 @@ class BLECoroutineRunner:
         """Shutdown handler called at process exit."""
         try:
             self.stop(timeout=1.0)
-        except Exception:
-            pass  # Best effort at exit
+        except Exception as e:
+            logger.debug("Exception during atexit shutdown: %s", e)
 
     def restart(self) -> bool:
         """

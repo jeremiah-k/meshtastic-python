@@ -194,15 +194,21 @@ class ClientManager:
         old_client : Any
             The previous client to close if it differs from `new_client`.
         """
+        # Compute the decision under lock, but start the thread after releasing
+        # to avoid holding the lock during thread creation/start
+        should_close = False
         with self.state_lock:
             if old_client and old_client is not new_client:
-                close_thread = self.thread_coordinator.create_thread(
-                    target=self.safe_close_client,
-                    args=(old_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                )
-                self.thread_coordinator.start_thread(close_thread)
+                should_close = True
+
+        if should_close:
+            close_thread = self.thread_coordinator.create_thread(
+                target=self.safe_close_client,
+                args=(old_client,),
+                name="BLEClientClose",
+                daemon=True,
+            )
+            self.thread_coordinator.start_thread(close_thread)
 
     def safe_close_client(
         self, client: "BLEClient", event: Optional[Event] = None

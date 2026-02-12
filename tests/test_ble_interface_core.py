@@ -605,11 +605,12 @@ def test_close_clears_ble_threads(monkeypatch):
 
     while elapsed_time < max_wait_time:
         # Check for specific BLE interface threads that should be cleaned up
-        # BLEClient thread might persist in test environment, so focus on interface-managed threads
+        # Exclude singleton threads that persist across interface instances
         lingering = [
             thread.name
             for thread in threading.enumerate()
-            if thread.name.startswith("BLE") and thread.name != "BLEClient"
+            if thread.name.startswith("BLE")
+            and thread.name not in ("BLEClient", "BLECoroutineRunner")
         ]
 
         if not lingering:
