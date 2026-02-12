@@ -89,11 +89,11 @@ class TestBLEStateManager:
         """Test that invalid transitions are rejected."""
         manager = BLEStateManager()
 
-        # Try to transition to same state (should be invalid)
-        assert not manager.transition_to(ConnectionState.DISCONNECTED)
+        # No-op transition (same state) is now valid - returns True
+        assert manager.transition_to(ConnectionState.DISCONNECTED)
         assert manager.state == ConnectionState.DISCONNECTED
 
-        # Try invalid transition from DISCONNECTED
+        # Try invalid transition from DISCONNECTED (not in valid transitions)
         assert not manager.transition_to(ConnectionState.CONNECTED)
         assert manager.state == ConnectionState.DISCONNECTED
 
@@ -102,7 +102,7 @@ class TestBLEStateManager:
         assert manager.transition_to(ConnectionState.CONNECTED)
         assert not manager.transition_to(
             ConnectionState.CONNECTING
-        )  # Can't go back to CONNECTING
+        )  # Can't go back to CONNECTING from CONNECTED
         assert manager.state == ConnectionState.CONNECTED
 
     def test_thread_safety(self):
@@ -312,8 +312,8 @@ class TestBLEInterfaceStateIntegration:
         assert manager.transition_to(ConnectionState.DISCONNECTED)
         assert manager.state == ConnectionState.DISCONNECTED
 
-        # Should not be able to set client for invalid states
-        assert not manager.transition_to(ConnectionState.DISCONNECTED)
+        # No-op transition (same state) is now valid - returns True
+        assert manager.transition_to(ConnectionState.DISCONNECTED)
 
     def test_state_transition_validation(self):
         """

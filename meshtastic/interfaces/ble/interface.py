@@ -55,6 +55,7 @@ from meshtastic.interfaces.ble.gating import (
     _mark_connected,
     _mark_disconnected,
     _release_addr_lock,
+    addr_lock_context,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -131,6 +132,26 @@ class BLEInterface(MeshInterface):
 
         # Thread safety and state management
         # Unified state-based lock system replacing multiple locks and boolean flags
+        #
+        # Lock Ordering (to prevent deadlocks):
+        #     When acquiring multiple locks, always acquire in this order:
+        #     1. Global registry lock (_REGISTRY_LOCK in gating.py)
+        #     2. Per-address locks (_ADDR_LOCKS in gating.py, via addr_lock_context)
+        #     3. Interface state lock (_state_lock)
+        #     4. Interface connect lock (_connect_lock)
+        #     5. Interface disconnect lock (_disconnect_lock)
+        #
+        # Note: _disconnect_lock is acquired non-blocking first for early-return
+        # optimization, then _state_lock is acquired. This is intentional for
+        # handling concurrent disconnect callbacks.
+        #
+        # _connect_lock Purpose:
+        #     Serializes connection attempts within a single interface instance.
+        #     While addr_lock_context provides process-wide serialization for the
+        #     same address, _connect_lock ensures that within this interface,
+        #     only one connection attempt can be in the critical section at a time.
+        #     This prevents race conditions when checking existing_client and
+        #     managing the connection state machine.
         self._state_manager = BLEStateManager()  # Centralized state tracking
         self._state_lock = self._state_manager.lock  # Direct access to unified lock
         self._connect_lock = threading.RLock()  # Serializes connection attempts
@@ -286,23 +307,29 @@ class BLEInterface(MeshInterface):
             )
             return True
         try:
-            # Use state manager for disconnect validation
-            current_state = self._state_manager.state
+            # CAPTURE CURRENT STATE UNDER LOCK FIRST (Fix Race #6)
+            # This prevents TOCTOU races where state changes between checks
+            with self._state_lock:
+                current_state = self._state_manager.state
+                current_client = self.client
+                is_closing = self.is_connection_closing
+
+            # Now perform validation checks
             if current_state == ConnectionState.CONNECTING:
                 logger.debug(
                     "Ignoring disconnect from %s while a connection is in progress.",
                     source,
                 )
                 return True
-            if self.is_connection_closing:
+            if is_closing:
                 logger.debug("Ignoring disconnect from %s during shutdown.", source)
                 return False
 
-            # Determine which client we're dealing with
+            # Determine which client we're dealing with (using pre-captured current_client)
             target_client = client
             if not target_client and bleak_client:
-                # Find the BLEClient that contains this bleak_client
-                target_client = self.client
+                # Match the BLEClient that contains this bleak_client
+                target_client = current_client
                 if (
                     target_client
                     and getattr(target_client, "bleak_client", None) is not bleak_client
@@ -319,14 +346,13 @@ class BLEInterface(MeshInterface):
 
             if self.auto_reconnect:
                 previous_client = None
-                # Use unified state lock
+                # ALL STATE CHANGES INSIDE _state_lock FOR ATOMICITY (Fix Race #2)
                 with self._state_lock:
                     # Prevent duplicate disconnect notifications
                     if self._disconnect_notified:
                         logger.debug("Ignoring duplicate disconnect from %s.", source)
                         return True
 
-                    current_client = self.client
                     # Ignore stale client disconnects (from previous connections)
                     if (
                         target_client
@@ -339,9 +365,9 @@ class BLEInterface(MeshInterface):
                     previous_client = current_client
                     self.client = None
                     self._disconnect_notified = True
+                    # State transition inside lock for atomicity
+                    self._state_manager.transition_to(ConnectionState.DISCONNECTED)
 
-                # Transition to DISCONNECTED state on disconnect
-                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                 if previous_client:
                     previous_address = getattr(previous_client, "address", self.address)
                     device_key = (
@@ -368,11 +394,14 @@ class BLEInterface(MeshInterface):
                 self._schedule_auto_reconnect()
                 return True
             else:
+                # ALL STATE CHANGES INSIDE _state_lock FOR ATOMICITY (Fix Race #2)
                 with self._state_lock:
                     if not self._disconnect_notified:
                         self._disconnect_notified = True
                     self.client = None
-                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                    # State transition inside lock for atomicity
+                    self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+
                 _mark_disconnected(_addr_key(address))
                 logger.debug("Auto-reconnect disabled, staying disconnected.")
                 self._disconnected()
@@ -874,94 +903,98 @@ class BLEInterface(MeshInterface):
             On connection failure any client opened during the attempt is closed before the exception is propagated.
         """
 
+        # EARLY CHECK: Fail fast if interface is closing before acquiring any locks
+        # This prevents blocking close() which needs the address lock to proceed
+        if self._closed or self.is_connection_closing:
+            raise self.BLEError("Cannot connect while interface is closing")
+
         requested_identifier = address if address is not None else self.address
         normalized_request = BLEInterface._sanitize_address(requested_identifier)
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         addr_key = _addr_key(requested_identifier) if requested_identifier else None
 
-        addr_lock = _get_addr_lock(addr_key)
-        with addr_lock:
-            # Fast suppression if a recent connect happened elsewhere.
-            # Check is performed inside addr_lock to ensure consistent lock ordering.
-            # Skip suppression check for discovery mode (addr_key is None)
-            if (
-                addr_key
-                and _is_currently_connected_elsewhere(addr_key)
-                and not self._state_manager.is_connected
-            ):
-                # Release the holder count since we're not actually using the lock for connection
-                _release_addr_lock(addr_key)
-                logger.info(
-                    "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                    addr_key or "unknown",
-                )
-                raise self.BLEError(
-                    "Connection suppressed: recently connected elsewhere"
-                )
+        # Use context manager for automatic holder count management
+        with addr_lock_context(addr_key) as addr_lock:
+            with addr_lock:
+                # Fast suppression if a recent connect happened elsewhere.
+                # Check is performed inside addr_lock to ensure consistent lock ordering.
+                # Skip suppression check for discovery mode (addr_key is None)
+                if (
+                    addr_key
+                    and _is_currently_connected_elsewhere(addr_key)
+                    and not self._state_manager.is_connected
+                ):
+                    # Context manager will release holder count automatically
+                    logger.info(
+                        "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                        addr_key or "unknown",
+                    )
+                    raise self.BLEError(
+                        "Connection suppressed: recently connected elsewhere"
+                    )
 
-            with self._connect_lock:
-                if self._closed or self.is_connection_closing:
-                    # Release the holder count since we're not actually connecting
-                    _release_addr_lock(addr_key)
-                    raise self.BLEError("Cannot connect while interface is closing")
+                with self._connect_lock:
+                    # Re-check closing state inside connect_lock for extra safety
+                    if self._closed or self.is_connection_closing:
+                        raise self.BLEError("Cannot connect while interface is closing")
 
-                with self._state_lock:
-                    existing_client = self.client
-                    if (
-                        existing_client
-                        and existing_client.is_connected()
-                        and self._connection_validator.check_existing_client(
-                            existing_client,
-                            normalized_request,
-                            self._last_connection_request,
-                            self.address,
+                    with self._state_lock:
+                        existing_client = self.client
+                        if (
+                            existing_client
+                            and existing_client.is_connected()
+                            and self._connection_validator.check_existing_client(
+                                existing_client,
+                                normalized_request,
+                                self._last_connection_request,
+                                self.address,
+                            )
+                        ):
+                            # Context manager will release holder count automatically
+                            logger.debug("Already connected, skipping connect call.")
+                            return existing_client
+
+                    client = self._connection_orchestrator.establish_connection(
+                        address,
+                        self.address,
+                        self._register_notifications,
+                        self._connected,
+                        self._on_ble_disconnect,
+                    )
+
+                    device_address = getattr(
+                        getattr(client, "bleak_client", None), "address", None
+                    )
+                    previous_client = None
+                    with self._state_lock:
+                        previous_client = self.client
+                        self.address = device_address
+                        self.client = client
+                        self._disconnect_notified = False
+                        normalized_device_address = BLEInterface._sanitize_address(
+                            device_address or ""
                         )
-                    ):
-                        # Release the holder count since we're reusing existing connection
-                        _release_addr_lock(addr_key)
-                        logger.debug("Already connected, skipping connect call.")
-                        return existing_client
+                        if normalized_request is not None:
+                            self._last_connection_request = normalized_request
+                        else:
+                            self._last_connection_request = normalized_device_address
 
-                client = self._connection_orchestrator.establish_connection(
-                    address,
-                    self.address,
-                    self._register_notifications,
-                    self._connected,
-                    self._on_ble_disconnect,
-                )
+                    if previous_client and previous_client is not client:
+                        self._client_manager.update_client_reference(
+                            client, previous_client
+                        )
 
-                device_address = getattr(
-                    getattr(client, "bleak_client", None), "address", None
-                )
-                previous_client = None
-                with self._state_lock:
-                    previous_client = self.client
-                    self.address = device_address
-                    self.client = client
-                    self._disconnect_notified = False
-                    normalized_device_address = BLEInterface._sanitize_address(
-                        device_address or ""
-                    )
-                    if normalized_request is not None:
-                        self._last_connection_request = normalized_request
-                    else:
-                        self._last_connection_request = normalized_device_address
-
-                if previous_client and previous_client is not client:
-                    self._client_manager.update_client_reference(
-                        client, previous_client
-                    )
-
-                # Use actual device address for gating to avoid empty-key entries
-                # Only use address registry for explicit addresses, not discovery mode (None)
-                device_key = _addr_key(device_address) if device_address else None
-                if device_key:
-                    _mark_connected(device_key)
-                # Mark that at least one successful connection has been established
-                self._ever_connected = True
-                self._read_retry_count = 0
-                return client
+                    # Use actual device address for gating to avoid empty-key entries
+                    # Only use address registry for explicit addresses, not discovery mode (None)
+                    device_key = _addr_key(device_address) if device_address else None
+                    if device_key:
+                        _mark_connected(device_key)
+                    # Context manager will release holder count automatically
+                    # Mark that at least one successful connection has been established
+                    self._ever_connected = True
+                    self._read_retry_count = 0
+                    return client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: "BLEClient"

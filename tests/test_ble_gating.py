@@ -10,6 +10,7 @@ from meshtastic.interfaces.ble.gating import (
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
+    addr_lock_context,
 )
 
 
@@ -52,6 +53,7 @@ class TestAddrLock:
         """Clear lock registries before each test for isolation."""
         _ADDR_LOCKS.clear()
         from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS
+
         _LOCK_HOLDERS.clear()
 
     def test_get_lock_for_valid_address(self):
@@ -88,8 +90,9 @@ class TestAddrLock:
         """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
         _ADDR_LOCKS.clear()
         from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS, _release_addr_lock
+
         _LOCK_HOLDERS.clear()
-        
+
         _get_addr_lock("testaddress")
         assert "testaddress" in _ADDR_LOCKS
         # Release the holder count that was incremented by _get_addr_lock
@@ -158,17 +161,21 @@ class TestMarkDisconnected:
     def test_mark_disconnected_cleanup_lock(self):
         """Test that marking an address as disconnected cleans up the lock.
 
-        Holder-count flow: _get_addr_lock increments holder count to 1, _mark_connected
-        decrements it back to 0 (connection complete), then _mark_disconnected decrements
-        again (clamped to 0) and calls _cleanup_addr_lock, which removes the lock since
-        holders <= 0.
+        With the new context manager design:
+        - addr_lock_context handles holder count (increments on enter, decrements on exit)
+        - _mark_connected just marks connected (no holder count change)
+        - _mark_disconnected just marks disconnected and cleans up
+
+        When using the context manager, holder count goes to 0 on exit, so
+        _mark_disconnected's cleanup removes the lock.
         """
         _ADDR_LOCKS.clear()
-        _get_addr_lock("testaddress")
-        _mark_connected("testaddress")
-        assert "testaddress" in _ADDR_LOCKS
+        # Use context manager for proper holder count management
+        with addr_lock_context("testaddress"):
+            _mark_connected("testaddress")
+        assert "testaddress" in _ADDR_LOCKS  # Lock still exists
         _mark_disconnected("testaddress")
-        assert "testaddress" not in _ADDR_LOCKS
+        assert "testaddress" not in _ADDR_LOCKS  # Lock cleaned up
 
 
 class TestIsCurrentlyConnectedElsewhere:

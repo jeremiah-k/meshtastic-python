@@ -3,12 +3,16 @@
 Lock Ordering Note:
     When acquiring multiple locks in the BLE subsystem, always acquire in this order:
     1. Global registry lock (_REGISTRY_LOCK in gating.py)
-    2. Per-address locks (_ADDR_LOCKS in gating.py)
+    2. Per-address locks (_ADDR_LOCKS in gating.py, via addr_lock_context)
     3. Interface state lock (_state_lock)
     4. Interface connect lock (_connect_lock)
     5. Interface disconnect lock (_disconnect_lock)
 
     This ordering prevents deadlocks in concurrent connection scenarios.
+
+    Note: _disconnect_lock is acquired non-blocking first for early-return
+    optimization, then _state_lock is acquired. This is intentional for
+    handling concurrent disconnect callbacks.
 """
 
 from enum import Enum
@@ -171,19 +175,21 @@ class BLEStateManager:
 
         Returns
         -------
-        bool: `True` if the transition was valid and applied. `False` for invalid
-            transitions, including transitions to the same state (no-op transitions
-            are considered invalid to help detect potential bugs in calling code).
+        bool: `True` if the transition was valid (including no-op transitions where
+            the state is already the target state). `False` for invalid transitions
+            that violate the state machine's transition rules.
         """
         with self._state_lock:
             if new_state == self._state:
-                # No-op transition: considered invalid to help detect bugs
+                # No-op transition: already in target state, this is valid
                 logger.debug("State transition no-op: already in %s", self._state.value)
-                return False
+                return True
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
                 self._state = new_state
-                logger.debug("State transition: %s → %s", old_state.value, new_state.value)
+                logger.debug(
+                    "State transition: %s → %s", old_state.value, new_state.value
+                )
                 return True
             else:
                 logger.warning(

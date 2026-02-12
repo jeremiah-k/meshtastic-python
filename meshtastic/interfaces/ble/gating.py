@@ -7,11 +7,22 @@ Lock Ordering Note:
     3. Interface-level locks (_state_lock, _connect_lock, _disconnect_lock)
 
     This ordering prevents deadlocks in concurrent connection scenarios.
+
+Context Manager Usage:
+    Prefer using addr_lock_context() over manual _get_addr_lock()/_release_addr_lock()
+    calls to ensure proper holder count management:
+
+        with addr_lock_context(address) as lock:
+            with lock:
+                # Connection logic here
+                # On success: _mark_connected(address) handles holder count
+                # On failure/exception: context manager releases holder count
 """
 
 import logging
+from contextlib import contextmanager
 from threading import RLock
-from typing import Dict, Optional, Set
+from typing import Dict, Generator, Optional, Set
 
 from meshtastic.interfaces.ble.utils import sanitize_address
 
@@ -118,16 +129,16 @@ def _mark_connected(addr: Optional[str]) -> None:
     Track that the given address is currently connected.
 
     The address is normalized internally using _addr_key.
-    Also decrements the lock holder count since the connection attempt is complete.
+
+    Note: This function only marks the address as connected. The caller is
+    responsible for managing the lock holder count, typically via the
+    addr_lock_context() context manager which handles it automatically.
     """
     key = _addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.add(key)
-        # Decrement holder count since connection attempt is complete
-        if key in _LOCK_HOLDERS:
-            _LOCK_HOLDERS[key] = max(0, _LOCK_HOLDERS[key] - 1)
 
 
 def _mark_disconnected(addr: Optional[str]) -> None:
@@ -136,16 +147,51 @@ def _mark_disconnected(addr: Optional[str]) -> None:
 
     The address is normalized internally using _addr_key.
     Also attempts to clean up the address lock if no holders remain.
+
+    Note: This function does NOT decrement the holder count. The caller is
+    responsible for managing the lock holder count, typically via the
+    addr_lock_context() context manager which handles it automatically.
     """
     key = _addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.discard(key)
-        # Decrement holder count if not already done
-        if key in _LOCK_HOLDERS:
-            _LOCK_HOLDERS[key] = max(0, _LOCK_HOLDERS[key] - 1)
         _cleanup_addr_lock(key)
+
+
+@contextmanager
+def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
+    """
+    Context manager for address lock with automatic holder count management.
+
+    This is the preferred way to acquire an address lock. It ensures the holder
+    count is properly managed even if exceptions occur or early returns happen.
+
+    Usage:
+        with addr_lock_context(address) as lock:
+            with lock:
+                # Connection logic here
+                if should_fail:
+                    return  # Holder count released automatically
+                # On success, _mark_connected() is called elsewhere
+                # and the context manager releases the holder count
+
+    Parameters
+    ----------
+    addr : Optional[str]
+        BLE address to get lock for. Can be a raw address or pre-normalized key.
+
+    Yields
+    ------
+    RLock
+        The lock associated with the given address.
+    """
+    lock = _get_addr_lock(addr)
+    try:
+        yield lock
+    finally:
+        _release_addr_lock(addr)
 
 
 def _is_currently_connected_elsewhere(addr: Optional[str]) -> bool:

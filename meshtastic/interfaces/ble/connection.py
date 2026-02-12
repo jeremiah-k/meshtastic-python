@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("meshtastic.ble")
 
+# Direct connect timeout for known device addresses.
+# Kept shorter than full CONNECTION_TIMEOUT to allow quick fallback to discovery
+# if the device has moved to a different adapter or requires fresh discovery.
+# This prevents long waits on stale connection attempts.
+DIRECT_CONNECT_TIMEOUT_SECONDS: float = 12.0
+
 
 class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
@@ -313,6 +319,18 @@ class ConnectionOrchestrator:
             # Register notifications while holding the lock to ensure we don't
             # race with a disconnect callback
             register_notifications_func(client)
+
+            # Post-registration check: verify client is still connected.
+            # This catches disconnects that occurred during notification registration
+            # which may have been ignored by _handle_disconnect due to CONNECTING state.
+            if not client.is_connected():
+                logger.debug(
+                    "Connection finalization aborted: client disconnected during notification registration"
+                )
+                raise self.interface.BLEError(
+                    "Connection invalidated: client disconnected during finalization"
+                )
+
             self.state_manager.transition_to(ConnectionState.CONNECTED)
 
         on_connected_func()
@@ -383,8 +401,8 @@ class ConnectionOrchestrator:
             )
             try:
                 direct_timeout = min(
-                    12.0, BLEConfig.CONNECTION_TIMEOUT
-                )  # keep direct attempts short for known targets
+                    DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
+                )
                 self.client_manager.connect_client(client, timeout=direct_timeout)
                 self._finalize_connection(
                     client,
