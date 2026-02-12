@@ -121,30 +121,39 @@ class BLECoroutineRunner:
     def _ensure_running(self) -> None:
         """Ensure the event loop thread is running."""
         with self._instance_lock:
-            # Check if already running
-            if (
-                self._thread is not None
-                and self._thread.is_alive()
-                and self._loop is not None
-            ):
-                return
+            self._start_locked()
 
-            # Reset stop flag for restart
-            self._stop_requested = False
-            self._loop_ready.clear()
+    def _start_locked(self) -> None:
+        """
+        Create and start the runner thread/loop. Must be called while holding _instance_lock.
 
-            # Create and start the thread
-            self._thread = threading.Thread(
-                target=self._run_loop,
-                name="BLECoroutineRunner",
-                daemon=True,
-            )
-            self._thread.start()
+        This is separated from _ensure_running() so restart() can call it while already
+        holding the lock, avoiding race conditions with concurrent stop()/restart() calls.
+        """
+        # Check if already running
+        if (
+            self._thread is not None
+            and self._thread.is_alive()
+            and self._loop is not None
+        ):
+            return
 
-            # Wait for loop to be ready
-            if not self._loop_ready.wait(timeout=5.0):
-                logger.error("BLECoroutineRunner loop failed to start within 5s")
-                raise RuntimeError("BLE event loop failed to start")
+        # Reset stop flag for restart
+        self._stop_requested = False
+        self._loop_ready.clear()
+
+        # Create and start the thread
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            name="BLECoroutineRunner",
+            daemon=True,
+        )
+        self._thread.start()
+
+        # Wait for loop to be ready
+        if not self._loop_ready.wait(timeout=5.0):
+            logger.error("BLECoroutineRunner loop failed to start within 5s")
+            raise RuntimeError("BLE event loop failed to start")
 
     def _run_loop(self) -> None:
         """Run the asyncio event loop in the background thread."""
@@ -288,8 +297,9 @@ class BLECoroutineRunner:
             if self._loop and self._loop.is_running():
                 self._loop.call_soon_threadsafe(self._loop.stop)
 
-            # Capture thread reference for join outside lock
+            # Capture thread and loop references for join/cleanup outside lock
             thread = self._thread
+            loop = self._loop
 
         # Join OUTSIDE the lock to avoid deadlocking with runner-thread code
         # that might need _instance_lock (e.g., run_coroutine_threadsafe)
@@ -317,10 +327,16 @@ class BLECoroutineRunner:
                         )
                     return False
 
-        # Final cleanup under lock
+        # Final cleanup under lock - only clear if no concurrent _ensure_running replaced them
         with self._instance_lock:
-            self._thread = None
-            self._loop = None
+            # Only clear _thread if it still references the original thread we stopped
+            if self._thread is thread:
+                self._thread = None
+            # Only clear _loop if it still references the original loop (or is not running)
+            if self._loop is loop or (
+                self._loop is not None and not self._loop.is_running()
+            ):
+                self._loop = None
         return True
 
     def _atexit_shutdown(self) -> None:
@@ -350,6 +366,7 @@ class BLECoroutineRunner:
             self._loop = None
             self._stop_requested = False
 
-        # Start fresh
-        self._ensure_running()
+            # Start fresh - call _start_locked() while still holding the lock
+            # to avoid race with concurrent stop()/restart() calls
+            self._start_locked()
         return True

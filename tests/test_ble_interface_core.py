@@ -896,30 +896,35 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
             """
             self.created = []
 
-        def create_thread(self, target, args, name, daemon):
+        def create_thread(self, target, name, *, daemon=True, args=(), kwargs=None):
             """
             Create a lightweight thread-like object used by tests to track created threads.
+
+            Signature matches ThreadCoordinator.create_thread for consistency.
 
             Parameters
             ----------
             target : Any
                 callable The callable that would be run by the thread.
-            args : Any
-                Arguments to pass to `target`.
             name : Any
                 The thread's name.
             daemon : Any
                 Whether the thread is a daemon.
+            args : Any
+                Arguments to pass to `target`.
+            kwargs : Any
+                Keyword arguments to pass to `target`.
 
             Returns
             -------
-                thread (SimpleNamespace): A thread-like object with attributes `target`, `args`, `name`, `daemon`, `started` and an `is_alive()` method. The object is also appended to `self.created`.
+                thread (SimpleNamespace): A thread-like object with attributes `target`, `args`, `name`, `daemon`, `kwargs`, `started` and an `is_alive()` method. The object is also appended to `self.created`.
             """
             thread = SimpleNamespace(
                 target=target,
                 args=args,
                 name=name,
                 daemon=daemon,
+                kwargs=kwargs if kwargs is not None else {},
                 started=False,
             )
             thread.is_alive = lambda: thread.started

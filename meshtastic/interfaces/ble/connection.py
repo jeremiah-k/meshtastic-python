@@ -164,7 +164,9 @@ class ClientManager:
         timeout : Any
             Maximum seconds to wait for the connection; if None uses BLEConfig.CONNECTION_TIMEOUT.
         """
-        connect_timeout = timeout or BLEConfig.CONNECTION_TIMEOUT
+        connect_timeout = (
+            timeout if timeout is not None else BLEConfig.CONNECTION_TIMEOUT
+        )
         client.connect(
             await_timeout=connect_timeout,
             timeout=connect_timeout,
