@@ -102,7 +102,19 @@ class DiscoveryStrategy(ABC):
 
 
 class ConnectedStrategy(DiscoveryStrategy):
-    """Device discovery strategy that enumerates already-connected devices."""
+    """Device discovery strategy that enumerates already-connected devices.
+
+    .. warning::
+       This strategy uses Bleak's private ``_backend`` API to enumerate
+       already-connected devices. This is not part of Bleak's public API
+       and may break in future Bleak versions. The strategy is version-gated
+       via ``_bleak_supports_connected_fallback()`` and will return an
+       empty list if the Bleak version is too old or if the private API
+       is unavailable.
+
+       See: https://github.com/hbldh/bleak/issues/ for upstream status
+       on a public API for connected-device enumeration.
+    """
 
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """

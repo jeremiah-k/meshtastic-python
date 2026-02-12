@@ -7,7 +7,7 @@ from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.constants import logger
 
-DecodeError: Type[Exception]
+# Import DecodeError from protobuf, or create a fallback if not available
 try:
     from google.protobuf.message import DecodeError as _DecodeError  # type: ignore
 
@@ -41,17 +41,17 @@ class BLEErrorHandler:
     ):
         """
         Safely execute a zero-argument callable and return its result, falling back to a default on error.
-        
+
         Parameters:
             func: Zero-argument callable to execute.
             default_return: Value returned if execution fails.
             log_error (bool): If True, log caught exceptions.
             error_msg (str): Message prefix used when logging errors.
             reraise (bool): If True, re-raise caught exceptions instead of returning default_return.
-        
+
         Returns:
             The value returned by func() on success, or default_return if execution fails.
-        
+
         Notes:
             Catches BleakError, BleakDBusError, DecodeError, FutureTimeoutError, and other Exceptions; SystemExit and KeyboardInterrupt are re-raised.
         """
@@ -76,13 +76,13 @@ class BLEErrorHandler:
     def safe_cleanup(func, cleanup_name: str = "cleanup operation") -> bool:
         """
         Execute a cleanup callable and return whether it succeeded.
-        
+
         Calls the provided zero-argument callable and suppresses any exception raised, logging a debug message that includes `cleanup_name` when an exception occurs.
-        
+
         Parameters:
             func (Callable[[], Any]): Cleanup operation to execute with no arguments.
             cleanup_name (str): Human-readable name included in debug messages (default: "cleanup operation").
-        
+
         Returns:
             bool: `True` if the cleanup completed without raising an exception, `False` otherwise.
         """
