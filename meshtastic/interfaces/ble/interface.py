@@ -14,10 +14,10 @@ from typing import Any, Callable, List, Optional
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic import publishingThread
 from meshtastic.interfaces.ble.client import BLEClient
-from pubsub import pub  # type: ignore[import-untyped]
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
     ConnectionOrchestrator,
