@@ -8,7 +8,10 @@ from typing import Optional, Tuple, cast
 logger = logging.getLogger("meshtastic.ble")
 
 # Get bleak version using importlib.metadata (reliable method)
-BLEAK_VERSION = importlib.metadata.version("bleak")
+try:
+    BLEAK_VERSION = importlib.metadata.version("bleak")
+except importlib.metadata.PackageNotFoundError:
+    BLEAK_VERSION = "0.0.0"
 
 # BLE Service and Characteristic UUIDs
 SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
@@ -74,9 +77,7 @@ BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION = (
 ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
 ERROR_MULTIPLE_DEVICES = (
     "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
-)
-
-# Error message constants
+ )
 ERROR_READING_BLE = "Error reading BLE"
 ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
 
@@ -104,13 +105,11 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
         matches.append("0")
-    try:
-        return cast(
-            Tuple[int, int, int],
-            tuple(int(segment) for segment in matches[:3]),
-        )
-    except ValueError:
-        return 0, 0, 0
+    # re.findall(r"\d+", ...) only returns strings of digits, so int() will always succeed
+    return cast(
+        Tuple[int, int, int],
+        tuple(int(segment) for segment in matches[:3]),
+    )
 
 
 def _bleak_supports_connected_fallback() -> bool:

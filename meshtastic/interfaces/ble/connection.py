@@ -301,12 +301,9 @@ class ConnectionOrchestrator:
         # We hold the state_lock during this check to prevent TOCTOU race conditions.
         with self.state_lock:
             current_state = self.state_manager.state
-            if current_state not in (
-                ConnectionState.CONNECTING,
-                ConnectionState.DISCONNECTING,
-            ):
+            if current_state != ConnectionState.CONNECTING:
                 logger.debug(
-                    "Connection finalization aborted: state changed to %s during connect",
+                    "Connection finalization aborted: state changed from CONNECTING to %s during connect",
                     current_state,
                 )
                 raise self.interface.BLEError(

@@ -1388,14 +1388,12 @@ class BLEInterface(MeshInterface):
                     "meshtastic.connection.status", interface=self, connected=False
                 )
             except Exception:
-                # Suppress errors during status publish for test compatibility
-                pass
+                logger.debug("Error publishing disconnect status", exc_info=True)
 
         try:
             publishingThread.queueWork(_publish_status)
         except Exception:
-            # Suppress errors for test compatibility
-            pass
+            logger.debug("Error queuing disconnect status publish", exc_info=True)
 
     def _connected(self):
         """Override to also publish connection status event for backwards compatibility."""
@@ -1409,11 +1407,9 @@ class BLEInterface(MeshInterface):
                     "meshtastic.connection.status", interface=self, connected=True
                 )
             except Exception:
-                # Suppress errors during status publish for test compatibility
-                pass
+                logger.debug("Error publishing connect status", exc_info=True)
 
         try:
             publishingThread.queueWork(_publish_status)
         except Exception:
-            # Suppress errors for test compatibility
-            pass
+            logger.debug("Error queuing connect status publish", exc_info=True)

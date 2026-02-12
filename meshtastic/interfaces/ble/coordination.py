@@ -112,12 +112,12 @@ class ThreadCoordinator:
 
     def start_thread(self, thread: Thread):
         """
-        Start the given thread if it is tracked by this coordinator.
+        Start the given thread if it is tracked by this coordinator and not already started.
 
         Only threads previously added to the coordinator's tracking list will be started; otherwise the call has no effect.
         """
         with self._lock:
-            if thread in self._threads:
+            if thread in self._threads and not thread.is_alive():
                 thread.start()
 
     def join_thread(self, thread: Thread, timeout: Optional[float] = None):

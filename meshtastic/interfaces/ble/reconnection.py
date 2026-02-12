@@ -12,6 +12,7 @@ from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _get_addr_lock,
     _is_currently_connected_elsewhere,
+    _release_addr_lock,
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
@@ -268,4 +269,7 @@ class ReconnectWorker:
                 )
                 sleep_fn(sleep_delay)
         finally:
+            # Balance the holder count from _get_addr_lock if we never connected
+            if not self.interface.is_connection_connected:
+                _release_addr_lock(addr_key)
             self.interface._reconnect_scheduler.clear_thread_reference()

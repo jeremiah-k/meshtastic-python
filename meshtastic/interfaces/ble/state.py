@@ -13,12 +13,9 @@ Lock Ordering Note:
 
 from enum import Enum
 from threading import RLock
-from typing import TYPE_CHECKING, ClassVar, Dict, Set
+from typing import ClassVar, Dict, Set
 
 from meshtastic.interfaces.ble.constants import logger
-
-if TYPE_CHECKING:
-    from meshtastic.interfaces.ble.client import BLEClient
 
 
 class ConnectionState(Enum):
@@ -186,11 +183,13 @@ class BLEStateManager:
             if self._is_valid_transition(self._state, new_state):
                 old_state = self._state
                 self._state = new_state
-                logger.debug(f"State transition: {old_state.value} → {new_state.value}")
+                logger.debug("State transition: %s → %s", old_state.value, new_state.value)
                 return True
             else:
                 logger.warning(
-                    f"Invalid state transition: {self._state.value} → {new_state.value}"
+                    "Invalid state transition: %s → %s",
+                    self._state.value,
+                    new_state.value,
                 )
                 return False
 
@@ -258,5 +257,5 @@ class BLEStateManager:
         with self._state_lock:
             old_state = self._state
             self._state = ConnectionState.DISCONNECTED
-            logger.debug(f"State reset: {old_state.value} → disconnected")
+            logger.debug("State reset: %s → disconnected", old_state.value)
             return True

@@ -48,6 +48,12 @@ class TestAddrKey:
 class TestAddrLock:
     """Test cases for _get_addr_lock function."""
 
+    def setup_method(self):
+        """Clear lock registries before each test for isolation."""
+        _ADDR_LOCKS.clear()
+        from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS
+        _LOCK_HOLDERS.clear()
+
     def test_get_lock_for_valid_address(self):
         """Test that locks are created for valid addresses."""
         lock1 = _get_addr_lock("aabbccddeeff")
@@ -84,7 +90,7 @@ class TestAddrLock:
         from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS, _release_addr_lock
         _LOCK_HOLDERS.clear()
         
-        lock = _get_addr_lock("testaddress")
+        _get_addr_lock("testaddress")
         assert "testaddress" in _ADDR_LOCKS
         # Release the holder count that was incremented by _get_addr_lock
         _release_addr_lock("testaddress")
@@ -150,7 +156,13 @@ class TestMarkDisconnected:
         assert len(_CONNECTED_ADDRS) == initial_count
 
     def test_mark_disconnected_cleanup_lock(self):
-        """Test that marking an address as disconnected cleans up the lock."""
+        """Test that marking an address as disconnected cleans up the lock.
+
+        Holder-count flow: _get_addr_lock increments holder count to 1, _mark_connected
+        decrements it back to 0 (connection complete), then _mark_disconnected decrements
+        again (clamped to 0) and calls _cleanup_addr_lock, which removes the lock since
+        holders <= 0.
+        """
         _ADDR_LOCKS.clear()
         _get_addr_lock("testaddress")
         _mark_connected("testaddress")

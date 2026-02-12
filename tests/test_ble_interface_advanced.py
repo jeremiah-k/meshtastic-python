@@ -652,7 +652,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
                 noProto=True,
                 auto_reconnect=True,
             )
-            setattr(iface, "_connect_stub_calls", connect_calls)
+            iface._connect_stub_calls = connect_calls  # type: ignore[attr-defined]
             client = cast("StressTestClient", iface.client)
             yield iface, client
         finally:

@@ -114,11 +114,6 @@ def mock_publishing_thread(monkeypatch):
 
     publishing_thread_module.queueWork = queueWork
 
-    # Ensure fresh state
-    for module_name in ("publishingThread", "meshtastic.publishingThread"):
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-
     monkeypatch.setitem(sys.modules, "publishingThread", publishing_thread_module)
     monkeypatch.setitem(
         sys.modules,

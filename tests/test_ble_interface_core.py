@@ -514,7 +514,7 @@ def test_connection_validator_existing_client_checks():
 
     state_manager = BLEStateManager()
     validator = ConnectionValidator(
-        state_manager, state_manager._state_lock, BLEInterface.BLEError
+        state_manager, state_manager.lock, BLEInterface.BLEError
     )
     client = DummyClient()
     client.is_connected = lambda: True
@@ -722,7 +722,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
             iface.close()
         except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
             # Log for visibility; still allow test to proceed with cleanup.
-            logging.warning(f"Cleanup error in iface.close(): {exc!r}")
+            logging.warning("Cleanup error in iface.close(): %r", exc)
 
 
 def test_log_notification_registration(monkeypatch):
@@ -876,7 +876,7 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     worker = SimpleNamespace(attempt_reconnect_loop=lambda *_args, **_kwargs: None)
     coordinator = StubCoordinator()
     scheduler = ReconnectScheduler(
-        state_manager, state_manager._state_lock, coordinator, worker
+        state_manager, state_manager.lock, coordinator, worker
     )
 
     assert scheduler.schedule_reconnect(True, shutdown_event) is True

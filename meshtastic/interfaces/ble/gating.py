@@ -43,6 +43,17 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
     Callers must call _release_addr_lock() when done with the lock if they
     don't actually acquire it, or ensure _mark_disconnected() is called after
     the connection attempt completes.
+
+    Parameters
+    ----------
+    key : Optional[str]
+        Address to get lock for. Can be either a raw address or a pre-normalized
+        key (the function normalizes either way for convenience).
+
+    Returns
+    -------
+    RLock
+        The lock associated with the given address, or the registry lock if key is None.
     """
     key = _addr_key(key)
     if key is None:

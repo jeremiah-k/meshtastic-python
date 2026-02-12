@@ -176,7 +176,6 @@ class ConnectedStrategy(DiscoveryStrategy):
                     device_copy = BLEDevice(
                         address=device.address,
                         name=device.name,
-                        details=metadata,
                     )
                     # Preserve RSSI if provided by backend
                     if hasattr(device, "rssi"):
