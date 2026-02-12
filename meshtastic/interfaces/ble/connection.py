@@ -396,14 +396,20 @@ class ConnectionOrchestrator:
         self.validator.validate_connection_request()
 
         target_address = address if address is not None else current_address
-        if not target_address or not target_address.strip():
-            raise self.interface.BLEError("Cannot connect: no target address provided")
+        # Allow None target_address for discovery mode - find_device() handles this
+        # Only reject empty/whitespace-only strings that are explicitly provided
+        if target_address is not None and not target_address.strip():
+            raise self.interface.BLEError("Cannot connect: empty address provided")
 
         normalized_target = BLEClient._sanitize_address(target_address)
-        if not normalized_target:
-            raise self.interface.BLEError("Cannot connect: address resolution failed")
+        # Note: normalized_target can be None for discovery mode - this is intentional
+        # The discovery fallback in find_device() will scan for any Meshtastic device
 
-        logger.info("Attempting to connect to %s", target_address)
+        if target_address:
+            logger.info("Attempting to connect to %s", target_address)
+        else:
+            logger.info("Attempting discovery-mode connection (no address specified)")
+
         with self.state_lock:
             if not self.state_manager.transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(
@@ -411,33 +417,36 @@ class ConnectionOrchestrator:
                 )
         client: Optional["BLEClient"] = None
         try:
-            client = self.client_manager.create_client(
-                target_address, on_disconnect_func
-            )
-            try:
-                direct_timeout = min(
-                    DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
+            # Only attempt direct connect if we have a target address
+            # Discovery mode (target_address=None) skips directly to find_device
+            if target_address:
+                client = self.client_manager.create_client(
+                    target_address, on_disconnect_func
                 )
-                self.client_manager.connect_client(client, timeout=direct_timeout)
-                self._finalize_connection(
-                    client,
-                    target_address,
-                    register_notifications_func,
-                    on_connected_func,
-                )
-                return client
-            except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-                raise
-            except Exception as direct_err:
-                logger.debug(
-                    "Direct connect to %s failed; falling back to discovery: %s",
-                    normalized_target,
-                    direct_err,
-                    exc_info=True,
-                )
-                if client:
-                    self.client_manager.safe_close_client(client)
-                client = None
+                try:
+                    direct_timeout = min(
+                        DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
+                    )
+                    self.client_manager.connect_client(client, timeout=direct_timeout)
+                    self._finalize_connection(
+                        client,
+                        target_address,
+                        register_notifications_func,
+                        on_connected_func,
+                    )
+                    return client
+                except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+                    raise
+                except Exception as direct_err:
+                    logger.debug(
+                        "Direct connect to %s failed; falling back to discovery: %s",
+                        normalized_target,
+                        direct_err,
+                        exc_info=True,
+                    )
+                    if client:
+                        self.client_manager.safe_close_client(client)
+                    client = None
 
             device = self.interface.find_device(address or current_address)
             client = self.client_manager.create_client(
