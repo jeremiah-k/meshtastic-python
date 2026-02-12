@@ -2,7 +2,6 @@
 
 import asyncio
 import threading
-import warnings
 
 import pytest
 
@@ -70,10 +69,10 @@ class TestBLECoroutineRunner:
         async def get_loop_id():
             """
             Get the identifier of the currently running asyncio event loop.
-            
+
             Returns:
                 int: The value of `id()` for the current running event loop.
-            
+
             Raises:
                 RuntimeError: If there is no running event loop in the current context.
             """
@@ -133,7 +132,7 @@ class TestBLECoroutineRunner:
         async def never_complete():
             """
             An awaitable coroutine that suspends forever and never completes.
-            
+
             Awaiting this coroutine blocks indefinitely (it does not return or raise).
             """
             await asyncio.Event().wait()
@@ -203,16 +202,18 @@ class TestBLEClientWithRunner:
         async def dummy():
             """
             Return the integer 42 from this coroutine.
-            
+
             Returns:
                 int: The integer 42.
             """
             return 42
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        coro = dummy()
+        try:
             with pytest.raises(BLEClient.BLEError) as exc_info:
-                client.async_await(dummy())
+                client.async_await(coro)
+        finally:
+            coro.close()
 
         assert "closed" in str(exc_info.value).lower()
 
@@ -224,16 +225,18 @@ class TestBLEClientWithRunner:
         async def dummy():
             """
             Return the integer 42 from this coroutine.
-            
+
             Returns:
                 int: The integer 42.
             """
             return 42
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        coro = dummy()
+        try:
             with pytest.raises(BLEClient.BLEError) as exc_info:
-                client.async_run(dummy())
+                client.async_run(coro)
+        finally:
+            coro.close()
 
         assert "closed" in str(exc_info.value).lower()
 

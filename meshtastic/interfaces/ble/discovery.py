@@ -238,19 +238,8 @@ class DiscoveryManager:
         Raises:
             BleakDBusError: If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
         """
-        if self._client:
-            event_thread = getattr(self._client, "_eventThread", None)
-            if getattr(self._client, "_closed", False) or (
-                event_thread and not event_thread.is_alive()
-            ):
-                try:
-                    self._client.close()
-                except Exception:  # pragma: no cover - best effort cleanup
-                    logger.warning(
-                        "Error closing stale discovery client", exc_info=True
-                    )
-                finally:
-                    self._client = None
+        if self._client and getattr(self._client, "_closed", False):
+            self._client = None
         if self._client is None:
             ble_mod = resolve_ble_module()
             client_factory: Callable[..., Any] = cast(
