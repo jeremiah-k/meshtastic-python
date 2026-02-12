@@ -3,6 +3,7 @@
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
+    _LOCK_HOLDERS,
     _REGISTRY_LOCK,
     _addr_key,
     _cleanup_addr_lock,
@@ -138,6 +139,7 @@ class TestMarkDisconnected:
         with _REGISTRY_LOCK:
             _CONNECTED_ADDRS.clear()
             _ADDR_LOCKS.clear()
+            _LOCK_HOLDERS.clear()
         _mark_connected("aabbccddeeff")
 
     def test_mark_disconnected_removes_from_registry(self):
@@ -161,7 +163,7 @@ class TestMarkDisconnected:
     def test_mark_disconnected_cleanup_lock(self):
         """
         Verify that marking an address disconnected removes its per-address lock from the registry.
-        
+
         The test enters addr_lock_context for "testaddress", marks it connected, and asserts the lock remains after the context exits. After calling _mark_disconnected("testaddress"), the test asserts the lock has been removed from _ADDR_LOCKS.
         """
         _ADDR_LOCKS.clear()
@@ -196,6 +198,5 @@ class TestIsCurrentlyConnectedElsewhere:
 
     def test_returns_false_for_empty_address(self):
         """Test that it returns False for empty address."""
-        # Empty string is not treated specially like None; if _mark_connected("") were called,
-        # this test would fail. This assumes empty string has not been added directly.
+        # Empty string normalizes to None via _addr_key, same as passing None directly.
         assert not _is_currently_connected_elsewhere("")
