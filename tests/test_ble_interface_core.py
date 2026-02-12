@@ -126,7 +126,7 @@ class _StrategyOverride(ConnectedStrategy):
         return await self._delegate(address, timeout)
 
 
-def test_find_device_returns_single_scan_result(monkeypatch):
+def test_find_device_returns_single_scan_result():
     """find_device should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
@@ -154,7 +154,7 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager.is_closing is False
 
 
-def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
+def test_find_device_uses_connected_fallback_when_scan_empty():
     """find_device should fall back to connected-device lookup when scan is empty."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
@@ -169,7 +169,7 @@ def test_find_device_uses_connected_fallback_when_scan_empty(monkeypatch):
     assert result is fallback_device
 
 
-def test_find_device_multiple_matches_raises(monkeypatch):
+def test_find_device_multiple_matches_raises():
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
@@ -781,8 +781,8 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
     iface._want_receive = False
     try:
         iface.close()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
+        logging.warning("Cleanup error in iface.close(): %r", exc)
 
 
 def test_log_notification_registration(monkeypatch):

@@ -68,6 +68,8 @@ class ThreadCoordinator:
         Thread: The created Thread instance (added to the coordinator's tracked threads, not started).
         """
         with self._lock:
+            # Prune dead threads to prevent unbounded growth in long-running processes
+            self._threads = [t for t in self._threads if t.is_alive()]
             thread = Thread(
                 target=target, name=name, daemon=daemon, args=args, kwargs=kwargs
             )

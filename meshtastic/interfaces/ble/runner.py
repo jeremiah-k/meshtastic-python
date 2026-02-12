@@ -82,8 +82,9 @@ class BLECoroutineRunner:
             return
 
         # Initialize instance lock before first use
+        # Use RLock to allow re-entrant locking (e.g., stop() calling cancel_pending_futures())
         if not hasattr(self, "_internal_lock"):
-            self._internal_lock = threading.Lock()
+            self._internal_lock = threading.RLock()
 
         with self._internal_lock:
             if self._initialized:
@@ -102,7 +103,7 @@ class BLECoroutineRunner:
             atexit.register(self._atexit_shutdown)
 
     @property
-    def _instance_lock(self) -> threading.Lock:
+    def _instance_lock(self) -> "threading.RLock":
         """Get the lock for this instance."""
         # Lock is always initialized in __init__, but keep property for access
         return self._internal_lock
@@ -185,7 +186,9 @@ class BLECoroutineRunner:
             logger.debug("Exception during task cancellation: %s", e)
 
     def run_coroutine_threadsafe(
-        self, coro: Coroutine[None, None, T], timeout: Optional[float] = None
+        self,
+        coro: Coroutine[None, None, T],
+        timeout: Optional[float] = None,  # noqa: ARG002
     ) -> Future[T]:
         """
         Submit a coroutine to be run in the singleton event loop thread.
@@ -268,21 +271,34 @@ class BLECoroutineRunner:
         bool
             True if the thread exited cleanly, False if it timed out.
         """
+        # Capture state and schedule stop under lock, but join OUTSIDE the lock
+        # to avoid deadlock if the runner thread needs _instance_lock
         with self._instance_lock:
             self._stop_requested = True
 
-            # Cancel pending futures first
-            self.cancel_pending_futures()
+            # Cancel pending futures inline (already holding lock, RLock allows this)
+            for future in list(self._pending_futures):
+                if not future.done():
+                    try:
+                        future.cancel()
+                    except Exception as e:
+                        logger.debug("Exception cancelling future: %s", e)
 
             # Stop the loop
             if self._loop and self._loop.is_running():
                 self._loop.call_soon_threadsafe(self._loop.stop)
 
-            # Join the thread
-            if self._thread and self._thread.is_alive():
-                self._thread.join(timeout=timeout)
+            # Capture thread reference for join outside lock
+            thread = self._thread
 
-                if self._thread.is_alive():
+        # Join OUTSIDE the lock to avoid deadlocking with runner-thread code
+        # that might need _instance_lock (e.g., run_coroutine_threadsafe)
+        if thread and thread.is_alive():
+            thread.join(timeout=timeout)
+
+            # Re-acquire lock to check result and update state
+            with self._instance_lock:
+                if thread.is_alive():
                     global _zombie_runner_count
                     with _zombie_lock:
                         _zombie_runner_count += 1
@@ -301,9 +317,11 @@ class BLECoroutineRunner:
                         )
                     return False
 
+        # Final cleanup under lock
+        with self._instance_lock:
             self._thread = None
             self._loop = None
-            return True
+        return True
 
     def _atexit_shutdown(self) -> None:
         """Shutdown handler called at process exit."""

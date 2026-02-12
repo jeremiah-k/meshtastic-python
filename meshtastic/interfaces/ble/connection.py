@@ -308,9 +308,7 @@ class ConnectionOrchestrator:
         ------
         BLEInterface.BLEError: If connection was invalidated by a concurrent disconnect.
         """
-        # If a disconnect callback raced and moved us away from CONNECTING, abort finalization.
-        # Check before registering notifications to avoid operating on a disconnected client.
-        # We hold the state_lock during this check to prevent TOCTOU race conditions.
+        # Initial state check under lock before performing blocking I/O
         with self.state_lock:
             current_state = self.state_manager.state
             if current_state != ConnectionState.CONNECTING:
@@ -322,9 +320,20 @@ class ConnectionOrchestrator:
                     "Connection invalidated by concurrent disconnect"
                 )
 
-            # Register notifications while holding the lock to ensure we don't
-            # race with a disconnect callback
-            register_notifications_func(client)
+        # Register notifications OUTSIDE the lock to avoid blocking state transitions
+        # during BLE I/O (start_notify can take up to NOTIFICATION_START_TIMEOUT).
+        # This allows disconnect/close/connect to proceed during notification setup.
+        register_notifications_func(client)
+
+        # Re-check state after registration under lock for atomic state transition
+        with self.state_lock:
+            if self.state_manager.state != ConnectionState.CONNECTING:
+                logger.debug(
+                    "Connection finalization aborted: state changed during notification registration"
+                )
+                raise self.interface.BLEError(
+                    "Connection invalidated by concurrent disconnect"
+                )
 
             # Post-registration check: verify client is still connected.
             # This catches disconnects that occurred during notification registration
