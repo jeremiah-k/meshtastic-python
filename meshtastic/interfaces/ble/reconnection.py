@@ -193,9 +193,11 @@ class ReconnectWorker:
                                 "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
                             )
                             return
-                        logger.exception(
+                        # DBus errors are often transient on Linux; log as warning since we'll retry
+                        logger.warning(
                             "DBus error during auto-reconnect attempt %d",
                             attempt_num,
+                            exc_info=True,
                         )
                         # Use longer delay for DBus errors to allow system Bluetooth stack to recover
                         override_delay = max(

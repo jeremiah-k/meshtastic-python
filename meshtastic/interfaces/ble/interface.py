@@ -127,8 +127,8 @@ class BLEInterface(MeshInterface):
         #     When acquiring multiple locks, always acquire in this order:
         #     1. Global registry lock (_REGISTRY_LOCK in gating.py)
         #     2. Per-address locks (_ADDR_LOCKS in gating.py, via addr_lock_context)
-        #     3. Interface state lock (_state_lock)
-        #     4. Interface connect lock (_connect_lock)
+        #     3. Interface connect lock (_connect_lock)
+        #     4. Interface state lock (_state_lock)
         #     5. Interface disconnect lock (_disconnect_lock)
         #
         # Note: _disconnect_lock is acquired non-blocking first for early-return
