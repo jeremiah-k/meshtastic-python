@@ -17,12 +17,12 @@ This document summarizes the current BLE implementation, common pitfalls seen in
 from meshtastic.interfaces.ble import BLEInterface
 from pubsub import pub
 
-# Create a single long-lived interface for the process
-# Note: BLEInterface automatically attempts connection during construction
-iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
-
-# Subscribe once for the life of the process
+# Subscribe BEFORE constructing BLEInterface to ensure early packets aren't missed
+# BLEInterface automatically attempts connection during construction
 pub.subscribe(lambda packet, interface: print(packet), "meshtastic.receive")
+
+# Create a single long-lived interface for the process
+iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
 
 # Connection is already established; auto-reconnect will take over after disconnects
 ```
@@ -67,9 +67,11 @@ from pubsub import pub
 def on_packet(packet, interface):
     print("Packet:", packet)
 
+# Subscribe BEFORE constructing BLEInterface to ensure early packets aren't missed
+pub.subscribe(on_packet, "meshtastic.receive")
+
 # BLEInterface automatically connects during construction
 iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
-pub.subscribe(on_packet, "meshtastic.receive")
 
 try:
     # Keep your application alive; work is driven by callbacks

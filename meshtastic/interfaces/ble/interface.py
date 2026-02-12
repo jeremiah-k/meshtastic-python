@@ -358,7 +358,9 @@ class BLEInterface(MeshInterface):
                         _addr_key(previous_address) if previous_address else None
                     )
                     if device_key:
-                        _mark_disconnected(device_key)
+                        # Use addr_lock_context to manage holder count for proper lock lifecycle
+                        with addr_lock_context(device_key):
+                            _mark_disconnected(device_key)
                     # Close previous client asynchronously
                     close_thread = self.thread_coordinator.create_thread(
                         target=self._client_manager.safe_close_client,
@@ -368,7 +370,10 @@ class BLEInterface(MeshInterface):
                     )
                     self.thread_coordinator.start_thread(close_thread)
                 else:
-                    _mark_disconnected(_addr_key(self.address))
+                    fallback_key = _addr_key(self.address)
+                    if fallback_key:
+                        with addr_lock_context(fallback_key):
+                            _mark_disconnected(fallback_key)
                 self._disconnected()
 
                 # Event coordination for reconnection (only if not closed)
@@ -387,7 +392,11 @@ class BLEInterface(MeshInterface):
                     # State transition inside lock for atomicity
                     self._state_manager.transition_to(ConnectionState.DISCONNECTED)
 
-                _mark_disconnected(_addr_key(address))
+                addr_disconnect_key = _addr_key(address)
+                if addr_disconnect_key:
+                    # Use addr_lock_context to manage holder count for proper lock lifecycle
+                    with addr_lock_context(addr_disconnect_key):
+                        _mark_disconnected(addr_disconnect_key)
                 logger.debug("Auto-reconnect disabled, staying disconnected.")
                 self._disconnected()
                 return False
@@ -944,7 +953,10 @@ class BLEInterface(MeshInterface):
                     # Only use address registry for explicit addresses, not discovery mode (None)
                     device_key = _addr_key(device_address) if device_address else None
                     if device_key:
-                        _mark_connected(device_key)
+                        # Use addr_lock_context to manage holder count for device_key
+                        # This ensures proper lock lifecycle even if device_key differs from addr_key
+                        with addr_lock_context(device_key):
+                            _mark_connected(device_key)
                     # Context manager will release holder count automatically
                     # Mark that at least one successful connection has been established
                     self._ever_connected = True
@@ -1296,7 +1308,11 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             # Record final state as DISCONNECTED for observers; instance remains closed.
             self._state_manager.transition_to(ConnectionState.DISCONNECTED)
-        _mark_disconnected(_addr_key(self.address))
+        close_key = _addr_key(self.address)
+        if close_key:
+            # Use addr_lock_context to manage holder count for proper lock lifecycle
+            with addr_lock_context(close_key):
+                _mark_disconnected(close_key)
 
     def _wait_for_disconnect_notifications(
         self, timeout: Optional[float] = None

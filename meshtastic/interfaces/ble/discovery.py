@@ -190,8 +190,13 @@ class ConnectedStrategy(DiscoveryStrategy):
                         params["details"] = device
                     device_copy = BLEDevice(**params)
                     # Preserve RSSI if provided by backend
+                    # Note: BLEDevice uses __slots__ without "rssi", so assignment may fail
                     if hasattr(device, "rssi"):
-                        device_copy.rssi = device.rssi  # type: ignore[attr-defined]  # pylint: disable=assigning-non-slot
+                        try:
+                            device_copy.rssi = device.rssi  # type: ignore[attr-defined]
+                        except AttributeError:
+                            # BLEDevice uses __slots__ and does not support rssi attribute
+                            pass
                     devices_found.append(device_copy)
             else:
                 logger.debug(
