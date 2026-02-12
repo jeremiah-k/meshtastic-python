@@ -77,7 +77,11 @@ class BLEStateManager:
     }
 
     def __init__(self):
-        """Initialize state manager with disconnected state."""
+        """
+        Create a BLEStateManager with a reentrant lock and initial state set to DISCONNECTED.
+        
+        Initializes the internal reentrant lock stored on self._state_lock and sets self._state to ConnectionState.DISCONNECTED for thread-safe state management.
+        """
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
 
@@ -95,11 +99,10 @@ class BLEStateManager:
     @property
     def state(self) -> ConnectionState:
         """
-        Return the current BLE connection state.
-
-        Returns
-        -------
-            ConnectionState: The current connection state (read under the manager's internal lock).
+        Get the current BLE connection state.
+        
+        Returns:
+            ConnectionState: The current connection state (read while holding the manager's internal lock).
         """
         with self._state_lock:
             return self._state
@@ -107,10 +110,9 @@ class BLEStateManager:
     @property
     def is_connected(self) -> bool:
         """
-        Indicate whether the BLE interface is in the connected state.
-
-        Returns
-        -------
+        Indicates whether the BLE interface is in the connected state.
+        
+        Returns:
             `true` if the current state is CONNECTED, `false` otherwise.
         """
         return self.state == ConnectionState.CONNECTED
@@ -129,21 +131,19 @@ class BLEStateManager:
     @property
     def can_connect(self) -> bool:
         """
-        Determine if a new BLE connection may be initiated.
-
-        Returns
-        -------
-            `true` if the current state is DISCONNECTED or ERROR, `false` otherwise.
+        Indicates whether a new BLE connection may be initiated.
+        
+        Returns:
+            True if the current state is DISCONNECTED or ERROR, False otherwise.
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
     @property
     def is_connecting(self) -> bool:
         """
-        Indicate whether the BLE interface is in a connecting state.
-
-        Returns
-        -------
+        Indicates whether the BLE interface is in a connecting state.
+        
+        Returns:
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
         """
         return self.state in (ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
@@ -151,12 +151,10 @@ class BLEStateManager:
     @property
     def is_active(self) -> bool:
         """
-        Indicate whether the BLE interface has an active or pending connection.
-
-        Returns
-        -------
-            True if the current state is CONNECTING, RECONNECTING, or CONNECTED,
-            False otherwise.
+        Report whether the BLE interface has an active or pending connection.
+        
+        Returns:
+            bool: `True` if the current state is CONNECTING, RECONNECTING, or CONNECTED, `False` otherwise.
         """
         return self.state in (
             ConnectionState.CONNECTING,
@@ -166,18 +164,12 @@ class BLEStateManager:
 
     def transition_to(self, new_state: ConnectionState) -> bool:
         """
-        Attempt to change the manager's BLE connection state to the given target state.
-
-        Parameters
-        ----------
-        new_state : Any
-            ConnectionState Target state to transition to.
-
-        Returns
-        -------
-        bool: `True` if the transition was valid (including no-op transitions where
-            the state is already the target state). `False` for invalid transitions
-            that violate the state machine's transition rules.
+        Attempt to transition the manager's BLE connection state to the specified target state.
+        
+        The requested transition is validated against the manager's state machine; transitioning to the current state is treated as a valid no-op.
+        
+        Returns:
+            bool: `True` if the state was changed or the target equals the current state; `False` if the transition is invalid.
         """
         with self._state_lock:
             if new_state == self._state:
@@ -203,18 +195,14 @@ class BLEStateManager:
         self, from_state: ConnectionState, to_state: ConnectionState
     ) -> bool:
         """
-        Determine whether changing from one ConnectionState to another is permitted.
-
-        Parameters
-        ----------
-        from_state : Any
-            ConnectionState Current connection state.
-        to_state : Any
-            ConnectionState Proposed next connection state.
-
-        Returns
-        -------
-        bool: True if the transition from from_state to to_state is allowed, False otherwise.
+        Check whether a transition between two ConnectionState values is allowed.
+        
+        Parameters:
+            from_state (ConnectionState): Current connection state.
+            to_state (ConnectionState): Proposed next connection state.
+        
+        Returns:
+            bool: `True` if the transition from `from_state` to `to_state` is allowed, `False` otherwise.
         """
         return to_state in self._VALID_TRANSITIONS.get(from_state, set())
 
@@ -251,14 +239,12 @@ class BLEStateManager:
 
     def reset_to_disconnected(self) -> bool:
         """
-        Force transition to DISCONNECTED state from any state.
-
-        This is useful for error recovery and cleanup scenarios where
-        the connection needs to be reset regardless of current state.
-
-        Returns
-        -------
-        bool: True if successfully transitioned to DISCONNECTED.
+        Forces the connection state to DISCONNECTED regardless of the current state.
+        
+        Useful for error recovery and cleanup where the BLE state must be reset.
+        
+        Returns:
+            bool: True indicating the state was set to DISCONNECTED.
         """
         with self._state_lock:
             old_state = self._state

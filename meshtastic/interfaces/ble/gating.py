@@ -37,10 +37,10 @@ _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
 def _addr_key(addr: Optional[str]) -> Optional[str]:
     """
-    Normalize a BLE address for registry lookups.
-
-    Returns None for empty, None, or whitespace-only addresses to prevent
-    unrelated connection attempts from sharing the same registry key.
+    Normalize a BLE address into a registry key.
+    
+    Returns:
+        The normalized address string, or `None` if `addr` is `None`, empty, or contains only whitespace.
     """
     sanitized = sanitize_address(addr)
     return sanitized if sanitized else None
@@ -48,23 +48,15 @@ def _addr_key(addr: Optional[str]) -> Optional[str]:
 
 def _get_addr_lock(key: Optional[str]) -> RLock:
     """
-    Return a process-wide lock associated with the given normalized address.
-
-    The lock is reference-counted to prevent premature cleanup while in use.
-    Callers must call _release_addr_lock() when done with the lock if they
-    don't actually acquire it, or ensure _mark_disconnected() is called after
-    the connection attempt completes.
-
-    Parameters
-    ----------
-    key : Optional[str]
-        Address to get lock for. Can be either a raw address or a pre-normalized
-        key (the function normalizes either way for convenience).
-
-    Returns
-    -------
-    RLock
-        The lock associated with the given address, or the registry lock if key is None.
+    Get the process-wide RLock associated with the given normalized address.
+    
+    This function ensures a per-address RLock exists (created lazily) and increments its internal holder count to prevent premature cleanup. If `key` is None, the global registry lock is returned. Callers that obtain the lock object but do not acquire it must call `_release_addr_lock()` when finished to decrement the holder count.
+    
+    Parameters:
+        key (Optional[str]): A raw address or already-normalized address key; `None` selects the global registry lock.
+    
+    Returns:
+        RLock: The per-address lock for the normalized key, or the global registry lock if `key` is None.
     """
     key = _addr_key(key)
     if key is None:
@@ -97,15 +89,15 @@ def _release_addr_lock(key: Optional[str]) -> None:
 
 def _cleanup_addr_lock(key: Optional[str]) -> None:
     """
-    Remove the lock for the given address from the registry if no holders remain.
-
-    This prevents unbounded lock accumulation in long-running processes.
-    The lock is only removed when:
-    1. The address is marked as disconnected
-    2. No threads are currently holding the lock
-
-    This prevents the race condition where a lock is removed while another
-    thread is waiting to acquire it, which would allow duplicate connections.
+    Remove the per-address lock from the registry when there are no remaining holders.
+    
+    If `key` is None this function is a no-op. When `key` is provided, the registry entry
+    for that address (both the lock and its holder count) is removed only if the tracked
+    holder count is less than or equal to zero; otherwise the lock is left in place.
+    
+    Parameters:
+        key (Optional[str]): Normalized address key identifying the per-address lock,
+            or `None` to indicate no target (no action).
     """
     if key is None:
         return
@@ -163,31 +155,15 @@ def _mark_disconnected(addr: Optional[str]) -> None:
 @contextmanager
 def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
     """
-    Context manager for address lock with automatic holder count management.
-
-    This is the preferred way to acquire an address lock. It ensures the holder
-    count is properly managed even if exceptions occur or early returns happen.
-
-    IMPORTANT: This context manager yields the lock WITHOUT acquiring it.
-    Callers MUST wrap the yielded lock in an inner `with lock:` block:
-
-        with addr_lock_context(address) as lock:
-            with lock:  # <-- MANDATORY: acquire the lock
-                # Connection logic here
-                if should_fail:
-                    return  # Holder count released automatically
-                # On success, _mark_connected() is called elsewhere
-                # and the context manager releases the holder count
-
-    Parameters
-    ----------
-    addr : Optional[str]
-        BLE address to get lock for. Can be a raw address or pre-normalized key.
-
-    Yields
-    ------
-    RLock
-        The lock associated with the given address.
+    Provide a context-managed per-address lock while ensuring holder-count bookkeeping.
+    
+    Yields the RLock associated with the normalized address without acquiring it; on context exit the holder count is decremented even if an exception or early return occurs.
+    
+    Parameters:
+        addr (Optional[str]): BLE address or pre-normalized address key.
+    
+    Yields:
+        RLock: The per-address re-entrant lock for the given address (not acquired).
     """
     lock = _get_addr_lock(addr)
     try:
@@ -201,9 +177,13 @@ def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
 
 def _is_currently_connected_elsewhere(addr: Optional[str]) -> bool:
     """
-    Return True when the address is currently connected by another interface.
-
-    The address is normalized internally using _addr_key.
+    Determine whether the given BLE address is currently marked as connected by any interface.
+    
+    Parameters:
+        addr (Optional[str]): BLE address to check; it will be normalized via _addr_key. If normalization yields None/empty, the function returns False.
+    
+    Returns:
+        True if the normalized address is marked connected, False otherwise.
     """
     key = _addr_key(addr)
     if key is None:

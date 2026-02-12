@@ -31,16 +31,13 @@ from meshtastic.protobuf import mesh_pb2
 
 def _get_connect_stub_calls(iface: BLEInterface) -> List[Optional[str]]:
     """
-    Return the test-only list that records addresses passed to connect calls on the interface.
-
-    Parameters
-    ----------
-    iface : Any
-        Interface instance that may have the test tracking attribute.
-
-    Returns
-    -------
-        List[Optional[str]]: The list stored in the `_connect_stub_calls` attribute, containing recorded addresses or `None` for connect attempts without an address. Returns an empty list if the attribute is not present.
+    Retrieve the test-only list that records addresses passed to connect calls on a BLEInterface.
+    
+    Parameters:
+        iface (BLEInterface): Interface instance that may hold the `_connect_stub_calls` test attribute.
+    
+    Returns:
+        List[Optional[str]]: Recorded addresses for each connect call; `None` indicates a connect attempt without an address. Returns an empty list if the attribute is not present.
     """
     return cast(List[Optional[str]], getattr(iface, "_connect_stub_calls", []))
 
@@ -55,8 +52,8 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
         def __init__(self):
             """
             Construct a mock BLE client that exposes only the FROMNUM characteristic.
-
-            Creates:
+            
+            Initializes:
                 start_notify_calls (list): Records (uuid, handler) pairs passed to start_notify.
                 has_characteristic_map (dict): Maps characteristic UUIDs to booleans; contains only `FROMNUM_UUID: True`.
             """
@@ -68,32 +65,25 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Determine whether the client reports support for a characteristic UUID.
-
-            Parameters
-            ----------
-            uuid : Any
-                | uuid.UUID The characteristic UUID to check.
-
-            Returns
-            -------
-            bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
-
+            Return whether the client reports support for the characteristic identified by `uuid`.
+            
+            Parameters:
+                uuid (Any): The characteristic UUID to check (typically a `uuid.UUID` or string).
+            
+            Returns:
+                bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
-            Record a notification registration request by appending the `(uuid, handler)` pair to self.start_notify_calls.
-
+            Record a notification registration request by appending the (uuid, handler) pair to self.start_notify_calls.
+            
             If at least two positional arguments are provided, the first is treated as the characteristic UUID and the second as the notification handler; additional positional or keyword arguments are ignored.
-
-            Parameters
-            ----------
-            _args : Any
-                Positional arguments where `_args[0]` is the UUID and `_args[1]` is the handler when present.
-            _kwargs : Any
-                Ignored.
+            
+            Parameters:
+                _args: Positional arguments where `_args[0]` is the UUID and `_args[1]` is the handler when present.
+                _kwargs: Ignored.
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
@@ -134,13 +124,12 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
 
         def read_gatt_char(self, *_args, **_kwargs) -> bytes:
             """
-            Provide raw GATT characteristic bytes for a test client.
-
-            If the first positional argument equals ble_mod.FROMRADIO_UUID, returns a deliberately malformed protobuf payload to simulate a decode error; otherwise returns an empty bytes object.
-
-            Returns
-            -------
-                bytes: Malformed protobuf bytes for ble_mod.FROMRADIO_UUID, empty bytes otherwise.
+            Return raw GATT characteristic bytes for the test client.
+            
+            When called for ble_mod.FROMRADIO_UUID, return deliberately malformed protobuf bytes to simulate a decode error; otherwise return an empty bytes object.
+            
+            Returns:
+                bytes: Malformed protobuf bytes when the requested UUID is ble_mod.FROMRADIO_UUID, empty bytes otherwise.
             """
             # Extract uuid from args if available
             if _args and _args[0] == ble_mod.FROMRADIO_UUID:
@@ -212,16 +201,13 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     def _capture_events(topic, **kwargs):
         """
         Record a pub/sub event for test inspection.
-
-        Parameters
-        ----------
-        topic : Any
-            The event topic name.
-        **kwargs : dict
-            payload key/value pairs; stored as a dict.
-
-        Details : Any
-            Appends a tuple `(topic, kwargs)` to the module-level `published_events` list.
+        
+        Parameters:
+        	topic (Any): The event topic name.
+        	**kwargs: Key/value pairs comprising the event payload; stored as a dict.
+        
+        Notes:
+        	Appends a tuple (topic, kwargs) to the module-level `published_events` list.
         """
         published_events.append((topic, kwargs))
 
@@ -254,10 +240,9 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
     def _track_close():
         """
-        Mark that close was invoked and then call the preserved original close function.
-
-        Returns
-        -------
+        Mark that close() was invoked and call the preserved original close function.
+        
+        Returns:
             The value returned by the original close function.
         """
         close_called.append(True)
@@ -340,7 +325,11 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
 
 def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
-    """Test that sendToRadio handles specific exceptions correctly."""
+    """
+    Verify that _sendToRadioImpl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
+    
+    This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
+    """
     # logging already imported at top
     # BleakError already imported at top as ble_mod.BleakError, BLEInterface
 
@@ -352,12 +341,10 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
         def __init__(self, exception_type):
             """
-            Initialize an ExceptionClient that raises the provided exception type for BLE operations.
-
-            Parameters
-            ----------
-            exception_type : Any
-                type Exception class to be raised by the client's BLE methods when invoked.
+            Create a test client configured to raise the given exception type for BLE operations.
+            
+            Parameters:
+                exception_type (type): Exception class that this client's BLE methods will raise when invoked.
             """
             super().__init__()
             self.exception_type = exception_type
@@ -365,10 +352,9 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
         def write_gatt_char(self, *_args, **_kwargs):
             """
             Simulate a failed GATT characteristic write by raising the configured exception.
-
-            Raises
-            ------
-            Exception: An instance of `self.exception_type` with the message "write failed".
+            
+            Raises:
+                Exception: An instance of `self.exception_type` with the message "write failed".
             """
             raise self.exception_type("write failed")
 
@@ -444,14 +430,13 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def __init__(self):
             """
-            Initialize the test BLE client and its simulation state.
-
-            Attributes
-            ----------
+            Create a test BLE client and initialize its simulation state.
+            
+            Attributes:
                 connect_count (int): Number of simulated connect attempts.
                 disconnect_count (int): Number of simulated disconnect attempts.
-                address (str): Mock Bluetooth address used to identify the client.
-                _should_fail_connect (bool): If True, connect() will simulate a failure by raising an error.
+                address (str): Mock Bluetooth address identifying the client.
+                _should_fail_connect (bool): When True, `connect()` will simulate a failure by raising an error.
             """
             self.connect_count = 0
             self.disconnect_count = 0
@@ -460,17 +445,15 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def connect(self, *_args, **_kwargs):
             """
-            Simulate a client connection for tests.
-
-            Increments the client's `connect_count` and returns the client instance. If the client is configured to fail (`self._should_fail_connect`), a RuntimeError is raised instead.
-
-            Returns
-            -------
-                self: The mock client instance with `connect_count` incremented.
-
-            Raises
-            ------
-                RuntimeError: If `self._should_fail_connect` is True.
+            Simulate a BLE client connection for tests.
+            
+            Increments the client's connect_count and returns the client instance. If the client is configured to fail, raises a RuntimeError.
+            
+            Returns:
+                self: The mock client instance with connect_count incremented.
+            
+            Raises:
+                RuntimeError: If the client is configured to fail connecting.
             """
             if self._should_fail_connect:
                 raise RuntimeError("connect fail")  # noqa: TRY003
@@ -479,11 +462,10 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def is_connected(self):
             """
-            Report whether this mock client is connected.
-
-            Returns
-            -------
-                True since the mock client always reports a connected state.
+            Indicates whether the mock client reports being connected.
+            
+            Returns:
+                True because this mock client always reports a connected state.
             """
             return True
 
@@ -497,14 +479,16 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def start_notify(self, *_args, **_kwargs):
             """
-            No-op stub that accepts any positional and keyword arguments and intentionally performs no action.
+            Accept any positional and keyword arguments and perform no action.
+            
+            This stub is a no-op placeholder that intentionally ignores all inputs.
             """
 
         def stop_notify(self, *_args, **_kwargs):
             """
-            No-op placeholder that accepts any positional and keyword arguments to match a BLE client's stop_notify signature.
-
-            Ignores all arguments and performs no action; provided solely for API compatibility with real BLE client implementations.
+            Accepts any positional and keyword arguments and performs no action.
+            
+            This no-op stub exists for API compatibility with real BLE client's stop_notify signature and ignores all provided arguments.
             """
 
     class StressTestClient(BLEClient):
@@ -513,10 +497,9 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         def __init__(self):  # pylint: disable=super-init-not-called
             # Don't call super().__init__() to avoid creating real event loop
             """
-            Initialize a mock BLE root client for tests that simulates a Bleak client and basic connection state.
-
-            Attributes
-            ----------
+            Create a mock BLE root client that simulates a Bleak client and basic connection state for tests.
+            
+            Attributes:
                 bleak_client (MockBleakRootClient): Mock underlying Bleak client used to emulate BLE operations.
                 connect_count (int): Number of simulated successful connect attempts.
                 disconnect_count (int): Number of simulated disconnect attempts.
@@ -536,17 +519,15 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def connect(self, *_args, **_kwargs):
             """
-            Simulate a client connection for tests.
-
-            Increments the client's `connect_count` and returns the client instance. If the client is configured to fail (`self._should_fail_connect`), a RuntimeError is raised instead.
-
-            Returns
-            -------
-                self: The mock client instance with `connect_count` incremented.
-
-            Raises
-            ------
-                RuntimeError: If `self._should_fail_connect` is True.
+            Simulate a BLE client connection for tests.
+            
+            Increments the client's connect_count and returns the client instance. If the client is configured to fail, raises a RuntimeError.
+            
+            Returns:
+                self: The mock client instance with connect_count incremented.
+            
+            Raises:
+                RuntimeError: If the client is configured to fail connecting.
             """
             if self._should_fail_connect:
                 raise RuntimeError("connect fail")  # noqa: TRY003
@@ -555,11 +536,10 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def is_connected(self):
             """
-            Return whether the mock client is configured as connected.
-
-            Returns
-            -------
-                bool: `True` if the mock client is configured as connected, `False` otherwise.
+            Determine if the mock client is configured as connected.
+            
+            Returns:
+                `True` if the mock client is configured as connected, `False` otherwise.
             """
             return self.is_connected_result
 
@@ -573,14 +553,16 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def start_notify(self, *_args, **_kwargs):
             """
-            No-op stub that accepts any positional and keyword arguments and intentionally performs no action.
+            Accept any positional and keyword arguments and perform no action.
+            
+            This stub is a no-op placeholder that intentionally ignores all inputs.
             """
 
         def stop_notify(self, *_args, **_kwargs):
             """
-            No-op placeholder that accepts any positional and keyword arguments to match a BLE client's stop_notify signature.
-
-            Ignores all arguments and performs no action; provided solely for API compatibility with real BLE client implementations.
+            Accepts any positional and keyword arguments and performs no action.
+            
+            This no-op stub exists for API compatibility with real BLE client's stop_notify signature and ignores all provided arguments.
             """
 
         def close(self):
@@ -597,12 +579,11 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     ):
         """
         Create a BLEInterface configured for stress testing with auto-reconnect enabled.
-
-        Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mock device and attaches a StressTestClient when connecting. The created interface records connection attempts in iface._connect_stub_calls and is cleaned up on generator exit.
-
-        Returns
-        -------
-            tuple: A tuple (iface, client) where `iface` is the configured BLEInterface and `client` is the attached StressTestClient.
+        
+        Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mock device and receives a StressTestClient. Yields a tuple with the configured interface and its attached StressTestClient and ensures the interface is closed and patches are undone on generator exit.
+        
+        Returns:
+            tuple: (iface, client) where `iface` is the configured BLEInterface and `client` is the attached StressTestClient.
         """
 
         outer_client = StressTestClient()
@@ -620,20 +601,15 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             address: Optional[str] = None,
         ) -> "StressTestClient":
             """
-            Attach a StressTestClient to this interface and record the connection address for test inspection.
-
-            Records the attempted connection address, (re)connects and attaches a StressTestClient to the interface, clears the interface's disconnect flag, and sets _reconnected_event if present.
-
-            Parameters
-            ----------
-            self : Any
-                Interface instance receiving the patched call.
-            address : Any
-                Address used for the connection; appended to the test's connect_calls list.
-
-            Returns
-            -------
-            StressTestClient: The client instance attached to the interface.
+            Attach a StressTestClient to the interface and record the connection address for testing.
+            
+            Records the attempted connection address, attaches the provided StressTestClient to the interface, clears the interface's disconnect-notified flag, and signals a reconnected event if present.
+            
+            Parameters:
+                address (Optional[str]): Address used for the connection; appended to the test's connect_calls list.
+            
+            Returns:
+                StressTestClient: The client instance attached to the interface.
             """
             connect_calls.append(address)
             outer_client.connect()
@@ -672,9 +648,9 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
 
         def simulate_rapid_disconnects():
             """
-            Trigger ten rapid BLE disconnection events on the test interface to exercise reconnect and disconnect handling.
-
-            Each disconnect is delivered ~0.01 seconds apart to simulate a burst of rapid disconnects.
+            Trigger a burst of rapid BLE disconnect events on the test interface to exercise reconnect and disconnect handling.
+            
+            Delivers ten disconnect callbacks to iface._on_ble_disconnect about 0.01 seconds apart to simulate rapid consecutive disconnects.
             """
             for _ in range(10):
                 iface._on_ble_disconnect(client.bleak_client)
@@ -697,8 +673,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         def _stress_test_disconnects():
             """
             Trigger a burst of simulated BLE disconnects on iface2 to exercise auto-reconnect and disconnect handling.
-
-            Performs five disconnect attempts with a 5 millisecond pause between attempts. Exceptions raised during individual attempts are caught and logged, and do not interrupt the remaining stress cycle.
+            
+            Performs five disconnect attempts spaced 5 milliseconds apart. Exceptions raised during individual attempts (including RuntimeError, AttributeError, KeyError, and other unexpected exceptions) are caught and logged and do not interrupt the remaining attempts.
             """
             for i in range(5):
                 try:
@@ -773,23 +749,19 @@ def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
 
         def __init__(self, exception_type):
             """
-            Create a test BLE client whose simulated BLE methods raise the specified exception type.
-
-            Parameters
-            ----------
-            exception_type : Any
-                type Exception class that the client's methods will raise to simulate BLE failures.
-
+            Test BLE client that raises the specified exception type from its simulated BLE methods.
+            
+            Parameters:
+                exception_type (type): Exception class to raise from the client's BLE methods to simulate failures.
             """
             self.exception_type = exception_type
 
         def is_connected(self):
             """
-            Simulate a failing connection-state check by raising the configured exception.
-
-            Raises
-            ------
-            Exception: An instance of `self.exception_type` with message "conn check failed".
+            Raise the configured exception to simulate a failing connection-state check.
+            
+            Raises:
+                Exception: An instance of `self.exception_type` with message "conn check failed".
             """
             raise self.exception_type("conn check failed")  # noqa: TRY003
 
@@ -835,13 +807,14 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     class _FakeFuture:
         def __init__(self):
             """
-            Initialize a cancellation tracker that records whether an operation was cancelled and holds an optional coroutine.
-
-            Attributes
-            ----------
-                cancelled (bool): True when the tracked operation has been cancelled, False otherwise.
-                coro (Optional[Coroutine]): The associated coroutine, or None if no coroutine is set.
-                callbacks (List[Callable]): List of callbacks to be called when the future is done.
+            Create a cancellation tracker for an asynchronous operation.
+            
+            Initializes attributes used to track cancellation state and associated coroutine:
+            
+            Attributes:
+                cancelled (bool): True if the tracked operation has been cancelled, False otherwise.
+                coro (Optional[Coroutine]): The associated coroutine, or None when no coroutine is set.
+                callbacks (List[Callable]): Callbacks to invoke when the operation/future completes.
             """
             self.cancelled = False
             self.coro = None
@@ -849,30 +822,30 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
         def result(self, _timeout=None):
             """
-            Raise FutureTimeoutError to simulate a future timing out.
-
-            Raises
-            ------
-                FutureTimeoutError: Raised unconditionally to represent a timeout.
+            Always raise FutureTimeoutError to simulate a future timing out.
+            
+            Parameters:
+                _timeout: Ignored. Optional timeout value accepted for interface compatibility.
+            
+            Raises:
+                FutureTimeoutError: Always raised to represent a timeout condition.
             """
             raise FutureTimeoutError()
 
         def cancel(self):
             """
-            Mark this future as cancelled.
-
-            Set the instance's `cancelled` attribute to True so callers can detect that cancellation has occurred.
+            Mark the future as cancelled.
+            
+            Sets the instance's `cancelled` flag to True so callers can detect that cancellation occurred.
             """
             self.cancelled = True
 
         def add_done_callback(self, callback):
             """
-            Add a callback to be called when the future is done.
-
-            Parameters
-            ----------
-            callback : Any
-                The callback function to add.
+            Register a callable to be invoked when this future completes.
+            
+            Parameters:
+                callback (callable): A callable that will be called with this future as its only argument when the future is done. The callable is stored and not executed until completion.
             """
             self.callbacks.append(callback)
 
@@ -880,17 +853,13 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
     def _fake_async_run(coro):
         """
-        Attach the provided coroutine to the test future and return that future.
-
-        Parameters
-        ----------
-        coro : Any
-            coroutine The coroutine to associate with the fake future.
-
-        Returns
-        -------
-        fake_future: The test future instance with its `coro` attribute set to `coro`.
-
+        Associate the given coroutine with the shared test future and return that future.
+        
+        Parameters:
+            coro (coroutine): The coroutine to attach to the fake future.
+        
+        Returns:
+            fake_future: The test future instance with its `coro` attribute set to `coro`.
         """
         fake_future.coro = coro
         return fake_future
@@ -932,17 +901,14 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
         def queueWork(self, _callback):
             """
-            Mock publishingThread.queueWork that always raises a RuntimeError to simulate a thread failure.
-
-            Parameters
-            ----------
-            _callback : Any
-                callable Work callback to queue; this argument is ignored.
-
-            Raises
-            ------
-            RuntimeError: Always raised with the message "thread error in queueWork".
-
+            Simulate a publishing thread failure by always raising RuntimeError.
+            
+            Parameters:
+                _callback: callable
+                    Work callback to queue; ignored by this mock.
+            
+            Raises:
+                RuntimeError: Always raised with the message "thread error in queueWork".
             """
             raise RuntimeError("thread error in queueWork")  # noqa: TRY003
 
@@ -961,11 +927,10 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
         def queueWork(self, _callback):
             """
-            Refuse any enqueued callback by raising a ValueError indicating an invalid state.
-
-            Raises
-            ------
-            ValueError: Always raised with the message "invalid state".
+            Refuse any enqueued callback by raising a ValueError with message "invalid state".
+            
+            Raises:
+                ValueError: Always raised with the message "invalid state".
             """
             raise ValueError("invalid state")  # noqa: TRY003
 
@@ -994,11 +959,10 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
 
         def __call__(self):
             """
-            Simulate a callback that always fails by raising a ValueError.
-
-            Raises
-            ------
-                ValueError: Always raised to indicate the mock callback failed during execution.
+            Invoke the mock callback; it always raises a ValueError.
+            
+            Raises:
+                ValueError: Indicates the mock callback failed during execution.
             """
             raise ValueError("callback failed")  # noqa: TRY003
 
@@ -1013,24 +977,21 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
 
         def __init__(self):
             """
-            Initialize the mock publishing thread and attach an external queue.
-
-            Sets self.queue to the external `mock_queue` supplied from the enclosing test scope so tests can provide and control the deferred-callback queue.
+            Initialize the mock publishing thread that uses an externally provided queue.
+            
+            Sets self.queue to the external `mock_queue` from the surrounding test scope so tests can supply and control deferred callbacks.
             """
             self.queue = mock_queue
 
         def queueWork(self, _callback):
             """
-            Execute the provided callback immediately to simulate scheduling work.
-
-            Parameters
-            ----------
-            _callback : Any
-                callable | None Callable to execute; if None, no action is taken.
-
-            Returns
-            -------
-                The value returned by `_callback`, or `None` if `_callback` is `None`.
+            Immediately execute the provided callback to simulate scheduling work.
+            
+            Parameters:
+                _callback (callable | None): Callable to execute; if `None`, no action is taken.
+            
+            Returns:
+                The value returned by `_callback` if provided, otherwise `None`.
             """
             if _callback:
                 return _callback()

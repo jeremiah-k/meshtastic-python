@@ -98,9 +98,12 @@ BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
-    Extract a three-part integer version tuple from a version string.
-
-    Non-numeric segments are ignored and missing components are treated as zeros.
+    Parse a version string into a three-integer (major, minor, patch) tuple.
+    
+    Non-numeric segments are ignored; if the string contains fewer than three numeric components the result is padded with zeros.
+    
+    Returns:
+        A tuple (major, minor, patch) containing the first three numeric components as integers.
     """
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
@@ -114,7 +117,10 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
 
 def _bleak_supports_connected_fallback() -> bool:
     """
-    Check whether the installed bleak version meets the minimum required version for the connected-device fallback.
+    Determine whether the installed bleak version supports the connected-device fallback.
+    
+    Returns:
+        True if the installed bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, False otherwise.
     """
     return (
         _parse_version_triplet(BLEAK_VERSION)
