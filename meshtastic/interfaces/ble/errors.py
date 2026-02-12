@@ -40,32 +40,20 @@ class BLEErrorHandler:
         reraise: bool = False,
     ):
         """
-        Execute a zero-argument callable and return its result, falling back to a default value on error.
-
-        Parameters
-        ----------
-        func : Any
-            callable Zero-argument callable to execute.
-        default_return : Any
-            Value returned when execution fails.
-        log_error : Any
-            If True, log caught exceptions.
-        error_msg : Any
-            Message prefix used when logging errors.
-        reraise : Any
-            If True, re-raise the caught exception instead of returning `default_return`.
-
-        Returns
-        -------
-            The value returned by `func()` on success, or `default_return` if execution fails.
-
-        Raises
-        ------
-        Exception: Re-raises the original exception if `reraise` is True.
-
-        Notes
-        -----
-            Handled exceptions include BleakError, BleakDBusError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated the same.
+        Safely execute a zero-argument callable and return its result, falling back to a default on error.
+        
+        Parameters:
+            func: Zero-argument callable to execute.
+            default_return: Value returned if execution fails.
+            log_error (bool): If True, log caught exceptions.
+            error_msg (str): Message prefix used when logging errors.
+            reraise (bool): If True, re-raise caught exceptions instead of returning default_return.
+        
+        Returns:
+            The value returned by func() on success, or default_return if execution fails.
+        
+        Notes:
+            Catches BleakError, BleakDBusError, DecodeError, FutureTimeoutError, and other Exceptions; SystemExit and KeyboardInterrupt are re-raised.
         """
         try:
             return func()
@@ -87,18 +75,16 @@ class BLEErrorHandler:
     @staticmethod
     def safe_cleanup(func, cleanup_name: str = "cleanup operation") -> bool:
         """
-        Perform a cleanup callable and suppress any exceptions.
-
-        Parameters
-        ----------
-        func : Any
-            callable Cleanup operation to execute; called with no arguments.
-        cleanup_name : Any
-            Descriptive name included in debug log messages.
-
-        Returns
-        -------
-                success (bool): True if the cleanup completed without raising an exception, False otherwise.
+        Execute a cleanup callable and return whether it succeeded.
+        
+        Calls the provided zero-argument callable and suppresses any exception raised, logging a debug message that includes `cleanup_name` when an exception occurs.
+        
+        Parameters:
+            func (Callable[[], Any]): Cleanup operation to execute with no arguments.
+            cleanup_name (str): Human-readable name included in debug messages (default: "cleanup operation").
+        
+        Returns:
+            bool: `True` if the cleanup completed without raising an exception, `False` otherwise.
         """
         try:
             func()

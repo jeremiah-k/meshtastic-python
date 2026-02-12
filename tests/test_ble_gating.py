@@ -159,15 +159,10 @@ class TestMarkDisconnected:
         assert len(_CONNECTED_ADDRS) == initial_count
 
     def test_mark_disconnected_cleanup_lock(self):
-        """Test that marking an address as disconnected cleans up the lock.
-
-        With the new context manager design:
-        - addr_lock_context handles holder count (increments on enter, decrements on exit)
-        - _mark_connected just marks connected (no holder count change)
-        - _mark_disconnected just marks disconnected and cleans up
-
-        When using the context manager, holder count goes to 0 on exit, so
-        _mark_disconnected's cleanup removes the lock.
+        """
+        Verify that marking an address disconnected removes its per-address lock from the registry.
+        
+        The test enters addr_lock_context for "testaddress", marks it connected, and asserts the lock remains after the context exits. After calling _mark_disconnected("testaddress"), the test asserts the lock has been removed from _ADDR_LOCKS.
         """
         _ADDR_LOCKS.clear()
         # Use context manager for proper holder count management

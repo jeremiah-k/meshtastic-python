@@ -68,6 +68,15 @@ class TestBLECoroutineRunner:
         client2 = BLEClient()
 
         async def get_loop_id():
+            """
+            Get the identifier of the currently running asyncio event loop.
+            
+            Returns:
+                int: The value of `id()` for the current running event loop.
+            
+            Raises:
+                RuntimeError: If there is no running event loop in the current context.
+            """
             return id(asyncio.get_running_loop())
 
         loop_id1 = client1.async_await(get_loop_id())
@@ -122,6 +131,11 @@ class TestBLECoroutineRunner:
 
         # Create a future that won't complete
         async def never_complete():
+            """
+            An awaitable coroutine that suspends forever and never completes.
+            
+            Awaiting this coroutine blocks indefinitely (it does not return or raise).
+            """
             await asyncio.Event().wait()
 
         future = runner.run_coroutine_threadsafe(never_complete())
@@ -187,6 +201,12 @@ class TestBLEClientWithRunner:
         client.close()
 
         async def dummy():
+            """
+            Return the integer 42 from this coroutine.
+            
+            Returns:
+                int: The integer 42.
+            """
             return 42
 
         with warnings.catch_warnings():
@@ -202,6 +222,12 @@ class TestBLEClientWithRunner:
         client.close()
 
         async def dummy():
+            """
+            Return the integer 42 from this coroutine.
+            
+            Returns:
+                int: The integer 42.
+            """
             return 42
 
         with warnings.catch_warnings():
