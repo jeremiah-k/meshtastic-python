@@ -833,23 +833,26 @@ class BLEInterface(MeshInterface):
     @property
     def is_connection_closing(self) -> bool:
         """
-        Indicate whether the interface is in the process of closing.
+        Indicate whether the interface is in the process of closing or is already closed.
 
         Returns
         -------
-        bool: `True` if the interface is shutting down, `False` otherwise.
+        bool: `True` if the interface is shutting down or closed, `False` otherwise.
         """
-        return self._state_manager.is_closing
+        return self._state_manager.is_closing or self._closed
 
     @property
     def can_initiate_connection(self) -> bool:
         """
         Indicates whether a new BLE connection may be started according to the state manager.
 
+        A connection cannot be initiated if the interface is already connected,
+        connecting, or if it has been closed.
+
         Returns:
             `true` if a new connection may be started, `false` otherwise.
         """
-        return self._state_manager.can_connect
+        return self._state_manager.can_connect and not self._closed
 
     def connect(self, address: Optional[str] = None) -> "BLEClient":
         """

@@ -70,10 +70,7 @@ def parse_scan_response(
             # pre-bonded the target device via bluetoothctl/blueman before starting the relay.
             # Example vulnerability: if whitelist_address is "AA:BB:CC:DD:EE:FF" and device.name
             # contains that string as a substring, it would incorrectly match and connect to wrong device.
-            if (
-                whitelist_address == sanitized_addr
-                or whitelist_address == sanitized_name
-            ):
+            if whitelist_address in (sanitized_addr, sanitized_name):
                 matches_whitelist = True
 
         if has_service or matches_whitelist:
@@ -173,10 +170,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                     if sanitized_target:
                         sanitized_addr = BLEClient._sanitize_address(device.address)
                         sanitized_name = BLEClient._sanitize_address(device.name)
-                        if (
-                            sanitized_target != sanitized_addr
-                            and sanitized_target != sanitized_name
-                        ):
+                        if sanitized_target not in (sanitized_addr, sanitized_name):
                             continue
 
                     # Use inspect to handle different BLEDevice constructor signatures across Bleak versions
