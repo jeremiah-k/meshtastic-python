@@ -288,10 +288,13 @@ class DiscoveryManager:
                 self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
             )
             self._client = client_factory(log_if_no_address=False)
+            # Validate factory returned a valid client
+            if self._client is None:
+                raise RuntimeError(
+                    f"Discovery client factory returned None. Factory: {client_factory!r}"
+                )
 
         client = self._client
-        if client is None:
-            raise RuntimeError("Discovery client failed to initialize")
         devices: List[BLEDevice] = []
         sanitized_target = BLEClient._sanitize_address(address) if address else None
         try:

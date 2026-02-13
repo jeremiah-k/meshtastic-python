@@ -121,6 +121,31 @@ class ReconnectWorker:
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
+    def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
+        """
+        Check if reconnection should be aborted.
+
+        Parameters:
+            auto_reconnect (bool): Whether auto-reconnect is enabled.
+            context (str): Additional context for logging.
+
+        Returns:
+            bool: True if reconnection should abort, False otherwise.
+        """
+        if self.interface.is_connection_closing:
+            logger.debug(
+                "Auto-reconnect aborted%s: interface is closing.",
+                f" ({context})" if context else "",
+            )
+            return True
+        if not auto_reconnect:
+            logger.debug(
+                "Auto-reconnect aborted%s: auto-reconnect disabled.",
+                f" ({context})" if context else "",
+            )
+            return True
+        return False
+
     def attempt_reconnect_loop(  # pylint: disable=R0911
         self, auto_reconnect: bool, shutdown_event: Event
     ) -> None:
@@ -144,10 +169,7 @@ class ReconnectWorker:
         try:
             while not shutdown_event.is_set():
                 override_delay = None
-                if interface.is_connection_closing or not auto_reconnect:
-                    logger.debug(
-                        "Auto-reconnect aborted because interface is closing or disabled."
-                    )
+                if self._should_abort_reconnect(auto_reconnect, "loop start"):
                     return
                 attempt_num = self.reconnect_policy.get_attempt_count() + 1
                 try:
@@ -177,10 +199,7 @@ class ReconnectWorker:
                     )
                     return
                 except interface.BLEError as err:
-                    if interface.is_connection_closing or not auto_reconnect:
-                        logger.debug(
-                            "Auto-reconnect cancelled after failure due to shutdown/disable."
-                        )
+                    if self._should_abort_reconnect(auto_reconnect, "BLEError"):
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
@@ -188,10 +207,7 @@ class ReconnectWorker:
                         err,
                     )
                 except BleakDBusError:
-                    if interface.is_connection_closing or not auto_reconnect:
-                        logger.debug(
-                            "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
-                        )
+                    if self._should_abort_reconnect(auto_reconnect, "DBusError"):
                         return
                     # DBus errors are often transient on Linux; log as warning since we'll retry
                     logger.warning(
@@ -200,14 +216,13 @@ class ReconnectWorker:
                         exc_info=True,
                     )
                     # Use longer delay for DBus errors to allow system Bluetooth stack to recover
-                    override_delay = max(override_delay or 0, DBUS_ERROR_RECONNECT_DELAY)
+                    override_delay = max(
+                        override_delay or 0, DBUS_ERROR_RECONNECT_DELAY
+                    )
                     # State transition to ERROR and DISCONNECTED is already handled by
                     # the connection orchestrator, so we don't need to do it here
                 except BleakError as err:
-                    if interface.is_connection_closing or not auto_reconnect:
-                        logger.debug(
-                            "Auto-reconnect cancelled after bleak failure due to shutdown/disable."
-                        )
+                    if self._should_abort_reconnect(auto_reconnect, "BleakError"):
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed with BLE error: %s",
@@ -222,17 +237,14 @@ class ReconnectWorker:
                     )
                     override_delay = max(override_delay or 0, delay_hint)
                 except Exception:
-                    if interface.is_connection_closing or not auto_reconnect:
-                        logger.debug(
-                            "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
-                        )
+                    if self._should_abort_reconnect(auto_reconnect, "unexpected error"):
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
                         attempt_num,
                     )
 
-                if interface.is_connection_closing or not auto_reconnect:
+                if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
                 (
                     sleep_delay,

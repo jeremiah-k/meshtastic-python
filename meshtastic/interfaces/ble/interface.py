@@ -161,6 +161,7 @@ class BLEInterface(MeshInterface):
         )
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
+        self._connection_alias_key: Optional[str] = None  # Track alias for cleanup
 
         # Error handling infrastructure
         self.error_handler = BLEErrorHandler()
@@ -405,6 +406,12 @@ class BLEInterface(MeshInterface):
                         # Use addr_lock_context to manage holder count for proper lock lifecycle
                         with addr_lock_context(device_key):
                             _mark_disconnected(device_key, owner=self)
+                    # Also clean up any alias key that was used for this connection
+                    alias_key = self._connection_alias_key
+                    if alias_key and alias_key != device_key:
+                        with addr_lock_context(alias_key):
+                            _mark_disconnected(alias_key, owner=self)
+                    self._connection_alias_key = None
                     # Close previous client asynchronously
                     close_thread = self.thread_coordinator.create_thread(
                         target=self._client_manager.safe_close_client,
@@ -418,6 +425,12 @@ class BLEInterface(MeshInterface):
                     if fallback_key:
                         with addr_lock_context(fallback_key):
                             _mark_disconnected(fallback_key, owner=self)
+                    # Also clean up any alias key
+                    alias_key = self._connection_alias_key
+                    if alias_key and alias_key != fallback_key:
+                        with addr_lock_context(alias_key):
+                            _mark_disconnected(alias_key, owner=self)
+                    self._connection_alias_key = None
                 self._disconnected()
 
                 # Event coordination for reconnection (only if not closed)
@@ -440,6 +453,12 @@ class BLEInterface(MeshInterface):
                 # Use addr_lock_context to manage holder count for proper lock lifecycle
                 with addr_lock_context(addr_disconnect_key):
                     _mark_disconnected(addr_disconnect_key, owner=self)
+            # Also clean up any alias key that was used for this connection
+            alias_key = self._connection_alias_key
+            if alias_key and alias_key != addr_disconnect_key:
+                with addr_lock_context(alias_key):
+                    _mark_disconnected(alias_key, owner=self)
+            self._connection_alias_key = None
             logger.debug("Auto-reconnect disabled, staying disconnected.")
             self._disconnected()
             return False
@@ -1030,10 +1049,13 @@ class BLEInterface(MeshInterface):
                         # If the user requested connection by name/alias that differs from the
                         # actual device address, also mark the requested key as connected.
                         # This ensures subsequent connection attempts using the same name
-                        # are properly suppressed.
+                        # are properly suppressed. Track for cleanup on disconnect.
                         if addr_key and addr_key != device_key:
                             with addr_lock_context(addr_key):
                                 _mark_connected(addr_key, owner=self)
+                            self._connection_alias_key = addr_key
+                        else:
+                            self._connection_alias_key = None
                     # Context manager will release holder count automatically
                     # Mark that at least one successful connection has been established
                     self._ever_connected = True

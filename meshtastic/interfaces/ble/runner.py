@@ -105,15 +105,11 @@ class BLECoroutineRunner:
 
         Sets up per-instance synchronization, lifecycle flags, background thread/loop placeholders, a weak set to track pending futures, and registers an atexit handler to ensure graceful shutdown.
         """
-        # Fast path: already initialized (atomic read outside lock for performance)
-        if getattr(self, "_initialized", False):
-            return
-
-        # Guard creation of per-instance lock and initialization state with the
-        # class-level singleton lock to avoid concurrent double-initialize races.
+        # The singleton lock is uncontended after first initialization, so always
+        # acquiring it has negligible performance impact while ensuring correctness.
         with self._singleton_lock:
-            # Double-check after acquiring lock
-            if self._initialized:
+            # Fast path: already initialized - check inside lock for thread safety
+            if getattr(self, "_initialized", False):
                 return
 
             # Use RLock to allow re-entrant locking in instance methods.
@@ -231,11 +227,15 @@ class BLECoroutineRunner:
             asyncio.set_event_loop(loop)
             loop.set_exception_handler(self._handle_loop_exception)
 
-            # Publish this loop only if this thread is still the active runner thread.
+            # Publish this loop only if this thread is still the active runner thread
+            # and stop hasn't been requested.
             with self._instance_lock:
-                if self._thread is not threading.current_thread():
+                if (
+                    self._thread is not threading.current_thread()
+                    or self._stop_requested
+                ):
                     logger.debug(
-                        "Discarding stale BLE runner thread during startup race."
+                        "Discarding stale BLE runner thread during startup race or stop requested."
                     )
                     return
                 self._loop = loop

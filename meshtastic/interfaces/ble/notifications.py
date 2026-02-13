@@ -15,6 +15,9 @@ class NotificationManager:
     Manage BLE notification subscriptions so we can resubscribe cleanly after reconnects.
     """
 
+    # Maximum subscription token value (2^31 - 1) to prevent unbounded counter growth
+    _MAX_SUBSCRIPTION_TOKEN = 0x7FFFFFFF
+
     def __init__(self):
         """
         Create a NotificationManager and initialize its thread-safe subscription state.
@@ -63,7 +66,16 @@ class NotificationManager:
         """
         with self._lock:
             token = self._subscription_counter
-            self._subscription_counter += 1
+            # Wrap at 2 billion to prevent unbounded growth in long-running processes
+            self._subscription_counter = (
+                self._subscription_counter + 1
+            ) & self._MAX_SUBSCRIPTION_TOKEN
+            # Handle wraparound collision (extremely unlikely in practice)
+            while token in self._active_subscriptions:
+                token = self._subscription_counter
+                self._subscription_counter = (
+                    self._subscription_counter + 1
+                ) & self._MAX_SUBSCRIPTION_TOKEN
             self._active_subscriptions[token] = (characteristic, callback)
             self._characteristic_to_callback[characteristic] = callback
             return token
