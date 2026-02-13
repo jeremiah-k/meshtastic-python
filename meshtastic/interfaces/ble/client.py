@@ -384,7 +384,7 @@ class BLEClient:
             raise
         except KeyboardInterrupt:  # pylint: disable=W0706
             raise
-        except (FutureTimeoutError, RuntimeError) as e:
+        except FutureTimeoutError as e:
             try:
                 future.cancel()  # Clean up pending task to avoid resource leaks
             except Exception:  # pragma: no cover - defensive
@@ -406,6 +406,16 @@ class BLEClient:
                     exc_info=True,
                 )
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+        except RuntimeError as e:
+            # RuntimeError here typically indicates loop shutdown/closure, not a timeout.
+            try:
+                future.cancel()
+            except Exception:  # pragma: no cover - defensive
+                logger.debug(
+                    "Failed to cancel BLE future after runtime error",
+                    exc_info=True,
+                )
+            raise self.BLEError(f"Async operation failed: {e}") from e
         except (CancelledError, asyncio.CancelledError) as e:
             # Propagate as timeout-style BLEError so callers handle uniformly
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e

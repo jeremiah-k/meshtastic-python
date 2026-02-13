@@ -409,6 +409,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     iface3.close()
 
 
+@pytest.mark.slow
 def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
     _ = monkeypatch  # Mark as unused
@@ -878,6 +879,39 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     assert fake_future.cancelled is True
 
     client.close()
+    coro_obj = getattr(fake_future, "coro", None)
+    if isinstance(coro_obj, types.CoroutineType):
+        coro_obj.close()
+
+
+def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
+    """BLEClient.async_await should surface RuntimeError as a non-timeout BLE error."""
+    client = ble_mod.BLEClient()
+
+    class _FakeFuture:
+        def __init__(self):
+            self.cancelled = False
+            self.coro = None
+
+        def result(self, _timeout=None):
+            raise RuntimeError("loop is closed")  # noqa: TRY003 - test signal
+
+        def cancel(self):
+            self.cancelled = True
+
+    fake_future = _FakeFuture()
+    monkeypatch.setattr(
+        client, "async_run", lambda coro: setattr(fake_future, "coro", coro) or fake_future
+    )
+
+    async def _test_coro():
+        return None
+
+    with pytest.raises((BLEInterface.BLEError, BLEClient.BLEError)) as excinfo:
+        client.async_await(_test_coro(), timeout=0.01)
+
+    assert "Async operation failed: loop is closed" in str(excinfo.value)
+    assert fake_future.cancelled is True
     coro_obj = getattr(fake_future, "coro", None)
     if isinstance(coro_obj, types.CoroutineType):
         coro_obj.close()

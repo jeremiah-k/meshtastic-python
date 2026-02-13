@@ -389,6 +389,8 @@ class DiscoveryManager:
             try:
                 client.close()
             except Exception:  # noqa: BLE001
-                pass  # Best effort cleanup during GC
+                # Best-effort cleanup during GC/interpreter shutdown; avoid logging
+                # because logging infrastructure may already be partially torn down.
+                pass
             finally:
                 self._client = None

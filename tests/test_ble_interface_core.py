@@ -757,24 +757,18 @@ def test_close_clears_ble_threads(monkeypatch):
     )
 
 
-def test_receive_thread_specific_exceptions(monkeypatch, caplog):
+@pytest.mark.parametrize("exc_type", [RuntimeError, OSError])
+def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     """
     Verify that the BLE receive thread treats specific exceptions as fatal: it logs a fatal error message and invokes the interface's close().
 
-    The test iterates over RuntimeError and OSError by injecting a client whose read_gatt_char raises the exception,
+    The test injects a client whose read_gatt_char raises the given exception type,
     triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
     """
     # logging and threading already imported at top
 
     # Set logging level to DEBUG to capture debug messages
     caplog.set_level(logging.DEBUG)
-
-    # The exceptions that should be caught and handled as immediately fatal
-    # Note: BleakError now goes through transient retry logic first, tested separately
-    handled_exceptions = [
-        RuntimeError,
-        OSError,
-    ]
 
     class ExceptionClient(DummyClient):
         """Mock client that raises specific exceptions for testing."""
@@ -798,62 +792,60 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog):
             """
             raise self.exception_type("test")
 
-    for exc_type in handled_exceptions:
-        # Clear caplog for each test
-        caplog.clear()
+    caplog.clear()
 
-        # Create a mock client that raises the specific exception
-        client = ExceptionClient(exc_type)
-        iface = _build_interface(monkeypatch, client)
+    # Create a mock client that raises the specific exception
+    client = ExceptionClient(exc_type)
+    iface = _build_interface(monkeypatch, client)
 
-        # Mock the close method to track if it's called
-        original_close = iface.close
-        close_called = threading.Event()
+    # Mock the close method to track if it's called
+    original_close = iface.close
+    close_called = threading.Event()
 
-        def mock_close(original_close=original_close, close_called=close_called):
-            """
-            Signal that close was invoked and delegate to the original close callable.
+    def mock_close(original_close=original_close, close_called=close_called):
+        """
+        Signal that close was invoked and delegate to the original close callable.
 
-            Parameters:
-                original_close (callable): The original close function to invoke.
-                close_called (threading.Event): Event to set to indicate close was called.
+        Parameters:
+            original_close (callable): The original close function to invoke.
+            close_called (threading.Event): Event to set to indicate close was called.
 
-            Returns:
-                Any: The value returned by `original_close()`.
-            """
-            close_called.set()
-            return original_close()
+        Returns:
+            Any: The value returned by `original_close()`.
+        """
+        close_called.set()
+        return original_close()
 
-        monkeypatch.setattr(iface, "close", mock_close)
+    monkeypatch.setattr(iface, "close", mock_close)
 
-        # Start the receive thread
-        iface._want_receive = True
+    # Start the receive thread
+    iface._want_receive = True
 
-        # Phase 3: Use unified state lock instead of _client_lock
-        with iface._state_lock:
-            iface.client = client
+    # Phase 3: Use unified state lock instead of _client_lock
+    with iface._state_lock:
+        iface.client = client
 
-        # Trigger the receive loop
-        iface._read_trigger.set()
+    # Trigger the receive loop
+    iface._read_trigger.set()
 
-        # Wait for the exception to be handled and close to be called
-        # Use a reasonable timeout to avoid hanging the test
-        close_called.wait(timeout=5.0)
+    # Wait for the exception to be handled and close to be called
+    # Use a reasonable timeout to avoid hanging the test
+    close_called.wait(timeout=5.0)
 
-        # Check that appropriate logging occurred
-        assert "Fatal error in BLE receive thread" in caplog.text
-        assert close_called.is_set(), (
-            f"Expected close() to be called for {exc_type.__name__}"
-        )
+    # Check that appropriate logging occurred
+    assert "Fatal error in BLE receive thread" in caplog.text
+    assert close_called.is_set(), (
+        f"Expected close() to be called for {exc_type.__name__}"
+    )
 
-        # Clean up
-        iface._want_receive = False
-        caplog.clear()
-        try:
-            iface.close()
-        except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
-            # Log for visibility; still allow test to proceed with cleanup.
-            logging.warning("Cleanup error in iface.close(): %r", exc)
+    # Clean up
+    iface._want_receive = False
+    caplog.clear()
+    try:
+        iface.close()
+    except Exception as exc:  # noqa: BLE001 - cleanup best-effort in tests
+        # Log for visibility; still allow test to proceed with cleanup.
+        logging.warning("Cleanup error in iface.close(): %r", exc)
 
 
 def test_bleak_error_transient_retry_logic(monkeypatch, caplog):

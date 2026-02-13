@@ -78,6 +78,19 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
             registry lock if `key` is None.
     """
     key = _addr_key(key)
+    return _get_addr_lock_by_key(key)
+
+
+def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
+    """
+    Get the process-wide RLock for an already-normalized address key.
+
+    Parameters:
+        key (Optional[str]): Normalized address key; `None` selects the global lock.
+
+    Returns:
+        RLock: Per-address lock for `key`, or `_REGISTRY_LOCK` when `key` is None.
+    """
     if key is None:
         return _REGISTRY_LOCK
     with _REGISTRY_LOCK:
@@ -101,6 +114,11 @@ def _release_addr_lock(key: Optional[str]) -> None:
     connected, the per-address lock entry is removed immediately.
     """
     key = _addr_key(key)
+    _release_addr_lock_by_key(key)
+
+
+def _release_addr_lock_by_key(key: Optional[str]) -> None:
+    """Release holder bookkeeping for an already-normalized address key."""
     if key is None:
         return
     with _REGISTRY_LOCK:
@@ -244,12 +262,7 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
         if owner is not None:
             owner_ref = _CONNECTED_OWNERS.get(key)
             current_owner = owner_ref() if owner_ref is not None else None
-            current_owner_id = _CONNECTED_OWNER_IDS.get(key)
-            if (
-                current_owner is not None
-                and current_owner is not owner
-                and current_owner_id != id(owner)
-            ):
+            if current_owner is not None and current_owner is not owner:
                 logger.debug(
                     "Ignoring disconnect mark for %s from non-owner instance.",
                     key,
@@ -272,14 +285,15 @@ def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
     Yields:
         RLock: The per-address re-entrant lock for the given address (not acquired).
     """
-    lock = _get_addr_lock(addr)
+    key = _addr_key(addr)
+    lock = _get_addr_lock_by_key(key)
     try:
         # NOTE: We intentionally yield WITHOUT acquiring the lock.
         # The caller must explicitly acquire it with `with lock:` to ensure
         # proper lock ordering discipline is visible in the code.
         yield lock
     finally:
-        _release_addr_lock(addr)
+        _release_addr_lock_by_key(key)
 
 
 def _is_currently_connected_elsewhere(
