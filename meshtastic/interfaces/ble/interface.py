@@ -296,67 +296,68 @@ class BLEInterface(MeshInterface):
             )
             return True
         try:
-            # CAPTURE CURRENT STATE UNDER LOCK FIRST (Fix Race #6)
-            # This prevents TOCTOU races where state changes between checks
+            target_client = client
+            previous_client = None
+            should_reconnect = False
+            address = "unknown"
+
+            # Perform state checks and state mutation atomically under the state lock.
             with self._state_lock:
                 current_state = self._state_manager.state
                 current_client = self.client
-                is_closing = self.is_connection_closing
+                is_closing = self._state_manager.is_closing or self._closed
 
-            # Now perform validation checks
-            if current_state == ConnectionState.CONNECTING:
-                logger.debug(
-                    "Ignoring disconnect from %s while a connection is in progress.",
-                    source,
-                )
-                return True
-            if is_closing:
-                logger.debug("Ignoring disconnect from %s during shutdown.", source)
-                return False
+                if current_state == ConnectionState.CONNECTING:
+                    logger.debug(
+                        "Ignoring disconnect from %s while a connection is in progress.",
+                        source,
+                    )
+                    return True
+                if is_closing:
+                    logger.debug("Ignoring disconnect from %s during shutdown.", source)
+                    return False
 
-            # Determine which client we're dealing with (using pre-captured current_client)
-            target_client = client
-            if not target_client and bleak_client:
-                # Match the BLEClient that contains this bleak_client
-                target_client = current_client
-                if (
-                    target_client
-                    and getattr(target_client, "bleak_client", None) is not bleak_client
-                ):
-                    target_client = None
-
-            address = "unknown"
-            if target_client:
-                address = getattr(target_client, "address", repr(target_client))
-            elif bleak_client:
-                address = getattr(bleak_client, "address", repr(bleak_client))
-
-            logger.debug("BLE client %s disconnected (source: %s).", address, source)
-
-            if self.auto_reconnect:
-                previous_client = None
-                # ALL STATE CHANGES INSIDE _state_lock FOR ATOMICITY (Fix Race #2)
-                with self._state_lock:
-                    # Prevent duplicate disconnect notifications
-                    if self._disconnect_notified:
-                        logger.debug("Ignoring duplicate disconnect from %s.", source)
-                        return True
-
-                    # Ignore stale client disconnects (from previous connections)
+                # Resolve callback source against the currently active client.
+                if target_client is None and bleak_client is not None:
                     if (
-                        target_client
-                        and current_client
-                        and target_client is not current_client
+                        current_client
+                        and getattr(current_client, "bleak_client", None) is bleak_client
                     ):
+                        target_client = current_client
+                    elif current_client is not None:
                         logger.debug("Ignoring stale disconnect from %s.", source)
                         return True
 
-                    previous_client = current_client
-                    self.client = None
-                    self._disconnect_notified = True
-                    # State transition inside lock for atomicity
-                    self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                # Ignore stale disconnect callbacks from non-active clients.
+                if (
+                    target_client is not None
+                    and current_client is not None
+                    and target_client is not current_client
+                ):
+                    logger.debug("Ignoring stale disconnect from %s.", source)
+                    return True
 
+                # Prevent duplicate disconnect notifications.
+                if self._disconnect_notified:
+                    logger.debug("Ignoring duplicate disconnect from %s.", source)
+                    return True
+
+                previous_client = current_client
+                self.client = None
+                self._disconnect_notified = True
+                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                should_reconnect = self.auto_reconnect
+
+                if target_client:
+                    address = getattr(target_client, "address", repr(target_client))
+                elif bleak_client:
+                    address = getattr(bleak_client, "address", repr(bleak_client))
+                elif previous_client:
+                    address = getattr(previous_client, "address", repr(previous_client))
+
+            logger.debug("BLE client %s disconnected (source: %s).", address, source)
+
+            if should_reconnect:
                 if previous_client:
                     previous_address = getattr(previous_client, "address", self.address)
                     device_key = (
@@ -388,26 +389,22 @@ class BLEInterface(MeshInterface):
                     )
                     self._schedule_auto_reconnect()
                 return True
-            else:
-                # ALL STATE CHANGES INSIDE _state_lock FOR ATOMICITY (Fix Race #2)
-                with self._state_lock:
-                    if not self._disconnect_notified:
-                        self._disconnect_notified = True
-                    self.client = None
-                    # State transition inside lock for atomicity
-                    self._state_manager.transition_to(ConnectionState.DISCONNECTED)
 
-                # Guard against sentinel "unknown" address - don't pollute registry
-                addr_disconnect_key = (
-                    _addr_key(address) if address != "unknown" else None
-                )
-                if addr_disconnect_key:
-                    # Use addr_lock_context to manage holder count for proper lock lifecycle
-                    with addr_lock_context(addr_disconnect_key):
-                        _mark_disconnected(addr_disconnect_key)
-                logger.debug("Auto-reconnect disabled, staying disconnected.")
-                self._disconnected()
-                return False
+            # Guard against sentinel "unknown" address - don't pollute registry.
+            # Prefer the previous active client's address because callback metadata can be stale.
+            address_for_registry = (
+                getattr(previous_client, "address", None)
+                if previous_client
+                else (address if address != "unknown" else self.address)
+            )
+            addr_disconnect_key = _addr_key(address_for_registry)
+            if addr_disconnect_key:
+                # Use addr_lock_context to manage holder count for proper lock lifecycle
+                with addr_lock_context(addr_disconnect_key):
+                    _mark_disconnected(addr_disconnect_key)
+            logger.debug("Auto-reconnect disabled, staying disconnected.")
+            self._disconnected()
+            return False
         finally:
             self._disconnect_lock.release()
 
@@ -1263,9 +1260,10 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called on already closed interface; ignoring"
                 )
                 return
+            was_closing = self._state_manager.is_closing
             # Mark closed immediately to prevent overlapping cleanup in concurrent calls
             self._closed = True
-            if self.is_connection_closing:
+            if was_closing:
                 logger.debug(
                     "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                 )

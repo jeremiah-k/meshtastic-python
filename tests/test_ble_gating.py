@@ -52,10 +52,10 @@ class TestAddrLock:
 
     def setup_method(self):
         """Clear lock registries before each test for isolation."""
-        _ADDR_LOCKS.clear()
-        from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS
-
-        _LOCK_HOLDERS.clear()
+        with _REGISTRY_LOCK:
+            _ADDR_LOCKS.clear()
+            _CONNECTED_ADDRS.clear()
+            _LOCK_HOLDERS.clear()
 
     def test_get_lock_for_valid_address(self):
         """Test that locks are created for valid addresses."""
@@ -101,6 +101,13 @@ class TestAddrLock:
         # Now cleanup should work since no holders remain
         _cleanup_addr_lock("testaddress")
         assert "testaddress" not in _ADDR_LOCKS
+
+    def test_addr_lock_context_cleans_unconnected_lock(self):
+        """Address locks should be removed after context exit when not connected."""
+        with addr_lock_context("temp-address"):
+            pass
+        assert _addr_key("temp-address") not in _ADDR_LOCKS
+        assert _addr_key("temp-address") not in _LOCK_HOLDERS
 
 
 class TestMarkConnected:

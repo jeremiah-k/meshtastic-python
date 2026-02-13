@@ -73,6 +73,13 @@ class BLECoroutineRunner:
 
     _instance: Optional["BLECoroutineRunner"] = None
     _singleton_lock = threading.Lock()
+    _initialized: bool
+    _internal_lock: threading.RLock
+    _loop: Optional[asyncio.AbstractEventLoop]
+    _thread: Optional[threading.Thread]
+    _loop_ready: threading.Event
+    _stop_requested: bool
+    _pending_futures: weakref.WeakSet[Future]
 
     def __new__(cls) -> "BLECoroutineRunner":
         """
@@ -152,9 +159,12 @@ class BLECoroutineRunner:
     def _ensure_running(self) -> None:
         """Ensure the event loop thread is running."""
         with self._instance_lock:
-            self._start_locked()
+            ready_event = self._start_locked()
+        if ready_event is not None and not ready_event.wait(timeout=5.0):
+            logger.error("BLECoroutineRunner loop failed to start within 5s")
+            raise RuntimeError("BLE event loop failed to start")
 
-    def _start_locked(self) -> None:
+    def _start_locked(self) -> Optional[threading.Event]:
         """
         Start the background event loop thread and wait for it to become ready.
 
@@ -171,66 +181,83 @@ class BLECoroutineRunner:
             self._thread is not None
             and self._thread.is_alive()
             and self._loop is not None
+            and self._loop.is_running()
         ):
-            return
+            return None
+        # If a thread exists but loop is not yet published, another caller is already
+        # starting the runner. Reuse its readiness event.
+        if self._thread is not None and self._thread.is_alive():
+            return self._loop_ready
 
         # Reset stop flag for restart
         self._stop_requested = False
-        self._loop_ready.clear()
+        # Use a fresh ready-event per start cycle to avoid cross-thread interference
+        # if a stale runner thread exits while a new one is starting.
+        self._loop_ready = threading.Event()
+        ready_event = self._loop_ready
 
         # Create and start the thread
         self._thread = threading.Thread(
             target=self._run_loop,
+            args=(ready_event,),
             name="BLECoroutineRunner",
             daemon=True,
         )
         self._thread.start()
+        return ready_event
 
-        # Wait for loop to be ready
-        if not self._loop_ready.wait(timeout=5.0):
-            logger.error("BLECoroutineRunner loop failed to start within 5s")
-            raise RuntimeError("BLE event loop failed to start")
-
-    def _run_loop(self) -> None:
+    def _run_loop(self, ready_event: threading.Event) -> None:
         """Run the asyncio event loop in the background thread."""
+        loop: Optional[asyncio.AbstractEventLoop] = None
         try:
-            self._loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self._loop)
-            self._loop.set_exception_handler(self._handle_loop_exception)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.set_exception_handler(self._handle_loop_exception)
+
+            # Publish this loop only if this thread is still the active runner thread.
+            with self._instance_lock:
+                if self._thread is not threading.current_thread():
+                    logger.debug(
+                        "Discarding stale BLE runner thread during startup race."
+                    )
+                    return
+                self._loop = loop
 
             # Signal that the loop is ready
-            self._loop.call_soon(self._loop_ready.set)
+            loop.call_soon(ready_event.set)
 
             # Run forever until stopped
-            self._loop.run_forever()
+            loop.run_forever()
 
         except Exception as e:
             logger.error("Error in BLECoroutineRunner loop: %s", e, exc_info=True)
         finally:
             # Clean shutdown: cancel all pending tasks
-            if self._loop:
-                self._cancel_all_tasks()
-                self._loop.close()
-                self._loop = None
-            self._loop_ready.clear()
+            if loop:
+                self._cancel_all_tasks(loop)
+                loop.close()
 
-    def _cancel_all_tasks(self) -> None:
+            ready_event.clear()
+            with self._instance_lock:
+                if self._thread is threading.current_thread():
+                    if self._loop is loop:
+                        self._loop = None
+                    self._thread = None
+
+    def _cancel_all_tasks(self, loop: asyncio.AbstractEventLoop) -> None:
         """
         Cancel all pending asyncio tasks on the runner's event loop.
 
         Cancels every task returned by asyncio.all_tasks() for the internal loop and runs the loop briefly to allow cancellation callbacks to execute.
         """
-        if not self._loop:
-            return
         try:
-            tasks = asyncio.all_tasks(self._loop)
+            tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
             for task in tasks:
                 task.cancel()
-            # Give tasks a moment to handle cancellation
             if tasks:
-                # Run one iteration to process cancellations
-                self._loop.stop()
-                self._loop.run_forever()
+                loop.run_until_complete(
+                    asyncio.gather(*tasks, return_exceptions=True)
+                )
         except Exception as e:
             logger.debug("Exception during task cancellation: %s", e)
 
@@ -261,10 +288,13 @@ class BLECoroutineRunner:
         """
         self._ensure_running()
 
-        if self._loop is None:
+        with self._instance_lock:
+            loop = self._loop
+
+        if loop is None or not loop.is_running():
             raise RuntimeError("BLECoroutineRunner loop is not available")
 
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:
             self._pending_futures.add(future)
@@ -334,17 +364,25 @@ class BLECoroutineRunner:
                     except Exception as e:
                         logger.debug("Exception cancelling future: %s", e)
 
-            # Stop the loop
-            if self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(self._loop.stop)
-
             # Capture thread and loop references for join/cleanup outside lock
             thread = self._thread
             loop = self._loop
 
+        # Stop the loop outside the lock
+        if loop and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except RuntimeError:
+                logger.debug(
+                    "Unable to stop BLE event loop thread-safely; loop may already be closing."
+                )
+
+        # Avoid self-join deadlock if stop() is called from the runner thread.
+        if thread is threading.current_thread():
+            logger.debug("stop() called from runner thread; skipping join.")
         # Join OUTSIDE the lock to avoid deadlocking with runner-thread code
         # that might need _instance_lock (e.g., run_coroutine_threadsafe)
-        if thread and thread.is_alive():
+        elif thread and thread.is_alive():
             thread.join(timeout=timeout)
 
             # Re-acquire lock to check result and update state
@@ -371,7 +409,11 @@ class BLECoroutineRunner:
         # Final cleanup under lock - only clear if no concurrent _ensure_running replaced them
         with self._instance_lock:
             # Only clear _thread if it still references the original thread we stopped
-            if self._thread is thread:
+            if self._thread is thread and (
+                thread is None
+                or thread is threading.current_thread()
+                or not thread.is_alive()
+            ):
                 self._thread = None
             # Only clear _loop if it still references the original loop (or is not running)
             if self._loop is loop or (

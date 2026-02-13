@@ -78,6 +78,8 @@ def _release_addr_lock(key: Optional[str]) -> None:
 
     This should be called when a caller obtained a lock via _get_addr_lock()
     but did not actually acquire it (e.g., early return due to already connected).
+    If the holder count reaches zero and the address is not currently marked
+    connected, the per-address lock entry is removed immediately.
     """
     key = _addr_key(key)
     if key is None:
@@ -85,6 +87,10 @@ def _release_addr_lock(key: Optional[str]) -> None:
     with _REGISTRY_LOCK:
         if key in _LOCK_HOLDERS:
             _LOCK_HOLDERS[key] = max(0, _LOCK_HOLDERS[key] - 1)
+            if _LOCK_HOLDERS[key] <= 0 and key not in _CONNECTED_ADDRS:
+                _ADDR_LOCKS.pop(key, None)
+                _LOCK_HOLDERS.pop(key, None)
+                logger.debug("Cleaned up address lock for %s", key)
 
 
 def _cleanup_addr_lock(key: Optional[str]) -> None:

@@ -142,6 +142,50 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager.is_closing is False
 
 
+def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
+    """Stale disconnect callbacks must not clear the current active client."""
+    stale_client = DummyClient()
+    iface = _build_interface(monkeypatch, stale_client)
+
+    active_client = DummyClient()
+    active_client.address = "active"
+    active_client.bleak_client = SimpleNamespace(address="active")
+    reconnect_calls: List[bool] = []
+    disconnected_calls: List[bool] = []
+
+    monkeypatch.setattr(
+        iface,
+        "_schedule_auto_reconnect",
+        lambda: reconnect_calls.append(True),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface, "_disconnected", lambda: disconnected_calls.append(True), raising=True
+    )
+
+    with iface._state_lock:
+        iface.client = active_client
+        iface._disconnect_notified = False
+        iface._state_manager.reset_to_disconnected()
+        assert iface._state_manager.transition_to(ConnectionState.CONNECTING) is True
+        assert iface._state_manager.transition_to(ConnectionState.CONNECTED) is True
+
+    # Stale callback by BLEClient instance should be ignored.
+    assert iface._handle_disconnect("stale-client", client=stale_client) is True
+    # Stale callback by bleak client identity should also be ignored.
+    assert (
+        iface._handle_disconnect("stale-bleak", bleak_client=stale_client.bleak_client)
+        is True
+    )
+
+    assert iface.client is active_client
+    assert iface._disconnect_notified is False
+    assert reconnect_calls == []
+    assert disconnected_calls == []
+
+    iface.close()
+
+
 def test_find_device_uses_connected_fallback_when_scan_empty():
     """find_device should fall back to connected-device lookup when scan is empty."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
