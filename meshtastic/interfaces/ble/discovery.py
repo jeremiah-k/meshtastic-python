@@ -338,19 +338,24 @@ class DiscoveryManager:
             connected_coro = self.connected_strategy.discover(
                 address, BLEConfig.BLE_SCAN_TIMEOUT
             )
+            coro_consumed = False
             try:
                 fallback = client.async_await(
                     connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
                 )
+                coro_consumed = True
                 devices.extend(fallback)
             except (SystemExit, KeyboardInterrupt):
-                if inspect.iscoroutine(connected_coro):
-                    connected_coro.close()
                 raise
             except Exception as e:  # pragma: no cover - best effort logging
                 logger.warning("Connected device fallback failed: %s", e, exc_info=True)
-                if inspect.iscoroutine(connected_coro):
-                    connected_coro.close()
+            finally:
+                # Close the coroutine if it was never consumed (async_await raised before scheduling)
+                if not coro_consumed and inspect.iscoroutine(connected_coro):
+                    try:
+                        connected_coro.close()
+                    except Exception:  # noqa: BLE001
+                        pass  # Best effort cleanup
 
         return devices
 
@@ -363,5 +368,21 @@ class DiscoveryManager:
         if self._client:
             try:
                 self._client.close()
+            finally:
+                self._client = None
+
+    def __del__(self) -> None:
+        """
+        Cleanup discovery client on garbage collection.
+
+        This ensures the BLE client is properly closed even if close() was not called explicitly.
+        """
+        # Use getattr to handle cases where __init__ didn't complete
+        client = getattr(self, "_client", None)
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass  # Best effort cleanup during GC
             finally:
                 self._client = None

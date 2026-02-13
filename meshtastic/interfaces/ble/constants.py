@@ -51,6 +51,9 @@ class BLEConfig:
     CONNECTION_GATE_UNOWNED_STALE_SECONDS = 300.0
     BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
     BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
+    # Runner configuration
+    RUNNER_LOOP_READY_TIMEOUT_SECONDS = 5.0
+    RUNNER_ZOMBIE_WARN_THRESHOLD = 3
 
 
 # Backwards-compatible aliases for legacy module-level constants
@@ -101,9 +104,9 @@ BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
     Parse a version string into a three-integer (major, minor, patch) tuple.
-    
+
     Non-numeric segments are ignored; if the string contains fewer than three numeric components the result is padded with zeros.
-    
+
     Returns:
         A tuple (major, minor, patch) containing the first three numeric components as integers.
     """
@@ -120,7 +123,7 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
 def _bleak_supports_connected_fallback() -> bool:
     """
     Determine whether the installed bleak version supports the connected-device fallback.
-    
+
     Returns:
         True if the installed bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, False otherwise.
     """

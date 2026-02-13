@@ -197,9 +197,7 @@ class TestBLECoroutineRunner:
 
         assert observed_timeouts == [0.25, 0.5]
 
-    def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(
-        self, monkeypatch
-    ):
+    def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
         runner = BLECoroutineRunner()
         monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
@@ -268,9 +266,7 @@ class TestBLECoroutineRunner:
         coro = _noop()
         try:
             with pytest.raises(ValueError, match="timeout or startup_timeout"):
-                runner.run_coroutine_threadsafe(
-                    coro, timeout=0.25, startup_timeout=0.5
-                )
+                runner.run_coroutine_threadsafe(coro, timeout=0.25, startup_timeout=0.5)
         finally:
             coro.close()
 
@@ -303,11 +299,18 @@ class TestBLECoroutineRunner:
         runner._ensure_running()
 
         # Force stop without waiting (simulates zombie)
-        if runner._loop and runner._loop.is_running():
-            runner._loop.call_soon_threadsafe(runner._loop.stop)
+        # Only call call_soon_threadsafe if the loop is a real asyncio event loop
+        loop = runner._loop
+        if loop and loop.is_running() and hasattr(loop, "call_soon_threadsafe"):
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except (RuntimeError, AttributeError):
+                # Loop may already be stopping or closed
+                pass
 
         # Give thread a moment to exit
-        runner._thread.join(timeout=0.1)
+        if runner._thread:
+            runner._thread.join(timeout=0.1)
 
         # The count should still be the same since we didn't call stop() with timeout
         # (zombie count only increments when stop() times out)

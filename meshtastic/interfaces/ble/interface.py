@@ -358,7 +358,8 @@ class BLEInterface(MeshInterface):
                 if target_client is None and bleak_client is not None:
                     if (
                         current_client
-                        and getattr(current_client, "bleak_client", None) is bleak_client
+                        and getattr(current_client, "bleak_client", None)
+                        is bleak_client
                     ):
                         target_client = current_client
                     elif current_client is not None:
@@ -1026,6 +1027,13 @@ class BLEInterface(MeshInterface):
                         # This ensures proper lock lifecycle even if device_key differs from addr_key
                         with addr_lock_context(device_key):
                             _mark_connected(device_key, owner=self)
+                        # If the user requested connection by name/alias that differs from the
+                        # actual device address, also mark the requested key as connected.
+                        # This ensures subsequent connection attempts using the same name
+                        # are properly suppressed.
+                        if addr_key and addr_key != device_key:
+                            with addr_lock_context(addr_key):
+                                _mark_connected(addr_key, owner=self)
                     # Context manager will release holder count automatically
                     # Mark that at least one successful connection has been established
                     self._ever_connected = True

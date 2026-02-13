@@ -24,6 +24,8 @@ from typing import Coroutine, Optional, TypeVar
 
 from bleak.exc import BleakDBusError
 
+from meshtastic.interfaces.ble.constants import BLEConfig
+
 T = TypeVar("T")
 
 logger = logging.getLogger("meshtastic.ble")
@@ -31,8 +33,6 @@ logger = logging.getLogger("meshtastic.ble")
 # Track zombie runners for diagnostics (shouldn't happen with singleton, but useful for monitoring)
 _zombie_lock = threading.Lock()
 _zombie_runner_count = 0
-_ZOMBIE_WARN_THRESHOLD = 3
-_LOOP_READY_TIMEOUT_SECONDS = 5.0
 
 
 def get_zombie_runner_count() -> int:
@@ -105,19 +105,21 @@ class BLECoroutineRunner:
 
         Sets up per-instance synchronization, lifecycle flags, background thread/loop placeholders, a weak set to track pending futures, and registers an atexit handler to ensure graceful shutdown.
         """
+        # Fast path: already initialized (atomic read outside lock for performance)
+        if getattr(self, "_initialized", False):
+            return
+
         # Guard creation of per-instance lock and initialization state with the
         # class-level singleton lock to avoid concurrent double-initialize races.
         with self._singleton_lock:
-            if getattr(self, "_initialized", False):
-                return
-            # Use RLock to allow re-entrant locking in instance methods.
-            if not hasattr(self, "_internal_lock"):
-                self._internal_lock = threading.RLock()
-            lock = self._internal_lock
-
-        with lock:
+            # Double-check after acquiring lock
             if self._initialized:
                 return
+
+            # Use RLock to allow re-entrant locking in instance methods.
+            # Create lock inside singleton lock to ensure only one is ever created.
+            if not hasattr(self, "_internal_lock"):
+                self._internal_lock = threading.RLock()
 
             self._loop = None
             self._thread = None
@@ -159,7 +161,7 @@ class BLECoroutineRunner:
             and self._loop.is_running()
         )
 
-    def _ensure_running(self, timeout: float = _LOOP_READY_TIMEOUT_SECONDS) -> None:
+    def _ensure_running(self, timeout: Optional[float] = None) -> None:
         """
         Ensure the event loop thread is running.
 
@@ -167,6 +169,8 @@ class BLECoroutineRunner:
         ----------
             timeout (float): Maximum seconds to wait for loop readiness when startup is needed.
         """
+        if timeout is None:
+            timeout = BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS
         with self._instance_lock:
             ready_event = self._start_locked()
         if ready_event is not None and not ready_event.wait(timeout=timeout):
@@ -268,9 +272,7 @@ class BLECoroutineRunner:
             for task in tasks:
                 task.cancel()
             if tasks:
-                loop.run_until_complete(
-                    asyncio.gather(*tasks, return_exceptions=True)
-                )
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
         except Exception as e:
             logger.debug("Exception during task cancellation: %s", e)
 
@@ -321,7 +323,7 @@ class BLECoroutineRunner:
             startup_timeout if startup_timeout is not None else timeout
         )
         if effective_startup_timeout is None:
-            effective_startup_timeout = _LOOP_READY_TIMEOUT_SECONDS
+            effective_startup_timeout = BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS
 
         self._ensure_running(timeout=effective_startup_timeout)
 
@@ -448,7 +450,7 @@ class BLECoroutineRunner:
                         timeout,
                         current_count,
                     )
-                    if current_count >= _ZOMBIE_WARN_THRESHOLD:
+                    if current_count >= BLEConfig.RUNNER_ZOMBIE_WARN_THRESHOLD:
                         logger.warning(
                             "Multiple zombie BLE runner threads detected (%d). "
                             "Consider restarting the process to recover resources.",
@@ -503,11 +505,11 @@ class BLECoroutineRunner:
             # to avoid race with concurrent stop()/restart() calls
             ready_event = self._start_locked()
         if ready_event is not None and not ready_event.wait(
-            timeout=_LOOP_READY_TIMEOUT_SECONDS
+            timeout=BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS
         ):
             logger.error(
                 "BLECoroutineRunner restart timed out waiting for loop readiness after %.1fs",
-                _LOOP_READY_TIMEOUT_SECONDS,
+                BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS,
             )
             raise RuntimeError("BLE event loop failed to restart")
         return True
