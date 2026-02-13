@@ -20,6 +20,7 @@ from typing import (
 
 import pytest
 from bleak.exc import BleakError
+from bleak.backends.device import BLEDevice
 
 # Import common fixtures
 from test_ble_interface_fixtures import DummyClient, _build_interface
@@ -32,16 +33,12 @@ from meshtastic.interfaces.ble import (
     LOGRADIO_UUID,
     SERVICE_UUID,
     BLEClient,
-    BLEDevice,
     BLEInterface,
-    BLEStateManager,
-    ConnectedStrategy,
-    ConnectionState,
-    ConnectionValidator,
-    DiscoveryManager,
-    ReconnectScheduler,
-    ReconnectWorker,
 )
+from meshtastic.interfaces.ble.connection import ConnectionValidator
+from meshtastic.interfaces.ble.discovery import ConnectedStrategy, DiscoveryManager
+from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
+from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 if TYPE_CHECKING:
 
@@ -73,12 +70,12 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
         BLEDevice: A BLEDevice instance constructed with the arguments supported by the installed bleak version.
     """
     params: Dict[str, Any] = {"address": address, "name": name}
-    signature = inspect.signature(ble_mod.BLEDevice.__init__)
+    signature = inspect.signature(BLEDevice.__init__)
     if "details" in signature.parameters:
         params["details"] = {}
     if "rssi" in signature.parameters:
         params["rssi"] = 0
-    return ble_mod.BLEDevice(**params)
+    return BLEDevice(**params)
 
 
 class _StrategyOverride(ConnectedStrategy):
@@ -127,6 +124,14 @@ def test_find_device_returns_single_scan_result():
     result = ble_mod.BLEInterface.find_device(iface, None)
 
     assert result is scanned_device
+
+
+def test_ble_package_all_uses_stable_surface():
+    """`meshtastic.interfaces.ble.__all__` should expose the stable facade only."""
+    assert "BLEInterface" in ble_mod.__all__
+    assert "BLEClient" in ble_mod.__all__
+    assert "ConnectionValidator" not in ble_mod.__all__
+    assert "ThreadCoordinator" not in ble_mod.__all__
 
 
 def test_state_manager_closing_only_for_disconnect():
@@ -346,7 +351,7 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
 
     monkeypatch.setattr("meshtastic.interfaces.ble.discovery.BleakScanner", BoomScanner)
 
-    strategy = ble_mod.ConnectedStrategy()
+    strategy = ConnectedStrategy()
     result = asyncio.run(strategy.discover(address="AA:BB", timeout=1.0))
     assert result == []
 
@@ -1069,8 +1074,6 @@ def test_reconnect_scheduler_tracks_threads(monkeypatch):
     assert len(coordinator.created) == 1
     assert scheduler.schedule_reconnect(True, shutdown_event) is False
 
-    stub_thread = coordinator.created[0]
-    monkeypatch.setattr(ble_mod, "current_thread", lambda: stub_thread)
     scheduler.clear_thread_reference()
     assert scheduler._reconnect_thread is None
 

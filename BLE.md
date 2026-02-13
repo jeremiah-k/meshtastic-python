@@ -4,7 +4,7 @@ This document summarizes the current BLE implementation, common pitfalls seen in
 
 ## Architecture highlights
 
-- **Single connection gate per address.** A process-wide registry prevents overlapping connects to the same normalized BLE address. When another interface instance already owns the address you will see `Connection suppressed: recently connected elsewhere`.
+- **Single connection gate per address (owner-aware + stale-pruning).** A process-wide registry prevents overlapping connects to the same normalized BLE address. Claims are owned by the active interface instance, ignore non-owner disconnect clears, and stale claims are pruned automatically (dead owners or aged unowned records). When another live interface instance owns the address you will see `Connection suppressed: recently connected elsewhere`.
 - **Short direct connect, then discovery.** When an address is known we try a short direct connect (~12s). If that fails we run a 10s scan and then perform a full connect using the configured `BLEConfig.CONNECTION_TIMEOUT` (default 60s).
 - **Disconnect handling is serialized.** A per-interface lock drops stale duplicate disconnect callbacks and marks the address as disconnected before scheduling auto-reconnect.
 - **Singleton BLE runner.** All BLE operations are managed by a singleton `BLECoroutineRunner` with a shared background thread and asyncio event loop. This reduces resource usage from N threads to 1 thread regardless of how many clients exist and simplifies cleanup.
