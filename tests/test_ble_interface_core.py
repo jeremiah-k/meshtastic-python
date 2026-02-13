@@ -186,6 +186,89 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     iface.close()
 
 
+def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
+    """Transient read retries should pass a zero-based attempt index to policy delay."""
+    iface = _build_interface(monkeypatch, DummyClient())
+    delay_attempts: List[int] = []
+
+    class StubTransientPolicy:
+        def should_retry(self, attempt: int) -> bool:
+            """
+            Return True only for the first retry attempt.
+            """
+            return attempt < 1
+
+        def get_delay(self, attempt: int) -> float:
+            """
+            Record the delay attempt index and return a no-op delay.
+            """
+            delay_attempts.append(attempt)
+            return 0.0
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.RetryPolicy.transient_error",
+        lambda: StubTransientPolicy(),
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._sleep", lambda _delay: None
+    )
+
+    iface._read_retry_count = 0
+    iface._handle_transient_read_error(BleakError("transient"))
+
+    assert iface._read_retry_count == 1
+    assert delay_attempts == [0]
+
+    iface.close()
+
+
+def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
+    """Outer receive-loop exceptions should use normal disconnect handling."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client)
+    disconnect_calls: List[tuple] = []
+
+    def raising_wait_for_event(_name: str, timeout: Optional[float] = None) -> bool:
+        """
+        Simulate an unexpected fatal receive-loop failure.
+        """
+        _ = timeout
+        raise RuntimeError("fatal receive loop failure")
+
+    def fake_handle_disconnect(
+        source: str,
+        client: Optional[Any] = None,
+        bleak_client: Optional[Any] = None,
+    ) -> bool:
+        """
+        Record disconnect handler invocation and stop receive loop progression.
+        """
+        disconnect_calls.append((source, client, bleak_client))
+        iface._want_receive = False
+        return False
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "wait_for_event",
+        raising_wait_for_event,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface, "_handle_disconnect", fake_handle_disconnect, raising=True
+    )
+
+    iface._want_receive = True
+    iface._receiveFromRadioImpl()
+
+    assert disconnect_calls
+    source, disconnected_client, disconnected_bleak = disconnect_calls[0]
+    assert source == "receive_thread_fatal"
+    assert disconnected_client is client
+    assert disconnected_bleak is None
+
+    iface.close()
+
+
 def test_find_device_uses_connected_fallback_when_scan_empty():
     """find_device should fall back to connected-device lookup when scan is empty."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface

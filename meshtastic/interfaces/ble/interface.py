@@ -226,9 +226,7 @@ class BLEInterface(MeshInterface):
         self.client: Optional["BLEClient"] = None
         try:
             logger.debug("BLE connecting to: %s", address if address else "any")
-            client = self.connect(address)
-            with self._state_lock:
-                self.client = client
+            self.connect(address)
             logger.debug("BLE connected")
 
             logger.debug("Mesh configure starting")
@@ -801,7 +799,10 @@ class BLEInterface(MeshInterface):
                     raise self.BLEError(
                         "Address resolution failed, cannot create device"
                     )
-                # Use signature inspection for Bleak version compatibility
+                # Bleak BLEDevice constructor parameters vary across versions
+                # (for example, some versions require/accept "details" while
+                # others differ in optional metadata fields). Use signature
+                # inspection to construct a compatible synthetic BLEDevice.
                 sig = inspect.signature(BLEDevice.__init__)
                 params: Dict[str, Any] = {"address": address, "name": address}
                 if "details" in sig.parameters:
@@ -1112,8 +1113,21 @@ class BLEInterface(MeshInterface):
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
             logger.exception("Unexpected fatal error in BLE receive thread")
             if not self._state_manager.is_closing:
-                # Mark disconnected so auto-reconnect can proceed without forcing close().
-                self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+                with self._state_lock:
+                    current_client = self.client
+                should_continue = self._handle_disconnect(
+                    "receive_thread_fatal", client=current_client
+                )
+                # If disconnect handling requests continuation (auto-reconnect path),
+                # replace this crashed receive thread so reads resume after reconnect.
+                if should_continue and self._want_receive and not self._closed:
+                    replacement = self.thread_coordinator.create_thread(
+                        target=self._receiveFromRadioImpl,
+                        name="BLEReceiveRecovery",
+                        daemon=True,
+                    )
+                    self._receiveThread = replacement
+                    self.thread_coordinator.start_thread(replacement)
 
     def _read_from_radio_with_retries(self, client: "BLEClient") -> Optional[bytes]:
         """
@@ -1155,13 +1169,14 @@ class BLEInterface(MeshInterface):
         """
         transient_policy = RetryPolicy.transient_error()
         if transient_policy.should_retry(self._read_retry_count):
+            attempt_index = self._read_retry_count
             self._read_retry_count += 1
             logger.debug(
                 "Transient BLE read error, retrying (%d/%d)",
                 self._read_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
-            _sleep(transient_policy.get_delay(self._read_retry_count))
+            _sleep(transient_policy.get_delay(attempt_index))
             return
         self._read_retry_count = 0
         logger.debug("Persistent BLE read error after retries", exc_info=True)

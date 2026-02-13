@@ -31,7 +31,7 @@ Avoid creating new `BLEInterface` instances on every reconnect attempt. Reuse th
 
 ### Let auto-reconnect run alone
 
-If you enable `auto_reconnect=True` (default), do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause "suppressed duplicate connect" logs and can interfere with the built-in recovery.
+If you enable `auto_reconnect=True` (default), do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause `suppressed duplicate connect` logs and can interfere with the built-in recovery.
 
 If your application manages reconnects itself, disable the built-in loop:
 

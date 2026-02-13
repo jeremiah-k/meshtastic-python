@@ -103,27 +103,26 @@ class BLECoroutineRunner:
 
         Sets up per-instance synchronization, lifecycle flags, background thread/loop placeholders, a weak set to track pending futures, and registers an atexit handler to ensure graceful shutdown.
         """
-        # Guard against re-initialization
-        if getattr(self, "_initialized", False):
-            return
-
-        # Initialize instance lock before first use
-        # Use RLock to allow re-entrant locking (e.g., stop() calling cancel_pending_futures())
-        if not hasattr(self, "_internal_lock"):
+        # Guard creation of per-instance lock and initialization state with the
+        # class-level singleton lock to avoid concurrent double-initialize races.
+        with self._singleton_lock:
+            if getattr(self, "_initialized", False):
+                return
+            # Use RLock to allow re-entrant locking in instance methods.
             self._internal_lock = threading.RLock()
 
         with self._internal_lock:
             if self._initialized:
                 return
 
-            self._loop: Optional[asyncio.AbstractEventLoop] = None
-            self._thread: Optional[threading.Thread] = None
+            self._loop = None
+            self._thread = None
             self._loop_ready = threading.Event()
             self._stop_requested = False
             self._initialized = True
 
             # Track pending futures for cleanup
-            self._pending_futures: weakref.WeakSet[Future] = weakref.WeakSet()
+            self._pending_futures = weakref.WeakSet()
 
             # Register atexit handler for graceful shutdown
             atexit.register(self._atexit_shutdown)
@@ -166,15 +165,16 @@ class BLECoroutineRunner:
 
     def _start_locked(self) -> Optional[threading.Event]:
         """
-        Start the background event loop thread and wait for it to become ready.
+        Start the background event loop thread if needed and return its readiness event.
 
-        Must be called while holding the instance lock (_instance_lock). If the runner is already
-        running this is a no-op. Raises RuntimeError if the loop does not signal readiness
-        within 5 seconds.
+        Must be called while holding the instance lock (`_instance_lock`).
+        If the runner is already active, returns `None`.
+        If startup is in progress on another thread, returns that startup's readiness event.
+        If a new thread is started, returns a fresh readiness event for the caller to wait on.
 
-        Raises
+        Returns
         ------
-            RuntimeError: If the event loop fails to start within 5 seconds.
+            Optional[threading.Event]: Event set when the runner loop is ready, or `None` if already running.
         """
         # Check if already running
         if (
@@ -264,7 +264,7 @@ class BLECoroutineRunner:
     def run_coroutine_threadsafe(
         self,
         coro: Coroutine[None, None, T],
-        _timeout: Optional[float] = None,
+        timeout: Optional[float] = None,
     ) -> Future[T]:
         """
         Submit a coroutine to be run in the singleton event loop thread.
@@ -286,6 +286,7 @@ class BLECoroutineRunner:
         RuntimeError
             If the event loop cannot be started or is not available.
         """
+        _ = timeout
         self._ensure_running()
 
         with self._instance_lock:
@@ -415,10 +416,9 @@ class BLECoroutineRunner:
                 or not thread.is_alive()
             ):
                 self._thread = None
-            # Only clear _loop if it still references the original loop (or is not running)
-            if self._loop is loop or (
-                self._loop is not None and not self._loop.is_running()
-            ):
+            # Only clear _loop if it still references the original loop.
+            # This avoids clearing a newer loop installed by a concurrent restart.
+            if self._loop is loop:
                 self._loop = None
         return True
 
@@ -439,7 +439,7 @@ class BLECoroutineRunner:
 
         Returns
         -------
-            bool: True if restart was initiated, False if the runner was already running.
+            bool: True if restart completed and loop readiness was confirmed, False if the runner was already running.
         """
         with self._instance_lock:
             if self.is_running:
@@ -452,5 +452,10 @@ class BLECoroutineRunner:
 
             # Start fresh - call _start_locked() while still holding the lock
             # to avoid race with concurrent stop()/restart() calls
-            self._start_locked()
+            ready_event = self._start_locked()
+        if ready_event is not None and not ready_event.wait(timeout=5.0):
+            logger.error(
+                "BLECoroutineRunner restart timed out waiting for loop readiness"
+            )
+            raise RuntimeError("BLE event loop failed to restart")
         return True
