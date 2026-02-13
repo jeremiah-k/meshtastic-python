@@ -36,7 +36,11 @@ from meshtastic.interfaces.ble import (
     BLEInterface,
 )
 from meshtastic.interfaces.ble.connection import ConnectionValidator
-from meshtastic.interfaces.ble.discovery import ConnectedStrategy, DiscoveryManager
+from meshtastic.interfaces.ble.discovery import (
+    ConnectedStrategy,
+    DiscoveryManager,
+    _ble_device_constructor_kwargs_support,
+)
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
@@ -139,6 +143,15 @@ def test_ble_package_and_legacy_facade_exports_match():
     import meshtastic.ble_interface as legacy_ble_mod
 
     assert set(ble_mod.__all__) == set(legacy_ble_mod.__all__)
+
+
+def test_ble_device_constructor_support_probe_shape():
+    """BLEDevice constructor support probe should return a bool/bool tuple."""
+    supports = _ble_device_constructor_kwargs_support()
+
+    assert isinstance(supports, tuple)
+    assert len(supports) == 2
+    assert all(isinstance(flag, bool) for flag in supports)
 
 
 def test_state_manager_closing_only_for_disconnect():

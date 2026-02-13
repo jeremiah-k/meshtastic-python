@@ -196,6 +196,35 @@ class TestBLECoroutineRunner:
 
         assert observed_timeouts == [0.25, 0.5]
 
+    def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(
+        self, monkeypatch
+    ):
+        """Legacy timeout alias should emit a deprecation warning."""
+        runner = BLECoroutineRunner()
+        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+
+        class _LoopStub:
+            @staticmethod
+            def is_running():
+                return True
+
+        with runner._instance_lock:
+            runner._loop = _LoopStub()
+
+        def _fake_submit(coro, _loop):
+            coro.close()
+            future = Future()
+            future.set_result(None)
+            return future
+
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+
+        async def _noop():
+            return None
+
+        with pytest.warns(DeprecationWarning, match="startup_timeout"):
+            runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+
     def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
         """Passing both timeout names should raise to avoid ambiguous behavior."""
         runner = BLECoroutineRunner()

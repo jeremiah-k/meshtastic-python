@@ -17,6 +17,7 @@ import asyncio
 import atexit
 import logging
 import threading
+import warnings
 import weakref
 from concurrent.futures import Future
 from typing import Coroutine, Optional, TypeVar
@@ -308,6 +309,13 @@ class BLECoroutineRunner:
         """
         if timeout is not None and startup_timeout is not None:
             raise ValueError("Specify only one of timeout or startup_timeout")
+        if timeout is not None and startup_timeout is None:
+            warnings.warn(
+                "run_coroutine_threadsafe(timeout=...) is deprecated; "
+                "use startup_timeout=... instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         effective_startup_timeout = (
             startup_timeout if startup_timeout is not None else timeout
