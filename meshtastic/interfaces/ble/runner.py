@@ -312,7 +312,7 @@ class BLECoroutineRunner:
         if timeout is not None and startup_timeout is None:
             warnings.warn(
                 "run_coroutine_threadsafe(timeout=...) is deprecated; "
-                "use startup_timeout=... instead.",
+                "use startup_timeout=<seconds> instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )

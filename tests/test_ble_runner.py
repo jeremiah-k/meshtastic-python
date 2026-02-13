@@ -3,6 +3,7 @@
 import asyncio
 import threading
 import time
+import warnings
 from concurrent.futures import Future
 
 import pytest
@@ -224,6 +225,38 @@ class TestBLECoroutineRunner:
 
         with pytest.warns(DeprecationWarning, match="startup_timeout"):
             runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+
+    def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
+        self, monkeypatch
+    ):
+        """Explicit startup_timeout should not emit timeout-alias deprecation warnings."""
+        runner = BLECoroutineRunner()
+        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+
+        class _LoopStub:
+            @staticmethod
+            def is_running():
+                return True
+
+        with runner._instance_lock:
+            runner._loop = _LoopStub()
+
+        def _fake_submit(coro, _loop):
+            coro.close()
+            future = Future()
+            future.set_result(None)
+            return future
+
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+
+        async def _noop():
+            return None
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", DeprecationWarning)
+            runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
+
+        assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
 
     def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
         """Passing both timeout names should raise to avoid ambiguous behavior."""
