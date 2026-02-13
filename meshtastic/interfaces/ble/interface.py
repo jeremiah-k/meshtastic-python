@@ -3,7 +3,6 @@
 import asyncio
 import atexit
 import contextlib
-import inspect
 import io
 import struct
 import threading
@@ -46,7 +45,11 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
-from meshtastic.interfaces.ble.discovery import DiscoveryManager, parse_scan_response
+from meshtastic.interfaces.ble.discovery import (
+    DiscoveryManager,
+    _ble_device_constructor_kwargs_support,
+    parse_scan_response,
+)
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
@@ -839,9 +842,9 @@ class BLEInterface(MeshInterface):
                 # (for example, some versions require/accept "details" while
                 # others differ in optional metadata fields). Use signature
                 # inspection to construct a compatible synthetic BLEDevice.
-                sig = inspect.signature(BLEDevice.__init__)
+                supports_details, _ = _ble_device_constructor_kwargs_support()
                 params: Dict[str, Any] = {"address": address, "name": address}
-                if "details" in sig.parameters:
+                if supports_details:
                     params["details"] = {}  # Empty details for synthetic device
                 return BLEDevice(**params)
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)

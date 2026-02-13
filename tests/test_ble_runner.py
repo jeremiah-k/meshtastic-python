@@ -150,6 +150,15 @@ class TestBLECoroutineRunner:
         # Future should be cancelled
         assert future.cancelled()
 
+    def test_ensure_running_timeout_raises(self, monkeypatch):
+        """_ensure_running should fail fast when loop readiness does not arrive."""
+        runner = BLECoroutineRunner()
+        never_ready = threading.Event()
+        monkeypatch.setattr(runner, "_start_locked", lambda: never_ready)
+
+        with pytest.raises(RuntimeError, match="failed to start"):
+            runner._ensure_running(timeout=0.01)
+
     def test_completed_futures_are_removed_from_tracking(self):
         """Completed futures should be removed from runner tracking promptly."""
         runner = BLECoroutineRunner()

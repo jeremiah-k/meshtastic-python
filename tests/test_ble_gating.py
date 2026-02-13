@@ -10,7 +10,6 @@ from meshtastic.interfaces.ble.gating import (
     _CONNECTED_OWNERS,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
-    _UNOWNED_CONNECTION_STALE_SECONDS,
     _addr_key,
     _cleanup_addr_lock,
     _get_addr_lock,
@@ -19,6 +18,7 @@ from meshtastic.interfaces.ble.gating import (
     _mark_disconnected,
     addr_lock_context,
 )
+from meshtastic.interfaces.ble.constants import BLEConfig
 
 
 class TestAddrKey:
@@ -291,12 +291,42 @@ class TestIsCurrentlyConnectedElsewhere:
         assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
 
+    def test_prunes_owner_claim_when_owner_method_reports_disconnected(self):
+        """Owner methods returning False should also be treated as stale claims."""
+
+        class Owner:
+            def is_connection_connected(self):
+                return False
+
+        owner = Owner()
+        key = _addr_key("aabbccddeeff")
+        _mark_connected("aabbccddeeff", owner=owner)
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTED_ADDRS
+
+    def test_preserves_owner_claim_when_state_probe_raises(self):
+        """State-probe exceptions should not aggressively prune active claims."""
+
+        class Owner:
+            def is_connection_connected(self):
+                raise RuntimeError("probe failed")
+
+        owner = Owner()
+        key = _addr_key("aabbccddeeff")
+        _mark_connected("aabbccddeeff", owner=owner)
+
+        assert _is_currently_connected_elsewhere("aabbccddeeff", owner=object())
+        assert key in _CONNECTED_ADDRS
+
     def test_prunes_stale_unowned_claim(self, monkeypatch):
         """Unowned claims should expire after a bounded stale window."""
         key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff")
         stale_now = (
-            _CONNECTED_MARKED_AT[key] + _UNOWNED_CONNECTION_STALE_SECONDS + 1.0
+            _CONNECTED_MARKED_AT[key]
+            + BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
+            + 1.0
         )
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.gating.time.monotonic",

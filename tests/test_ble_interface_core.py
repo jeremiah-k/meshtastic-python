@@ -134,6 +134,13 @@ def test_ble_package_all_uses_stable_surface():
     assert "ThreadCoordinator" not in ble_mod.__all__
 
 
+def test_ble_package_and_legacy_facade_exports_match():
+    """Package BLE exports should match the legacy meshtastic.ble_interface facade."""
+    import meshtastic.ble_interface as legacy_ble_mod
+
+    assert set(ble_mod.__all__) == set(legacy_ble_mod.__all__)
+
+
 def test_state_manager_closing_only_for_disconnect():
     """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()

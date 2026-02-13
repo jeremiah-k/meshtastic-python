@@ -26,6 +26,7 @@ from contextlib import contextmanager
 from threading import RLock
 from typing import Any, Dict, Generator, Optional, Set
 
+from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.utils import sanitize_address
 
 logger = logging.getLogger("meshtastic.ble")
@@ -38,7 +39,7 @@ _CONNECTED_OWNERS: Dict[str, Optional["weakref.ReferenceType[Any]"]] = {}
 _CONNECTED_OWNER_IDS: Dict[str, Optional[int]] = {}
 _CONNECTED_MARKED_AT: Dict[str, float] = {}
 # Fallback pruning window for claims created without an owner.
-_UNOWNED_CONNECTION_STALE_SECONDS = 300.0
+_UNOWNED_CONNECTION_STALE_SECONDS = BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
 # Track locks that are currently held to prevent premature cleanup
 _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
@@ -149,6 +150,34 @@ def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
         return weakref.ref(owner)
     except TypeError:
         return None
+
+
+def _owner_connected_state(owner: Any) -> Optional[bool]:
+    """
+    Read owner connection state when exposed as either a bool attribute or callable.
+
+    Parameters
+    ----------
+        owner (Any): Connected-claim owner instance.
+
+    Returns
+    -------
+        Optional[bool]: Boolean connection state when available, else `None`.
+    """
+    connection_state = getattr(owner, "is_connection_connected", None)
+    if callable(connection_state):
+        try:
+            connection_state = connection_state()
+        except Exception:
+            logger.debug(
+                "Failed to read owner connection state; preserving gate claim.",
+                exc_info=True,
+            )
+            return None
+
+    if isinstance(connection_state, bool):
+        return connection_state
+    return None
 
 
 def _remove_connected_record_locked(key: str) -> None:
@@ -284,11 +313,11 @@ def _is_currently_connected_elsewhere(
             _cleanup_addr_lock(key)
             return False
 
-        # If owner exposes a connected-state property and no longer appears
-        # connected, treat the claim as stale and remove it.
+        # If owner exposes connection state and no longer appears connected,
+        # treat the claim as stale and remove it.
         if current_owner is not None:
-            connection_state = getattr(current_owner, "is_connection_connected", None)
-            if isinstance(connection_state, bool) and not connection_state:
+            connection_state = _owner_connected_state(current_owner)
+            if connection_state is False:
                 _remove_connected_record_locked(key)
                 _cleanup_addr_lock(key)
                 return False

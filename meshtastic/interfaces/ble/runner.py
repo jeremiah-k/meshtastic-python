@@ -158,16 +158,20 @@ class BLECoroutineRunner:
             and self._loop.is_running()
         )
 
-    def _ensure_running(self) -> None:
-        """Ensure the event loop thread is running."""
+    def _ensure_running(self, timeout: float = _LOOP_READY_TIMEOUT_SECONDS) -> None:
+        """
+        Ensure the event loop thread is running.
+
+        Parameters
+        ----------
+            timeout (float): Maximum seconds to wait for loop readiness when startup is needed.
+        """
         with self._instance_lock:
             ready_event = self._start_locked()
-        if ready_event is not None and not ready_event.wait(
-            timeout=_LOOP_READY_TIMEOUT_SECONDS
-        ):
+        if ready_event is not None and not ready_event.wait(timeout=timeout):
             logger.error(
                 "BLECoroutineRunner loop failed to start within %.1fs",
-                _LOOP_READY_TIMEOUT_SECONDS,
+                timeout,
             )
             raise RuntimeError("BLE event loop failed to start")
 
@@ -282,7 +286,9 @@ class BLECoroutineRunner:
         coro : Coroutine[None, None, T]
             The coroutine to execute.
         timeout : Optional[float]
-            Not used directly, but callers may use it with the returned Future.
+            Optional startup timeout in seconds used while ensuring the runner
+            loop is ready. This does not apply to the coroutine result wait;
+            use `Future.result(timeout=...)` on the returned Future for that.
 
         Returns
         -------
@@ -294,8 +300,10 @@ class BLECoroutineRunner:
         RuntimeError
             If the event loop cannot be started or is not available.
         """
-        _ = timeout
-        self._ensure_running()
+        startup_timeout = (
+            timeout if timeout is not None else _LOOP_READY_TIMEOUT_SECONDS
+        )
+        self._ensure_running(timeout=startup_timeout)
 
         with self._instance_lock:
             loop = self._loop

@@ -12,8 +12,9 @@ try:
     import bleak  # noqa: F401
 except ImportError as exc:  # pragma: no cover - environment/dependency guard
     raise ImportError(
-        "BLE support requires the 'bleak' package. Install dependencies with "
-        "`poetry install` (or `pip install meshtastic`)."
+        "BLE support requires the 'bleak' package, but it is missing. "
+        "Your Meshtastic installation appears incomplete; reinstall dependencies "
+        "with `poetry install` (or `pip install --upgrade meshtastic`)."
     ) from exc
 
 from meshtastic.interfaces.ble.client import BLEClient

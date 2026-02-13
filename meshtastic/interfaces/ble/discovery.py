@@ -4,7 +4,8 @@ import asyncio
 import inspect
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, cast
+from functools import lru_cache
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -19,6 +20,19 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import resolve_ble_module
+
+
+@lru_cache(maxsize=1)
+def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
+    """
+    Detect BLEDevice constructor keyword support for the installed bleak version.
+
+    Returns
+    -------
+        Tuple[bool, bool]: `(supports_details, supports_rssi)`.
+    """
+    sig = inspect.signature(BLEDevice.__init__)
+    return ("details" in sig.parameters, "rssi" in sig.parameters)
 
 
 def parse_scan_response(
@@ -170,9 +184,9 @@ class ConnectedStrategy(DiscoveryStrategy):
                 )
                 # BLEDevice constructor signature varies across bleak versions.
                 # Handle both `details` and legacy `rssi` kwargs when present.
-                sig = inspect.signature(BLEDevice.__init__)
-                supports_details = "details" in sig.parameters
-                supports_rssi = "rssi" in sig.parameters
+                supports_details, supports_rssi = (
+                    _ble_device_constructor_kwargs_support()
+                )
                 for device in backend_devices or []:
                     metadata = getattr(device, "metadata", None) or {}
                     uuids = metadata.get("uuids", [])
