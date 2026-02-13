@@ -31,6 +31,7 @@ logger = logging.getLogger("meshtastic.ble")
 _zombie_lock = threading.Lock()
 _zombie_runner_count = 0
 _ZOMBIE_WARN_THRESHOLD = 3
+_LOOP_READY_TIMEOUT_SECONDS = 5.0
 
 
 def get_zombie_runner_count() -> int:
@@ -109,9 +110,11 @@ class BLECoroutineRunner:
             if getattr(self, "_initialized", False):
                 return
             # Use RLock to allow re-entrant locking in instance methods.
-            self._internal_lock = threading.RLock()
+            if not hasattr(self, "_internal_lock"):
+                self._internal_lock = threading.RLock()
+            lock = self._internal_lock
 
-        with self._internal_lock:
+        with lock:
             if self._initialized:
                 return
 
@@ -159,8 +162,13 @@ class BLECoroutineRunner:
         """Ensure the event loop thread is running."""
         with self._instance_lock:
             ready_event = self._start_locked()
-        if ready_event is not None and not ready_event.wait(timeout=5.0):
-            logger.error("BLECoroutineRunner loop failed to start within 5s")
+        if ready_event is not None and not ready_event.wait(
+            timeout=_LOOP_READY_TIMEOUT_SECONDS
+        ):
+            logger.error(
+                "BLECoroutineRunner loop failed to start within %.1fs",
+                _LOOP_READY_TIMEOUT_SECONDS,
+            )
             raise RuntimeError("BLE event loop failed to start")
 
     def _start_locked(self) -> Optional[threading.Event]:
@@ -453,9 +461,12 @@ class BLECoroutineRunner:
             # Start fresh - call _start_locked() while still holding the lock
             # to avoid race with concurrent stop()/restart() calls
             ready_event = self._start_locked()
-        if ready_event is not None and not ready_event.wait(timeout=5.0):
+        if ready_event is not None and not ready_event.wait(
+            timeout=_LOOP_READY_TIMEOUT_SECONDS
+        ):
             logger.error(
-                "BLECoroutineRunner restart timed out waiting for loop readiness"
+                "BLECoroutineRunner restart timed out waiting for loop readiness after %.1fs",
+                _LOOP_READY_TIMEOUT_SECONDS,
             )
             raise RuntimeError("BLE event loop failed to restart")
         return True

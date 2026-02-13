@@ -168,6 +168,11 @@ class ConnectedStrategy(DiscoveryStrategy):
                 sanitized_target = (
                     BLEClient._sanitize_address(address) if address else None
                 )
+                # BLEDevice constructor signature varies across bleak versions.
+                # Handle both `details` and legacy `rssi` kwargs when present.
+                sig = inspect.signature(BLEDevice.__init__)
+                supports_details = "details" in sig.parameters
+                supports_rssi = "rssi" in sig.parameters
                 for device in backend_devices or []:
                     metadata = getattr(device, "metadata", None) or {}
                     uuids = metadata.get("uuids", [])
@@ -180,23 +185,23 @@ class ConnectedStrategy(DiscoveryStrategy):
                         if sanitized_target not in (sanitized_addr, sanitized_name):
                             continue
 
-                    # Use inspect to handle different BLEDevice constructor signatures across Bleak versions
-                    sig = inspect.signature(BLEDevice.__init__)
                     params: Dict[str, Any] = {
                         "address": device.address,
                         "name": device.name,
                     }
-                    # Add details if the constructor accepts it (Bleak 1.1.0+)
-                    if "details" in sig.parameters:
+                    if supports_details:
                         params["details"] = device
+                    if supports_rssi:
+                        rssi = getattr(device, "rssi", None)
+                        if rssi is not None:
+                            params["rssi"] = rssi
                     device_copy = BLEDevice(**params)
-                    # Preserve RSSI if provided by backend
-                    # Note: BLEDevice uses __slots__ without "rssi", so assignment may fail
-                    if hasattr(device, "rssi"):
+                    # Preserve RSSI where constructor kwargs are unsupported.
+                    # Note: some BLEDevice variants use __slots__ without `rssi`.
+                    if not supports_rssi and hasattr(device, "rssi"):
                         try:
-                            device_copy.rssi = device.rssi  # type: ignore[attr-defined]
+                            setattr(device_copy, "rssi", device.rssi)
                         except AttributeError:
-                            # BLEDevice uses __slots__ and does not support rssi attribute
                             pass
                     devices_found.append(device_copy)
             else:

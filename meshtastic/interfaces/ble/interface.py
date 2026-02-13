@@ -217,10 +217,8 @@ class BLEInterface(MeshInterface):
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
         self._want_receive = True
-        self._receiveThread: Optional[Thread] = self.thread_coordinator.create_thread(
-            target=self._receiveFromRadioImpl, name="BLEReceive", daemon=True
-        )
-        self.thread_coordinator.start_thread(self._receiveThread)
+        self._receiveThread: Optional[Thread] = None
+        self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
 
         self.client: Optional["BLEClient"] = None
@@ -265,6 +263,44 @@ class BLEInterface(MeshInterface):
         if not self.auto_reconnect:
             parts.append("auto_reconnect=False")
         return f"BLEInterface({', '.join(parts)})"
+
+    def _start_receive_thread(self, *, name: str) -> None:
+        """
+        Create and start the background receive thread, updating `_receiveThread`.
+
+        Parameters
+        ----------
+            name (str): Thread name to assign (for diagnostics/logging).
+        """
+        with self._state_lock:
+            # Avoid reviving the receive loop after shutdown has begun.
+            if self._closed or not self._want_receive:
+                logger.debug(
+                    "Skipping receive thread start (%s): interface is closing/stopped.",
+                    name,
+                )
+                return
+            # Prevent duplicate live receive threads except when the current thread
+            # is replacing itself after an unexpected failure.
+            existing = self._receiveThread
+            if (
+                existing is not None
+                and existing is not threading.current_thread()
+                and existing.is_alive()
+            ):
+                logger.debug(
+                    "Skipping receive thread start (%s): %s is already running.",
+                    name,
+                    existing.name,
+                )
+                return
+            thread = self.thread_coordinator.create_thread(
+                target=self._receiveFromRadioImpl,
+                name=name,
+                daemon=True,
+            )
+            self._receiveThread = thread
+        self.thread_coordinator.start_thread(thread)
 
     def _handle_disconnect(
         self,
@@ -1023,22 +1059,19 @@ class BLEInterface(MeshInterface):
 
         Waits for the internal read trigger and reconnection events, performs GATT reads when a BLE client is available, tolerates transient empty reads with retry/backoff, and forwards non-empty payloads to _handleFromRadio (discarding malformed protobufs). On persistent or fatal BLE or OS errors the method initiates a safe shutdown (or transitions the connection state to DISCONNECTED) so the interface can recover or stop.
         """
+        coordinator = self.thread_coordinator
+        wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
         try:
             while self._want_receive:
                 # Wait for data to read, but also check periodically for reconnection
-                if not self.thread_coordinator.wait_for_event(
-                    "read_trigger", timeout=BLEConfig.RECEIVE_WAIT_TIMEOUT
-                ):
+                if not coordinator.wait_for_event("read_trigger", timeout=wait_timeout):
                     # Timeout occurred, check if we were reconnected during this time
-                    if self.thread_coordinator.check_and_clear_event(
+                    if self._ever_connected and coordinator.check_and_clear_event(
                         "reconnected_event"
                     ):
-                        if self._ever_connected:
-                            logger.debug(
-                                "Detected reconnection, resuming normal operation"
-                            )
+                        logger.debug("Detected reconnection, resuming normal operation")
                     continue
-                self.thread_coordinator.clear_event("read_trigger")
+                coordinator.clear_event("read_trigger")
 
                 while self._want_receive:
                     # Use unified state lock
@@ -1050,9 +1083,9 @@ class BLEInterface(MeshInterface):
                                 "BLE client is None; waiting for auto-reconnect"
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
-                            self.thread_coordinator.wait_for_event(
+                            coordinator.wait_for_event(
                                 "reconnected_event",
-                                timeout=BLEConfig.RECEIVE_WAIT_TIMEOUT,
+                                timeout=wait_timeout,
                             )
                             break  # Return to outer loop to re-check state
                         logger.debug("BLE client is None, shutting down")
@@ -1073,12 +1106,8 @@ class BLEInterface(MeshInterface):
                             self._read_retry_count = 0
                             continue
                         self._read_retry_count = 0
-                    except BleakDBusError as e:
-                        # Handle D-Bus specific BLE errors (common on Linux)
-                        if self._handle_read_loop_disconnect(str(e), client):
-                            break
-                        return
-                    except BLEClient.BLEError as e:
+                    except (BleakDBusError, BLEClient.BLEError) as e:
+                        # Handle expected BLE disconnect/read failures.
                         if self._handle_read_loop_disconnect(str(e), client):
                             break
                         return
@@ -1118,16 +1147,13 @@ class BLEInterface(MeshInterface):
                 should_continue = self._handle_disconnect(
                     "receive_thread_fatal", client=current_client
                 )
+                if not should_continue:
+                    self._want_receive = False
+                    return
                 # If disconnect handling requests continuation (auto-reconnect path),
                 # replace this crashed receive thread so reads resume after reconnect.
-                if should_continue and self._want_receive and not self._closed:
-                    replacement = self.thread_coordinator.create_thread(
-                        target=self._receiveFromRadioImpl,
-                        name="BLEReceiveRecovery",
-                        daemon=True,
-                    )
-                    self._receiveThread = replacement
-                    self.thread_coordinator.start_thread(replacement)
+                if self._want_receive and not self._closed:
+                    self._start_receive_thread(name="BLEReceiveRecovery")
 
     def _read_from_radio_with_retries(self, client: "BLEClient") -> Optional[bytes]:
         """

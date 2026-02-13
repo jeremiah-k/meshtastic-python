@@ -269,6 +269,25 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
     iface.close()
 
 
+def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
+    """Receive thread start helper should no-op once the interface is closed."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client)
+    iface.close()
+
+    def should_not_create_thread(*_args, **_kwargs):
+        raise AssertionError("create_thread should not be called after close()")
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "create_thread",
+        should_not_create_thread,
+        raising=True,
+    )
+
+    iface._start_receive_thread(name="BLEReceiveAfterClose")
+
+
 def test_find_device_uses_connected_fallback_when_scan_empty():
     """find_device should fall back to connected-device lookup when scan is empty."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
@@ -677,10 +696,10 @@ def test_close_clears_ble_threads(monkeypatch):
     # Poll for thread cleanup with a reasonable timeout
     max_wait_time = 1.0  # Maximum time to wait for thread cleanup
     poll_interval = 0.05  # Time between checks
-    elapsed_time = 0.0
+    deadline = time.monotonic() + max_wait_time
     lingering = []  # Initialize to ensure it's defined outside the loop
 
-    while elapsed_time < max_wait_time:
+    while time.monotonic() < deadline:
         # Check for specific BLE interface threads that should be cleaned up
         # Exclude singleton threads that persist across interface instances
         lingering = [
@@ -694,7 +713,6 @@ def test_close_clears_ble_threads(monkeypatch):
             break  # No lingering threads found
 
         time.sleep(poll_interval)
-        elapsed_time += poll_interval
 
     assert not lingering, (
         f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
@@ -1198,14 +1216,12 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
     sleep_calls = []
 
-    # Mock Event.wait to capture the sleep delay instead of actually waiting
-    def mock_wait(self, timeout=None):
+    # Mock shutdown_event.wait to capture the sleep delay instead of actually waiting
+    def mock_wait(timeout=None):
         if timeout is not None:
             sleep_calls.append(timeout)
         # Return False to simulate timeout (not interrupted by shutdown)
         return False
-
-    monkeypatch.setattr(threading.Event, "wait", mock_wait)
 
     class LimitedPolicy:
         def __init__(self):
@@ -1338,7 +1354,10 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
     iface = FailingInterface()
     worker = ReconnectWorker(iface, iface._reconnect_policy)
-    worker.attempt_reconnect_loop(True, threading.Event())
+    shutdown_event = threading.Event()
+    monkeypatch.setattr(shutdown_event, "wait", mock_wait)
+
+    worker.attempt_reconnect_loop(True, shutdown_event)
 
     assert iface.connect_attempts == 2
     assert iface._notification_manager.cleaned == 0

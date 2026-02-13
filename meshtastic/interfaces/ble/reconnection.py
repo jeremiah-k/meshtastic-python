@@ -11,7 +11,6 @@ from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
     _is_currently_connected_elsewhere,
-    addr_lock_context,
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
@@ -139,119 +138,116 @@ class ReconnectWorker:
             shutdown_event (threading.Event): Event that, when set, causes the loop to stop as soon as possible.
         """
         self.reconnect_policy.reset()
-
+        interface = self.interface
         override_delay: Optional[float] = None
-        addr_key = _addr_key(getattr(self.interface, "address", None))
 
-        # Use context manager for automatic holder count management
-        with addr_lock_context(addr_key) as gate:
-            try:
-                while not shutdown_event.is_set():
-                    override_delay = None
-                    if self.interface.is_connection_closing or not auto_reconnect:
-                        logger.debug(
-                            "Auto-reconnect aborted because interface is closing or disabled."
-                        )
-                        return
-                    attempt_num = self.reconnect_policy.get_attempt_count() + 1
-                    try:
-                        with gate:
-                            if self.interface.is_connection_connected:
-                                return
-                            # Check if already connected elsewhere before attempting
-                            if _is_currently_connected_elsewhere(addr_key):
-                                logger.debug(
-                                    "Skipping reconnect attempt %d: address %s already connected elsewhere",
-                                    attempt_num,
-                                    addr_key or "unknown",
-                                )
-                                return
-                            logger.info(
-                                "Attempting BLE auto-reconnect (attempt %d).",
-                                attempt_num,
-                            )
-                            self.interface.connect(self.interface.address)
-                            logger.info(
-                                "BLE auto-reconnect succeeded after %d attempts.",
-                                attempt_num,
-                            )
-                            return
-                    except self.interface.BLEError as err:
-                        if self.interface.is_connection_closing or not auto_reconnect:
-                            logger.debug(
-                                "Auto-reconnect cancelled after failure due to shutdown/disable."
-                            )
-                            return
-                        logger.warning(
-                            "Auto-reconnect attempt %d failed: %s",
-                            attempt_num,
-                            err,
-                        )
-                    except BleakDBusError:
-                        if self.interface.is_connection_closing or not auto_reconnect:
-                            logger.debug(
-                                "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
-                            )
-                            return
-                        # DBus errors are often transient on Linux; log as warning since we'll retry
-                        logger.warning(
-                            "DBus error during auto-reconnect attempt %d",
-                            attempt_num,
-                            exc_info=True,
-                        )
-                        # Use longer delay for DBus errors to allow system Bluetooth stack to recover
-                        override_delay = max(
-                            override_delay or 0, DBUS_ERROR_RECONNECT_DELAY
-                        )
-                        # State transition to ERROR and DISCONNECTED is already handled by
-                        # the connection orchestrator, so we don't need to do it here
-                    except BleakError as err:
-                        if self.interface.is_connection_closing or not auto_reconnect:
-                            logger.debug(
-                                "Auto-reconnect cancelled after bleak failure due to shutdown/disable."
-                            )
-                            return
-                        logger.warning(
-                            "Auto-reconnect attempt %d failed with BLE error: %s",
-                            attempt_num,
-                            err,
-                        )
-                        # Give the adapter a respite before retrying and avoid thrashing scans.
-                        delay_hint = (
-                            DBUS_ERROR_RECONNECT_DELAY
-                            if isinstance(err, BleakDeviceNotFoundError)
-                            else BLEConfig.SEND_PROPAGATION_DELAY
-                        )
-                        override_delay = max(override_delay or 0, delay_hint)
-                    except Exception:
-                        if self.interface.is_connection_closing or not auto_reconnect:
-                            logger.debug(
-                                "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
-                            )
-                            return
-                        logger.exception(
-                            "Unexpected error during auto-reconnect attempt %d",
-                            attempt_num,
-                        )
-
-                    if self.interface.is_connection_closing or not auto_reconnect:
-                        return
-                    (
-                        sleep_delay,
-                        should_retry,
-                    ) = self.reconnect_policy.next_attempt()
-                    if override_delay is not None:
-                        sleep_delay = max(sleep_delay, override_delay)
-                    if not should_retry:
-                        logger.info("Auto-reconnect reached maximum retry limit.")
-                        return
+        try:
+            while not shutdown_event.is_set():
+                override_delay = None
+                if interface.is_connection_closing or not auto_reconnect:
                     logger.debug(
-                        "Waiting %.2f seconds before next reconnect attempt.",
-                        sleep_delay,
+                        "Auto-reconnect aborted because interface is closing or disabled."
                     )
-                    # Allow prompt shutdown without waiting the full backoff.
-                    if shutdown_event.wait(timeout=sleep_delay):
-                        logger.debug("Reconnect wait interrupted by shutdown signal.")
+                    return
+                attempt_num = self.reconnect_policy.get_attempt_count() + 1
+                try:
+                    if interface.is_connection_connected:
                         return
-            finally:
-                self.interface._reconnect_scheduler.clear_thread_reference()
+                    addr_key = _addr_key(getattr(interface, "address", None))
+                    # Check if already connected elsewhere before attempting.
+                    # connect() enforces this gate as well; this early check avoids
+                    # scheduling a full connect path when we already know it will fail.
+                    if addr_key and _is_currently_connected_elsewhere(addr_key):
+                        logger.debug(
+                            "Skipping reconnect attempt %d: address %s already connected elsewhere",
+                            attempt_num,
+                            addr_key,
+                        )
+                        return
+                    logger.info(
+                        "Attempting BLE auto-reconnect (attempt %d).",
+                        attempt_num,
+                    )
+                    interface.connect(interface.address)
+                    logger.info(
+                        "BLE auto-reconnect succeeded after %d attempts.",
+                        attempt_num,
+                    )
+                    return
+                except interface.BLEError as err:
+                    if interface.is_connection_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after failure due to shutdown/disable."
+                        )
+                        return
+                    logger.warning(
+                        "Auto-reconnect attempt %d failed: %s",
+                        attempt_num,
+                        err,
+                    )
+                except BleakDBusError:
+                    if interface.is_connection_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after DBus failure due to shutdown/disable."
+                        )
+                        return
+                    # DBus errors are often transient on Linux; log as warning since we'll retry
+                    logger.warning(
+                        "DBus error during auto-reconnect attempt %d",
+                        attempt_num,
+                        exc_info=True,
+                    )
+                    # Use longer delay for DBus errors to allow system Bluetooth stack to recover
+                    override_delay = max(override_delay or 0, DBUS_ERROR_RECONNECT_DELAY)
+                    # State transition to ERROR and DISCONNECTED is already handled by
+                    # the connection orchestrator, so we don't need to do it here
+                except BleakError as err:
+                    if interface.is_connection_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after bleak failure due to shutdown/disable."
+                        )
+                        return
+                    logger.warning(
+                        "Auto-reconnect attempt %d failed with BLE error: %s",
+                        attempt_num,
+                        err,
+                    )
+                    # Give the adapter a respite before retrying and avoid thrashing scans.
+                    delay_hint = (
+                        DBUS_ERROR_RECONNECT_DELAY
+                        if isinstance(err, BleakDeviceNotFoundError)
+                        else BLEConfig.SEND_PROPAGATION_DELAY
+                    )
+                    override_delay = max(override_delay or 0, delay_hint)
+                except Exception:
+                    if interface.is_connection_closing or not auto_reconnect:
+                        logger.debug(
+                            "Auto-reconnect cancelled after unexpected failure due to shutdown/disable."
+                        )
+                        return
+                    logger.exception(
+                        "Unexpected error during auto-reconnect attempt %d",
+                        attempt_num,
+                    )
+
+                if interface.is_connection_closing or not auto_reconnect:
+                    return
+                (
+                    sleep_delay,
+                    should_retry,
+                ) = self.reconnect_policy.next_attempt()
+                if override_delay is not None:
+                    sleep_delay = max(sleep_delay, override_delay)
+                if not should_retry:
+                    logger.info("Auto-reconnect reached maximum retry limit.")
+                    return
+                logger.debug(
+                    "Waiting %.2f seconds before next reconnect attempt.",
+                    sleep_delay,
+                )
+                # Allow prompt shutdown without waiting the full backoff.
+                if shutdown_event.wait(timeout=sleep_delay):
+                    logger.debug("Reconnect wait interrupted by shutdown signal.")
+                    return
+        finally:
+            interface._reconnect_scheduler.clear_thread_reference()
