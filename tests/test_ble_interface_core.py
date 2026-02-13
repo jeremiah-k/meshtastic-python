@@ -23,7 +23,7 @@ from bleak.exc import BleakError
 from bleak.backends.device import BLEDevice
 
 # Import common fixtures
-from test_ble_interface_fixtures import DummyClient, _build_interface
+from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
@@ -230,10 +230,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
             delay_attempts.append(attempt)
             return 0.0
 
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.RetryPolicy.transient_error",
-        lambda: StubTransientPolicy(),
-    )
+    iface._transient_read_policy = StubTransientPolicy()
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface._sleep", lambda _delay: None
     )

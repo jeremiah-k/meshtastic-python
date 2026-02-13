@@ -1,6 +1,11 @@
 version: 0.1
 cli:
   version: 1.25.0
+  options:
+    # Keep trunk check non-interactive by default so fixes are always explicit.
+    - commands:
+        - check
+      args: -n
 plugins:
   sources:
     - id: trunk

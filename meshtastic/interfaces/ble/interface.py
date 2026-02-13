@@ -156,9 +156,7 @@ class BLEInterface(MeshInterface):
         )
         self._exit_handler = None
         self.address = address
-        self._last_connection_request: Optional[str] = BLEInterface._sanitize_address(
-            address
-        )
+        self._last_connection_request: Optional[str] = sanitize_address(address)
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._connection_alias_key: Optional[str] = None  # Track alias for cleanup
@@ -214,6 +212,9 @@ class BLEInterface(MeshInterface):
         )
 
         # Initialize retry counter for transient read errors
+        # Policies are immutable presets; cache instances to avoid churn in hot loops.
+        self._empty_read_policy = RetryPolicy.empty_read()
+        self._transient_read_policy = RetryPolicy.transient_error()
         self._read_retry_count = 0
         self._last_empty_read_warning = 0.0
         self._suppressed_empty_read_warnings = 0
@@ -839,7 +840,7 @@ class BLEInterface(MeshInterface):
         """
 
         target = address or getattr(self, "address", None)
-        sanitized = BLEInterface._sanitize_address(target)
+        sanitized = sanitize_address(target)
 
         # Surface DBus failures to allow higher-level backoff
         if self._discovery_manager is None:
@@ -878,17 +879,6 @@ class BLEInterface(MeshInterface):
             raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
-
-    @staticmethod
-    def _sanitize_address(address: Optional[str]) -> Optional[str]:
-        """
-        Normalize a BLE address by removing common separators, trimming whitespace, and converting to lowercase.
-
-        Returns
-        -------
-            The normalized address string with all '-', '_', and ':' removed and lowercased, or `None` if `address` is `None` or contains only whitespace.
-        """
-        return sanitize_address(address)
 
     @property
     def connection_state(self) -> ConnectionState:
@@ -962,7 +952,7 @@ class BLEInterface(MeshInterface):
             raise self.BLEError("Cannot connect while interface is closing")
 
         requested_identifier = address if address is not None else self.address
-        normalized_request = BLEInterface._sanitize_address(requested_identifier)
+        normalized_request = sanitize_address(requested_identifier)
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         addr_key = _addr_key(requested_identifier) if requested_identifier else None
@@ -1025,7 +1015,7 @@ class BLEInterface(MeshInterface):
                         self.address = device_address
                         self.client = client
                         self._disconnect_notified = False
-                        normalized_device_address = BLEInterface._sanitize_address(
+                        normalized_device_address = sanitize_address(
                             device_address or ""
                         )
                         if normalized_request is not None:
@@ -1198,14 +1188,13 @@ class BLEInterface(MeshInterface):
         -------
             The payload bytes read from FROMRADIO, or `None` if no non-empty payload was obtained after the configured retries.
         """
-        empty_read_policy = RetryPolicy.empty_read()
         for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
             payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
             if payload:
                 self._suppressed_empty_read_warnings = 0
                 return payload
             if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
-                _sleep(empty_read_policy.get_delay(attempt))
+                _sleep(self._empty_read_policy.get_delay(attempt))
         self._log_empty_read_warning()
         return None
 
@@ -1226,7 +1215,7 @@ class BLEInterface(MeshInterface):
         ------
             BLEInterface.BLEError: When the retry policy is exhausted and the read should be treated as persistent.
         """
-        transient_policy = RetryPolicy.transient_error()
+        transient_policy = self._transient_read_policy
         if transient_policy.should_retry(self._read_retry_count):
             attempt_index = self._read_retry_count
             self._read_retry_count += 1

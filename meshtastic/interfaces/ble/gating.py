@@ -297,7 +297,8 @@ def _is_currently_connected_elsewhere(
 
     Returns:
         True if the normalized address is marked connected by a different owner,
-        False otherwise.
+        False otherwise. Stale claims may be pruned during this check (owner GC,
+        owner-reported disconnected state, or expired unowned claim window).
     """
     key = _addr_key(addr)
     if key is None:

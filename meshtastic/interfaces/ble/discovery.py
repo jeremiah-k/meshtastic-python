@@ -164,7 +164,6 @@ class ConnectedStrategy(DiscoveryStrategy):
             backend = getattr(scanner, "_backend", None)
             if backend and hasattr(backend, "get_devices"):
                 getter = backend.get_devices
-                loop = asyncio.get_running_loop()
                 # TODO: Replace this private backend access if bleak adds a public API for enumerating connected devices.
                 if inspect.iscoroutinefunction(getter):
                     backend_devices = await BLEClient._with_timeout(
@@ -173,6 +172,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                         "connected-device enumeration",
                     )
                 else:
+                    loop = asyncio.get_running_loop()
                     backend_devices = await BLEClient._with_timeout(
                         loop.run_in_executor(None, getter),
                         timeout,
@@ -358,7 +358,10 @@ class DiscoveryManager:
                     try:
                         connected_coro.close()
                     except Exception:  # noqa: BLE001
-                        pass  # Best effort cleanup
+                        logger.debug(
+                            "Error closing unconsumed connected-device fallback coroutine",
+                            exc_info=True,
+                        )
 
         return devices
 

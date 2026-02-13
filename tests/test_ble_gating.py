@@ -2,6 +2,7 @@
 
 import gc
 
+from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
@@ -16,9 +17,9 @@ from meshtastic.interfaces.ble.gating import (
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
+    _release_addr_lock,
     addr_lock_context,
 )
-from meshtastic.interfaces.ble.constants import BLEConfig
 
 
 class TestAddrKey:
@@ -99,8 +100,6 @@ class TestAddrLock:
     def test_lock_cleanup_removes_from_registry(self):
         """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
         _ADDR_LOCKS.clear()
-        from meshtastic.interfaces.ble.gating import _LOCK_HOLDERS, _release_addr_lock
-
         _LOCK_HOLDERS.clear()
 
         _get_addr_lock("testaddress")

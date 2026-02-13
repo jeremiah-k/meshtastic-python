@@ -49,6 +49,10 @@ class BLEConfig:
     AUTO_RECONNECT_JITTER_RATIO = 0.15
     DBUS_ERROR_RECONNECT_DELAY = 30.0
     CONNECTION_GATE_UNOWNED_STALE_SECONDS = 300.0
+    # Minimum bleak version for connected-device fallback:
+    # this path relies on bleak's private/undocumented `_backend.get_devices` API.
+    # We gate at 1.1.0 (higher than the baseline bleak requirement) to reduce
+    # compatibility risk from older private API variants.
     BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
     BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
     # Runner configuration

@@ -91,9 +91,9 @@ class ReconnectScheduler:
             )
             # Set the thread reference before starting to prevent race conditions
             self._reconnect_thread = thread
-
-        # Start the thread outside the lock to avoid holding the lock during thread start
-        self.thread_coordinator.start_thread(thread)
+            # Start while still holding state_lock so concurrent schedulers cannot
+            # overwrite the reference before this thread is started.
+            self.thread_coordinator.start_thread(thread)
         return True
 
     def clear_thread_reference(self) -> None:
@@ -233,7 +233,7 @@ class ReconnectWorker:
                     delay_hint = (
                         DBUS_ERROR_RECONNECT_DELAY
                         if isinstance(err, BleakDeviceNotFoundError)
-                        else BLEConfig.SEND_PROPAGATION_DELAY
+                        else BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
                     )
                     override_delay = max(override_delay or 0, delay_hint)
                 except Exception:

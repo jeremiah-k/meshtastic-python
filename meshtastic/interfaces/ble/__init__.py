@@ -6,10 +6,13 @@ by `meshtastic.ble_interface` (main classes, UUID constants, BLE error strings,
 and logger). Internal managers/helpers live in submodules under
 `meshtastic.interfaces.ble.*` and are not part of the compatibility surface.
 """
+
 # ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
 
+import importlib
+
 try:
-    import bleak  # noqa: F401
+    importlib.import_module("bleak")
 except ImportError as exc:  # pragma: no cover - environment/dependency guard
     raise ImportError(
         "BLE support requires the 'bleak' package, but it is missing. "
