@@ -12,6 +12,7 @@ from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS, BLEC
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
+from meshtastic.interfaces.ble.utils import sanitize_address
 
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.discovery import DiscoveryManager
@@ -83,8 +84,8 @@ class ConnectionValidator:
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
             last_connection_request,
-            BLEClient._sanitize_address(address),
-            BLEClient._sanitize_address(bleak_address),
+            sanitize_address(address),
+            sanitize_address(bleak_address),
         }
         return (
             normalized_request is None or normalized_request in normalized_known_targets
@@ -310,7 +311,7 @@ class ConnectionOrchestrator:
         on_connected_func()
         if getattr(self.interface, "_ever_connected", False):
             self.thread_coordinator.set_event("reconnected_event")
-        normalized_device_address = BLEClient._sanitize_address(device_address)
+        normalized_device_address = sanitize_address(device_address)
         logger.info(
             "Connection successful to %s",
             normalized_device_address or "unknown",
@@ -351,7 +352,7 @@ class ConnectionOrchestrator:
         if target_address is not None and not target_address.strip():
             raise self.interface.BLEError("Cannot connect: empty address provided")
 
-        normalized_target = BLEClient._sanitize_address(target_address)
+        normalized_target = sanitize_address(target_address)
         # Note: normalized_target can be None for discovery mode - this is intentional
         # The discovery fallback in find_device() will scan for any Meshtastic device
 

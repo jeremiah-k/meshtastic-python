@@ -19,7 +19,8 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
-from meshtastic.interfaces.ble.utils import sanitize_address
+
+
 class BLEClient:
     """
     Client wrapper for managing BLE device connections with thread-safe async operations.
@@ -41,11 +42,6 @@ class BLEClient:
     # Class-level fallback so callers using __new__ still get the right exception type
     class BLEError(Exception):
         """An exception class for BLE errors in the client."""
-
-    @staticmethod
-    def _sanitize_address(address: Optional[str]) -> Optional[str]:
-        """Normalize BLE identifiers used across BLE modules."""
-        return sanitize_address(address)
 
     @staticmethod
     async def _with_timeout(awaitable, timeout: Optional[float], label: str):

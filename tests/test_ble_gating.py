@@ -189,8 +189,9 @@ class TestMarkDisconnected:
         """
         _ADDR_LOCKS.clear()
         # Use context manager for proper holder count management
-        with addr_lock_context("testaddress"):
-            _mark_connected("testaddress")
+        with addr_lock_context("testaddress") as lock:
+            with lock:
+                _mark_connected("testaddress")
         assert "testaddress" in _ADDR_LOCKS  # Lock still exists
         _mark_disconnected("testaddress")
         assert "testaddress" not in _ADDR_LOCKS  # Lock cleaned up
@@ -321,6 +322,7 @@ class TestIsCurrentlyConnectedElsewhere:
     def test_prunes_stale_unowned_claim(self, monkeypatch):
         """Unowned claims should expire after a bounded stale window."""
         key = _addr_key("aabbccddeeff")
+        assert key is not None
         _mark_connected("aabbccddeeff")
         stale_now = (
             _CONNECTED_MARKED_AT[key]

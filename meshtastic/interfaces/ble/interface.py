@@ -307,6 +307,35 @@ class BLEInterface(MeshInterface):
             self._receiveThread = thread
         self.thread_coordinator.start_thread(thread)
 
+    @staticmethod
+    def _sorted_address_keys(*keys: Optional[str]) -> List[str]:
+        """Return normalized non-empty address keys in deterministic order."""
+        return sorted({key for key in keys if key})
+
+    def _mark_address_keys_connected(self, *keys: Optional[str]) -> None:
+        """Mark one or more address keys as connected using deterministic lock ordering."""
+        ordered_keys = self._sorted_address_keys(*keys)
+        if not ordered_keys:
+            return
+        with contextlib.ExitStack() as stack:
+            locks = [stack.enter_context(addr_lock_context(key)) for key in ordered_keys]
+            for addr_lock in locks:
+                stack.enter_context(addr_lock)
+            for key in ordered_keys:
+                _mark_connected(key, owner=self)
+
+    def _mark_address_keys_disconnected(self, *keys: Optional[str]) -> None:
+        """Mark one or more address keys as disconnected using deterministic lock ordering."""
+        ordered_keys = self._sorted_address_keys(*keys)
+        if not ordered_keys:
+            return
+        with contextlib.ExitStack() as stack:
+            locks = [stack.enter_context(addr_lock_context(key)) for key in ordered_keys]
+            for addr_lock in locks:
+                stack.enter_context(addr_lock)
+            for key in ordered_keys:
+                _mark_disconnected(key, owner=self)
+
     def _handle_disconnect(
         self,
         source: str,
@@ -334,12 +363,14 @@ class BLEInterface(MeshInterface):
                 source,
             )
             return True
+        disconnect_lock_released = False
+        target_client = client
+        previous_client: Optional["BLEClient"] = None
+        should_reconnect = False
+        should_schedule_reconnect = False
+        address = "unknown"
+        disconnect_keys: List[str] = []
         try:
-            target_client = client
-            previous_client = None
-            should_reconnect = False
-            address = "unknown"
-
             # Perform state checks and state mutation atomically under the state lock.
             with self._state_lock:
                 current_state = self._state_manager.state
@@ -383,10 +414,13 @@ class BLEInterface(MeshInterface):
                     return True
 
                 previous_client = current_client
+                alias_key = self._connection_alias_key
                 self.client = None
                 self._disconnect_notified = True
+                self._connection_alias_key = None
                 self._state_manager.transition_to(ConnectionState.DISCONNECTED)
                 should_reconnect = self.auto_reconnect
+                should_schedule_reconnect = should_reconnect and not self._closed
 
                 if target_client:
                     address = getattr(target_client, "address", repr(target_client))
@@ -395,76 +429,70 @@ class BLEInterface(MeshInterface):
                 elif previous_client:
                     address = getattr(previous_client, "address", repr(previous_client))
 
-            logger.debug("BLE client %s disconnected (source: %s).", address, source)
-
-            if should_reconnect:
-                if previous_client:
-                    previous_address = getattr(previous_client, "address", self.address)
-                    device_key = (
-                        _addr_key(previous_address) if previous_address else None
-                    )
-                    if device_key:
-                        # Use addr_lock_context to manage holder count for proper lock lifecycle
-                        with addr_lock_context(device_key):
-                            _mark_disconnected(device_key, owner=self)
-                    # Also clean up any alias key that was used for this connection
-                    alias_key = self._connection_alias_key
-                    if alias_key and alias_key != device_key:
-                        with addr_lock_context(alias_key):
-                            _mark_disconnected(alias_key, owner=self)
-                    self._connection_alias_key = None
-                    # Close previous client asynchronously
-                    close_thread = self.thread_coordinator.create_thread(
-                        target=self._client_manager.safe_close_client,
-                        args=(previous_client,),
-                        name="BLEClientClose",
-                        daemon=True,
-                    )
-                    self.thread_coordinator.start_thread(close_thread)
+                if should_reconnect:
+                    if previous_client:
+                        previous_address = getattr(
+                            previous_client, "address", self.address
+                        )
+                        device_key = (
+                            _addr_key(previous_address) if previous_address else None
+                        )
+                        disconnect_keys = self._sorted_address_keys(
+                            device_key, alias_key
+                        )
+                    else:
+                        fallback_key = _addr_key(self.address)
+                        disconnect_keys = self._sorted_address_keys(
+                            fallback_key, alias_key
+                        )
                 else:
-                    fallback_key = _addr_key(self.address)
-                    if fallback_key:
-                        with addr_lock_context(fallback_key):
-                            _mark_disconnected(fallback_key, owner=self)
-                    # Also clean up any alias key
-                    alias_key = self._connection_alias_key
-                    if alias_key and alias_key != fallback_key:
-                        with addr_lock_context(alias_key):
-                            _mark_disconnected(alias_key, owner=self)
-                    self._connection_alias_key = None
-                self._disconnected()
-
-                # Event coordination for reconnection (only if not closed)
-                if not self._closed:
-                    self.thread_coordinator.clear_events(
-                        "read_trigger", "reconnected_event"
+                    # Guard against sentinel "unknown" address - don't pollute registry.
+                    # Prefer the previous active client's address because callback metadata can be stale.
+                    address_for_registry = (
+                        getattr(previous_client, "address", None)
+                        if previous_client
+                        else (address if address != "unknown" else self.address)
                     )
-                    self._schedule_auto_reconnect()
-                return True
+                    addr_disconnect_key = _addr_key(address_for_registry)
+                    disconnect_keys = self._sorted_address_keys(
+                        addr_disconnect_key, alias_key
+                    )
 
-            # Guard against sentinel "unknown" address - don't pollute registry.
-            # Prefer the previous active client's address because callback metadata can be stale.
-            address_for_registry = (
-                getattr(previous_client, "address", None)
-                if previous_client
-                else (address if address != "unknown" else self.address)
-            )
-            addr_disconnect_key = _addr_key(address_for_registry)
-            if addr_disconnect_key:
-                # Use addr_lock_context to manage holder count for proper lock lifecycle
-                with addr_lock_context(addr_disconnect_key):
-                    _mark_disconnected(addr_disconnect_key, owner=self)
-            # Also clean up any alias key that was used for this connection
-            alias_key = self._connection_alias_key
-            if alias_key and alias_key != addr_disconnect_key:
-                with addr_lock_context(alias_key):
-                    _mark_disconnected(alias_key, owner=self)
-            self._connection_alias_key = None
-            logger.debug("Auto-reconnect disabled, staying disconnected.")
-            self._disconnected()
-            return False
-        finally:
+            # Release the disconnect lock before any address-lock operations.
             self._disconnect_lock.release()
+            disconnect_lock_released = True
+        finally:
+            if not disconnect_lock_released:
+                self._disconnect_lock.release()
+
+        logger.debug("BLE client %s disconnected (source: %s).", address, source)
+
+        if disconnect_keys:
+            self._mark_address_keys_disconnected(*disconnect_keys)
+
+        if should_reconnect:
+            if previous_client:
+                # Close previous client asynchronously
+                close_thread = self.thread_coordinator.create_thread(
+                    target=self._client_manager.safe_close_client,
+                    args=(previous_client,),
+                    name="BLEClientClose",
+                    daemon=True,
+                )
+                self.thread_coordinator.start_thread(close_thread)
+            self._disconnected()
+
+            # Event coordination for reconnection (only if not closed)
+            if should_schedule_reconnect:
+                self.thread_coordinator.clear_events(
+                    "read_trigger", "reconnected_event"
+                )
+                self._schedule_auto_reconnect()
+            return True
+
+        logger.debug("Auto-reconnect disabled, staying disconnected.")
+        self._disconnected()
+        return False
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """
@@ -956,6 +984,9 @@ class BLEInterface(MeshInterface):
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         addr_key = _addr_key(requested_identifier) if requested_identifier else None
+        connected_client: Optional["BLEClient"] = None
+        connected_device_key: Optional[str] = None
+        connection_alias_key: Optional[str] = None
 
         # Use context manager for automatic holder count management
         with addr_lock_context(addr_key) as addr_lock:
@@ -1028,29 +1059,48 @@ class BLEInterface(MeshInterface):
                             client, previous_client
                         )
 
-                    # Use actual device address for gating to avoid empty-key entries
-                    # Only use address registry for explicit addresses, not discovery mode (None)
-                    device_key = _addr_key(device_address) if device_address else None
-                    if device_key:
-                        # Use addr_lock_context to manage holder count for device_key
-                        # This ensures proper lock lifecycle even if device_key differs from addr_key
-                        with addr_lock_context(device_key):
-                            _mark_connected(device_key, owner=self)
-                        # If the user requested connection by name/alias that differs from the
-                        # actual device address, also mark the requested key as connected.
-                        # This ensures subsequent connection attempts using the same name
-                        # are properly suppressed. Track for cleanup on disconnect.
-                        if addr_key and addr_key != device_key:
-                            with addr_lock_context(addr_key):
-                                _mark_connected(addr_key, owner=self)
-                            self._connection_alias_key = addr_key
-                        else:
-                            self._connection_alias_key = None
-                    # Context manager will release holder count automatically
+                    # Record keys for gate marking after releasing the initial request lock.
+                    # This avoids nested per-address lock acquisition for different keys.
+                    connected_device_key = (
+                        _addr_key(device_address) if device_address else None
+                    )
+                    connection_alias_key = (
+                        addr_key
+                        if connected_device_key
+                        and addr_key
+                        and addr_key != connected_device_key
+                        else None
+                    )
                     # Mark that at least one successful connection has been established
                     self._ever_connected = True
                     self._read_retry_count = 0
-                    return client
+                    connected_client = client
+
+        if connected_client is None:
+            # Defensive: establish_connection should have returned a client or raised.
+            raise self.BLEError("Connection failed: no BLE client established")
+
+        # Mark connected keys with deterministic lock ordering only if the same client
+        # is still active; this avoids stale claim resurrection on rapid disconnects.
+        with self._state_lock:
+            still_active = (
+                self.client is connected_client and self._state_manager.is_connected
+            )
+
+        if still_active:
+            self._mark_address_keys_connected(
+                connected_device_key, connection_alias_key
+            )
+            with self._state_lock:
+                if self.client is connected_client and self._state_manager.is_connected:
+                    self._connection_alias_key = connection_alias_key
+        else:
+            logger.debug(
+                "Skipping connect gate marking for stale client result (%s).",
+                getattr(connected_client, "address", "unknown"),
+            )
+
+        return connected_client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: "BLEClient"
@@ -1407,11 +1457,10 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             # Record final state as DISCONNECTED for observers; instance remains closed.
             self._state_manager.transition_to(ConnectionState.DISCONNECTED)
+            alias_key = self._connection_alias_key
+            self._connection_alias_key = None
         close_key = _addr_key(self.address)
-        if close_key:
-            # Use addr_lock_context to manage holder count for proper lock lifecycle
-            with addr_lock_context(close_key):
-                _mark_disconnected(close_key, owner=self)
+        self._mark_address_keys_disconnected(close_key, alias_key)
 
     def _wait_for_disconnect_notifications(
         self, timeout: Optional[float] = None

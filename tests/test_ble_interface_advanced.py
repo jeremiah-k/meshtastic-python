@@ -662,10 +662,11 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
         disconnect_thread.join()
 
         # Verify that the interface handled rapid disconnects gracefully
+        assert client.bleak_client is not None
         assert client.bleak_client.disconnect_count >= 0  # Should not crash
-    assert (
-        len(_get_connect_stub_calls(iface)) >= 2
-    ), "Auto-reconnect should continue scheduling during rapid disconnects"
+        assert (
+            len(_get_connect_stub_calls(iface)) >= 2
+        ), "Auto-reconnect should continue scheduling during rapid disconnects"
 
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
@@ -704,6 +705,7 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
             thread.join()
 
         # Verify thread-safety - no exceptions should be raised
+        assert client2.bleak_client is not None
         assert client2.bleak_client.disconnect_count >= 0
 
     # Test 3: Stress test with connection failures
@@ -866,17 +868,19 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
     monkeypatch.setattr(client, "async_run", _fake_async_run)
 
+    async def _test_coro():
+        return None
+
     with pytest.raises((BLEInterface.BLEError, BLEClient.BLEError)) as excinfo:
-        client.async_await(object(), timeout=0.01)
+        client.async_await(_test_coro(), timeout=0.01)
 
     assert "Async operation timed out" in str(excinfo.value)
     assert fake_future.cancelled is True
 
     client.close()
-    if getattr(fake_future, "coro", None) is not None and hasattr(
-        fake_future.coro, "close"
-    ):
-        fake_future.coro.close()
+    coro_obj = getattr(fake_future, "coro", None)
+    if isinstance(coro_obj, types.CoroutineType):
+        coro_obj.close()
 
 
 def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):

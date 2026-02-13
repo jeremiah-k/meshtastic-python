@@ -19,7 +19,7 @@ from meshtastic.interfaces.ble.constants import (
     _bleak_supports_connected_fallback,
     logger,
 )
-from meshtastic.interfaces.ble.utils import resolve_ble_module
+from meshtastic.interfaces.ble.utils import resolve_ble_module, sanitize_address
 
 
 @lru_cache(maxsize=1)
@@ -78,8 +78,8 @@ def parse_scan_response(
         # Check for whitelist match if provided
         matches_whitelist = False
         if whitelist_address:
-            sanitized_addr = BLEClient._sanitize_address(device.address)
-            sanitized_name = BLEClient._sanitize_address(device.name)
+            sanitized_addr = sanitize_address(device.address)
+            sanitized_name = sanitize_address(device.name)
             # CRITICAL FIX: Use exact equality matching instead of substring matching to prevent
             # connecting to wrong device when device name/address contains target address as substring.
             # This is essential for scenarios where multiple BLE devices are present and user has
@@ -180,7 +180,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                     )
 
                 sanitized_target = (
-                    BLEClient._sanitize_address(address) if address else None
+                    sanitize_address(address) if address else None
                 )
                 # BLEDevice constructor signature varies across bleak versions.
                 # Handle both `details` and legacy `rssi` kwargs when present.
@@ -194,8 +194,8 @@ class ConnectedStrategy(DiscoveryStrategy):
                         continue
 
                     if sanitized_target:
-                        sanitized_addr = BLEClient._sanitize_address(device.address)
-                        sanitized_name = BLEClient._sanitize_address(device.name)
+                        sanitized_addr = sanitize_address(device.address)
+                        sanitized_name = sanitize_address(device.name)
                         if sanitized_target not in (sanitized_addr, sanitized_name):
                             continue
 
@@ -296,7 +296,7 @@ class DiscoveryManager:
 
         client = self._client
         devices: List[BLEDevice] = []
-        sanitized_target = BLEClient._sanitize_address(address) if address else None
+        sanitized_target = sanitize_address(address) if address else None
         try:
             scan_start = time.monotonic()
             logger.debug(
