@@ -20,9 +20,11 @@ Context Manager Usage:
 """
 
 import logging
+import time
+import weakref
 from contextlib import contextmanager
 from threading import RLock
-from typing import Dict, Generator, Optional, Set
+from typing import Any, Dict, Generator, Optional, Set
 
 from meshtastic.interfaces.ble.utils import sanitize_address
 
@@ -31,6 +33,12 @@ logger = logging.getLogger("meshtastic.ble")
 _REGISTRY_LOCK = RLock()
 _ADDR_LOCKS: Dict[str, RLock] = {}
 _CONNECTED_ADDRS: Set[str] = set()
+# Optional owner references for active connected-address claims.
+_CONNECTED_OWNERS: Dict[str, Optional["weakref.ReferenceType[Any]"]] = {}
+_CONNECTED_OWNER_IDS: Dict[str, Optional[int]] = {}
+_CONNECTED_MARKED_AT: Dict[str, float] = {}
+# Fallback pruning window for claims created without an owner.
+_UNOWNED_CONNECTION_STALE_SECONDS = 300.0
 # Track locks that are currently held to prevent premature cleanup
 _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
@@ -122,11 +130,46 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
             )
 
 
-def _mark_connected(addr: Optional[str]) -> None:
+def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
+    """
+    Return a weak reference for an owner object when possible.
+
+    Parameters
+    ----------
+        owner (Optional[Any]): Arbitrary owner object to weak-reference.
+
+    Returns
+    -------
+        Optional[weakref.ReferenceType[Any]]: Weak reference to owner, or `None`
+        when owner is None or does not support weak references.
+    """
+    if owner is None:
+        return None
+    try:
+        return weakref.ref(owner)
+    except TypeError:
+        return None
+
+
+def _remove_connected_record_locked(key: str) -> None:
+    """
+    Remove all connected-state bookkeeping for a normalized address key.
+
+    Must be called while `_REGISTRY_LOCK` is held.
+    """
+    _CONNECTED_ADDRS.discard(key)
+    _CONNECTED_OWNERS.pop(key, None)
+    _CONNECTED_OWNER_IDS.pop(key, None)
+    _CONNECTED_MARKED_AT.pop(key, None)
+
+
+def _mark_connected(addr: Optional[str], owner: Optional[Any] = None) -> None:
     """
     Track that the given address is currently connected.
 
     The address is normalized internally using _addr_key.
+    When an owner is provided, a weak reference is recorded so stale claims can
+    be pruned automatically if the owner goes out of scope.
 
     Note: This function only marks the address as connected. The caller is
     responsible for managing the lock holder count, typically via the
@@ -137,14 +180,19 @@ def _mark_connected(addr: Optional[str]) -> None:
         return
     with _REGISTRY_LOCK:
         _CONNECTED_ADDRS.add(key)
+        _CONNECTED_OWNERS[key] = _owner_ref(owner)
+        _CONNECTED_OWNER_IDS[key] = id(owner) if owner is not None else None
+        _CONNECTED_MARKED_AT[key] = time.monotonic()
 
 
-def _mark_disconnected(addr: Optional[str]) -> None:
+def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None:
     """
     Track that the given address has disconnected.
 
     The address is normalized internally using _addr_key.
     Also attempts to clean up the address lock if no holders remain.
+    If owner is provided and the connected claim belongs to a different live
+    owner, the request is ignored to avoid clearing another interface's claim.
 
     Note: This function does NOT decrement the holder count. The caller is
     responsible for managing the lock holder count, typically via the
@@ -154,7 +202,21 @@ def _mark_disconnected(addr: Optional[str]) -> None:
     if key is None:
         return
     with _REGISTRY_LOCK:
-        _CONNECTED_ADDRS.discard(key)
+        if owner is not None:
+            owner_ref = _CONNECTED_OWNERS.get(key)
+            current_owner = owner_ref() if owner_ref is not None else None
+            current_owner_id = _CONNECTED_OWNER_IDS.get(key)
+            if (
+                current_owner is not None
+                and current_owner is not owner
+                and current_owner_id != id(owner)
+            ):
+                logger.debug(
+                    "Ignoring disconnect mark for %s from non-owner instance.",
+                    key,
+                )
+                return
+        _remove_connected_record_locked(key)
         _cleanup_addr_lock(key)
 
 
@@ -181,18 +243,64 @@ def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
         _release_addr_lock(addr)
 
 
-def _is_currently_connected_elsewhere(addr: Optional[str]) -> bool:
+def _is_currently_connected_elsewhere(
+    addr: Optional[str], owner: Optional[Any] = None
+) -> bool:
     """
-    Determine whether the given BLE address is currently marked as connected by any interface.
+    Determine whether the given BLE address is currently marked as connected by another interface.
     
     Parameters:
-        addr (Optional[str]): BLE address to check; it will be normalized via _addr_key. If normalization yields None/empty, the function returns False.
+        addr (Optional[str]): BLE address to check; it will be normalized via
+            _addr_key. If normalization yields None/empty, the function returns
+            False.
+        owner (Optional[Any]): Current caller/owner instance. If the connected
+            claim belongs to this owner, returns False (not "elsewhere").
     
     Returns:
-        True if the normalized address is marked connected, False otherwise.
+        True if the normalized address is marked connected by a different owner,
+        False otherwise.
     """
     key = _addr_key(addr)
     if key is None:
         return False
     with _REGISTRY_LOCK:
-        return key in _CONNECTED_ADDRS
+        if key not in _CONNECTED_ADDRS:
+            return False
+
+        owner_ref = _CONNECTED_OWNERS.get(key)
+        current_owner = owner_ref() if owner_ref is not None else None
+        current_owner_id = _CONNECTED_OWNER_IDS.get(key)
+
+        # Same owner is not "connected elsewhere".
+        if owner is not None and (
+            current_owner is owner
+            or (current_owner_id is not None and current_owner_id == id(owner))
+        ):
+            return False
+
+        # Prune stale claims when owner object was garbage collected.
+        if owner_ref is not None and current_owner is None:
+            _remove_connected_record_locked(key)
+            _cleanup_addr_lock(key)
+            return False
+
+        # If owner exposes a connected-state property and no longer appears
+        # connected, treat the claim as stale and remove it.
+        if current_owner is not None:
+            connection_state = getattr(current_owner, "is_connection_connected", None)
+            if isinstance(connection_state, bool) and not connection_state:
+                _remove_connected_record_locked(key)
+                _cleanup_addr_lock(key)
+                return False
+            return True
+
+        # Fallback for unowned claims: prune after a safety window.
+        marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
+        if marked_at and (
+            time.monotonic() - marked_at > _UNOWNED_CONNECTION_STALE_SECONDS
+        ):
+            _remove_connected_record_locked(key)
+            _cleanup_addr_lock(key)
+            return False
+
+        return True

@@ -2,6 +2,8 @@
 
 import asyncio
 import threading
+import time
+from concurrent.futures import Future
 
 import pytest
 
@@ -147,6 +149,25 @@ class TestBLECoroutineRunner:
 
         # Future should be cancelled
         assert future.cancelled()
+
+    def test_completed_futures_are_removed_from_tracking(self):
+        """Completed futures should be removed from runner tracking promptly."""
+        runner = BLECoroutineRunner()
+        future = Future()
+        with runner._instance_lock:
+            runner._pending_futures.add(future)
+        future.add_done_callback(runner._discard_tracked_future)
+        future.set_result(7)
+
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            with runner._instance_lock:
+                if future not in runner._pending_futures:
+                    break
+            time.sleep(0.01)
+
+        with runner._instance_lock:
+            assert future not in runner._pending_futures
 
     def test_zombie_runner_count(self):
         """Verify zombie runner count is tracked."""

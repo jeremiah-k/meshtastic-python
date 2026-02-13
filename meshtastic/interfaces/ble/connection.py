@@ -1,6 +1,7 @@
 """BLE connection management and validation."""
 
 import logging
+import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable, Optional
 
@@ -197,12 +198,17 @@ class ClientManager:
             client (BLEClient): The BLE client to disconnect and close.
             event (Optional[Event]): If provided, will be set after the close attempt to signal completion.
         """
-        if not getattr(client, "_closed", False) and getattr(
+        skip_disconnect = bool(getattr(sys, "is_finalizing", lambda: False)())
+        if not skip_disconnect and not getattr(client, "_closed", False) and getattr(
             client, "bleak_client", None
         ):
             self.error_handler.safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
+            )
+        elif skip_disconnect:
+            logger.debug(
+                "Skipping BLE client disconnect during interpreter finalization."
             )
         self.error_handler.safe_cleanup(client.close, "client close")
         if event:

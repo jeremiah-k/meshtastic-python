@@ -157,7 +157,9 @@ class ReconnectWorker:
                     # Check if already connected elsewhere before attempting.
                     # connect() enforces this gate as well; this early check avoids
                     # scheduling a full connect path when we already know it will fail.
-                    if addr_key and _is_currently_connected_elsewhere(addr_key):
+                    if addr_key and _is_currently_connected_elsewhere(
+                        addr_key, owner=interface
+                    ):
                         logger.debug(
                             "Skipping reconnect attempt %d: address %s already connected elsewhere",
                             attempt_num,

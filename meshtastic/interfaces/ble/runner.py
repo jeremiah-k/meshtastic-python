@@ -307,7 +307,20 @@ class BLECoroutineRunner:
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:
             self._pending_futures.add(future)
+        # Remove completed futures promptly instead of waiting for GC.
+        future.add_done_callback(self._discard_tracked_future)
         return future
+
+    def _discard_tracked_future(self, future: Future) -> None:
+        """
+        Remove a completed future from the pending-futures tracker.
+
+        Parameters
+        ----------
+            future (Future): Future to remove from `_pending_futures`.
+        """
+        with self._instance_lock:
+            self._pending_futures.discard(future)
 
     def _handle_loop_exception(
         self, loop: asyncio.AbstractEventLoop, context: dict

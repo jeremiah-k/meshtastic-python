@@ -77,7 +77,7 @@ BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION = (
 ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
 ERROR_MULTIPLE_DEVICES = (
     "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
- )
+)
 ERROR_READING_BLE = "Error reading BLE"
 ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
 

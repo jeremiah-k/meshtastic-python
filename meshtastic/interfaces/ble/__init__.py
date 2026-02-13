@@ -3,7 +3,13 @@
 
 from threading import current_thread
 
-from bleak import BleakScanner, BLEDevice
+try:
+    from bleak import BleakScanner, BLEDevice
+except ImportError as exc:  # pragma: no cover - environment/dependency guard
+    raise ImportError(
+        "BLE support requires the 'bleak' package. Install dependencies with "
+        "`poetry install` (or `pip install meshtastic`)."
+    ) from exc
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import (

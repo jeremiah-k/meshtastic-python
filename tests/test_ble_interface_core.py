@@ -684,6 +684,22 @@ def test_close_handles_errors(monkeypatch, exc_cls):
     assert client.close_calls == 1
 
 
+def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
+    """close() should avoid scheduling disconnect coroutines during finalization."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client)
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.connection.sys.is_finalizing",
+        lambda: True,
+    )
+
+    iface.close()
+
+    assert client.disconnect_calls == 0
+    assert client.close_calls == 1
+
+
 def test_close_clears_ble_threads(monkeypatch):
     """Closing the interface should leave no BLE* threads running."""
     # threading already imported at top

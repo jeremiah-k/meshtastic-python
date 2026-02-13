@@ -1,10 +1,16 @@
 """Tests for BLE gating utilities."""
 
+import gc
+
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
+    _CONNECTED_MARKED_AT,
+    _CONNECTED_OWNER_IDS,
+    _CONNECTED_OWNERS,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
+    _UNOWNED_CONNECTION_STALE_SECONDS,
     _addr_key,
     _cleanup_addr_lock,
     _get_addr_lock,
@@ -55,6 +61,9 @@ class TestAddrLock:
         with _REGISTRY_LOCK:
             _ADDR_LOCKS.clear()
             _CONNECTED_ADDRS.clear()
+            _CONNECTED_MARKED_AT.clear()
+            _CONNECTED_OWNER_IDS.clear()
+            _CONNECTED_OWNERS.clear()
             _LOCK_HOLDERS.clear()
 
     def test_get_lock_for_valid_address(self):
@@ -117,6 +126,9 @@ class TestMarkConnected:
         """Clear the connected addresses set before each test."""
         with _REGISTRY_LOCK:
             _CONNECTED_ADDRS.clear()
+            _CONNECTED_MARKED_AT.clear()
+            _CONNECTED_OWNER_IDS.clear()
+            _CONNECTED_OWNERS.clear()
 
     def test_mark_connected_adds_to_registry(self):
         """Test that marking an address as connected adds it to registry."""
@@ -146,6 +158,9 @@ class TestMarkDisconnected:
         with _REGISTRY_LOCK:
             _CONNECTED_ADDRS.clear()
             _ADDR_LOCKS.clear()
+            _CONNECTED_MARKED_AT.clear()
+            _CONNECTED_OWNER_IDS.clear()
+            _CONNECTED_OWNERS.clear()
             _LOCK_HOLDERS.clear()
         _mark_connected("aabbccddeeff")
 
@@ -181,6 +196,20 @@ class TestMarkDisconnected:
         _mark_disconnected("testaddress")
         assert "testaddress" not in _ADDR_LOCKS  # Lock cleaned up
 
+    def test_mark_disconnected_ignores_non_owner(self):
+        """Disconnect from a different owner should not clear an active claim."""
+
+        class Owner:
+            pass
+
+        owner_a = Owner()
+        owner_b = Owner()
+        key = _addr_key("aabbccddeeff")
+        _mark_connected("aabbccddeeff", owner=owner_a)
+        _mark_disconnected("aabbccddeeff", owner=owner_b)
+
+        assert key in _CONNECTED_ADDRS
+
 
 class TestIsCurrentlyConnectedElsewhere:
     """Test cases for _is_currently_connected_elsewhere function."""
@@ -189,6 +218,9 @@ class TestIsCurrentlyConnectedElsewhere:
         """Clear the connected addresses set before each test."""
         with _REGISTRY_LOCK:
             _CONNECTED_ADDRS.clear()
+            _CONNECTED_MARKED_AT.clear()
+            _CONNECTED_OWNER_IDS.clear()
+            _CONNECTED_OWNERS.clear()
 
     def test_returns_true_for_connected_address(self):
         """Test that it returns True for a connected address."""
@@ -207,3 +239,69 @@ class TestIsCurrentlyConnectedElsewhere:
         """Test that it returns False for empty address."""
         # Empty string normalizes to None via _addr_key, same as passing None directly.
         assert not _is_currently_connected_elsewhere("")
+
+    def test_returns_false_for_same_owner(self):
+        """A claim owned by this interface is not considered connected elsewhere."""
+
+        class Owner:
+            is_connection_connected = True
+
+        owner = Owner()
+        _mark_connected("aabbccddeeff", owner=owner)
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=owner)
+
+    def test_returns_true_for_different_owner(self):
+        """A live claim from another owner should be treated as connected elsewhere."""
+
+        class Owner:
+            is_connection_connected = True
+
+        owner_a = Owner()
+        owner_b = Owner()
+        _mark_connected("aabbccddeeff", owner=owner_a)
+
+        assert _is_currently_connected_elsewhere("aabbccddeeff", owner=owner_b)
+
+    def test_prunes_dead_owner_claim(self):
+        """Dead weakref owners should be pruned automatically."""
+
+        class Owner:
+            is_connection_connected = True
+
+        owner = Owner()
+        key = _addr_key("aabbccddeeff")
+        _mark_connected("aabbccddeeff", owner=owner)
+        del owner
+        gc.collect()
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTED_ADDRS
+
+    def test_prunes_owner_claim_when_owner_not_connected(self):
+        """Claims from owners no longer connected should be pruned."""
+
+        class Owner:
+            is_connection_connected = False
+
+        owner = Owner()
+        key = _addr_key("aabbccddeeff")
+        _mark_connected("aabbccddeeff", owner=owner)
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTED_ADDRS
+
+    def test_prunes_stale_unowned_claim(self, monkeypatch):
+        """Unowned claims should expire after a bounded stale window."""
+        key = _addr_key("aabbccddeeff")
+        _mark_connected("aabbccddeeff")
+        stale_now = (
+            _CONNECTED_MARKED_AT[key] + _UNOWNED_CONNECTION_STALE_SECONDS + 1.0
+        )
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.gating.time.monotonic",
+            lambda: stale_now,
+        )
+
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
+        assert key not in _CONNECTED_ADDRS
