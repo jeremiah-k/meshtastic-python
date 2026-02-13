@@ -159,6 +159,59 @@ class TestBLECoroutineRunner:
         with pytest.raises(RuntimeError, match="failed to start"):
             runner._ensure_running(timeout=0.01)
 
+    def test_run_coroutine_threadsafe_supports_startup_timeout_aliases(
+        self, monkeypatch
+    ):
+        """Both startup_timeout and legacy timeout should drive runner startup wait."""
+        runner = BLECoroutineRunner()
+        observed_timeouts = []
+
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: observed_timeouts.append(timeout),
+        )
+
+        class _LoopStub:
+            @staticmethod
+            def is_running():
+                return True
+
+        with runner._instance_lock:
+            runner._loop = _LoopStub()
+
+        def _fake_submit(coro, _loop):
+            coro.close()
+            future = Future()
+            future.set_result(None)
+            return future
+
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+
+        async def _noop():
+            return None
+
+        runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+        runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.5)
+
+        assert observed_timeouts == [0.25, 0.5]
+
+    def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
+        """Passing both timeout names should raise to avoid ambiguous behavior."""
+        runner = BLECoroutineRunner()
+
+        async def _noop():
+            return None
+
+        coro = _noop()
+        try:
+            with pytest.raises(ValueError, match="timeout or startup_timeout"):
+                runner.run_coroutine_threadsafe(
+                    coro, timeout=0.25, startup_timeout=0.5
+                )
+        finally:
+            coro.close()
+
     def test_completed_futures_are_removed_from_tracking(self):
         """Completed futures should be removed from runner tracking promptly."""
         runner = BLECoroutineRunner()

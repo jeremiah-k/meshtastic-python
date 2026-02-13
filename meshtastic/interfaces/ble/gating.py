@@ -38,8 +38,6 @@ _CONNECTED_ADDRS: Set[str] = set()
 _CONNECTED_OWNERS: Dict[str, Optional["weakref.ReferenceType[Any]"]] = {}
 _CONNECTED_OWNER_IDS: Dict[str, Optional[int]] = {}
 _CONNECTED_MARKED_AT: Dict[str, float] = {}
-# Fallback pruning window for claims created without an owner.
-_UNOWNED_CONNECTION_STALE_SECONDS = BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
 # Track locks that are currently held to prevent premature cleanup
 _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
@@ -326,7 +324,8 @@ def _is_currently_connected_elsewhere(
         # Fallback for unowned claims: prune after a safety window.
         marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
         if marked_at and (
-            time.monotonic() - marked_at > _UNOWNED_CONNECTION_STALE_SECONDS
+            time.monotonic() - marked_at
+            > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
         ):
             _remove_connected_record_locked(key)
             _cleanup_addr_lock(key)

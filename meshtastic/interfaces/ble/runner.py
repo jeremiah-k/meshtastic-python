@@ -277,6 +277,8 @@ class BLECoroutineRunner:
         self,
         coro: Coroutine[None, None, T],
         timeout: Optional[float] = None,
+        *,
+        startup_timeout: Optional[float] = None,
     ) -> Future[T]:
         """
         Submit a coroutine to be run in the singleton event loop thread.
@@ -286,8 +288,10 @@ class BLECoroutineRunner:
         coro : Coroutine[None, None, T]
             The coroutine to execute.
         timeout : Optional[float]
+            Deprecated alias for `startup_timeout`.
+        startup_timeout : Optional[float]
             Optional startup timeout in seconds used while ensuring the runner
-            loop is ready. This does not apply to the coroutine result wait;
+            loop is ready. This does not apply to coroutine completion waits;
             use `Future.result(timeout=...)` on the returned Future for that.
 
         Returns
@@ -299,11 +303,19 @@ class BLECoroutineRunner:
         ------
         RuntimeError
             If the event loop cannot be started or is not available.
+        ValueError
+            If both `timeout` and `startup_timeout` are provided.
         """
-        startup_timeout = (
-            timeout if timeout is not None else _LOOP_READY_TIMEOUT_SECONDS
+        if timeout is not None and startup_timeout is not None:
+            raise ValueError("Specify only one of timeout or startup_timeout")
+
+        effective_startup_timeout = (
+            startup_timeout if startup_timeout is not None else timeout
         )
-        self._ensure_running(timeout=startup_timeout)
+        if effective_startup_timeout is None:
+            effective_startup_timeout = _LOOP_READY_TIMEOUT_SECONDS
+
+        self._ensure_running(timeout=effective_startup_timeout)
 
         with self._instance_lock:
             loop = self._loop
