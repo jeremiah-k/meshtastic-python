@@ -174,7 +174,7 @@ def test_getNode_not_local_timeout(capsys):
     with patch("meshtastic.node.Node", return_value=anode):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             iface.getNode("bar2")
-        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
         assert re.match(r"Timed out trying to retrieve channel info, retrying", out)
@@ -190,7 +190,7 @@ def test_getNode_not_local_timeout_attempts(capsys):
     with patch("meshtastic.node.Node", return_value=anode):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             iface.getNode("bar2", requestChannelAttempts=2)
-        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
         assert out == 'Timed out trying to retrieve channel info, retrying\nError: Timed out waiting for channels, giving up\n'
@@ -206,6 +206,96 @@ def test_sendPosition(caplog):
         iface.sendPosition()
     iface.close()
     # assert re.search(r"p.time:", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch):
+    """Heartbeat timer should be daemonized and cancelled during close()."""
+
+    class FakeTimer:
+        """Simple timer stub that records start/cancel calls."""
+
+        created = []
+
+        def __init__(self, interval, function):
+            self.interval = interval
+            self.function = function
+            self.daemon = False
+            self.started = False
+            self.cancelled = False
+            FakeTimer.created.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
+
+    iface = MeshInterface(noProto=True)
+    monkeypatch.setattr(iface, "sendHeartbeat", lambda: None)
+
+    iface._startHeartbeat()
+    assert len(FakeTimer.created) == 1
+    timer = FakeTimer.created[0]
+    assert timer.daemon is True
+    assert timer.started is True
+
+    iface.close()
+    assert timer.cancelled is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_heartbeat_callback_does_not_reschedule_after_close(monkeypatch):
+    """A heartbeat callback firing after close() must not create a new timer."""
+
+    class FakeTimer:
+        """Simple timer stub used to control callback execution in tests."""
+
+        created = []
+
+        def __init__(self, interval, function):
+            self.interval = interval
+            self.function = function
+            self.daemon = False
+            self.started = False
+            self.cancelled = False
+            FakeTimer.created.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
+
+    iface = MeshInterface(noProto=True)
+    monkeypatch.setattr(iface, "sendHeartbeat", lambda: None)
+
+    iface._startHeartbeat()
+    assert len(FakeTimer.created) == 1
+    old_timer = FakeTimer.created[0]
+
+    iface.close()
+    old_timer.function()
+
+    assert len(FakeTimer.created) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connected_noop_when_closing():
+    """_connected() should not set connection state while shutdown is in progress."""
+    iface = MeshInterface(noProto=True)
+    iface._closing = True
+
+    iface._connected()
+
+    assert iface.isConnected.is_set() is False
 
 
 # TODO
@@ -392,7 +482,7 @@ def test_sendData_unknown_app(capsys):
     out, err = capsys.readouterr()
     assert re.search(r"Warning: A non-zero port number", out, re.MULTILINE)
     assert err == ""
-    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
 
 
@@ -418,7 +508,7 @@ def test_sendPacket_with_no_destination(capsys):
     out, err = capsys.readouterr()
     assert re.search(r"Warning: destinationId must not be None", out, re.MULTILINE)
     assert err == ""
-    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
 
 
@@ -466,7 +556,7 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo(capsys):
     out, err = capsys.readouterr()
     assert re.search(r"Warning: No myInfo", out, re.MULTILINE)
     assert err == ""
-    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
 
 
@@ -492,7 +582,7 @@ def test_sendPacket_with_destination_is_blank_with_nodes(capsys, iface_with_node
     meshPacket = mesh_pb2.MeshPacket()
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         iface._sendPacket(meshPacket, destinationId="")
-    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
     assert re.match(r"Warning: NodeId  not found in DB", out, re.MULTILINE)
@@ -676,7 +766,7 @@ def test_exit_with_exception(caplog):
         try:
             with MeshInterface(noProto=True):
                 raise ValueError("Something went wrong")
-        except:
+        except Exception:
             assert re.search(
                 r"An exception of type <class \'ValueError\'> with value Something went wrong has occurred",
                 caplog.text,

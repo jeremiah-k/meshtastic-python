@@ -20,7 +20,7 @@ import google.protobuf.json_format
 
 try:
     import print_color  # type: ignore[import-untyped]
-except ImportError as e:
+except ImportError:
     print_color = None
 
 from pubsub import pub  # type: ignore[import-untyped]
@@ -123,6 +123,8 @@ class MeshInterface:  # pylint: disable=R0902
         self._timeout: Timeout = Timeout(maxSecs=timeout)
         self._acknowledgment: Acknowledgment = Acknowledgment()
         self.heartbeatTimer: Optional[threading.Timer] = None
+        self._heartbeat_lock = threading.RLock()
+        self._closing = False
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
         self.currentPacketId: int = random.randint(0, 0xFFFFFFFF)
         self.nodesByNum: Optional[Dict[int, Dict]] = None
@@ -142,8 +144,12 @@ class MeshInterface:  # pylint: disable=R0902
 
     def close(self):
         """Shutdown this interface"""
-        if self.heartbeatTimer:
-            self.heartbeatTimer.cancel()
+        with self._heartbeat_lock:
+            self._closing = True
+            timer = self.heartbeatTimer
+            self.heartbeatTimer = None
+        if timer:
+            timer.cancel()
 
         self._sendDisconnect()
 
@@ -1149,17 +1155,31 @@ class MeshInterface:  # pylint: disable=R0902
         """We need to send a heartbeat message to the device every X seconds"""
 
         def callback():
-            self.heartbeatTimer = None
+            with self._heartbeat_lock:
+                # If shutdown started, don't schedule more heartbeat timers.
+                if self._closing:
+                    return
+                self.heartbeatTimer = None
             interval = 300
             logger.debug(f"Sending heartbeat, interval {interval} seconds")
-            self.heartbeatTimer = threading.Timer(interval, callback)
-            self.heartbeatTimer.start()
+            timer = threading.Timer(interval, callback)
+            # Heartbeat maintenance should never prevent process shutdown.
+            timer.daemon = True
+            with self._heartbeat_lock:
+                if self._closing:
+                    return
+                self.heartbeatTimer = timer
+            timer.start()
             self.sendHeartbeat()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
 
     def _connected(self):
         """Called by this class to tell clients we are now fully connected to a node"""
+        with self._heartbeat_lock:
+            if self._closing:
+                logger.debug("Skipping _connected(): interface is closing")
+                return
         # (because I'm lazy) _connected might be called when remote Node
         # objects complete their config reads, don't generate redundant isConnected
         # for the local interface
@@ -1326,7 +1346,7 @@ class MeshInterface:  # pylint: disable=R0902
             try:
                 newpos = self._fixupPosition(node["position"])
                 node["position"] = newpos
-            except:
+            except Exception:
                 logger.debug("Node without position")
 
             # no longer necessary since we're mutating directly in nodesByNum via _getOrCreateByNum
@@ -1490,7 +1510,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         try:
             return self.nodesByNum[num]["user"]["id"]  # type: ignore[index]
-        except:
+        except Exception:
             logger.debug(f"Node {num} not found for fromId")
             return None
 
