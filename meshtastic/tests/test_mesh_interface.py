@@ -227,9 +227,11 @@ def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch):
             FakeTimer.created.append(self)
 
         def start(self):
+            """Record that the fake timer was started."""
             self.started = True
 
         def cancel(self):
+            """Record that the fake timer was cancelled."""
             self.cancelled = True
 
     monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
@@ -266,9 +268,11 @@ def test_heartbeat_callback_does_not_reschedule_after_close(monkeypatch):
             FakeTimer.created.append(self)
 
         def start(self):
+            """Record that the fake timer was started."""
             self.started = True
 
         def cancel(self):
+            """Record that the fake timer was cancelled."""
             self.cancelled = True
 
     monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
