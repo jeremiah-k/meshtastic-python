@@ -14,7 +14,7 @@ import pytest
 from bleak.exc import BleakError
 
 # Import common fixtures
-from test_ble_interface_fixtures import DummyClient, _build_interface
+from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble.interface as ble_mod
