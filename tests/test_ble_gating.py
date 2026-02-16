@@ -12,13 +12,13 @@ from meshtastic.interfaces.ble.gating import (
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
     _addr_key,
+    _addr_lock_context,
     _cleanup_addr_lock,
     _get_addr_lock,
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
     _release_addr_lock,
-    addr_lock_context,
 )
 
 
@@ -112,7 +112,7 @@ class TestAddrLock:
 
     def test_addr_lock_context_cleans_unconnected_lock(self):
         """Address locks should be removed after context exit when not connected."""
-        with addr_lock_context("temp-address"):
+        with _addr_lock_context("temp-address"):
             pass
         assert _addr_key("temp-address") not in _ADDR_LOCKS
         assert _addr_key("temp-address") not in _LOCK_HOLDERS
@@ -189,11 +189,11 @@ class TestMarkDisconnected:
         """
         Verify that marking an address disconnected removes its per-address lock from the registry.
 
-        The test enters addr_lock_context for "testaddress", marks it connected, and asserts the lock remains after the context exits. After calling _mark_disconnected("testaddress"), the test asserts the lock has been removed from _ADDR_LOCKS.
+        The test enters _addr_lock_context for "testaddress", marks it connected, and asserts the lock remains after the context exits. After calling _mark_disconnected("testaddress"), the test asserts the lock has been removed from _ADDR_LOCKS.
         """
         _ADDR_LOCKS.clear()
         # Use context manager for proper holder count management
-        with addr_lock_context("testaddress") as lock:
+        with _addr_lock_context("testaddress") as lock:
             with lock:
                 _mark_connected("testaddress")
         assert "testaddress" in _ADDR_LOCKS  # Lock still exists
