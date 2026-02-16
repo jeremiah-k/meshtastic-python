@@ -122,27 +122,32 @@ class BLEClient:
     def discover(self, **kwargs) -> Any:  # pylint: disable=C0116
         """
         Discover nearby BLE devices.
-        
+
         Keyword arguments are passed to the scanner to configure discovery options (for example, `timeout` or `adapter`).
-        
+
         Returns:
             A list of discovered `BLEDevice` objects.
+
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
     def pair(self, **kwargs) -> Any:  # pylint: disable=C0116
         """
         Pair the underlying BLE client with the remote device.
-        
-        Parameters:
+
+        Parameters
+        ----------
             **kwargs: dict
                 Backend-specific pairing options forwarded to the underlying BLE client.
-        
-        Returns:
+
+        Returns
+        -------
             The backend pairing result (typically `None` for bleak >= 2.1.1).
-        
-        Raises:
+
+        Raises
+        ------
             BLEError: If the BLE client is not initialized or if the pairing operation fails.
+
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot pair: BLE client not initialized")
@@ -173,9 +178,10 @@ class BLEClient:
     def is_connected(self) -> bool:
         """
         Report whether the underlying Bleak client currently has an active connection.
-        
+
         Returns:
             `True` if the bleak client reports an active connection, `False` otherwise (also `False` when no bleak client exists or the connection state cannot be read).
+
         """
         bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
@@ -184,11 +190,12 @@ class BLEClient:
         def _check_connection():
             """
             Check whether the configured Bleak client reports an active connection.
-            
+
             This interprets either a boolean `is_connected` attribute or an `is_connected()` method on the client and coerces the result to a boolean.
-            
+
             Returns:
                 bool: `True` if the client reports an active connection, `False` otherwise.
+
             """
             connected = getattr(bleak_client, "is_connected", False)
             if callable(connected):
@@ -228,17 +235,21 @@ class BLEClient:
     ) -> bytes:  # pylint: disable=C0116
         """
         Read the value of a GATT characteristic from the connected BLE device.
-        
-        Parameters:
+
+        Parameters
+        ----------
             *args: Positional identifier(s) for the characteristic (commonly a UUID string or integer handle).
             timeout (Optional[float]): Maximum seconds to wait for the read to complete; if None, waits indefinitely.
             **kwargs: Additional keyword arguments forwarded to the underlying read operation.
-        
-        Returns:
+
+        Returns
+        -------
             bytes: Raw bytes read from the characteristic.
-        
-        Raises:
+
+        Raises
+        ------
             BLEClient.BLEError: If no underlying BLE client is initialized.
+
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot read: BLE client not initialized")
@@ -272,11 +283,12 @@ class BLEClient:
     def get_services(self, **kwargs) -> Any:
         """
         Retrieve the BLE client's discovered GATT services and characteristics.
-        
+
         Keyword arguments are forwarded to the underlying BLE client's `get_services` call.
-        
+
         Returns:
             The services collection object from the underlying BLE client containing discovered GATT services and their characteristics.
+
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot get services: BLE client not initialized")
@@ -285,14 +297,17 @@ class BLEClient:
     def has_characteristic(self, specifier: Union[str, UUID]):  # pylint: disable=C0116
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
-        
+
         If services are not populated, attempts to fetch services before checking.
-        
-        Parameters:
+
+        Parameters
+        ----------
             specifier (str | UUID): UUID string or UUID object identifying the characteristic to check.
-        
-        Returns:
+
+        Returns
+        -------
             bool: `True` if the characteristic is present, `False` otherwise.
+
         """
         if self.bleak_client is None:
             return False
@@ -360,7 +375,7 @@ class BLEClient:
     def __exit__(self, _type, _value, _traceback) -> None:
         """
         Close the BLEClient when exiting a context manager.
-        
+
         This method calls close() to release resources. Any exception information supplied by the context manager (_type, _value, _traceback) is ignored and exceptions are not suppressed.
         """
         self.close()

@@ -124,7 +124,7 @@ class TestMarkConnected:
     def setup_method(self):
         """
         Reset connection-related registries to a clean state.
-        
+
         Clears the connected address set, connection timestamps, owner ID mapping, and owner references while holding the global registry lock so tests start with no recorded connections.
         """
         with _REGISTRY_LOCK:
@@ -221,7 +221,7 @@ class TestIsCurrentlyConnectedElsewhere:
     def setup_method(self):
         """
         Reset connection-related registries to a clean state.
-        
+
         Clears the connected address set, connection timestamps, owner ID mapping, and owner references while holding the global registry lock so tests start with no recorded connections.
         """
         with _REGISTRY_LOCK:
@@ -306,9 +306,10 @@ class TestIsCurrentlyConnectedElsewhere:
             def is_connection_connected(self):
                 """
                 Report whether the associated connection is currently established.
-                
+
                 Returns:
                     bool: `True` if the connection is established, `False` otherwise.
+
                 """
                 return False
 
@@ -326,12 +327,13 @@ class TestIsCurrentlyConnectedElsewhere:
             def is_connection_connected(self):
                 """
                 Probe whether the owner's connection is active.
-                
+
                 Returns:
                     `True` if the owner's connection is active, `False` otherwise.
-                
+
                 Raises:
                     RuntimeError: If the probe cannot determine connection state (e.g., probe failure).
+
                 """
                 raise RuntimeError("probe failed")
 

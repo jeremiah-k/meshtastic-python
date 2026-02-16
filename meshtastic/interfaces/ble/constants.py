@@ -108,11 +108,12 @@ BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
     Parse a version string into a three-integer (major, minor, patch) tuple.
-    
+
     Non-numeric segments are ignored. If fewer than three numeric components are found the result is padded with zeros so the returned tuple always has three integers.
-    
+
     Returns:
         tuple[int, int, int]: (major, minor, patch) extracted from the version string.
+
     """
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:

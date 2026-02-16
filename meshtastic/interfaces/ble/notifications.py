@@ -127,9 +127,10 @@ class NotificationManager:
     def __len__(self) -> int:
         """
         Return the number of active BLE notification subscriptions being tracked.
-        
+
         Returns:
             int: Number of active subscriptions currently tracked.
+
         """
         with self._lock:
             return len(self._active_subscriptions)
@@ -137,9 +138,10 @@ class NotificationManager:
     def get_callback(self, characteristic: str) -> Optional[Callable[[Any, Any], None]]:
         """
         Return the most recently registered callback for a BLE characteristic.
-        
+
         Returns:
             The callback for the given characteristic, or None if no callback is registered.
+
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)

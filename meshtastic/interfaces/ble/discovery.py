@@ -26,9 +26,10 @@ from meshtastic.interfaces.ble.utils import resolve_ble_module, sanitize_address
 def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
     """
     Determine whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
-    
+
     Returns:
         Tuple[bool, bool]: (supports_details, supports_rssi) where the first element is True if the constructor accepts a `details` kwarg and the second is True if it accepts an `rssi` kwarg.
+
     """
     sig = inspect.signature(BLEDevice.__init__)
     return ("details" in sig.parameters, "rssi" in sig.parameters)
@@ -386,7 +387,7 @@ class DiscoveryManager:
     def __del__(self) -> None:
         """
         Close and clear the internal BLE client when the DiscoveryManager is garbage-collected.
-        
+
         Performs a best-effort close of the client, suppressing any exceptions and clearing the internal reference to avoid resource leaks during interpreter shutdown.
         """
         # Use getattr to handle cases where __init__ didn't complete

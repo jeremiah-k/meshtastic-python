@@ -90,7 +90,7 @@ class TestBLEStateManager:
     def test_invalid_transitions(self):
         """
         Verify that invalid state transitions are rejected while no-op transitions to the same state are allowed.
-        
+
         Asserts:
         - Transitioning to the current state (no-op) returns True and leaves the state unchanged.
         - Transition from DISCONNECTED to CONNECTED is rejected and leaves state unchanged.
@@ -125,14 +125,16 @@ class TestBLEStateManager:
     def test_transition_sequence_invariants(self, sequence):
         """
         Verify that arbitrary sequences of state transition requests preserve BLEStateManager invariants.
-        
+
         For each target in `sequence` this test asserts three invariants:
         - The boolean result of transition_to(target) matches whether the manager's state equals the target after the call.
         - If the transition call indicates failure, the manager's state does not change.
         - The manager's state is always a member of ConnectionState.
-        
-        Parameters:
+
+        Parameters
+        ----------
             sequence (iterable[ConnectionState]): Ordered collection of target states to request on the manager.
+
         """
         manager = BLEStateManager()
         for target_state in sequence:
@@ -153,11 +155,13 @@ class TestBLEStateManager:
         def worker(worker_id):
             """
             Worker loop that performs alternating state transition attempts and records outcomes to shared lists.
-            
+
             On each of 100 iterations the worker attempts ConnectionState.CONNECTING for even indices and ConnectionState.DISCONNECTED for odd indices, appending (worker_id, iteration_index, success, current_state_value) to the shared `results` list. If an exception occurs it is appended to the shared `errors` list as (worker_id, error_message).
-            
-            Parameters:
+
+            Parameters
+            ----------
                 worker_id (Any): Identifier used when recording results and errors.
+
             """
             try:
                 for i in range(100):
@@ -227,9 +231,10 @@ class TestBLEStateManager:
             # This should work with reentrant lock
             """
             Read and return the manager's current connection state while holding its reentrant state lock.
-            
+
             Returns:
                 ConnectionState: The current connection state.
+
             """
             with manager._state_lock:
                 with manager._state_lock:
@@ -341,7 +346,7 @@ class TestBLEInterfaceStateIntegration:
     def test_client_management_with_states(self):
         """
         Verify client lifecycle behavior across state transitions.
-        
+
         Asserts that transitioning from CONNECTING to CONNECTED marks the manager as connected, that transitioning to DISCONNECTED clears the client and sets the state to DISCONNECTED, and that performing a no-op transition to the current DISCONNECTED state is considered valid.
         """
         manager = BLEStateManager()
@@ -398,11 +403,13 @@ class TestPhase3LockConsolidation:
         def worker(worker_id):
             """
             Perform a short sequence of state transitions on a shared BLEStateManager and record outcomes.
-            
+
             Runs 10 iterations requesting CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order. Appends a tuple (worker_id, iteration, manager.state, success) to the shared `results` list for each iteration; on exception appends (worker_id, error_message) to the shared `errors` list. Intended for invocation from concurrent threads to exercise transition behavior.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 worker_id (Any): Identifier included in entries added to `results` and `errors` to distinguish this worker.
+
             """
             try:
                 for i in range(10):
@@ -442,7 +449,7 @@ class TestPhase3LockConsolidation:
     def test_reentrant_lock_behavior(self):
         """
         Verify that the manager's state lock is reentrant and allows nested transitions without deadlock.
-        
+
         Acquires the manager's internal lock, performs nested CONNECTING → CONNECTED transitions, and asserts the manager is connected and ends in ConnectionState.CONNECTED.
         """
         manager = BLEStateManager()
@@ -452,7 +459,7 @@ class TestPhase3LockConsolidation:
             # This should work without deadlock due to reentrant lock
             """
             Validate that nested state transitions under the manager's reentrant lock complete without deadlock and leave the manager connected.
-            
+
             Performs a CONNECTING → CONNECTED sequence while the manager's reentrant lock is held (using a mock client) and verifies the manager reports connected and retains the client.
             """
             assert manager.transition_to(ConnectionState.CONNECTING)
@@ -479,7 +486,7 @@ class TestPhase3LockConsolidation:
         def contending_worker():
             """
             Performs a short lock-holding workload against the shared manager to exercise lock contention.
-            
+
             Acquires manager._state_lock, sleeps briefly, transitions the manager to ConnectionState.CONNECTING and then to ConnectionState.DISCONNECTED. If an unexpected exception occurs, increments contention_count[0].
             """
             try:
@@ -515,7 +522,7 @@ class TestPhase3LockConsolidation:
 def test_state_transition_performance():
     """
     Measure the performance of repeated BLEStateManager state transitions.
-    
+
     This test cycles the manager through CONNECTING → CONNECTED → DISCONNECTED many times and asserts the total elapsed time and per-transition average are below predefined thresholds to detect regressions in transition throughput. It logs a summary with total transitions, elapsed time, and average time per transition.
     """
     manager = BLEStateManager()

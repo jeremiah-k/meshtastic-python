@@ -114,15 +114,18 @@ class BLEInterface(MeshInterface):
     ) -> None:
         """
         Create and initialize a BLEInterface, start its background receive thread, and attempt an initial connection and configuration to a Meshtastic BLE device.
-        
+
         Initializes internal state, thread and event coordinators, notification and discovery managers, starts the receive thread, attempts to connect (using the provided address or any discovered device when None), performs protocol configuration when enabled, and registers an atexit handler to ensure orderly disconnect on process exit.
-        
-        Parameters:
+
+        Parameters
+        ----------
             address (Optional[str]): BLE address or device name to connect to; if None, any discovered Meshtastic device may be used.
             auto_reconnect (bool): If True, schedule automatic reconnection after unexpected disconnects; if False, the interface will not attempt automatic reconnects and will begin shutdown on disconnect.
-        
-        Raises:
+
+        Raises
+        ------
             BLEInterface.BLEError: If the initial connection or configuration fails.
+
         """
 
         # Thread safety and state management
@@ -255,9 +258,10 @@ class BLEInterface(MeshInterface):
     def __repr__(self):
         """
         Return a compact textual representation of the BLEInterface including its address and any non-default feature flags.
-        
+
         Returns:
             str: A string in the form "BLEInterface(...)" containing `address`, `debugOut` when set, and boolean flags `noProto`, `noNodes`, and `auto_reconnect` only when they differ from their defaults.
+
         """
         parts = [f"address={self.address!r}"]
         if self.debugOut is not None:
@@ -313,12 +317,15 @@ class BLEInterface(MeshInterface):
     def _sorted_address_keys(*keys: Optional[str]) -> List[str]:
         """
         Produce a deterministically ordered list of unique, non-empty address keys.
-        
-        Parameters:
+
+        Parameters
+        ----------
             keys (Optional[str]): One or more address key strings; `None` or empty values are ignored.
-        
-        Returns:
+
+        Returns
+        -------
             List[str]: Unique, non-empty address keys sorted in deterministic order.
+
         """
         return sorted({key for key in keys if key})
 
@@ -339,11 +346,13 @@ class BLEInterface(MeshInterface):
     def _mark_address_keys_disconnected(self, *keys: Optional[str]) -> None:
         """
         Mark the given address keys as disconnected while acquiring per-address locks in a deterministic order.
-        
+
         Acquires each address's lock (using deterministic ordering to avoid deadlocks) and marks the address key as disconnected. None or empty keys are ignored.
-        
-        Parameters:
+
+        Parameters
+        ----------
             *keys (Optional[str]): One or more address key strings to mark disconnected; None or empty values are skipped.
+
         """
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
@@ -528,16 +537,18 @@ class BLEInterface(MeshInterface):
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:
         """
         Notify the interface that a Bleak client has disconnected.
-        
-        Parameters:
+
+        Parameters
+        ----------
             client (BleakRootClient): The Bleak client that experienced the disconnection.
+
         """
         self._handle_disconnect("bleak_callback", bleak_client=client)
 
     def _schedule_auto_reconnect(self) -> None:
         """
         Schedule the reconnect worker to repeatedly attempt BLE reconnection until a connection succeeds or shutdown begins.
-        
+
         If auto-reconnect is disabled, or the interface is closing or already closed, this call does nothing. Otherwise it clears the internal shutdown event and delegates scheduling to the reconnect scheduler.
         """
 
@@ -633,12 +644,14 @@ class BLEInterface(MeshInterface):
         def _safe_call(handler, sender, data, error_msg):
             """
             Invoke a notification handler via the interface's error handler so any exceptions are caught and reported.
-            
-            Parameters:
-            	handler (callable): Function to call with (sender, data).
-            	sender (Any): Origin of the notification passed to the handler.
-            	data (Any): Payload delivered to the handler (bytes, bytearray, or object).
-            	error_msg (str): Message forwarded to the error handler if the handler raises an exception.
+
+            Parameters
+            ----------
+                handler (callable): Function to call with (sender, data).
+                sender (Any): Origin of the notification passed to the handler.
+                data (Any): Payload delivered to the handler (bytes, bytearray, or object).
+                error_msg (str): Message forwarded to the error handler if the handler raises an exception.
+
             """
             self.error_handler.safe_execute(
                 lambda: handler(sender, data),
@@ -648,10 +661,12 @@ class BLEInterface(MeshInterface):
         def _safe_legacy_handler(sender, data):
             """
             Invoke the legacy log-radio notification handler for a received BLE notification and capture/report any handler errors without letting them propagate.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 sender: The notification source (characteristic or client) that produced the payload.
                 data: Raw notification payload (bytes or bytearray) delivered by the BLE characteristic.
+
             """
             _safe_call(
                 self.legacy_log_radio_handler,
@@ -663,10 +678,12 @@ class BLEInterface(MeshInterface):
         def _safe_log_handler(sender, data):
             """
             Forward a BLE log-characteristic notification to the configured log handler and record an error if the handler fails.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 sender (Any): Notification sender (characteristic or client); may be unused by the handler.
                 data (bytes | bytearray): Raw notification payload from the BLE device.
+
             """
             _safe_call(
                 self.log_radio_handler,
@@ -678,10 +695,12 @@ class BLEInterface(MeshInterface):
         def _safe_from_num_handler(sender, data):
             """
             Call the FROMNUM notification handler and capture/report any exceptions raised by it.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 sender (Any): Source of the notification (typically the BLE characteristic or client).
                 data (bytes): Raw payload bytes received from the FROMNUM characteristic.
+
             """
             _safe_call(
                 self.from_num_handler,
@@ -695,13 +714,16 @@ class BLEInterface(MeshInterface):
         ):
             """
             Return the notification handler for the given characteristic UUID, creating and subscribing one if none exists.
-            
-            Parameters:
-            	uuid (str): Characteristic UUID to look up or register.
-            	factory (Callable[[], Callable[[Any, Any], None]]): Factory that returns a handler callable which accepts (sender, data).
-            
-            Returns:
-            	Callable[[Any, Any], None]: The existing or newly created notification handler.
+
+            Parameters
+            ----------
+                uuid (str): Characteristic UUID to look up or register.
+                factory (Callable[[], Callable[[Any, Any], None]]): Factory that returns a handler callable which accepts (sender, data).
+
+            Returns
+            -------
+                Callable[[Any, Any], None]: The existing or newly created notification handler.
+
             """
             handler = self._notification_manager.get_callback(uuid)
             if handler is None:
@@ -751,12 +773,14 @@ class BLEInterface(MeshInterface):
     def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
-        
+
         Parses the notification payload as a mesh_pb2.LogRecord and forwards its message to self._handleLogLine. If the record includes a `source` the message is prefixed with "[source] ". Malformed records are logged and ignored.
-        
-        Parameters:
+
+        Parameters
+        ----------
             _ (Any): Unused sender/handle value provided by the BLE library.
             b (bytearray): Serialized mesh_pb2.LogRecord payload from the BLE notification.
+
         """
         log_record = mesh_pb2.LogRecord()  # type: ignore[attr-defined]
         try:
@@ -774,12 +798,14 @@ class BLEInterface(MeshInterface):
     def legacy_log_radio_handler(self, _, b: bytearray) -> None:
         """
         Handle a legacy log-radio notification by delivering the decoded UTF-8 log line to the log handler.
-        
+
         Decode the notification payload `b` as UTF-8, strip newline characters, and forward the resulting string to `self._handleLogLine`. If decoding fails, a warning is logged and the payload is ignored.
-        
-        Parameters:
+
+        Parameters
+        ----------
             _ (Any): Unused sender/handle value provided by the BLE library.
             b (bytearray): Raw notification payload expected to contain a UTF-8 encoded log line.
+
         """
         try:
             log_radio = b.decode("utf-8").replace("\n", "")
@@ -920,9 +946,10 @@ class BLEInterface(MeshInterface):
     def connection_state(self) -> ConnectionState:
         """
         Retrieve the current BLE connection state.
-        
+
         Returns:
             ConnectionState: The current connection state held by the internal state manager.
+
         """
         return self._state_manager.state
 
@@ -930,9 +957,10 @@ class BLEInterface(MeshInterface):
     def is_connection_connected(self) -> bool:
         """
         Report whether the interface currently has an active BLE connection.
-        
+
         Returns:
             True if a connection is active, False otherwise.
+
         """
         return self._state_manager.is_connected
 
@@ -940,9 +968,10 @@ class BLEInterface(MeshInterface):
     def is_connection_closing(self) -> bool:
         """
         Report whether the interface is shutting down or has already closed.
-        
+
         Returns:
             `true` if the interface is shutting down or closed, `false` otherwise.
+
         """
         return self._state_manager.is_closing or self._closed
 
@@ -950,9 +979,10 @@ class BLEInterface(MeshInterface):
     def can_initiate_connection(self) -> bool:
         """
         Indicates whether the interface may start a new BLE connection.
-        
+
         Returns:
             bool: True if a new connection may be started, False otherwise.
+
         """
         return self._state_manager.can_connect and not self._closed
 
@@ -1110,13 +1140,16 @@ class BLEInterface(MeshInterface):
     ) -> bool:
         """
         Determine whether the receive loop should continue after a BLE client disconnect.
-        
-        Parameters:
+
+        Parameters
+        ----------
             error_message (str): Human-readable description of the disconnection cause.
             previous_client (BLEClient): The BLE client that disconnected and may be closed.
-        
-        Returns:
+
+        Returns
+        -------
             `true` if the read loop should continue to allow auto-reconnect, `false` otherwise.
+
         """
         logger.debug("Device disconnected: %s", error_message)
         should_continue = self._handle_disconnect(
@@ -1130,7 +1163,7 @@ class BLEInterface(MeshInterface):
     def _receiveFromRadioImpl(self) -> None:
         """
         Run the receive loop that reads FROMRADIO packets and delivers them to the packet handler.
-        
+
         This method waits on the internal read trigger and reconnection events, performs GATT reads when a BLE client is available (with retry/backoff for transient empty reads), and forwards non-empty payloads to _handleFromRadio. It discards malformed protobufs with a warning, applies the retry policy for transient BLE errors, and on persistent or fatal BLE/OS errors initiates a safe shutdown or reconnection flow so the interface can recover or stop. The loop runs until the interface is closing or the receive thread is requested to stop.
         """
         coordinator = self.thread_coordinator
@@ -1232,11 +1265,12 @@ class BLEInterface(MeshInterface):
     def _read_from_radio_with_retries(self, client: "BLEClient") -> Optional[bytes]:
         """
         Read a non-empty payload from the FROMRADIO characteristic, retrying on transient empty reads.
-        
+
         Attempts up to BLEConfig.EMPTY_READ_MAX_RETRIES retries with backoff when reads yield empty payloads. Resets the suppressed-empty-read counter on a successful read and triggers a throttled empty-read warning when all retries are exhausted.
-        
+
         Returns:
             bytes or None: The payload bytes if a non-empty read occurred, or `None` if no non-empty payload was obtained after retries.
+
         """
         for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
             payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
@@ -1251,14 +1285,17 @@ class BLEInterface(MeshInterface):
     def _handle_transient_read_error(self, error: BleakError) -> None:
         """
         Apply the configured transient-read retry policy for a BLE read error.
-        
+
         May increment an internal retry counter and sleep for the policy delay to allow the caller to retry the read. If the policy indicates retries are exhausted, the internal counter is reset and a BLEInterface.BLEError is raised.
-        
-        Parameters:
+
+        Parameters
+        ----------
             error (BleakError): The BLE read error to evaluate.
-        
-        Raises:
+
+        Raises
+        ------
             BLEInterface.BLEError: When the retry policy is exhausted and the read should be treated as persistent.
+
         """
         transient_policy = self._transient_read_policy
         if transient_policy.should_retry(self._read_retry_count):
@@ -1278,7 +1315,7 @@ class BLEInterface(MeshInterface):
     def _log_empty_read_warning(self) -> None:
         """
         Throttle and emit warnings for repeated empty FROMRADIO BLE reads.
-        
+
         When empty read events occur repeatedly, this method either logs a warning (including the number
         of suppressed repeats since the last warning) if the configured cooldown has elapsed, or
         increments an internal suppressed counter and emits a debug-level message while still within the
@@ -1364,7 +1401,7 @@ class BLEInterface(MeshInterface):
     def close(self) -> None:
         """
         Shuts down the BLE interface and releases all associated resources.
-        
+
         This method performs an idempotent, orderly shutdown: it stops background threads and reconnection activity, disconnects and closes any active BLE client, cleans up notification and discovery managers, unregisters the atexit handler, and publishes a final disconnected notification while waiting briefly for pending disconnect-related notifications to flush.
         """
         # Use unified state lock
@@ -1468,11 +1505,13 @@ class BLEInterface(MeshInterface):
     ) -> None:
         """
         Wait up to `timeout` seconds for the publish queue to flush before continuing.
-        
+
         Triggers a flush request on the publishing thread and waits for a flush event. If `timeout` is reached and the publishing thread is alive, a debug message is logged. If the publishing thread is not running when the timeout elapses, the publish queue is drained synchronously on the current thread. Exceptions raised while requesting the flush are caught and logged.
-        
-        Parameters:
+
+        Parameters
+        ----------
             timeout (float | None): Maximum seconds to wait for the publish queue to flush. If `None`, uses `DISCONNECT_TIMEOUT_SECONDS`.
+
         """
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
@@ -1527,7 +1566,7 @@ class BLEInterface(MeshInterface):
     def _disconnected(self):
         """
         Publish the legacy meshtastic.connection.status event when the interface disconnects.
-        
+
         Enqueues a publish of the connection status (interface=self) to maintain backward compatibility with tests and integrations. Any exceptions raised while queueing or during publish are suppressed and logged at debug level.
         """
         super()._disconnected()
@@ -1540,7 +1579,7 @@ class BLEInterface(MeshInterface):
         def _publish_status():
             """
             Publish a disconnected connection status to the mesh publisher.
-            
+
             Sends a "meshtastic.connection.status" message with `connected=False` via `mesh_pub`. Any exception raised while publishing is suppressed and logged at debug level.
             """
             try:
@@ -1566,7 +1605,7 @@ class BLEInterface(MeshInterface):
         def _publish_status():
             """
             Publish a meshtastic.connection.status notification indicating this interface is connected.
-            
+
             Calls the mesh publisher with `interface=self` and `connected=True`. Any exceptions raised while publishing are suppressed and logged at debug level.
             """
             try:

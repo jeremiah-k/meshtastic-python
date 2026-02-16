@@ -32,15 +32,17 @@ class StreamInterface(MeshInterface):
     ) -> None:
         """
         Initialize the StreamInterface, prepare its reader thread, and optionally open and configure the underlying stream connection.
-        
-        Parameters:
+
+        Parameters
+        ----------
             debugOut (Optional[io.TextIOWrapper]): If provided, device debug serial output will be written to this stream.
             noProto (bool): If True, skip protocol-specific startup and allow using this class without a concrete stream implementation.
             connectNow (bool): If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration.
             noNodes (bool): Passed to the MeshInterface initializer to control node discovery behavior.
             timeout (int): Seconds to wait for replies and configuration operations.
-        
-        Raises:
+
+        Raises
+        ------
             Exception: If this class has not been specialized with a concrete `self.stream` and `noProto` is False (indicates StreamInterface is abstract).
         """
 
@@ -138,7 +140,7 @@ class StreamInterface(MeshInterface):
     def close(self) -> None:
         """
         Close the connection to the device and shut down the reader thread.
-        
+
         Calls MeshInterface.close(), sets the internal shutdown flag to request the background reader to exit, and attempts to join the reader thread for up to 2 seconds. If close() is called before the reader thread has started, joining is skipped. If the reader thread remains alive after the timeout, a warning is logged.
         """
         logger.debug("Closing stream")
@@ -154,14 +156,16 @@ class StreamInterface(MeshInterface):
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _handleLogByte(self, b):
-        """
+        r"""
         Process a single byte from the device's log stream, building log lines and dispatching complete lines.
-        
-        Parameters:
+
+        Parameters
+        ----------
             b (bytes): A single-byte bytes object read from the device.
-        
+
         Behavior:
             Decodes the byte as UTF-8, using '?' if decoding fails. Ignores carriage return characters ('\r'). On newline ('\n'), passes the accumulated line to self._handleLogLine and clears the accumulator; otherwise appends the decoded character to self.cur_log_line.
+
         """
 
         utf = "?"  # assume we might fail
@@ -181,7 +185,7 @@ class StreamInterface(MeshInterface):
     def __reader(self) -> None:
         """
         Continuously read from the configured stream in a background thread, dispatching device log bytes and framed radio packets for processing.
-        
+
         This thread accumulates incoming bytes, treats bytes that do not start a protocol frame as device log data (forwarded to _handleLogByte), recognizes framed messages prefixed by START1/START2 with a length header, and passes complete payloads to _handleFromRadio. On termination it calls _disconnected to clean up resources.
         """
         logger.debug("in __reader()")

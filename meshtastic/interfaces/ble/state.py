@@ -79,7 +79,7 @@ class BLEStateManager:
     def __init__(self):
         """
         Initialize the BLEStateManager with a reentrant lock and set the initial connection state.
-        
+
         Creates the internal reentrant lock used to serialize state transitions and sets the manager's state to ConnectionState.DISCONNECTED.
         """
         self._state_lock = RLock()  # Single reentrant lock for all state changes
@@ -89,9 +89,10 @@ class BLEStateManager:
     def lock(self) -> RLock:
         """
         The reentrant lock used to synchronize BLE state transitions.
-        
+
         Returns:
             RLock: The internal reentrant lock protecting state changes.
+
         """
         return self._state_lock
 
@@ -99,11 +100,12 @@ class BLEStateManager:
     def state(self) -> ConnectionState:
         """
         Get the current BLE connection state.
-        
+
         The state is read while holding the manager's internal reentrant lock to ensure thread safety.
-        
+
         Returns:
             ConnectionState: The current connection state.
+
         """
         with self._state_lock:
             return self._state
@@ -112,9 +114,10 @@ class BLEStateManager:
     def is_connected(self) -> bool:
         """
         Report whether the BLE interface is in the CONNECTED state.
-        
+
         Returns:
             `true` if the current connection state is `ConnectionState.CONNECTED`, `false` otherwise.
+
         """
         return self.state == ConnectionState.CONNECTED
 
@@ -122,9 +125,10 @@ class BLEStateManager:
     def is_closing(self) -> bool:
         """
         Whether the BLE interface is in the closing state (DISCONNECTING).
-        
+
         Returns:
             True if the current connection state is DISCONNECTING, False otherwise.
+
         """
         return self.state == ConnectionState.DISCONNECTING
 
@@ -144,9 +148,10 @@ class BLEStateManager:
     def is_connecting(self) -> bool:
         """
         Determine if the BLE interface is in a connecting state.
-        
+
         Returns:
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
+
         """
         return self.state in (ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
 
@@ -169,14 +174,17 @@ class BLEStateManager:
     def transition_to(self, new_state: ConnectionState) -> bool:
         """
         Attempt to change the manager's BLE connection state to the given target state.
-        
+
         Validates the requested transition against the state machine and treats a transition to the current state as a valid no-op.
-        
-        Parameters:
+
+        Parameters
+        ----------
             new_state (ConnectionState): Target connection state to transition to.
-        
-        Returns:
+
+        Returns
+        -------
             bool: `True` if the state was changed or already equals the target state, `False` if the transition is invalid.
+
         """
         with self._state_lock:
             if new_state == self._state:
@@ -250,9 +258,10 @@ class BLEStateManager:
     def reset_to_disconnected(self) -> bool:
         """
         Force the connection state to DISCONNECTED for recovery or cleanup.
-        
+
         Returns:
             True if the state was set to DISCONNECTED.
+
         """
         with self._state_lock:
             old_state = self._state

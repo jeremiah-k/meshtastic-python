@@ -75,17 +75,20 @@ class ConnectionValidator:
     ) -> bool:
         """
         Determine whether a connected BLE client matches the requested or known device address.
-        
+
         Considers the provided normalized_request, the last_connection_request, and the sanitized forms of the original address and the client's bleak address when deciding a match.
-        
-        Parameters:
+
+        Parameters
+        ----------
             client (Optional[BLEClient]): The BLE client to verify.
             normalized_request (Optional[str]): Sanitized identifier for the desired target; if `None`, any connected client is treated as acceptable for matching.
             last_connection_request (Optional[str]): The last sanitized connection request to include among known targets.
             address (Optional[str]): The originally requested address; its sanitized form is compared against the client's address.
-        
-        Returns:
+
+        Returns
+        -------
             True if the client is connected and its address equals `normalized_request` or one of the known targets, False otherwise.
+
         """
         if not client or not client.is_connected():
             return False
@@ -132,13 +135,16 @@ class ClientManager:
     ) -> "BLEClient":
         """
         Create a BLEClient for the specified device address and register a disconnect callback.
-        
-        Parameters:
+
+        Parameters
+        ----------
             device_address (str): The BLE device address to bind the client to.
             disconnect_callback (Callable): Callback invoked when the client disconnects.
-        
-        Returns:
+
+        Returns
+        -------
             BLEClient: A BLEClient instance bound to device_address with the disconnect callback set.
+
         """
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
@@ -281,15 +287,18 @@ class ConnectionOrchestrator:
     ) -> None:
         """
         Finalize a successful BLE connection by registering notifications, verifying the client remains connected, transitioning state to CONNECTED, invoking the connected callback, signaling a reconnection event if applicable, and logging success.
-        
-        Parameters:
+
+        Parameters
+        ----------
             client (BLEClient): The connected BLE client instance.
             device_address (str): Device address used for logging.
             register_notifications_func (Callable): Function that registers notification handlers on the client.
             on_connected_func (Callable): Callback invoked after the state transitions to CONNECTED.
-        
-        Raises:
+
+        Raises
+        ------
             BLEInterface.BLEError: If the connection is invalidated by a concurrent disconnect or if the client disconnects during finalization.
+
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:

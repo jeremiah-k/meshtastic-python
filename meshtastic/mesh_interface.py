@@ -53,12 +53,15 @@ logger = logging.getLogger(__name__)
 def _timeago(delta_secs: int) -> str:
     """
     Produce a short human-readable relative time string for a past interval.
-    
-    Parameters:
+
+    Parameters
+    ----------
         delta_secs (int): Number of seconds elapsed in the past; zero or negative values are treated as "now".
-    
-    Returns:
+
+    Returns
+    -------
         str: A compact relative time string such as "now", "30 sec ago", "1 hour ago", or "2 days ago".
+
     """
     intervals = (
         ("year", 60 * 60 * 24 * 365),
@@ -94,9 +97,11 @@ class MeshInterface:  # pylint: disable=R0902
         def __init__(self, message):
             """
             Initialize the MeshInterfaceError with a human-readable message.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 message (str): The error message to store on the exception and pass to the base Exception.
+
             """
             self.message = message
             super().__init__(self.message)
@@ -110,8 +115,9 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """
         Initialize the MeshInterface and configure runtime options.
-        
-        Parameters:
+
+        Parameters
+        ----------
             debugOut (Optional[file-like or callable]): Destination for human-readable log lines; if provided the interface will publish device logs to this output.
             noProto (bool): If True, disable running the meshtastic protocol layer over the link (operate as a dumb serial client).
             noNodes (bool): If True, instruct the device not to send its node database on startup; only other configuration will be requested.
@@ -214,9 +220,11 @@ class MeshInterface:  # pylint: disable=R0902
     def _handleLogRecord(self, record: mesh_pb2.LogRecord) -> None:
         """
         Process a protobuf LogRecord by extracting its message text and handling it as a device log line.
-        
-        Parameters:
+
+        Parameters
+        ----------
             record (mesh_pb2.LogRecord): Protobuf log record containing the `message` field to be processed.
+
         """
         # For now we just try to format the line as if it had come in over the serial port
         self._handleLogLine(record.message)
@@ -224,14 +232,17 @@ class MeshInterface:  # pylint: disable=R0902
     def showInfo(self, file=sys.stdout) -> str:  # pylint: disable=W0613
         """
         Produce and print a human-readable summary of this mesh interface, including owner, local node info, metadata, and the set of known nodes.
-        
+
         The summary formats node entries as JSON, removes internal keys (`raw`, `decoded`, `payload`) from node records, and normalizes stored MAC addresses into human-readable form.
-        
-        Parameters:
+
+        Parameters
+        ----------
             file: A file-like object to which the summary is printed (defaults to sys.stdout).
-        
-        Returns:
+
+        Returns
+        -------
             summary (str): The full summary text that was printed.
+
         """
         owner = f"Owner: {self.getLongName()} ({self.getShortName()})"
         myinfo = ""
@@ -268,24 +279,29 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> str:  # pylint: disable=W0613
         """
         Produce a formatted table summarizing known mesh nodes.
-        
-        Parameters:
+
+        Parameters
+        ----------
             includeSelf (bool): If False, omit the local node from the output.
             showFields (Optional[List[str]]): Ordered list of node fields to include (dotted paths for nested fields). If omitted or empty, a sensible default set of fields is used; the row-number column "N" is always included.
-        
-        Returns:
+
+        Returns
+        -------
             table (str): The rendered table string (also printed to stdout) containing one row per node and columns mapped to human-readable headings.
         """
 
         def get_human_readable(name):
             """
             Map an internal dotted field path to a human-readable column label.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 name (str): Dotted field path or key to convert (e.g., "user.longName", "position.latitude").
-            
-            Returns:
+
+            Returns
+            -------
                 str: A human-readable label for the given field when known (e.g., "User", "Latitude"); otherwise returns the original `name`.
+
             """
             name_map = {
                 "user.longName": "User",
@@ -316,26 +332,32 @@ class MeshInterface:  # pylint: disable=R0902
         def formatFloat(value, precision=2, unit="") -> Optional[str]:
             """
             Format a numeric value into a fixed-precision string with an optional unit suffix.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 value (float | int | None): The numeric value to format. Falsy inputs (e.g., None or 0) produce no output.
                 precision (int): Number of digits after the decimal point. Defaults to 2.
                 unit (str): Suffix to append to the formatted number (e.g., "V", "m"). Defaults to empty string.
-            
-            Returns:
+
+            Returns
+            -------
                 str | None: `None` if `value` is falsy (for example `None` or `0`), otherwise the formatted string (e.g., "3.14V").
+
             """
             return f"{value:.{precision}f}{unit}" if value else None
 
         def getLH(ts) -> Optional[str]:
             """
             Format a Unix timestamp into a human-readable 'YYYY-MM-DD HH:MM:SS' string.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 ts (float|int|None): Seconds since the Unix epoch. If falsy or None, no time is available.
-            
-            Returns:
+
+            Returns
+            -------
                 last_heard (Optional[str]): Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is falsy.
+
             """
             return (
                 datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else None
@@ -344,12 +366,15 @@ class MeshInterface:  # pylint: disable=R0902
         def getTimeAgo(ts) -> Optional[str]:
             """
             Produce a short human-readable relative time string for a Unix epoch timestamp.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 ts (float|int|None): Unix timestamp in seconds since the epoch; if `None` no computation is performed.
-            
-            Returns:
+
+            Returns
+            -------
                 Optional[str]: A concise relative time string like "now", "5 sec ago", "2 min ago", etc., or `None` if `ts` is `None` or represents a time in the future.
+
             """
             if ts is None:
                 return None
@@ -362,13 +387,16 @@ class MeshInterface:  # pylint: disable=R0902
         def getNestedValue(node_dict: Dict[str, Any], key_path: str) -> Any:
             """
             Retrieve a value from a nested dict using a dotted key path.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 node_dict (Dict[str, Any]): Dictionary to traverse.
                 key_path (str): Dotted path (e.g., "a.b.c"); must contain at least one dot.
-            
-            Returns:
+
+            Returns
+            -------
                 Any: The value at the nested path, or `None` if `key_path` does not contain a dot, any intermediate key is missing, or an intermediate value is not a dict.
+
             """
             if "." not in key_path:
                 logger.debug("getNestedValue was called without a nested path.")
@@ -500,17 +528,20 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> meshtastic.node.Node:
         """
         Obtain a Node object representing the device identified by nodeId.
-        
+
         If nodeId is the local or broadcast address, returns the already-initialized local node. For remote nodes, this constructs a Node and, when requestChannels is True, requests channel information and retries up to requestChannelAttempts until channel data is received or the operation times out. On repeated failures to retrieve channel info, the function will terminate the process via our_exit.
-        
-        Parameters:
+
+        Parameters
+        ----------
             nodeId (str): Node identifier (hex/node-id string, or LOCAL_ADDR/BROADCAST_ADDR).
             requestChannels (bool): If True, request channel settings from the remote node.
             requestChannelAttempts (int): Number of attempts to retrieve channel info before giving up.
             timeout (int): Timeout (in seconds) passed to the Node constructor and used while waiting for responses.
-        
-        Returns:
+
+        Returns
+        -------
             meshtastic.node.Node: The Node object corresponding to nodeId.
+
         """
         if nodeId in (LOCAL_ADDR, BROADCAST_ADDR):
             return self.localNode
@@ -593,14 +624,16 @@ class MeshInterface:  # pylint: disable=R0902
     ):
         """
         Send a high-priority alert text to a node, which may trigger special notifications on clients.
-        
-        Parameters:
+
+        Parameters
+        ----------
             text (str): Alert text to send.
             destinationId (int | str): Node ID or node number to receive the alert (defaults to broadcast).
             onResponse (Optional[Callable[[dict], Any]]): Optional callback invoked if a response is received for this message.
             channelIndex (int): Channel index to use when sending.
-        
-        Returns:
+
+        Returns
+        -------
             mesh_pb2.MeshPacket: The sent mesh packet with its `id` populated.
         """
 
@@ -618,10 +651,12 @@ class MeshInterface:  # pylint: disable=R0902
     def sendMqttClientProxyMessage(self, topic: str, data: bytes):
         """
         Send an MQTT Client Proxy message to the radio.
-        
-        Parameters:
-        	topic (str): MQTT topic string to forward to the radio.
-        	data (bytes): MQTT message payload to forward.
+
+        Parameters
+        ----------
+                topic (str): MQTT topic string to forward to the radio.
+                data (bytes): MQTT message payload to forward.
+
         """
         prox = mesh_pb2.MqttClientProxyMessage()
         prox.topic = topic
@@ -648,27 +683,31 @@ class MeshInterface:  # pylint: disable=R0902
     ):  # pylint: disable=R0913
         """
         Send a data packet to a mesh node.
-        
-        Parameters:
-        	data (bytes or protobuf): Payload to send; protobuf objects will be serialized.
-        	destinationId (int|str): Destination node identifier (node ID string, numeric node number, BROADCAST_ADDR, or LOCAL_ADDR).
-        	portNum (int): Application port number for the payload.
-        	wantAck (bool): Request reliable delivery with retries and ack/nak.
-        	wantResponse (bool): Request an application-layer response from the recipient.
-        	onResponse (callable[[dict], Any] | None): Callback invoked when a response or NAK/ACK (if permitted) for this packet is received.
-        	onResponseAckPermitted (bool): If True, invoke onResponse for regular ACKs as well as data responses and NAKs.
-        	channelIndex (int): Channel index to send on.
-        	hopLimit (int | None): Maximum hop count for the packet; None uses the default.
-        	pkiEncrypted (bool | None): If True, attempt PKI encryption for the payload.
-        	publicKey (bytes | None): Public key to use for PKI encryption when pkiEncrypted is True.
-        	priority (int | None): Packet priority enum value to assign to the packet.
-        	replyId (int | None): If provided, marks this packet as a reply to the given message ID.
-        
-        Returns:
-        	mesh_pb2.MeshPacket: The sent packet with its `id` field populated.
-        
-        Raises:
-        	MeshInterface.MeshInterfaceError: If the payload exceeds the maximum allowed size or a packet id cannot be generated.
+
+        Parameters
+        ----------
+                data (bytes or protobuf): Payload to send; protobuf objects will be serialized.
+                destinationId (int|str): Destination node identifier (node ID string, numeric node number, BROADCAST_ADDR, or LOCAL_ADDR).
+                portNum (int): Application port number for the payload.
+                wantAck (bool): Request reliable delivery with retries and ack/nak.
+                wantResponse (bool): Request an application-layer response from the recipient.
+                onResponse (callable[[dict], Any] | None): Callback invoked when a response or NAK/ACK (if permitted) for this packet is received.
+                onResponseAckPermitted (bool): If True, invoke onResponse for regular ACKs as well as data responses and NAKs.
+                channelIndex (int): Channel index to send on.
+                hopLimit (int | None): Maximum hop count for the packet; None uses the default.
+                pkiEncrypted (bool | None): If True, attempt PKI encryption for the payload.
+                publicKey (bytes | None): Public key to use for PKI encryption when pkiEncrypted is True.
+                priority (int | None): Packet priority enum value to assign to the packet.
+                replyId (int | None): If provided, marks this packet as a reply to the given message ID.
+
+        Returns
+        -------
+                mesh_pb2.MeshPacket: The sent packet with its `id` field populated.
+
+        Raises
+        ------
+                MeshInterface.MeshInterfaceError: If the payload exceeds the maximum allowed size or a packet id cannot be generated.
+
         """
 
         if getattr(data, "SerializeToString", None):
@@ -725,10 +764,11 @@ class MeshInterface:  # pylint: disable=R0902
     ):
         """
         Send a position packet to a node (defaults to broadcast) and optionally wait for a response.
-        
+
         The device will use this packet to update its notion of local position.
-        
-        Parameters:
+
+        Parameters
+        ----------
             latitude (float): Latitude in degrees. If 0.0 the latitude field is omitted.
             longitude (float): Longitude in degrees. If 0.0 the longitude field is omitted.
             altitude (int): Altitude in meters. If 0 the altitude field is omitted.
@@ -736,9 +776,11 @@ class MeshInterface:  # pylint: disable=R0902
             wantAck (bool): Request an acknowledgment from the recipient.
             wantResponse (bool): If True, block until a position response is received.
             channelIndex (int): Channel index to send the packet on.
-        
-        Returns:
+
+        Returns
+        -------
             mesh_pb2.MeshPacket: The sent packet with its `id` populated.
+
         """
         p = mesh_pb2.Position()
         if latitude != 0.0:
@@ -774,11 +816,13 @@ class MeshInterface:  # pylint: disable=R0902
     def onResponsePosition(self, p):
         """
         Handle an incoming position response payload.
-        
+
         Parses the Position protobuf from the decoded packet payload, marks the interface's position acknowledgment as received, and prints a concise human-readable summary including latitude/longitude (in degrees), altitude (meters) when present, and precision information. If the packet is a routing response indicating "NO_RESPONSE", terminates with a message about the required firmware version.
-        
-        Parameters:
+
+        Parameters
+        ----------
             p (dict): A decoded packet dictionary containing at minimum the keys `"decoded"`, `"decoded"]["portnum"`, and `"decoded"]["payload"`; for routing responses it must include `"decoded"]["routing"]["errorReason"`.
+
         """
         if p["decoded"]["portnum"] == "POSITION_APP":
             self._acknowledgment.receivedPosition = True
@@ -815,16 +859,19 @@ class MeshInterface:  # pylint: disable=R0902
     ):
         """
         Initiate a traceroute toward a destination node.
-        
+
         Sends a RouteDiscovery packet to the given destination and waits for trace route responses; the wait timeout is extended based on the local node count but capped by hopLimit.
-        
-        Parameters:
+
+        Parameters
+        ----------
             dest (int | str): Destination node (numeric node number, node ID string, or broadcast/local constants).
             hopLimit (int): Maximum number of hops to probe for the trace route.
             channelIndex (int): Channel index to use for transmission.
-        
-        Raises:
+
+        Raises
+        ------
             MeshInterfaceError: If waiting for the trace route response times out or the operation fails.
+
         """
         r = mesh_pb2.RouteDiscovery()
         self.sendData(
@@ -843,19 +890,21 @@ class MeshInterface:  # pylint: disable=R0902
     def onResponseTraceRoute(self, p: dict):
         """
         Handle a route-trace response and display human-readable forward and return paths.
-        
+
         Parses a RouteDiscovery payload from p["decoded"]["payload"], prints a formatted
         route from the response destination back to the origin and, when present,
         prints the traced route back to the requester. Marks the interface acknowledgment
         flag for trace-route reception.
-        
-        Parameters:
+
+        Parameters
+        ----------
             p (dict): Received mesh packet dictionary. Expected keys:
                 - "decoded": a dict containing a "payload" field with the RouteDiscovery
                   protobuf serialized bytes.
                 - "from": numeric node ID of the packet sender.
                 - "to": numeric node ID of the packet destination.
                 - "hopStart" (optional): present when a return route is included.
+
         """
         UNK_SNR = -128  # Value representing unknown SNR
 
@@ -866,25 +915,31 @@ class MeshInterface:  # pylint: disable=R0902
         def _node_label(node_num: int) -> str:
             """
             Return a human-readable label for a node number.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 node_num (int): Numeric node identifier.
-            
-            Returns:
+
+            Returns
+            -------
                 str: The node's ID string if known, otherwise the node number formatted as an 8-digit hexadecimal string.
+
             """
             return self._nodeNumToId(node_num, False) or f"{node_num:08x}"
 
         def _format_snr(snr_value: Optional[int]) -> str:
             """
             Format an SNR value encoded in quarter-dB units into a human-readable string.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 snr_value (Optional[int]): SNR expressed as an integer number of quarter dB units,
                     or `None`/`UNK_SNR` to indicate an unknown value.
-            
-            Returns:
+
+            Returns
+            -------
                 Formatted SNR in dB as a string (for example, "7.5"), or "?" when the SNR is unknown.
+
             """
             return (
                 str(snr_value / 4)
@@ -895,14 +950,17 @@ class MeshInterface:  # pylint: disable=R0902
         def _append_hop(route_text: str, node_num: int, snr_text: str) -> str:
             """
             Append a hop description to an existing route string.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 route_text (str): Current route representation.
                 node_num (int): Numeric node identifier to be converted to a label.
                 snr_text (str): Signal-to-noise ratio text to display (unit omitted).
-            
-            Returns:
+
+            Returns
+            -------
                 str: The route string with " --> <node_label> (<snr_text>dB)" appended.
+
             """
             return f"{route_text} --> {_node_label(node_num)} ({snr_text}dB)"
 
@@ -943,15 +1001,17 @@ class MeshInterface:  # pylint: disable=R0902
     ):
         """
         Send a telemetry request or announcement and optionally wait for a reply.
-        
-        Parameters:
-        	destinationId (int | str): Node ID or broadcast address to send the telemetry to.
-        	wantResponse (bool): If true, register a telemetry response handler and block until a response is received.
-        	channelIndex (int): Channel index to use for the outgoing packet.
-        	telemetryType (str): Type of telemetry payload to send. Supported values:
-        		"environment_metrics", "air_quality_metrics", "power_metrics", "local_stats",
-        		and "device_metrics" (the default). When "device_metrics" is chosen, the method
-        		populates the payload from the local node's cached device metrics when available.
+
+        Parameters
+        ----------
+                destinationId (int | str): Node ID or broadcast address to send the telemetry to.
+                wantResponse (bool): If true, register a telemetry response handler and block until a response is received.
+                channelIndex (int): Channel index to use for the outgoing packet.
+                telemetryType (str): Type of telemetry payload to send. Supported values:
+                        "environment_metrics", "air_quality_metrics", "power_metrics", "local_stats",
+                        and "device_metrics" (the default). When "device_metrics" is chosen, the method
+                        populates the payload from the local node's cached device metrics when available.
+
         """
         r = telemetry_pb2.Telemetry()
 
@@ -1004,13 +1064,15 @@ class MeshInterface:  # pylint: disable=R0902
     def onResponseTelemetry(self, p: dict):
         """
         Handle an incoming telemetry response packet.
-        
+
         Parses the packet's Telemetry protobuf, marks telemetry as received, and prints human-readable telemetry fields.
         If the packet contains a routing error indicating `NO_RESPONSE`, exits with a firmware-requirement message.
-        
-        Parameters:
+
+        Parameters
+        ----------
             p (dict): Decoded packet dictionary as produced by _handlePacketFromRadio, expected to contain
                 "decoded" with keys "portnum" and either "payload" (for TELEMETRY_APP) or "routing" (for ROUTING_APP).
+
         """
         if p["decoded"]["portnum"] == "TELEMETRY_APP":
             self._acknowledgment.receivedTelemetry = True
@@ -1056,14 +1118,16 @@ class MeshInterface:  # pylint: disable=R0902
     def onResponseWaypoint(self, p: dict):
         """
         Handle an incoming waypoint response packet.
-        
+
         If the packet is a WAYPOINT_APP response, mark the waypoint acknowledgment as received, parse the Waypoint protobuf from decoded['payload'], and print a human-readable representation. If the packet is a ROUTING_APP response with routing['errorReason'] == "NO_RESPONSE", exit with a message indicating a minimum firmware requirement.
-        
-        Parameters:
+
+        Parameters
+        ----------
             p (dict): Packet dictionary with a 'decoded' mapping that contains at least:
                 - 'portnum' (str): Port name such as "WAYPOINT_APP" or "ROUTING_APP".
                 - 'payload' (bytes): Serialized Waypoint protobuf (when portnum is WAYPOINT_APP).
                 - 'routing' (dict): Routing info including 'errorReason' (when portnum is ROUTING_APP).
+
         """
         if p["decoded"]["portnum"] == "WAYPOINT_APP":
             self._acknowledgment.receivedWaypoint = True
@@ -1092,15 +1156,18 @@ class MeshInterface:  # pylint: disable=R0902
     ):  # pylint: disable=R0913
         """
         Send a waypoint to a node (usually broadcast) and return the sent MeshPacket.
-        
-        Parameters:
-        	waypoint_id (Optional[int]): If provided, use this waypoint id; otherwise a random id will be generated.
-        	wantResponse (bool): If True, block until a waypoint response is received.
-        	latitude (float): Latitude in decimal degrees.
-        	longitude (float): Longitude in decimal degrees.
-        
-        Returns:
-        	The sent MeshPacket with its `id` populated for tracking acknowledgments.
+
+        Parameters
+        ----------
+                waypoint_id (Optional[int]): If provided, use this waypoint id; otherwise a random id will be generated.
+                wantResponse (bool): If True, block until a waypoint response is received.
+                latitude (float): Latitude in decimal degrees.
+                longitude (float): Longitude in decimal degrees.
+
+        Returns
+        -------
+                The sent MeshPacket with its `id` populated for tracking acknowledgments.
+
         """
         w = mesh_pb2.Waypoint()
         w.name = name
@@ -1150,16 +1217,19 @@ class MeshInterface:  # pylint: disable=R0902
     ):
         """
         Send a deletion for a waypoint identified by `waypoint_id` to a destination node.
-        
-        Parameters:
+
+        Parameters
+        ----------
             waypoint_id (int): The waypoint's identifier to delete (must be the waypoint's id, not a packet id).
             destinationId (int | str): Destination node identifier or address (defaults to broadcast).
             wantResponse (bool): If True, wait for and process a waypoint response before returning.
             wantAck (bool): If True, request an acknowledgement for the sent packet.
             channelIndex (int): Channel index to send the packet on.
-        
-        Returns:
+
+        Returns
+        -------
             mesh_pb2.MeshPacket: The MeshPacket that was sent; its `id` field will be populated and can be used to track acks/naks.
+
         """
         p = mesh_pb2.Waypoint()
         p.id = waypoint_id
@@ -1204,17 +1274,20 @@ class MeshInterface:  # pylint: disable=R0902
     ):
         """
         Send a MeshPacket to a specific node or broadcast.
-        
-        Parameters:
+
+        Parameters
+        ----------
             meshPacket (mesh_pb2.MeshPacket): The packet to send; fields such as payload and port should be set by the caller.
             destinationId (int|str): Destination identifier — can be a node number (int), a node ID string (hex-style), or the constants BROADCAST_ADDR or LOCAL_ADDR. Determines the packet's `to` field.
             wantAck (bool): If true, request an acknowledgement from the recipient; sets the packet's `want_ack`.
             hopLimit (int | None): Maximum hop count for the packet. If omitted, the local node's LoRa `hop_limit` is used.
             pkiEncrypted (bool | None): If true, mark the packet as PKI-encrypted.
             publicKey (bytes | None): Optional public key to include on the packet.
-        
-        Returns:
+
+        Returns
+        -------
             mesh_pb2.MeshPacket: The same MeshPacket instance that was sent, with transport-related fields populated (for example: `to`, `want_ack`, `hop_limit`, `id`, and encryption/public key fields).
+
         """
 
         # We allow users to talk to the local node before we've completed the full connection flow...
@@ -1283,9 +1356,10 @@ class MeshInterface:  # pylint: disable=R0902
     def waitForConfig(self):
         """
         Block until the radio configuration and the local node's configuration are available.
-        
+
         Raises:
             MeshInterface.MeshInterfaceError: If the configuration is not received before the interface timeout.
+
         """
         success = (
             self._timeout.waitForSet(self, attrs=("myInfo", "nodes"))
@@ -1299,9 +1373,10 @@ class MeshInterface:  # pylint: disable=R0902
     def waitForAckNak(self):
         """
         Block until an acknowledgement (ACK) or negative acknowledgement (NAK) is received.
-        
+
         Raises:
             MeshInterface.MeshInterfaceError: If waiting times out before an ACK/NAK is received.
+
         """
         success = self._timeout.waitForAckNak(self._acknowledgment)
         if not success:
@@ -1312,14 +1387,17 @@ class MeshInterface:  # pylint: disable=R0902
     def waitForTraceRoute(self, waitFactor):
         """
         Wait for trace route completion using the configured timeout.
-        
+
         Blocks until a trace route response is acknowledged or the configured timeout multiplied by waitFactor elapses.
-        
-        Parameters:
+
+        Parameters
+        ----------
             waitFactor (float): Multiplier applied to the base trace-route timeout to extend the wait period.
-        
-        Raises:
+
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If the wait times out before a traceroute response is received.
+
         """
         success = self._timeout.waitForTraceRoute(waitFactor, self._acknowledgment)
         if not success:
@@ -1328,9 +1406,10 @@ class MeshInterface:  # pylint: disable=R0902
     def waitForTelemetry(self):
         """
         Block until a telemetry response is received or the configured timeout elapses.
-        
+
         Raises:
             MeshInterface.MeshInterfaceError: If waiting for telemetry times out.
+
         """
         success = self._timeout.waitForTelemetry(self._acknowledgment)
         if not success:
@@ -1339,9 +1418,10 @@ class MeshInterface:  # pylint: disable=R0902
     def waitForPosition(self):
         """
         Block until a position acknowledgment is received.
-        
+
         Raises:
             MeshInterface.MeshInterfaceError: If waiting for the position times out.
+
         """
         success = self._timeout.waitForPosition(self._acknowledgment)
         if not success:
@@ -1350,7 +1430,7 @@ class MeshInterface:  # pylint: disable=R0902
     def waitForWaypoint(self):
         """
         Block until a waypoint acknowledgment is received.
-        
+
         Waits for the internal waypoint acknowledgment event to be set; raises MeshInterface.MeshInterfaceError if the wait times out.
         """
         success = self._timeout.waitForWaypoint(self._acknowledgment)
@@ -1360,9 +1440,10 @@ class MeshInterface:  # pylint: disable=R0902
     def getMyNodeInfo(self) -> Optional[Dict]:
         """
         Return the stored node info for the local node.
-        
+
         Returns:
             dict: The local node's info dictionary from nodesByNum, or `None` if myInfo or nodesByNum is unavailable or the local node entry is not present.
+
         """
         if self.myInfo is None or self.nodesByNum is None:
             return None
@@ -1372,11 +1453,12 @@ class MeshInterface:  # pylint: disable=R0902
     def getMyUser(self):
         """
         Retrieve the user dictionary for the local node.
-        
+
         If local node information is available, returns the value of its "user" field.
-        
+
         Returns:
             dict: The local node's user data, or `None` if no local node info or user field is present.
+
         """
         nodeInfo = self.getMyNodeInfo()
         if nodeInfo is not None:
@@ -1386,9 +1468,10 @@ class MeshInterface:  # pylint: disable=R0902
     def getLongName(self):
         """
         Return the configured long name for the local user.
-        
+
         Returns:
             The long name string for the local user, or None if no user or long name is set.
+
         """
         user = self.getMyUser()
         if user is not None:
@@ -1398,9 +1481,10 @@ class MeshInterface:  # pylint: disable=R0902
     def getShortName(self):
         """
         Return the local node user's short name.
-        
+
         Returns:
             str: The user's `shortName` if present, `None` otherwise.
+
         """
         user = self.getMyUser()
         if user is not None:
@@ -1410,9 +1494,10 @@ class MeshInterface:  # pylint: disable=R0902
     def getPublicKey(self):
         """
         Return the local node's public key if one is set.
-        
+
         Returns:
             public_key (bytes | None): The local node's public key bytes if present, `None` otherwise.
+
         """
         user = self.getMyUser()
         if user is not None:
@@ -1422,9 +1507,10 @@ class MeshInterface:  # pylint: disable=R0902
     def getCannedMessage(self):
         """
         Retrieve the canned (predefined) message configured for the local node.
-        
+
         Returns:
             str: The canned message text, or `None` if there is no local node or no canned message configured.
+
         """
         node = self.localNode
         if node is not None:
@@ -1434,9 +1520,10 @@ class MeshInterface:  # pylint: disable=R0902
     def getRingtone(self):
         """
         Retrieve the ringtone for the local node.
-        
+
         Returns:
             str or None: The local node's ringtone name or identifier, or `None` if no local node exists or the ringtone is unavailable.
+
         """
         node = self.localNode
         if node is not None:
@@ -1459,14 +1546,15 @@ class MeshInterface:  # pylint: disable=R0902
     def _generatePacketId(self) -> int:
         """
         Produce a new unique packet identifier for outgoing mesh packets.
-        
+
         The returned value encodes a 10-bit rolling counter in the low 10 bits and random bits in the upper bits to reduce collision risk across restarts.
-        
+
         Returns:
             int: A new packet id where the lower 10 bits are a monotonic counter and the remaining bits are randomized.
-        
+
         Raises:
             MeshInterface.MeshInterfaceError: If the interface is not connected and cannot generate a packet id.
+
         """
         if self.currentPacketId is None:
             raise MeshInterface.MeshInterfaceError(
@@ -1486,7 +1574,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _disconnected(self):
         """
         Mark the interface as disconnected and publish a meshtastic.connection.lost event.
-        
+
         This clears the internal connected flag and schedules a published notification (via the publishing thread) so external listeners are informed that the interface has lost its connection.
         """
         self.isConnected.clear()
@@ -1505,14 +1593,14 @@ class MeshInterface:  # pylint: disable=R0902
     def _startHeartbeat(self):
         """
         Schedule and run periodic heartbeat transmissions to the radio device.
-        
+
         This starts a recurring, daemonized timer that calls sendHeartbeat() at a fixed interval (300 seconds) and reschedules itself. The scheduler runs the first heartbeat immediately and thereafter every interval. It is safe during shutdown: the method respects the _closing flag and _heartbeat_lock to avoid scheduling or sending heartbeats after shutdown has begun.
         """
 
         def callback():
             """
             Schedule recurring heartbeat timers and dispatch a heartbeat, while avoiding scheduling or sending during shutdown.
-            
+
             This callback creates and registers a daemon timer that re-invokes itself after a fixed interval, stores the timer on self.heartbeatTimer, and then calls self.sendHeartbeat() to emit a heartbeat. The function observes self._closing and acquires self._heartbeat_lock to ensure it does not schedule, store, or send heartbeats once shutdown has begun.
             """
             with self._heartbeat_lock:
@@ -1543,7 +1631,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _connected(self):
         """
         Mark the interface as connected, start the heartbeat timer, and publish a connection-established event.
-        
+
         If the interface is shutting down, do nothing. Otherwise set the internal connected event, start periodic heartbeats, and enqueue a "meshtastic.connection.established" publication.
         """
         with self._heartbeat_lock:
@@ -1565,7 +1653,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _startConfig(self):
         """
         Initialize internal node/config state and request the radio's configuration.
-        
+
         Resets local state used during configuration (myInfo, nodes, nodesByNum, and local channel list),
         allocates a new non-conflicting configId when appropriate, and sends a ToRadio message
         requesting configuration using the chosen configId.
@@ -1602,7 +1690,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _queueClaim(self) -> None:
         """
         Decrement the cached transmit-queue free-slot counter when a packet is claimed.
-        
+
         Does nothing if queue status information is not available.
         """
         if self.queueStatus is None:
@@ -1612,10 +1700,13 @@ class MeshInterface:  # pylint: disable=R0902
     def _sendToRadio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """
         Send a ToRadio protobuf to the radio device, queueing MeshPacket payloads and sending non-packet messages immediately.
-        
+
         If `toRadio` contains a `packet` (a MeshPacket) it is placed on the internal transmit queue and will be sent when TX queue space is available; otherwise it is sent immediately. This call may block while waiting for free TX queue space, will claim queue slots for outgoing packets, and will requeue packets that were not acknowledged. If protocol usage is disabled via `noProto`, the message is not sent.
-        Parameters:
+
+        Parameters
+        ----------
             toRadio (mesh_pb2.ToRadio): The protobuf message to transmit; if it has a `packet` field the contained MeshPacket will be queued for transmission.
+
         """
         if self.noProto:
             logger.warning(
@@ -1667,19 +1758,21 @@ class MeshInterface:  # pylint: disable=R0902
     def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """
         Transmit the given ToRadio protobuf to the radio device; intended to be implemented by subclasses.
-        
-        Parameters:
+
+        Parameters
+        ----------
             toRadio (mesh_pb2.ToRadio): The protobuf message describing the action or packet to send to the radio.
-        
+
         Description:
             This method is the transport hook used by MeshInterface to deliver ToRadio protobufs to the underlying hardware or driver. Subclasses must override this method to perform the actual transmission.
+
         """
         logger.error(f"Subclass must provide toradio: {toRadio}")
 
     def _handleConfigComplete(self) -> None:
         """
         Finalize initial configuration by applying collected local channels and marking the interface as connected.
-        
+
         Sets the local node's channels from the internally collected _localChannels and invokes _connected() to signal that configuration is complete and normal packet handling may begin.
         """
         # This is no longer necessary because the current protocol statemachine has already proactively sent us the locally visible channels
@@ -1711,19 +1804,22 @@ class MeshInterface:  # pylint: disable=R0902
     def _handleFromRadio(self, fromRadioBytes):
         """
         Process raw FromRadio protobuf bytes, update internal state, and publish corresponding events.
-        
+
         Parses the provided FromRadio protobuf payload and applies its contents to the interface:
         - updates myInfo and metadata and sets local node number;
         - creates/updates node entries and publishes meshtastic.node.updated;
         - handles config completion, channel records, packet receipts, log records, queue status, client notifications, MQTT proxy messages, and XMODEM packets by invoking the appropriate handlers and publishing events;
         - on reboot, marks the interface disconnected and restarts configuration download;
         - copies config and moduleConfig subfields into the local node's configuration objects.
-        
-        Parameters:
+
+        Parameters
+        ----------
             fromRadioBytes (bytes): Raw protobuf bytes received from the radio representing a mesh_pb2.FromRadio message.
-        
-        Raises:
+
+        Raises
+        ------
             Exception: If parsing the protobuf fails or if downstream handlers raise; parse errors are logged before being re-raised.
+
         """
         fromRadio = mesh_pb2.FromRadio()
         logger.debug(
@@ -1887,16 +1983,18 @@ class MeshInterface:  # pylint: disable=R0902
     def _fixupPosition(self, position: Dict) -> Dict:
         """
         Convert integer coordinate fields to float latitude/longitude values.
-        
+
         If the input dict contains 'latitudeI' or 'longitudeI', sets 'latitude' and/or
         'longitude' to those values multiplied by 1e-7 and converted to float, then
         returns the same dict.
-        
-        Parameters:
+
+        Parameters
+        ----------
             position (Dict): A position dictionary that may contain integer fields
                 'latitudeI' and 'longitudeI'.
-        
-        Returns:
+
+        Returns
+        -------
             Dict: The same position dictionary with 'latitude' and/or 'longitude' set
             to float values when corresponding integer fields were present.
         """
@@ -1909,13 +2007,15 @@ class MeshInterface:  # pylint: disable=R0902
     def _nodeNumToId(self, num: int, isDest: bool = True) -> Optional[str]:
         """
         Return the node ID corresponding to a mesh node number.
-        
+
         If num is the broadcast number, returns the broadcast address when isDest is True or the string "Unknown" when isDest is False. Otherwise looks up the node in internal state.
-        
-        Parameters:
+
+        Parameters
+        ----------
             isDest (bool): When True treat broadcast as a destination (return broadcast address); when False treat broadcast as an unknown source.
-        
-        Returns:
+
+        Returns
+        -------
             str: The node ID for the given node number, the broadcast address, "Unknown", or `None` if the node number is not found.
         """
         if num == BROADCAST_NUM:
@@ -1933,15 +2033,19 @@ class MeshInterface:  # pylint: disable=R0902
     def _getOrCreateByNum(self, nodeNum):
         """
         Return a node entry for a given node number, creating a minimal placeholder if none exists.
-        
-        Parameters:
+
+        Parameters
+        ----------
             nodeNum (int): Numeric node identifier.
-        
-        Returns:
+
+        Returns
+        -------
             dict: Node info dictionary stored in self.nodesByNum for the given nodeNum.
-        
-        Raises:
+
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If nodeNum is the broadcast node number.
+
         """
         if nodeNum == BROADCAST_NUM:
             raise MeshInterface.MeshInterfaceError(
@@ -1967,24 +2071,29 @@ class MeshInterface:  # pylint: disable=R0902
     def _handleChannel(self, channel):
         """
         Append a received channel descriptor to the interface's local channel list during initial configuration.
-        
-        Parameters:
+
+        Parameters
+        ----------
             channel: Channel descriptor (protobuf message or dict) received from the radio that describes a local channel; appended to self._localChannels.
+
         """
         self._localChannels.append(channel)
 
     def _handlePacketFromRadio(self, meshPacket, hack=False):
         """
         Process an incoming MeshPacket from the radio and publish an appropriate meshtastic.receive event.
-        
+
         Converts the protobuf MeshPacket to a dictionary, attaches the original protobuf as "raw", ensures "from" and "to" keys exist (defaulting to 0 if missing), and populates "fromId"/"toId" using node-number-to-ID mapping. If the packet contains a decoded payload, preserves the raw payload bytes, exposes or sets a port number, and, when a known protocol handler exists, decodes the protocol payload into decoded.<handler.name> and attaches the protocol protobuf as decoded.<handler.name>["raw"]. If a protocol handler defines an onReceive callback it will be invoked with the packet dict. If the decoded payload contains a requestId, any registered response handler will be invoked (respecting ACK filtering and handler ackPermitted/onAckNak rules). Finally, publishes the packet on a topic like "meshtastic.receive", "meshtastic.receive.data.<portnum>", or "meshtastic.receive.<protocol>" via the pub/sub system.
-        
-        Parameters:
+
+        Parameters
+        ----------
             meshPacket: protobuf MeshPacket instance received from the radio.
             hack (bool): When True, skip the usual check that requires a "from" field so unit tests can construct packets lacking that field.
-        
-        Returns:
+
+        Returns
+        -------
             None
+
         """
         asDict = google.protobuf.json_format.MessageToDict(meshPacket)
 

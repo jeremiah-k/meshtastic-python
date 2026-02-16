@@ -61,13 +61,16 @@ class ReconnectScheduler:
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """
         Schedule a background BLE reconnect worker if auto-reconnect is enabled and no worker is currently running.
-        
-        Parameters:
+
+        Parameters
+        ----------
             auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
             shutdown_event (Event): Event the worker observes to stop retrying early during shutdown.
-        
-        Returns:
+
+        Returns
+        -------
             True if a new reconnect worker thread was created and started, False otherwise.
+
         """
         if not auto_reconnect:
             return False
@@ -115,10 +118,12 @@ class ReconnectWorker:
     def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
         """
         Bind a BLE interface and a reconnect policy to this worker.
-        
-        Parameters:
+
+        Parameters
+        ----------
             interface ("BLEInterface"): Interface used to perform connection attempts and to query or modify connection state.
             reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
+
         """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
@@ -126,15 +131,18 @@ class ReconnectWorker:
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """
         Decides whether a reconnect attempt should be aborted.
-        
+
         Checks the interface state and the auto_reconnect flag and logs an explanatory debug message including optional context.
-        
-        Parameters:
+
+        Parameters
+        ----------
             auto_reconnect (bool): Whether automatic reconnect is enabled.
             context (str): Optional context to include in debug logs.
-        
-        Returns:
+
+        Returns
+        -------
             `true` if reconnection should be aborted, `false` otherwise.
+
         """
         if self.interface.is_connection_closing:
             logger.debug(

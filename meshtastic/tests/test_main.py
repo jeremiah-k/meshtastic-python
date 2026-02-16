@@ -384,11 +384,13 @@ def test_main_qr(capsys):
 def test_main_onConnected_exception(capsys):
     """
     Verify that running main with the QR option causes the process to exit when QR code generation raises an exception.
-    
+
     This test patches SerialInterface and forces pyqrcode.create to raise an Exception, then asserts that main() results in a SystemExit and prints an abort message containing the exception text.
-    
-    Parameters:
+
+    Parameters
+    ----------
         capsys: Pytest capture fixture used to read stdout/stderr.
+
     """
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
@@ -396,12 +398,15 @@ def test_main_onConnected_exception(capsys):
     def throw_an_exception(junk):
         """
         Always raises a generic Exception.
-        
-        Parameters:
+
+        Parameters
+        ----------
             junk: Value is ignored.
-        
-        Raises:
+
+        Raises
+        ------
             Exception: Always raised with message "Fake exception."
+
         """
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
@@ -555,7 +560,7 @@ def test_main_get_canned_messages(capsys, caplog, iface_with_nodes):
 def test_main_set_ringtone(capsys):
     """
     Verify the CLI --set-ringtone option instructs the device to set the ringtone and prints confirmation.
-    
+
     Sets argv to request setting the ringtone, patches the SerialInterface, runs main(), and asserts stdout contains "Connected to radio" and "Setting ringtone to foo,bar", stderr is empty, and the SerialInterface was instantiated.
     """
     sys.argv = ["", "--set-ringtone", "foo,bar"]
@@ -705,8 +710,9 @@ def test_main_sendtext(capsys):
     ):
         """
         Mock implementation of sendText used in tests that prints diagnostic information to stdout.
-        
-        Parameters:
+
+        Parameters
+        ----------
             text (str): The message text to send.
             dest: Destination identifier (node id, group, or channel); type flexible to match production usage.
             wantAck (bool): Whether an acknowledgement is requested.
@@ -714,9 +720,11 @@ def test_main_sendtext(capsys):
             onResponse (callable|None): Optional callback for handling a response.
             channelIndex (int): Channel index to use for sending.
             portNum (int): Port number to use for sending.
-        
-        Notes:
+
+        Notes
+        -----
             This mock does not perform network I/O; it only prints the provided arguments for test visibility.
+
         """
         print("inside mocked sendText")
         print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
@@ -738,11 +746,13 @@ def test_main_sendtext(capsys):
 def test_main_sendtext_with_channel(capsys):
     """
     Verify that invoking the CLI with `--sendtext <message> --ch-index <n>` results in a sendText call for the specified channel and emits the expected connection and send messages.
-    
+
     The test sets CLI arguments, replaces SerialInterface with a mock whose sendText prints identifiable lines, runs main(), and asserts that stdout contains "Connected to radio", a "Sending text message" line referencing the channel index, and the mock's output. Uses the pytest `capsys` fixture to capture stdout/stderr.
-    
-    Parameters:
+
+    Parameters
+    ----------
         capsys: Pytest capture fixture for reading stdout and stderr.
+
     """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -760,8 +770,9 @@ def test_main_sendtext_with_channel(capsys):
     ):
         """
         Mock implementation of sendText used in tests that prints diagnostic information to stdout.
-        
-        Parameters:
+
+        Parameters
+        ----------
             text (str): The message text to send.
             dest: Destination identifier (node id, group, or channel); type flexible to match production usage.
             wantAck (bool): Whether an acknowledgement is requested.
@@ -769,9 +780,11 @@ def test_main_sendtext_with_channel(capsys):
             onResponse (callable|None): Optional callback for handling a response.
             channelIndex (int): Channel index to use for sending.
             portNum (int): Port number to use for sending.
-        
-        Notes:
+
+        Notes
+        -----
             This mock does not perform network I/O; it only prints the provided arguments for test visibility.
+
         """
         print("inside mocked sendText")
         print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")

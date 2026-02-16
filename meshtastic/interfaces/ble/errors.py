@@ -46,16 +46,19 @@ class BLEErrorHandler:
     ) -> Any:
         """
         Execute a zero-argument callable and return its result, or fall back to a provided default or re-raise on error.
-        
-        Parameters:
+
+        Parameters
+        ----------
             func (Callable[[], Any]): Zero-argument callable to execute.
             default_return (Any): Value to return if execution fails.
             log_error (bool): If True, log caught exceptions.
             error_msg (str): Message prefix used when logging errors.
             reraise (bool): If True, re-raise caught exceptions instead of returning `default_return`.
-        
-        Returns:
+
+        Returns
+        -------
             Any: The value returned by `func()` on success, or `default_return` if execution fails.
+
         """
         try:
             return func()

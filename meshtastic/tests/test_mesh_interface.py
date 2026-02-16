@@ -226,14 +226,16 @@ def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch):
         def __init__(self, interval, function):
             """
             Initialize a FakeTimer used by tests to simulate threading.Timer behavior.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 interval (float): The timer interval in seconds.
                 function (callable): The callback to invoke when the timer fires.
-            
+
             Side effects:
                 Appends the new FakeTimer instance to the class-level list `FakeTimer.created`.
                 Initializes boolean flags `daemon`, `started`, and `cancelled` to False.
+
             """
             self.interval = interval
             self.function = function
@@ -278,14 +280,16 @@ def test_heartbeat_callback_does_not_reschedule_after_close(monkeypatch):
         def __init__(self, interval, function):
             """
             Initialize a FakeTimer used by tests to simulate threading.Timer behavior.
-            
-            Parameters:
+
+            Parameters
+            ----------
                 interval (float): The timer interval in seconds.
                 function (callable): The callback to invoke when the timer fires.
-            
+
             Side effects:
                 Appends the new FakeTimer instance to the class-level list `FakeTimer.created`.
                 Initializes boolean flags `daemon`, `started`, and `cancelled` to False.
+
             """
             self.interval = interval
             self.function = function
@@ -559,7 +563,7 @@ def test_sendPacket_with_destination_as_int(caplog):
 def test_sendPacket_with_destination_starting_with_a_bang(caplog):
     """
     Verify that _sendPacket ignores destination IDs that begin with '!' and logs the action.
-    
+
     Asserts that calling _sendPacket with a destinationId starting with "!" results in a log entry containing "Not sending packet".
     """
     iface = MeshInterface(noProto=True)
@@ -809,7 +813,7 @@ def test_getOrCreateByNum(iface_with_nodes):
 def test_exit_with_exception(caplog):
     """
     Verify MeshInterface.__exit__ logs exception details when an exception is raised inside its context.
-    
+
     Asserts that an error-level log entry contains the raised ValueError message and a traceback that includes the line where the exception was raised in this test.
     """
     with caplog.at_level(logging.ERROR):
@@ -844,7 +848,7 @@ def test_showNodes_exclude_self(capsys, caplog, iface_with_nodes):
 def test_waitForConfig(capsys):
     """
     Verify that waitForConfig raises MeshInterface.MeshInterfaceError when the interface times out waiting for configuration.
-    
+
     This test sets a very short timeout on a no-protocol MeshInterface, calls waitForConfig(), and asserts that a MeshInterfaceError is raised, that stderr contains a timeout message ("Timed out waiting for interface config"), and that no output is written to stdout.
     """
     iface = MeshInterface(noProto=True)

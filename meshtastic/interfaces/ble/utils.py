@@ -38,9 +38,11 @@ def sanitize_address(address: Optional[str]) -> Optional[str]:
 def _sleep(delay: float) -> None:
     """
     Pause execution for a given number of seconds.
-    
-    Parameters:
+
+    Parameters
+    ----------
         delay (float): Number of seconds to sleep; may be fractional.
+
     """
     time.sleep(delay)
 
@@ -48,11 +50,12 @@ def _sleep(delay: float) -> None:
 def resolve_ble_module() -> Optional[ModuleType]:
     """
     Locate and return the first importable BLE module used by the package.
-    
+
     Attempts to import "meshtastic.interfaces.ble" then "meshtastic.ble_interface" in order and returns the first module that can be imported.
-    
+
     Returns:
         The first importable BLE module as a ModuleType, or `None` if neither is available.
+
     """
     for module_name in (
         "meshtastic.interfaces.ble",
