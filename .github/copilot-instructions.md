@@ -6,7 +6,7 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 
 ## Technology Stack
 
-- **Language**: Python 3.9 - 3.14
+- **Language**: Python 3.10 - 3.14
 - **Package Manager**: Poetry
 - **Testing**: pytest with hypothesis for property-based testing
 - **Linting**: pylint
@@ -47,7 +47,7 @@ protobufs/            # Protocol Buffer source definitions
 
 - Add type hints to all new code
 - Use `Optional[T]` for nullable types
-- Use `Dict`, `List`, `Tuple` from `typing` module for Python 3.9 compatibility
+- Use `Dict`, `List`, `Tuple` from `typing` module for compatibility with older type checkers
 - Protobuf types are in `meshtastic.protobuf.*_pb2` modules
 
 ### Naming Conventions
