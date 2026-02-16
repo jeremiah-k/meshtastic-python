@@ -37,12 +37,10 @@ _zombie_runner_count = 0
 
 def get_zombie_runner_count() -> int:
     """
-    Get the current count of runner threads that failed to stop cleanly.
-
-    Returns
-    -------
-        int: The number of zombie runner threads.
-
+    Return the number of runner threads that failed to stop cleanly.
+    
+    Returns:
+        int: Count of zombie runner threads.
     """
     with _zombie_lock:
         return _zombie_runner_count
@@ -104,9 +102,11 @@ class BLECoroutineRunner:
 
     def __init__(self) -> None:
         """
-        Initialize the singleton BLECoroutineRunner instance and its runtime state.
-
-        Sets up per-instance synchronization, lifecycle flags, background thread/loop placeholders, a weak set to track pending futures, and registers an atexit handler to ensure graceful shutdown.
+        Initialize per-instance state for the singleton BLECoroutineRunner.
+        
+        Sets up the per-instance reentrant lock, lifecycle flags and placeholders for the background
+        thread and asyncio loop, initializes a WeakSet to track pending futures, and registers
+        an atexit handler to ensure the runner is shut down when the process exits.
         """
         # The singleton lock is uncontended after first initialization, so always
         # acquiring it has negligible performance impact while ensuring correctness.
@@ -148,12 +148,10 @@ class BLECoroutineRunner:
     @property
     def is_running(self) -> bool:
         """
-        Indicates whether the runner's background thread and event loop are active.
-
-        Returns
-        -------
+        Return whether the runner's background thread and asyncio event loop are active.
+        
+        @returns
             `true` if the background thread exists and is alive and the event loop exists and is running, `false` otherwise.
-
         """
         return (
             self._thread is not None
@@ -164,12 +162,13 @@ class BLECoroutineRunner:
 
     def _ensure_running(self, timeout: Optional[float] = None) -> None:
         """
-        Ensure the event loop thread is running.
-
-        Parameters
-        ----------
-            timeout (float): Maximum seconds to wait for loop readiness when startup is needed.
-
+        Ensure the runner's background asyncio event loop is started and ready.
+        
+        Parameters:
+            timeout (Optional[float]): Maximum seconds to wait for the loop to become ready. If None, uses BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS.
+        
+        Raises:
+            RuntimeError: If the event loop fails to start within the given timeout.
         """
         if timeout is None:
             timeout = BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS
@@ -184,17 +183,11 @@ class BLECoroutineRunner:
 
     def _start_locked(self) -> Optional[threading.Event]:
         """
-        Start the background event loop thread if needed and return its readiness event.
-
-        Must be called while holding the instance lock (`_instance_lock`).
-        If the runner is already active, returns `None`.
-        If startup is in progress on another thread, returns that startup's readiness event.
-        If a new thread is started, returns a fresh readiness event for the caller to wait on.
-
-        Returns
-        -------
-            Optional[threading.Event]: Event set when the runner loop is ready, or `None` if already running.
-
+        Ensure the background event loop thread is started and return an event that will be set when the loop is ready.
+        
+        Must be called while holding the instance lock (`_instance_lock`). If the runner is already running, returns `None`. If a startup is already in progress on another thread, returns that startup's readiness event. If this call starts a new thread, returns a fresh `threading.Event` that will be set when the loop becomes ready.
+        Returns:
+            threading.Event: Event set when the runner's loop is ready, or `None` if the runner is already running.
         """
         # Check if already running
         if (
@@ -227,7 +220,14 @@ class BLECoroutineRunner:
         return ready_event
 
     def _run_loop(self, ready_event: threading.Event) -> None:
-        """Run the asyncio event loop in the background thread."""
+        """
+        Start and run the asyncio event loop on the background runner thread and manage its lifecycle.
+        
+        Creates and installs a new event loop on the current thread, publishes that loop to the runner if this thread remains the active runner and stop has not been requested, signals readiness via `ready_event`, runs the loop until stopped, and on exit cancels remaining tasks and closes the loop.
+        
+        Parameters:
+            ready_event (threading.Event): Event that will be set when the loop is ready and cleared when the thread is shutting down.
+        """
         loop: Optional[asyncio.AbstractEventLoop] = None
         try:
             loop = asyncio.new_event_loop()
@@ -270,9 +270,13 @@ class BLECoroutineRunner:
 
     def _cancel_all_tasks(self, loop: asyncio.AbstractEventLoop) -> None:
         """
-        Cancel all pending asyncio tasks on the runner's event loop.
-
-        Cancels every task returned by asyncio.all_tasks() for the internal loop and runs the loop briefly to allow cancellation callbacks to execute.
+        Cancel all non-completed tasks associated with the given event loop and wait for their cancellation to finish.
+        
+        Parameters:
+        	loop (asyncio.AbstractEventLoop): The event loop whose pending tasks should be cancelled.
+        
+        Notes:
+        	This method suppresses and logs any exceptions raised while cancelling or awaiting the tasks.
         """
         try:
             tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
@@ -351,12 +355,10 @@ class BLECoroutineRunner:
 
     def _discard_tracked_future(self, future: Future) -> None:
         """
-        Remove a completed future from the pending-futures tracker.
-
-        Parameters
-        ----------
-            future (Future): Future to remove from `_pending_futures`.
-
+        Remove a completed Future from the runner's tracked pending futures.
+        
+        Parameters:
+            future (Future): The completed future to remove from `_pending_futures`.
         """
         with self._instance_lock:
             self._pending_futures.discard(future)
@@ -366,8 +368,12 @@ class BLECoroutineRunner:
     ) -> None:
         """
         Handle exceptions raised in the runner's asyncio event loop.
-
-        Suppresses `BleakDBusError` exceptions (logged at debug) that commonly occur during disconnects, logs other exceptions with their context at error level, and then delegates to `loop.default_exception_handler`. Any exception raised by the default handler is logged at debug level.
+        
+        Suppresses BleakDBusError exceptions (logged at debug) that commonly occur during disconnects, logs other exceptions with their context at error level, and delegates to the loop's default exception handler. If the default handler raises, that error is logged at debug level.
+        
+        Parameters:
+            loop (asyncio.AbstractEventLoop): The event loop where the exception occurred.
+            context (dict): The context mapping provided by asyncio containing exception and message information.
         """
         exception = context.get("exception")
         if exception and isinstance(exception, BleakDBusError):
@@ -388,9 +394,9 @@ class BLECoroutineRunner:
 
     def cancel_pending_futures(self) -> None:
         """
-        Cancel all tracked pending futures that have not completed.
-
-        This method iterates the runner's tracked futures and cancels each one that is not done. Exceptions raised while attempting to cancel an individual future are caught and logged at the debug level.
+        Cancel all tracked futures that have not completed.
+        
+        Attempts to cancel each future currently tracked by the runner; futures that are already done are not affected. Exceptions raised while cancelling individual futures are handled internally and do not propagate.
         """
         with self._instance_lock:
             for future in list(self._pending_futures):
@@ -403,15 +409,14 @@ class BLECoroutineRunner:
     def stop(self, timeout: float = 2.0) -> bool:
         """
         Stop the runner's event loop and wait for the background thread to exit.
-
-        Parameters
-        ----------
-            timeout (float): Maximum number of seconds to wait for the thread to join.
-
-        Returns
-        -------
+        
+        This requests the runner to stop, cancels any tracked pending futures, and attempts to stop the background asyncio loop. If called from the runner thread, joining the thread is skipped to avoid deadlock. The method performs thread-safe cleanup and avoids clearing loop/thread references if a concurrent restart replaced them.
+        
+        Parameters:
+            timeout (float): Maximum number of seconds to wait for the background thread to join.
+        
+        Returns:
             bool: `True` if the background thread exited within `timeout`, `False` if it did not (thread considered a zombie).
-
         """
         # Capture state and schedule stop under lock, but join OUTSIDE the lock
         # to avoid deadlock if the runner thread needs _instance_lock
@@ -497,11 +502,12 @@ class BLECoroutineRunner:
     def restart(self) -> bool:
         """
         Restart the singleton runner if it is not currently running.
-
-        Returns
-        -------
-            bool: True if restart completed and loop readiness was confirmed, False if the runner was already running.
-
+        
+        Returns:
+            bool: `True` if restart completed and loop readiness was confirmed, `False` if the runner was already running.
+        
+        Raises:
+            RuntimeError: If the event loop fails to become ready within the configured timeout.
         """
         with self._instance_lock:
             if self.is_running:

@@ -60,17 +60,14 @@ class ReconnectScheduler:
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """
-        Start a background BLE reconnect worker when auto-reconnect is enabled and no reconnect worker is currently active.
-
-        Parameters
-        ----------
-                auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
-                shutdown_event (Event): Event used by the worker to detect shutdown and stop retrying.
-
-        Returns
-        -------
-                `true` if a new reconnect worker thread was created and started, `false` otherwise.
-
+        Schedule a background BLE reconnect worker if auto-reconnect is enabled and no worker is currently running.
+        
+        Parameters:
+            auto_reconnect (bool): Whether automatic reconnection is enabled; scheduling is skipped when False.
+            shutdown_event (Event): Event the worker observes to stop retrying early during shutdown.
+        
+        Returns:
+            True if a new reconnect worker thread was created and started, False otherwise.
         """
         if not auto_reconnect:
             return False
@@ -117,30 +114,27 @@ class ReconnectWorker:
 
     def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
         """
-        Initialize a ReconnectWorker bound to a BLE interface and a reconnect policy.
-
-        Parameters
-        ----------
-            interface ("BLEInterface"): BLE interface used to perform connection attempts and to query or modify connection state.
+        Bind a BLE interface and a reconnect policy to this worker.
+        
+        Parameters:
+            interface ("BLEInterface"): Interface used to perform connection attempts and to query or modify connection state.
             reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
-
         """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """
-        Check if reconnection should be aborted.
-
-        Parameters
-        ----------
-            auto_reconnect (bool): Whether auto-reconnect is enabled.
-            context (str): Additional context for logging.
-
-        Returns
-        -------
-            bool: True if reconnection should abort, False otherwise.
-
+        Decides whether a reconnect attempt should be aborted.
+        
+        Checks the interface state and the auto_reconnect flag and logs an explanatory debug message including optional context.
+        
+        Parameters:
+            auto_reconnect (bool): Whether automatic reconnect is enabled.
+            context (str): Optional context to include in debug logs.
+        
+        Returns:
+            `true` if reconnection should be aborted, `false` otherwise.
         """
         if self.interface.is_connection_closing:
             logger.debug(
