@@ -893,4 +893,4 @@ def test_timeago():
 def test_timeago_fuzz(seconds):
     """Fuzz _timeago to ensure it works with any integer."""
     val = _timeago(seconds)
-    assert re.match(r"(now|\d+ (secs?|mins?|hours?|days?|months?|years?))", val)
+    assert re.fullmatch(r"now|\d+ (secs?|mins?|hours?|days?|months?|years?) ago", val)

@@ -14,7 +14,7 @@ import time
 import traceback
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import IO, Any, Callable, Dict, List, Optional, Type, Union
 
 import google.protobuf.json_format
 
@@ -108,7 +108,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def __init__(
         self,
-        debugOut=None,
+        debugOut: Optional[Union[IO[str], Callable[[str], Any]]] = None,
         noProto: bool = False,
         noNodes: bool = False,
         timeout: int = 300,
@@ -159,7 +159,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.mask: Optional[int] = None  # used in gpio read and gpio watch
         self.queueStatus: Optional[mesh_pb2.QueueStatus] = None
         self.queue: collections.OrderedDict = collections.OrderedDict()
-        self._localChannels = None
+        self._localChannels: List[Any] = []
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
@@ -203,15 +203,15 @@ class MeshInterface:  # pylint: disable=R0902
         if print_color is not None and interface.debugOut == sys.stdout:
             # this isn't quite correct (could cause false positives), but currently our formatting differs between different log representations
             if "DEBUG" in line:
-                print_color.print(line, color="cyan", end=None)
+                print_color.print(line, color="cyan", end=None)  # type: ignore[call-arg]
             elif "INFO" in line:
-                print_color.print(line, color="white", end=None)
+                print_color.print(line, color="white", end=None)  # type: ignore[call-arg]
             elif "WARN" in line:
-                print_color.print(line, color="yellow", end=None)
+                print_color.print(line, color="yellow", end=None)  # type: ignore[call-arg]
             elif "ERR" in line:
-                print_color.print(line, color="red", end=None)
+                print_color.print(line, color="red", end=None)  # type: ignore[call-arg]
             else:
-                print_color.print(line, end=None)
+                print_color.print(line, end=None)  # type: ignore[call-arg]
         else:
             interface.debugOut.write(line + "\n")
 
@@ -237,7 +237,7 @@ class MeshInterface:  # pylint: disable=R0902
         # For now we just try to format the line as if it had come in over the serial port
         self._handleLogLine(record.message)
 
-    def showInfo(self, file=None) -> str:
+    def showInfo(self, file: Optional[IO[str]] = None) -> str:
         """
         Produce and print a human-readable summary of this mesh interface, including owner, local node info, metadata, and the set of known nodes.
 
@@ -306,7 +306,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         """
 
-        def get_human_readable(name):
+        def get_human_readable(name: str) -> str:
             """
             Map an internal dotted field path to a human-readable column label.
 
@@ -341,7 +341,7 @@ class MeshInterface:  # pylint: disable=R0902
             }
 
             if name in name_map:
-                return name_map.get(name)  # Default to a formatted guess
+                return name_map[name]  # Default to a formatted guess
             else:
                 return name
 
@@ -1499,7 +1499,7 @@ class MeshInterface:  # pylint: disable=R0902
         logger.debug(f"self.nodesByNum:{self.nodesByNum}")
         return self.nodesByNum.get(self.myInfo.my_node_num)
 
-    def getMyUser(self):
+    def getMyUser(self) -> Optional[Dict[str, Any]]:
         """
         Retrieve the user dictionary for the local node.
 
@@ -1514,7 +1514,7 @@ class MeshInterface:  # pylint: disable=R0902
             return nodeInfo.get("user")
         return None
 
-    def getLongName(self):
+    def getLongName(self) -> Optional[str]:
         """
         Return the configured long name for the local user.
 
@@ -1527,7 +1527,7 @@ class MeshInterface:  # pylint: disable=R0902
             return user.get("longName", None)
         return None
 
-    def getShortName(self):
+    def getShortName(self) -> Optional[str]:
         """
         Return the local node user's short name.
 
@@ -1540,7 +1540,7 @@ class MeshInterface:  # pylint: disable=R0902
             return user.get("shortName", None)
         return None
 
-    def getPublicKey(self):
+    def getPublicKey(self) -> Optional[bytes]:
         """
         Return the local node's public key if one is set.
 
@@ -1553,7 +1553,7 @@ class MeshInterface:  # pylint: disable=R0902
             return user.get("publicKey", None)
         return None
 
-    def getCannedMessage(self):
+    def getCannedMessage(self) -> Optional[str]:
         """
         Retrieve the canned (predefined) message configured for the local node.
 
@@ -1566,7 +1566,7 @@ class MeshInterface:  # pylint: disable=R0902
             return node.get_canned_message()
         return None
 
-    def getRingtone(self):
+    def getRingtone(self) -> Optional[str]:
         """
         Retrieve the ringtone for the local node.
 
@@ -1935,7 +1935,8 @@ class MeshInterface:  # pylint: disable=R0902
             # self.nodesByNum[node["num"]] = node
             if "user" in node:  # Some nodes might not have user/ids assigned yet
                 if "id" in node["user"]:
-                    self.nodes[node["user"]["id"]] = node
+                    if self.nodes is not None:
+                        self.nodes[node["user"]["id"]] = node
             publishingThread.queueWork(
                 lambda: pub.sendMessage(
                     "meshtastic.node.updated", node=node, interface=self
@@ -2135,6 +2136,9 @@ class MeshInterface:  # pylint: disable=R0902
                 "Can not create/find nodenum by the broadcast num"
             )
 
+        if self.nodesByNum is None:
+            raise MeshInterface.MeshInterfaceError("Node database not initialized")
+
         if nodeNum in self.nodesByNum:
             return self.nodesByNum[nodeNum]
         else:
@@ -2290,10 +2294,11 @@ class MeshInterface:  # pylint: disable=R0902
                         or handler.ackPermitted
                     ):
                         handler = self.responseHandlers.pop(requestId, None)
-                        logger.debug(
-                            f"Calling response handler for requestId {requestId}"
-                        )
-                        handler.callback(asDict)
+                        if handler is not None:
+                            logger.debug(
+                                f"Calling response handler for requestId {requestId}"
+                            )
+                            handler.callback(asDict)
 
         logger.debug(f"Publishing {topic}: packet={stripnl(asDict)} ")
         publishingThread.queueWork(

@@ -3,7 +3,6 @@
 # We just hit the 1600 line limit for main.py, but I currently have a huge set of powermon/structured logging changes
 # later we can have a separate changelist to refactor main.py into smaller files
 # pylint: disable=R0917,C0302
-# ruff: noqa: E402
 
 import argparse
 from types import ModuleType
@@ -39,7 +38,7 @@ except ImportError:
 
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
-import meshtastic.util
+import meshtastic.util  # noqa: E402
 from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.ble_interface import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
@@ -1285,10 +1284,7 @@ def export_config(interface) -> str:
         if alt:
             configObj["location"]["alt"] = alt
 
-    config = MessageToDict(
-        interface.localNode.localConfig
-    )  # checkme - Used as a dictionary here and a string below
-    # was used as a string here and a Dictionary above
+    config = MessageToDict(interface.localNode.localConfig)
     if config:
         # Ensure explicit false values are present before key conversion.
         set_missing_flags_false(config, config_true_defaults)
@@ -1320,7 +1316,7 @@ def export_config(interface) -> str:
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
         for pref, value in module_config.items():
-            if len(value) > 0:
+            if value:
                 pref_key = (
                     meshtastic.util.snake_to_camel(pref)
                     if mt_config.camel_case
@@ -1329,7 +1325,7 @@ def export_config(interface) -> str:
                 prefs[pref_key] = value
         configObj["module_config"] = prefs
 
-    config_txt = "# start of Meshtastic configure yaml\n"  # checkme - "config" (now changed to config_out)
+    config_txt = "# start of Meshtastic configure yaml\n"
     # was used as a string here and a Dictionary above
     config_txt += yaml.dump(configObj)
     return config_txt
@@ -1439,7 +1435,7 @@ def common():
         elif args.test:
             if not have_test:
                 meshtastic.util.our_exit(
-                    "Test module could not be important. Ensure you have the 'dotmap' module installed."
+                    "Test module could not be imported. Ensure you have the 'dotmap' module installed."
                 )
             else:
                 result = meshtastic.test.testAll()
