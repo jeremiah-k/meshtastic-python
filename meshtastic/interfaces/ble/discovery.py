@@ -39,16 +39,21 @@ def _parse_scan_response(
     response: Any, whitelist_address: Optional[str] = None
 ) -> List[BLEDevice]:
     """
-    Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects, including devices that advertise SERVICE_UUID or that exactly match an optional whitelist address or name.
+    Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects.
+
+    When `whitelist_address` is provided, only exact address/name matches are
+    returned. Otherwise, devices advertising `SERVICE_UUID` are returned.
 
     Parameters
     ----------
         response (Any): The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
-        whitelist_address (Optional[str]): A sanitized address or device name to include regardless of advertised services; must match device address or name exactly.
+        whitelist_address (Optional[str]): A sanitized address or device name
+            to match exactly against device address or name.
 
     Returns
     -------
-        List[BLEDevice]: Devices that advertise SERVICE_UUID or match the provided whitelist_address.
+        List[BLEDevice]: Devices matching the whitelist (targeted mode) or
+            devices advertising SERVICE_UUID (broad scan mode).
 
     """
     devices: List[BLEDevice] = []
@@ -61,6 +66,7 @@ def _parse_scan_response(
             type(response),
         )
         return devices
+    has_whitelist = bool(whitelist_address)
     for _, value in response.items():
         if isinstance(value, tuple) and len(value) == 2:
             device, adv = value
@@ -78,7 +84,7 @@ def _parse_scan_response(
 
         # Check for whitelist match if provided
         matches_whitelist = False
-        if whitelist_address:
+        if has_whitelist:
             sanitized_addr = sanitize_address(device.address)
             sanitized_name = sanitize_address(device.name)
             # CRITICAL FIX: Use exact equality matching instead of substring matching to prevent
@@ -90,7 +96,10 @@ def _parse_scan_response(
             if whitelist_address in (sanitized_addr, sanitized_name):
                 matches_whitelist = True
 
-        if has_service or matches_whitelist:
+        if has_whitelist:
+            if matches_whitelist:
+                devices.append(device)
+        elif has_service:
             devices.append(device)
     return devices
 

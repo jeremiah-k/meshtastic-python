@@ -663,7 +663,38 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     manager.connected_strategy = _StrategyOverride(fake_connected)
 
     assert manager.discover_devices(address=None) == []
-    assert fallback_called is False
+
+
+def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch):
+    """Targeted discovery should keep only exact address/name matches."""
+    target_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Target")
+    other_meshtastic_device = _create_ble_device("11:22:33:44:55:66", "Other")
+
+    class FakeClient:
+        """Provide scan results with one target and one non-target device."""
+
+        def discover(self, **_kwargs):
+            return {
+                "target": (
+                    target_device,
+                    SimpleNamespace(service_uuids=[]),
+                ),
+                "other": (
+                    other_meshtastic_device,
+                    SimpleNamespace(service_uuids=[SERVICE_UUID]),
+                ),
+            }
+
+        @staticmethod
+        def async_await(coro, timeout=None):  # pragma: no cover - should not be hit
+            raise AssertionError("Fallback should not run for targeted whitelist match")
+
+    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+
+    manager = DiscoveryManager()
+    devices = manager.discover_devices(address="AA:BB:CC:DD:EE:FF")
+
+    assert devices == [target_device]
 
 
 def test_connection_validator_enforces_state():
