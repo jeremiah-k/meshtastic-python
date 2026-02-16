@@ -684,7 +684,7 @@ def test_getRingtone():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_generatePacketId(capsys):
+def test_generatePacketId():
     """Test _generatePacketId() when no currentPacketId (not connected)."""
     iface = MeshInterface(noProto=True)
     # not sure when this condition would ever happen... but we can simulate it
@@ -692,10 +692,8 @@ def test_generatePacketId(capsys):
     assert iface.currentPacketId is None
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface._generatePacketId()
-    out, err = capsys.readouterr()
-    assert re.search(r"Not connected yet, can not generate packet", out, re.MULTILINE)
-    assert err == ""
     assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+    assert "Not connected yet, can not generate packet" in str(pytest_wrapped_e.value)
 
 
 @pytest.mark.unit
@@ -848,14 +846,9 @@ def test_showNodes_exclude_self(capsys, caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_waitForConfig(capsys):
+def test_waitForConfig():
     """
     Verify that waitForConfig raises MeshInterface.MeshInterfaceError when the interface times out waiting for configuration.
-
-    This test sets a very short timeout on a no-protocol MeshInterface, calls
-    waitForConfig(), and asserts that a MeshInterfaceError is raised, that
-    stderr contains a timeout message ("Timed out waiting for interface
-    config"), and that no output is written to stdout.
     """
     iface = MeshInterface(noProto=True)
     # override how long to wait
@@ -863,36 +856,28 @@ def test_waitForConfig(capsys):
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface.waitForConfig()
     assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
-    out, err = capsys.readouterr()
-    assert re.search(
-        r"Exception: Timed out waiting for interface config", err, re.MULTILINE
-    )
-    assert out == ""
+    assert "Timed out waiting for interface config" in str(pytest_wrapped_e.value)
 
 
 @pytest.mark.unit
-def test_waitConnected_raises_an_exception(capsys):
+def test_waitConnected_raises_an_exception():
     """Test waitConnected()."""
     iface = MeshInterface(noProto=True)
+    iface.failure = MeshInterface.MeshInterfaceError("warn about something")
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
-        iface.failure = MeshInterface.MeshInterfaceError("warn about something")
         iface._waitConnected(0.01)
     assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
-    out, err = capsys.readouterr()
-    assert re.search(r"warn about something", err, re.MULTILINE)
-    assert out == ""
+    assert "warn about something" in str(pytest_wrapped_e.value)
 
 
 @pytest.mark.unit
-def test_waitConnected_isConnected_timeout(capsys):
+def test_waitConnected_isConnected_timeout():
     """Test waitConnected()."""
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface = MeshInterface()
         iface._waitConnected(0.01)
     assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
-    out, err = capsys.readouterr()
-    assert re.search(r"warn about something", err, re.MULTILINE)
-    assert out == ""
+    assert "Timed out waiting for connection completion" in str(pytest_wrapped_e.value)
 
 
 @pytest.mark.unit

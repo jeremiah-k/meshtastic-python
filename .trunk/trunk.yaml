@@ -14,7 +14,6 @@ plugins:
 lint:
   disabled:
     - bandit
-    - pylint
   ignore:
     - linters: [ALL]
       paths:
