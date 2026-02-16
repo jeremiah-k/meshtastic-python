@@ -37,15 +37,6 @@ _zombie_runner_count = 0
 
 
 def get_zombie_runner_count() -> int:
-    warnings.warn(
-        "use getZombieRunnerCount instead of get_zombie_runner_count",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return getZombieRunnerCount()
-
-
-def getZombieRunnerCount() -> int:
     """
     Return the number of runner threads that failed to stop cleanly.
 
@@ -55,6 +46,11 @@ def getZombieRunnerCount() -> int:
     """
     with _zombie_lock:
         return _zombie_runner_count
+
+
+def getZombieRunnerCount() -> int:
+    """Compatibility wrapper for callers using camelCase."""
+    return get_zombie_runner_count()
 
 
 class BLECoroutineRunner:
@@ -276,8 +272,29 @@ class BLECoroutineRunner:
                     return
                 self._loop = loop
 
+            def _runner_keepalive_tick() -> None:
+                """
+                Keep the event loop from sleeping indefinitely between I/O events.
+
+                This periodic no-op timer ensures callbacks enqueued from other
+                threads are observed promptly even when low-level loop wakeup
+                signaling is unavailable in restricted environments.
+                """
+                if self._stop_requested:
+                    return
+                if self._thread is not threading.current_thread():
+                    return
+                if loop.is_closed():
+                    return
+                loop.call_later(
+                    BLEConfig.RUNNER_IDLE_WAKE_INTERVAL_SECONDS,
+                    _runner_keepalive_tick,
+                )
+
             # Signal that the loop is ready
             loop.call_soon(ready_event.set)
+            # Periodic keepalive to avoid starvation of cross-thread callbacks.
+            loop.call_soon(_runner_keepalive_tick)
 
             # Run forever until stopped
             loop.run_forever()
@@ -326,12 +343,7 @@ class BLECoroutineRunner:
         *,
         startup_timeout: Optional[float] = None,
     ) -> Future[T]:
-        warnings.warn(
-            "use runCoroutineThreadsafe instead of run_coroutine_threadsafe",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.runCoroutineThreadsafe(
+        return self._runCoroutineThreadsafe_impl(
             coro,
             timeout=timeout,
             startup_timeout=startup_timeout,
@@ -371,7 +383,7 @@ class BLECoroutineRunner:
             If both `timeout` and `startup_timeout` are provided.
 
         """
-        return self._runCoroutineThreadsafe_impl(
+        return self.run_coroutine_threadsafe(
             coro,
             timeout=timeout,
             startup_timeout=startup_timeout,
@@ -499,14 +511,6 @@ class BLECoroutineRunner:
             logger.debug("Exception in default exception handler: %s", e)
 
     def cancel_pending_futures(self) -> None:
-        warnings.warn(
-            "use cancelPendingFutures instead of cancel_pending_futures",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.cancelPendingFutures()
-
-    def cancelPendingFutures(self) -> None:
         """
         Cancel all tracked futures that have not completed.
 
@@ -522,6 +526,10 @@ class BLECoroutineRunner:
                         future.cancel()
                     except Exception as e:
                         logger.debug("Exception cancelling future: %s", e)
+
+    def cancelPendingFutures(self) -> None:
+        """Compatibility wrapper for callers using camelCase."""
+        self.cancel_pending_futures()
 
     def stop(self, timeout: float = 2.0) -> bool:
         """

@@ -58,6 +58,9 @@ class BLEConfig:
     # Runner configuration
     RUNNER_LOOP_READY_TIMEOUT_SECONDS = 5.0
     RUNNER_ZOMBIE_WARN_THRESHOLD = 3
+    # Wake the runner loop periodically so queued thread-safe callbacks are
+    # serviced even if OS wakeup signaling is delayed or unavailable.
+    RUNNER_IDLE_WAKE_INTERVAL_SECONDS = 0.1
 
 
 # Backwards-compatible aliases for legacy module-level constants
