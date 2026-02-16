@@ -348,89 +348,27 @@ class BLECoroutineRunner:
         *,
         startup_timeout: Optional[float] = None,
     ) -> Future[T]:
-        return self._runCoroutineThreadsafe_impl(
-            coro,
-            timeout=timeout,
-            startup_timeout=startup_timeout,
-        )
-
-    def runCoroutineThreadsafe(
-        self,
-        coro: Coroutine[None, None, T],
-        timeout: Optional[float] = None,
-        *,
-        startup_timeout: Optional[float] = None,
-    ) -> Future[T]:
         """
-        Submit a coroutine to be run in the singleton event loop thread.
+        Submit a coroutine to the singleton event-loop thread and return a Future.
 
         Parameters
         ----------
         coro : Coroutine[None, None, T]
-            The coroutine to execute.
+            Coroutine to execute on the BLE runner event loop.
         timeout : Optional[float]
-            Deprecated alias for `startup_timeout`.
+            Deprecated alias for ``startup_timeout``.
         startup_timeout : Optional[float]
-            Optional startup timeout in seconds used while ensuring the runner
-            loop is ready. This does not apply to coroutine completion waits;
-            use `Future.result(timeout=...)` on the returned Future for that.
+            Maximum seconds to wait for loop startup before submission.
 
         Returns
         -------
         Future[T]
-            A future that will contain the result of the coroutine.
+            Future containing the coroutine result.
 
-        Raises
-        ------
-        RuntimeError
-            If the event loop cannot be started or is not available.
-        ValueError
-            If both `timeout` and `startup_timeout` are provided.
-
-        """
-        warnings.warn(
-            "runCoroutineThreadsafe is deprecated; use run_coroutine_threadsafe instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.run_coroutine_threadsafe(
-            coro,
-            timeout=timeout,
-            startup_timeout=startup_timeout,
-        )
-
-    def _runCoroutineThreadsafe_impl(
-        self,
-        coro: Coroutine[None, None, T],
-        timeout: Optional[float] = None,
-        *,
-        startup_timeout: Optional[float] = None,
-    ) -> Future[T]:
-        """
-        Submit a coroutine to be run in the singleton event loop thread.
-
-        Parameters
-        ----------
-        coro : Coroutine[None, None, T]
-            The coroutine to execute.
-        timeout : Optional[float]
-            Deprecated alias for `startup_timeout`.
-        startup_timeout : Optional[float]
-            Optional startup timeout in seconds used while ensuring the runner
-            loop is ready. This does not apply to coroutine completion waits;
-            use `Future.result(timeout=...)` on the returned Future for that.
-
-        Returns
-        -------
-        Future[T]
-            A future that will contain the result of the coroutine.
-
-        Raises
-        ------
-        RuntimeError
-            If the event loop cannot be started or is not available.
-        ValueError
-            If both `timeout` and `startup_timeout` are provided.
+        Notes
+        -----
+        ``runCoroutineThreadsafe`` is a deprecated camelCase alias that forwards
+        to this method.
 
         """
         if timeout is not None and startup_timeout is not None:
@@ -473,6 +411,25 @@ class BLECoroutineRunner:
         # Remove completed futures promptly instead of waiting for GC.
         future.add_done_callback(self._discard_tracked_future)
         return future
+
+    def runCoroutineThreadsafe(
+        self,
+        coro: Coroutine[None, None, T],
+        timeout: Optional[float] = None,
+        *,
+        startup_timeout: Optional[float] = None,
+    ) -> Future[T]:
+        """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "runCoroutineThreadsafe is deprecated; use run_coroutine_threadsafe instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.run_coroutine_threadsafe(
+            coro,
+            timeout=timeout,
+            startup_timeout=startup_timeout,
+        )
 
     def _discard_tracked_future(self, future: Future) -> None:
         """
@@ -662,6 +619,9 @@ class BLECoroutineRunner:
                 return False
 
             # Force cleanup
+            # Intentional: when not running, drop stale thread reference without
+            # incrementing _zombie_runner_count (tracked in stop()) so restart()
+            # can safely win races with concurrent stop()/restart() and rebuild.
             self._thread = None
             self._loop = None
             self._stop_requested = False

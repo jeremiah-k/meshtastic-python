@@ -229,6 +229,18 @@ class ThreadCoordinator:
         )
         self.join_all(timeout=timeout)
 
+    def _set_event_no_lock(self, name: str) -> None:
+        """Set a tracked event without acquiring the coordinator lock."""
+        event = self._events.get(name)
+        if event is not None:
+            event.set()
+
+    def _clear_event_no_lock(self, name: str) -> None:
+        """Clear a tracked event without acquiring the coordinator lock."""
+        event = self._events.get(name)
+        if event is not None:
+            event.clear()
+
     def set_event(self, name: str) -> None:
         """
         Set the coordinator's named event, waking any threads waiting on it.
@@ -241,8 +253,7 @@ class ThreadCoordinator:
 
         """
         with self._lock:
-            if name in self._events:
-                self._events[name].set()
+            self._set_event_no_lock(name)
 
     def setEvent(self, name: str) -> None:
         """Compatibility wrapper for callers using camelCase."""
@@ -265,8 +276,7 @@ class ThreadCoordinator:
 
         """
         with self._lock:
-            if name in self._events:
-                self._events[name].clear()
+            self._clear_event_no_lock(name)
 
     def clearEvent(self, name: str) -> None:
         """Compatibility wrapper for callers using camelCase."""
@@ -338,8 +348,9 @@ class ThreadCoordinator:
             event_names (str): One or more event names tracked by this coordinator; names not tracked are ignored.
 
         """
-        for name in event_names:
-            self.set_event(name)
+        with self._lock:
+            for name in event_names:
+                self._set_event_no_lock(name)
 
     def wakeWaitingThreads(self, *event_names: str) -> None:
         """Compatibility wrapper for callers using camelCase."""
@@ -359,8 +370,9 @@ class ThreadCoordinator:
             event_names (str): One or more event names to clear; names not registered with the coordinator are ignored.
 
         """
-        for name in event_names:
-            self.clear_event(name)
+        with self._lock:
+            for name in event_names:
+                self._clear_event_no_lock(name)
 
     def clearEvents(self, *event_names: str) -> None:
         """Compatibility wrapper for callers using camelCase."""

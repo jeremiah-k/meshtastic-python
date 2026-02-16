@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,7 +29,7 @@ from ..util import Timeout
 class FakeTimer:
     """Simple timer stub for heartbeat timer tests."""
 
-    created: list["FakeTimer"] = []
+    created: ClassVar[list["FakeTimer"]] = []
 
     def __init__(self, interval, function):
         self.interval = interval
@@ -57,8 +58,9 @@ def _fake_timer_cls_fixture(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_MeshInterface(capsys):
+def test_MeshInterface(capsys, monkeypatch, tmp_path):
     """Test that we can instantiate a MeshInterface."""
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     iface = MeshInterface(noProto=True)
 
     NODE_ID = "!9388f81c"

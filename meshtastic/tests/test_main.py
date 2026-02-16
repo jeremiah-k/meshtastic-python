@@ -36,6 +36,12 @@ from ..tcp_interface import TCPInterface
 # from ..config_pb2 import Config
 
 
+@pytest.fixture(autouse=True)
+def _mock_newer_version_check(monkeypatch):
+    """Prevent external network calls during unit tests in this module."""
+    monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_init_parser_no_args(capsys):

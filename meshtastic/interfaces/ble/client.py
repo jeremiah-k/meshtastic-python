@@ -3,11 +3,12 @@
 import asyncio
 import contextlib
 import sys
+import types
 import warnings
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Awaitable, Coroutine, Optional, TypeVar, Union
+from typing import Any, Awaitable, Coroutine, Optional, Type, TypeVar, Union
 from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
@@ -332,7 +333,9 @@ class BLEClient:
         )
         return self.get_services(**kwargs)
 
-    def has_characteristic(self, specifier: Union[str, UUID]):  # pylint: disable=C0116
+    def has_characteristic(
+        self, specifier: Union[str, UUID]
+    ) -> bool:  # pylint: disable=C0116
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -437,7 +440,12 @@ class BLEClient:
         """
         return self
 
-    def __exit__(self, _type, _value, _traceback) -> None:
+    def __exit__(
+        self,
+        _type: Optional[Type[BaseException]],
+        _value: Optional[BaseException],
+        _traceback: Optional[types.TracebackType],
+    ) -> None:
         """
         Close the BLEClient when exiting a context manager.
 
@@ -448,7 +456,7 @@ class BLEClient:
         self.close()
 
     def async_await(
-        self, coro: Awaitable[Any], timeout: Optional[float] = None
+        self, coro: Coroutine[Any, Any, Any], timeout: Optional[float] = None
     ) -> Any:  # pylint: disable=C0116
         """
         Wait for the given coroutine to complete and return its result.
@@ -458,7 +466,7 @@ class BLEClient:
 
         Parameters
         ----------
-        coro : Awaitable
+        coro : Coroutine[Any, Any, Any]
             The coroutine to run on the shared BLE event loop.
         timeout : Optional[float]
             Maximum seconds to wait for completion; `None` means wait indefinitely.
@@ -481,7 +489,7 @@ class BLEClient:
         # Exception mapping contract:
         #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
-        future = self.async_run(coro)  # type: ignore[arg-type]
+        future = self.async_run(coro)
         if hasattr(self, "_pending_futures"):
             self._pending_futures.add(future)
         try:
@@ -536,7 +544,9 @@ class BLEClient:
             if hasattr(self, "_pending_futures"):
                 self._pending_futures.discard(future)
 
-    def asyncAwait(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
+    def asyncAwait(
+        self, coro: Coroutine[Any, Any, Any], timeout: Optional[float] = None
+    ) -> Any:
         """Compatibility wrapper for callers using camelCase."""
         warnings.warn(
             "asyncAwait is deprecated; use async_await instead",
@@ -589,6 +599,7 @@ class BLEClient:
 
 # Expose zombie tracking from runner module for backwards compatibility
 def get_zombie_thread_count() -> int:
+    """Return the zombie BLE runner count via get_zombie_runner_count()."""
     from meshtastic.interfaces.ble.runner import get_zombie_runner_count
 
     return get_zombie_runner_count()

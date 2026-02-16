@@ -5,8 +5,27 @@
 # pylint: disable=R0917,C0302
 
 import argparse
+import importlib
+import logging
+import os
+import platform
+import sys
+import time
 from types import ModuleType
 from typing import List, Optional, Set, Tuple, Union
+
+import yaml
+from google.protobuf.json_format import MessageToDict
+from pubsub import pub  # type: ignore[import-untyped]
+
+import meshtastic.serial_interface
+import meshtastic.tcp_interface
+import meshtastic.util
+from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
+from meshtastic.ble_interface import BLEInterface
+from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
+from meshtastic.version import get_active_version
 
 argcomplete: Union[None, ModuleType] = None
 try:
@@ -14,54 +33,35 @@ try:
 except ImportError:
     pass  # already set to None by default above
 
-import logging
-import os
-import platform
-import sys
-import time
-
 try:
     import pyqrcode  # type: ignore[import-untyped]
 except ImportError:
     pyqrcode = None
 
-import yaml
-from google.protobuf.json_format import MessageToDict
-from pubsub import pub  # type: ignore[import-untyped]
-
+meshtastic_test: Optional[ModuleType] = None
 try:
-    import meshtastic.test
-
+    meshtastic_test = importlib.import_module("meshtastic.test")
     have_test = True
 except ImportError:
     have_test = False
 
-import meshtastic.serial_interface
-import meshtastic.tcp_interface
-import meshtastic.util  # noqa: E402
-from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
-from meshtastic.ble_interface import BLEInterface
-from meshtastic.mesh_interface import MeshInterface
-
 try:
-    from meshtastic.powermon import (
-        PowerMeter,
-        PowerStress,
-        PPK2PowerSupply,
-        RidenPowerSupply,
-        SimPowerSupply,
-    )
-    from meshtastic.slog import LogSet
+    powermon_module = importlib.import_module("meshtastic.powermon")
+    slog_module = importlib.import_module("meshtastic.slog")
+    PowerMeter = powermon_module.PowerMeter
+    PowerStress = powermon_module.PowerStress
+    PPK2PowerSupply = powermon_module.PPK2PowerSupply
+    RidenPowerSupply = powermon_module.RidenPowerSupply
+    SimPowerSupply = powermon_module.SimPowerSupply
+    LogSet = slog_module.LogSet
 
     have_powermon = True
     powermon_exception = None
-    meter: Optional[PowerMeter] = None
+    meter = None
 except ImportError as exc:
     have_powermon = False
     powermon_exception = exc
     meter = None
-from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
-from meshtastic.version import get_active_version
 
 logger = logging.getLogger(__name__)
 
@@ -1293,7 +1293,9 @@ def export_config(interface) -> str:
         prefs = {}
         for pref, value in config.items():
             pref_key = (
-                meshtastic.util.snake_to_camel(pref) if mt_config.camel_case else pref
+                meshtastic.util.snake_to_camel(pref)
+                if mt_config.camel_case
+                else meshtastic.util.camel_to_snake(pref)
             )
             prefs[pref_key] = value
             # mark base64 encoded fields as such
@@ -1318,7 +1320,9 @@ def export_config(interface) -> str:
         prefs = {}
         for pref, value in module_config.items():
             pref_key = (
-                meshtastic.util.snake_to_camel(pref) if mt_config.camel_case else pref
+                meshtastic.util.snake_to_camel(pref)
+                if mt_config.camel_case
+                else meshtastic.util.camel_to_snake(pref)
             )
             prefs[pref_key] = value
         configObj["module_config"] = prefs
@@ -1431,12 +1435,12 @@ def common():
             parser.print_help(sys.stderr)
             meshtastic.util.our_exit("", 1)
         elif args.test:
-            if not have_test:
+            if not have_test or meshtastic_test is None:
                 meshtastic.util.our_exit(
                     "Test module could not be imported. Ensure you have the 'dotmap' module installed."
                 )
             else:
-                result = meshtastic.test.testAll()
+                result = meshtastic_test.testAll()
                 if not result:
                     meshtastic.util.our_exit("Warning: Test was not successful.")
                 else:

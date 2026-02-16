@@ -501,18 +501,18 @@ class BLEInterface(MeshInterface):
         if disconnect_keys:
             self._mark_address_keys_disconnected(*disconnect_keys)
 
-        if should_reconnect:
-            if previous_client:
-                # Close previous client asynchronously
-                close_thread = self.thread_coordinator.create_thread(
-                    target=self._client_manager.safe_close_client,
-                    args=(previous_client,),
-                    name="BLEClientClose",
-                    daemon=True,
-                )
-                self.thread_coordinator.start_thread(close_thread)
-            self._disconnected()
+        if previous_client:
+            # Keep cleanup behavior consistent between reconnect paths.
+            close_thread = self.thread_coordinator.create_thread(
+                target=self._client_manager.safe_close_client,
+                args=(previous_client,),
+                name="BLEClientClose",
+                daemon=True,
+            )
+            self.thread_coordinator.start_thread(close_thread)
+        self._disconnected()
 
+        if should_reconnect:
             # Event coordination for reconnection (only if not closed)
             if should_schedule_reconnect:
                 self.thread_coordinator.clear_events(
@@ -521,17 +521,7 @@ class BLEInterface(MeshInterface):
                 self._schedule_auto_reconnect()
             return True
 
-        if previous_client:
-            # Keep cleanup behavior consistent with reconnect-enabled disconnects.
-            close_thread = self.thread_coordinator.create_thread(
-                target=self._client_manager.safe_close_client,
-                args=(previous_client,),
-                name="BLEClientClose",
-                daemon=True,
-            )
-            self.thread_coordinator.start_thread(close_thread)
         logger.debug("Auto-reconnect disabled, staying disconnected.")
-        self._disconnected()
         return False
 
     def _on_ble_disconnect(self, client: BleakRootClient) -> None:

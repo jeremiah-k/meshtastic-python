@@ -1313,7 +1313,7 @@ class MeshInterface:  # pylint: disable=R0902
         hopLimit: Optional[int] = None,
         pkiEncrypted: Optional[bool] = False,
         publicKey: Optional[bytes] = None,
-    ):
+    ) -> mesh_pb2.MeshPacket:
         """
         Send a MeshPacket to a specific node or broadcast.
 
@@ -1580,7 +1580,7 @@ class MeshInterface:  # pylint: disable=R0902
             return node.get_ringtone()
         return None
 
-    def _waitConnected(self, timeout=30.0):
+    def _waitConnected(self, timeout: float = 30.0) -> None:
         """Block until the initial node db download is complete, or timeout
         and raise an exception."""
         if not self.noProto:
