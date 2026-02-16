@@ -768,7 +768,7 @@ def test_main_sendtext_with_dest(mock_findPorts, mock_serial, mocked_open, mock_
 
     #iface = iface_with_nodes
     #iface.myInfo.my_node_num = 2475227164
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
 
     mocked_channel = MagicMock(autospec=Channel)
     serialInterface.localNode.getChannelByChannelIndex = mocked_channel
@@ -964,7 +964,7 @@ def test_main_set_valid(mocked_findports, mocked_serial, mocked_open, mocked_hup
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -988,7 +988,7 @@ def test_main_set_valid_wifi_psk(mocked_findports, mocked_serial, mocked_open, m
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -1012,7 +1012,7 @@ def test_main_set_invalid_wifi_psk(mocked_findports, mocked_serial, mocked_open,
     sys.argv = ["", "--set", "network.wifi_psk", "1234567"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -1040,7 +1040,7 @@ def test_main_set_valid_camel_case(mocked_findports, mocked_serial, mocked_open,
     mt_config.args = sys.argv
     mt_config.camel_case = True
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -1064,7 +1064,7 @@ def test_main_set_with_invalid(mocked_findports, mocked_serial, mocked_open, moc
     sys.argv = ["", "--set", "foo", "foo"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -1089,7 +1089,7 @@ def test_main_configure_with_snake_case(mocked_findports, mocked_serial, mocked_
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -1121,7 +1121,7 @@ def test_main_configure_with_camel_case_keys(mocked_findports, mocked_serial, mo
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
 
@@ -2737,7 +2737,7 @@ def test_tunnel_tunnel_arg(
     sys.argv = ["", "--tunnel"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True)
+    serialInterface = SerialInterface(noProto=True, connectNow=False)
 
     with caplog.at_level(logging.DEBUG):
         with patch("meshtastic.serial_interface.SerialInterface", return_value=serialInterface):

@@ -170,7 +170,8 @@ def test_fixme():
 
 
 @pytest.mark.unit
-def test_support_info(capsys):
+@patch("meshtastic.util.check_if_newer_version", return_value=None)
+def test_support_info(_mock_check_if_newer_version, capsys):
     """Test support_info"""
     support_info()
     out, err = capsys.readouterr()
