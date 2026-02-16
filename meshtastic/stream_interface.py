@@ -1,4 +1,4 @@
-"""Stream Interface base class"""
+"""Stream Interface base class."""
 
 import io
 import logging
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class StreamInterface(MeshInterface):
-    """Interface class for meshtastic devices over a stream link (serial, TCP, etc)"""
+    """Interface class for meshtastic devices over a stream link (serial, TCP, etc)."""
 
     def __init__(  # pylint: disable=R0917
         self,
@@ -44,6 +44,7 @@ class StreamInterface(MeshInterface):
         Raises
         ------
             Exception: If this class has not been specialized with a concrete `self.stream` and `noProto` is False (indicates StreamInterface is abstract).
+
         """
 
         if not hasattr(self, "stream") and not noProto:
@@ -75,7 +76,7 @@ class StreamInterface(MeshInterface):
                 self.waitForConfig()
 
     def connect(self) -> None:
-        """Connect to our radio
+        """Connect to our radio.
 
         Normally this is called automatically by the constructor, but if you
         passed in connectNow=False you can manually start the reading thread later.
@@ -97,19 +98,19 @@ class StreamInterface(MeshInterface):
             self._waitConnected()
 
     def _disconnected(self) -> None:
-        """We override the superclass implementation to close our port"""
+        """We override the superclass implementation to close our port."""
         MeshInterface._disconnected(self)
 
         logger.debug("Closing our port")
         # pylint: disable=E0203
-        if not self.stream is None:
+        if self.stream is not None:
             # pylint: disable=E0203
             self.stream.close()
             # pylint: disable=W0201
             self.stream = None
 
     def _writeBytes(self, b: bytes) -> None:
-        """Write an array of bytes to our stream and flush"""
+        """Write an array of bytes to our stream and flush."""
         if self.stream:  # ignore writes when stream is closed
             self.stream.write(b)
             self.stream.flush()
@@ -121,14 +122,14 @@ class StreamInterface(MeshInterface):
                 time.sleep(0.1)
 
     def _readBytes(self, length) -> Optional[bytes]:
-        """Read an array of bytes from our stream"""
+        """Read an array of bytes from our stream."""
         if self.stream:
             return self.stream.read(length)
         else:
             return None
 
     def _sendToRadioImpl(self, toRadio) -> None:
-        """Send a ToRadio protobuf to the device"""
+        """Send a ToRadio protobuf to the device."""
         logger.debug(f"Sending: {stripnl(toRadio)}")
         b: bytes = toRadio.SerializeToString()
         bufLen: int = len(b)
@@ -171,7 +172,7 @@ class StreamInterface(MeshInterface):
         utf = "?"  # assume we might fail
         try:
             utf = b.decode("utf-8")
-        except:
+        except UnicodeDecodeError:
             pass
 
         if utf == "\r":

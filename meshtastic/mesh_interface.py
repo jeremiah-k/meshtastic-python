@@ -122,6 +122,7 @@ class MeshInterface:  # pylint: disable=R0902
             noProto (bool): If True, disable running the meshtastic protocol layer over the link (operate as a dumb serial client).
             noNodes (bool): If True, instruct the device not to send its node database on startup; only other configuration will be requested.
             timeout (int): Default timeout in seconds for operations that wait for replies.
+
         """
         self.debugOut = debugOut
         self.nodes: Optional[Dict[str, Dict]] = None  # FIXME
@@ -288,6 +289,7 @@ class MeshInterface:  # pylint: disable=R0902
         Returns
         -------
             table (str): The rendered table string (also printed to stdout) containing one row per node and columns mapped to human-readable headings.
+
         """
 
         def get_human_readable(name):
@@ -635,6 +637,7 @@ class MeshInterface:  # pylint: disable=R0902
         Returns
         -------
             mesh_pb2.MeshPacket: The sent mesh packet with its `id` populated.
+
         """
 
         return self.sendData(
@@ -1997,6 +2000,7 @@ class MeshInterface:  # pylint: disable=R0902
         -------
             Dict: The same position dictionary with 'latitude' and/or 'longitude' set
             to float values when corresponding integer fields were present.
+
         """
         if "latitudeI" in position:
             position["latitude"] = float(position["latitudeI"] * Decimal("1e-7"))
@@ -2017,6 +2021,7 @@ class MeshInterface:  # pylint: disable=R0902
         Returns
         -------
             str: The node ID for the given node number, the broadcast address, "Unknown", or `None` if the node number is not found.
+
         """
         if num == BROADCAST_NUM:
             if isDest:

@@ -1,6 +1,9 @@
 name: Make Release
 on: workflow_dispatch
 
+permissions:
+  contents: write
+
 jobs:
   release_create:
     runs-on: ubuntu-latest
@@ -30,8 +33,7 @@ jobs:
 
       - name: Get version
         id: get_version
-        run: >-
-          poetry version --short | sed 's/^/::set-output name=version::/'
+        run: echo "version=$(poetry version --short)" >> "$GITHUB_OUTPUT"
 
       - name: Commit updated version.
         id: commit_updated
@@ -41,7 +43,7 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git add pyproject.toml
           git commit -m "bump version to ${{ steps.get_version.outputs.version }}" && git push || echo "No changes to commit"
-          git log -n 1 --pretty=format:"%H" | tail -n 1 | awk '{print "::set-output name=sha::"$0}'
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
         uses: actions/create-release@v1
