@@ -185,6 +185,7 @@ class TestBLECoroutineRunner:
                 return True
 
         with runner._instance_lock:
+            original_loop = runner._loop
             runner._loop = _LoopStub()
 
         def _fake_submit(coro, _loop):
@@ -218,10 +219,13 @@ class TestBLECoroutineRunner:
             """
             return None
 
-        runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
-        runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.5)
-
-        assert observed_timeouts == [0.25, 0.5]
+        try:
+            runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+            runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.5)
+            assert observed_timeouts == [0.25, 0.5]
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
 
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
@@ -241,6 +245,7 @@ class TestBLECoroutineRunner:
                 return True
 
         with runner._instance_lock:
+            original_loop = runner._loop
             runner._loop = _LoopStub()
 
         def _fake_submit(coro, _loop):
@@ -274,8 +279,12 @@ class TestBLECoroutineRunner:
             """
             return None
 
-        with pytest.warns(DeprecationWarning, match="startup_timeout"):
-            runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+        try:
+            with pytest.warns(DeprecationWarning, match="startup_timeout"):
+                runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
 
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
@@ -297,6 +306,7 @@ class TestBLECoroutineRunner:
                 return True
 
         with runner._instance_lock:
+            original_loop = runner._loop
             runner._loop = _LoopStub()
 
         def _fake_submit(coro, _loop):
@@ -330,11 +340,14 @@ class TestBLECoroutineRunner:
             """
             return None
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always", DeprecationWarning)
-            runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
-
-        assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", DeprecationWarning)
+                runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
+            assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
 
     def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
         """Passing both timeout names should raise to avoid ambiguous behavior."""
@@ -405,6 +418,45 @@ class TestBLECoroutineRunner:
 
         # Count should be >= initial (may have incremented if thread didn't exit)
         assert current_count >= initial_count
+
+    def test_stop_unregisters_atexit_handler(self, monkeypatch):
+        """Explicit stop should unregister the runner atexit callback."""
+        runner = BLECoroutineRunner()
+        runner._ensure_running()
+        unregister_calls = []
+
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.runner.atexit.unregister",
+            lambda func: unregister_calls.append(func),
+        )
+
+        assert runner.stop() is True
+        assert unregister_calls == [runner._atexit_handler]
+        assert runner._atexit_registered is False
+
+    def test_restart_reregisters_atexit_handler(self, monkeypatch):
+        """Runner restart should re-register the atexit callback after explicit stop."""
+        runner = BLECoroutineRunner()
+        runner._ensure_running()
+        register_calls = []
+        unregister_calls = []
+
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.runner.atexit.register",
+            lambda func: register_calls.append(func),
+        )
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.runner.atexit.unregister",
+            lambda func: unregister_calls.append(func),
+        )
+
+        assert runner.stop() is True
+        assert unregister_calls == [runner._atexit_handler]
+        assert runner._atexit_registered is False
+
+        runner._ensure_running()
+        assert register_calls == [runner._atexit_handler]
+        assert runner._atexit_registered is True
 
 
 class TestBLEClientWithRunner:
@@ -486,3 +538,41 @@ class TestBLEClientWithRunner:
         client_count = get_zombie_thread_count()
 
         assert client_count == runner_count
+
+    def test_client_close_disconnects_active_bleak_client(self):
+        """close() should disconnect a connected underlying bleak client before closing."""
+
+        class ConnectedBleakClient:
+            def __init__(self):
+                self.is_connected = True
+                self.disconnect_calls = 0
+
+            async def disconnect(self):
+                self.disconnect_calls += 1
+                self.is_connected = False
+
+        client = BLEClient()
+        bleak_client = ConnectedBleakClient()
+        client.bleak_client = bleak_client
+
+        client.close()
+
+        assert bleak_client.disconnect_calls == 1
+        assert client._closed is True
+
+    def test_client_close_suppresses_disconnect_failures(self):
+        """close() should remain best-effort when disconnect raises."""
+
+        class FailingBleakClient:
+            is_connected = True
+
+            @staticmethod
+            async def disconnect():
+                raise RuntimeError("boom")
+
+        client = BLEClient()
+        client.bleak_client = FailingBleakClient()
+
+        client.close()
+
+        assert client._closed is True

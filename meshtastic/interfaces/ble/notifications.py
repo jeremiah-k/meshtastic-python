@@ -92,6 +92,30 @@ class NotificationManager:
             self._active_subscriptions.clear()
             self._characteristic_to_callback.clear()
 
+    def unsubscribe_all(self, client: "BLEClient", *, timeout: Optional[float]) -> None:
+        """
+        Best-effort stop notifications for all tracked characteristics on the provided client.
+
+        Parameters
+        ----------
+            client (BLEClient): BLE client used to stop notifications.
+            timeout (float | None): Per-unsubscribe timeout passed to the client's
+                `stop_notify` method.
+
+        """
+        with self._lock:
+            characteristics = list(self._characteristic_to_callback.keys())
+
+        for characteristic in characteristics:
+            try:
+                client.stop_notify(characteristic, timeout=timeout)
+            except Exception as e:  # pragma: no cover - best effort; noqa: BLE001
+                logger.debug(
+                    "Failed to unsubscribe %s during shutdown: %s",
+                    characteristic,
+                    e,
+                )
+
     def resubscribe_all(self, client: "BLEClient", *, timeout: float) -> None:
         """
         Re-register all tracked BLE notification subscriptions on the provided client.

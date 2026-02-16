@@ -356,6 +356,7 @@ class DummyClient:
         """
         self.disconnect_calls = 0
         self.close_calls = 0
+        self.stop_notify_calls = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
         self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
@@ -383,6 +384,16 @@ class DummyClient:
 
         Accepts any arguments and performs no action.
         """
+        return None
+
+    def stop_notify(self, *args, **_kwargs):
+        """
+        Simulate unsubscribing from BLE notifications for tests.
+
+        Records the first positional argument (characteristic) when provided.
+        """
+        if args:
+            self.stop_notify_calls.append(args[0])
         return None
 
     def read_gatt_char(self, *_args, **_kwargs) -> bytes:

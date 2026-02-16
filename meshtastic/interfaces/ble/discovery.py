@@ -395,18 +395,12 @@ class DiscoveryManager:
 
     def __del__(self) -> None:
         """
-        Close and clear the internal BLE client when the DiscoveryManager is garbage-collected.
+        Drop the internal client reference during garbage collection.
 
-        Performs a best-effort close of the client, suppressing any exceptions and clearing the internal reference to avoid resource leaks during interpreter shutdown.
+        Destructor cleanup is intentionally minimal: avoid performing BLE I/O
+        (for example, `client.close()`) during interpreter finalization.
+        Explicit lifecycle owners should call `close()`.
         """
-        # Use getattr to handle cases where __init__ didn't complete
-        client = getattr(self, "_client", None)
-        if client is not None:
-            try:
-                client.close()
-            except Exception:  # noqa: BLE001
-                # Best-effort cleanup during GC/interpreter shutdown; avoid logging
-                # because logging infrastructure may already be partially torn down.
-                pass
-            finally:
-                self._client = None
+        # Use setattr only; __init__ may not have completed in exceptional paths.
+        if hasattr(self, "_client"):
+            self._client = None

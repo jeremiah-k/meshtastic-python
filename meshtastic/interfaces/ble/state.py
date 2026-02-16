@@ -71,6 +71,7 @@ class BLEStateManager:
         },
         ConnectionState.ERROR: {
             ConnectionState.DISCONNECTED,
+            ConnectionState.DISCONNECTING,
             ConnectionState.CONNECTING,
             ConnectionState.RECONNECTING,
         },

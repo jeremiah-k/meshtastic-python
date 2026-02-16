@@ -21,7 +21,7 @@ import threading
 import warnings
 import weakref
 from concurrent.futures import Future
-from typing import Coroutine, Optional, TypeVar
+from typing import Callable, Coroutine, Optional, TypeVar
 
 from bleak.exc import BleakDBusError
 
@@ -94,6 +94,8 @@ class BLECoroutineRunner:
     _loop_ready: threading.Event
     _stop_requested: bool
     _pending_futures: weakref.WeakSet[Future]
+    _atexit_handler: Callable[[], None]
+    _atexit_registered: bool
 
     def __new__(cls) -> "BLECoroutineRunner":
         """
@@ -141,8 +143,9 @@ class BLECoroutineRunner:
             # Track pending futures for cleanup
             self._pending_futures = weakref.WeakSet()
 
-            # Register atexit handler for graceful shutdown
-            atexit.register(self._atexit_shutdown)
+            self._atexit_handler = self._atexit_shutdown
+            self._atexit_registered = False
+            self._register_atexit_handler_locked()
 
     @property
     def _instance_lock(self) -> "threading.RLock":
@@ -156,6 +159,29 @@ class BLECoroutineRunner:
         """
         # Lock is always initialized in __init__, but keep property for access
         return self._internal_lock
+
+    def _register_atexit_handler_locked(self) -> None:
+        """
+        Register the runner's process-exit shutdown handler when not already registered.
+
+        Must be called while holding `_instance_lock` or `_singleton_lock`.
+        """
+        if self._atexit_registered:
+            return
+        atexit.register(self._atexit_handler)
+        self._atexit_registered = True
+
+    def _unregister_atexit_handler_locked(self) -> None:
+        """
+        Best-effort unregister of the runner's process-exit shutdown handler.
+
+        Must be called while holding `_instance_lock` or `_singleton_lock`.
+        """
+        if not self._atexit_registered:
+            return
+        with contextlib.suppress(Exception):
+            atexit.unregister(self._atexit_handler)
+        self._atexit_registered = False
 
     @property
     def is_running(self) -> bool:
@@ -225,6 +251,8 @@ class BLECoroutineRunner:
         # starting the runner. Reuse its readiness event.
         if self._thread is not None and self._thread.is_alive():
             return self._loop_ready
+
+        self._register_atexit_handler_locked()
 
         # Reset stop flag for restart
         self._stop_requested = False
@@ -543,7 +571,7 @@ class BLECoroutineRunner:
         if loop and loop.is_running():
             try:
                 loop.call_soon_threadsafe(loop.stop)
-            except RuntimeError:
+            except (RuntimeError, AttributeError, TypeError):
                 logger.debug(
                     "Unable to stop BLE event loop thread-safely; loop may already be closing."
                 )
@@ -590,6 +618,7 @@ class BLECoroutineRunner:
             # This avoids clearing a newer loop installed by a concurrent restart.
             if self._loop is loop:
                 self._loop = None
+            self._unregister_atexit_handler_locked()
         return True
 
     def _atexit_shutdown(self) -> None:

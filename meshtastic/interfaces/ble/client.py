@@ -8,6 +8,7 @@ import warnings
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from threading import RLock
 from typing import Any, Awaitable, Coroutine, Optional, Type, TypeVar, Union
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from bleak import BleakScanner
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
+    DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     logger,
 )
@@ -111,6 +113,7 @@ class BLEClient:
         self.address = address
         self._closed = False
         self._pending_futures: weakref.WeakSet[Future] = weakref.WeakSet()
+        self._close_lock = RLock()
 
         # Use singleton runner for all BLE operations
         self._runner = BLECoroutineRunner()
@@ -411,24 +414,72 @@ class BLEClient:
         )
         self.start_notify(*args, timeout=timeout, **kwargs)
 
+    def stop_notify(
+        self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
+    ) -> None:  # pylint: disable=C0116
+        """
+        Unsubscribe notifications for a GATT characteristic on the connected device.
+
+        Parameters
+        ----------
+            *args: Positional arguments passed to the underlying notification stop
+                call, typically the characteristic UUID (or handle).
+            timeout (float | None): Maximum seconds to wait for the operation
+                to complete; if None, wait indefinitely.
+            **kwargs: Additional keyword arguments passed to the underlying
+                notification stop call.
+
+        Raises
+        ------
+            BLEError: If no BLE client is initialized or if the operation times out or fails.
+
+        """
+        if self.bleak_client is None:
+            raise self.BLEError("Cannot stop notify: BLE client not initialized")
+        self.async_await(
+            self.bleak_client.stop_notify(*args, **kwargs), timeout=timeout
+        )
+
+    def stopNotify(
+        self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
+    ) -> None:
+        """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "stopNotify is deprecated; use stop_notify instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.stop_notify(*args, timeout=timeout, **kwargs)
+
     def close(self) -> None:  # pylint: disable=C0116
         """
-        Close the BLEClient and cancel any pending operations for this instance.
+        Close the BLEClient, best-effort disconnecting transport first, then cancel pending operations.
 
-        This marks the client as closed, cancels any pending futures associated
-        with it to unblock waiting callers, and is idempotent: subsequent calls
-        have no additional effect. This does not stop or affect any shared
-        event loop used by other clients.
+        If an underlying Bleak client exists and currently reports connected,
+        close() attempts a bounded disconnect first. Any disconnect errors are
+        suppressed so shutdown remains best-effort and idempotent. After that,
+        this marks the wrapper as closed and cancels pending futures to unblock
+        waiting callers. This does not stop or affect any shared event loop
+        used by other clients.
         """
-        if getattr(self, "_closed", False):
-            return
-        self._closed = True
+        with self._close_lock:
+            if getattr(self, "_closed", False):
+                return
 
-        # Cancel any pending futures to unblock waiting threads immediately
-        if hasattr(self, "_pending_futures"):
-            for future in list(self._pending_futures):
-                if not future.done():
-                    future.cancel()
+            # Best effort: disconnect active transport before closing this wrapper.
+            if getattr(self, "bleak_client", None) is not None and self.is_connected():
+                self.error_handler.safe_cleanup(
+                    lambda: self.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
+                    "client disconnect during close",
+                )
+
+            self._closed = True
+
+            # Cancel any pending futures to unblock waiting threads immediately.
+            if hasattr(self, "_pending_futures"):
+                for future in list(self._pending_futures):
+                    if not future.done():
+                        future.cancel()
 
     def __enter__(self) -> "BLEClient":
         """

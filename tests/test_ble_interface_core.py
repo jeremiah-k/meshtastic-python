@@ -231,6 +231,18 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager.is_closing is False
 
 
+def test_state_manager_allows_error_to_disconnecting_shutdown():
+    """State manager should support ERROR -> DISCONNECTING for deterministic close paths."""
+    state_manager = BLEStateManager()
+
+    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager.transition_to(ConnectionState.ERROR) is True
+    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
+    assert state_manager.is_closing is True
+    assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
+    assert state_manager.is_closing is False
+
+
 def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     """Stale disconnect callbacks must not clear the current active client."""
     stale_client = DummyClient()
@@ -620,6 +632,26 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch)
     assert devices == [target_device]
 
 
+def test_discovery_manager_destructor_does_not_close_client():
+    """DiscoveryManager.__del__ should avoid active client close I/O during GC."""
+
+    class StubDiscoveryClient:
+        def __init__(self):
+            self.close_calls = 0
+
+        def close(self):
+            self.close_calls += 1
+
+    manager = DiscoveryManager()
+    client = StubDiscoveryClient()
+    manager._client = cast(BLEClient, client)
+
+    manager.__del__()
+
+    assert client.close_calls == 0
+    assert manager._client is None
+
+
 def test_connection_validator_enforces_state():
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 
@@ -994,6 +1026,19 @@ def test_log_notification_registration(monkeypatch):
     ), "FROMNUM notification should register a callable handler"
 
     iface.close()
+
+
+def test_close_unsubscribes_tracked_notifications(monkeypatch):
+    """close() should best-effort stop tracked notifications before client teardown."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    iface._register_notifications(cast(BLEClient, client))
+    assert len(iface._notification_manager) > 0
+
+    iface.close()
+
+    assert FROMNUM_UUID in client.stop_notify_calls
 
 
 def test_reconnect_scheduler_tracks_threads():
