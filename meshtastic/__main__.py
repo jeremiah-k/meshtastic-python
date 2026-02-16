@@ -29,9 +29,11 @@ from meshtastic.version import get_active_version
 
 argcomplete: Union[None, ModuleType] = None
 try:
-    import argcomplete  # type: ignore
+    import argcomplete as _argcomplete  # type: ignore
+
+    argcomplete = _argcomplete
 except ImportError:
-    pass  # already set to None by default above
+    pass
 
 pyqrcode: Union[None, ModuleType] = None
 try:
@@ -44,9 +46,8 @@ except ImportError:
 meshtastic_test: Optional[ModuleType] = None
 try:
     meshtastic_test = importlib.import_module("meshtastic.test")
-    have_test = True
 except ImportError:
-    have_test = False
+    pass
 
 try:
     powermon_module = importlib.import_module("meshtastic.powermon")
@@ -1121,7 +1122,7 @@ def onConnected(interface):
             else:
                 print("Install pyqrcode to view a QR code printed to terminal.")
 
-        log_set: Optional[Any] = None
+        log_set: Any = None
         # we need to keep a reference to the logset so it doesn't get GCed early
 
         if args.slog or args.power_stress:
@@ -1304,13 +1305,28 @@ def export_config(interface) -> str:
             # mark base64 encoded fields as such
             if pref == "security" and isinstance(prefs[pref_key], dict):
                 security = prefs[pref_key]
-                if "privateKey" in security:
-                    security["privateKey"] = "base64:" + security["privateKey"]
-                if "publicKey" in security:
-                    security["publicKey"] = "base64:" + security["publicKey"]
-                if "adminKey" in security:
-                    security["adminKey"] = [
-                        "base64:" + key for key in security["adminKey"]
+                normalized_key_map = {
+                    meshtastic.util.snake_to_camel(
+                        meshtastic.util.camel_to_snake(key)
+                    ): key
+                    for key in security
+                    if isinstance(key, str)
+                }
+
+                private_key = normalized_key_map.get("privateKey")
+                if private_key and isinstance(security.get(private_key), str):
+                    security[private_key] = "base64:" + security[private_key]
+
+                public_key = normalized_key_map.get("publicKey")
+                if public_key and isinstance(security.get(public_key), str):
+                    security[public_key] = "base64:" + security[public_key]
+
+                admin_key = normalized_key_map.get("adminKey")
+                admin_keys = security.get(admin_key) if admin_key else None
+                if isinstance(admin_keys, list):
+                    security[admin_key] = [
+                        "base64:" + key if isinstance(key, str) else key
+                        for key in admin_keys
                     ]
         configObj["config"] = prefs
 
@@ -1438,7 +1454,7 @@ def common():
             parser.print_help(sys.stderr)
             meshtastic.util.our_exit("", 1)
         elif args.test:
-            if not have_test or meshtastic_test is None:
+            if meshtastic_test is None:
                 meshtastic.util.our_exit(
                     "Test module could not be imported. Ensure you have the 'dotmap' module installed."
                 )

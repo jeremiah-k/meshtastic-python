@@ -508,7 +508,9 @@ def stub_atexit(
             )
 
 
-def _build_interface(monkeypatch: Any, client: DummyClient) -> "BLEInterface":
+def _build_interface(
+    monkeypatch: Any, client: DummyClient, *, start_receive_thread: bool = True
+) -> "BLEInterface":
     """
     Create a BLEInterface configured for tests whose `connect` is stubbed to return the supplied client and whose `_startConfig` is a no-op.
 
@@ -516,6 +518,9 @@ def _build_interface(monkeypatch: Any, client: DummyClient) -> "BLEInterface":
     ----------
         monkeypatch: pytest monkeypatch fixture used to patch BLEInterface methods.
         client: Fake or mock BLE client instance that the stubbed `connect` will return.
+        start_receive_thread (bool): If False, patches BLEInterface to skip starting
+            the background receive thread so tests can invoke receive paths
+            synchronously.
 
     Returns
     -------
@@ -560,8 +565,26 @@ def _build_interface(monkeypatch: Any, client: DummyClient) -> "BLEInterface":
         """
         return None
 
+    def _stub_start_receive_thread(_self: "BLEInterface", *, name: str) -> None:
+        """
+        No-op replacement for BLEInterface._start_receive_thread.
+
+        Parameters
+        ----------
+            _self ("BLEInterface"): BLE interface instance under test.
+            name (str): Thread name requested by production code; accepted for
+                signature compatibility and ignored.
+
+        """
+        _ = (_self, name)
+        return None
+
     monkeypatch.setattr(BleInterfaceClass, "connect", _stub_connect)
     monkeypatch.setattr(BleInterfaceClass, "_startConfig", _stub_start_config)
+    if not start_receive_thread:
+        monkeypatch.setattr(
+            BleInterfaceClass, "_start_receive_thread", _stub_start_receive_thread
+        )
     iface = BleInterfaceClass(address="dummy", noProto=True)
     iface._connect_stub_calls = connect_calls
     return iface

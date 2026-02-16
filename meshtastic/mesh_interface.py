@@ -1300,7 +1300,7 @@ class MeshInterface:  # pylint: disable=R0902
         requestId: int,
         callback: Callable[[dict], Any],
         ackPermitted: bool = False,
-    ):
+    ) -> None:
         self.responseHandlers[requestId] = ResponseHandler(
             callback=callback, ackPermitted=ackPermitted
         )
@@ -1876,7 +1876,7 @@ class MeshInterface:  # pylint: disable=R0902
             )
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
 
-    def _handleFromRadio(self, fromRadioBytes):
+    def _handleFromRadio(self, fromRadioBytes: bytes) -> None:
         """
         Process raw FromRadio protobuf bytes, update internal state, and publish corresponding events.
 
@@ -1901,7 +1901,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         fromRadio = mesh_pb2.FromRadio()
         logger.debug(
-            f"in mesh_interface.py _handleFromRadio() fromRadioBytes: {fromRadioBytes}"
+            "in mesh_interface.py _handleFromRadio() fromRadioBytes: %r",
+            fromRadioBytes,
         )
         try:
             fromRadio.ParseFromString(fromRadioBytes)
@@ -2113,7 +2114,7 @@ class MeshInterface:  # pylint: disable=R0902
             logger.debug(f"Node {num} not found for fromId")
             return None
 
-    def _getOrCreateByNum(self, nodeNum):
+    def _getOrCreateByNum(self, nodeNum: int) -> Dict[str, Any]:
         """
         Return a node entry for a given node number, creating a minimal placeholder if none exists.
 
@@ -2167,7 +2168,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         self._localChannels.append(channel)
 
-    def _handlePacketFromRadio(self, meshPacket, hack=False):
+    def _handlePacketFromRadio(
+        self, meshPacket: mesh_pb2.MeshPacket, hack: bool = False
+    ) -> None:
         """
         Process an incoming MeshPacket from the radio and publish an appropriate meshtastic.receive event.
 
@@ -2285,19 +2288,19 @@ class MeshInterface:  # pylint: disable=R0902
                     "errorReason" not in routing or routing["errorReason"] == "NONE"
                 )
                 # we keep the responseHandler in dict until we actually call it
-                handler = self.responseHandlers.get(requestId, None)
-                if handler is not None:
+                response_handler = self.responseHandlers.get(requestId, None)
+                if response_handler is not None:
                     if (
                         (not isAck)
-                        or handler.callback.__name__ == "onAckNak"
-                        or handler.ackPermitted
+                        or response_handler.callback.__name__ == "onAckNak"
+                        or response_handler.ackPermitted
                     ):
-                        handler = self.responseHandlers.pop(requestId, None)
-                        if handler is not None:
+                        response_handler = self.responseHandlers.pop(requestId, None)
+                        if response_handler is not None:
                             logger.debug(
                                 f"Calling response handler for requestId {requestId}"
                             )
-                            handler.callback(asDict)
+                            response_handler.callback(asDict)
 
         logger.debug(f"Publishing {topic}: packet={stripnl(asDict)} ")
         publishingThread.queueWork(

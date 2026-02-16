@@ -1,7 +1,6 @@
 """Tests for the BLE interface module - Core functionality."""
 
 import asyncio
-import inspect
 import logging
 import threading
 import time
@@ -75,12 +74,67 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
 
     """
     params: Dict[str, Any] = {"address": address, "name": name}
-    signature = inspect.signature(BLEDevice.__init__)
-    if "details" in signature.parameters:
+    supports_details, supports_rssi = _ble_device_constructor_kwargs_support()
+    if supports_details:
         params["details"] = {}
-    if "rssi" in signature.parameters:
+    if supports_rssi:
         params["rssi"] = 0
     return BLEDevice(**params)
+
+
+class _FakeDiscoveryClient:
+    """Context-manager BLE client stub used by discovery tests."""
+
+    def __init__(
+        self,
+        discover_result: Dict[str, Any],
+        *,
+        async_await_impl: Optional[Callable[[Any, Optional[float]], Any]] = None,
+    ) -> None:
+        self._discover_result = discover_result
+        self._async_await_impl = async_await_impl
+
+    def __enter__(self) -> "_FakeDiscoveryClient":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        _ = (exc_type, exc, tb)
+        return False
+
+    def discover(self, **_kwargs: Any) -> Dict[str, Any]:
+        return self._discover_result
+
+    def async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
+        if self._async_await_impl is not None:
+            return self._async_await_impl(coro, timeout)
+        return asyncio.run(coro)
+
+
+def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Event:
+    """
+    Patch `iface.close` to set and return a signaling event when close is invoked.
+    """
+    original_close = iface.close
+    close_called = threading.Event()
+
+    def _mock_close(
+        original_close: Callable[[], Any] = original_close,
+        close_called: threading.Event = close_called,
+    ) -> Any:
+        close_called.set()
+        return original_close()
+
+    monkeypatch.setattr(iface, "close", _mock_close)
+    return close_called
+
+
+def _assert_no_fallback(message: str) -> Callable[[Any, Optional[float]], Any]:
+    """Return an async_await stub that fails if fallback logic is invoked."""
+
+    def _raise(_coro: Any, _timeout: Optional[float] = None) -> Any:
+        raise AssertionError(message)
+
+    return _raise
 
 
 class _StrategyOverride(ConnectedStrategy):
@@ -421,63 +475,26 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
     filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
     other_device = _create_ble_device("11:22:33:44:55:66", "Other")
 
-    class FakeClient:
-        def __enter__(self):
-            """
-            Enter the context and return the context manager instance.
-
-            Returns:
-                self: The context manager instance to be used by the `with` statement.
-
-            """
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            """
-            Indicate that the context manager does not suppress exceptions raised inside the with-block.
-
-            Returns:
-                bool: `False` to propagate any exception raised in the with-block.
-
-            """
-            return False
-
-        def discover(self, **_kwargs):
-            """
-            Provide a test discovery mapping of labeled (device, advertisement) pairs.
-
-            Returns:
-                dict: Mapping with keys "filtered" and "other". "filtered" maps to a (device, advertisement) pair whose `advertisement.service_uuids` includes `SERVICE_UUID`. "other" maps to a (device, advertisement) pair whose `advertisement.service_uuids` does not include `SERVICE_UUID`.
-
-            """
-            return {
-                "filtered": (
-                    filtered_device,
-                    SimpleNamespace(service_uuids=[SERVICE_UUID]),
-                ),
-                "other": (
-                    other_device,
-                    SimpleNamespace(service_uuids=["some-other-service"]),
-                ),
-            }
-
-        def async_await(self, coro, timeout=None):
-            """
-            Fail the test when a connected-device fallback coroutine is awaited.
-
-            Parameters
-            ----------
-                coro: The coroutine that would be awaited for a connected-device fallback.
-                timeout: Unused; present for API compatibility.
-
-            Raises
-            ------
-                AssertionError: Always raised with the message "Fallback should not be attempted when scan succeeds".
-
-            """
-            raise AssertionError("Fallback should not be attempted when scan succeeds")
-
-    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+        "other": (
+            other_device,
+            SimpleNamespace(service_uuids=["some-other-service"]),
+        ),
+    }
+    monkeypatch.setattr(
+        ble_mod,
+        "BLEClient",
+        lambda **_kwargs: _FakeDiscoveryClient(
+            discover_result,
+            async_await_impl=_assert_no_fallback(
+                "Fallback should not be attempted when scan succeeds"
+            ),
+        ),
+    )
 
     manager = DiscoveryManager()
 
@@ -492,60 +509,11 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     fallback_device = _create_ble_device("AA:BB", "Fallback")
 
-    class FakeClient:
-        def __enter__(self):
-            """
-            Enter the context and return the context manager instance.
-
-            Returns:
-                self: The context manager instance to be used by the `with` statement.
-
-            """
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            """
-            Indicate that the context manager does not suppress exceptions raised inside the with-block.
-
-            Returns:
-                bool: `False` to propagate any exception raised in the with-block.
-
-            """
-            return False
-
-        def discover(self, **_kwargs):
-            """
-            Provide an empty mapping of discovered BLE devices.
-
-            Parameters
-            ----------
-                _kwargs: Ignored; accepted for API compatibility with other discovery implementations.
-
-            Returns
-            -------
-                dict: Mapping of discovered device addresses to metadata; always empty.
-
-            """
-            return {}
-
-        @staticmethod
-        def async_await(coro, timeout=None):
-            """
-            Execute an awaitable to completion and return its result.
-
-            Parameters
-            ----------
-                coro (Awaitable): The coroutine or awaitable to execute.
-                timeout (float | None): Optional timeout value; ignored by this implementation.
-
-            Returns
-            -------
-                The value produced by the awaitable.
-
-            """
-            return asyncio.run(coro)
-
-    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+    monkeypatch.setattr(
+        ble_mod,
+        "BLEClient",
+        lambda **_kwargs: _FakeDiscoveryClient({}),
+    )
 
     manager = DiscoveryManager()
 
@@ -577,62 +545,11 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     """Connected-device fallback should not run when no address filter is provided."""
 
-    class FakeClient:
-        def __enter__(self):
-            """
-            Enter the context and return the context manager instance.
-
-            Returns:
-                self: The context manager instance to be used by the `with` statement.
-
-            """
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            """
-            Indicate that the context manager does not suppress exceptions raised inside the with-block.
-
-            Returns:
-                bool: `False` to propagate any exception raised in the with-block.
-
-            """
-            return False
-
-        def discover(self, **_kwargs):
-            """
-            Provide an empty mapping of discovered BLE devices.
-
-            Parameters
-            ----------
-                _kwargs: Ignored; accepted for API compatibility with other discovery implementations.
-
-            Returns
-            -------
-                dict: Mapping of discovered device addresses to metadata; always empty.
-
-            """
-            return {}
-
-        @staticmethod
-        def async_await(
-            coro, timeout=None
-        ):  # pragma: no cover - fallback should not be hit
-            """
-            Execute a coroutine to completion and return its result.
-
-            Parameters
-            ----------
-                coro: The coroutine to execute.
-                timeout: Ignored in this fallback implementation.
-
-            Returns
-            -------
-                The value produced by the coroutine.
-
-            """
-            return asyncio.run(coro)
-
-    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+    monkeypatch.setattr(
+        ble_mod,
+        "BLEClient",
+        lambda **_kwargs: _FakeDiscoveryClient({}),
+    )
 
     manager = DiscoveryManager()
 
@@ -670,26 +587,26 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch)
     target_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Target")
     other_meshtastic_device = _create_ble_device("11:22:33:44:55:66", "Other")
 
-    class FakeClient:
-        """Provide scan results with one target and one non-target device."""
-
-        def discover(self, **_kwargs):
-            return {
-                "target": (
-                    target_device,
-                    SimpleNamespace(service_uuids=[]),
-                ),
-                "other": (
-                    other_meshtastic_device,
-                    SimpleNamespace(service_uuids=[SERVICE_UUID]),
-                ),
-            }
-
-        @staticmethod
-        def async_await(coro, timeout=None):  # pragma: no cover - should not be hit
-            raise AssertionError("Fallback should not run for targeted whitelist match")
-
-    monkeypatch.setattr(ble_mod, "BLEClient", lambda **_kwargs: FakeClient())
+    discover_result = {
+        "target": (
+            target_device,
+            SimpleNamespace(service_uuids=[]),
+        ),
+        "other": (
+            other_meshtastic_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+    monkeypatch.setattr(
+        ble_mod,
+        "BLEClient",
+        lambda **_kwargs: _FakeDiscoveryClient(
+            discover_result,
+            async_await_impl=_assert_no_fallback(
+                "Fallback should not run for targeted whitelist match"
+            ),
+        ),
+    )
 
     manager = DiscoveryManager()
     devices = manager.discover_devices(address="AA:BB:CC:DD:EE:FF")
@@ -891,48 +808,18 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
 
     caplog.clear()
 
-    # Create a mock client that raises the specific exception
     client = ExceptionClient(exc_type)
-    iface = _build_interface(monkeypatch, client)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    close_called = _attach_close_monitor(monkeypatch, iface)
 
-    # Mock the close method to track if it's called
-    original_close = iface.close
-    close_called = threading.Event()
-
-    def mock_close(original_close=original_close, close_called=close_called):
-        """
-        Mark the provided Event to record that close was invoked and then call the original close callable.
-
-        Parameters
-        ----------
-            original_close (callable): The original close function to invoke.
-            close_called (threading.Event): Event that will be set to indicate close was called.
-
-        Returns
-        -------
-            Any: The value returned by the `original_close` callable.
-
-        """
-        close_called.set()
-        return original_close()
-
-    monkeypatch.setattr(iface, "close", mock_close)
-
-    # Start the receive thread
+    # Exercise the receive loop synchronously for deterministic assertions.
     iface._want_receive = True
-
-    # Phase 3: Use unified state lock instead of _client_lock
     with iface._state_lock:
         iface.client = client
 
-    # Trigger the receive loop
     iface._read_trigger.set()
+    iface._receiveFromRadioImpl()
 
-    # Wait for the exception to be handled and close to be called
-    # Use a reasonable timeout to avoid hanging the test
-    close_called.wait(timeout=5.0)
-
-    # Check that appropriate logging occurred
     assert "Fatal error in BLE receive thread" in caplog.text
     assert (
         close_called.is_set()
@@ -983,44 +870,19 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
             raise BleakError("transient error")
 
     client = BleakErrorClient()
-    iface = _build_interface(monkeypatch, client)
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    close_called = _attach_close_monitor(monkeypatch, iface)
 
-    # Mock the close method to track if it's called
-    original_close = iface.close
-    close_called = threading.Event()
-
-    def mock_close(original_close=original_close, close_called=close_called):
-        """
-        Mark the close event and invoke the original close callable.
-
-        This test helper sets the `close_called` event to signal that a close was requested, then calls and returns the result of `original_close()`.
-
-        Returns:
-            The value returned by `original_close()`.
-
-        """
-        close_called.set()
-        return original_close()
-
-    monkeypatch.setattr(iface, "close", mock_close)
-
-    # Start the receive thread
     iface._want_receive = True
 
     with iface._state_lock:
         iface.client = client
 
-    # Trigger the receive loop
     iface._read_trigger.set()
+    iface._receiveFromRadioImpl()
 
-    # Wait for the retry logic to exhaust and close to be called
-    close_called.wait(timeout=5.0)
-
-    # Verify retry attempts were logged
     assert "Transient BLE read error, retrying" in caplog.text
     assert "Fatal BLE read error after retries" in caplog.text
-
-    # Verify close was called
     assert close_called.is_set()
 
     # Clean up

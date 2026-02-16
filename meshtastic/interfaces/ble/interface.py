@@ -633,7 +633,12 @@ class BLEInterface(MeshInterface):
 
         """
 
-        def _safe_call(handler, sender, data, error_msg):
+        def _safe_call(
+            handler: Callable[[Any, Any], None],
+            sender: Any,
+            data: Any,
+            error_msg: str,
+        ) -> None:
             """
             Invoke a notification handler via the interface's error handler so any exceptions are caught and reported.
 
@@ -703,7 +708,7 @@ class BLEInterface(MeshInterface):
 
         def _get_or_create_handler(
             uuid: str, factory: Callable[[], Callable[[Any, Any], None]]
-        ):
+        ) -> Callable[[Any, Any], None]:
             """
             Return the notification handler for the given characteristic UUID, creating and subscribing one if none exists.
 
