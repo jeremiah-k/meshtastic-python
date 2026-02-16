@@ -385,7 +385,9 @@ def test_main_onConnected_exception(capsys):
     """
     Verify that running main with the QR option causes the process to exit when QR code generation raises an exception.
 
-    This test patches SerialInterface and forces pyqrcode.create to raise an Exception, then asserts that main() results in a SystemExit and prints an abort message containing the exception text.
+    This test patches SerialInterface and forces pyqrcode.create to raise an
+    Exception, then asserts that main() results in a SystemExit and prints an
+    abort message containing the exception text.
 
     Parameters
     ----------
@@ -561,7 +563,10 @@ def test_main_set_ringtone(capsys):
     """
     Verify the CLI --set-ringtone option instructs the device to set the ringtone and prints confirmation.
 
-    Sets argv to request setting the ringtone, patches the SerialInterface, runs main(), and asserts stdout contains "Connected to radio" and "Setting ringtone to foo,bar", stderr is empty, and the SerialInterface was instantiated.
+    Sets argv to request setting the ringtone, patches the SerialInterface,
+    runs main(), and asserts stdout contains "Connected to radio" and
+    "Setting ringtone to foo,bar", stderr is empty, and the SerialInterface
+    was instantiated.
     """
     sys.argv = ["", "--set-ringtone", "foo,bar"]
     mt_config.args = sys.argv
@@ -745,9 +750,15 @@ def test_main_sendtext(capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_sendtext_with_channel(capsys):
     """
-    Verify that invoking the CLI with `--sendtext <message> --ch-index <n>` results in a sendText call for the specified channel and emits the expected connection and send messages.
+    Verify that invoking the CLI with
+    `--sendtext <message> --ch-index <n>` results in a sendText call for the
+    specified channel and emits the expected connection and send messages.
 
-    The test sets CLI arguments, replaces SerialInterface with a mock whose sendText prints identifiable lines, runs main(), and asserts that stdout contains "Connected to radio", a "Sending text message" line referencing the channel index, and the mock's output. Uses the pytest `capsys` fixture to capture stdout/stderr.
+    The test sets CLI arguments, replaces SerialInterface with a mock whose
+    sendText prints identifiable lines, runs main(), and asserts that stdout
+    contains "Connected to radio", a "Sending text message" line referencing
+    the channel index, and the mock's output. Uses the pytest `capsys`
+    fixture to capture stdout/stderr.
 
     Parameters
     ----------
@@ -1600,7 +1611,10 @@ def test_main_ch_enable_primary_channel(capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_longfast_on_non_primary_channel(capsys):
     """
-    Verify that invoking the CLI with --ch-longfast and a non-primary --ch-index exits with code 1 and prints a warning that the modem preset cannot be set for a non-primary channel while still showing "Connected to radio".
+    Verify that invoking the CLI with --ch-longfast and a non-primary
+    --ch-index exits with code 1 and prints a warning that the modem preset
+    cannot be set for a non-primary channel while still showing
+    "Connected to radio".
     """
     sys.argv = ["", "--ch-longfast", "--ch-index", "1"]
     mt_config.args = sys.argv

@@ -210,7 +210,10 @@ def _onPositionReceive(iface, asDict):
     """
     Parse and apply position data from a received packet to the corresponding node.
 
-    If the packet dictionary contains both a 'from' field and a decoded 'position', this function normalizes the position using iface._fixupPosition and stores the result on the node entry for the sender under the 'position' key.
+    If the packet dictionary contains both a 'from' field and a decoded
+    'position', this function normalizes the position using
+    iface._fixupPosition and stores the result on the node entry for the
+    sender under the 'position' key.
 
     Parameters
     ----------
@@ -261,7 +264,12 @@ def _onTelemetryReceive(iface, asDict):
     """
     Update a node's telemetry metrics when a telemetry packet is received.
 
-    If the packet contains a sender ('from') and a telemetry payload, merges the reported metrics into the corresponding per-node telemetry section and stores the merged metrics on the node. Supported telemetry sections: `deviceMetrics`, `environmentMetrics`, `airQualityMetrics`, `powerMetrics`, and `localStats`. If none of these sections are present, no update is performed.
+    If the packet contains a sender ('from') and a telemetry payload, merges
+    the reported metrics into the corresponding per-node telemetry section and
+    stores the merged metrics on the node. Supported telemetry sections:
+    `deviceMetrics`, `environmentMetrics`, `airQualityMetrics`,
+    `powerMetrics`, and `localStats`. If none of these sections are present,
+    no update is performed.
 
     Parameters
     ----------

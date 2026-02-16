@@ -118,7 +118,9 @@ class MeshInterface:  # pylint: disable=R0902
 
         Parameters
         ----------
-            debugOut (Optional[file-like or callable]): Destination for human-readable log lines; if provided the interface will publish device logs to this output.
+            debugOut (Optional[file-like or callable]): Destination for
+                human-readable log lines; if provided the interface will
+                publish device logs to this output.
             noProto (bool): If True, disable running the meshtastic protocol layer over the link (operate as a dumb serial client).
             noNodes (bool): If True, instruct the device not to send its node database on startup; only other configuration will be requested.
             timeout (int): Default timeout in seconds for operations that wait for replies.
@@ -234,7 +236,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Produce and print a human-readable summary of this mesh interface, including owner, local node info, metadata, and the set of known nodes.
 
-        The summary formats node entries as JSON, removes internal keys (`raw`, `decoded`, `payload`) from node records, and normalizes stored MAC addresses into human-readable form.
+        The summary formats node entries as JSON, removes internal keys
+        (`raw`, `decoded`, `payload`) from node records, and normalizes stored
+        MAC addresses into human-readable form.
 
         Parameters
         ----------
@@ -284,7 +288,10 @@ class MeshInterface:  # pylint: disable=R0902
         Parameters
         ----------
             includeSelf (bool): If False, omit the local node from the output.
-            showFields (Optional[List[str]]): Ordered list of node fields to include (dotted paths for nested fields). If omitted or empty, a sensible default set of fields is used; the row-number column "N" is always included.
+            showFields (Optional[List[str]]): Ordered list of node fields to
+                include (dotted paths for nested fields). If omitted or empty,
+                a sensible default set of fields is used; the row-number column
+                "N" is always included.
 
         Returns
         -------
@@ -375,7 +382,9 @@ class MeshInterface:  # pylint: disable=R0902
 
             Returns
             -------
-                Optional[str]: A concise relative time string like "now", "5 sec ago", "2 min ago", etc., or `None` if `ts` is `None` or represents a time in the future.
+                Optional[str]: A concise relative time string like "now",
+                    "5 sec ago", "2 min ago", etc., or `None` if `ts` is
+                    `None` or represents a time in the future.
 
             """
             if ts is None:
@@ -397,7 +406,9 @@ class MeshInterface:  # pylint: disable=R0902
 
             Returns
             -------
-                Any: The value at the nested path, or `None` if `key_path` does not contain a dot, any intermediate key is missing, or an intermediate value is not a dict.
+                Any: The value at the nested path, or `None` if `key_path`
+                    does not contain a dot, any intermediate key is missing,
+                    or an intermediate value is not a dict.
 
             """
             if "." not in key_path:
@@ -531,7 +542,12 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Obtain a Node object representing the device identified by nodeId.
 
-        If nodeId is the local or broadcast address, returns the already-initialized local node. For remote nodes, this constructs a Node and, when requestChannels is True, requests channel information and retries up to requestChannelAttempts until channel data is received or the operation times out. On repeated failures to retrieve channel info, the function will terminate the process via our_exit.
+        If nodeId is the local or broadcast address, returns the
+        already-initialized local node. For remote nodes, this constructs a
+        Node and, when requestChannels is True, requests channel information
+        and retries up to requestChannelAttempts until channel data is received
+        or the operation times out. On repeated failures to retrieve channel
+        info, the function will terminate the process via our_exit.
 
         Parameters
         ----------
@@ -820,11 +836,19 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Handle an incoming position response payload.
 
-        Parses the Position protobuf from the decoded packet payload, marks the interface's position acknowledgment as received, and prints a concise human-readable summary including latitude/longitude (in degrees), altitude (meters) when present, and precision information. If the packet is a routing response indicating "NO_RESPONSE", terminates with a message about the required firmware version.
+        Parses the Position protobuf from the decoded packet payload, marks the
+        interface's position acknowledgment as received, and prints a concise
+        human-readable summary including latitude/longitude (in degrees),
+        altitude (meters) when present, and precision information. If the
+        packet is a routing response indicating "NO_RESPONSE", terminates with
+        a message about the required firmware version.
 
         Parameters
         ----------
-            p (dict): A decoded packet dictionary containing at minimum the keys `"decoded"`, `"decoded"]["portnum"`, and `"decoded"]["payload"`; for routing responses it must include `"decoded"]["routing"]["errorReason"`.
+            p (dict): A decoded packet dictionary containing at minimum the
+                keys `"decoded"`, `"decoded"]["portnum"`, and
+                `"decoded"]["payload"`; for routing responses it must include
+                `"decoded"]["routing"]["errorReason"`.
 
         """
         if p["decoded"]["portnum"] == "POSITION_APP":
@@ -863,7 +887,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Initiate a traceroute toward a destination node.
 
-        Sends a RouteDiscovery packet to the given destination and waits for trace route responses; the wait timeout is extended based on the local node count but capped by hopLimit.
+        Sends a RouteDiscovery packet to the given destination and waits for
+        trace route responses; the wait timeout is extended based on the local
+        node count but capped by hopLimit.
 
         Parameters
         ----------
@@ -1122,7 +1148,12 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Handle an incoming waypoint response packet.
 
-        If the packet is a WAYPOINT_APP response, mark the waypoint acknowledgment as received, parse the Waypoint protobuf from decoded['payload'], and print a human-readable representation. If the packet is a ROUTING_APP response with routing['errorReason'] == "NO_RESPONSE", exit with a message indicating a minimum firmware requirement.
+        If the packet is a WAYPOINT_APP response, mark the waypoint
+        acknowledgment as received, parse the Waypoint protobuf from
+        decoded['payload'], and print a human-readable representation. If the
+        packet is a ROUTING_APP response with routing['errorReason'] ==
+        "NO_RESPONSE", exit with a message indicating a minimum firmware
+        requirement.
 
         Parameters
         ----------
@@ -1281,7 +1312,10 @@ class MeshInterface:  # pylint: disable=R0902
         Parameters
         ----------
             meshPacket (mesh_pb2.MeshPacket): The packet to send; fields such as payload and port should be set by the caller.
-            destinationId (int|str): Destination identifier — can be a node number (int), a node ID string (hex-style), or the constants BROADCAST_ADDR or LOCAL_ADDR. Determines the packet's `to` field.
+            destinationId (int|str): Destination identifier — can be a node
+                number (int), a node ID string (hex-style), or the constants
+                BROADCAST_ADDR or LOCAL_ADDR. Determines the packet's `to`
+                field.
             wantAck (bool): If true, request an acknowledgement from the recipient; sets the packet's `want_ack`.
             hopLimit (int | None): Maximum hop count for the packet. If omitted, the local node's LoRa `hop_limit` is used.
             pkiEncrypted (bool | None): If true, mark the packet as PKI-encrypted.
@@ -1289,7 +1323,10 @@ class MeshInterface:  # pylint: disable=R0902
 
         Returns
         -------
-            mesh_pb2.MeshPacket: The same MeshPacket instance that was sent, with transport-related fields populated (for example: `to`, `want_ack`, `hop_limit`, `id`, and encryption/public key fields).
+            mesh_pb2.MeshPacket: The same MeshPacket instance that was sent,
+                with transport-related fields populated (for example: `to`,
+                `want_ack`, `hop_limit`, `id`, and encryption/public key
+                fields).
 
         """
 
@@ -1445,7 +1482,9 @@ class MeshInterface:  # pylint: disable=R0902
         Return the stored node info for the local node.
 
         Returns:
-            dict: The local node's info dictionary from nodesByNum, or `None` if myInfo or nodesByNum is unavailable or the local node entry is not present.
+            dict: The local node's info dictionary from nodesByNum, or `None`
+                if myInfo or nodesByNum is unavailable or the local node entry
+                is not present.
 
         """
         if self.myInfo is None or self.nodesByNum is None:
@@ -1550,7 +1589,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Produce a new unique packet identifier for outgoing mesh packets.
 
-        The returned value encodes a 10-bit rolling counter in the low 10 bits and random bits in the upper bits to reduce collision risk across restarts.
+        The returned value encodes a 10-bit rolling counter in the low 10 bits
+        and random bits in the upper bits to reduce collision risk across
+        restarts.
 
         Returns:
             int: A new packet id where the lower 10 bits are a monotonic counter and the remaining bits are randomized.
@@ -1578,7 +1619,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Mark the interface as disconnected and publish a meshtastic.connection.lost event.
 
-        This clears the internal connected flag and schedules a published notification (via the publishing thread) so external listeners are informed that the interface has lost its connection.
+        This clears the internal connected flag and schedules a published
+        notification (via the publishing thread) so external listeners are
+        informed that the interface has lost its connection.
         """
         self.isConnected.clear()
         publishingThread.queueWork(
@@ -1597,14 +1640,24 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Schedule and run periodic heartbeat transmissions to the radio device.
 
-        This starts a recurring, daemonized timer that calls sendHeartbeat() at a fixed interval (300 seconds) and reschedules itself. The scheduler runs the first heartbeat immediately and thereafter every interval. It is safe during shutdown: the method respects the _closing flag and _heartbeat_lock to avoid scheduling or sending heartbeats after shutdown has begun.
+        This starts a recurring, daemonized timer that calls sendHeartbeat() at
+        a fixed interval (300 seconds) and reschedules itself. The scheduler
+        runs the first heartbeat immediately and thereafter every interval. It
+        is safe during shutdown: the method respects the _closing flag and
+        _heartbeat_lock to avoid scheduling or sending heartbeats after
+        shutdown has begun.
         """
 
         def callback():
             """
             Schedule recurring heartbeat timers and dispatch a heartbeat, while avoiding scheduling or sending during shutdown.
 
-            This callback creates and registers a daemon timer that re-invokes itself after a fixed interval, stores the timer on self.heartbeatTimer, and then calls self.sendHeartbeat() to emit a heartbeat. The function observes self._closing and acquires self._heartbeat_lock to ensure it does not schedule, store, or send heartbeats once shutdown has begun.
+            This callback creates and registers a daemon timer that re-invokes
+            itself after a fixed interval, stores the timer on
+            self.heartbeatTimer, and then calls self.sendHeartbeat() to emit a
+            heartbeat. The function observes self._closing and acquires
+            self._heartbeat_lock to ensure it does not schedule, store, or send
+            heartbeats once shutdown has begun.
             """
             with self._heartbeat_lock:
                 # If shutdown started, don't schedule more heartbeat timers.
@@ -1635,7 +1688,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Mark the interface as connected, start the heartbeat timer, and publish a connection-established event.
 
-        If the interface is shutting down, do nothing. Otherwise set the internal connected event, start periodic heartbeats, and enqueue a "meshtastic.connection.established" publication.
+        If the interface is shutting down, do nothing. Otherwise set the
+        internal connected event, start periodic heartbeats, and enqueue a
+        "meshtastic.connection.established" publication.
         """
         with self._heartbeat_lock:
             if self._closing:
@@ -1704,11 +1759,18 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Send a ToRadio protobuf to the radio device, queueing MeshPacket payloads and sending non-packet messages immediately.
 
-        If `toRadio` contains a `packet` (a MeshPacket) it is placed on the internal transmit queue and will be sent when TX queue space is available; otherwise it is sent immediately. This call may block while waiting for free TX queue space, will claim queue slots for outgoing packets, and will requeue packets that were not acknowledged. If protocol usage is disabled via `noProto`, the message is not sent.
+        If `toRadio` contains a `packet` (a MeshPacket) it is placed on the
+        internal transmit queue and will be sent when TX queue space is
+        available; otherwise it is sent immediately. This call may block while
+        waiting for free TX queue space, will claim queue slots for outgoing
+        packets, and will requeue packets that were not acknowledged. If
+        protocol usage is disabled via `noProto`, the message is not sent.
 
         Parameters
         ----------
-            toRadio (mesh_pb2.ToRadio): The protobuf message to transmit; if it has a `packet` field the contained MeshPacket will be queued for transmission.
+            toRadio (mesh_pb2.ToRadio): The protobuf message to transmit; if it
+                has a `packet` field the contained MeshPacket will be queued
+                for transmission.
 
         """
         if self.noProto:
@@ -1767,7 +1829,9 @@ class MeshInterface:  # pylint: disable=R0902
             toRadio (mesh_pb2.ToRadio): The protobuf message describing the action or packet to send to the radio.
 
         Description:
-            This method is the transport hook used by MeshInterface to deliver ToRadio protobufs to the underlying hardware or driver. Subclasses must override this method to perform the actual transmission.
+            This method is the transport hook used by MeshInterface to deliver
+            ToRadio protobufs to the underlying hardware or driver. Subclasses
+            must override this method to perform the actual transmission.
 
         """
         logger.error(f"Subclass must provide toradio: {toRadio}")
@@ -1776,7 +1840,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Finalize initial configuration by applying collected local channels and marking the interface as connected.
 
-        Sets the local node's channels from the internally collected _localChannels and invokes _connected() to signal that configuration is complete and normal packet handling may begin.
+        Sets the local node's channels from the internally collected
+        _localChannels and invokes _connected() to signal that configuration is
+        complete and normal packet handling may begin.
         """
         # This is no longer necessary because the current protocol statemachine has already proactively sent us the locally visible channels
         # self.localNode.requestChannels()
@@ -1811,7 +1877,10 @@ class MeshInterface:  # pylint: disable=R0902
         Parses the provided FromRadio protobuf payload and applies its contents to the interface:
         - updates myInfo and metadata and sets local node number;
         - creates/updates node entries and publishes meshtastic.node.updated;
-        - handles config completion, channel records, packet receipts, log records, queue status, client notifications, MQTT proxy messages, and XMODEM packets by invoking the appropriate handlers and publishing events;
+        - handles config completion, channel records, packet receipts, log
+          records, queue status, client notifications, MQTT proxy messages, and
+          XMODEM packets by invoking the appropriate handlers and publishing
+          events;
         - on reboot, marks the interface disconnected and restarts configuration download;
         - copies config and moduleConfig subfields into the local node's configuration objects.
 
@@ -2012,7 +2081,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Return the node ID corresponding to a mesh node number.
 
-        If num is the broadcast number, returns the broadcast address when isDest is True or the string "Unknown" when isDest is False. Otherwise looks up the node in internal state.
+        If num is the broadcast number, returns the broadcast address when
+        isDest is True or the string "Unknown" when isDest is False. Otherwise
+        looks up the node in internal state.
 
         Parameters
         ----------
@@ -2079,7 +2150,9 @@ class MeshInterface:  # pylint: disable=R0902
 
         Parameters
         ----------
-            channel: Channel descriptor (protobuf message or dict) received from the radio that describes a local channel; appended to self._localChannels.
+            channel: Channel descriptor (protobuf message or dict) received from
+                the radio that describes a local channel; appended to
+                self._localChannels.
 
         """
         self._localChannels.append(channel)
@@ -2088,7 +2161,20 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Process an incoming MeshPacket from the radio and publish an appropriate meshtastic.receive event.
 
-        Converts the protobuf MeshPacket to a dictionary, attaches the original protobuf as "raw", ensures "from" and "to" keys exist (defaulting to 0 if missing), and populates "fromId"/"toId" using node-number-to-ID mapping. If the packet contains a decoded payload, preserves the raw payload bytes, exposes or sets a port number, and, when a known protocol handler exists, decodes the protocol payload into decoded.<handler.name> and attaches the protocol protobuf as decoded.<handler.name>["raw"]. If a protocol handler defines an onReceive callback it will be invoked with the packet dict. If the decoded payload contains a requestId, any registered response handler will be invoked (respecting ACK filtering and handler ackPermitted/onAckNak rules). Finally, publishes the packet on a topic like "meshtastic.receive", "meshtastic.receive.data.<portnum>", or "meshtastic.receive.<protocol>" via the pub/sub system.
+        Converts the protobuf MeshPacket to a dictionary, attaches the original
+        protobuf as "raw", ensures "from" and "to" keys exist (defaulting to 0
+        if missing), and populates "fromId"/"toId" using
+        node-number-to-ID mapping. If the packet contains a decoded payload,
+        preserves the raw payload bytes, exposes or sets a port number, and,
+        when a known protocol handler exists, decodes the protocol payload into
+        decoded.<handler.name> and attaches the protocol protobuf as
+        decoded.<handler.name>["raw"]. If a protocol handler defines an
+        onReceive callback it will be invoked with the packet dict. If the
+        decoded payload contains a requestId, any registered response handler
+        will be invoked (respecting ACK filtering and handler
+        ackPermitted/onAckNak rules). Finally, publishes the packet on a topic
+        like "meshtastic.receive", "meshtastic.receive.data.<portnum>", or
+        "meshtastic.receive.<protocol>" via the pub/sub system.
 
         Parameters
         ----------

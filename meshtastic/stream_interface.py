@@ -43,7 +43,9 @@ class StreamInterface(MeshInterface):
 
         Raises
         ------
-            Exception: If this class has not been specialized with a concrete `self.stream` and `noProto` is False (indicates StreamInterface is abstract).
+            Exception: If this class has not been specialized with a concrete
+                `self.stream` and `noProto` is False (indicates
+                StreamInterface is abstract).
 
         """
 
@@ -142,7 +144,11 @@ class StreamInterface(MeshInterface):
         """
         Close the connection to the device and shut down the reader thread.
 
-        Calls MeshInterface.close(), sets the internal shutdown flag to request the background reader to exit, and attempts to join the reader thread for up to 2 seconds. If close() is called before the reader thread has started, joining is skipped. If the reader thread remains alive after the timeout, a warning is logged.
+        Calls MeshInterface.close(), sets the internal shutdown flag to request
+        the background reader to exit, and attempts to join the reader thread
+        for up to 2 seconds. If close() is called before the reader thread has
+        started, joining is skipped. If the reader thread remains alive after
+        the timeout, a warning is logged.
         """
         logger.debug("Closing stream")
         MeshInterface.close(self)
@@ -165,7 +171,10 @@ class StreamInterface(MeshInterface):
             b (bytes): A single-byte bytes object read from the device.
 
         Behavior:
-            Decodes the byte as UTF-8, using '?' if decoding fails. Ignores carriage return characters ('\r'). On newline ('\n'), passes the accumulated line to self._handleLogLine and clears the accumulator; otherwise appends the decoded character to self.cur_log_line.
+            Decodes the byte as UTF-8, using '?' if decoding fails. Ignores
+            carriage return characters ('\r'). On newline ('\n'), passes the
+            accumulated line to self._handleLogLine and clears the accumulator;
+            otherwise appends the decoded character to self.cur_log_line.
 
         """
 
@@ -187,7 +196,11 @@ class StreamInterface(MeshInterface):
         """
         Continuously read from the configured stream in a background thread, dispatching device log bytes and framed radio packets for processing.
 
-        This thread accumulates incoming bytes, treats bytes that do not start a protocol frame as device log data (forwarded to _handleLogByte), recognizes framed messages prefixed by START1/START2 with a length header, and passes complete payloads to _handleFromRadio. On termination it calls _disconnected to clean up resources.
+        This thread accumulates incoming bytes, treats bytes that do not start
+        a protocol frame as device log data (forwarded to _handleLogByte),
+        recognizes framed messages prefixed by START1/START2 with a length
+        header, and passes complete payloads to _handleFromRadio. On
+        termination it calls _disconnected to clean up resources.
         """
         logger.debug("in __reader()")
         empty = bytes()
