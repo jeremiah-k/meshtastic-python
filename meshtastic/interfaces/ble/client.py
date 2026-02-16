@@ -133,9 +133,10 @@ class BLEClient:
         **kwargs : dict
             Backend-specific pairing options forwarded to the underlying BLE client.
 
-        Returns
-        -------
-            `True` if pairing succeeded, `False` otherwise.
+        Note
+        ----
+            In bleak >= 2.1.1, this method returns None. The operation raises
+            an exception on failure; success is indicated by normal return.
 
         """
         if self.bleak_client is None:
@@ -150,8 +151,9 @@ class BLEClient:
             await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; None to wait indefinitely.
             **kwargs: Forwarded to the underlying Bleak client's `connect` call.
 
-        Returns:
-            The value returned by the underlying Bleak client's `connect` call.
+        Note:
+            In bleak >= 2.1.1, this method returns None. The operation raises
+            an exception on failure; success is indicated by normal return.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot connect: BLE client not initialized")
@@ -201,6 +203,10 @@ class BLEClient:
         Parameters:
             await_timeout (float | None): Maximum seconds to wait for disconnect to complete. If `None`, wait indefinitely.
             **kwargs: Additional keyword arguments forwarded to the underlying Bleak client's `disconnect` method.
+
+        Note:
+            In bleak >= 2.1.1, this method returns None. The operation raises
+            an exception on failure; success is indicated by normal return.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")

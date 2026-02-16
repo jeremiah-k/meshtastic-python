@@ -1,5 +1,4 @@
-"""Mesh Interface class
-"""
+"""Mesh Interface class"""
 # pylint: disable=R0917,C0302
 
 import collections
@@ -49,6 +48,7 @@ from meshtastic.util import (
 
 logger = logging.getLogger(__name__)
 
+
 def _timeago(delta_secs: int) -> str:
     """Convert a number of seconds in the past into a short, friendly string
     e.g. "now", "30 sec ago",  "1 hour ago"
@@ -90,7 +90,11 @@ class MeshInterface:  # pylint: disable=R0902
             super().__init__(self.message)
 
     def __init__(
-        self, debugOut=None, noProto: bool = False, noNodes: bool = False, timeout: int = 300
+        self,
+        debugOut=None,
+        noProto: bool = False,
+        noNodes: bool = False,
+        timeout: int = 300,
     ) -> None:
         """Constructor
 
@@ -108,12 +112,12 @@ class MeshInterface:  # pylint: disable=R0902
         self.localNode: meshtastic.node.Node = meshtastic.node.Node(
             self, -1, timeout=timeout
         )  # We fixup nodenum later
-        self.myInfo: Optional[
-            mesh_pb2.MyNodeInfo
-        ] = None  # We don't have device info yet
-        self.metadata: Optional[
-            mesh_pb2.DeviceMetadata
-        ] = None  # We don't have device metadata yet
+        self.myInfo: Optional[mesh_pb2.MyNodeInfo] = (
+            None  # We don't have device info yet
+        )
+        self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
+            None  # We don't have device metadata yet
+        )
         self.responseHandlers: Dict[
             int, ResponseHandler
         ] = {}  # A map from request ID to the handler
@@ -235,9 +239,9 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> str:  # pylint: disable=W0613
         """Show table summary of nodes in mesh
 
-           Args:
-                includeSelf (bool): Include ourself in the output?
-                showFields (List[str]): List of fields to show in output
+        Args:
+             includeSelf (bool): Include ourself in the output?
+             showFields (List[str]): List of fields to show in output
         """
 
         def get_human_readable(name):
@@ -260,14 +264,12 @@ class MeshInterface:  # pylint: disable=R0902
                 "lastHeard": "LastHeard",
                 "since": "Since",
                 "isFavorite": "Fav",
-
             }
 
             if name in name_map:
                 return name_map.get(name)  # Default to a formatted guess
             else:
                 return name
-
 
         def formatFloat(value, precision=2, unit="") -> Optional[str]:
             """Format a float value with precision."""
@@ -303,11 +305,28 @@ class MeshInterface:  # pylint: disable=R0902
             return value
 
         if showFields is None or len(showFields) == 0:
-          # The default set of fields to show (e.g., the status quo)
-            showFields = ["N", "user.longName", "user.id", "user.shortName", "user.hwModel", "user.publicKey",
-                          "user.role", "position.latitude", "position.longitude", "position.altitude",
-                          "deviceMetrics.batteryLevel", "deviceMetrics.channelUtilization",
-                          "deviceMetrics.airUtilTx", "snr", "hopsAway", "channel", "isFavorite", "lastHeard", "since"]
+            # The default set of fields to show (e.g., the status quo)
+            showFields = [
+                "N",
+                "user.longName",
+                "user.id",
+                "user.shortName",
+                "user.hwModel",
+                "user.publicKey",
+                "user.role",
+                "position.latitude",
+                "position.longitude",
+                "position.altitude",
+                "deviceMetrics.batteryLevel",
+                "deviceMetrics.channelUtilization",
+                "deviceMetrics.airUtilTx",
+                "snr",
+                "hopsAway",
+                "channel",
+                "isFavorite",
+                "lastHeard",
+                "since",
+            ]
         else:
             # Always at least include the row number.
             showFields.insert(0, "N")
@@ -364,17 +383,29 @@ class MeshInterface:  # pylint: disable=R0902
                     elif field == "snr":
                         formatted_value = formatFloat(raw_value, 0, " dB")
                     elif field == "user.shortName":
-                        formatted_value = raw_value if raw_value is not None else f'Meshtastic {presumptive_id[-4:]}'
+                        formatted_value = (
+                            raw_value
+                            if raw_value is not None
+                            else f"Meshtastic {presumptive_id[-4:]}"
+                        )
                     elif field == "user.id":
-                        formatted_value = raw_value if raw_value is not None else presumptive_id
+                        formatted_value = (
+                            raw_value if raw_value is not None else presumptive_id
+                        )
                     else:
                         formatted_value = raw_value  # No special formatting
 
                     fields[field] = formatted_value
 
                 # Filter out any field in the data set that was not specified.
-                filteredData = {get_human_readable(k): v for k, v in fields.items() if k in showFields}
-                filteredData.update({get_human_readable(k): v for k, v in fields.items()})
+                filteredData = {
+                    get_human_readable(k): v
+                    for k, v in fields.items()
+                    if k in showFields
+                }
+                filteredData.update(
+                    {get_human_readable(k): v for k, v in fields.items()}
+                )
                 rows.append(filteredData)
 
         rows.sort(key=lambda r: r.get("LastHeard") or "0000", reverse=True)
@@ -386,7 +417,11 @@ class MeshInterface:  # pylint: disable=R0902
         return table
 
     def getNode(
-        self, nodeId: str, requestChannels: bool = True, requestChannelAttempts: int = 3, timeout: int = 300
+        self,
+        nodeId: str,
+        requestChannels: bool = True,
+        requestChannelAttempts: int = 3,
+        timeout: int = 300,
     ) -> meshtastic.node.Node:
         """Return a node object which contains device settings and channel info"""
         if nodeId in (LOCAL_ADDR, BROADCAST_ADDR):
@@ -402,7 +437,9 @@ class MeshInterface:  # pylint: disable=R0902
                 while retries_left > 0:
                     retries_left -= 1
                     if not n.waitForConfig():
-                        new_index: int = len(n.partialChannels) if n.partialChannels else 0
+                        new_index: int = (
+                            len(n.partialChannels) if n.partialChannels else 0
+                        )
                         # each time we get a new channel, reset the counter
                         if new_index != last_index:
                             retries_left = requestChannelAttempts - 1
@@ -424,7 +461,7 @@ class MeshInterface:  # pylint: disable=R0902
         onResponse: Optional[Callable[[dict], Any]] = None,
         channelIndex: int = 0,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.TEXT_MESSAGE_APP,
-        replyId: Optional[int]=None,
+        replyId: Optional[int] = None,
     ):
         """Send a utf8 string to some other node, if the node has a display it
            will also be shown on the device.
@@ -455,9 +492,8 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse=wantResponse,
             onResponse=onResponse,
             channelIndex=channelIndex,
-            replyId=replyId
+            replyId=replyId,
         )
-
 
     def sendAlert(
         self,
@@ -489,7 +525,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse=False,
             onResponse=onResponse,
             channelIndex=channelIndex,
-            priority=mesh_pb2.MeshPacket.Priority.ALERT
+            priority=mesh_pb2.MeshPacket.Priority.ALERT,
         )
 
     def sendMqttClientProxyMessage(self, topic: str, data: bytes):
@@ -507,19 +543,19 @@ class MeshInterface:  # pylint: disable=R0902
     def sendData(
         self,
         data,
-        destinationId: Union[int, str]=BROADCAST_ADDR,
-        portNum: portnums_pb2.PortNum.ValueType=portnums_pb2.PortNum.PRIVATE_APP,
-        wantAck: bool=False,
-        wantResponse: bool=False,
-        onResponse: Optional[Callable[[dict], Any]]=None,
-        onResponseAckPermitted: bool=False,
-        channelIndex: int=0,
-        hopLimit: Optional[int]=None,
-        pkiEncrypted: Optional[bool]=False,
-        publicKey: Optional[bytes]=None,
-        priority: mesh_pb2.MeshPacket.Priority.ValueType=mesh_pb2.MeshPacket.Priority.RELIABLE,
-        replyId: Optional[int]=None,
-    ): # pylint: disable=R0913
+        destinationId: Union[int, str] = BROADCAST_ADDR,
+        portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
+        wantAck: bool = False,
+        wantResponse: bool = False,
+        onResponse: Optional[Callable[[dict], Any]] = None,
+        onResponseAckPermitted: bool = False,
+        channelIndex: int = 0,
+        hopLimit: Optional[int] = None,
+        pkiEncrypted: Optional[bool] = False,
+        publicKey: Optional[bytes] = None,
+        priority: mesh_pb2.MeshPacket.Priority.ValueType = mesh_pb2.MeshPacket.Priority.RELIABLE,
+        replyId: Optional[int] = None,
+    ):  # pylint: disable=R0913
         """Send a data packet to some other node
 
         Keyword Arguments:
@@ -578,8 +614,17 @@ class MeshInterface:  # pylint: disable=R0902
 
         if onResponse is not None:
             logger.debug(f"Setting a response handler for requestId {meshPacket.id}")
-            self._addResponseHandler(meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted)
-        p = self._sendPacket(meshPacket, destinationId, wantAck=wantAck, hopLimit=hopLimit, pkiEncrypted=pkiEncrypted, publicKey=publicKey)
+            self._addResponseHandler(
+                meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
+            )
+        p = self._sendPacket(
+            meshPacket,
+            destinationId,
+            wantAck=wantAck,
+            hopLimit=hopLimit,
+            pkiEncrypted=pkiEncrypted,
+            publicKey=publicKey,
+        )
         return p
 
     def sendPosition(
@@ -684,46 +729,92 @@ class MeshInterface:  # pylint: disable=R0902
 
     def onResponseTraceRoute(self, p: dict):
         """on response for trace route"""
-        UNK_SNR = -128 # Value representing unknown SNR
+        UNK_SNR = -128  # Value representing unknown SNR
 
         routeDiscovery = mesh_pb2.RouteDiscovery()
         routeDiscovery.ParseFromString(p["decoded"]["payload"])
         asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
 
         print("Route traced towards destination:")
-        routeStr = self._nodeNumToId(p["to"], False) or f"{p['to']:08x}" # Start with destination of response
+        routeStr = (
+            self._nodeNumToId(p["to"], False) or f"{p['to']:08x}"
+        )  # Start with destination of response
 
         # SNR list should have one more entry than the route, as the final destination adds its SNR also
         lenTowards = 0 if "route" not in asDict else len(asDict["route"])
-        snrTowardsValid = "snrTowards" in asDict and len(asDict["snrTowards"]) == lenTowards + 1
-        if lenTowards > 0: # Loop through hops in route and add SNR if available
+        snrTowardsValid = (
+            "snrTowards" in asDict and len(asDict["snrTowards"]) == lenTowards + 1
+        )
+        if lenTowards > 0:  # Loop through hops in route and add SNR if available
             for idx, nodeNum in enumerate(asDict["route"]):
-                routeStr += " --> " + (self._nodeNumToId(nodeNum, False) or f"{nodeNum:08x}") \
-                         + " (" + (str(asDict["snrTowards"][idx] / 4) if snrTowardsValid and asDict["snrTowards"][idx] != UNK_SNR else "?") + "dB)"
+                routeStr += (
+                    " --> "
+                    + (self._nodeNumToId(nodeNum, False) or f"{nodeNum:08x}")
+                    + " ("
+                    + (
+                        str(asDict["snrTowards"][idx] / 4)
+                        if snrTowardsValid and asDict["snrTowards"][idx] != UNK_SNR
+                        else "?"
+                    )
+                    + "dB)"
+                )
 
         # End with origin of response
-        routeStr += " --> " + (self._nodeNumToId(p["from"], False) or f"{p['from']:08x}") \
-                 + " (" + (str(asDict["snrTowards"][-1] / 4) if snrTowardsValid and asDict["snrTowards"][-1] != UNK_SNR else "?") + "dB)"
+        routeStr += (
+            " --> "
+            + (self._nodeNumToId(p["from"], False) or f"{p['from']:08x}")
+            + " ("
+            + (
+                str(asDict["snrTowards"][-1] / 4)
+                if snrTowardsValid and asDict["snrTowards"][-1] != UNK_SNR
+                else "?"
+            )
+            + "dB)"
+        )
 
-        print(routeStr) # Print the route towards destination
+        print(routeStr)  # Print the route towards destination
 
         # Only if hopStart is set and there is an SNR entry (for the origin) it's valid, even though route might be empty (direct connection)
         lenBack = 0 if "routeBack" not in asDict else len(asDict["routeBack"])
-        backValid = "hopStart" in p and "snrBack" in asDict and len(asDict["snrBack"]) == lenBack + 1
+        backValid = (
+            "hopStart" in p
+            and "snrBack" in asDict
+            and len(asDict["snrBack"]) == lenBack + 1
+        )
         if backValid:
             print("Route traced back to us:")
-            routeStr = self._nodeNumToId(p["from"], False) or f"{p['from']:08x}" # Start with origin of response
+            routeStr = (
+                self._nodeNumToId(p["from"], False) or f"{p['from']:08x}"
+            )  # Start with origin of response
 
-            if lenBack > 0: # Loop through hops in routeBack and add SNR if available
+            if lenBack > 0:  # Loop through hops in routeBack and add SNR if available
                 for idx, nodeNum in enumerate(asDict["routeBack"]):
-                    routeStr += " --> " + (self._nodeNumToId(nodeNum, False) or f"{nodeNum:08x}") \
-                             + " (" + (str(asDict["snrBack"][idx] / 4) if asDict["snrBack"][idx] != UNK_SNR else "?") + "dB)"
+                    routeStr += (
+                        " --> "
+                        + (self._nodeNumToId(nodeNum, False) or f"{nodeNum:08x}")
+                        + " ("
+                        + (
+                            str(asDict["snrBack"][idx] / 4)
+                            if asDict["snrBack"][idx] != UNK_SNR
+                            else "?"
+                        )
+                        + "dB)"
+                    )
 
             # End with destination of response (us)
-            routeStr += " --> " + (self._nodeNumToId(p["to"], False) or f"{p['to']:08x}") \
-                     + " (" + (str(asDict["snrBack"][-1] / 4) if asDict["snrBack"][-1] != UNK_SNR else "?") + "dB)"
+            routeStr += (
+                " --> "
+                + (self._nodeNumToId(p["to"], False) or f"{p['to']:08x}")
+                + " ("
+                + (
+                    str(asDict["snrBack"][-1] / 4)
+                    if asDict["snrBack"][-1] != UNK_SNR
+                    else "?"
+                )
+                + "dB)"
+            )
 
-            print(routeStr) # Print the route back to us
+            print(routeStr)  # Print the route back to us
 
         self._acknowledgment.receivedTraceRoute = True
 
@@ -732,7 +823,7 @@ class MeshInterface:  # pylint: disable=R0902
         destinationId: Union[int, str] = BROADCAST_ADDR,
         wantResponse: bool = False,
         channelIndex: int = 0,
-        telemetryType: str = "device_metrics"
+        telemetryType: str = "device_metrics",
     ):
         """Send telemetry and optionally ask for a response"""
         r = telemetry_pb2.Telemetry()
@@ -745,7 +836,7 @@ class MeshInterface:  # pylint: disable=R0902
             r.power_metrics.CopyFrom(telemetry_pb2.PowerMetrics())
         elif telemetryType == "local_stats":
             r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
-        else: # fall through to device metrics
+        else:  # fall through to device metrics
             if self.nodesByNum is not None:
                 node = self.nodesByNum.get(self.localNode.nodeNum)
                 if node is not None:
@@ -794,7 +885,9 @@ class MeshInterface:  # pylint: disable=R0902
             # This is the original code that was the default for --request-telemetry and is kept for compatibility
             if telemetry.HasField("device_metrics"):
                 if telemetry.device_metrics.battery_level is not None:
-                    print(f"Battery level: {telemetry.device_metrics.battery_level:.2f}%")
+                    print(
+                        f"Battery level: {telemetry.device_metrics.battery_level:.2f}%"
+                    )
                 if telemetry.device_metrics.voltage is not None:
                     print(f"Voltage: {telemetry.device_metrics.voltage:.2f} V")
                 if telemetry.device_metrics.channel_utilization is not None:
@@ -811,7 +904,9 @@ class MeshInterface:  # pylint: disable=R0902
                 # this is the new code if --request-telemetry <type> is used.
                 telemetry_dict = google.protobuf.json_format.MessageToDict(telemetry)
                 for key, value in telemetry_dict.items():
-                    if key != "time": # protobuf includes a time field that we don't print for device_metrics.
+                    if (
+                        key != "time"
+                    ):  # protobuf includes a time field that we don't print for device_metrics.
                         print(f"{key}:")
                         for sub_key, sub_value in value.items():
                             print(f"  {sub_key}: {sub_value}")
@@ -848,7 +943,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantAck: bool = True,
         wantResponse: bool = False,
         channelIndex: int = 0,
-    ): # pylint: disable=R0913
+    ):  # pylint: disable=R0913
         """
         Send a waypoint packet to some other node (normally a broadcast)
 
@@ -944,11 +1039,11 @@ class MeshInterface:  # pylint: disable=R0902
     def _sendPacket(
         self,
         meshPacket: mesh_pb2.MeshPacket,
-        destinationId: Union[int,str]=BROADCAST_ADDR,
-        wantAck: bool=False,
-        hopLimit: Optional[int]=None,
-        pkiEncrypted: Optional[bool]=False,
-        publicKey: Optional[bytes]=None,
+        destinationId: Union[int, str] = BROADCAST_ADDR,
+        wantAck: bool = False,
+        hopLimit: Optional[int] = None,
+        pkiEncrypted: Optional[bool] = False,
+        publicKey: Optional[bytes] = None,
     ):
         """Send a MeshPacket to the specified node (or if unspecified, broadcast).
         You probably don't want this - use sendData instead.
@@ -1133,9 +1228,13 @@ class MeshInterface:  # pylint: disable=R0902
             )
         else:
             nextPacketId = (self.currentPacketId + 1) & 0xFFFFFFFF
-            nextPacketId = nextPacketId & 0x3FF                           # == (0xFFFFFFFF >> 22), masks upper 22 bits
-            randomPart = (random.randint(0, 0x3FFFFF) << 10) & 0xFFFFFFFF # generate number with 10 zeros at end
-            self.currentPacketId = nextPacketId | randomPart              # combine
+            nextPacketId = (
+                nextPacketId & 0x3FF
+            )  # == (0xFFFFFFFF >> 22), masks upper 22 bits
+            randomPart = (
+                random.randint(0, 0x3FFFFF) << 10
+            ) & 0xFFFFFFFF  # generate number with 10 zeros at end
+            self.currentPacketId = nextPacketId | randomPart  # combine
             return self.currentPacketId
 
     def _disconnected(self):
@@ -1170,6 +1269,12 @@ class MeshInterface:  # pylint: disable=R0902
                     return
                 self.heartbeatTimer = timer
             timer.start()
+            # Final guard: check _closing one more time before sending heartbeat
+            # to avoid sending after shutdown has started
+            with self._heartbeat_lock:
+                if self._closing:
+                    timer.cancel()
+                    return
             self.sendHeartbeat()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
@@ -1197,9 +1302,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
@@ -1322,9 +1425,7 @@ class MeshInterface:  # pylint: disable=R0902
         try:
             fromRadio.ParseFromString(fromRadioBytes)
         except Exception as ex:
-            logger.error(
-                    f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}"
-            )
+            logger.error(f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}")
             traceback.print_exc()
             raise ex
         asDict = google.protobuf.json_format.MessageToDict(fromRadio)
@@ -1424,9 +1525,7 @@ class MeshInterface:  # pylint: disable=R0902
                     fromRadio.config.bluetooth
                 )
             elif fromRadio.config.HasField("security"):
-                self.localNode.localConfig.security.CopyFrom(
-                    fromRadio.config.security
-                )
+                self.localNode.localConfig.security.CopyFrom(fromRadio.config.security)
             elif fromRadio.moduleConfig.HasField("mqtt"):
                 self.localNode.moduleConfig.mqtt.CopyFrom(fromRadio.moduleConfig.mqtt)
             elif fromRadio.moduleConfig.HasField("serial"):
@@ -1492,7 +1591,7 @@ class MeshInterface:  # pylint: disable=R0902
             position["longitude"] = float(position["longitudeI"] * Decimal("1e-7"))
         return position
 
-    def _nodeNumToId(self, num: int, isDest = True) -> Optional[str]:
+    def _nodeNumToId(self, num: int, isDest=True) -> Optional[str]:
         """Map a node node number to a node ID
 
         Arguments:

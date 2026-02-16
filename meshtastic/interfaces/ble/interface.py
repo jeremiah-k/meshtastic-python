@@ -906,7 +906,7 @@ class BLEInterface(MeshInterface):
         if address and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
             device_list = "\n".join(
-                [f"- {d.name} ({d.address})" for d in addressed_devices]
+                [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
             )
             raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         # No specific address provided and multiple devices found, return the first one

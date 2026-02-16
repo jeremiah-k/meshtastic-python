@@ -23,7 +23,24 @@ meshtastic/           # Main library package
 ├── mesh_interface.py # Base interface class for all connection types
 ├── serial_interface.py
 ├── tcp_interface.py
-├── ble_interface.py
+├── ble_interface.py  # BLE compatibility shim (imports from interfaces/ble/)
+├── interfaces/       # Modular interface implementations
+│   └── ble/          # BLE subsystem (refactored)
+│       ├── __init__.py
+│       ├── client.py        # BLEClient wrapper for Bleak
+│       ├── connection.py    # Connection lifecycle management
+│       ├── constants.py     # Configuration and timeouts
+│       ├── coordination.py  # Thread coordination utilities
+│       ├── discovery.py     # Device discovery strategies
+│       ├── errors.py        # Error handling utilities
+│       ├── gating.py        # Process-wide connection gating
+│       ├── interface.py     # Main BLEInterface implementation
+│       ├── notifications.py # Notification subscription management
+│       ├── policies.py      # Retry policies
+│       ├── reconnection.py  # Auto-reconnect scheduling
+│       ├── runner.py        # Singleton asyncio runner
+│       ├── state.py         # Connection state machine
+│       └── utils.py         # BLE utility functions
 ├── node.py           # Node representation and configuration
 ├── protobuf/         # Generated Protocol Buffer files (*_pb2.py, *_pb2.pyi)
 ├── tests/            # Unit and integration tests
@@ -46,8 +63,8 @@ protobufs/            # Protocol Buffer source definitions
 ### Type Annotations
 
 - Add type hints to all new code
-- Use `Optional[T]` for nullable types
-- Use `Dict`, `List`, `Tuple` from `typing` module for compatibility with older type checkers
+- Use `T | None` for nullable types (or `Optional[T]` for consistency with existing code)
+- Built-in generics (`dict`, `list`, `tuple`) are preferred over `typing` equivalents
 - Protobuf types are in `meshtastic.protobuf.*_pb2` modules
 
 ### Naming Conventions
