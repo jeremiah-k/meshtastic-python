@@ -1,5 +1,10 @@
 # Generic, formatter-friendly config.
+[lint]
 select = ["B", "D3", "D4", "E", "F"]
 
 # Never enforce `E501` (line length violations). This should be handled by formatters.
-ignore = ["E501"]
+# Also relax strict docstring-argument/imperative checks to avoid noisy churn in this repo.
+ignore = ["E501", "D401", "D417"]
+
+# Generated protobuf modules rely on import side effects during descriptor loading.
+per-file-ignores = { "meshtastic/protobuf/*_pb2.py" = ["F401"] }

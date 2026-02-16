@@ -6,7 +6,7 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 
 ## Technology Stack
 
-- **Language**: Python 3.9 - 3.14
+- **Language**: Python 3.10 - 3.14
 - **Package Manager**: Poetry
 - **Testing**: pytest with hypothesis for property-based testing
 - **Linting**: pylint
@@ -16,14 +16,31 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 
 ## Project Structure
 
-```
+```text
 meshtastic/           # Main library package
 ├── __init__.py       # Core interface classes and pub/sub topics
 ├── __main__.py       # CLI entry point
 ├── mesh_interface.py # Base interface class for all connection types
 ├── serial_interface.py
 ├── tcp_interface.py
-├── ble_interface.py
+├── ble_interface.py  # BLE compatibility shim (imports from interfaces/ble/)
+├── interfaces/       # Modular interface implementations
+│   └── ble/          # BLE subsystem (refactored)
+│       ├── __init__.py
+│       ├── client.py        # BLEClient wrapper for Bleak
+│       ├── connection.py    # Connection lifecycle management
+│       ├── constants.py     # Configuration and timeouts
+│       ├── coordination.py  # Thread coordination utilities
+│       ├── discovery.py     # Device discovery strategies
+│       ├── errors.py        # Error handling utilities
+│       ├── gating.py        # Process-wide connection gating
+│       ├── interface.py     # Main BLEInterface implementation
+│       ├── notifications.py # Notification subscription management
+│       ├── policies.py      # Retry policies
+│       ├── reconnection.py  # Auto-reconnect scheduling
+│       ├── runner.py        # Singleton asyncio runner
+│       ├── state.py         # Connection state machine
+│       └── utils.py         # BLE utility functions
 ├── node.py           # Node representation and configuration
 ├── protobuf/         # Generated Protocol Buffer files (*_pb2.py, *_pb2.pyi)
 ├── tests/            # Unit and integration tests
@@ -46,8 +63,8 @@ protobufs/            # Protocol Buffer source definitions
 ### Type Annotations
 
 - Add type hints to all new code
-- Use `Optional[T]` for nullable types
-- Use `Dict`, `List`, `Tuple` from `typing` module for Python 3.9 compatibility
+- Use `T | None` for nullable types (or `Optional[T]` for consistency with existing code)
+- Built-in generics (`dict`, `list`, `tuple`) are preferred over `typing` equivalents
 - Protobuf types are in `meshtastic.protobuf.*_pb2` modules
 
 ### Naming Conventions
@@ -184,6 +201,7 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 ## Dependencies
 
 ### Required
+
 - `pyserial` - Serial port communication
 - `protobuf` - Protocol Buffers
 - `pypubsub` - Pub/sub messaging
@@ -193,6 +211,7 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 - `requests` - HTTP requests
 
 ### Optional (extras)
+
 - `cli` extra: `pyqrcode`, `print-color`, `dotmap`, `argcomplete`
 - `tunnel` extra: `pytap2`
 - `analysis` extra: `dash`, `pandas`

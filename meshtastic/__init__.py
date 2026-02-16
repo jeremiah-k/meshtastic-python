@@ -1,5 +1,5 @@
 """
-# A library for the Meshtastic Client API
+# A library for the Meshtastic Client API.
 
 Primary interfaces: SerialInterface, TCPInterface, BLEInterface
 
@@ -65,29 +65,20 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 """
 
-import base64
 import logging
-import os
-import platform
-import random
-import socket
-import stat
-import sys
-import threading
-import time
-import traceback
-from datetime import datetime
-from typing import *
+from typing import Callable, NamedTuple, Optional
 
-import google.protobuf.json_format
-import serial # type: ignore[import-untyped]
+import serial  # type: ignore[import-untyped]
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
 
 from meshtastic.node import Node
 from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, fixme, stripnl
 
+from . import (
+    util,
+)
 from .protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -97,14 +88,46 @@ from .protobuf import (
     mqtt_pb2,
     paxcount_pb2,
     portnums_pb2,
+    powermon_pb2,
     remote_hardware_pb2,
     storeforward_pb2,
     telemetry_pb2,
-    powermon_pb2
 )
-from . import (
-    util,
-)
+
+__all__ = [
+    "LOCAL_ADDR",
+    "BROADCAST_NUM",
+    "BROADCAST_ADDR",
+    "OUR_APP_VERSION",
+    "NODELESS_WANT_CONFIG_ID",
+    "publishingThread",
+    "logger",
+    "ResponseHandler",
+    "KnownProtocol",
+    "protocols",
+    "Node",
+    "Timeout",
+    "catchAndIgnore",
+    "fixme",
+    "stripnl",
+    "serial",
+    "MessageToJson",
+    "pub",
+    "tabulate",
+    "admin_pb2",
+    "apponly_pb2",
+    "channel_pb2",
+    "config_pb2",
+    "mesh_pb2",
+    "mqtt_pb2",
+    "paxcount_pb2",
+    "portnums_pb2",
+    "remote_hardware_pb2",
+    "storeforward_pb2",
+    "telemetry_pb2",
+    "powermon_pb2",
+    "util",
+]
 
 # Note: To follow PEP224, comments should be after the module variable.
 
@@ -131,8 +154,9 @@ publishingThread = DeferredExecution("publishing")
 
 logger = logging.getLogger(__name__)
 
+
 class ResponseHandler(NamedTuple):
-    """A pending response callback, waiting for a response to one of our messages"""
+    """A pending response callback, waiting for a response to one of our messages."""
 
     # requestId: int - used only as a key
     #: a callable to call when a response is received
@@ -143,7 +167,7 @@ class ResponseHandler(NamedTuple):
 
 
 class KnownProtocol(NamedTuple):
-    """Used to automatically decode known protocol payloads"""
+    """Used to automatically decode known protocol payloads."""
 
     #: A descriptive name (e.g. "text", "user", "admin")
     name: str
@@ -154,7 +178,7 @@ class KnownProtocol(NamedTuple):
 
 
 def _onTextReceive(iface, asDict):
-    """Special text auto parsing for received messages"""
+    """Special text auto parsing for received messages."""
     # We don't throw if the utf8 is invalid in the text message.  Instead we just don't populate
     # the decoded.data.text and we log an error message.  This at least allows some delivery to
     # the app and the app can deal with the missing decoded representation.
@@ -171,7 +195,7 @@ def _onTextReceive(iface, asDict):
 
 
 def _onPositionReceive(iface, asDict):
-    """Special auto parsing for received messages"""
+    """Special auto parsing for received messages."""
     logger.debug(f"in _onPositionReceive() asDict:{asDict}")
     if "decoded" in asDict:
         if "position" in asDict["decoded"] and "from" in asDict:
@@ -184,7 +208,7 @@ def _onPositionReceive(iface, asDict):
 
 
 def _onNodeInfoReceive(iface, asDict):
-    """Special auto parsing for received messages"""
+    """Special auto parsing for received messages."""
     logger.debug(f"in _onNodeInfoReceive() asDict:{asDict}")
     if "decoded" in asDict:
         if "user" in asDict["decoded"] and "from" in asDict:
@@ -197,8 +221,9 @@ def _onNodeInfoReceive(iface, asDict):
             iface.nodes[p["id"]] = n
             _receiveInfoUpdate(iface, asDict)
 
+
 def _onTelemetryReceive(iface, asDict):
-    """Automatically update device metrics on received packets"""
+    """Automatically update device metrics on received packets."""
     logger.debug(f"in _onTelemetryReceive() asDict:{asDict}")
     if "from" not in asDict:
         return
@@ -226,6 +251,7 @@ def _onTelemetryReceive(iface, asDict):
     logger.debug(f"updating {toUpdate} metrics for {asDict['from']} to {newMetrics}")
     node[toUpdate] = newMetrics
 
+
 def _receiveInfoUpdate(iface, asDict):
     if "from" in asDict:
         iface._getOrCreateByNum(asDict["from"])["lastReceived"] = asDict
@@ -233,12 +259,16 @@ def _receiveInfoUpdate(iface, asDict):
         iface._getOrCreateByNum(asDict["from"])["snr"] = asDict.get("rxSnr")
         iface._getOrCreateByNum(asDict["from"])["hopLimit"] = asDict.get("hopLimit")
 
+
 def _onAdminReceive(iface, asDict):
-    """Special auto parsing for received messages"""
+    """Special auto parsing for received messages."""
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
     if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])[
+            "adminSessionPassKey"
+        ] = adminMessage.session_passkey
+
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""
 protocols = {
@@ -251,7 +281,6 @@ protocols = {
     portnums_pb2.PortNum.DETECTION_SENSOR_APP: KnownProtocol(
         "detectionsensor", onReceive=_onTextReceive
     ),
-
     portnums_pb2.PortNum.POSITION_APP: KnownProtocol(
         "position", mesh_pb2.Position, _onPositionReceive
     ),
@@ -276,8 +305,14 @@ protocols = {
         "powerstress", powermon_pb2.PowerStressMessage
     ),
     portnums_pb2.PortNum.WAYPOINT_APP: KnownProtocol("waypoint", mesh_pb2.Waypoint),
-    portnums_pb2.PortNum.PAXCOUNTER_APP: KnownProtocol("paxcounter", paxcount_pb2.Paxcount),
-    portnums_pb2.PortNum.STORE_FORWARD_APP: KnownProtocol("storeforward", storeforward_pb2.StoreAndForward),
-    portnums_pb2.PortNum.NEIGHBORINFO_APP: KnownProtocol("neighborinfo", mesh_pb2.NeighborInfo),
+    portnums_pb2.PortNum.PAXCOUNTER_APP: KnownProtocol(
+        "paxcounter", paxcount_pb2.Paxcount
+    ),
+    portnums_pb2.PortNum.STORE_FORWARD_APP: KnownProtocol(
+        "storeforward", storeforward_pb2.StoreAndForward
+    ),
+    portnums_pb2.PortNum.NEIGHBORINFO_APP: KnownProtocol(
+        "neighborinfo", mesh_pb2.NeighborInfo
+    ),
     portnums_pb2.PortNum.MAP_REPORT_APP: KnownProtocol("mapreport", mqtt_pb2.MapReport),
 }
