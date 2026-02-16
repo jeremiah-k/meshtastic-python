@@ -123,7 +123,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.responseHandlers: Dict[int, ResponseHandler] = (
             {}
         )  # A map from request ID to the handler
-        self.failure = (
+        self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
         self._timeout: Timeout = Timeout(maxSecs=timeout)
@@ -1178,7 +1178,7 @@ class MeshInterface:  # pylint: disable=R0902
                 )
 
         # If we failed while connecting, raise the connection to the client
-        if self.failure:
+        if self.failure is not None:
             raise self.failure
 
     def _generatePacketId(self) -> int:
