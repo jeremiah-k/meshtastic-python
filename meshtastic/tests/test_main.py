@@ -252,8 +252,8 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
             ) as mo:
                 mo.side_effect = PermissionError("bla bla")
                 main()
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
+        assert pytest_wrapped_e.type is SystemExit
+        assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
         patched_getlogin.assert_called()
         assert re.search(r"Need to add yourself", out, re.MULTILINE)
@@ -417,10 +417,7 @@ def test_main_onConnected_exception(capsys):
         with patch("pyqrcode.create", side_effect=throw_an_exception):
             with pytest.raises(SystemExit) as pytest_wrapped_e:
                 main()
-                out, err = capsys.readouterr()
-                assert re.search("Aborting due to: Fake exception", out, re.MULTILINE)
-                assert err == ""
-                assert pytest_wrapped_e.type is Exception
+            assert pytest_wrapped_e.type is SystemExit
 
 
 @pytest.mark.unit

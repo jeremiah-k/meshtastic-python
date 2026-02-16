@@ -35,7 +35,7 @@ def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
     return ("details" in sig.parameters, "rssi" in sig.parameters)
 
 
-def parse_scan_response(
+def _parse_scan_response(
     response: Any, whitelist_address: Optional[str] = None
 ) -> List[BLEDevice]:
     """
@@ -324,7 +324,7 @@ class DiscoveryManager:
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )
 
-            devices = parse_scan_response(response, whitelist_address=sanitized_target)
+            devices = _parse_scan_response(response, whitelist_address=sanitized_target)
         except BleakDBusError as e:
             # Bubble up BlueZ/DBus failures so callers can back off more aggressively
             logger.warning(

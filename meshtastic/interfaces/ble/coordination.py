@@ -117,7 +117,7 @@ class ThreadCoordinator:
             if thread in self._threads and thread.ident is None:
                 thread.start()
 
-    def join_thread(self, thread: Thread, timeout: Optional[float] = None):
+    def join_thread(self, thread: Thread, timeout: Optional[float] = None) -> None:
         """
         Join a tracked thread if it is alive and not the current thread.
 
@@ -136,7 +136,7 @@ class ThreadCoordinator:
         if should_join:
             thread.join(timeout=timeout)
 
-    def join_all(self, timeout: Optional[float] = None):
+    def join_all(self, timeout: Optional[float] = None) -> None:
         """
         Join all tracked, alive threads except the calling thread, applying the given timeout to each join.
 
@@ -155,7 +155,7 @@ class ThreadCoordinator:
         for thread in threads_to_join:
             thread.join(timeout=timeout)
 
-    def set_event(self, name: str):
+    def set_event(self, name: str) -> None:
         """
         Set the coordinator's named event, waking any threads waiting on it.
 
@@ -170,7 +170,7 @@ class ThreadCoordinator:
             if name in self._events:
                 self._events[name].set()
 
-    def clear_event(self, name: str):
+    def clear_event(self, name: str) -> None:
         """
         Clear the coordinator's tracked Event with the given name.
 
@@ -219,7 +219,7 @@ class ThreadCoordinator:
                 return True
             return False
 
-    def wake_waiting_threads(self, *event_names: str):
+    def wake_waiting_threads(self, *event_names: str) -> None:
         """
         Wake threads waiting on the named coordinator-managed events.
 
@@ -231,7 +231,7 @@ class ThreadCoordinator:
         for name in event_names:
             self.set_event(name)
 
-    def clear_events(self, *event_names: str):
+    def clear_events(self, *event_names: str) -> None:
         """
         Clear the named tracked events.
 
@@ -243,7 +243,7 @@ class ThreadCoordinator:
         for name in event_names:
             self.clear_event(name)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """
         Signal all tracked events, join live tracked threads (excluding the current thread), and clear the coordinator's internal registries.
 

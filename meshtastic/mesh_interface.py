@@ -14,7 +14,7 @@ import time
 import traceback
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import google.protobuf.json_format
 
@@ -94,7 +94,7 @@ class MeshInterface:  # pylint: disable=R0902
     class MeshInterfaceError(Exception):
         """An exception class for general mesh interface errors."""
 
-        def __init__(self, message):
+        def __init__(self, message: str) -> None:
             """
             Initialize the MeshInterfaceError with a human-readable message.
 
@@ -167,7 +167,7 @@ class MeshInterface:  # pylint: disable=R0902
         if debugOut:
             pub.subscribe(MeshInterface._printLogLine, "meshtastic.log.line")
 
-    def close(self):
+    def close(self) -> None:
         """
         Shut down the interface, cancel any pending heartbeat, mark the interface as closing, and send a disconnect to the radio.
         """
@@ -180,10 +180,15 @@ class MeshInterface:  # pylint: disable=R0902
 
         self._sendDisconnect()
 
-    def __enter__(self):
+    def __enter__(self) -> "MeshInterface":
         return self
 
-    def __exit__(self, exc_type, exc_value, trace):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        trace: Optional[Any],
+    ) -> None:
         if exc_type is not None and exc_value is not None:
             logger.error(
                 f"An exception of type {exc_type} with value {exc_value} has occurred"
@@ -1921,8 +1926,8 @@ class MeshInterface:  # pylint: disable=R0902
             try:
                 newpos = self._fixupPosition(node["position"])
                 node["position"] = newpos
-            except Exception:
-                logger.debug("Node without position")
+            except KeyError:
+                logger.debug("Node has no position key")
 
             # no longer necessary since we're mutating directly in nodesByNum via _getOrCreateByNum
             # self.nodesByNum[node["num"]] = node

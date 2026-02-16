@@ -48,15 +48,15 @@ from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
     _ble_device_constructor_kwargs_support,
-    parse_scan_response,
+    _parse_scan_response,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
     _addr_key,
+    _addr_lock_context,
     _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
-    addr_lock_context,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -134,7 +134,7 @@ class BLEInterface(MeshInterface):
         # Lock Ordering (to prevent deadlocks):
         #     When acquiring multiple locks, always acquire in this order:
         #     1. Global registry lock (_REGISTRY_LOCK in gating.py)
-        #     2. Per-address locks (_ADDR_LOCKS in gating.py, via addr_lock_context)
+        #     2. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
         #     3. Interface connect lock (_connect_lock)
         #     4. Interface state lock (_state_lock)
         #     5. Interface disconnect lock (_disconnect_lock)
@@ -145,7 +145,7 @@ class BLEInterface(MeshInterface):
         #
         # _connect_lock Purpose:
         #     Serializes connection attempts within a single interface instance.
-        #     While addr_lock_context provides process-wide serialization for the
+        #     While _addr_lock_context provides process-wide serialization for the
         #     same address, _connect_lock ensures that within this interface,
         #     only one connection attempt can be in the critical section at a time.
         #     This prevents race conditions when checking existing_client and
@@ -255,7 +255,7 @@ class BLEInterface(MeshInterface):
                 raise
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Return a compact textual representation of the BLEInterface including its address and any non-default feature flags.
 
@@ -336,7 +336,7 @@ class BLEInterface(MeshInterface):
             return
         with contextlib.ExitStack() as stack:
             locks = [
-                stack.enter_context(addr_lock_context(key)) for key in ordered_keys
+                stack.enter_context(_addr_lock_context(key)) for key in ordered_keys
             ]
             for addr_lock in locks:
                 stack.enter_context(addr_lock)
@@ -359,7 +359,7 @@ class BLEInterface(MeshInterface):
             return
         with contextlib.ExitStack() as stack:
             locks = [
-                stack.enter_context(addr_lock_context(key)) for key in ordered_keys
+                stack.enter_context(_addr_lock_context(key)) for key in ordered_keys
             ]
             for addr_lock in locks:
                 stack.enter_context(addr_lock)
@@ -572,7 +572,7 @@ class BLEInterface(MeshInterface):
             self.auto_reconnect, self._shutdown_event
         )
 
-    def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False):
+    def _handle_malformed_fromnum(self, reason: str, exc_info: bool = False) -> None:
         """
         Increment the malformed FROMNUM notification counter and log the reason; when the counter reaches the configured threshold, log a warning and reset the counter.
 
@@ -870,7 +870,7 @@ class BLEInterface(MeshInterface):
                     return_adv=True,
                     service_uuids=[SERVICE_UUID],
                 )
-                return parse_scan_response(response)
+                return _parse_scan_response(response)
             except BleakDBusError:
                 # Propagate DBus-level failures so callers can back off appropriately
                 raise
@@ -1025,7 +1025,7 @@ class BLEInterface(MeshInterface):
         # global registry lock during long-running scan/discovery operations.
         with contextlib.ExitStack() as stack:
             if addr_key is not None:
-                addr_lock = stack.enter_context(addr_lock_context(addr_key))
+                addr_lock = stack.enter_context(_addr_lock_context(addr_key))
                 stack.enter_context(addr_lock)
 
             # Fast suppression if a recent connect happened elsewhere.
@@ -1529,7 +1529,7 @@ class BLEInterface(MeshInterface):
             else:
                 self._drain_publish_queue(flush_event)
 
-    def _disconnect_and_close_client(self, client: "BLEClient"):
+    def _disconnect_and_close_client(self, client: "BLEClient") -> None:
         """
         Ensure the given BLE client is disconnected and its resources are released.
 
@@ -1563,7 +1563,7 @@ class BLEInterface(MeshInterface):
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
 
-    def _disconnected(self):
+    def _disconnected(self) -> None:
         """
         Publish the legacy meshtastic.connection.status event when the interface disconnects.
 
@@ -1594,7 +1594,7 @@ class BLEInterface(MeshInterface):
         except Exception:
             logger.debug("Error queuing disconnect status publish", exc_info=True)
 
-    def _connected(self):
+    def _connected(self) -> None:
         """Override to also publish connection status event for backwards compatibility."""
         super()._connected()
         # Also publish connection.status event for test compatibility

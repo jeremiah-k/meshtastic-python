@@ -9,10 +9,10 @@ Lock Ordering Note:
     This ordering prevents deadlocks in concurrent connection scenarios.
 
 Context Manager Usage:
-    Prefer using addr_lock_context() over manual _get_addr_lock()/_release_addr_lock()
+    Prefer using _addr_lock_context() over manual _get_addr_lock()/_release_addr_lock()
     calls to ensure proper holder count management:
 
-        with addr_lock_context(address) as lock:
+        with _addr_lock_context(address) as lock:
             with lock:
                 # Connection logic here
                 # On success: _mark_connected(address) handles holder count
@@ -67,7 +67,7 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
         `_release_addr_lock()` when finished to decrement the holder count.
         Failure to do so will prevent cleanup of the per-address lock.
 
-        **Prefer using `addr_lock_context()` instead** - it handles holder count
+        **Prefer using `_addr_lock_context()` instead** - it handles holder count
         management automatically via try/finally.
 
     Parameters
@@ -300,7 +300,7 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
 
 
 @contextmanager
-def addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
+def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
     """
     Provide a context-managed per-address reentrant lock and manage its holder count.
 

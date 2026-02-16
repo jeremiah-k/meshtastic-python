@@ -15,6 +15,7 @@ Architecture:
 
 import asyncio
 import atexit
+import contextlib
 import logging
 import threading
 import warnings
@@ -354,9 +355,18 @@ class BLECoroutineRunner:
             loop = self._loop
 
         if loop is None or not loop.is_running():
+            # Close the coroutine to prevent "coroutine was never awaited" warning
+            with contextlib.suppress(Exception):
+                coro.close()
             raise RuntimeError("BLECoroutineRunner loop is not available")
 
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+        except Exception:
+            # Close the coroutine to prevent "coroutine was never awaited" warning
+            with contextlib.suppress(Exception):
+                coro.close()
+            raise
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:
             self._pending_futures.add(future)

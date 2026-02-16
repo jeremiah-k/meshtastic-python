@@ -494,6 +494,9 @@ class BLEClient:
         try:
             return self._runner.run_coroutine_threadsafe(coro)
         except RuntimeError as e:
+            # Close the coroutine to prevent "coroutine was never awaited" warning
+            with contextlib.suppress(Exception):
+                coro.close()
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
 
 
