@@ -74,7 +74,7 @@ from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
 
 from meshtastic.node import Node
-from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, fixme, stripnl
+from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, stripnl
 
 from . import (
     util,
@@ -108,7 +108,6 @@ __all__ = [
     "Node",
     "Timeout",
     "catchAndIgnore",
-    "fixme",
     "stripnl",
     "serial",
     "MessageToJson",

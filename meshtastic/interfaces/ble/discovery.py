@@ -216,7 +216,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                     # Note: some BLEDevice variants use __slots__ without `rssi`.
                     if not supports_rssi and hasattr(device, "rssi"):
                         try:
-                            device_copy.rssi = device.rssi
+                            device_copy.rssi = device.rssi  # type: ignore[attr-defined]
                         except AttributeError:
                             pass
                     devices_found.append(device_copy)

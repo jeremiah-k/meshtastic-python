@@ -426,9 +426,8 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
 
 @pytest.mark.slow
-def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
+def test_rapid_connect_disconnect_stress_test(caplog):
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
-    _ = monkeypatch  # Mark as unused
     # logging, threading, and time already imported at top
     # MagicMock, patch already imported at top
 
@@ -764,9 +763,8 @@ def test_rapid_connect_disconnect_stress_test(monkeypatch, caplog):
     ), f"Critical errors found in logs: {[r.message for r in critical]}"
 
 
-def test_ble_client_is_connected_exception_handling(monkeypatch, caplog):
+def test_ble_client_is_connected_exception_handling(caplog):
     """Test that BLEClient.is_connected handles exceptions gracefully."""
-    _ = monkeypatch  # Mark as unused
     # logging already imported at top
     # BLEClient already imported at top as ble_mod.BLEClient
 
@@ -965,7 +963,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     caplog.set_level(logging.DEBUG)
 
     # Also ensure the logger is configured to capture the actual module logger
-    logger = logging.getLogger("meshtastic.ble_interface")
+    logger = logging.getLogger("meshtastic.ble")
     logger.setLevel(logging.DEBUG)
 
     client = DummyClient()

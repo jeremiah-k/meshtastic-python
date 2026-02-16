@@ -201,9 +201,11 @@ def mock_bleak(monkeypatch):
             """
             return None
 
-        async def start_notify(self, **_kwargs):
+        async def start_notify(self, *_args, **_kwargs):
             """
-            Compatibility shim for a BLE client's start_notify that accepts and ignores any keyword arguments.
+            Compatibility shim for start_notify(char_specifier, callback, *args, **kwargs).
+
+            Accepts and ignores positional and keyword arguments.
             """
             return None
 

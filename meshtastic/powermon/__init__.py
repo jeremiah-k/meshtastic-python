@@ -7,11 +7,11 @@ from .sim import SimPowerSupply
 from .stress import PowerStress
 
 __all__ = [
+    "PPK2PowerSupply",
     "PowerError",
     "PowerMeter",
+    "PowerStress",
     "PowerSupply",
-    "PPK2PowerSupply",
     "RidenPowerSupply",
     "SimPowerSupply",
-    "PowerStress",
 ]

@@ -99,6 +99,7 @@ def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
 
     """
     if key is None:
+        # The registry lock is a process-wide singleton and is not ref-counted.
         return _REGISTRY_LOCK
     with _REGISTRY_LOCK:
         lock = _ADDR_LOCKS.get(key)

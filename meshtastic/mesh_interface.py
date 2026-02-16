@@ -295,7 +295,7 @@ class MeshInterface:  # pylint: disable=R0902
             return _timeago(delta_secs)
 
         def getNestedValue(node_dict: Dict[str, Any], key_path: str) -> Any:
-            if key_path.index(".") < 0:
+            if "." not in key_path:
                 logger.debug("getNestedValue was called without a nested path.")
                 return None
             keys = key_path.split(".")
@@ -406,9 +406,6 @@ class MeshInterface:  # pylint: disable=R0902
                     for k, v in fields.items()
                     if k in showFields
                 }
-                filteredData.update(
-                    {get_human_readable(k): v for k, v in fields.items()}
-                )
                 rows.append(filteredData)
 
         rows.sort(key=lambda r: r.get("LastHeard") or "0000", reverse=True)

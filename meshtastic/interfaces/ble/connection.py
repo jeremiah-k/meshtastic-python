@@ -159,8 +159,10 @@ class ClientManager:
         connect_timeout = (
             timeout if timeout is not None else BLEConfig.CONNECTION_TIMEOUT
         )
+        # Give the underlying BLE timeout a chance to fail first with clearer context.
+        await_timeout = connect_timeout + 5.0
         client.connect(
-            await_timeout=connect_timeout,
+            await_timeout=await_timeout,
             timeout=connect_timeout,
         )
         services = getattr(client.bleak_client, "services", None)

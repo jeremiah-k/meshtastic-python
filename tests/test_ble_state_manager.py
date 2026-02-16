@@ -1,6 +1,7 @@
 """Tests for BLEStateManager state machine functionality."""
 
 import gc
+import logging
 import os
 import threading
 import time
@@ -388,9 +389,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - worker errors recorded for debugging
+            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -512,7 +511,7 @@ def test_state_transition_performance():
     avg_time = elapsed / (iterations * 3)
     assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
 
-    print(
+    logging.info(
         f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
     )
 
@@ -593,7 +592,11 @@ def test_lock_contention_performance():
         total_operations >= expected_operations * 0.8
     ), f"Too many failed operations: {total_operations}/{expected_operations}"
 
-    print(f"Contention performance: {total_operations} operations in {total_time:.3f}s")
+    logging.info(
+        "Contention performance: %s operations in %.3fs",
+        total_operations,
+        total_time,
+    )
 
 
 @pytest.mark.slow
@@ -627,7 +630,10 @@ def test_memory_efficiency():
         object_growth < 1000
     ), f"Potential memory leak: {object_growth} objects created"
 
-    print(f"Memory efficiency: {object_growth} objects created for 100 state managers")
+    logging.info(
+        "Memory efficiency: %s objects created for 100 state managers",
+        object_growth,
+    )
 
 
 @pytest.mark.slow
@@ -660,6 +666,6 @@ def test_property_access_performance():
     avg_time = elapsed / (iterations * 4)  # 4 properties per iteration
     assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
 
-    print(
+    logging.info(
         f"Property access: {iterations * 4} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
     )

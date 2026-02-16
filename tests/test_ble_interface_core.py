@@ -1079,7 +1079,7 @@ def test_log_notification_registration(monkeypatch):
     iface.close()
 
 
-def test_reconnect_scheduler_tracks_threads(monkeypatch):
+def test_reconnect_scheduler_tracks_threads():
     """ReconnectScheduler should start at most one reconnect thread and respect closing state."""
 
     state_manager = BLEStateManager()
