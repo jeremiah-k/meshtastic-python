@@ -38,10 +38,6 @@ jobs:
         run: |
           poetry install --all-extras --with dev,powermon
           poetry run meshtastic --version
-      - name: Run pylint
-        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
-      - name: Check types with mypy
-        run: poetry run mypy meshtastic/
       - name: Run tests with pytest
         run: poetry run pytest --cov=meshtastic --cov-report=xml
       - name: Upload coverage to Codecov
@@ -55,6 +51,10 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
           verbose: true
+      - name: Run pylint
+        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
+      - name: Check types with mypy
+        run: poetry run mypy meshtastic/
   validate:
     runs-on: ubuntu-latest
     strategy:
