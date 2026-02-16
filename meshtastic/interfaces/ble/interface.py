@@ -67,6 +67,7 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
+MAX_DRAIN_ITERATIONS = 10_000
 
 
 class BLEInterface(MeshInterface):
@@ -415,6 +416,9 @@ class BLEInterface(MeshInterface):
                         "Ignoring disconnect from %s while a connection is in progress.",
                         source,
                     )
+                    # Early returns inside this try block are safe: the finally
+                    # below releases _disconnect_lock when disconnect_lock_released
+                    # is still False.
                     return True
                 if is_closing:
                     logger.debug("Ignoring disconnect from %s during shutdown.", source)
@@ -1553,11 +1557,19 @@ class BLEInterface(MeshInterface):
         queue = getattr(publishingThread, "queue", None)
         if queue is None:
             return
+        iterations = 0
         while not flush_event.is_set():
+            if iterations >= MAX_DRAIN_ITERATIONS:
+                logger.debug(
+                    "Stopping publish queue drain after %d callbacks to avoid shutdown starvation",
+                    MAX_DRAIN_ITERATIONS,
+                )
+                break
             try:
                 runnable = queue.get_nowait()
             except Empty:
                 break
+            iterations += 1
             self.error_handler.safe_execute(
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )

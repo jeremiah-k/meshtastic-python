@@ -90,9 +90,6 @@ class TestAddrLock:
 
     def test_lock_cleanup_removes_from_registry(self):
         """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
-        _ADDR_LOCKS.clear()
-        _LOCK_HOLDERS.clear()
-
         _get_addr_lock("testaddress")
         assert "testaddress" in _ADDR_LOCKS
         # Release the holder count that was incremented by _get_addr_lock

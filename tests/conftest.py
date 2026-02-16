@@ -1,5 +1,7 @@
 """Shared pytest fixtures for BLE tests."""
 
+from typing import Iterator
+
 import pytest
 
 from meshtastic.interfaces.ble.gating import (
@@ -14,7 +16,7 @@ from meshtastic.interfaces.ble.gating import (
 
 
 @pytest.fixture
-def clear_registry() -> None:
+def clear_registry() -> Iterator[None]:
     """Reset BLE gating global registries before and after each test."""
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()

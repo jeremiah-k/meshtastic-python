@@ -346,7 +346,11 @@ class MeshInterface:  # pylint: disable=R0902
             else:
                 return name
 
-        def formatFloat(value, precision=2, unit="") -> Optional[str]:
+        def formatFloat(
+            value: Optional[Union[int, float]],
+            precision: int = 2,
+            unit: str = "",
+        ) -> Optional[str]:
             """
             Format a numeric value into a fixed-precision string with an optional unit suffix.
 
@@ -363,7 +367,7 @@ class MeshInterface:  # pylint: disable=R0902
             """
             return f"{value:.{precision}f}{unit}" if value else None
 
-        def getLH(ts) -> Optional[str]:
+        def getLH(ts: Optional[Union[int, float]]) -> Optional[str]:
             """
             Format a Unix timestamp into a human-readable 'YYYY-MM-DD HH:MM:SS' string.
 
@@ -380,7 +384,7 @@ class MeshInterface:  # pylint: disable=R0902
                 datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else None
             )
 
-        def getTimeAgo(ts) -> Optional[str]:
+        def getTimeAgo(ts: Optional[Union[int, float]]) -> Optional[str]:
             """
             Produce a short human-readable relative time string for a Unix epoch timestamp.
 

@@ -162,7 +162,7 @@ class StreamInterface(MeshInterface):
             if self._rxThread.is_alive():
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
-    def _handleLogByte(self, b):
+    def _handleLogByte(self, b: bytes) -> None:
         r"""
         Process a single byte from the device's log stream, building log lines and dispatching complete lines.
 

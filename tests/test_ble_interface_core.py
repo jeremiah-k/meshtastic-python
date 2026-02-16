@@ -117,6 +117,8 @@ def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Ev
     original_close = iface.close
     close_called = threading.Event()
 
+    # Bind outer values into defaults so monkeypatched method keeps stable
+    # references even if local names are reassigned later in the test.
     def _mock_close(
         original_close: Callable[[], Any] = original_close,
         close_called: threading.Event = close_called,
@@ -179,6 +181,8 @@ def test_find_device_returns_single_scan_result():
     """find_device should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
+    # Intentional constructor bypass: inject a controlled _discovery_manager
+    # without running BLEInterface.__init__ side effects.
     iface = object.__new__(ble_mod.BLEInterface)
     scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
     iface._discovery_manager = SimpleNamespace(
@@ -409,6 +413,7 @@ def test_find_device_uses_connected_fallback_when_scan_empty():
     """find_device should fall back to connected-device lookup when scan is empty."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
+    # Intentional constructor bypass for isolated find_device() behavior.
     iface = object.__new__(ble_mod.BLEInterface)
     fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
     iface._discovery_manager = SimpleNamespace(
@@ -424,6 +429,7 @@ def test_find_device_multiple_matches_raises():
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
+    # Intentional constructor bypass for isolated find_device() behavior.
     iface = object.__new__(ble_mod.BLEInterface)
     devices = [
         _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),

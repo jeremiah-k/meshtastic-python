@@ -12,7 +12,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Set, Tuple
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -27,7 +27,7 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from meshtastic.version import get_active_version
 
-argcomplete: Union[None, ModuleType] = None
+argcomplete: Optional[ModuleType] = None
 try:
     import argcomplete as _argcomplete  # type: ignore
 
@@ -35,7 +35,7 @@ try:
 except ImportError:
     pass
 
-pyqrcode: Union[None, ModuleType] = None
+pyqrcode: Optional[ModuleType] = None
 try:
     import pyqrcode as _pyqrcode  # type: ignore[import-untyped]
 
@@ -62,7 +62,7 @@ try:
     have_powermon = True
     powermon_exception = None
     meter = None
-except ImportError as exc:
+except (ImportError, AttributeError) as exc:
     have_powermon = False
     powermon_exception = exc
     meter = None
