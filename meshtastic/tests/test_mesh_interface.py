@@ -25,6 +25,36 @@ except ImportError:
 from ..util import Timeout
 
 
+class FakeTimer:
+    """Simple timer stub for heartbeat timer tests."""
+
+    created: list["FakeTimer"] = []
+
+    def __init__(self, interval, function):
+        self.interval = interval
+        self.function = function
+        self.daemon = False
+        self.started = False
+        self.cancelled = False
+        FakeTimer.created.append(self)
+
+    def start(self):
+        """Record that the fake timer was started."""
+        self.started = True
+
+    def cancel(self):
+        """Record that the fake timer was cancelled."""
+        self.cancelled = True
+
+
+@pytest.fixture(name="fake_timer_cls")
+def _fake_timer_cls_fixture(monkeypatch):
+    """Patch mesh_interface Timer with a deterministic fake timer."""
+    FakeTimer.created.clear()
+    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
+    return FakeTimer
+
+
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_MeshInterface(capsys):
@@ -125,7 +155,7 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
     iface = MeshInterface(noProto=True)
     meshPacket = mesh_pb2.MeshPacket()
     meshPacket.decoded.payload = b""
-    meshPacket.decoded.portnum = portnums_pb2.TEXT_MESSAGE_APP
+    meshPacket.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
     with caplog.at_level(logging.WARNING):
         iface._handlePacketFromRadio(meshPacket, hack=True)
     assert re.search(r"Not populating fromId", caplog.text, re.MULTILINE)
@@ -215,51 +245,15 @@ def test_sendPosition(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch):
+def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch, fake_timer_cls):
     """Heartbeat timer should be daemonized and cancelled during close()."""
-
-    class FakeTimer:
-        """Simple timer stub that records start/cancel calls."""
-
-        created = []
-
-        def __init__(self, interval, function):
-            """
-            Initialize a FakeTimer used by tests to simulate threading.Timer behavior.
-
-            Parameters
-            ----------
-                interval (float): The timer interval in seconds.
-                function (callable): The callback to invoke when the timer fires.
-
-            Side effects:
-                Appends the new FakeTimer instance to the class-level list `FakeTimer.created`.
-                Initializes boolean flags `daemon`, `started`, and `cancelled` to False.
-
-            """
-            self.interval = interval
-            self.function = function
-            self.daemon = False
-            self.started = False
-            self.cancelled = False
-            FakeTimer.created.append(self)
-
-        def start(self):
-            """Record that the fake timer was started."""
-            self.started = True
-
-        def cancel(self):
-            """Record that the fake timer was cancelled."""
-            self.cancelled = True
-
-    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
 
     iface = MeshInterface(noProto=True)
     monkeypatch.setattr(iface, "sendHeartbeat", lambda: None)
 
     iface._startHeartbeat()
-    assert len(FakeTimer.created) == 1
-    timer = FakeTimer.created[0]
+    assert len(fake_timer_cls.created) == 1
+    timer = fake_timer_cls.created[0]
     assert timer.daemon is True
     assert timer.started is True
 
@@ -269,56 +263,22 @@ def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_heartbeat_callback_does_not_reschedule_after_close(monkeypatch):
+def test_heartbeat_callback_does_not_reschedule_after_close(
+    monkeypatch, fake_timer_cls
+):
     """A heartbeat callback firing after close() must not create a new timer."""
-
-    class FakeTimer:
-        """Simple timer stub used to control callback execution in tests."""
-
-        created = []
-
-        def __init__(self, interval, function):
-            """
-            Initialize a FakeTimer used by tests to simulate threading.Timer behavior.
-
-            Parameters
-            ----------
-                interval (float): The timer interval in seconds.
-                function (callable): The callback to invoke when the timer fires.
-
-            Side effects:
-                Appends the new FakeTimer instance to the class-level list `FakeTimer.created`.
-                Initializes boolean flags `daemon`, `started`, and `cancelled` to False.
-
-            """
-            self.interval = interval
-            self.function = function
-            self.daemon = False
-            self.started = False
-            self.cancelled = False
-            FakeTimer.created.append(self)
-
-        def start(self):
-            """Record that the fake timer was started."""
-            self.started = True
-
-        def cancel(self):
-            """Record that the fake timer was cancelled."""
-            self.cancelled = True
-
-    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
 
     iface = MeshInterface(noProto=True)
     monkeypatch.setattr(iface, "sendHeartbeat", lambda: None)
 
     iface._startHeartbeat()
-    assert len(FakeTimer.created) == 1
-    old_timer = FakeTimer.created[0]
+    assert len(fake_timer_cls.created) == 1
+    old_timer = fake_timer_cls.created[0]
 
     iface.close()
     old_timer.function()
 
-    assert len(FakeTimer.created) == 1
+    assert len(fake_timer_cls.created) == 1
 
 
 @pytest.mark.unit
@@ -516,7 +476,7 @@ def test_sendData_unknown_app(capsys):
     """Test sendData when unknown app."""
     iface = MeshInterface(noProto=True)
     with pytest.raises(SystemExit) as pytest_wrapped_e:
-        iface.sendData(b"hello", portNum=portnums_pb2.UNKNOWN_APP)
+        iface.sendData(b"hello", portNum=portnums_pb2.PortNum.UNKNOWN_APP)
     out, err = capsys.readouterr()
     assert re.search(r"Warning: A non-zero port number", out, re.MULTILINE)
     assert err == ""

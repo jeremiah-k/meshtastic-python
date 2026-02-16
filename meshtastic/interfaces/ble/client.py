@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import sys
+import warnings
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -234,9 +235,7 @@ class BLEClient:
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
-        self.async_await(
-            self.bleak_client.disconnect(**kwargs), timeout=await_timeout
-        )
+        self.async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
@@ -269,6 +268,11 @@ class BLEClient:
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> bytes:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "readGattChar is deprecated; use read_gatt_char instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.read_gatt_char(*args, timeout=timeout, **kwargs)
 
     def write_gatt_char(
@@ -298,6 +302,11 @@ class BLEClient:
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "writeGattChar is deprecated; use write_gatt_char instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.write_gatt_char(*args, timeout=timeout, **kwargs)
 
     def get_services(self, **kwargs: Any) -> Any:
@@ -316,6 +325,11 @@ class BLEClient:
 
     def getServices(self, **kwargs: Any) -> Any:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "getServices is deprecated; use get_services instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.get_services(**kwargs)
 
     def has_characteristic(self, specifier: Union[str, UUID]):  # pylint: disable=C0116
@@ -349,6 +363,11 @@ class BLEClient:
 
     def hasCharacteristic(self, specifier: Union[str, UUID]) -> bool:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "hasCharacteristic is deprecated; use has_characteristic instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.has_characteristic(specifier)
 
     def start_notify(
@@ -382,6 +401,11 @@ class BLEClient:
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "startNotify is deprecated; use start_notify instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.start_notify(*args, timeout=timeout, **kwargs)
 
     def close(self) -> None:  # pylint: disable=C0116
@@ -514,6 +538,11 @@ class BLEClient:
 
     def asyncAwait(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "asyncAwait is deprecated; use async_await instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.async_await(coro, timeout=timeout)
 
     def async_run(
@@ -550,6 +579,11 @@ class BLEClient:
 
     def asyncRun(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "asyncRun is deprecated; use async_run instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.async_run(coro)
 
 
@@ -568,4 +602,9 @@ def getZombieThreadCount() -> int:
         int: Number of zombie BLE event threads (typically 0 or 1 due to the singleton runner).
 
     """
+    warnings.warn(
+        "getZombieThreadCount is deprecated; use get_zombie_thread_count instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return get_zombie_thread_count()

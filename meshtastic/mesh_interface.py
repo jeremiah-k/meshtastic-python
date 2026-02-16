@@ -14,6 +14,7 @@ import time
 import traceback
 from datetime import datetime
 from decimal import Decimal
+from types import TracebackType
 from typing import IO, Any, Callable, Dict, List, Optional, Type, Union
 
 import google.protobuf.json_format
@@ -187,7 +188,7 @@ class MeshInterface:  # pylint: disable=R0902
         self,
         exc_type: Optional[Type[BaseException]],
         exc_value: Optional[BaseException],
-        trace: Optional[Any],
+        trace: Optional[TracebackType],
     ) -> None:
         if exc_type is not None and exc_value is not None:
             logger.error(
@@ -341,7 +342,7 @@ class MeshInterface:  # pylint: disable=R0902
             }
 
             if name in name_map:
-                return name_map[name]  # Default to a formatted guess
+                return name_map[name]  # Return known mapped name
             else:
                 return name
 

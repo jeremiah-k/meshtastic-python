@@ -1304,8 +1304,9 @@ def export_config(interface) -> str:
                 if "publicKey" in security:
                     security["publicKey"] = "base64:" + security["publicKey"]
                 if "adminKey" in security:
-                    for i in range(len(security["adminKey"])):
-                        security["adminKey"][i] = "base64:" + security["adminKey"][i]
+                    security["adminKey"] = [
+                        "base64:" + key for key in security["adminKey"]
+                    ]
         configObj["config"] = prefs
 
     module_config = MessageToDict(interface.localNode.moduleConfig)
@@ -1316,13 +1317,10 @@ def export_config(interface) -> str:
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
         for pref, value in module_config.items():
-            if value:
-                pref_key = (
-                    meshtastic.util.snake_to_camel(pref)
-                    if mt_config.camel_case
-                    else pref
-                )
-                prefs[pref_key] = value
+            pref_key = (
+                meshtastic.util.snake_to_camel(pref) if mt_config.camel_case else pref
+            )
+            prefs[pref_key] = value
         configObj["module_config"] = prefs
 
     config_txt = "# start of Meshtastic configure yaml\n"
@@ -1389,21 +1387,21 @@ def common():
             meshtastic.util.our_exit("", 0)
 
         # Early validation for owner names before attempting device connection
-        if hasattr(args, "set_owner") and args.set_owner is not None:
+        if args.set_owner is not None:
             stripped_long_name = args.set_owner.strip()
             if not stripped_long_name:
                 meshtastic.util.our_exit(
                     "ERROR: Long Name cannot be empty or contain only whitespace characters"
                 )
 
-        if hasattr(args, "set_owner_short") and args.set_owner_short is not None:
+        if args.set_owner_short is not None:
             stripped_short_name = args.set_owner_short.strip()
             if not stripped_short_name:
                 meshtastic.util.our_exit(
                     "ERROR: Short Name cannot be empty or contain only whitespace characters"
                 )
 
-        if hasattr(args, "set_ham") and args.set_ham is not None:
+        if args.set_ham is not None:
             stripped_ham_name = args.set_ham.strip()
             if not stripped_ham_name:
                 meshtastic.util.our_exit(

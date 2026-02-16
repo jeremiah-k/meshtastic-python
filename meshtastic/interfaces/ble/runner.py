@@ -50,6 +50,11 @@ def get_zombie_runner_count() -> int:
 
 def getZombieRunnerCount() -> int:
     """Compatibility wrapper for callers using camelCase."""
+    warnings.warn(
+        "getZombieRunnerCount is deprecated; use get_zombie_runner_count instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return get_zombie_runner_count()
 
 
@@ -383,6 +388,11 @@ class BLECoroutineRunner:
             If both `timeout` and `startup_timeout` are provided.
 
         """
+        warnings.warn(
+            "runCoroutineThreadsafe is deprecated; use run_coroutine_threadsafe instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.run_coroutine_threadsafe(
             coro,
             timeout=timeout,
@@ -529,6 +539,11 @@ class BLECoroutineRunner:
 
     def cancelPendingFutures(self) -> None:
         """Compatibility wrapper for callers using camelCase."""
+        warnings.warn(
+            "cancelPendingFutures is deprecated; use cancel_pending_futures instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.cancel_pending_futures()
 
     def stop(self, timeout: float = 2.0) -> bool:
