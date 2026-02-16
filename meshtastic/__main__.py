@@ -12,7 +12,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import List, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Set, Tuple, Union
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -33,10 +33,13 @@ try:
 except ImportError:
     pass  # already set to None by default above
 
+pyqrcode: Union[None, ModuleType] = None
 try:
-    import pyqrcode  # type: ignore[import-untyped]
+    import pyqrcode as _pyqrcode  # type: ignore[import-untyped]
+
+    pyqrcode = _pyqrcode
 except ImportError:
-    pyqrcode = None
+    pass
 
 meshtastic_test: Optional[ModuleType] = None
 try:
@@ -1118,7 +1121,7 @@ def onConnected(interface):
             else:
                 print("Install pyqrcode to view a QR code printed to terminal.")
 
-        log_set: Optional = None  # type: ignore[annotation-unchecked]
+        log_set: Optional[Any] = None
         # we need to keep a reference to the logset so it doesn't get GCed early
 
         if args.slog or args.power_stress:

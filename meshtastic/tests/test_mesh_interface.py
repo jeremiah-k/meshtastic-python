@@ -467,8 +467,8 @@ def test_sendData_too_long(caplog):
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
             iface.sendData(some_large_text)
-            assert re.search("Data payload too big", caplog.text, re.MULTILINE)
         assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+        assert "Data payload too big" in str(pytest_wrapped_e.value)
     iface.close()
 
 

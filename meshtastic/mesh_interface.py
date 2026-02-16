@@ -456,7 +456,7 @@ class MeshInterface:  # pylint: disable=R0902
             ]
         else:
             # Always at least include the row number.
-            showFields.insert(0, "N")
+            showFields = ["N", *showFields]
 
         rows: List[Dict[str, Any]] = []
         if self.nodesByNum:
@@ -1667,21 +1667,19 @@ class MeshInterface:  # pylint: disable=R0902
             self._heartbeat_lock to ensure it does not schedule, store, or send
             heartbeats once shutdown has begun.
             """
+            interval = 300
+            logger.debug(f"Sending heartbeat, interval {interval} seconds")
             with self._heartbeat_lock:
-                # If shutdown started, don't schedule more heartbeat timers.
+                # Keep timer update/start in one critical section for simpler
+                # state reasoning while still honoring shutdown.
                 if self._closing:
                     return
                 self.heartbeatTimer = None
-            interval = 300
-            logger.debug(f"Sending heartbeat, interval {interval} seconds")
-            timer = threading.Timer(interval, callback)
-            # Heartbeat maintenance should never prevent process shutdown.
-            timer.daemon = True
-            with self._heartbeat_lock:
-                if self._closing:
-                    return
+                timer = threading.Timer(interval, callback)
+                # Heartbeat maintenance should never prevent process shutdown.
+                timer.daemon = True
                 self.heartbeatTimer = timer
-            timer.start()
+                timer.start()
             # Final guard: check _closing one more time before sending heartbeat
             # to avoid sending after shutdown has started
             with self._heartbeat_lock:

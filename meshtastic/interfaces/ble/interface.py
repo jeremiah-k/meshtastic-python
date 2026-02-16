@@ -9,7 +9,7 @@ import threading
 import time
 from queue import Empty
 from threading import Event, Thread
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -65,6 +65,8 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import _sleep, sanitize_address
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
+
+T = TypeVar("T")
 
 
 class BLEInterface(MeshInterface):
@@ -806,7 +808,9 @@ class BLEInterface(MeshInterface):
             )
 
     @staticmethod
-    async def _with_timeout(awaitable, timeout: Optional[float], label: str):
+    async def _with_timeout(
+        awaitable: Awaitable[T], timeout: Optional[float], label: str
+    ) -> T:
         """
         Await an awaitable and raise BLEError if it does not complete within the given timeout.
 
