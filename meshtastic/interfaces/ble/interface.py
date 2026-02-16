@@ -219,14 +219,14 @@ class BLEInterface(MeshInterface):
         self._last_empty_read_warning = 0.0
         self._suppressed_empty_read_warnings = 0
 
+        self.client: Optional["BLEClient"] = None
+
         # Start background receive thread for inbound packet processing
         logger.debug("Threads starting")
         self._want_receive = True
         self._receiveThread: Optional[Thread] = None
         self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
-
-        self.client: Optional["BLEClient"] = None
         try:
             logger.debug("BLE connecting to: %s", address if address else "any")
             self.connect(address)
@@ -318,7 +318,9 @@ class BLEInterface(MeshInterface):
         if not ordered_keys:
             return
         with contextlib.ExitStack() as stack:
-            locks = [stack.enter_context(addr_lock_context(key)) for key in ordered_keys]
+            locks = [
+                stack.enter_context(addr_lock_context(key)) for key in ordered_keys
+            ]
             for addr_lock in locks:
                 stack.enter_context(addr_lock)
             for key in ordered_keys:
@@ -330,7 +332,9 @@ class BLEInterface(MeshInterface):
         if not ordered_keys:
             return
         with contextlib.ExitStack() as stack:
-            locks = [stack.enter_context(addr_lock_context(key)) for key in ordered_keys]
+            locks = [
+                stack.enter_context(addr_lock_context(key)) for key in ordered_keys
+            ]
             for addr_lock in locks:
                 stack.enter_context(addr_lock)
             for key in ordered_keys:
