@@ -135,7 +135,9 @@ class StreamInterface(MeshInterface):
         # pyserial cancel_read doesn't seem to work, therefore we ask the
         # reader thread to close things for us
         self._wantExit = True
-        if self._rxThread != threading.current_thread():
+        # close() can be called before connect() starts the reader thread
+        # (e.g., tests using connectNow=False). In that case join() would raise.
+        if self._rxThread != threading.current_thread() and self._rxThread.ident is not None:
             self._rxThread.join()  # wait for it to exit
 
     def _handleLogByte(self, b):
