@@ -26,7 +26,7 @@ def _get_ble_module():
     return ble_mod
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_serial(monkeypatch):
     """
     Inject a minimal fake `serial` package into sys.modules for tests.
@@ -61,7 +61,7 @@ def mock_serial(monkeypatch):
     return serial_module
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_pubsub(monkeypatch):
     """
     Injects a fake `pubsub` module into sys.modules for tests.
@@ -84,7 +84,7 @@ def mock_pubsub(monkeypatch):
     return pubsub_module
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_publishing_thread(monkeypatch):
     """
     Install a mocked publishingThread module into sys.modules whose `queueWork` invokes callbacks immediately.
@@ -121,7 +121,7 @@ def mock_publishing_thread(monkeypatch):
     return publishing_thread_module
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_tabulate(monkeypatch):
     """
     Install a minimal fake tabulate module into sys.modules for tests.
@@ -139,7 +139,7 @@ def mock_tabulate(monkeypatch):
     return tabulate_module
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_bleak(monkeypatch):
     """
     Install a minimal fake `bleak` package into `sys.modules` for tests.
@@ -151,7 +151,7 @@ def mock_bleak(monkeypatch):
 
     """
     bleak_module = types.ModuleType("bleak")
-    bleak_module.__version__ = "2.0.0"
+    bleak_module.__version__ = "2.1.1"
 
     class _StubBleakClient:
         def __init__(self, address=None, **_kwargs):
@@ -203,9 +203,10 @@ def mock_bleak(monkeypatch):
 
         async def start_notify(self, *_args, **_kwargs):
             """
-            Compatibility shim for start_notify(char_specifier, callback, *args, **kwargs).
+            Compatibility shim for the bleak start_notify API.
 
-            Accepts and ignores positional and keyword arguments.
+            Accepts and ignores positional and keyword arguments
+            `(char_specifier, callback, *args, **kwargs)`.
             """
             return None
 
@@ -311,7 +312,7 @@ def mock_bleak(monkeypatch):
     return bleak_module
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-name
     """
     Create and register a minimal `bleak.exc` submodule that exposes `BleakError` and `BleakDBusError`.
@@ -433,10 +434,9 @@ class DummyClient:
         self.close_calls += 1
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def stub_atexit(
     monkeypatch,
-    *,
     mock_serial,  # pylint: disable=redefined-outer-name
     mock_pubsub,  # pylint: disable=redefined-outer-name
     mock_tabulate,  # pylint: disable=redefined-outer-name

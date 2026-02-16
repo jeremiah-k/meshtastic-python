@@ -1278,7 +1278,7 @@ class MeshInterface:  # pylint: disable=R0902
                 if self._closing:
                     timer.cancel()
                     return
-            self.sendHeartbeat()
+                self.sendHeartbeat()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
 
@@ -1429,10 +1429,9 @@ class MeshInterface:  # pylint: disable=R0902
         )
         try:
             fromRadio.ParseFromString(fromRadioBytes)
-        except Exception as ex:
-            logger.error(f"Error while parsing FromRadio bytes:{fromRadioBytes} {ex}")
-            traceback.print_exc()
-            raise ex
+        except Exception:
+            logger.exception("Error while parsing FromRadio bytes:%s", fromRadioBytes)
+            raise
         asDict = google.protobuf.json_format.MessageToDict(fromRadio)
         logger.debug(f"Received from radio: {fromRadio}")
         if fromRadio.HasField("my_info"):
@@ -1597,7 +1596,7 @@ class MeshInterface:  # pylint: disable=R0902
             position["longitude"] = float(position["longitudeI"] * Decimal("1e-7"))
         return position
 
-    def _nodeNumToId(self, num: int, isDest=True) -> Optional[str]:
+    def _nodeNumToId(self, num: int, isDest: bool = True) -> Optional[str]:
         """Map a node node number to a node ID.
 
         Arguments:

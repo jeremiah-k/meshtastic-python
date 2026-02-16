@@ -1206,7 +1206,7 @@ class BLEInterface(MeshInterface):
                         self._read_retry_count = 0
                     except (BleakDBusError, BLEClient.BLEError) as e:
                         # Handle expected BLE disconnect/read failures.
-                        if self._handle_read_loop_disconnect(str(e), client):
+                        if self._handle_read_loop_disconnect(repr(e), client):
                             break
                         return
                     except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -1231,7 +1231,7 @@ class BLEInterface(MeshInterface):
                         return
                     except Exception as e:  # pragma: no cover - defensive catch-all
                         logger.exception("Unexpected error in BLE read loop")
-                        if self._handle_read_loop_disconnect(str(e), client):
+                        if self._handle_read_loop_disconnect(repr(e), client):
                             break
                         return
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706

@@ -936,10 +936,15 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
             self.cancelled = True
 
     fake_future = _FakeFuture()
+
+    def _fake_async_run(coro):
+        fake_future.coro = coro
+        return fake_future
+
     monkeypatch.setattr(
         client,
         "async_run",
-        lambda coro: setattr(fake_future, "coro", coro) or fake_future,
+        _fake_async_run,
     )
 
     async def _test_coro():

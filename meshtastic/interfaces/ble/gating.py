@@ -106,7 +106,6 @@ def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
         if lock is None:
             lock = RLock()
             _ADDR_LOCKS[key] = lock
-            _LOCK_HOLDERS[key] = 0
         # Increment holder count to prevent premature cleanup
         _LOCK_HOLDERS[key] = _LOCK_HOLDERS.get(key, 0) + 1
         return lock

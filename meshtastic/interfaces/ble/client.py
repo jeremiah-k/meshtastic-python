@@ -6,7 +6,7 @@ import sys
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Awaitable, Coroutine, Optional, Union
+from typing import Any, Awaitable, Coroutine, Optional, Union
 from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
@@ -115,7 +115,7 @@ class BLEClient:
         # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
 
-    def discover(self, **kwargs):  # pylint: disable=C0116
+    def discover(self, **kwargs) -> Any:  # pylint: disable=C0116
         """
         Discover nearby BLE devices.
 
@@ -132,7 +132,7 @@ class BLEClient:
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
-    def pair(self, **kwargs):  # pylint: disable=C0116
+    def pair(self, **kwargs) -> Any:  # pylint: disable=C0116
         """
         Pair the underlying BLE client with the remote device.
 
@@ -153,7 +153,7 @@ class BLEClient:
 
     def connect(
         self, *, await_timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    ) -> Any:  # pylint: disable=C0116
         """
         Connects to the remote BLE device.
 
@@ -212,7 +212,7 @@ class BLEClient:
 
     def disconnect(
         self, *, await_timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    ) -> None:  # pylint: disable=C0116
         """
         Disconnect from the remote BLE device and wait until the operation completes.
 
@@ -232,7 +232,7 @@ class BLEClient:
 
     def read_gatt_char(
         self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    ) -> bytes:  # pylint: disable=C0116
         """
         Read a GATT characteristic from the connected BLE device.
 
@@ -259,7 +259,7 @@ class BLEClient:
 
     def write_gatt_char(
         self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    ) -> None:  # pylint: disable=C0116
         """
         Write bytes to a GATT characteristic on the connected device and wait for completion.
 
@@ -280,7 +280,7 @@ class BLEClient:
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def get_services(self, **kwargs):
+    def get_services(self, **kwargs) -> Any:
         """
         Actively retrieve the client's discovered GATT services and characteristics.
 
@@ -329,7 +329,7 @@ class BLEClient:
 
     def start_notify(
         self, *args, timeout: Optional[float] = None, **kwargs
-    ):  # pylint: disable=C0116
+    ) -> None:  # pylint: disable=C0116
         """
         Subscribe to notifications for a GATT characteristic on the connected device.
 
@@ -350,7 +350,7 @@ class BLEClient:
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
 
-    def close(self):  # pylint: disable=C0116
+    def close(self) -> None:  # pylint: disable=C0116
         """
         Close the BLEClient and cancel any pending operations for this instance.
 
@@ -366,7 +366,7 @@ class BLEClient:
                 if not future.done():
                     future.cancel()
 
-    def __enter__(self):
+    def __enter__(self) -> "BLEClient":
         """
         Provide the BLEClient instance for use as a context manager.
 
@@ -376,7 +376,7 @@ class BLEClient:
         """
         return self
 
-    def __exit__(self, _type, _value, _traceback):
+    def __exit__(self, _type, _value, _traceback) -> None:
         """
         Close the BLEClient when exiting a context manager.
 
@@ -386,7 +386,7 @@ class BLEClient:
 
     def async_await(
         self, coro: "Awaitable", timeout: Optional[float] = None
-    ):  # pylint: disable=C0116
+    ) -> Any:  # pylint: disable=C0116
         """
         Wait for the given coroutine to complete and return its result.
 
@@ -425,6 +425,8 @@ class BLEClient:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
             # was happening, causing callbacks to never be processed.
+            # TODO: Remove this workaround once upstream bleak/CoreBluetooth
+            # callback starvation behavior is resolved.
             with contextlib.suppress(ValueError, OSError):
                 sys.stdout.flush()
             return future.result(timeout)

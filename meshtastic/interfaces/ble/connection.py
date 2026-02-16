@@ -26,6 +26,10 @@ logger = logging.getLogger("meshtastic.ble")
 # This prevents long waits on stale connection attempts.
 DIRECT_CONNECT_TIMEOUT_SECONDS: float = 12.0
 
+# Extra margin added to await_timeout so the BLE-level timeout fires first and
+# surfaces clearer context before the outer future wait times out.
+AWAIT_TIMEOUT_BUFFER_SECONDS: float = 5.0
+
 
 class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
@@ -160,7 +164,7 @@ class ClientManager:
             timeout if timeout is not None else BLEConfig.CONNECTION_TIMEOUT
         )
         # Give the underlying BLE timeout a chance to fail first with clearer context.
-        await_timeout = connect_timeout + 5.0
+        await_timeout = connect_timeout + AWAIT_TIMEOUT_BUFFER_SECONDS
         client.connect(
             await_timeout=await_timeout,
             timeout=connect_timeout,

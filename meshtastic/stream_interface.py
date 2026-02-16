@@ -1,14 +1,13 @@
-"""Stream Interface base class
-"""
+"""Stream Interface base class"""
+
 import io
 import logging
 import threading
 import time
 import traceback
-
 from typing import Optional, cast
 
-import serial # type: ignore[import-untyped]
+import serial  # type: ignore[import-untyped]
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.util import is_windows11, stripnl
@@ -23,13 +22,13 @@ logger = logging.getLogger(__name__)
 class StreamInterface(MeshInterface):
     """Interface class for meshtastic devices over a stream link (serial, TCP, etc)"""
 
-    def __init__( # pylint: disable=R0917
+    def __init__(  # pylint: disable=R0917
         self,
         debugOut: Optional[io.TextIOWrapper] = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
-        timeout: int = 300
+        timeout: int = 300,
     ) -> None:
         """Constructor, opens a connection to self.stream
 
@@ -44,10 +43,12 @@ class StreamInterface(MeshInterface):
         """
 
         if not hasattr(self, "stream") and not noProto:
-            raise Exception( # pylint: disable=W0719
+            raise Exception(  # pylint: disable=W0719
                 "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
             )
-        self.stream: Optional[serial.Serial] # only serial uses this, TCPInterface overrides the relevant methods instead
+        self.stream: Optional[
+            serial.Serial
+        ]  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
 
@@ -55,9 +56,13 @@ class StreamInterface(MeshInterface):
         self.cur_log_line = ""
 
         # FIXME, figure out why daemon=True causes reader thread to exit too early
-        self._rxThread = threading.Thread(target=self.__reader, args=(), daemon=True, name="stream reader")
+        self._rxThread = threading.Thread(
+            target=self.__reader, args=(), daemon=True, name="stream reader"
+        )
 
-        MeshInterface.__init__(self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout)
+        MeshInterface.__init__(
+            self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
+        )
 
         # Start the reader thread after superclass constructor completes init
         if connectNow:
@@ -137,8 +142,10 @@ class StreamInterface(MeshInterface):
         self._wantExit = True
         # close() can be called before connect() starts the reader thread
         # (e.g., tests using connectNow=False). In that case join() would raise.
-        if self._rxThread != threading.current_thread() and self._rxThread.ident is not None:
-            self._rxThread.join()  # wait for it to exit
+        if self._rxThread != threading.current_thread() and self._rxThread.is_alive():
+            self._rxThread.join(timeout=2.0)
+            if self._rxThread.is_alive():
+                logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _handleLogByte(self, b):
         """Handle a byte that is part of a log message from the device."""
@@ -150,7 +157,7 @@ class StreamInterface(MeshInterface):
             pass
 
         if utf == "\r":
-            pass    # ignore
+            pass  # ignore
         elif utf == "\n":
             self._handleLogLine(self.cur_log_line)
             self.cur_log_line = ""
@@ -226,9 +233,7 @@ class StreamInterface(MeshInterface):
                     f"Unexpected OSError, terminating meshtastic reader... {ex}"
                 )
         except Exception as ex:
-            logger.error(
-                f"Unexpected exception, terminating meshtastic reader... {ex}"
-            )
+            logger.error(f"Unexpected exception, terminating meshtastic reader... {ex}")
         finally:
             logger.debug("reader is exiting")
             self._disconnected()

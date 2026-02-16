@@ -287,6 +287,8 @@ class DiscoveryManager:
             self._client = None
         if self._client is None:
             ble_mod = resolve_ble_module()
+            if ble_mod is None:
+                logger.debug("No BLE module found; using default BLEClient")
             client_factory: Callable[..., Any] = cast(
                 Callable[..., Any],
                 self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),

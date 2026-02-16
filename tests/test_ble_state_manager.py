@@ -389,7 +389,7 @@ class TestPhase3LockConsolidation:
 
                     results.append((worker_id, i, manager.state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
-            except Exception as e:  # noqa: BLE001 - worker errors recorded for debugging
+            except Exception as e:  # noqa: BLE001
                 errors.append((worker_id, str(e)))
 
         # Create multiple threads
@@ -512,7 +512,10 @@ def test_state_transition_performance():
     assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
 
     logging.info(
-        f"Performance: {iterations * 3} transitions in {elapsed:.3f}s, avg: {avg_time:.6f}s"
+        "Performance: %d transitions in %.3fs, avg: %.6fs",
+        iterations * 3,
+        elapsed,
+        avg_time,
     )
 
 
@@ -667,5 +670,8 @@ def test_property_access_performance():
     assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
 
     logging.info(
-        f"Property access: {iterations * 4} accesses in {elapsed:.3f}s, avg: {avg_time:.9f}s"
+        "Property access: %d accesses in %.3fs, avg: %.9fs",
+        iterations * 4,
+        elapsed,
+        avg_time,
     )

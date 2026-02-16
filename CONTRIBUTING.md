@@ -13,7 +13,7 @@
 - also execute `poetry install --all-extras --with dev,powermon` for all optional dependencies
 - check your code with GitHub CI actions locally
   - You need to have act installed. You can get it at https://nektosact.com/
-  - on linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
+  - on Linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
   - on Windows:
     - linux checks (linux docker): `act --matrix "python-version:3.12"`
     - Windows checks (Windows host): `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
