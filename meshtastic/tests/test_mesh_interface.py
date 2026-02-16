@@ -690,10 +690,9 @@ def test_generatePacketId():
     # not sure when this condition would ever happen... but we can simulate it
     iface.currentPacketId = None  # type: ignore[assignment]
     assert iface.currentPacketId is None
-    with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
+    with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
         iface._generatePacketId()
-    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
-    assert "Not connected yet, can not generate packet" in str(pytest_wrapped_e.value)
+    assert "Not connected yet, can not generate packet" in str(excinfo.value)
 
 
 @pytest.mark.unit
@@ -864,20 +863,18 @@ def test_waitConnected_raises_an_exception():
     """Test waitConnected()."""
     iface = MeshInterface(noProto=True)
     iface.failure = MeshInterface.MeshInterfaceError("warn about something")
-    with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
+    with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
         iface._waitConnected(0.01)
-    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
-    assert "warn about something" in str(pytest_wrapped_e.value)
+    assert "warn about something" in str(excinfo.value)
 
 
 @pytest.mark.unit
 def test_waitConnected_isConnected_timeout():
     """Test waitConnected()."""
-    with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
+    with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
         iface = MeshInterface()
         iface._waitConnected(0.01)
-    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
-    assert "Timed out waiting for connection completion" in str(pytest_wrapped_e.value)
+    assert "Timed out waiting for connection completion" in str(excinfo.value)
 
 
 @pytest.mark.unit

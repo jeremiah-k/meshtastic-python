@@ -2,13 +2,13 @@
 
 import gc
 
+import pytest
+
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
     _ADDR_LOCKS,
     _CONNECTED_ADDRS,
     _CONNECTED_MARKED_AT,
-    _CONNECTED_OWNER_IDS,
-    _CONNECTED_OWNERS,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
     _addr_key,
@@ -54,18 +54,9 @@ class TestAddrKey:
         # All return None, which is handled specially by gating functions
 
 
+@pytest.mark.usefixtures("clear_registry")
 class TestAddrLock:
     """Test cases for _get_addr_lock function."""
-
-    def setup_method(self):
-        """Clear lock registries before each test for isolation."""
-        with _REGISTRY_LOCK:
-            _ADDR_LOCKS.clear()
-            _CONNECTED_ADDRS.clear()
-            _CONNECTED_MARKED_AT.clear()
-            _CONNECTED_OWNER_IDS.clear()
-            _CONNECTED_OWNERS.clear()
-            _LOCK_HOLDERS.clear()
 
     def test_get_lock_for_valid_address(self):
         """Test that locks are created for valid addresses."""
@@ -118,20 +109,9 @@ class TestAddrLock:
         assert _addr_key("temp-address") not in _LOCK_HOLDERS
 
 
+@pytest.mark.usefixtures("clear_registry")
 class TestMarkConnected:
     """Test cases for _mark_connected function."""
-
-    def setup_method(self):
-        """
-        Reset connection-related registries to a clean state.
-
-        Clears the connected address set, connection timestamps, owner ID mapping, and owner references while holding the global registry lock so tests start with no recorded connections.
-        """
-        with _REGISTRY_LOCK:
-            _CONNECTED_ADDRS.clear()
-            _CONNECTED_MARKED_AT.clear()
-            _CONNECTED_OWNER_IDS.clear()
-            _CONNECTED_OWNERS.clear()
 
     def test_mark_connected_adds_to_registry(self):
         """Test that marking an address as connected adds it to registry."""
@@ -153,18 +133,14 @@ class TestMarkConnected:
         assert len(_CONNECTED_ADDRS) == 0
 
 
+@pytest.mark.usefixtures("clear_registry")
 class TestMarkDisconnected:
     """Test cases for _mark_disconnected function."""
 
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    def _mark_default_connected(self, clear_registry):
         """Set up a connected address before each test."""
-        with _REGISTRY_LOCK:
-            _CONNECTED_ADDRS.clear()
-            _ADDR_LOCKS.clear()
-            _CONNECTED_MARKED_AT.clear()
-            _CONNECTED_OWNER_IDS.clear()
-            _CONNECTED_OWNERS.clear()
-            _LOCK_HOLDERS.clear()
+        _ = clear_registry
         _mark_connected("aabbccddeeff")
 
     def test_mark_disconnected_removes_from_registry(self):
@@ -187,9 +163,13 @@ class TestMarkDisconnected:
 
     def test_mark_disconnected_cleanup_lock(self):
         """
-        Verify that marking an address disconnected removes its per-address lock from the registry.
+        Verify that marking an address disconnected removes its per-address
+        lock from the registry.
 
-        The test enters _addr_lock_context for "testaddress", marks it connected, and asserts the lock remains after the context exits. After calling _mark_disconnected("testaddress"), the test asserts the lock has been removed from _ADDR_LOCKS.
+        The test enters `_addr_lock_context` for `"testaddress"`, marks it
+        connected, and asserts the lock remains after the context exits. After
+        calling `_mark_disconnected("testaddress")`, the test asserts the lock
+        has been removed from `_ADDR_LOCKS`.
         """
         _ADDR_LOCKS.clear()
         # Use context manager for proper holder count management
@@ -215,20 +195,9 @@ class TestMarkDisconnected:
         assert key in _CONNECTED_ADDRS
 
 
+@pytest.mark.usefixtures("clear_registry")
 class TestIsCurrentlyConnectedElsewhere:
     """Test cases for _is_currently_connected_elsewhere function."""
-
-    def setup_method(self):
-        """
-        Reset connection-related registries to a clean state.
-
-        Clears the connected address set, connection timestamps, owner ID mapping, and owner references while holding the global registry lock so tests start with no recorded connections.
-        """
-        with _REGISTRY_LOCK:
-            _CONNECTED_ADDRS.clear()
-            _CONNECTED_MARKED_AT.clear()
-            _CONNECTED_OWNER_IDS.clear()
-            _CONNECTED_OWNERS.clear()
 
     def test_returns_true_for_connected_address(self):
         """Test that it returns True for a connected address."""

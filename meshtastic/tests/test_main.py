@@ -398,18 +398,7 @@ def test_main_onConnected_exception(capsys):
     mt_config.args = sys.argv
 
     def throw_an_exception(junk):
-        """
-        Always raises a generic Exception.
-
-        Parameters
-        ----------
-            junk: Value is ignored.
-
-        Raises
-        ------
-            Exception: Always raised with message "Fake exception."
-
-        """
+        """Raise a deterministic exception for this test."""
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
     iface = MagicMock(autospec=SerialInterface)
@@ -710,24 +699,7 @@ def test_main_sendtext(capsys):
         channelIndex=0,
         portNum=0,
     ):
-        """
-        Mock implementation of sendText used in tests that prints diagnostic information to stdout.
-
-        Parameters
-        ----------
-            text (str): The message text to send.
-            dest: Destination identifier (node id, group, or channel); type flexible to match production usage.
-            wantAck (bool): Whether an acknowledgement is requested.
-            wantResponse (bool): Whether a response is requested.
-            onResponse (callable|None): Optional callback for handling a response.
-            channelIndex (int): Channel index to use for sending.
-            portNum (int): Port number to use for sending.
-
-        Notes
-        -----
-            This mock does not perform network I/O; it only prints the provided arguments for test visibility.
-
-        """
+        """Mock sendText that prints arguments for assertion."""
         print("inside mocked sendText")
         print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
@@ -776,24 +748,7 @@ def test_main_sendtext_with_channel(capsys):
         channelIndex=0,
         portNum=0,
     ):
-        """
-        Mock implementation of sendText used in tests that prints diagnostic information to stdout.
-
-        Parameters
-        ----------
-            text (str): The message text to send.
-            dest: Destination identifier (node id, group, or channel); type flexible to match production usage.
-            wantAck (bool): Whether an acknowledgement is requested.
-            wantResponse (bool): Whether a response is requested.
-            onResponse (callable|None): Optional callback for handling a response.
-            channelIndex (int): Channel index to use for sending.
-            portNum (int): Port number to use for sending.
-
-        Notes
-        -----
-            This mock does not perform network I/O; it only prints the provided arguments for test visibility.
-
-        """
+        """Mock sendText that prints arguments for assertion."""
         print("inside mocked sendText")
         print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
@@ -877,8 +832,6 @@ def test_main_sendtext_with_dest(
     sys.argv = ["", "--sendtext", "hello", "--dest", "foo"]
     mt_config.args = sys.argv
 
-    # iface = iface_with_nodes
-    # iface.myInfo.my_node_num = 2475227164
     serialInterface = SerialInterface(noProto=True, connectNow=False)
 
     mocked_channel = MagicMock(autospec=Channel)
@@ -888,10 +841,7 @@ def test_main_sendtext_with_dest(
         "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
     ):
         with caplog.at_level(logging.DEBUG):
-            # with pytest.raises(SystemExit) as pytest_wrapped_e:
             main()
-            # assert pytest_wrapped_e.type is SystemExit
-            # assert pytest_wrapped_e.value.code == 1
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
             assert not re.search(
@@ -900,7 +850,6 @@ def test_main_sendtext_with_dest(
             assert not re.search(
                 r"There is a SECONDARY channel named 'admin'", out, re.MULTILINE
             )
-            print(out)
             assert re.search(r"Not sending packet because", caplog.text, re.MULTILINE)
             assert re.search(
                 r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE

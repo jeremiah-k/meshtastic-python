@@ -237,7 +237,7 @@ class MeshInterface:  # pylint: disable=R0902
         # For now we just try to format the line as if it had come in over the serial port
         self._handleLogLine(record.message)
 
-    def showInfo(self, file=sys.stdout) -> str:  # pylint: disable=W0613
+    def showInfo(self, file=None) -> str:
         """
         Produce and print a human-readable summary of this mesh interface, including owner, local node info, metadata, and the set of known nodes.
 
@@ -281,7 +281,9 @@ class MeshInterface:  # pylint: disable=R0902
                 nodeid = n2["user"]["id"]
                 nodes[nodeid] = n2
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
-        print(infos)
+        if file is None:
+            file = sys.stdout
+        print(infos, file=file)
         return infos
 
     def showNodes(
@@ -604,7 +606,7 @@ class MeshInterface:  # pylint: disable=R0902
         channelIndex: int = 0,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.TEXT_MESSAGE_APP,
         replyId: Optional[int] = None,
-    ):
+    ) -> mesh_pb2.MeshPacket:
         """Send a utf8 string to some other node, if the node has a display it
            will also be shown on the device.
 
@@ -644,7 +646,7 @@ class MeshInterface:  # pylint: disable=R0902
         destinationId: Union[int, str] = BROADCAST_ADDR,
         onResponse: Optional[Callable[[dict], Any]] = None,
         channelIndex: int = 0,
-    ):
+    ) -> mesh_pb2.MeshPacket:
         """
         Send a high-priority alert text to a node, which may trigger special notifications on clients.
 
@@ -672,7 +674,7 @@ class MeshInterface:  # pylint: disable=R0902
             priority=mesh_pb2.MeshPacket.Priority.ALERT,
         )
 
-    def sendMqttClientProxyMessage(self, topic: str, data: bytes):
+    def sendMqttClientProxyMessage(self, topic: str, data: bytes) -> None:
         """
         Send an MQTT Client Proxy message to the radio.
 
@@ -689,9 +691,9 @@ class MeshInterface:  # pylint: disable=R0902
         toRadio.mqttClientProxyMessage.CopyFrom(prox)
         self._sendToRadio(toRadio)
 
-    def sendData(
+    def sendData(  # pylint: disable=R0913
         self,
-        data,
+        data: Any,
         destinationId: Union[int, str] = BROADCAST_ADDR,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
         wantAck: bool = False,
@@ -704,7 +706,7 @@ class MeshInterface:  # pylint: disable=R0902
         publicKey: Optional[bytes] = None,
         priority: mesh_pb2.MeshPacket.Priority.ValueType = mesh_pb2.MeshPacket.Priority.RELIABLE,
         replyId: Optional[int] = None,
-    ):  # pylint: disable=R0913
+    ) -> mesh_pb2.MeshPacket:
         """
         Send a data packet to a mesh node.
 
@@ -785,7 +787,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantAck: bool = False,
         wantResponse: bool = False,
         channelIndex: int = 0,
-    ):
+    ) -> mesh_pb2.MeshPacket:
         """
         Send a position packet to a node (defaults to broadcast) and optionally wait for a response.
 
@@ -888,7 +890,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def sendTraceRoute(
         self, dest: Union[int, str], hopLimit: int, channelIndex: int = 0
-    ):
+    ) -> None:
         """
         Initiate a traceroute toward a destination node.
 
@@ -1032,7 +1034,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantResponse: bool = False,
         channelIndex: int = 0,
         telemetryType: str = "device_metrics",
-    ):
+    ) -> None:
         """
         Send a telemetry request or announcement and optionally wait for a reply.
 
@@ -1179,11 +1181,11 @@ class MeshInterface:  # pylint: disable=R0902
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
                 )
 
-    def sendWaypoint(
+    def sendWaypoint(  # pylint: disable=R0913
         self,
-        name,
-        description,
-        icon,
+        name: str,
+        description: str,
+        icon: Union[int, str],
         expire: int,
         waypoint_id: Optional[int] = None,
         latitude: float = 0.0,
@@ -1192,7 +1194,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantAck: bool = True,
         wantResponse: bool = False,
         channelIndex: int = 0,
-    ):  # pylint: disable=R0913
+    ) -> mesh_pb2.MeshPacket:
         """
         Send a waypoint to a node (usually broadcast) and return the sent MeshPacket.
 
@@ -1211,7 +1213,7 @@ class MeshInterface:  # pylint: disable=R0902
         w = mesh_pb2.Waypoint()
         w.name = name
         w.description = description
-        w.icon = icon
+        w.icon = int(icon)
         w.expire = expire
         if waypoint_id is None:
             # Generate a waypoint's id, NOT a packet ID.
@@ -1253,7 +1255,7 @@ class MeshInterface:  # pylint: disable=R0902
         wantAck: bool = True,
         wantResponse: bool = False,
         channelIndex: int = 0,
-    ):
+    ) -> mesh_pb2.MeshPacket:
         """
         Send a deletion for a waypoint identified by `waypoint_id` to a destination node.
 

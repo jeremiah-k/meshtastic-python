@@ -116,7 +116,8 @@ class BLEStateManager:
         Report whether the BLE interface is in the CONNECTED state.
 
         Returns:
-            `true` if the current connection state is `ConnectionState.CONNECTED`, `false` otherwise.
+            True if the current connection state is ConnectionState.CONNECTED,
+            False otherwise.
 
         """
         return self.state == ConnectionState.CONNECTED
@@ -249,7 +250,7 @@ class BLEStateManager:
             if self._state not in expected_states:
                 logger.debug(
                     "State check failed: expected one of %s, got %s",
-                    {s.value for s in expected_states},
+                    sorted(s.value for s in expected_states),
                     self._state.value,
                 )
                 return False

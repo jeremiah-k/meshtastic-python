@@ -7,7 +7,7 @@
 
 import argparse
 from types import ModuleType
-from typing import List, Optional, Union
+from typing import List, Optional, Set, Tuple, Union
 
 argcomplete: Union[None, ModuleType] = None
 try:
@@ -57,9 +57,9 @@ try:
     have_powermon = True
     powermon_exception = None
     meter: Optional[PowerMeter] = None
-except ImportError as e:
+except ImportError as exc:
     have_powermon = False
-    powermon_exception = e
+    powermon_exception = exc
     meter = None
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from meshtastic.version import get_active_version
@@ -1138,7 +1138,7 @@ def onConnected(interface):
                 meshtastic.util.our_exit(
                     "The powermon module could not be loaded. "
                     "You may need to run `poetry install --with powermon`. "
-                    "Import Error was: " + powermon_exception
+                    f"Import Error was: {powermon_exception}"
                 )
 
         if args.listen:
@@ -1220,7 +1220,7 @@ def subscribe() -> None:
 
 
 def set_missing_flags_false(
-    config_dict: dict, true_defaults: set[tuple[str, str]]
+    config_dict: dict, true_defaults: Set[Tuple[str, str]]
 ) -> None:
     """Ensure that missing default=True keys are present in the config_dict and set to False."""
     for path in true_defaults:
@@ -1290,41 +1290,44 @@ def export_config(interface) -> str:
     )  # checkme - Used as a dictionary here and a string below
     # was used as a string here and a Dictionary above
     if config:
-        # Convert inner keys to correct snake/camelCase
-        prefs = {}
-        for pref in config:
-            if mt_config.camel_case:
-                prefs[meshtastic.util.snake_to_camel(pref)] = config[pref]
-            else:
-                prefs[pref] = config[pref]
-            # mark base64 encoded fields as such
-            if pref == "security":
-                if "privateKey" in prefs[pref]:
-                    prefs[pref]["privateKey"] = "base64:" + prefs[pref]["privateKey"]
-                if "publicKey" in prefs[pref]:
-                    prefs[pref]["publicKey"] = "base64:" + prefs[pref]["publicKey"]
-                if "adminKey" in prefs[pref]:
-                    for i in range(len(prefs[pref]["adminKey"])):
-                        prefs[pref]["adminKey"][i] = (
-                            "base64:" + prefs[pref]["adminKey"][i]
-                        )
-        configObj["config"] = config
+        # Ensure explicit false values are present before key conversion.
+        set_missing_flags_false(config, config_true_defaults)
 
-        set_missing_flags_false(configObj["config"], config_true_defaults)
+        # Convert inner keys to correct snake/camelCase.
+        prefs = {}
+        for pref, value in config.items():
+            pref_key = (
+                meshtastic.util.snake_to_camel(pref) if mt_config.camel_case else pref
+            )
+            prefs[pref_key] = value
+            # mark base64 encoded fields as such
+            if pref == "security" and isinstance(prefs[pref_key], dict):
+                security = prefs[pref_key]
+                if "privateKey" in security:
+                    security["privateKey"] = "base64:" + security["privateKey"]
+                if "publicKey" in security:
+                    security["publicKey"] = "base64:" + security["publicKey"]
+                if "adminKey" in security:
+                    for i in range(len(security["adminKey"])):
+                        security["adminKey"][i] = "base64:" + security["adminKey"][i]
+        configObj["config"] = prefs
 
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
-        # Convert inner keys to correct snake/camelCase
-        prefs = {}
-        for pref in module_config:
-            if len(module_config[pref]) > 0:
-                prefs[pref] = module_config[pref]
-        if mt_config.camel_case:
-            configObj["module_config"] = prefs
-        else:
-            configObj["module_config"] = prefs
+        # Ensure explicit false values are present before key conversion.
+        set_missing_flags_false(module_config, module_true_defaults)
 
-        set_missing_flags_false(configObj["module_config"], module_true_defaults)
+        # Convert inner keys to correct snake/camelCase.
+        prefs = {}
+        for pref, value in module_config.items():
+            if len(value) > 0:
+                pref_key = (
+                    meshtastic.util.snake_to_camel(pref)
+                    if mt_config.camel_case
+                    else pref
+                )
+                prefs[pref_key] = value
+        configObj["module_config"] = prefs
 
     config_txt = "# start of Meshtastic configure yaml\n"  # checkme - "config" (now changed to config_out)
     # was used as a string here and a Dictionary above
