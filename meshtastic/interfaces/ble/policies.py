@@ -1,7 +1,7 @@
 """Retry and reconnection policies for BLE operations."""
 
 import random
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 
@@ -20,7 +20,7 @@ class ReconnectPolicy:
         jitter_ratio: float = 0.1,
         max_retries: Optional[int] = None,
         random_source=None,
-    ):
+    ) -> None:
         """
         Initialize a jittered exponential-backoff reconnect policy.
 
@@ -145,7 +145,7 @@ class ReconnectPolicy:
 class _PolicyDescriptor:
     """Descriptor that returns a fresh policy instance on each access."""
 
-    def __init__(self, factory_name: str):
+    def __init__(self, factory_name: str) -> None:
         """
         Store the name of a factory method used to produce fresh policy instances.
 
@@ -156,7 +156,7 @@ class _PolicyDescriptor:
         """
         self.factory_name = factory_name
 
-    def __get__(self, _obj, cls):
+    def __get__(self, _obj: Any, cls: type) -> ReconnectPolicy:
         """
         Descriptor getter that returns a fresh ReconnectPolicy instance by invoking the named factory on the owning class.
 

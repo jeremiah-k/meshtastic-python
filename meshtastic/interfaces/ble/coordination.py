@@ -25,7 +25,7 @@ class ThreadCoordinator:
         - Helper methods for common coordination patterns
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Create a ThreadCoordinator used to track and manage threads and events.
 
@@ -112,7 +112,7 @@ class ThreadCoordinator:
         with self._lock:
             return self._events.get(name)
 
-    def start_thread(self, thread: Thread):
+    def start_thread(self, thread: Thread) -> None:
         """
         Start the given thread if it is tracked by this coordinator and has never been started.
 

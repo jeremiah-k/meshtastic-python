@@ -18,7 +18,7 @@ class NotificationManager:
     # Maximum subscription token value (2^31 - 1) to prevent unbounded counter growth
     _MAX_SUBSCRIPTION_TOKEN = 0x7FFFFFFF
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Create a NotificationManager and initialize its thread-safe subscription state.
 

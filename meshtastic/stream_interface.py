@@ -232,8 +232,8 @@ class StreamInterface(MeshInterface):
                 logger.error(
                     f"Unexpected OSError, terminating meshtastic reader... {ex}"
                 )
-        except Exception as ex:
-            logger.error(f"Unexpected exception, terminating meshtastic reader... {ex}")
+        except Exception:
+            logger.exception("Unexpected exception, terminating meshtastic reader...")
         finally:
             logger.debug("reader is exiting")
             self._disconnected()

@@ -252,7 +252,9 @@ class ConnectedStrategy(DiscoveryStrategy):
 class DiscoveryManager:
     """Orchestrates scanning + connected-device fallback logic."""
 
-    def __init__(self, client_factory=None):
+    def __init__(
+        self, client_factory: Optional[Callable[..., BLEClient]] = None
+    ) -> None:
         """
         Create a DiscoveryManager that orchestrates BLE scanning and connected-device fallback.
 

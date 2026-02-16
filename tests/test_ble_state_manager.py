@@ -7,6 +7,8 @@ import threading
 import time
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
@@ -111,6 +113,33 @@ class TestBLEStateManager:
             ConnectionState.CONNECTING
         )  # Can't go back to CONNECTING from CONNECTED
         assert manager.state == ConnectionState.CONNECTED
+
+    @given(
+        st.lists(
+            st.sampled_from(list(ConnectionState)),
+            min_size=1,
+            max_size=80,
+        )
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_transition_sequence_invariants(self, sequence):
+        """
+        Property test: arbitrary transition sequences preserve state-machine invariants.
+
+        For every requested transition in a generated sequence:
+        - the result matches whether transition_to considers it valid,
+        - failed transitions do not mutate state,
+        - state always remains a valid ConnectionState.
+        """
+        manager = BLEStateManager()
+        for target_state in sequence:
+            previous_state = manager.state
+            expected_success = manager.transition_to(target_state)
+            current_state = manager.state
+            assert expected_success == (current_state == target_state)
+            if not expected_success:
+                assert current_state == previous_state
+            assert current_state in ConnectionState
 
     def test_thread_safety(self):
         """Test concurrent state access is thread-safe."""

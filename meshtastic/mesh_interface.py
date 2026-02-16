@@ -738,85 +738,43 @@ class MeshInterface:  # pylint: disable=R0902
         routeDiscovery.ParseFromString(p["decoded"]["payload"])
         asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
 
-        print("Route traced towards destination:")
-        routeStr = (
-            self._nodeNumToId(p["to"], False) or f"{p['to']:08x}"
-        )  # Start with destination of response
+        def _node_label(node_num: int) -> str:
+            return self._nodeNumToId(node_num, False) or f"{node_num:08x}"
 
-        # SNR list should have one more entry than the route, as the final destination adds its SNR also
-        lenTowards = 0 if "route" not in asDict else len(asDict["route"])
-        snrTowardsValid = (
-            "snrTowards" in asDict and len(asDict["snrTowards"]) == lenTowards + 1
-        )
-        if lenTowards > 0:  # Loop through hops in route and add SNR if available
-            for idx, nodeNum in enumerate(asDict["route"]):
-                routeStr += (
-                    " --> "
-                    + (self._nodeNumToId(nodeNum, False) or f"{nodeNum:08x}")
-                    + " ("
-                    + (
-                        str(asDict["snrTowards"][idx] / 4)
-                        if snrTowardsValid and asDict["snrTowards"][idx] != UNK_SNR
-                        else "?"
-                    )
-                    + "dB)"
-                )
-
-        # End with origin of response
-        routeStr += (
-            " --> "
-            + (self._nodeNumToId(p["from"], False) or f"{p['from']:08x}")
-            + " ("
-            + (
-                str(asDict["snrTowards"][-1] / 4)
-                if snrTowardsValid and asDict["snrTowards"][-1] != UNK_SNR
+        def _format_snr(snr_value: Optional[int]) -> str:
+            return (
+                str(snr_value / 4)
+                if snr_value is not None and snr_value != UNK_SNR
                 else "?"
             )
-            + "dB)"
-        )
+
+        def _append_hop(route_text: str, node_num: int, snr_text: str) -> str:
+            return f"{route_text} --> {_node_label(node_num)} ({snr_text}dB)"
+
+        route_towards = asDict.get("route", [])
+        snr_towards = asDict.get("snrTowards", [])
+        snr_towards_valid = len(snr_towards) == len(route_towards) + 1
+
+        print("Route traced towards destination:")
+        routeStr = _node_label(p["to"])  # Start with destination of response
+        for idx, nodeNum in enumerate(route_towards):  # Add intermediate hops
+            hop_snr = _format_snr(snr_towards[idx]) if snr_towards_valid else "?"
+            routeStr = _append_hop(routeStr, nodeNum, hop_snr)
+        final_towards_snr = _format_snr(snr_towards[-1]) if snr_towards_valid else "?"
+        routeStr = _append_hop(routeStr, p["from"], final_towards_snr)
 
         print(routeStr)  # Print the route towards destination
 
         # Only if hopStart is set and there is an SNR entry (for the origin) it's valid, even though route might be empty (direct connection)
-        lenBack = 0 if "routeBack" not in asDict else len(asDict["routeBack"])
-        backValid = (
-            "hopStart" in p
-            and "snrBack" in asDict
-            and len(asDict["snrBack"]) == lenBack + 1
-        )
+        route_back = asDict.get("routeBack", [])
+        snr_back = asDict.get("snrBack", [])
+        backValid = "hopStart" in p and len(snr_back) == len(route_back) + 1
         if backValid:
             print("Route traced back to us:")
-            routeStr = (
-                self._nodeNumToId(p["from"], False) or f"{p['from']:08x}"
-            )  # Start with origin of response
-
-            if lenBack > 0:  # Loop through hops in routeBack and add SNR if available
-                for idx, nodeNum in enumerate(asDict["routeBack"]):
-                    routeStr += (
-                        " --> "
-                        + (self._nodeNumToId(nodeNum, False) or f"{nodeNum:08x}")
-                        + " ("
-                        + (
-                            str(asDict["snrBack"][idx] / 4)
-                            if asDict["snrBack"][idx] != UNK_SNR
-                            else "?"
-                        )
-                        + "dB)"
-                    )
-
-            # End with destination of response (us)
-            routeStr += (
-                " --> "
-                + (self._nodeNumToId(p["to"], False) or f"{p['to']:08x}")
-                + " ("
-                + (
-                    str(asDict["snrBack"][-1] / 4)
-                    if asDict["snrBack"][-1] != UNK_SNR
-                    else "?"
-                )
-                + "dB)"
-            )
-
+            routeStr = _node_label(p["from"])  # Start with origin of response
+            for idx, nodeNum in enumerate(route_back):  # Add intermediate hops
+                routeStr = _append_hop(routeStr, nodeNum, _format_snr(snr_back[idx]))
+            routeStr = _append_hop(routeStr, p["to"], _format_snr(snr_back[-1]))
             print(routeStr)  # Print the route back to us
 
         self._acknowledgment.receivedTraceRoute = True
@@ -1278,7 +1236,7 @@ class MeshInterface:  # pylint: disable=R0902
                 if self._closing:
                     timer.cancel()
                     return
-                self.sendHeartbeat()
+            self.sendHeartbeat()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
 
@@ -1615,7 +1573,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         try:
             return self.nodesByNum[num]["user"]["id"]  # type: ignore[index]
-        except Exception:
+        except (KeyError, TypeError):
             logger.debug(f"Node {num} not found for fromId")
             return None
 

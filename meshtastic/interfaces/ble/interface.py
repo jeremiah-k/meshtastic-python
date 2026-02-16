@@ -149,7 +149,9 @@ class BLEInterface(MeshInterface):
         #     This prevents race conditions when checking existing_client and
         #     managing the connection state machine.
         self._state_manager = BLEStateManager()  # Centralized state tracking
-        self._state_lock = self._state_manager.lock  # Direct access to unified lock
+        self._state_lock = (
+            self._state_manager.lock
+        )  # `lock` is a property returning the shared RLock instance
         self._connect_lock = threading.RLock()  # Serializes connection attempts
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
         self._closed: bool = (
@@ -498,6 +500,15 @@ class BLEInterface(MeshInterface):
                 self._schedule_auto_reconnect()
             return True
 
+        if previous_client:
+            # Keep cleanup behavior consistent with reconnect-enabled disconnects.
+            close_thread = self.thread_coordinator.create_thread(
+                target=self._client_manager.safe_close_client,
+                args=(previous_client,),
+                name="BLEClientClose",
+                daemon=True,
+            )
+            self.thread_coordinator.start_thread(close_thread)
         logger.debug("Auto-reconnect disabled, staying disconnected.")
         self._disconnected()
         return False
@@ -1012,93 +1023,94 @@ class BLEInterface(MeshInterface):
         connected_device_key: Optional[str] = None
         connection_alias_key: Optional[str] = None
 
-        # Use context manager for automatic holder count management
-        with addr_lock_context(addr_key) as addr_lock:
-            with addr_lock:
-                # Fast suppression if a recent connect happened elsewhere.
-                # Check is performed inside addr_lock to ensure consistent lock ordering.
-                # Skip suppression check for discovery mode (addr_key is None)
-                if (
+        # Apply address gating only for explicit-address connects.
+        # Discovery-mode connects intentionally skip gating to avoid holding the
+        # global registry lock during long-running scan/discovery operations.
+        with contextlib.ExitStack() as stack:
+            if addr_key is not None:
+                addr_lock = stack.enter_context(addr_lock_context(addr_key))
+                stack.enter_context(addr_lock)
+
+            # Fast suppression if a recent connect happened elsewhere.
+            # Check is performed inside addr_lock to ensure consistent lock ordering.
+            # Skip suppression check for discovery mode (addr_key is None)
+            if (
+                addr_key
+                and _is_currently_connected_elsewhere(addr_key, owner=self)
+                and not self._state_manager.is_connected
+            ):
+                logger.info(
+                    "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                    addr_key or "unknown",
+                )
+                raise self.BLEError(
+                    "Connection suppressed: recently connected elsewhere"
+                )
+
+            with self._connect_lock:
+                # Re-check closing state inside connect_lock for extra safety
+                if self._closed or self.is_connection_closing:
+                    raise self.BLEError("Cannot connect while interface is closing")
+
+                with self._state_lock:
+                    existing_client = self.client
+                    if (
+                        existing_client
+                        and existing_client.is_connected()
+                        and self._connection_validator.check_existing_client(
+                            existing_client,
+                            normalized_request,
+                            self._last_connection_request,
+                            self.address,
+                        )
+                    ):
+                        logger.debug("Already connected, skipping connect call.")
+                        return existing_client
+
+                client = self._connection_orchestrator.establish_connection(
+                    address,
+                    self.address,
+                    self._register_notifications,
+                    self._connected,
+                    self._on_ble_disconnect,
+                )
+
+                device_address = getattr(
+                    getattr(client, "bleak_client", None), "address", None
+                )
+                previous_client = None
+                with self._state_lock:
+                    previous_client = self.client
+                    self.address = device_address
+                    self.client = client
+                    self._disconnect_notified = False
+                    normalized_device_address = sanitize_address(device_address or "")
+                    if normalized_request is not None:
+                        self._last_connection_request = normalized_request
+                    else:
+                        self._last_connection_request = normalized_device_address
+
+                if previous_client and previous_client is not client:
+                    self._client_manager.update_client_reference(
+                        client, previous_client
+                    )
+
+                # Record keys for gate marking after releasing the initial request lock.
+                # This avoids nested per-address lock acquisition for different keys.
+                connected_device_key = (
+                    _addr_key(device_address) if device_address else None
+                )
+                connection_alias_key = (
                     addr_key
-                    and _is_currently_connected_elsewhere(addr_key, owner=self)
-                    and not self._state_manager.is_connected
-                ):
-                    # Context manager will release holder count automatically
-                    logger.info(
-                        "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                        addr_key or "unknown",
-                    )
-                    raise self.BLEError(
-                        "Connection suppressed: recently connected elsewhere"
-                    )
-
-                with self._connect_lock:
-                    # Re-check closing state inside connect_lock for extra safety
-                    if self._closed or self.is_connection_closing:
-                        raise self.BLEError("Cannot connect while interface is closing")
-
-                    with self._state_lock:
-                        existing_client = self.client
-                        if (
-                            existing_client
-                            and existing_client.is_connected()
-                            and self._connection_validator.check_existing_client(
-                                existing_client,
-                                normalized_request,
-                                self._last_connection_request,
-                                self.address,
-                            )
-                        ):
-                            # Context manager will release holder count automatically
-                            logger.debug("Already connected, skipping connect call.")
-                            return existing_client
-
-                    client = self._connection_orchestrator.establish_connection(
-                        address,
-                        self.address,
-                        self._register_notifications,
-                        self._connected,
-                        self._on_ble_disconnect,
-                    )
-
-                    device_address = getattr(
-                        getattr(client, "bleak_client", None), "address", None
-                    )
-                    previous_client = None
-                    with self._state_lock:
-                        previous_client = self.client
-                        self.address = device_address
-                        self.client = client
-                        self._disconnect_notified = False
-                        normalized_device_address = sanitize_address(
-                            device_address or ""
-                        )
-                        if normalized_request is not None:
-                            self._last_connection_request = normalized_request
-                        else:
-                            self._last_connection_request = normalized_device_address
-
-                    if previous_client and previous_client is not client:
-                        self._client_manager.update_client_reference(
-                            client, previous_client
-                        )
-
-                    # Record keys for gate marking after releasing the initial request lock.
-                    # This avoids nested per-address lock acquisition for different keys.
-                    connected_device_key = (
-                        _addr_key(device_address) if device_address else None
-                    )
-                    connection_alias_key = (
-                        addr_key
-                        if connected_device_key
-                        and addr_key
-                        and addr_key != connected_device_key
-                        else None
-                    )
-                    # Mark that at least one successful connection has been established
-                    self._ever_connected = True
-                    self._read_retry_count = 0
-                    connected_client = client
+                    if connected_device_key
+                    and addr_key
+                    and addr_key != connected_device_key
+                    else None
+                )
+                # Mark that at least one successful connection has been established
+                self._ever_connected = True
+                self._read_retry_count = 0
+                connected_client = client
 
         if connected_client is None:
             # Defensive: establish_connection should have returned a client or raised.

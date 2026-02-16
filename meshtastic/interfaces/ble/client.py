@@ -6,7 +6,7 @@ import sys
 import weakref
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Awaitable, Coroutine, Optional, Union
+from typing import Any, Awaitable, Coroutine, Optional, TypeVar, Union
 from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
@@ -19,6 +19,8 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
+
+T = TypeVar("T")
 
 
 class BLEClient:
@@ -44,7 +46,9 @@ class BLEClient:
         """An exception class for BLE errors in the client."""
 
     @staticmethod
-    async def _with_timeout(awaitable, timeout: Optional[float], label: str):
+    async def _with_timeout(
+        awaitable: Awaitable[T], timeout: Optional[float], label: str
+    ) -> T:
         """
         Waits for the given awaitable to complete and raises a BLEClient.BLEError if it does not finish within the specified timeout.
 

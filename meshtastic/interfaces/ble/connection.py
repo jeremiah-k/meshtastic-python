@@ -36,7 +36,7 @@ class ConnectionValidator:
 
     def __init__(
         self, state_manager: BLEStateManager, state_lock: RLock, error_class: type
-    ):
+    ) -> None:
         """
         Create a ConnectionValidator that enforces BLE connection pre-checks using the provided state manager and lock.
 
@@ -111,7 +111,7 @@ class ClientManager:
         state_lock: RLock,
         thread_coordinator: ThreadCoordinator,
         error_handler: "BLEErrorHandler",
-    ):
+    ) -> None:
         """
         Initialize a ClientManager with the managers, synchronization primitive, and error handler required to manage BLEClient lifecycle.
 
@@ -253,7 +253,7 @@ class ConnectionOrchestrator:
         state_manager: BLEStateManager,
         state_lock: RLock,
         thread_coordinator: ThreadCoordinator,
-    ):
+    ) -> None:
         """
         Coordinate BLE connection orchestration by wiring together the interface, validators, client lifecycle manager, discovery manager, and synchronization primitives.
 
