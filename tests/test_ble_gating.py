@@ -122,7 +122,11 @@ class TestMarkConnected:
     """Test cases for _mark_connected function."""
 
     def setup_method(self):
-        """Clear the connected addresses set before each test."""
+        """
+        Reset connection-related registries to a clean state.
+        
+        Clears the connected address set, connection timestamps, owner ID mapping, and owner references while holding the global registry lock so tests start with no recorded connections.
+        """
         with _REGISTRY_LOCK:
             _CONNECTED_ADDRS.clear()
             _CONNECTED_MARKED_AT.clear()
@@ -215,7 +219,11 @@ class TestIsCurrentlyConnectedElsewhere:
     """Test cases for _is_currently_connected_elsewhere function."""
 
     def setup_method(self):
-        """Clear the connected addresses set before each test."""
+        """
+        Reset connection-related registries to a clean state.
+        
+        Clears the connected address set, connection timestamps, owner ID mapping, and owner references while holding the global registry lock so tests start with no recorded connections.
+        """
         with _REGISTRY_LOCK:
             _CONNECTED_ADDRS.clear()
             _CONNECTED_MARKED_AT.clear()
@@ -296,6 +304,12 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             def is_connection_connected(self):
+                """
+                Report whether the associated connection is currently established.
+                
+                Returns:
+                    bool: `True` if the connection is established, `False` otherwise.
+                """
                 return False
 
         owner = Owner()
@@ -310,6 +324,15 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             def is_connection_connected(self):
+                """
+                Probe whether the owner's connection is active.
+                
+                Returns:
+                    `True` if the owner's connection is active, `False` otherwise.
+                
+                Raises:
+                    RuntimeError: If the probe cannot determine connection state (e.g., probe failure).
+                """
                 raise RuntimeError("probe failed")
 
         owner = Owner()
