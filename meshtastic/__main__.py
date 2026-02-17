@@ -66,6 +66,7 @@ except (ImportError, AttributeError) as exc:
     have_powermon = False
     powermon_exception = exc
     meter = None
+    logging.getLogger(__name__).debug("powermon/slog not available: %s", exc)
 
 logger = logging.getLogger(__name__)
 
@@ -1506,19 +1507,45 @@ def common():
                 )
             elif args.host:
                 try:
-                    if ":" in args.host:
+                    if args.host.startswith("["):
+                        # Bracketed IPv6: [addr] or [addr]:port
+                        bracket_end = args.host.find("]")
+                        if bracket_end == -1:
+                            meshtastic.util.our_exit(
+                                f"Error: malformed IPv6 address in --host '{args.host}'.",
+                                1,
+                            )
+                        tcp_hostname = args.host[1:bracket_end]
+                        remainder = args.host[bracket_end + 1 :]
+                        if remainder.startswith(":"):
+                            tcp_port_str = remainder[1:]
+                            try:
+                                tcp_port = int(tcp_port_str)
+                                if not 1 <= tcp_port <= 65535:
+                                    raise ValueError(f"Port {tcp_port} out of range")
+                            except ValueError:
+                                meshtastic.util.our_exit(
+                                    f"Error: invalid TCP port in --host '{args.host}'.",
+                                    1,
+                                )
+                        elif remainder:
+                            meshtastic.util.our_exit(
+                                f"Error: unexpected characters after IPv6 address in --host '{args.host}'.",
+                                1,
+                            )
+                        else:
+                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                    elif ":" in args.host:
+                        # Could be host:port or bare IPv6; try splitting on last colon
                         tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
-                        # Handle bracketed IPv6 addresses like [::1]:4403
-                        if tcp_hostname.startswith("[") and tcp_hostname.endswith("]"):
-                            tcp_hostname = tcp_hostname[1:-1]
                         try:
                             tcp_port = int(tcp_port_str)
                             if not 1 <= tcp_port <= 65535:
                                 raise ValueError(f"Port {tcp_port} out of range")
                         except ValueError:
-                            meshtastic.util.our_exit(
-                                f"Error: invalid TCP port in --host '{args.host}'.", 1
-                            )
+                            # Not a valid port – treat the whole string as a hostname/IPv6 addr
+                            tcp_hostname = args.host
+                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
                     else:
                         tcp_hostname = args.host
                         tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT

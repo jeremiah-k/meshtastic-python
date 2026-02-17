@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[
-            int, ResponseHandler
-        ] = {}  # A map from request ID to the handler
+        self.responseHandlers: Dict[int, ResponseHandler] = (
+            {}
+        )  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -372,15 +372,17 @@ class MeshInterface:  # pylint: disable=R0902
 
             Parameters
             ----------
-                ts (float|int|None): Seconds since the Unix epoch. If falsy or None, no time is available.
+                ts (float|int|None): Seconds since the Unix epoch. `None` produces no output; zero is formatted normally.
 
             Returns
             -------
-                last_heard (Optional[str]): Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is falsy.
+                last_heard (Optional[str]): Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is `None`.
 
             """
             return (
-                datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else None
+                datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+                if ts is not None
+                else None
             )
 
         def getTimeAgo(ts: Optional[Union[int, float]]) -> Optional[str]:
@@ -458,8 +460,10 @@ class MeshInterface:  # pylint: disable=R0902
                 "since",
             ]
         else:
-            # Always at least include the row number.
-            showFields = ["N", *showFields]
+            # Always at least include the row number, but avoid duplicates.
+            showFields = (
+                ["N", *showFields] if "N" not in showFields else list(showFields)
+            )
 
         rows: List[Dict[str, Any]] = []
         if self.nodesByNum:
@@ -1728,7 +1732,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = (
+            []
+        )  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
@@ -2301,7 +2307,12 @@ class MeshInterface:  # pylint: disable=R0902
                             logger.debug(
                                 f"Calling response handler for requestId {requestId}"
                             )
-                            response_handler.callback(asDict)
+                            try:
+                                response_handler.callback(asDict)
+                            except Exception:
+                                logger.exception(
+                                    f"Error in response handler for requestId {requestId}"
+                                )
 
         logger.debug(f"Publishing {topic}: packet={stripnl(asDict)} ")
         publishingThread.queueWork(

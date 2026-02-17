@@ -215,7 +215,7 @@ class StreamInterface(MeshInterface):
                 b: Optional[bytes] = self._readBytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
-                if b is not None and len(cast(bytes, b)) > 0:
+                if b is not None and len(b) > 0:
                     c: int = b[0]
                     # logger.debug(f'c:{c}')
                     ptr: int = len(self._rxBuf)

@@ -422,6 +422,7 @@ def test_main_onConnected_exception(capsys):
         with patch("pyqrcode.create", side_effect=throw_an_exception):
             with pytest.raises(SystemExit) as pytest_wrapped_e:
                 main()
+            _ = capsys.readouterr()  # consume output to avoid polluting test output
             assert pytest_wrapped_e.type is SystemExit
 
 

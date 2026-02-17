@@ -23,8 +23,9 @@ class _FallbackDotMap(dict):
     def __getattr__(self, key):
         try:
             value = self[key]
-        except KeyError as exc:
-            raise AttributeError(key) from exc
+        except KeyError:
+            # Match real DotMap's permissive behavior: return empty DotMap for missing keys
+            return _FallbackDotMap()
         if isinstance(value, dict):
             return _FallbackDotMap(value)
         return value
@@ -238,7 +239,7 @@ def testSimulator() -> None:
         iface.localNode.exitSimulator()
         iface.close()
         logger.info("Integration test successful!")
-    except Exception:
+    except (ConnectionError, OSError):
         print("Error while testing simulator:", sys.exc_info()[0])
         traceback.print_exc()
         sys.exit(1)
