@@ -15,6 +15,7 @@ from meshtastic.supported_device import SupportedDevice
 from meshtastic.util import (
     DEFAULT_KEY,
     Acknowledgment,
+    FixmeError,
     Timeout,
     active_ports_on_supported_devices,
     camel_to_snake,
@@ -174,9 +175,9 @@ def test_our_exit_non_zero_return_value(capsys):
 @pytest.mark.unitslow
 def test_fixme():
     """Test fixme()."""
-    with pytest.raises(Exception) as pytest_wrapped_e:
+    with pytest.raises(FixmeError) as pytest_wrapped_e:
         fixme("some exception")
-    assert pytest_wrapped_e.type is Exception
+    assert pytest_wrapped_e.type is FixmeError
 
 
 @pytest.mark.unit

@@ -401,17 +401,22 @@ class DiscoveryManager:
                 self._client = resolved_factory(log_if_no_address=False)
             except TypeError:
                 self._client = resolved_factory()
-            # Validate factory returned a valid client
+            # Validate factory returned a valid client (duck typing for testability)
             if self._client is None:
                 raise RuntimeError(
                     f"Discovery client factory returned None. Factory: {resolved_factory!r}"
                 )
+            # Accept BLEClient instances or any object with the required interface
+            # (duck typing allows test fixtures while still catching errors)
             if not isinstance(self._client, BLEClient):
-                raise RuntimeError(
-                    f"Discovery client factory returned invalid type. "
-                    f"Factory: {resolved_factory!r}, returned type: {type(self._client)!r}, "
-                    f"expected: BLEClient"
-                )
+                required_attrs = ("discover", "__enter__", "__exit__")
+                missing = [a for a in required_attrs if not hasattr(self._client, a)]
+                if missing:
+                    raise RuntimeError(
+                        f"Discovery client factory returned invalid type. "
+                        f"Factory: {resolved_factory!r}, returned type: {type(self._client)!r}, "
+                        f"missing required attributes: {missing}"
+                    )
 
         client = self._client
         devices: List[BLEDevice] = []

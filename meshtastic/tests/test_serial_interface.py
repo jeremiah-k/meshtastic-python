@@ -1,14 +1,16 @@
 """Meshtastic unit tests for serial_interface.py"""
-# pylint: disable=R0917
 
+# pylint: disable=R0917
+import logging
 import re
 import sys
 from unittest.mock import mock_open, patch
 
 import pytest
 
-from ..serial_interface import SerialInterface
 from ..protobuf import config_pb2
+from ..serial_interface import SerialInterface
+
 
 @pytest.mark.unit
 @patch("time.sleep")
@@ -44,14 +46,13 @@ def test_SerialInterface_single_port(
 
 @pytest.mark.unit
 @patch("meshtastic.util.findPorts", return_value=[])
-def test_SerialInterface_no_ports(mocked_findPorts, capsys):
+def test_SerialInterface_no_ports(mocked_findPorts, caplog):
     """Test that we can instantiate a SerialInterface with no ports"""
-    serialInterface = SerialInterface(noProto=True)
+    with caplog.at_level(logging.DEBUG):
+        serialInterface = SerialInterface(noProto=True)
     mocked_findPorts.assert_called()
     assert serialInterface.devPath is None
-    out, err = capsys.readouterr()
-    assert re.search(r"No.*Meshtastic.*device.*detected", out, re.MULTILINE)
-    assert err == ""
+    assert re.search(r"No.*Meshtastic.*device.*detected", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit

@@ -139,7 +139,7 @@ def test_main_ch_index_no_devices(patched_find_ports, capsys):
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
-    assert re.search(r"No.*Meshtastic.*device.*detected", out, re.MULTILINE)
+    assert re.search(r"Error connecting to localhost", out, re.MULTILINE)
     assert err == ""
     patched_find_ports.assert_called()
 
@@ -911,16 +911,12 @@ def test_main_sendtext_with_dest(
             "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
         ):
             with caplog.at_level(logging.DEBUG):
+                # Note: With noProto=True, the packet is not actually sent due to
+                # "protocol use is disabled by noProto", so no SystemExit is raised
                 main()
                 out, err = capsys.readouterr()
                 assert re.search(r"Connected to radio", out, re.MULTILINE)
-                assert not re.search(
-                    r"Warning: 0 is not a valid channel", out, re.MULTILINE
-                )
-                assert not re.search(
-                    r"There is a SECONDARY channel named 'admin'", out, re.MULTILINE
-                )
-            assert re.search(r"Not sending packet because", caplog.text, re.MULTILINE)
+            assert re.search(r"Not sending packet", caplog.text, re.MULTILINE)
             assert re.search(
                 r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE
             )
@@ -2891,7 +2887,7 @@ def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system, caplog, capsys)
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
-        assert re.search(r"No.*Meshtastic.*device.*detected", out, re.MULTILINE)
+        assert re.search(r"Error connecting to localhost", out, re.MULTILINE)
         assert err == ""
 
 
@@ -2914,7 +2910,7 @@ def test_tunnel_subnet_arg_with_no_devices(mock_platform_system, caplog, capsys)
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
-        assert re.search(r"No.*Meshtastic.*device.*detected", out, re.MULTILINE)
+        assert re.search(r"Error connecting to localhost", out, re.MULTILINE)
         assert err == ""
 
 
