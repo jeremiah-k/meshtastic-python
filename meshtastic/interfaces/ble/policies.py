@@ -155,6 +155,27 @@ class ReconnectPolicy:
 
         _sleep(self.get_delay(attempt))
 
+    # CamelCase aliases for public API compatibility
+    def getDelay(self, attempt: Optional[int] = None) -> float:
+        """CamelCase alias for get_delay."""
+        return self.get_delay(attempt)
+
+    def shouldRetry(self, attempt: Optional[int] = None) -> bool:
+        """CamelCase alias for should_retry."""
+        return self.should_retry(attempt)
+
+    def nextAttempt(self) -> Tuple[float, bool]:
+        """CamelCase alias for next_attempt."""
+        return self.next_attempt()
+
+    def getAttemptCount(self) -> int:
+        """CamelCase alias for get_attempt_count."""
+        return self.get_attempt_count()
+
+    def sleepWithBackoff(self, attempt: int) -> None:
+        """CamelCase alias for sleep_with_backoff."""
+        self.sleep_with_backoff(attempt)
+
 
 class _PolicyDescriptor:
     """Descriptor that returns a fresh policy instance on each access."""

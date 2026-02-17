@@ -429,6 +429,8 @@ def onConnected(interface: MeshInterface) -> None:
     )
     try:
         args = mt_config.args
+        # onConnected is only called from common() after args are parsed
+        assert args is not None, "onConnected called without args being set up"
 
         # convenient place to store any keyword args we pass to getNode
         getNode_kwargs = {
@@ -454,8 +456,8 @@ def onConnected(interface: MeshInterface) -> None:
             waitForAckNak = True
 
             alt = 0
-            lat = 0
-            lon = 0
+            lat = 0.0
+            lon = 0.0
             if args.setalt:
                 alt = int(args.setalt)
                 print(f"Fixing altitude at {alt} meters")
@@ -803,8 +805,9 @@ def onConnected(interface: MeshInterface) -> None:
             node = interface.getNode(args.dest, False, **getNode_kwargs)
 
             # Handle the int/float/bool arguments
-            pref = None
-            fields = set()
+            pref: Optional[Tuple[str, str]] = None
+            fields: Set[str] = set()
+            found = False
             for pref in args.set:
                 found = False
                 field = splitCompoundName(pref[0].lower())[0]
@@ -830,7 +833,7 @@ def onConnected(interface: MeshInterface) -> None:
                     node.writeConfig(field)
                 if len(fields) > 1:
                     node.commitSettingsTransaction()
-            else:
+            elif pref is not None:
                 if mt_config.camel_case:
                     print(
                         f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {pref[0]}."
@@ -1015,8 +1018,8 @@ def onConnected(interface: MeshInterface) -> None:
             )
 
         if args.ch_add:
-            channelIndex = mt_config.channel_index
-            if channelIndex is not None:
+            ch_add_idx = mt_config.channel_index
+            if ch_add_idx is not None:
                 # Since we set the channel index after adding a channel, don't allow --ch-index
                 meshtastic.util.our_exit(
                     "Warning: '--ch-add' and '--ch-index' are incompatible. Channel not added."
@@ -1044,7 +1047,7 @@ def onConnected(interface: MeshInterface) -> None:
                 ch.role = channel_pb2.Channel.Role.SECONDARY
                 print("Writing modified channels to device")
                 n.writeChannel(ch.index)
-                if channelIndex is None:
+                if ch_add_idx is None:
                     print(
                         f"Setting newly-added channel's {ch.index} as '--ch-index' for further modifications"
                     )
@@ -1053,20 +1056,20 @@ def onConnected(interface: MeshInterface) -> None:
         if args.ch_del:
             closeNow = True
 
-            channelIndex = mt_config.channel_index
-            if channelIndex is None:
+            ch_del_idx = mt_config.channel_index
+            if ch_del_idx is None:
                 meshtastic.util.our_exit(
                     "Warning: Need to specify '--ch-index' for '--ch-del'.", 1
                 )
             else:
-                if channelIndex == 0:
+                if ch_del_idx == 0:
                     meshtastic.util.our_exit(
                         "Warning: Cannot delete primary channel.", 1
                     )
                 else:
-                    print(f"Deleting channel {channelIndex}")
+                    print(f"Deleting channel {ch_del_idx}")
                     ch = interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
-                        channelIndex
+                        ch_del_idx
                     )
 
         def setSimpleConfig(modem_preset):
@@ -1121,18 +1124,19 @@ def onConnected(interface: MeshInterface) -> None:
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True
 
-            channelIndex = mt_config.channel_index
-            if channelIndex is None:
+            _idx: Optional[int] = mt_config.channel_index
+            if _idx is None:
                 meshtastic.util.our_exit("Warning: Need to specify '--ch-index'.", 1)
+            # _idx is now narrowed to int due to NoReturn from our_exit
             node = interface.getNode(args.dest, **getNode_kwargs)
-            ch = node.channels[channelIndex]
+            ch = node.channels[_idx]  # type: ignore[index]
 
             if args.ch_enable or args.ch_disable:
                 print(
                     "Warning: --ch-enable and --ch-disable can produce noncontiguous channels, "
                     "which can cause errors in some clients. Whenever possible, use --ch-add and --ch-del instead."
                 )
-                if channelIndex == 0:
+                if _idx == 0:
                     meshtastic.util.our_exit(
                         "Warning: Cannot enable/disable PRIMARY channel."
                     )
@@ -1176,14 +1180,14 @@ def onConnected(interface: MeshInterface) -> None:
             if enable:
                 ch.role = (
                     channel_pb2.Channel.Role.PRIMARY
-                    if (channelIndex == 0)
+                    if (_idx == 0)
                     else channel_pb2.Channel.Role.SECONDARY
                 )
             else:
                 ch.role = channel_pb2.Channel.Role.DISABLED
 
             print("Writing modified channels to device")
-            node.writeChannel(channelIndex)
+            node.writeChannel(_idx)  # type: ignore[index]
 
         if args.get_canned_message:
             closeNow = True

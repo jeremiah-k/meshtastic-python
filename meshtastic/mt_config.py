@@ -13,9 +13,11 @@ with rather more easily once the code is simplified by this change.
 
 """
 
+import argparse
 from typing import Any, Optional
 
-def reset():
+
+def reset() -> None:
     """
     Restore the namespace to pristine condition.
     """
@@ -29,11 +31,12 @@ def reset():
     # TODO: to migrate to camel_case for v1.3 change this value to True
     camel_case = False
 
+
 # These assignments are used instead of calling reset()
 # purely to shut pylint up.
-args = None
-parser = None
-channel_index = None
-logfile = None
+args: Optional[argparse.Namespace] = None
+parser: Optional[argparse.ArgumentParser] = None
+channel_index: Optional[int] = None
+logfile: Optional[Any] = None
 tunnelInstance: Optional[Any] = None
-camel_case = False
+camel_case: bool = False
