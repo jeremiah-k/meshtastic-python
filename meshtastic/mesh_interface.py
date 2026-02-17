@@ -1075,6 +1075,16 @@ class MeshInterface:  # pylint: disable=R0902
                 from the local node's cached device metrics when available.
 
         """
+        valid_types = {
+            "environment_metrics",
+            "air_quality_metrics",
+            "power_metrics",
+            "local_stats",
+            "device_metrics",
+        }
+        if telemetryType not in valid_types:
+            raise self.MeshInterfaceError(f"Unsupported telemetryType: {telemetryType}")
+
         r = telemetry_pb2.Telemetry()
 
         if telemetryType == "environment_metrics":
@@ -1085,7 +1095,7 @@ class MeshInterface:  # pylint: disable=R0902
             r.power_metrics.CopyFrom(telemetry_pb2.PowerMetrics())
         elif telemetryType == "local_stats":
             r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
-        else:  # fall through to device metrics
+        elif telemetryType == "device_metrics":
             if self.nodesByNum is not None:
                 node = self.nodesByNum.get(self.localNode.nodeNum)
                 if node is not None:

@@ -25,6 +25,9 @@ class ReconnectPolicy:
     Unified reconnection / retry policy with jittered exponential backoff.
     """
 
+    class ConfigurationError(ValueError):
+        """Raised when a ReconnectPolicy is constructed with invalid parameters."""
+
     def __init__(
         self,
         *,
@@ -53,19 +56,25 @@ class ReconnectPolicy:
 
         """
         if initial_delay <= 0:
-            raise ValueError(f"initial_delay must be > 0, got {initial_delay}")
+            raise ReconnectPolicy.ConfigurationError(
+                f"initial_delay must be > 0, got {initial_delay}"
+            )
         if max_delay < initial_delay:
-            raise ValueError(
+            raise ReconnectPolicy.ConfigurationError(
                 f"max_delay ({max_delay}) must be >= initial_delay ({initial_delay})"
             )
         if backoff <= 1.0:
-            raise ValueError(f"backoff must be > 1.0, got {backoff}")
+            raise ReconnectPolicy.ConfigurationError(
+                f"backoff must be > 1.0, got {backoff}"
+            )
         if not 0.0 <= jitter_ratio <= 1.0:
-            raise ValueError(
+            raise ReconnectPolicy.ConfigurationError(
                 f"jitter_ratio must be between 0.0 and 1.0, got {jitter_ratio}"
             )
         if max_retries is not None and max_retries < 0:
-            raise ValueError(f"max_retries must be >= 0 or None, got {max_retries}")
+            raise ReconnectPolicy.ConfigurationError(
+                f"max_retries must be >= 0 or None, got {max_retries}"
+            )
         self.initial_delay = initial_delay
         self.max_delay = max_delay
         self.backoff = backoff
@@ -118,12 +127,11 @@ class ReconnectPolicy:
 
     def next_attempt(self) -> Tuple[float, bool]:
         """
-        Compute the jittered backoff delay for the next attempt, indicate whether another retry is permitted, and advance the internal attempt counter.
-
-        Also increments the internal attempt counter.
+        Compute the jittered backoff delay for the current attempt, indicate whether
+        another retry is permitted, and then advance the internal attempt counter.
 
         Returns:
-            delay (float): Computed jittered backoff delay for the upcoming attempt.
+            delay (float): Computed jittered backoff delay for the current attempt.
             should_retry (bool): `True` if another retry is permitted, `False` otherwise.
 
         """

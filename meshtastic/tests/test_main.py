@@ -47,6 +47,7 @@ def _mock_sendText_helper(
     portNum=0,
 ):
     """Shared helper for mocking sendText; prints parameters to stdout for test assertions."""
+    _ = onResponse  # Mark as intentionally unused
     print("inside mocked sendText")
     print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
@@ -143,7 +144,7 @@ def test_main_support(capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.tcp_interface.TCPInterface", side_effect=Exception("no tcp"))
 @patch("meshtastic.util.findPorts", return_value=[])
-def test_main_ch_index_no_devices(patched_find_ports, patched_tcp, capsys):
+def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
     """Test --ch-index 1."""
     sys.argv = ["", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -450,7 +451,7 @@ def test_main_onConnected_exception(capsys):
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
 
-    def throw_an_exception(junk):
+    def throw_an_exception(_junk):
         """Raise a deterministic exception used by tests."""
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
@@ -886,10 +887,10 @@ def test_main_sendtext_with_invalid_channel_nine(caplog, capsys):
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_sendtext_with_dest(
-    mock_findPorts,
-    mock_serial,
-    mocked_open,
-    mock_hupcl,
+    _mock_findPorts,
+    _mock_serial,
+    _mocked_open,
+    _mock_hupcl,
     capsys,
     caplog,
 ):
@@ -1114,7 +1115,7 @@ def test_main_seturl(capsys):
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_set_valid(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --set with valid field."""
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
@@ -1142,7 +1143,7 @@ def test_main_set_valid(
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_set_valid_wifi_psk(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --set with valid field."""
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
@@ -1170,7 +1171,7 @@ def test_main_set_valid_wifi_psk(
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_set_invalid_wifi_psk(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --set with an invalid value (psk must be 8 or more characters)."""
     sys.argv = ["", "--set", "network.wifi_psk", "1234567"]
@@ -1203,7 +1204,7 @@ def test_main_set_invalid_wifi_psk(
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_set_valid_camel_case(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --set with valid field."""
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
@@ -1232,7 +1233,7 @@ def test_main_set_valid_camel_case(
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_set_with_invalid(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --set with invalid field."""
     sys.argv = ["", "--set", "foo", "foo"]
@@ -1261,7 +1262,7 @@ def test_main_set_with_invalid(
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_snake_case(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --configure with valid file."""
     sys.argv = ["", "--configure", "example_config.yaml"]
@@ -1297,7 +1298,7 @@ def test_main_configure_with_snake_case(
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_camel_case_keys(
-    mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
     """Test --configure with valid file."""
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
@@ -2977,10 +2978,10 @@ def test_tunnel_subnet_arg_with_no_devices(mock_platform_system, caplog, capsys)
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_tunnel_tunnel_arg(
-    mocked_findPorts,
-    mocked_serial,
-    mocked_open,
-    mock_hupcl,
+    _mocked_findPorts,
+    _mocked_serial,
+    _mocked_open,
+    _mock_hupcl,
     mock_platform_system,
     caplog,
     capsys,

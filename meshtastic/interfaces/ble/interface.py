@@ -310,13 +310,16 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             return self._want_receive and not self._closed
 
-    def _start_receive_thread(self, *, name: str) -> None:
+    def _start_receive_thread(self, *, name: str, reset_recovery: bool = True) -> None:
         """
         Create and start the background receive thread, updating `_receiveThread`.
 
         Parameters
         ----------
             name (str): Thread name to assign (for diagnostics/logging).
+            reset_recovery (bool): If True, reset the recovery attempt counter after
+                successful thread start; if False, preserve the counter for recovery
+                backoff tracking. Defaults to True.
 
         """
         with self._state_lock:
@@ -348,8 +351,9 @@ class BLEInterface(MeshInterface):
             )
             self._receiveThread = thread
         self.thread_coordinator.start_thread(thread)
-        # Reset recovery throttling on successful thread start
-        self._receive_recovery_attempts = 0
+        if reset_recovery:
+            # Reset recovery throttling on successful thread start (not during recovery)
+            self._receive_recovery_attempts = 0
 
     @staticmethod
     def _sorted_address_keys(*keys: Optional[str]) -> List[str]:
@@ -1458,7 +1462,9 @@ class BLEInterface(MeshInterface):
                 # If disconnect handling requests continuation (auto-reconnect path),
                 # replace this crashed receive thread so reads resume after reconnect.
                 if self._should_run_receive_loop():
-                    self._start_receive_thread(name="BLEReceiveRecovery")
+                    self._start_receive_thread(
+                        name="BLEReceiveRecovery", reset_recovery=False
+                    )
 
     def _read_from_radio_with_retries(self, client: "BLEClient") -> Optional[bytes]:
         """
@@ -1772,6 +1778,35 @@ class BLEInterface(MeshInterface):
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
 
+    def _publish_connection_status(self, connected: bool) -> None:
+        """
+        Publish a connection status event for backward compatibility with tests and integrations.
+
+        Parameters
+        ----------
+            connected (bool): True if connected, False if disconnected.
+
+        """
+        from meshtastic.mesh_interface import (
+            pub as mesh_pub,  # type: ignore[attr-defined]
+        )
+
+        def _publish_status():
+            try:
+                mesh_pub.sendMessage(
+                    "meshtastic.connection.status", interface=self, connected=connected
+                )
+            except Exception:
+                logger.debug(
+                    f"Error publishing {'connect' if connected else 'disconnect'} status",
+                    exc_info=True,
+                )
+
+        try:
+            publishingThread.queueWork(_publish_status)
+        except Exception:
+            logger.debug("Error queuing connection status publish", exc_info=True)
+
     def _disconnected(self) -> None:
         """
         Publish the legacy meshtastic.connection.status event when the interface disconnects.
@@ -1779,55 +1814,12 @@ class BLEInterface(MeshInterface):
         Enqueues a publish of the connection status (interface=self) to maintain backward compatibility with tests and integrations. Any exceptions raised while queueing or during publish are suppressed and logged at debug level.
         """
         super()._disconnected()
-        # Also publish connection.status event for test compatibility
-        # Import from mesh_interface to respect test monkeypatching
-        from meshtastic.mesh_interface import (
-            pub as mesh_pub,  # type: ignore[attr-defined]
-        )
-
-        def _publish_status():
-            """
-            Publish a disconnected connection status to the mesh publisher.
-
-            Sends a "meshtastic.connection.status" message with `connected=False` via `mesh_pub`. Any exception raised while publishing is suppressed and logged at debug level.
-            """
-            try:
-                mesh_pub.sendMessage(
-                    "meshtastic.connection.status", interface=self, connected=False
-                )
-            except Exception:
-                logger.debug("Error publishing disconnect status", exc_info=True)
-
-        try:
-            publishingThread.queueWork(_publish_status)
-        except Exception:
-            logger.debug("Error queuing disconnect status publish", exc_info=True)
+        self._publish_connection_status(connected=False)
 
     def _connected(self) -> None:
         """Override to also publish connection status event for backwards compatibility."""
         super()._connected()
-        # Also publish connection.status event for test compatibility
-        from meshtastic.mesh_interface import (
-            pub as mesh_pub,  # type: ignore[attr-defined]
-        )
-
-        def _publish_status():
-            """
-            Publish a meshtastic.connection.status notification that marks this interface as connected.
-
-            Exceptions raised while publishing are suppressed and logged at debug level.
-            """
-            try:
-                mesh_pub.sendMessage(
-                    "meshtastic.connection.status", interface=self, connected=True
-                )
-            except Exception:
-                logger.debug("Error publishing connect status", exc_info=True)
-
-        try:
-            publishingThread.queueWork(_publish_status)
-        except Exception:
-            logger.debug("Error queuing connect status publish", exc_info=True)
+        self._publish_connection_status(connected=True)
 
     # CamelCase aliases for public API naming convention compatibility
     def findDevice(self, address: Optional[str]) -> "BLEDevice":

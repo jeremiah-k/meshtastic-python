@@ -389,6 +389,11 @@ def _is_currently_connected_elsewhere(
             return True
 
         # Fallback for unowned claims: prune after a safety window.
+        # NOTE: If _CONNECTED_MARKED_AT lacks the key (out-of-sync records),
+        # marked_at defaults to 0.0 which is falsy, causing the timed-prune check
+        # to be skipped. This intentionally keeps the claim alive to avoid
+        # premature removal when records are inconsistent, trading off immediate
+        # cleanup for safety.
         marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
         if marked_at and (
             time.monotonic() - marked_at

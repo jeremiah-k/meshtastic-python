@@ -69,7 +69,8 @@ class StreamInterface(MeshInterface):
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
 
-        # FIXME, figure out why daemon=True causes reader thread to exit too early
+        # daemon=True so the reader thread does not prevent process exit;
+        # callers must call close() explicitly for a clean shutdown.
         self._rxThread = threading.Thread(
             target=self.__reader, args=(), daemon=True, name="stream reader"
         )

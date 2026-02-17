@@ -430,8 +430,8 @@ def onConnected(interface: MeshInterface) -> None:
     )
     try:
         args = mt_config.args
-        # onConnected is only called from common() after args are parsed
-        assert args is not None, "onConnected called without args being set up"
+        if args is None:
+            raise RuntimeError("onConnected called without args being set up")
 
         # convenient place to store any keyword args we pass to getNode
         getNode_kwargs = {
@@ -1688,16 +1688,19 @@ def common():
             with contextlib.ExitStack() as stack:
                 client: MeshInterface
                 if args.ble:
-                    client = stack.enter_context(
-                        BLEInterface(
-                            args.ble if args.ble != "any" else None,
-                            debugOut=logfile,
-                            noProto=args.noproto,
-                            noNodes=args.no_nodes,
-                            timeout=args.timeout,
-                            auto_reconnect=args.ble_auto_reconnect,
+                    try:
+                        client = stack.enter_context(
+                            BLEInterface(
+                                args.ble if args.ble != "any" else None,
+                                debugOut=logfile,
+                                noProto=args.noproto,
+                                noNodes=args.no_nodes,
+                                timeout=args.timeout,
+                                auto_reconnect=args.ble_auto_reconnect,
+                            )
                         )
-                    )
+                    except BLEInterface.BLEError as e:
+                        meshtastic.util.our_exit(str(e), 1)
                 elif args.host:
                     try:
                         if args.host.startswith("["):
@@ -1790,7 +1793,12 @@ def common():
                         message += "       Ensure you are using a **data-capable USB cable**.\n"
                         meshtastic.util.our_exit(message, 1)
                     except PermissionError as ex:
-                        username = os.getlogin()
+                        try:
+                            username = os.getlogin()
+                        except OSError:
+                            import getpass
+
+                            username = getpass.getuser()
                         message = "Permission Error:\n"
                         message += "  Need to add yourself to the 'dialout' group by running:\n"
                         message += f"     sudo usermod -a -G dialout {username}\n"

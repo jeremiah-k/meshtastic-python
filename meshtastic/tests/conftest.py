@@ -1,7 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
-from typing import ClassVar, Type
+from typing import Callable, ClassVar, Type
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,9 +26,11 @@ def create_context_manager_mock(spec_class: Type) -> MagicMock:
         spec_class: The class to use as spec for the mock (e.g., SerialInterface)
 
     Returns:
+
         A MagicMock with __enter__ configured to return itself.
+
     """
-    mock = MagicMock(autospec=spec_class)
+    mock = MagicMock(spec=spec_class)
     mock.__enter__ = MagicMock(return_value=mock)
     mock.__exit__ = MagicMock(return_value=None)
     return mock
@@ -39,7 +41,7 @@ class FakeTimer:
 
     created: ClassVar[list["FakeTimer"]] = []
 
-    def __init__(self, interval, function):
+    def __init__(self, interval: float, function: Callable[[], None]) -> None:
         """
         Initialize a FakeTimer instance and register it in the class registry.
 

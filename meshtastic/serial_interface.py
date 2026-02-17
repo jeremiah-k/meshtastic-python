@@ -121,7 +121,7 @@ class SerialInterface(StreamInterface):
         self,
         exc_type: Optional[type[BaseException]],
         exc_val: Optional[BaseException],
-        exc_tb: Optional["types.TracebackType"],
+        exc_tb: Optional[types.TracebackType],
     ) -> None:
         """Context manager exit - ensures connection is closed."""
         self.close()
