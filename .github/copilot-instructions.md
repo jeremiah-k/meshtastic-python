@@ -6,7 +6,7 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 
 ## Technology Stack
 
-- **Language**: Python 3.10 - 3.14
+- **Language**: Python 3.10 - 3.13
 - **Package Manager**: Poetry
 - **Testing**: pytest with hypothesis for property-based testing
 - **Linting**: pylint

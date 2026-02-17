@@ -295,10 +295,9 @@ class ConnectedStrategy(DiscoveryStrategy):
                     matched_candidates = target_candidates
 
                 for device in matched_candidates:
-                    params: Dict[str, Any] = {
-                        "address": device.address,
-                        "name": device.name,
-                    }
+                    # Pass address and name as positional args to avoid DeprecationWarning
+                    # in bleak 2.1.x where kwargs for these are deprecated.
+                    params: Dict[str, Any] = {}
                     if supports_details:
                         # Pass the original device object as details so the backend
                         # can recognize it as an already-connected device.
@@ -307,7 +306,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                         rssi = getattr(device, "rssi", None)
                         if rssi is not None:
                             params["rssi"] = rssi
-                    device_copy = BLEDevice(**params)
+                    device_copy = BLEDevice(device.address, device.name, **params)
                     # Preserve RSSI where constructor kwargs are unsupported.
                     # Note: some BLEDevice variants use __slots__ without `rssi`.
                     if not supports_rssi and hasattr(device, "rssi"):
@@ -381,8 +380,12 @@ class DiscoveryManager:
             BleakDBusError: If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
 
         """
-        if self._client and not self._client.is_connected():
-            self._client = None
+        # Only discard the client if it was previously connected and has since
+        # disconnected. A discovery-only client (never connected) should be reused.
+        if self._client is not None:
+            bleak = getattr(self._client, "bleak_client", None)
+            if bleak is not None and not self._client.is_connected():
+                self._client = None
         if self._client is None:
             # Factory resolution precedence (back-compat and testability):
             #   1. Explicit self.client_factory (injected for testing)

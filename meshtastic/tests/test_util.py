@@ -593,6 +593,8 @@ def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, m
 def test_message_to_json_shows_all():
     """Test that message_to_json prints fields that aren't included in data passed in."""
     actual = json.loads(message_to_json(mesh_pb2.MyNodeInfo()))
+    # Check that expected keys are present with expected values, rather than
+    # asserting exact equality, to avoid fragility when protobuf schema adds fields.
     expected = {
         "myNodeNum": 0,
         "rebootCount": 0,
@@ -602,7 +604,10 @@ def test_message_to_json_shows_all():
         "firmwareEdition": "VANILLA",
         "nodedbCount": 0,
     }
-    assert actual == expected
+    for key, value in expected.items():
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
 
 
 @pytest.mark.unit

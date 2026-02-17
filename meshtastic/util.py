@@ -201,7 +201,7 @@ class Timeout:
     """Timeout class."""
 
     def __init__(self, maxSecs: float = 20.0) -> None:
-        self.expireTime: Union[int, float] = 0
+        self.expireTime: float = 0.0
         self.sleepInterval: float = 0.1
         self.expireTimeout: float = maxSecs
 

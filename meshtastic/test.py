@@ -37,6 +37,9 @@ class _FallbackDotMap(dict):
             The value stored under `key`, a `_FallbackDotMap` wrapping a nested dict, or an empty `_FallbackDotMap` if the key is absent.
 
         """
+        # Guard dunder names to avoid interfering with copy, pickle, etc.
+        if key.startswith("__") and key.endswith("__"):
+            raise AttributeError(key)
         try:
             value = self[key]
         except KeyError:

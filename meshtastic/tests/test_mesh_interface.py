@@ -2,7 +2,6 @@
 
 import logging
 import re
-from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,61 +23,7 @@ except ImportError:
 # TODO
 # from ..config import Config
 from ..util import Timeout
-
-
-class FakeTimer:
-    """Simple timer stub for heartbeat timer tests."""
-
-    created: ClassVar[list["FakeTimer"]] = []
-
-    def __init__(self, interval, function):
-        """
-        Initialize a FakeTimer instance and register it in the class registry.
-
-        Parameters
-        ----------
-            interval (float): Time interval in seconds for the timer.
-            function (Callable): Callback to be invoked when the timer fires.
-
-        Notes
-        -----
-            The new instance is appended to FakeTimer.created for test inspection.
-
-        """
-        self.interval = interval
-        self.function = function
-        self.daemon = False
-        self.started = False
-        self.cancelled = False
-        FakeTimer.created.append(self)
-
-    def start(self):
-        """Record that the fake timer was started."""
-        self.started = True
-
-    def cancel(self):
-        """
-        Mark the fake timer as cancelled.
-
-        Sets the instance's cancelled flag to True so tests can detect that the timer has been cancelled.
-        """
-        self.cancelled = True
-
-
-@pytest.fixture(name="fake_timer_cls")
-def _fake_timer_cls_fixture(monkeypatch):
-    """
-    Replace meshtastic.mesh_interface.threading.Timer with a deterministic FakeTimer for tests.
-
-    Clears any previously created FakeTimer instances and installs FakeTimer in place of threading.Timer so tests can control timer behavior.
-
-    Returns:
-        The FakeTimer class that was installed.
-
-    """
-    FakeTimer.created.clear()
-    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
-    return FakeTimer
+from .conftest import FakeTimer
 
 
 @pytest.mark.unit

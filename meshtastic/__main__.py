@@ -148,7 +148,7 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
-def getPref(node, comp_name) -> bool:
+def getPref(node: Any, comp_name: str) -> bool:
     """
     Retrieve and display a channel or preference value for the given node.
 
@@ -274,7 +274,9 @@ def splitCompoundName(comp_name: str) -> List[str]:
     return name
 
 
-def traverseConfig(config_root, config, interface_config) -> bool:
+def traverseConfig(
+    config_root: str, config: Dict[str, Any], interface_config: Any
+) -> bool:
     """
     Recursively apply configuration values from a nested mapping onto an interface configuration.
 
@@ -300,7 +302,7 @@ def traverseConfig(config_root, config, interface_config) -> bool:
     return True
 
 
-def setPref(config, comp_name, raw_val) -> bool:
+def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     """
     Set a preference or channel field on a protobuf config object identified by a (possibly compound) name.
 
@@ -419,7 +421,7 @@ def setPref(config, comp_name, raw_val) -> bool:
     return True
 
 
-def onConnected(interface):
+def onConnected(interface: MeshInterface) -> None:
     """Callback invoked when we connect to a radio."""
     closeNow = False  # Should we drop the connection after we finish?
     waitForAckNak = (
@@ -1316,12 +1318,11 @@ def onConnected(interface):
             log_set.close()
 
     except Exception as ex:
-        print(f"Aborting due to: {ex}")
         interface.close()  # close the connection now, so that our app exits
-        sys.exit(1)
+        meshtastic.util.our_exit(f"Aborting due to: {ex}", 1)
 
 
-def printConfig(config) -> None:
+def printConfig(config: Any) -> None:
     """
     Prints the top-level configuration sections and their field names.
 
@@ -1348,7 +1349,7 @@ def printConfig(config) -> None:
                 print(f"    {temp_name}")
 
 
-def onNode(node) -> None:
+def onNode(node: Any) -> None:
     """Callback invoked when the node DB changes."""
     print(f"Node changed: {node}")
 

@@ -58,7 +58,7 @@ class Node:
         r = f"Node({self.iface!r}, 0x{self.nodeNum:08x}"
         if self.noProto:
             r += ", noProto=True"
-        if self._timeout.expireTimeout != 300:
+        if self._timeout.expireTimeout != 300.0:
             r += ", timeout={self._timeout.expireTimeout!r}"
         r += ")"
         return r
@@ -1084,11 +1084,8 @@ class Node:
         result = []
         if self.channels:
             for c in self.channels:
-                if (
-                    c.settings
-                    and hasattr(c.settings, "name")
-                    and hasattr(c.settings, "psk")
-                ):
+                settings_has_name = c.settings and hasattr(c.settings, "name")
+                if settings_has_name and hasattr(c.settings, "psk"):
                     hash_val = generate_channel_hash(c.settings.name, c.settings.psk)
                 else:
                     hash_val = None
@@ -1096,9 +1093,7 @@ class Node:
                     {
                         "index": c.index,
                         "role": channel_pb2.Channel.Role.Name(c.role),
-                        "name": c.settings.name
-                        if c.settings and hasattr(c.settings, "name")
-                        else "",
+                        "name": c.settings.name if settings_has_name else "",
                         "hash": hash_val,
                     }
                 )

@@ -141,8 +141,9 @@ def test_main_support(capsys):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.tcp_interface.TCPInterface", side_effect=Exception("no tcp"))
 @patch("meshtastic.util.findPorts", return_value=[])
-def test_main_ch_index_no_devices(patched_find_ports, capsys):
+def test_main_ch_index_no_devices(patched_find_ports, patched_tcp, capsys):
     """Test --ch-index 1."""
     sys.argv = ["", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -1836,7 +1837,7 @@ def test_main_onReceive_with_sendtext(caplog, capsys):
     # Note: 'TEXT_MESSAGE_APP' value is 1
     packet = {
         "to": 4294967295,
-        "decoded": {"portnum": 1, "payload": "hello"},
+        "decoded": {"portnum": "TEXT_MESSAGE_APP", "payload": "hello"},
         "id": 334776977,
         "hop_limit": 3,
         "want_ack": True,
@@ -1868,7 +1869,7 @@ def test_main_onReceive_with_text(caplog, capsys):
     # Note: Some of this is faked below.
     packet = {
         "to": 4294967295,
-        "decoded": {"portnum": 1, "payload": "hello", "text": "faked"},
+        "decoded": {"portnum": "TEXT_MESSAGE_APP", "payload": "hello", "text": "faked"},
         "id": 334776977,
         "hop_limit": 3,
         "want_ack": True,

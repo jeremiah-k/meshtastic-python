@@ -25,6 +25,12 @@ class StreamInterface(MeshInterface):
     class StreamInterfaceError(MeshInterface.MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
+        def __init__(
+            self,
+            msg: str = "StreamInterface is now abstract (to update existing code create SerialInterface instead)",
+        ):
+            super().__init__(msg)
+
     def __init__(  # pylint: disable=R0917
         self,
         debugOut: Optional[io.TextIOWrapper] = None,
@@ -34,7 +40,8 @@ class StreamInterface(MeshInterface):
         timeout: float = 300.0,
     ) -> None:
         """
-        Initialize the StreamInterface, prepare its reader thread, and optionally open and configure the underlying stream connection.
+        Initialize the StreamInterface, prepare its reader thread, and optionally
+        open and configure the underlying stream connection.
 
         Parameters
         ----------
@@ -53,9 +60,7 @@ class StreamInterface(MeshInterface):
         """
 
         if not hasattr(self, "stream") and not noProto:
-            raise StreamInterface.StreamInterfaceError(
-                "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
-            )
+            raise StreamInterface.StreamInterfaceError()
         self.stream: Optional[serial.Serial] = cast(
             Optional[serial.Serial],
             getattr(self, "stream", None),

@@ -1741,12 +1741,13 @@ class MeshInterface:  # pylint: disable=R0902
             if self._closing:
                 logger.debug("Skipping _connected(): interface is closing")
                 return
-        # (because I'm lazy) _connected might be called when remote Node
-        # objects complete their config reads, don't generate redundant isConnected
-        # for the local interface
-        if not self.isConnected.is_set():
-            self.isConnected.set()
-            self._startHeartbeat()
+            # (because I'm lazy) _connected might be called when remote Node
+            # objects complete their config reads, don't generate redundant isConnected
+            # for the local interface
+            if not self.isConnected.is_set():
+                self.isConnected.set()
+                self._startHeartbeat()
+        if self.isConnected.is_set():
             publishingThread.queueWork(
                 lambda: pub.sendMessage(
                     "meshtastic.connection.established", interface=self

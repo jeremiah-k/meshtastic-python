@@ -66,7 +66,7 @@ interface = meshtastic.serial_interface.SerialInterface()
 """
 
 import logging
-from typing import Callable, NamedTuple, Optional
+from typing import Any, Callable, Dict, NamedTuple, Optional
 
 import serial  # type: ignore[import-untyped]
 from google.protobuf.json_format import MessageToJson
@@ -177,7 +177,7 @@ class KnownProtocol(NamedTuple):
     onReceive: Optional[Callable] = None
 
 
-def _onTextReceive(iface, asDict):
+def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Decode text payloads from a received packet and update per-node metadata.
 
@@ -206,7 +206,7 @@ def _onTextReceive(iface, asDict):
     _receiveInfoUpdate(iface, asDict)
 
 
-def _onPositionReceive(iface, asDict):
+def _onPositionReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Parse and apply position data from a received packet to the corresponding node.
 
@@ -232,7 +232,7 @@ def _onPositionReceive(iface, asDict):
             iface._getOrCreateByNum(asDict["from"])["position"] = p
 
 
-def _onNodeInfoReceive(iface, asDict):
+def _onNodeInfoReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Parse a NodeInfo ("user") payload from a received packet and update the interface's node records.
 
@@ -260,7 +260,7 @@ def _onNodeInfoReceive(iface, asDict):
             _receiveInfoUpdate(iface, asDict)
 
 
-def _onTelemetryReceive(iface, asDict):
+def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Update a node's telemetry metrics when a telemetry packet is received.
 
@@ -305,7 +305,7 @@ def _onTelemetryReceive(iface, asDict):
     node[toUpdate] = newMetrics
 
 
-def _receiveInfoUpdate(iface, asDict):
+def _receiveInfoUpdate(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Update per-node metadata fields based on information present in a received packet dictionary.
 
@@ -327,7 +327,7 @@ def _receiveInfoUpdate(iface, asDict):
         node["hopLimit"] = asDict.get("hopLimit")
 
 
-def _onAdminReceive(iface, asDict):
+def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Extract the admin session passkey from a received admin message and store it on the sending node.
 
@@ -345,9 +345,9 @@ def _onAdminReceive(iface, asDict):
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
     if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""
