@@ -219,7 +219,7 @@ class BLEInterface(MeshInterface):
         )
         # Recovery throttling to prevent tight crash→spawn loops
         self._receive_recovery_attempts = 0
-        self._last_recovery_time = 0.0
+        self._last_recovery_time = 0.0  # monotonic clock
 
         # Initialize parent interface
         MeshInterface.__init__(
@@ -1324,7 +1324,7 @@ class BLEInterface(MeshInterface):
                     self._set_receive_wanted(False)
                     return
                 # Recovery throttling to prevent tight crash→spawn loops
-                now = time.time()
+                now = time.monotonic()
                 self._receive_recovery_attempts += 1
                 if self._receive_recovery_attempts > 3:
                     # Exponential backoff after 3 rapid failures

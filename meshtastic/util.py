@@ -30,7 +30,7 @@ from meshtastic.version import get_active_version
      0925 Lakeview Research Saleae Logic (logic analyzer)
 04b4:602a Cypress Semiconductor Corp. Hantek DSO-6022BL (oscilloscope)
 """
-blacklistVids: Dict = dict.fromkeys([0x1366, 0x0483, 0x1915, 0x0925, 0x04B4])
+blacklistVids: Set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 
 """Some devices are highly likely to be meshtastic.
 0x239a RAK4631
@@ -134,16 +134,22 @@ def stripnl(s) -> str:
     return " ".join(s.split())
 
 
+class FixmeError(Exception):
+    """Exception for marking code that needs to be fixed."""
+
+    pass
+
+
 def fixme(message: str) -> None:
     """Raise an exception for things that needs to be fixed."""
-    raise Exception(f"FIXME: {message}")  # pylint: disable=W0719
+    raise FixmeError(f"FIXME: {message}")
 
 
 def catchAndIgnore(reason: str, closure) -> None:
     """Call a closure but if it throws an exception print it and continue."""
     try:
         closure()
-    except BaseException:
+    except Exception:
         logger.exception(f"Exception thrown in {reason}")
 
 

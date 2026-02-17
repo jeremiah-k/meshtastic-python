@@ -2963,21 +2963,23 @@ def test_tunnel_tunnel_arg(
     mt_config.args = sys.argv
 
     with SerialInterface(noProto=True, connectNow=False) as serialInterface:
-        with caplog.at_level(logging.DEBUG):
-            with patch(
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch(
                 "meshtastic.serial_interface.SerialInterface",
                 return_value=serialInterface,
-            ):
-                with patch("time.sleep", side_effect=my_sleep):
-                    with pytest.raises(SystemExit) as pytest_wrapped_e:
-                        tunnelMain()
-                    assert pytest_wrapped_e.type is SystemExit
-                    assert pytest_wrapped_e.value.code == 3
-                mock_platform_system.assert_called()
-                assert re.search(r"Not starting Tunnel", caplog.text, re.MULTILINE)
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert err == ""
+            ),
+            patch("time.sleep", side_effect=my_sleep),
+        ):
+            with pytest.raises(SystemExit) as pytest_wrapped_e:
+                tunnelMain()
+            assert pytest_wrapped_e.type is SystemExit
+            assert pytest_wrapped_e.value.code == 3
+        mock_platform_system.assert_called()
+        assert re.search(r"Not starting Tunnel", caplog.text, re.MULTILINE)
+    out, err = capsys.readouterr()
+    assert re.search(r"Connected to radio", out, re.MULTILINE)
+    assert err == ""
 
 
 @pytest.mark.unit

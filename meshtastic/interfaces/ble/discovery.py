@@ -1,6 +1,7 @@
 """BLE device discovery strategies."""
 
 import asyncio
+import contextlib
 import inspect
 import time
 from abc import ABC, abstractmethod
@@ -470,12 +471,9 @@ class DiscoveryManager:
                 raise
             except Exception as e:  # pragma: no cover - best effort logging
                 logger.warning("Connected device fallback failed: %s", e, exc_info=True)
-            # Note: We do NOT manually close connected_coro here. Once passed to
-            # async_await, that function takes ownership of the coroutine's lifecycle.
-            # Attempting to close after async_await has scheduled it would cause a
-            # double-close error. If async_await raises before scheduling, the coroutine
-            # may not be closed, but this is a minor edge case vs. the risk of
-            # double-closing.
+                # Attempt to close the coroutine if async_await failed before scheduling
+                with contextlib.suppress(Exception):
+                    connected_coro.close()
 
         return devices
 
