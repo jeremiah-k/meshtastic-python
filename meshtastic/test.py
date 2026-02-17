@@ -53,7 +53,7 @@ sendingInterface = None
 logger = logging.getLogger(__name__)
 
 
-def onReceive(packet, interface) -> None:
+def onReceive(packet: dict, interface: Any) -> None:
     """Callback invoked when a packet arrives."""
     if sendingInterface == interface:
         pass
@@ -80,8 +80,8 @@ def subscribe() -> None:
 
 
 def testSend(
-    fromInterface,
-    toInterface,
+    fromInterface: Any,
+    toInterface: Any,
     isBroadcast: bool = False,
     asBinary: bool = False,
     wantAck: bool = False,

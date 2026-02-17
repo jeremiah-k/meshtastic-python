@@ -271,3 +271,43 @@ class BLEStateManager:
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
             return self.transition_to(ConnectionState.DISCONNECTED)
+
+    # CamelCase aliases for public API consistency
+    @property
+    def isConnected(self) -> bool:
+        """CamelCase alias for is_connected."""
+        return self.is_connected
+
+    @property
+    def isClosing(self) -> bool:
+        """CamelCase alias for is_closing."""
+        return self.is_closing
+
+    @property
+    def canConnect(self) -> bool:
+        """CamelCase alias for can_connect."""
+        return self.can_connect
+
+    @property
+    def isConnecting(self) -> bool:
+        """CamelCase alias for is_connecting."""
+        return self.is_connecting
+
+    @property
+    def isActive(self) -> bool:
+        """CamelCase alias for is_active."""
+        return self.is_active
+
+    def transitionTo(self, new_state: ConnectionState) -> bool:
+        """CamelCase alias for transition_to."""
+        return self.transition_to(new_state)
+
+    def transitionIfIn(
+        self, expected_states: Set[ConnectionState], new_state: ConnectionState
+    ) -> bool:
+        """CamelCase alias for transition_if_in."""
+        return self.transition_if_in(expected_states, new_state)
+
+    def resetToDisconnected(self) -> bool:
+        """CamelCase alias for reset_to_disconnected."""
+        return self.reset_to_disconnected()

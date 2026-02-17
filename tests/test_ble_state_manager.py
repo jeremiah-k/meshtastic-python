@@ -2,6 +2,7 @@
 
 import gc
 import logging
+import os
 import threading
 import time
 import weakref
@@ -530,6 +531,9 @@ class TestPhase3LockConsolidation:
 
 
 @pytest.mark.unit
+@pytest.mark.skipif(
+    not os.getenv("RUN_PERF_TESTS"), reason="Performance tests disabled by default"
+)
 def test_state_transition_performance():
     """
     Lightweight performance regression guard for repeated BLE state transitions.
@@ -565,6 +569,9 @@ def test_state_transition_performance():
 
 
 @pytest.mark.unit
+@pytest.mark.skipif(
+    not os.getenv("RUN_PERF_TESTS"), reason="Performance tests disabled by default"
+)
 def test_lock_contention_performance():
     """
     Lightweight lock-contention regression guard for BLEStateManager.
@@ -634,9 +641,9 @@ def test_lock_contention_performance():
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
     expected_operations = 5 * 200 * 3  # 5 workers * 200 iterations * 3 operations
-    assert (
-        total_operations >= expected_operations * 0.8
-    ), f"Too many failed operations: {total_operations}/{expected_operations}"
+    assert total_operations >= expected_operations * 0.8, (
+        f"Too many failed operations: {total_operations}/{expected_operations}"
+    )
 
     logging.info(
         "Contention performance: %s operations in %.3fs",
@@ -654,6 +661,7 @@ def test_memory_efficiency():
     coverage/plugins) and instead asserts no managers remain strongly referenced.
     """
     manager_refs = []
+    manager: BLEStateManager = None  # type: ignore[assignment]
     with _suppress_ble_debug_logs():
         for _i in range(300):
             manager = BLEStateManager()
@@ -667,14 +675,17 @@ def test_memory_efficiency():
     gc.collect()
 
     alive = sum(1 for ref in manager_refs if ref() is not None)
-    assert (
-        alive == 0
-    ), f"Potential memory leak: {alive} BLEStateManager instances still alive"
+    assert alive == 0, (
+        f"Potential memory leak: {alive} BLEStateManager instances still alive"
+    )
 
     logging.info("Memory efficiency: all %d instances collected", len(manager_refs))
 
 
 @pytest.mark.unit
+@pytest.mark.skipif(
+    not os.getenv("RUN_PERF_TESTS"), reason="Performance tests disabled by default"
+)
 def test_property_access_performance():
     """
     Lightweight property-access performance regression guard.

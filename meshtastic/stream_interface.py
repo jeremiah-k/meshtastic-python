@@ -10,6 +10,7 @@ from typing import Optional, cast
 import serial  # type: ignore[import-untyped]
 
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import mesh_pb2
 from meshtastic.util import is_windows11, stripnl
 
 START1 = 0x94
@@ -92,7 +93,7 @@ class StreamInterface(MeshInterface):
         # if the reading statemachine was parsing a bad packet make sure
         # we write enough start bytes to force it to resync (we don't use START1
         # because we want to ensure it is looking for START1)
-        p: bytes = bytearray([START2] * 32)
+        p: bytes = bytes([START2] * 32)
         self._writeBytes(p)
         time.sleep(0.1)  # wait 100ms to give device time to start running
 
@@ -134,7 +135,7 @@ class StreamInterface(MeshInterface):
         else:
             return None
 
-    def _sendToRadioImpl(self, toRadio) -> None:
+    def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Send a ToRadio protobuf to the device."""
         logger.debug(f"Sending: {stripnl(toRadio)}")
         b: bytes = toRadio.SerializeToString()

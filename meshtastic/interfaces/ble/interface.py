@@ -967,6 +967,12 @@ class BLEInterface(MeshInterface):
                 params: Dict[str, Any] = {"address": address, "name": address}
                 if supports_details:
                     params["details"] = {}  # Empty details for synthetic device
+                logger.debug(
+                    "Creating synthetic BLEDevice for direct connect: address=%s, sanitized=%s, params=%s",
+                    address,
+                    sanitized,
+                    list(params.keys()),
+                )
                 return BLEDevice(**params)
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
@@ -1492,8 +1498,7 @@ class BLEInterface(MeshInterface):
         )
 
         if self._exit_handler:
-            with contextlib.suppress(ValueError):
-                atexit.unregister(self._exit_handler)
+            atexit.unregister(self._exit_handler)
             self._exit_handler = None
 
         # Use unified state lock

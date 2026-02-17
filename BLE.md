@@ -14,10 +14,10 @@ This document summarizes the current BLE implementation, common pitfalls seen in
 When code paths need multiple BLE locks, always acquire in this order:
 
 1. Global registry lock (`meshtastic/interfaces/ble/gating.py:_REGISTRY_LOCK`)
-1. Per-address lock (`meshtastic/interfaces/ble/gating.py:_addr_lock_context`)
-1. Interface connect lock (`meshtastic/interfaces/ble/interface.py:_connect_lock`)
-1. Interface state lock (`meshtastic/interfaces/ble/interface.py:_state_lock`)
-1. Interface disconnect lock (`meshtastic/interfaces/ble/interface.py:_disconnect_lock`)
+2. Per-address lock (`meshtastic/interfaces/ble/gating.py:_addr_lock_context`)
+3. Interface connect lock (`meshtastic/interfaces/ble/interface.py:_connect_lock`)
+4. Interface state lock (`meshtastic/interfaces/ble/interface.py:_state_lock`)
+5. Interface disconnect lock (`meshtastic/interfaces/ble/interface.py:_disconnect_lock`)
 
 `_handle_disconnect()` intentionally acquires `_disconnect_lock` first in non-blocking mode. If another disconnect handler is active, it exits early instead of waiting, which prevents lock inversion while still deduplicating callbacks.
 

@@ -12,7 +12,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -70,7 +70,7 @@ except (ImportError, AttributeError) as exc:
 logger = logging.getLogger(__name__)
 
 
-def onReceive(packet, interface) -> None:
+def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
     """Callback invoked when a packet arrives."""
     args = mt_config.args
     try:
@@ -81,6 +81,8 @@ def onReceive(packet, interface) -> None:
         if (
             args
             and args.sendtext
+            and d is not None
+            and interface.myInfo is not None
             and packet["to"] == interface.myInfo.my_node_num
             and d.get("portnum", portnums_pb2.PortNum.UNKNOWN_APP)
             == portnums_pb2.PortNum.TEXT_MESSAGE_APP
@@ -102,7 +104,7 @@ def onReceive(packet, interface) -> None:
         print(f"Warning: Error processing received packet: {ex}.")
 
 
-def onConnection(interface, topic: Any = pub.AUTO_TOPIC) -> None:
+def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
     """Callback invoked when we connect/disconnect from a radio."""
     _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
@@ -1504,7 +1506,18 @@ def common():
             elif args.host:
                 try:
                     if ":" in args.host:
-                        tcp_hostname, tcp_port = args.host.split(":")
+                        tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
+                        # Handle bracketed IPv6 addresses like [::1]:4403
+                        if tcp_hostname.startswith("[") and tcp_hostname.endswith("]"):
+                            tcp_hostname = tcp_hostname[1:-1]
+                        try:
+                            tcp_port = int(tcp_port_str)
+                            if not (1 <= tcp_port <= 65535):
+                                raise ValueError(f"Port {tcp_port} out of range")
+                        except ValueError:
+                            meshtastic.util.our_exit(
+                                f"Error: invalid TCP port in --host '{args.host}'.", 1
+                            )
                     else:
                         tcp_hostname = args.host
                         tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
