@@ -174,7 +174,11 @@ def test_fixme():
 @pytest.mark.unit
 @patch("meshtastic.util.check_if_newer_version", return_value=None)
 def test_support_info(_mock_check_if_newer_version, capsys):
-    """Test support_info."""
+    """
+    Verify support_info outputs system and environment information and writes no error output.
+    
+    Asserts that captured stdout contains the "System", "Platform", "Machine", and "Executable" headings and that stderr is empty.
+    """
     support_info()
     out, err = capsys.readouterr()
     assert re.search(r"System", out, re.MULTILINE)
@@ -189,6 +193,12 @@ def test_catchAndIgnore(caplog):
     """Test catchAndIgnore() does not actually throw an exception, but just logs."""
 
     def some_closure():
+        """
+        Raise an Exception with the message "foo".
+        
+        Raises:
+            Exception: Always raised with message "foo".
+        """
         raise Exception("foo")  # pylint: disable=W0719
 
     with caplog.at_level(logging.DEBUG):
@@ -284,12 +294,26 @@ def test_findPorts_when_none_found(patch_comports):
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports")
 def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports):
-    """Test findPorts()."""
+    """
+    Verify that findPorts() removes duplicate serial devices when eliminate_duplicates is True.
+    
+    Sets the patched comports() to return two port-like objects representing the same physical device and asserts findPorts(eliminate_duplicates=True) returns only the deduplicated device path.
+    
+    Parameters:
+        patch_comports: pytest fixture that patches and returns the serial.tools.list_ports.comports function.
+    """
 
     class TempPort:
         """temp class for port."""
 
         def __init__(self, device=None, vid=None):
+            """
+            Initialize the instance with optional device identifier and vendor id.
+            
+            Parameters:
+                device (str | None): Optional device identifier or path.
+                vid (int | str | None): Optional vendor identifier.
+            """
             self.device = device
             self.vid = vid
 
@@ -305,12 +329,23 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports
 def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed(
     patch_comports,
 ):
-    """Test findPorts()."""
+    """
+    Verifies that findPorts(eliminate_duplicates=True) returns the expected single port when duplicate devices are reported in reversed order.
+    
+    Patches the comports listing to simulate two ports that should be considered duplicates and asserts the duplicate-elimination logic selects the correct remaining device.
+    """
 
     class TempPort:
         """temp class for port."""
 
         def __init__(self, device=None, vid=None):
+            """
+            Initialize the instance with optional device identifier and vendor id.
+            
+            Parameters:
+                device (str | None): Optional device identifier or path.
+                vid (int | str | None): Optional vendor identifier.
+            """
             self.device = device
             self.vid = vid
 
@@ -330,6 +365,13 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(patch_comp
         """temp class for port."""
 
         def __init__(self, device=None, vid=None):
+            """
+            Initialize the instance with optional device identifier and vendor id.
+            
+            Parameters:
+                device (str | None): Optional device identifier or path.
+                vid (int | str | None): Optional vendor identifier.
+            """
             self.device = device
             self.vid = vid
 
@@ -549,7 +591,12 @@ def test_active_ports_on_supported_devices_mac_no_duplicates_check(
 @patch("subprocess.getstatusoutput")
 @patch("platform.system", return_value="Darwin")
 def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, mock_sp):
-    """Test active_ports_on_supported_devices()."""
+    """
+    Ensure duplicate mac device entries are deduplicated when duplicate checking is enabled.
+    
+    Verifies that given a mac-style device listing containing two related device paths, active_ports_on_supported_devices(...)
+    returns only the non-duplicate host port when the duplicates check is enabled.
+    """
     mock_sp.return_value = (
         None,
         (

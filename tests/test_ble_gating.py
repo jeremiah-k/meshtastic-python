@@ -148,7 +148,15 @@ class TestMarkDisconnected:
 
     @pytest.fixture(autouse=True)
     def _mark_default_connected(self, clear_registry):
-        """Set up a connected address before each test."""
+        """
+        Mark a fixed test address as connected before each test.
+        
+        This autouse fixture ensures the registry is cleared (via the `clear_registry` fixture)
+        and then records the address "aabbccddeeff" as connected for the duration of the test.
+        
+        Parameters:
+            clear_registry: pytest fixture that clears gating registries before use.
+        """
         _ = clear_registry
         _mark_connected("aabbccddeeff")
 
@@ -283,10 +291,9 @@ class TestIsCurrentlyConnectedElsewhere:
             def is_connection_connected(self):
                 """
                 Report whether the associated connection is currently established.
-
+                
                 Returns:
-                    bool: `True` if the connection is established, `False` otherwise.
-
+                    `True` if the connection is established, `False` otherwise.
                 """
                 return False
 

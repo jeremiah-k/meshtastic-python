@@ -82,9 +82,9 @@ class BLEStateManager:
 
     def __init__(self) -> None:
         """
-        Initialize the BLEStateManager with a reentrant lock and set the initial connection state.
-
-        Creates the internal reentrant lock used to serialize state transitions and sets the manager's state to ConnectionState.DISCONNECTED.
+        Set up the BLEStateManager's synchronization primitive and initial connection state.
+        
+        Create a reentrant lock used to serialize state transitions and set the initial state to ConnectionState.DISCONNECTED.
         """
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
@@ -92,11 +92,10 @@ class BLEStateManager:
     @property
     def lock(self) -> RLock:
         """
-        The reentrant lock used to synchronize BLE state transitions.
-
+        Access the reentrant lock used to serialize BLE state transitions.
+        
         Returns:
             RLock: The internal reentrant lock protecting state changes.
-
         """
         return self._state_lock
 
@@ -129,23 +128,20 @@ class BLEStateManager:
     @property
     def is_closing(self) -> bool:
         """
-        Whether the BLE interface is in the closing state (DISCONNECTING).
-
+        Indicates whether the BLE interface is in the DISCONNECTING state.
+        
         Returns:
             True if the current connection state is DISCONNECTING, False otherwise.
-
         """
         return self.state == ConnectionState.DISCONNECTING
 
     @property
     def can_connect(self) -> bool:
         """
-        Indicates whether a new BLE connection may be initiated.
-
-        Returns
-        -------
-            True if the current state is DISCONNECTED or ERROR, False otherwise.
-
+        Return whether a new BLE connection may be initiated.
+        
+        Returns:
+            True if the current state is CONNECTED is not required; `True` if the current state is DISCONNECTED or ERROR, `False` otherwise.
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
@@ -276,39 +272,86 @@ class BLEStateManager:
     # CamelCase aliases for public API consistency
     @property
     def isConnected(self) -> bool:
-        """CamelCase alias for is_connected."""
+        """
+        Indicates whether the BLE connection is currently CONNECTED.
+        
+        Returns:
+            bool: `True` if the current state is CONNECTED, `False` otherwise.
+        """
         return self.is_connected
 
     @property
     def isClosing(self) -> bool:
-        """CamelCase alias for is_closing."""
+        """
+        Whether the BLE connection is in the disconnecting state.
+        
+        Returns:
+            True if the current state is DISCONNECTING, False otherwise.
+        """
         return self.is_closing
 
     @property
     def canConnect(self) -> bool:
-        """CamelCase alias for can_connect."""
+        """
+        Indicates whether a connection may be initiated from the current state.
+        
+        Returns:
+            `true` if the current state is DISCONNECTED or ERROR, `false` otherwise.
+        """
         return self.can_connect
 
     @property
     def isConnecting(self) -> bool:
-        """CamelCase alias for is_connecting."""
+        """
+        CamelCase alias for the is_connecting property.
+        
+        Returns:
+            `True` if the manager's state is CONNECTING or RECONNECTING, `False` otherwise.
+        """
         return self.is_connecting
 
     @property
     def isActive(self) -> bool:
-        """CamelCase alias for is_active."""
+        """
+        Alias exposing the active connection status using a camelCase name for compatibility.
+        
+        Returns:
+            True if the state is CONNECTING, RECONNECTING, or CONNECTED, False otherwise.
+        """
         return self.is_active
 
     def transitionTo(self, new_state: ConnectionState) -> bool:
-        """CamelCase alias for transition_to."""
+        """
+        Attempt to change the BLE connection state to the provided target state.
+        
+        Parameters:
+            new_state (ConnectionState): Target connection state to transition to.
+        
+        Returns:
+            True if the state was changed, False otherwise.
+        """
         return self.transition_to(new_state)
 
     def transitionIfIn(
         self, expected_states: Set[ConnectionState], new_state: ConnectionState
     ) -> bool:
-        """CamelCase alias for transition_if_in."""
+        """
+        Attempt to transition the state to `new_state` only if the current state is in `expected_states`.
+        
+        Parameters:
+            expected_states (Set[ConnectionState]): States that permit the transition.
+            new_state (ConnectionState): Target state to transition to if allowed.
+        
+        Returns:
+            bool: `True` if the transition occurred, `False` otherwise.
+        """
         return self.transition_if_in(expected_states, new_state)
 
     def resetToDisconnected(self) -> bool:
-        """CamelCase alias for reset_to_disconnected."""
+        """
+        Force the manager's state to DISCONNECTED.
+        
+        Returns:
+            bool: `True` if the state changed to DISCONNECTED, `False` otherwise.
+        """
         return self.reset_to_disconnected()

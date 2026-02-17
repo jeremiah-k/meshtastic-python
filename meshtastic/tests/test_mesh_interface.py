@@ -32,6 +32,16 @@ class FakeTimer:
     created: ClassVar[list["FakeTimer"]] = []
 
     def __init__(self, interval, function):
+        """
+        Initialize a FakeTimer instance and register it in the class registry.
+        
+        Parameters:
+            interval (float): Time interval in seconds for the timer.
+            function (Callable): Callback to be invoked when the timer fires.
+        
+        Notes:
+            The new instance is appended to FakeTimer.created for test inspection.
+        """
         self.interval = interval
         self.function = function
         self.daemon = False
@@ -44,13 +54,24 @@ class FakeTimer:
         self.started = True
 
     def cancel(self):
-        """Record that the fake timer was cancelled."""
+        """
+        Mark the fake timer as cancelled.
+        
+        Sets the instance's cancelled flag to True so tests can detect that the timer has been cancelled.
+        """
         self.cancelled = True
 
 
 @pytest.fixture(name="fake_timer_cls")
 def _fake_timer_cls_fixture(monkeypatch):
-    """Patch mesh_interface Timer with a deterministic fake timer."""
+    """
+    Replace meshtastic.mesh_interface.threading.Timer with a deterministic FakeTimer for tests.
+    
+    Clears any previously created FakeTimer instances and installs FakeTimer in place of threading.Timer so tests can control timer behavior.
+    
+    Returns:
+        The FakeTimer class that was installed.
+    """
     FakeTimer.created.clear()
     monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
     return FakeTimer
@@ -635,7 +656,11 @@ def test_getCannedMessage():
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_getRingtone():
-    """Test MeshInterface.getRingtone()."""
+    """
+    Verifies MeshInterface.getRingtone returns the ringtone provided by the local node.
+    
+    Asserts that when the local node's get_ringtone() returns a string, MeshInterface.getRingtone() forwards that exact string.
+    """
     iface = MeshInterface(noProto=True)
     node = MagicMock()
     node.get_ringtone.return_value = "foo,bar"

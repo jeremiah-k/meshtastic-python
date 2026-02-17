@@ -307,17 +307,15 @@ def _onTelemetryReceive(iface, asDict):
 
 def _receiveInfoUpdate(iface, asDict):
     """
-    Update per-node metadata fields based on information present in a received packet dictionary.
-
-    Parameters
-    ----------
-        iface: The interface instance whose node store will be updated.
-        asDict (dict): A parsed packet dictionary; if it contains a "from" key, the node identified by that value will have these fields set:
-                - lastReceived: the full packet dictionary
-                - lastHeard: value of `rxTime` from the packet (or None)
-                - snr: value of `rxSnr` from the packet (or None)
-                - hopLimit: value of `hopLimit` from the packet (or None)
-
+    Update per-node metadata from a received packet dictionary.
+    
+    Parameters:
+    	iface: Interface instance whose node store will be updated.
+    	asDict (dict): Parsed packet dictionary. If it contains a "from" key, the node identified by that value will have these fields set:
+    		- lastReceived: the full packet dictionary
+    		- lastHeard: value of `rxTime` from the packet (or None)
+    		- snr: value of `rxSnr` from the packet (or None)
+    		- hopLimit: value of `hopLimit` from the packet (or None)
     """
     if "from" in asDict:
         node = iface._getOrCreateByNum(asDict["from"])

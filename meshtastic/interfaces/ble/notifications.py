@@ -20,19 +20,13 @@ class NotificationManager:
 
     def __init__(self) -> None:
         """
-        Create a NotificationManager and initialize its thread-safe subscription state.
-
-        Attributes
-        ----------
-            _active_subscriptions (dict[int, tuple[str, Callable[[Any, Any], None]]]):
-                Maps a unique subscription token to a (characteristic, callback) pair for each tracked subscription.
-            _characteristic_to_callback (dict[str, Callable[[Any, Any], None]]):
-                Maps a characteristic UUID to the most recently registered callback for that characteristic.
-            _subscription_counter (int):
-                Monotonic counter used to allocate unique subscription tokens.
-            _lock (RLock):
-                Re-entrant lock protecting access to the subscription state for thread safety.
-
+        Initialize a NotificationManager and its thread-safe subscription state.
+        
+        Initializes the following internal attributes used for tracking subscriptions:
+        - _active_subscriptions: maps a unique subscription token to a (characteristic, callback) pair.
+        - _characteristic_to_callback: maps a characteristic UUID to the most recently registered callback.
+        - _subscription_counter: monotonic counter used to allocate unique subscription tokens.
+        - _lock: re-entrant lock protecting access to subscription state.
         """
         self._active_subscriptions: Dict[
             int, Tuple[str, Callable[[Any, Any], None]]
@@ -106,14 +100,11 @@ class NotificationManager:
         self, client: "BLEClient", *, timeout: Optional[float]
     ) -> None:
         """
-        Best-effort stop notifications for all tracked characteristics on the provided client.
-
-        Parameters
-        ----------
-            client (BLEClient): BLE client used to stop notifications.
-            timeout (float | None): Per-unsubscribe timeout passed to the client's
-                `stop_notify` method.
-
+        Stop notifications for all tracked characteristics on the given BLE client, suppressing and logging any errors.
+        
+        Parameters:
+            client: BLE client used to stop notifications.
+            timeout: Per-unsubscribe timeout passed to the client's `stop_notify` method; may be None.
         """
         with self._lock:
             characteristics = list(self._characteristic_to_callback.keys())
@@ -162,11 +153,10 @@ class NotificationManager:
 
     def __len__(self) -> int:
         """
-        Return the number of active BLE notification subscriptions being tracked.
-
+        Number of active BLE notification subscriptions being tracked.
+        
         Returns:
             int: Number of active subscriptions currently tracked.
-
         """
         with self._lock:
             return len(self._active_subscriptions)
@@ -175,11 +165,10 @@ class NotificationManager:
         self, characteristic: str
     ) -> Optional[Callable[[Any, Any], None]]:
         """
-        Return the most recently registered callback for a BLE characteristic.
-
+        Get the most recently registered callback for a BLE characteristic.
+        
         Returns:
-            The callback for the given characteristic, or None if no callback is registered.
-
+            The callback for the given characteristic, or `None` if no callback is registered.
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)

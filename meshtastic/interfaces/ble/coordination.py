@@ -28,13 +28,13 @@ class ThreadCoordinator:
 
     def __init__(self) -> None:
         """
-        Create a ThreadCoordinator used to track and manage threads and events.
-
-        Initializes:
-            _lock (RLock): reentrant lock protecting internal state.
-            _threads (List[Thread]): list of tracked Thread objects.
-            _events (dict[str, Event]): mapping of event names to threading.Event objects for coordination.
-            _cleaned_up (bool): flag indicating cleanup() has been called.
+        Initialize the ThreadCoordinator that centralizes thread and event management.
+        
+        Initializes internal state:
+            _lock (RLock): reentrant lock protecting coordinator state.
+            _threads (List[Thread]): list of tracked Thread objects (initially empty).
+            _events (Dict[str, Event]): mapping of event names to threading.Event objects (initially empty).
+            _cleaned_up (bool): flag indicating whether cleanup() has been performed (initially False).
         """
         self._lock = RLock()
         self._threads: List[Thread] = []
@@ -113,16 +113,15 @@ class ThreadCoordinator:
 
     def create_event(self, name: str) -> Event:
         """
-        Create and register an Event object under the given name.
-
-        Parameters
-        ----------
-            name (str): Name used as the key to register the event.
-
-        Returns
-        -------
+        Register and return a new Event object under the given name.
+        
+        If an event with the same name already exists, it will be replaced and a warning is logged.
+        
+        Parameters:
+            name (str): Key under which the Event will be stored.
+        
+        Returns:
             Event: The created Event instance registered under `name`.
-
         """
         with self._lock:
             if name in self._events:
@@ -132,7 +131,15 @@ class ThreadCoordinator:
             return event
 
     def createEvent(self, name: str) -> Event:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase compatibility wrapper that creates and returns an Event registered under the given name. Issues a DeprecationWarning when called.
+        
+        Parameters:
+            name (str): The name to register the Event under.
+        
+        Returns:
+            Event: The newly created and registered Event.
+        """
         warnings.warn(
             "createEvent is deprecated; use create_event instead",
             DeprecationWarning,
@@ -152,7 +159,15 @@ class ThreadCoordinator:
             return self._events.get(name)
 
     def getEvent(self, name: str) -> Optional[Event]:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Compatibility wrapper for retrieving a named event; emits a DeprecationWarning.
+        
+        Parameters:
+            name (str): Name of the tracked event to retrieve.
+        
+        Returns:
+            Event or None: The registered Event with the given name, or None if no such event exists.
+        """
         warnings.warn(
             "getEvent is deprecated; use get_event instead",
             DeprecationWarning,
@@ -162,9 +177,12 @@ class ThreadCoordinator:
 
     def start_thread(self, thread: Thread) -> None:
         """
-        Start the tracked thread if it has not been started yet.
-
-        Does nothing for threads not registered with this coordinator or for threads that have already been started.
+        Start a tracked Thread if it has not been started yet.
+        
+        If the given thread is not registered with this coordinator or has already been started, no action is taken.
+        
+        Parameters:
+            thread (Thread): The thread to start if it is tracked and not yet started.
         """
         with self._lock:
             # thread.ident is None only if the thread has never been started
@@ -204,7 +222,13 @@ class ThreadCoordinator:
             thread.join(timeout=timeout)
 
     def joinThread(self, thread: Thread, timeout: Optional[float] = None) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase alias that joins a tracked Thread if it is alive and not the current thread; emits a DeprecationWarning and delegates to the new behavior.
+        
+        Parameters:
+        	thread (Thread): The thread to join; only joined if tracked by the coordinator, alive, and not the current thread.
+        	timeout (Optional[float]): Maximum seconds to wait for the thread to finish, or None to wait indefinitely.
+        """
         warnings.warn(
             "joinThread is deprecated; use join_thread instead",
             DeprecationWarning,
@@ -241,7 +265,11 @@ class ThreadCoordinator:
         self.join_all(timeout=timeout)
 
     def _set_event_no_lock(self, name: str) -> None:
-        """Set a tracked event without acquiring the coordinator lock."""
+        """
+        Set the named tracked event without acquiring the coordinator lock.
+        
+        If no event with the given name is registered, this is a no-op.
+        """
         event = self._events.get(name)
         if event is not None:
             event.set()
@@ -277,14 +305,12 @@ class ThreadCoordinator:
 
     def clear_event(self, name: str) -> None:
         """
-        Clear the coordinator's tracked Event with the given name.
-
-        If an Event with `name` is tracked, clear its flag; otherwise do nothing.
-
-        Parameters
-        ----------
+        Clear the tracked event with the given name.
+        
+        If an event with `name` exists, clear its flag so waiting threads will block until it is set again; otherwise do nothing.
+        
+        Parameters:
             name (str): Name of the tracked event to clear.
-
         """
         with self._lock:
             self._clear_event_no_lock(name)
@@ -300,17 +326,14 @@ class ThreadCoordinator:
 
     def wait_for_event(self, name: str, timeout: Optional[float] = None) -> bool:
         """
-        Waits for a named tracked event to be set or until the timeout elapses.
-
-        Parameters
-        ----------
-            name (str): Name of the tracked event to wait for.
-            timeout (float | None): Maximum time in seconds to wait; None means wait indefinitely.
-
-        Returns
-        -------
-            bool: True if the event was set before the timeout, False otherwise (also False if the event is not tracked).
-
+        Waits for the tracked event named `name` to be set or until `timeout` seconds elapse.
+        
+        Parameters:
+            name (str): Name of the tracked event.
+            timeout (float | None): Maximum time in seconds to wait; `None` means wait indefinitely.
+        
+        Returns:
+            `True` if the event was set before the timeout, `False` otherwise.
         """
         event = self.get_event(name)
         if event:
@@ -328,11 +351,10 @@ class ThreadCoordinator:
 
     def check_and_clear_event(self, name: str) -> bool:
         """
-        Clear the named tracked event if it exists and is currently set.
-
+        Clears the named tracked event if it exists and is currently set.
+        
         Returns:
             True if the named event existed and was set (and was cleared), False otherwise.
-
         """
         with self._lock:
             event = self._events.get(name)
@@ -342,7 +364,15 @@ class ThreadCoordinator:
             return False
 
     def checkAndClearEvent(self, name: str) -> bool:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase alias that checks whether a named event is set and clears it if so.
+        
+        Parameters:
+            name (str): Name of the tracked event to check and clear.
+        
+        Returns:
+            bool: `True` if the event existed and was set (and was cleared), `False` otherwise.
+        """
         warnings.warn(
             "checkAndClearEvent is deprecated; use check_and_clear_event instead",
             DeprecationWarning,
@@ -352,12 +382,10 @@ class ThreadCoordinator:
 
     def wake_waiting_threads(self, *event_names: str) -> None:
         """
-        Wake threads waiting on the named coordinator-managed events.
-
-        Parameters
-        ----------
-            event_names (str): One or more event names tracked by this coordinator; names not tracked are ignored.
-
+        Wake all coordinator-managed events named in event_names, causing any threads waiting on them to resume.
+        
+        Parameters:
+        	event_names (str): One or more event names to set; names that are not tracked are ignored.
         """
         with self._lock:
             for name in event_names:
@@ -374,12 +402,10 @@ class ThreadCoordinator:
 
     def clear_events(self, *event_names: str) -> None:
         """
-        Clear the named tracked events.
-
-        Parameters
-        ----------
-            event_names (str): One or more event names to clear; names not registered with the coordinator are ignored.
-
+        Clear the named tracked events, ignoring any names that are not registered.
+        
+        Parameters:
+            event_names (str): One or more event names to clear.
         """
         with self._lock:
             for name in event_names:
@@ -396,17 +422,9 @@ class ThreadCoordinator:
 
     def cleanup(self) -> None:
         """
-        Signal all tracked events, join live tracked threads (excluding the
-        current thread), and clear the coordinator's internal registries.
-
-        Sets every tracked Event to wake any waiting threads, collects all live
-        tracked Thread objects except the current thread, clears the internal
-        thread and event registries under the coordinator lock, then joins the
-        collected threads outside the lock using a short timeout defined by
-        EVENT_THREAD_JOIN_TIMEOUT.
-
-        After cleanup() is called, subsequent create_thread() calls will log
-        a warning and return an untracked thread to prevent orphaned threads.
+        Perform a coordinated shutdown by waking tracked events, joining live tracked threads (except the current thread), and clearing internal registries.
+        
+        Sets every tracked Event to wake any waiting threads, collects live tracked Thread objects (excluding the current thread), clears the coordinator's thread and event registries under the coordinator lock, and then joins the collected threads outside the lock using the timeout defined by EVENT_THREAD_JOIN_TIMEOUT. After cleanup is called, create_thread will log a warning and return an untracked Thread to avoid creating orphaned threads.
         """
         with self._lock:
             # Mark as cleaned up to prevent new thread creation

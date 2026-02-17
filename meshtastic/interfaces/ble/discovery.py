@@ -349,12 +349,10 @@ class DiscoveryManager:
         self, client_factory: Optional[Callable[..., BLEClient]] = None
     ) -> None:
         """
-        Create a DiscoveryManager that orchestrates BLE scanning and connected-device fallback.
-
-        Parameters
-        ----------
-            client_factory (Optional[Callable[..., BLEClient]]): Optional factory (callable or class) used to construct BLE client instances; primarily provided for testing or to override the default BLE client.
-
+        Create a DiscoveryManager that orchestrates BLE scanning and a connected-device fallback.
+        
+        Parameters:
+            client_factory (Optional[Callable[..., BLEClient]]): Optional factory used to construct BLE client instances; primarily for testing or to override the default BLE client.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
@@ -469,8 +467,6 @@ class DiscoveryManager:
     def close(self) -> None:
         """
         Close the manager's persistent discovery client and clear the internal reference.
-
-        If a client exists, attempts to close it and then sets the internal _client to None.
         """
         if self._client:
             try:

@@ -52,13 +52,13 @@ if TYPE_CHECKING:
     class _PubProtocol(Protocol):
         def sendMessage(self, topic: str, **kwargs: Any) -> None:
             """
-            Publish a message on a pubsub topic.
-
-            Parameters
-            ----------
+            Publish a message to the specified pubsub topic.
+            
+            The provided keyword arguments are assembled into the message payload and published under the given topic name.
+            
+            Parameters:
                 topic (str): Topic name to publish the message under.
-                **kwargs: Key/value pairs included as the message payload.
-
+                **kwargs: Arbitrary key/value pairs included as the message payload.
             """
             ...
 
@@ -95,20 +95,60 @@ class _FakeDiscoveryClient:
         *,
         async_await_impl: Optional[Callable[[Any, Optional[float]], Any]] = None,
     ) -> None:
+        """
+        Initialize the fake discovery client with a preset discovery result.
+        
+        Parameters:
+            discover_result (Dict[str, Any]): The value to return from discovery() calls; represents the simulated scan results.
+            async_await_impl (Optional[Callable[[Any, Optional[float]], Any]]): Optional function used to run/await coroutines passed to async_await(coro, timeout). If omitted, the default awaiting behavior is used.
+        """
         self._discover_result = discover_result
         self._async_await_impl = async_await_impl
 
     def __enter__(self) -> "_FakeDiscoveryClient":
+        """
+        Enter the context for the fake discovery client and return the client instance.
+        
+        Returns:
+            _FakeDiscoveryClient: The fake discovery client instance to be used inside the context manager.
+        """
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        """
+        Exit the context and indicate that any exception should propagate.
+        
+        Parameters:
+            exc_type (Any): Exception type if an exception was raised inside the context, otherwise None.
+            exc (Any): Exception instance if raised, otherwise None.
+            tb (Any): Traceback object if an exception was raised, otherwise None.
+        
+        Returns:
+            bool: `False` to indicate that exceptions should not be suppressed and must be re-raised.
+        """
         _ = (exc_type, exc, tb)
         return False
 
     def discover(self, **_kwargs: Any) -> Dict[str, Any]:
+        """
+        Provides the preconfigured discovery result for use in tests.
+        
+        Returns:
+            dict: The stored discovery result dictionary that this fake discovery client will return.
+        """
         return self._discover_result
 
     def async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
+        """
+        Run the given coroutine to completion using the configured await implementation or the default runner.
+        
+        Parameters:
+            coro: The coroutine or awaitable to execute.
+            timeout (float | None): Optional timeout in seconds for the await implementation to honor; may be ignored by the configured implementation.
+        
+        Returns:
+            The value returned by the awaited coroutine.
+        """
         if self._async_await_impl is not None:
             return self._async_await_impl(coro, timeout)
         return asyncio.run(coro)
@@ -116,7 +156,14 @@ class _FakeDiscoveryClient:
 
 def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Event:
     """
-    Patch `iface.close` to set and return a signaling event when close is invoked.
+    Wrap iface.close so calling close sets a threading.Event and then invokes the original close.
+    
+    Parameters:
+        monkeypatch: pytest-style monkeypatch fixture used to replace attributes on the interface.
+        iface: BLEInterface whose close method will be wrapped.
+    
+    Returns:
+        threading.Event: event that will be set when the patched close is invoked.
     """
     original_close = iface.close
     close_called = threading.Event()
@@ -127,6 +174,16 @@ def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Ev
         original_close: Callable[[], Any] = original_close,
         close_called: threading.Event = close_called,
     ) -> Any:
+        """
+        Mark the provided close event and invoke the original close callable.
+        
+        Parameters:
+            original_close (Callable[[], Any]): The original close function to invoke.
+            close_called (threading.Event): Event to set when close is invoked.
+        
+        Returns:
+            Any: The value returned by `original_close`.
+        """
         close_called.set()
         return original_close()
 
@@ -135,9 +192,20 @@ def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Ev
 
 
 def _assert_no_fallback(message: str) -> Callable[[Any, Optional[float]], Any]:
-    """Return an async_await stub that fails if fallback logic is invoked."""
+    """
+    Create a callable that raises an AssertionError with the given message when invoked.
+    
+    Returns:
+        callable: A function taking (coro, timeout=None) that always raises AssertionError(message).
+    """
 
     def _raise(_coro: Any, _timeout: Optional[float] = None) -> Any:
+        """
+        Raise an AssertionError to indicate this async-await path must not be used.
+        
+        The parameters are ignored; calling this function will always raise an AssertionError
+        carrying the configured failure message.
+        """
         raise AssertionError(message)
 
     return _raise
@@ -185,6 +253,16 @@ class _ReconnectTestNotificationManager:
     """Shared notification-manager test double for reconnect worker tests."""
 
     def __init__(self, *, fail_on_resubscribe: bool = False) -> None:
+        """
+        Initialize the test notification manager used by reconnect tests.
+        
+        Tracks how many times cleanup is requested and records resubscription attempts.
+        When `fail_on_resubscribe` is True, the manager is configured to simulate a failing
+        resubscribe operation.
+        
+        Parameters:
+            fail_on_resubscribe (bool): If True, resubscription attempts will be treated as failures.
+        """
         self.cleaned = 0
         self.resubscribed: List[Tuple[Any, float]] = []
         self._fail_on_resubscribe = fail_on_resubscribe
@@ -194,7 +272,16 @@ class _ReconnectTestNotificationManager:
         self.cleaned += 1
 
     def _resubscribe_all(self, client: Any, timeout: float) -> None:
-        """Record or reject resubscribe requests based on test configuration."""
+        """
+        Record a resubscription request for testing, or raise if resubscriptions are configured to fail.
+        
+        Parameters:
+            client (Any): The client object for which resubscription was requested.
+            timeout (float): The timeout (in seconds) to use for the resubscription attempt.
+        
+        Raises:
+            AssertionError: If the test instance is configured to fail on resubscribe.
+        """
         if self._fail_on_resubscribe:
             raise AssertionError("Should not resubscribe without a client")
         self.resubscribed.append((client, timeout))
@@ -204,6 +291,11 @@ class _ReconnectTestScheduler:
     """Shared reconnect-scheduler test double for reconnect worker tests."""
 
     def __init__(self) -> None:
+        """
+        Initialize the test scheduler and mark it as not cleared.
+        
+        Sets the `cleared` attribute to `False`. The `cleared` flag indicates whether clear_thread_reference() has been invoked.
+        """
         self.cleared = False
 
     def clear_thread_reference(self) -> None:
@@ -359,6 +451,16 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     def _init_connect_stub(
         iface: BLEInterface, _address: Optional[str] = None
     ) -> DummyClient:
+        """
+        Prepare the given BLEInterface for tests by installing and returning a pre-existing DummyClient and marking the interface as connected.
+        
+        Parameters:
+        	iface (BLEInterface): The interface whose client and connection state will be configured.
+        	_address (Optional[str]): Ignored; present for compatibility with call sites that pass an address.
+        
+        Returns:
+        	DummyClient: The dummy client instance that was attached to the interface.
+        """
         _ = _address
         with iface._state_lock:
             iface.client = initial_client  # type: ignore[assignment]
@@ -391,6 +493,19 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     thread_errors: "Queue[tuple[str, Exception]]" = Queue()
 
     def _gate_check_stub(addr_key: Optional[str], owner: Optional[Any] = None) -> bool:
+        """
+        Block test caller until the test releases a connection gate and record that the gate was reached.
+        
+        Parameters:
+            addr_key (Optional[str]): Address key that must be provided (asserted non-None); used to identify the gated connection.
+            owner (Optional[Any]): Ignored; present to match the gate-check signature.
+        
+        Returns:
+            bool: `False` always.
+        
+        Raises:
+            AssertionError: If `addr_key` is None or if waiting for the test to release the gate times out (12 seconds).
+        """
         _ = owner
         assert addr_key is not None
         connect_waiting.set()
@@ -399,6 +514,14 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         return False
 
     def _establish_connection_stub(*_args: Any, **_kwargs: Any) -> DummyClient:
+        """
+        Simulate a successful connection for tests by transitioning the interface state to CONNECTING then CONNECTED.
+        
+        Also sets the `establish_called` event to signal completion.
+        
+        Returns:
+            connected_client (DummyClient): A DummyClient instance representing the established connection.
+        """
         with iface._state_lock:
             assert iface._state_manager.transition_to(ConnectionState.CONNECTING)
             assert iface._state_manager.transition_to(ConnectionState.CONNECTED)
@@ -422,12 +545,22 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     monkeypatch.setattr(iface, "_disconnected", lambda: None)
 
     def _connect_worker() -> None:
+        """
+        Invoke the interface's connect routine for the configured target address and capture any exception raised.
+        
+        If an exception occurs, record a tuple ("connect", exc) into the `thread_errors` queue for later inspection by tests.
+        """
         try:
             iface.connect(target_address)
         except Exception as exc:  # noqa: BLE001 - test captures thread errors
             thread_errors.put(("connect", exc))
 
     def _disconnect_worker() -> None:
+        """
+        Invoke the interface's disconnect handler in a thread and capture any exception for test inspection.
+        
+        Calls iface._handle_disconnect("concurrency-test"). If an exception is raised, places a ("disconnect", exception) tuple into the thread_errors queue so test code can observe thread failures.
+        """
         try:
             iface._handle_disconnect("concurrency-test")
         except Exception as exc:  # noqa: BLE001 - test captures thread errors
@@ -471,33 +604,27 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
     class StubTransientPolicy:
         def should_retry(self, attempt: int) -> bool:
             """
-            Determine if a transient operation should be retried for the given zero-based attempt index.
-
-            Parameters
-            ----------
-                attempt (int): Zero-based retry attempt index (0 for first attempt).
-
-            Returns
-            -------
-                bool: `True` if `attempt` is less than 1 (only retry on the first attempt), `False` otherwise.
-
+            Decides whether to perform another retry based on the zero-based attempt index.
+            
+            Parameters:
+                attempt (int): Zero-based retry attempt index (0 for the first attempt).
+            
+            Returns:
+                bool: `True` if `attempt` is less than 1, `False` otherwise.
             """
             return attempt < 1
 
         def get_delay(self, attempt: int) -> float:
             """
-            Record the retry attempt index and return a zero-second delay.
-
-            Also appends the given attempt index to the surrounding test's `delay_attempts` list.
-
-            Parameters
-            ----------
+            Record the retry attempt index and return a zero-second retry delay.
+            
+            Appends the zero-based `attempt` index to the surrounding test's `delay_attempts` list.
+            
+            Parameters:
                 attempt (int): Zero-based retry attempt index to record.
-
-            Returns
-            -------
+            
+            Returns:
                 float: Delay in seconds (always 0.0).
-
             """
             delay_attempts.append(attempt)
             return 0.0
@@ -539,11 +666,10 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
         bleak_client: Optional[Any] = None,
     ) -> bool:
         """
-        Record a disconnect invocation and stop the receive loop.
-
+        Record the disconnect invocation and stop the receive loop.
+        
         Returns:
-            bool: `False` indicating the handler did not handle the disconnect.
-
+            `False` indicating the handler did not handle the disconnect.
         """
         disconnect_calls.append((source, client, bleak_client))
         iface._want_receive = False
@@ -579,11 +705,10 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
 
     def should_not_create_thread(*_args, **_kwargs):
         """
-        Prevent thread creation after the interface has been closed by failing if invoked.
-
+        Fail if thread creation is attempted after the interface has been closed.
+        
         Raises:
             AssertionError: Always raised with the message "create_thread should not be called after close()".
-
         """
         raise AssertionError("create_thread should not be called after close()")
 
@@ -644,13 +769,10 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
 
         def __init__(self):
             """
-            Prevent instantiation of the scanner when a guard condition fails.
-
-            Always raises an AssertionError with the message "BleakScanner should not be instantiated when guard fails".
-
+            Prevent creating the scanner when the guard condition fails.
+            
             Raises:
-                AssertionError: Indicates the scanner must not be created when the guard is false.
-
+                AssertionError: Always raised with message "BleakScanner should not be instantiated when guard fails".
             """
             raise AssertionError(
                 "BleakScanner should not be instantiated when guard fails"
@@ -713,17 +835,14 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
-        Return the predefined fallback device when called with the expected address and timeout.
-
-        Parameters
-        ----------
-            address (Optional[str]): Expected device address; must be "AA:BB".
-            timeout (float): Expected scan timeout; must equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
-
-        Returns
-        -------
-            List[BLEDevice]: A list containing the single `fallback_device`.
-
+        Return the predefined fallback BLE device when invoked with the expected address and timeout.
+        
+        Parameters:
+            address (Optional[str]): Expected device address; should be "AA:BB".
+            timeout (float): Expected scan timeout; should equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
+        
+        Returns:
+            List[BLEDevice]: A list containing the single fallback device.
         """
         assert address == "AA:BB"
         assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
@@ -753,19 +872,15 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
         address: Optional[str], timeout: float
     ) -> List[BLEDevice]:  # pragma: no cover - should not run
         """
-        Mark the connected-fallback as invoked for tests and return no devices.
-
-        This test helper sets the enclosing `fallback_called` flag to True to indicate the fallback was exercised.
-
-        Parameters
-        ----------
-            address (Optional[str]): Address passed to the fallback; recorded for test context but not used.
+        Mark the connected-fallback as invoked for tests and return an empty list.
+        
+        Sets the enclosing `fallback_called` flag to True to indicate the fallback was exercised.
+        Parameters:
+            address (Optional[str]): Address passed to the fallback; accepted but ignored.
             timeout (float): Timeout value passed to the fallback; accepted but ignored.
-
-        Returns
-        -------
+        
+        Returns:
             list: An empty list indicating no connected devices were found.
-
         """
         nonlocal fallback_called
         fallback_called = True
@@ -840,9 +955,19 @@ def test_discovery_manager_destructor_does_not_close_client():
 
     class StubDiscoveryClient:
         def __init__(self):
+            """
+            Initialize the test stub and reset its close-call counter.
+            
+            Sets the `close_calls` attribute to 0; tests increment this counter when the stub's `close()` is invoked to verify that discovery clients are not closed unexpectedly.
+            """
             self.close_calls = 0
 
         def close(self):
+            """
+            Record that the client's close method was invoked by incrementing an internal call counter.
+            
+            This method exists for tests to track how many times close() was called on the object by incrementing the `close_calls` attribute.
+            """
             self.close_calls += 1
 
     manager = DiscoveryManager()
@@ -920,14 +1045,12 @@ def test_close_handles_errors(monkeypatch, exc_cls):
     def _capture(topic, **kwargs):
         """
         Record a published pubsub message for test inspection.
-
-        Appends a tuple of (topic, kwargs) to the module-level `calls` list.
-
-        Parameters
-        ----------
-                topic (str): Pubsub topic identifier.
-                **kwargs: Additional message fields to capture.
-
+        
+        Appends (topic, kwargs) to the module-level `calls` list.
+        
+        Parameters:
+            topic (str): Pubsub topic identifier.
+            **kwargs: Additional message fields to capture.
         """
         calls.append((topic, kwargs))
 
@@ -1027,12 +1150,10 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
 
         def __init__(self, exception_type):
             """
-            Initialize the test BLE client to raise the provided exception from simulated faulting methods.
-
-            Parameters
-            ----------
-                exception_type (type | Exception): Exception class or exception instance that the client's faulting methods will raise.
-
+            Create a test BLE client configured to raise the given exception from its faulting methods.
+            
+            Parameters:
+                exception_type (type | Exception): Exception class or exception instance that the client will raise when its faulting methods are invoked.
             """
             super().__init__()
             self.exception_type = exception_type
@@ -1089,23 +1210,19 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
 
         def __init__(self):
             """
-            Initialize the instance and set the read operation counter.
-
-            Initializes the object via the superclass constructor and sets the `read_count`
-            attribute to 0 to track the number of read operations performed.
+            Initialize the instance and set the read operation counter to 0.
             """
             super().__init__()
             self.read_count = 0
 
         def read_gatt_char(self, *_args, **_kwargs):
             """
-            Simulate a GATT characteristic read that always fails and increments the instance's read counter.
-
-            Increments self.read_count, then raises a BleakError with the message "transient error".
-
+            Simulate a GATT characteristic read that increments self.read_count and always fails.
+            
+            Increments self.read_count and then raises a BleakError with the message "transient error".
+            
             Raises:
                 BleakError: Always raised with message "transient error".
-
             """
             self.read_count += 1
             raise BleakError("transient error")
@@ -1143,13 +1260,12 @@ def test_log_notification_registration(monkeypatch):
 
         def __init__(self):
             """
-            Create a mock BLE client that tracks notification registrations and which log characteristics it exposes.
-
+            Initialize the mock BLE client and its notification/characteristic tracking.
+            
             Attributes:
-                start_notify_calls (list): List of tuples recording each call to start_notify; each entry contains the arguments passed.
-                has_characteristic_map (dict): Mapping of characteristic UUID (str) to bool indicating presence. Initially sets
+                start_notify_calls (list): Recorded calls to start_notify as tuples of the arguments passed.
+                has_characteristic_map (dict): Maps characteristic UUID strings to booleans indicating presence. Initially sets
                     LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
-
             """
             super().__init__()
             self.start_notify_calls = []
@@ -1161,28 +1277,21 @@ def test_log_notification_registration(monkeypatch):
 
         def has_characteristic(self, uuid):
             """
-            Check whether the client has a characteristic with the given UUID.
-
-            Parameters
-            ----------
-            uuid: uuid.UUID or hashable
-                Characteristic UUID or key used in the client's characteristic map.
-
-            Returns
-            -------
-            bool
-                `True` if the UUID is present in the client's characteristic map, `False` otherwise.
-
+            Determine whether the client exposes a GATT characteristic identified by the given UUID.
+            
+            Parameters:
+                uuid (uuid.UUID or hashable): Characteristic UUID or key used to look up the client's characteristic map.
+            
+            Returns:
+                bool: `True` if the UUID is present in the client's characteristic map, `False` otherwise.
             """
             return self.has_characteristic_map.get(uuid, False)
 
         def start_notify(self, *_args, **_kwargs):
             """
             Record a notification registration by saving the characteristic UUID and its handler.
-
-            If called with at least two positional arguments, the first is treated as the characteristic UUID
-            and the second as the notification handler; the pair is appended to self.start_notify_calls.
-            Additional positional or keyword arguments are accepted and ignored.
+            
+            If called with at least two positional arguments, treats the first as the characteristic UUID and the second as the notification handler, and appends the pair to self.start_notify_calls. Any additional positional or keyword arguments are accepted and ignored.
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
@@ -1253,17 +1362,25 @@ def test_reconnect_scheduler_tracks_threads():
     class StubCoordinator:
         def __init__(self):
             """
-            Initialize the instance and create an empty `created` list for recording created items.
+            Initialize the instance and prepare storage for items created during tests.
+            
+            Creates an empty `created` list used to record items that this helper constructs.
             """
             self.created = []
 
         def create_thread(self, target, name, *, daemon=True, args=(), kwargs=None):
             """
-            Create and record a lightweight thread-like SimpleNamespace used by tests.
-
+            Create a lightweight thread-like SimpleNamespace, record it in self.created, and return it.
+            
+            Parameters:
+                target (callable): The callable intended to run when the thread is started.
+                name (str): Identifier for the thread-like object.
+                daemon (bool): Whether the thread-like object is considered a daemon.
+                args (tuple): Positional arguments associated with the target.
+                kwargs (dict | None): Keyword arguments associated with the target; treated as {} when None.
+            
             Returns:
-                SimpleNamespace: A thread-like object with attributes `target`, `args`, `name`, `daemon`, `kwargs`, `started` and a callable `is_alive()` that returns whether `started` is True. The object is appended to `self.created`.
-
+                SimpleNamespace: An object with attributes `target`, `args`, `name`, `daemon`, `kwargs`, and `started`, plus an `is_alive()` callable that returns whether `started` is True.
             """
             thread = SimpleNamespace(
                 target=target,
@@ -1281,11 +1398,9 @@ def test_reconnect_scheduler_tracks_threads():
         def start_thread(thread):
             """
             Mark a thread-like object's `started` attribute as True.
-
-            Parameters
-            ----------
-                thread (object): A thread-like object exposing a writable `started` attribute.
-
+            
+            Parameters:
+                thread (object): Thread-like object with a writable `started` attribute.
             """
             thread.started = True
 
@@ -1317,12 +1432,13 @@ def test_reconnect_worker_successful_attempt():
     class StubPolicy:
         def __init__(self):
             """
-            Initialize a stub retry policy used in reconnect tests.
-
+            Initialize the stub retry policy used by reconnect tests.
+            
+            Sets initial state for test assertions.
+            
             Attributes:
-                reset_called (bool): True if reset() has been invoked.
-                _attempt_count (int): Number of connection attempts recorded.
-
+                reset_called: True if reset() has been invoked.
+                _attempt_count: Number of connection attempts recorded.
             """
             self.reset_called = False
             self._attempt_count = 0
@@ -1330,33 +1446,31 @@ def test_reconnect_worker_successful_attempt():
         def reset(self):
             """
             Reset the retry policy to its initial state.
-
-            Sets the internal attempt counter to zero and marks that a reset occurred by setting `reset_called` to True.
+            
+            Sets the internal attempt counter to 0 and records that a reset occurred by setting `reset_called` to True.
             """
             self.reset_called = True
             self._attempt_count = 0
 
         def get_attempt_count(self):
             """
-            Retrieve the policy's recorded reconnect attempt count.
-
+            Get the number of reconnect attempts recorded by this policy.
+            
             Returns:
                 int: The number of reconnect attempts recorded.
-
             """
             return self._attempt_count
 
         def next_attempt(self):
             """
-            Compute the next retry delay and whether to continue retrying.
-
-            Increments the internal attempt counter.
-
+            Determine the delay before the next retry and whether another attempt should be made.
+            
+            Increments the internal attempt counter as a side effect.
+            
             Returns:
-                tuple: (delay_seconds, continue_retry) where `delay_seconds` is the number
-                of seconds to wait before the next attempt and `continue_retry` is `True`
-                to perform another attempt, `False` otherwise.
-
+                tuple: (delay_seconds, continue_retry)
+                    delay_seconds (float): Seconds to wait before the next attempt.
+                    continue_retry (bool): `True` to perform another attempt, `False` otherwise.
             """
             self._attempt_count += 1
             return 0.1, False
@@ -1366,22 +1480,21 @@ def test_reconnect_worker_successful_attempt():
 
         def __init__(self):
             """
-            Create a minimal stub interface used by reconnect-related tests.
-
-            Provides lightweight test doubles and records connect invocations.
-
+            Create a minimal stub interface for reconnect-related tests.
+            
+            Initializes lightweight test doubles and records connect invocations.
+            
             Attributes:
-                _reconnect_policy (StubPolicy): Controls retry/backoff behavior for reconnect attempts.
-                _notification_manager (_ReconnectTestNotificationManager): Tracks cleanup and resubscribe calls.
+                _reconnect_policy (StubPolicy): Retry/backoff policy used by reconnect attempts.
+                _notification_manager (_ReconnectTestNotificationManager): Tracks cleanup and resubscribe requests.
                 _state_manager (types.SimpleNamespace): Exposes `is_closing` (bool) to simulate shutdown state.
-                _reconnect_scheduler (_ReconnectTestScheduler): Manages reconnect thread references and clearing.
+                _reconnect_scheduler (_ReconnectTestScheduler): Manages reconnect thread reference and clearing.
                 auto_reconnect (bool): Whether automatic reconnect attempts are enabled.
                 is_connection_closing (bool): Simulates an in-progress connection close.
                 is_connection_connected (bool): Simulates an active connection state.
                 address (str): Device address used for connect attempts.
                 client: Placeholder BLE client object.
-                connect_calls (list): Records addresses passed to `connect` for test assertions.
-
+                connect_calls (list): Records addresses passed to `connect` for assertions in tests.
             """
             self._reconnect_policy = StubPolicy()
             self._notification_manager = _ReconnectTestNotificationManager()
@@ -1396,12 +1509,10 @@ def test_reconnect_worker_successful_attempt():
 
         def connect(self, address):
             """
-            Record that a connection was attempted for the given device address.
-
-            Parameters
-            ----------
-                address: Bluetooth address or device identifier that was attempted; appended to this instance's `connect_calls` list.
-
+            Record that a connection was attempted for the given device address by appending it to this instance's `connect_calls` list.
+            
+            Parameters:
+                address (str): Bluetooth address or device identifier that was attempted and will be appended to `connect_calls`.
             """
             self.connect_calls.append(address)
 
@@ -1454,12 +1565,11 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     class LimitedPolicy:
         def __init__(self):
             """
-            Create a stub reconnect policy used by tests.
-
+            Initialize a stub reconnect policy for tests, resetting counters and flags.
+            
             Attributes:
                 reset_called (bool): True if reset() has been invoked.
                 attempts (int): Number of connection attempts recorded.
-
             """
             self.reset_called = False
             self.attempts = 0
@@ -1467,7 +1577,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
         def reset(self):
             """
             Mark the retry policy as reset and clear its attempt counter.
-
+            
             Sets the internal `reset_called` flag to True and resets `attempts` to 0.
             """
             self.reset_called = True
@@ -1485,13 +1595,12 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
         def next_attempt(self):
             """
-            Compute the delay before the next retry and indicate whether another retry should be attempted.
-
+            Return the delay before the next retry and whether another retry should be attempted.
+            
             Returns:
                 tuple: (delay_seconds, continue_flag)
                     delay_seconds (float): Seconds to wait before the next retry (0.25).
-                    continue_flag (bool): `True` if another retry should be attempted, `False` otherwise.
-
+                    continue_flag (bool): `True` if another retry should be attempted for the current policy cycle, `False` otherwise.
             """
             self.attempts += 1
             return 0.25, self.attempts < 2
@@ -1531,13 +1640,12 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
         def connect(self, *_args, **_kwargs):
             """
-            Simulate a failing connection attempt for tests.
-
-            Increments self.connect_attempts and then raises self.BLEError with the message "boom".
-
+            Simulate a failing connection attempt for tests and record the attempt.
+            
+            Increments the instance's `connect_attempts` counter and raises an error to emulate a failed connection.
+            
             Raises:
-                self.BLEError: always raised with the message "boom".
-
+                self.BLEError: raised with message "boom".
             """
             self.connect_attempts += 1
             raise self.BLEError("boom")
