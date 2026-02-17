@@ -180,7 +180,6 @@ class TestMarkDisconnected:
         calling `_mark_disconnected("testaddress")`, the test asserts the lock
         has been removed from `_ADDR_LOCKS`.
         """
-        _ADDR_LOCKS.clear()
         # Use context manager for proper holder count management
         with _addr_lock_context("testaddress") as lock:
             with lock:

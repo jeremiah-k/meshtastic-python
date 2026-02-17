@@ -102,10 +102,9 @@ def onReceive(packet, interface) -> None:
         print(f"Warning: Error processing received packet: {ex}.")
 
 
-def onConnection(
-    interface, topic: Any = pub.AUTO_TOPIC
-) -> None:  # pylint: disable=W0613
+def onConnection(interface, topic: Any = pub.AUTO_TOPIC) -> None:
     """Callback invoked when we connect/disconnect from a radio."""
+    _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
     print(f"Connection changed: {topic_name}")
 
@@ -1167,8 +1166,7 @@ def onConnected(interface):
             if interface.noProto:
                 logger.warning("Not starting Tunnel - disabled by noProto")
             else:
-                # pylint: disable=C0415
-                from . import tunnel
+                from . import tunnel  # pylint: disable=C0415
 
                 if args.tunnel_net:
                     tunnel.Tunnel(interface, subnet=args.tunnel_net)

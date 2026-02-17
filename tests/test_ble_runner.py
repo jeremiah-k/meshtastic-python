@@ -419,6 +419,53 @@ class TestBLECoroutineRunner:
         # Count should be >= initial (may have incremented if thread didn't exit)
         assert current_count >= initial_count
 
+    def test_zombie_runner_increments_when_stop_times_out(self):
+        """stop() timeout path should increment zombie runner count."""
+
+        class FakeLoop:
+            def is_running(self) -> bool:
+                return True
+
+            def stop(self) -> None:
+                return None
+
+            def call_soon_threadsafe(self, fn):
+                fn()
+
+        class FakeThread:
+            def __init__(self):
+                self.join_calls = []
+
+            def is_alive(self) -> bool:
+                return True
+
+            def join(self, timeout=None):
+                self.join_calls.append(timeout)
+
+        runner = BLECoroutineRunner()
+        # Ensure we don't interfere with any real runner state.
+        runner.stop()
+
+        initial_count = get_zombie_runner_count()
+        fake_thread = FakeThread()
+        fake_loop = FakeLoop()
+        with runner._instance_lock:
+            runner._thread = fake_thread  # type: ignore[assignment]
+            runner._loop = fake_loop  # type: ignore[assignment]
+            runner._stop_requested = False
+
+        try:
+            assert runner.stop(timeout=0.0) is False
+            assert get_zombie_runner_count() == initial_count + 1
+            assert fake_thread.join_calls == [0.0]
+        finally:
+            # Restore singleton runner for subsequent tests.
+            with runner._instance_lock:
+                runner._thread = None
+                runner._loop = None
+                runner._stop_requested = False
+            runner._ensure_running()
+
     def test_stop_unregisters_atexit_handler(self, monkeypatch):
         """Explicit stop should unregister the runner atexit callback."""
         runner = BLECoroutineRunner()

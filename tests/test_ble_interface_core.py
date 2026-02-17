@@ -180,6 +180,36 @@ class _StrategyOverride(ConnectedStrategy):
         return await self._delegate(address, timeout)
 
 
+class _ReconnectTestNotificationManager:
+    """Shared notification-manager test double for reconnect worker tests."""
+
+    def __init__(self, *, fail_on_resubscribe: bool = False) -> None:
+        self.cleaned = 0
+        self.resubscribed: List[tuple[Any, float]] = []
+        self._fail_on_resubscribe = fail_on_resubscribe
+
+    def cleanup_all(self) -> None:
+        """Record notification cleanup calls."""
+        self.cleaned += 1
+
+    def resubscribe_all(self, client: Any, timeout: float) -> None:
+        """Record or reject resubscribe requests based on test configuration."""
+        if self._fail_on_resubscribe:
+            raise AssertionError("Should not resubscribe without a client")
+        self.resubscribed.append((client, timeout))
+
+
+class _ReconnectTestScheduler:
+    """Shared reconnect-scheduler test double for reconnect worker tests."""
+
+    def __init__(self) -> None:
+        self.cleared = False
+
+    def clear_thread_reference(self) -> None:
+        """Record that reconnect thread reference cleanup was requested."""
+        self.cleared = True
+
+
 def test_find_device_returns_single_scan_result():
     """find_device should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
@@ -1320,58 +1350,6 @@ def test_reconnect_worker_successful_attempt():
             self._attempt_count += 1
             return 0.1, False
 
-    class StubNotificationManager:
-        def __init__(self):
-            """
-            Initialize the stub notification manager state used by tests.
-
-            Attributes:
-                cleaned (int): Number of times cleanup_all() was called.
-                resubscribed (list[tuple]): Recorded arguments from resubscribe_all(client, timeout); each entry is (client, timeout).
-
-            """
-            self.cleaned = 0
-            self.resubscribed = []
-
-        def cleanup_all(self):
-            """
-            Record a completed notifications cleanup.
-
-            Increments the internal `cleaned` counter used by tests to track how many cleanup operations have occurred.
-            """
-            self.cleaned += 1
-
-        def resubscribe_all(self, client, timeout):
-            """
-            Record a BLE client and its notification resubscription timeout.
-
-            Parameters
-            ----------
-                client: The BLE client instance that was resubscribed.
-                timeout (float): Notification resubscription timeout in seconds.
-
-            """
-            self.resubscribed.append((client, timeout))
-
-    class StubScheduler:
-        def __init__(self):
-            """
-            Create the instance and initialize its cleared flag.
-
-            Attributes:
-                cleared (bool): Indicates whether the instance has been cleared; initially False.
-
-            """
-            self.cleared = False
-
-        def clear_thread_reference(self):
-            """
-            Mark that the scheduler no longer holds a reference to an active reconnect thread.
-
-            Sets an internal flag so a new reconnect thread may be scheduled.
-            """
-            self.cleared = True
-
     class DummyInterface:
         BLEError = RuntimeError
 
@@ -1383,9 +1361,9 @@ def test_reconnect_worker_successful_attempt():
 
             Attributes:
                 _reconnect_policy (StubPolicy): Controls retry/backoff behavior for reconnect attempts.
-                _notification_manager (StubNotificationManager): Tracks cleanup and resubscribe calls.
+                _notification_manager (_ReconnectTestNotificationManager): Tracks cleanup and resubscribe calls.
                 _state_manager (types.SimpleNamespace): Exposes `is_closing` (bool) to simulate shutdown state.
-                _reconnect_scheduler (StubScheduler): Manages reconnect thread references and clearing.
+                _reconnect_scheduler (_ReconnectTestScheduler): Manages reconnect thread references and clearing.
                 auto_reconnect (bool): Whether automatic reconnect attempts are enabled.
                 is_connection_closing (bool): Simulates an in-progress connection close.
                 is_connection_connected (bool): Simulates an active connection state.
@@ -1395,9 +1373,9 @@ def test_reconnect_worker_successful_attempt():
 
             """
             self._reconnect_policy = StubPolicy()
-            self._notification_manager = StubNotificationManager()
+            self._notification_manager = _ReconnectTestNotificationManager()
             self._state_manager = SimpleNamespace(is_closing=False)
-            self._reconnect_scheduler = StubScheduler()
+            self._reconnect_scheduler = _ReconnectTestScheduler()
             self.auto_reconnect = True
             self.is_connection_closing = False
             self.is_connection_connected = False
@@ -1507,52 +1485,6 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.attempts += 1
             return 0.25, self.attempts < 2
 
-    class StubNotificationManager:
-        def __init__(self):
-            """
-            Create a new instance and initialize the cleanup counter.
-
-            Attributes:
-                cleaned (int): Number of cleanup operations performed; starts at 0.
-
-            """
-            self.cleaned = 0
-
-        def cleanup_all(self):
-            """
-            Record a completed notifications cleanup.
-
-            Increments the internal `cleaned` counter used by tests to track how many cleanup operations have occurred.
-            """
-            self.cleaned += 1
-
-        def resubscribe_all(self, *_args, **_kwargs):  # pragma: no cover - no client
-            """
-            Prevent resubscription when no client is available.
-
-            Raises:
-                AssertionError: Always raised with the message "Should not resubscribe without a client".
-
-            """
-            raise AssertionError("Should not resubscribe without a client")
-
-    class StubScheduler:
-        def __init__(self):
-            """
-            Initialize the instance and set its cleared state.
-
-            Sets the attribute `cleared` to False to indicate the instance has not been cleared.
-            """
-            self.cleared = False
-
-        def clear_thread_reference(self):
-            """
-            Mark that the scheduler no longer holds a reference to an active reconnect thread.
-
-            Sets an internal flag so a new reconnect thread may be scheduled.
-            """
-            self.cleared = True
-
     class FailingInterface:
         BLEError = RuntimeError
 
@@ -1562,9 +1494,9 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
             Attributes:
                 _reconnect_policy (LimitedPolicy): Policy controlling reconnect attempts.
-                _notification_manager (StubNotificationManager): Manages notification cleanup and resubscription.
+                _notification_manager (_ReconnectTestNotificationManager): Manages notification cleanup and resubscription.
                 _state_manager (SimpleNamespace): Runtime state flags (contains `is_closing`).
-                _reconnect_scheduler (StubScheduler): Scheduler that manages reconnect threads.
+                _reconnect_scheduler (_ReconnectTestScheduler): Scheduler that manages reconnect threads.
                 auto_reconnect (bool): Whether automatic reconnect attempts are enabled.
                 is_connection_closing (bool): Indicates an in-progress connection close.
                 is_connection_connected (bool): Indicates whether the interface is currently connected.
@@ -1574,9 +1506,11 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
             """
             self._reconnect_policy = LimitedPolicy()
-            self._notification_manager = StubNotificationManager()
+            self._notification_manager = _ReconnectTestNotificationManager(
+                fail_on_resubscribe=True
+            )
             self._state_manager = SimpleNamespace(is_closing=False)
-            self._reconnect_scheduler = StubScheduler()
+            self._reconnect_scheduler = _ReconnectTestScheduler()
             self.auto_reconnect = True
             self.is_connection_closing = False
             self.is_connection_connected = False

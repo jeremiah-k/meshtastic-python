@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 class StreamInterface(MeshInterface):
     """Interface class for meshtastic devices over a stream link (serial, TCP, etc)."""
 
+    class StreamInterfaceError(MeshInterface.MeshInterfaceError):
+        """Raised when StreamInterface is instantiated without a concrete stream."""
+
     def __init__(  # pylint: disable=R0917
         self,
         debugOut: Optional[io.TextIOWrapper] = None,
@@ -43,19 +46,21 @@ class StreamInterface(MeshInterface):
 
         Raises
         ------
-            Exception: If this class has not been specialized with a concrete
+            StreamInterfaceError: If this class has not been specialized with a concrete
                 `self.stream` and `noProto` is False (indicates
                 StreamInterface is abstract).
 
         """
 
         if not hasattr(self, "stream") and not noProto:
-            raise Exception(  # pylint: disable=W0719
+            raise StreamInterface.StreamInterfaceError(
                 "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
             )
         self.stream: Optional[
             serial.Serial
         ]  # only serial uses this, TCPInterface overrides the relevant methods instead
+        if not hasattr(self, "stream"):
+            self.stream = None
         self._rxBuf = bytes()  # empty
         self._wantExit = False
 
@@ -123,7 +128,7 @@ class StreamInterface(MeshInterface):
                 # we sleep here to give the TBeam a chance to work
                 time.sleep(0.1)
 
-    def _readBytes(self, length) -> Optional[bytes]:
+    def _readBytes(self, length: int) -> Optional[bytes]:
         """Read an array of bytes from our stream."""
         if self.stream:
             return self.stream.read(length)

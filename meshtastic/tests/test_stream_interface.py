@@ -1,4 +1,4 @@
-"""Meshtastic unit tests for stream_interface.py"""
+"""Meshtastic unit tests for stream_interface.py."""
 
 import logging
 from unittest.mock import MagicMock
@@ -12,10 +12,10 @@ from ..stream_interface import StreamInterface
 
 @pytest.mark.unit
 def test_StreamInterface():
-    """Test that we cannot instantiate a StreamInterface based on noProto"""
-    with pytest.raises(Exception) as pytest_wrapped_e:
+    """Test that we cannot instantiate a StreamInterface based on noProto."""
+    with pytest.raises(StreamInterface.StreamInterfaceError) as pytest_wrapped_e:
         StreamInterface()
-    assert pytest_wrapped_e.type == Exception
+    assert pytest_wrapped_e.type == StreamInterface.StreamInterfaceError
 
 
 # Note: This takes a bit, so moving from unit to slow
@@ -23,7 +23,7 @@ def test_StreamInterface():
 @pytest.mark.usefixtures("reset_mt_config")
 def test_StreamInterface_with_noProto(caplog):
     """Test that we can instantiate a StreamInterface based on nonProto
-    and we can read/write bytes from a mocked stream
+    and we can read/write bytes from a mocked stream.
     """
     stream = MagicMock()
     test_data = b"hello"

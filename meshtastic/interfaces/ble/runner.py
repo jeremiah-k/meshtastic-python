@@ -191,11 +191,14 @@ class BLECoroutineRunner:
         @returns
             `true` if the background thread exists and is alive and the event loop exists and is running, `false` otherwise.
         """
+        with self._instance_lock:
+            thread = self._thread
+            loop = self._loop
         return (
-            self._thread is not None
-            and self._thread.is_alive()
-            and self._loop is not None
-            and self._loop.is_running()
+            thread is not None
+            and thread.is_alive()
+            and loop is not None
+            and loop.is_running()
         )
 
     def _ensure_running(self, timeout: Optional[float] = None) -> None:

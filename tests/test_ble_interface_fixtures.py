@@ -507,7 +507,7 @@ def stub_atexit(
     monkeypatch.setattr(ble_mod.atexit, "unregister", fake_unregister, raising=True)
     yield
     # run any registered functions manually to avoid surprising global state
-    for func in registered:
+    for func in list(registered):
         try:
             func()
         except Exception as e:  # noqa: BLE001 - teardown should log but continue

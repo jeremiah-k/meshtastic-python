@@ -268,10 +268,6 @@ class BLEStateManager:
 
         """
         with self._state_lock:
-            old_state = self._state
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
-            transitioned = self.transition_to(ConnectionState.DISCONNECTED)
-            if transitioned:
-                logger.debug("State reset: %s → disconnected", old_state.value)
-            return transitioned
+            return self.transition_to(ConnectionState.DISCONNECTED)

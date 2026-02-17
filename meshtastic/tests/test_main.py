@@ -2,12 +2,12 @@
 
 # pylint: disable=C0302,W0613,R0917
 
+import importlib.util
 import logging
 import os
 import platform
 import re
 import sys
-import importlib.util
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -842,7 +842,6 @@ def test_main_sendtext_with_dest(
     mock_hupcl,
     capsys,
     caplog,
-    iface_with_nodes,
 ):
     """Test --sendtext with --dest."""
     sys.argv = ["", "--sendtext", "hello", "--dest", "foo"]
@@ -2870,7 +2869,6 @@ def test_tunnel_tunnel_arg(
     mock_hupcl,
     mock_platform_system,
     caplog,
-    iface_with_nodes,
     capsys,
 ):
     """Test tunnel with tunnel arg (act like we are on a linux system)."""

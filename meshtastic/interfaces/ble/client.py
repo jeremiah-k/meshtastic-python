@@ -194,6 +194,8 @@ class BLEClient:
             connection state cannot be read).
 
         """
+        # Keep getattr() defensive: some tests instantiate via object.__new__
+        # and bypass __init__, so bleak_client may legitimately be absent.
         bleak_client = getattr(self, "bleak_client", None)
         if bleak_client is None:
             return False

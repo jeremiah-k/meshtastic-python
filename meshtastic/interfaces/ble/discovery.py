@@ -381,6 +381,10 @@ class DiscoveryManager:
         if self._client and getattr(self._client, "_closed", False):
             self._client = None
         if self._client is None:
+            # resolve_ble_module() may return a monkeypatched legacy
+            # meshtastic.ble_interface shim in tests/back-compat paths.
+            # Prefer self.client_factory, then ble_mod.BLEClient when present,
+            # and finally fall back to the directly imported BLEClient.
             ble_mod = resolve_ble_module()
             if ble_mod is None:
                 logger.debug("No BLE module found; using default BLEClient")

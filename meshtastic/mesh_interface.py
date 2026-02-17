@@ -199,7 +199,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.close()
 
     @staticmethod
-    def _printLogLine(line, interface):
+    def _printLogLine(line: str, interface: Any) -> None:
         """Print a line of log output."""
         if print_color is not None and interface.debugOut == sys.stdout:
             # this isn't quite correct (could cause false positives), but currently our formatting differs between different log representations
@@ -1684,13 +1684,11 @@ class MeshInterface:  # pylint: disable=R0902
                 timer.daemon = True
                 self.heartbeatTimer = timer
                 timer.start()
-            # Final guard: check _closing one more time before sending heartbeat
-            # to avoid sending after shutdown has started
             with self._heartbeat_lock:
                 if self._closing:
                     timer.cancel()
                     return
-            self.sendHeartbeat()
+                self.sendHeartbeat()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
 

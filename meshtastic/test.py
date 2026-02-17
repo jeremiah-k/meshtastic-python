@@ -2,12 +2,11 @@
 messages and report back if successful.
 """
 
+import io
 import logging
 import sys
 import time
 import traceback
-import io
-
 from typing import Any, List, Optional
 
 try:
@@ -50,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 def onReceive(packet, interface) -> None:
-    """Callback invoked when a packet arrives"""
+    """Callback invoked when a packet arrives."""
     if sendingInterface == interface:
         pass
         # print("Ignoring sending interface")
@@ -65,12 +64,12 @@ def onReceive(packet, interface) -> None:
 
 
 def onNode(node) -> None:
-    """Callback invoked when the node DB changes"""
+    """Callback invoked when the node DB changes."""
     print(f"Node changed: {node}")
 
 
 def subscribe() -> None:
-    """Subscribe to the topics the user probably wants to see, prints output to stdout"""
+    """Subscribe to the topics the user probably wants to see, prints output to stdout."""
 
     pub.subscribe(onNode, "meshtastic.node")
 
@@ -83,7 +82,7 @@ def testSend(
     wantAck: bool = False,
 ) -> bool:
     """
-    Sends one test packet between two nodes and then returns success or failure
+    Sends one test packet between two nodes and then returns success or failure.
 
     Arguments:
         fromInterface {[type]} -- [description]
@@ -91,6 +90,7 @@ def testSend(
 
     Returns:
         boolean -- True for success
+
     """
     # pylint: disable=W0603
     global receivedPackets
@@ -153,7 +153,7 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
 
 
 def testThread(numTests=50) -> bool:
-    """Test thread"""
+    """Test thread."""
     logger.info("Found devices, starting tests...")
     result: bool = runTests(numTests, wantAck=True)
     if result:
@@ -164,13 +164,13 @@ def testThread(numTests=50) -> bool:
 
 
 def onConnection(topic: Any = pub.AUTO_TOPIC) -> None:
-    """Callback invoked when we connect/disconnect from a radio"""
+    """Callback invoked when we connect/disconnect from a radio."""
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
     print(f"Connection changed: {topic_name}")
 
 
 def openDebugLog(portName) -> io.TextIOWrapper:
-    """Open the debug log file"""
+    """Open the debug log file."""
     debugname = "log" + portName.replace("/", "_")
     logger.info(f"Writing serial debugging to {debugname}")
     return open(debugname, "w+", buffering=1, encoding="utf8")
