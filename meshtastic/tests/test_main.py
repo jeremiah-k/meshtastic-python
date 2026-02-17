@@ -37,6 +37,20 @@ from ..tcp_interface import TCPInterface
 # from ..config_pb2 import Config
 
 
+def _mock_sendText_helper(
+    text,
+    dest,
+    wantAck=False,
+    wantResponse=False,
+    onResponse=None,
+    channelIndex=0,
+    portNum=0,
+):
+    """Shared helper for mocking sendText; prints parameters to stdout for test assertions."""
+    print("inside mocked sendText")
+    print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
+
+
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch):
     """Prevent external network calls during unit tests in this module."""
@@ -422,18 +436,7 @@ def test_main_onConnected_exception(capsys):
     mt_config.args = sys.argv
 
     def throw_an_exception(junk):
-        """
-        Raise a deterministic exception used by tests.
-
-        Parameters
-        ----------
-            junk: Ignored; present to match call signature.
-
-        Raises
-        ------
-            Exception: Always raised with the message "Fake exception."
-
-        """
+        """Raise a deterministic exception used by tests."""
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
     pytest.importorskip("pyqrcode")
@@ -735,34 +738,7 @@ def test_main_sendtext(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
-
-    def mock_sendText(
-        text,
-        dest,
-        wantAck=False,
-        wantResponse=False,
-        onResponse=None,
-        channelIndex=0,
-        portNum=0,
-    ):
-        """
-        Test helper that simulates sending a text message by printing its parameters to stdout for assertions.
-
-        Parameters
-        ----------
-            text (str): Message text to send.
-            dest: Destination node identifier or None for broadcast.
-            wantAck (bool): Whether an acknowledgment is requested.
-            wantResponse (bool): Whether a response is requested.
-            onResponse (callable|None): Optional callback for a response; this mock does not invoke it.
-            channelIndex (int): Channel index to use.
-            portNum (int): Port number to use.
-
-        """
-        print("inside mocked sendText")
-        print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
-
-    iface.sendText.side_effect = mock_sendText
+    iface.sendText.side_effect = _mock_sendText_helper
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
@@ -797,34 +773,7 @@ def test_main_sendtext_with_channel(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
-
-    def mock_sendText(
-        text,
-        dest,
-        wantAck=False,
-        wantResponse=False,
-        onResponse=None,
-        channelIndex=0,
-        portNum=0,
-    ):
-        """
-        Test helper that simulates sending a text message by printing its parameters to stdout for assertions.
-
-        Parameters
-        ----------
-            text (str): Message text to send.
-            dest: Destination node identifier or None for broadcast.
-            wantAck (bool): Whether an acknowledgment is requested.
-            wantResponse (bool): Whether a response is requested.
-            onResponse (callable|None): Optional callback for a response; this mock does not invoke it.
-            channelIndex (int): Channel index to use.
-            portNum (int): Port number to use.
-
-        """
-        print("inside mocked sendText")
-        print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
-
-    iface.sendText.side_effect = mock_sendText
+    iface.sendText.side_effect = _mock_sendText_helper
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
@@ -2009,7 +1958,7 @@ fixed_position: true
 position_flags: 35"""
         export_config(mo)
     out = export_config(mo)
-    err = ""
+    _, err = capsys.readouterr()
 
     # ensure we do not output this line
     assert not re.search(r"Connected to radio", out, re.MULTILINE)
@@ -2935,20 +2884,7 @@ def test_tunnel_tunnel_arg(
 
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
-        """
-        Prints the given value and terminates the process with exit code 3.
-
-        Writes the string representation of `amount` to standard output, then exits the interpreter with status code 3.
-
-        Parameters
-        ----------
-            amount: The value to print; its string representation will be written to stdout.
-
-        Raises
-        ------
-            SystemExit: Always raised with exit code 3.
-
-        """
+        """Sleep helper for tests; prints amount and exits with code 3."""
         print(f"{amount}")
         sys.exit(3)
 

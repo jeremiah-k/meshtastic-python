@@ -381,7 +381,7 @@ class DiscoveryManager:
             BleakDBusError: If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
 
         """
-        if self._client and getattr(self._client, "_closed", False):
+        if self._client and not self._client.is_connected():
             self._client = None
         if self._client is None:
             # Factory resolution precedence (back-compat and testability):

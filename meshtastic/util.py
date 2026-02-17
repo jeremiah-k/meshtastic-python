@@ -35,7 +35,7 @@ blacklistVids: Set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 """Some devices are highly likely to be meshtastic.
 0x239a RAK4631
 0x303a Heltec tracker"""
-whitelistVids = dict.fromkeys([0x239A, 0x303A])
+whitelistVids: Set[int] = {0x239A, 0x303A}
 
 logger = logging.getLogger(__name__)
 
@@ -320,11 +320,10 @@ class DeferredExecution:
             try:
                 o = self.queue.get()
                 o()
-            except:
+            except Exception:
                 logger.error(
-                    f"Unexpected error in deferred execution {sys.exc_info()[0]}"
+                    f"Unexpected error in deferred execution: {traceback.format_exc()}"
                 )
-                print(traceback.format_exc())
 
 
 def our_exit(message, return_value=1) -> NoReturn:
@@ -371,7 +370,7 @@ def remove_keys_from_dict(keys: Union[Tuple, List, Set], adict: Dict) -> Dict:
     for key in keys:
         try:
             del adict[key]
-        except:
+        except KeyError:
             pass
     for val in adict.values():
         if isinstance(val, dict):
