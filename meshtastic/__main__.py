@@ -102,16 +102,17 @@ def onReceive(packet, interface) -> None:
         print(f"Warning: Error processing received packet: {ex}.")
 
 
-def onConnection(interface, topic=pub.AUTO_TOPIC) -> None:  # pylint: disable=W0613
+def onConnection(interface, topic: Any = pub.AUTO_TOPIC) -> None:  # pylint: disable=W0613
     """Callback invoked when we connect/disconnect from a radio."""
-    print(f"Connection changed: {topic.getName()}")
+    topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
+    print(f"Connection changed: {topic_name}")
 
 
 def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     """Given an interface and channel index, return True if that channel is non-disabled on the local node."""
     ch = interface.localNode.getChannelByChannelIndex(channelIndex)
     logger.debug(f"ch:{ch}")
-    return ch and ch.role != channel_pb2.Channel.Role.DISABLED
+    return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
 def getPref(node, comp_name) -> bool:
@@ -140,6 +141,9 @@ def getPref(node, comp_name) -> bool:
     localConfig = node.localConfig
     moduleConfig = node.moduleConfig
     found: bool = False
+    config = localConfig
+    config_type = None
+    pref = ""
     for config in [localConfig, moduleConfig]:
         objDesc = config.DESCRIPTOR
         config_type = objDesc.fields_by_name.get(name[0])
@@ -160,6 +164,9 @@ def getPref(node, comp_name) -> bool:
         return False
 
     # Check if we need to request the config
+    if config_type is None:
+        return False
+
     if len(config.ListFields()) != 0 and not isinstance(
         pref, str
     ):  # if str, it's still the empty string, I think
@@ -1089,6 +1096,7 @@ def onConnected(interface):
         if args.get:
             closeNow = True
             node = interface.getNode(args.dest, False, **getNode_kwargs)
+            found = False
             for pref in args.get:
                 found = getPref(node, pref[0])
 
@@ -1152,14 +1160,14 @@ def onConnected(interface):
             if args.dest != BROADCAST_ADDR:
                 print("A tunnel can only be created using the local node.")
                 return
-            # pylint: disable=C0415
-            from . import tunnel
-
             # Even if others said we could close, stay open if the user asked for a tunnel
             closeNow = False
             if interface.noProto:
                 logger.warning("Not starting Tunnel - disabled by noProto")
             else:
+                # pylint: disable=C0415
+                from . import tunnel
+
                 if args.tunnel_net:
                     tunnel.Tunnel(interface, subnet=args.tunnel_net)
                 else:

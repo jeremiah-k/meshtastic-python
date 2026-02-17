@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import sys
+import importlib.util
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -379,8 +380,15 @@ def test_main_qr(capsys):
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)
         assert re.search(r"Primary channel URL", out, re.MULTILINE)
-        # if a qr code is generated it will have lots of these
-        assert re.search(r"\[7m", out, re.MULTILINE)
+        if importlib.util.find_spec("pyqrcode") is None:
+            assert re.search(
+                r"Install pyqrcode to view a QR code printed to terminal.",
+                out,
+                re.MULTILINE,
+            )
+        else:
+            # if a qr code is generated it will have lots of these
+            assert re.search(r"\[7m", out, re.MULTILINE)
         assert err == ""
         mo.assert_called()
 
@@ -406,6 +414,8 @@ def test_main_onConnected_exception(capsys):
     def throw_an_exception(junk):
         """Raise a deterministic exception for this test."""
         raise Exception("Fake exception.")  # pylint: disable=W0719
+
+    pytest.importorskip("pyqrcode")
 
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):

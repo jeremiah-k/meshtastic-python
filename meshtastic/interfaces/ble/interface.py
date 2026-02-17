@@ -355,17 +355,30 @@ class BLEInterface(MeshInterface):
         """
         return sorted({key for key in keys if key})
 
+    def _lock_ordered_address_keys(
+        self, ordered_keys: List[str]
+    ) -> contextlib.ExitStack:
+        """
+        Acquire holder tracking and address locks for already-sorted keys.
+
+        Returns
+        -------
+            contextlib.ExitStack: Active stack that must remain open while lock
+            ownership is required.
+
+        """
+        stack = contextlib.ExitStack()
+        for key in ordered_keys:
+            addr_lock = stack.enter_context(_addr_lock_context(key))
+            stack.enter_context(addr_lock)
+        return stack
+
     def _mark_address_keys_connected(self, *keys: Optional[str]) -> None:
         """Mark one or more address keys as connected using deterministic lock ordering."""
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
             return
-        with contextlib.ExitStack() as stack:
-            locks = [
-                stack.enter_context(_addr_lock_context(key)) for key in ordered_keys
-            ]
-            for addr_lock in locks:
-                stack.enter_context(addr_lock)
+        with self._lock_ordered_address_keys(ordered_keys):
             for key in ordered_keys:
                 _mark_connected(key, owner=self)
 
@@ -383,12 +396,7 @@ class BLEInterface(MeshInterface):
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
             return
-        with contextlib.ExitStack() as stack:
-            locks = [
-                stack.enter_context(_addr_lock_context(key)) for key in ordered_keys
-            ]
-            for addr_lock in locks:
-                stack.enter_context(addr_lock)
+        with self._lock_ordered_address_keys(ordered_keys):
             for key in ordered_keys:
                 _mark_disconnected(key, owner=self)
 

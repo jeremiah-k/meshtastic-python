@@ -1,16 +1,33 @@
 """With two radios connected serially, send and receive test
-   messages and report back if successful.
+messages and report back if successful.
 """
+
 import logging
 import sys
 import time
 import traceback
 import io
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from dotmap import DotMap # type: ignore[import-untyped]
-from pubsub import pub # type: ignore[import-untyped]
+try:
+    from dotmap import DotMap  # type: ignore[import-untyped]
+except ImportError:
+
+    class DotMap(dict):
+        """Lightweight fallback used when dotmap is unavailable."""
+
+        def __getattr__(self, key):
+            try:
+                value = self[key]
+            except KeyError as exc:
+                raise AttributeError(key) from exc
+            if isinstance(value, dict):
+                return DotMap(value)
+            return value
+
+
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
@@ -30,6 +47,7 @@ testNumber: int = 0
 sendingInterface = None
 
 logger = logging.getLogger(__name__)
+
 
 def onReceive(packet, interface) -> None:
     """Callback invoked when a packet arrives"""
@@ -58,7 +76,11 @@ def subscribe() -> None:
 
 
 def testSend(
-    fromInterface, toInterface, isBroadcast: bool=False, asBinary: bool=False, wantAck: bool=False
+    fromInterface,
+    toInterface,
+    isBroadcast: bool = False,
+    asBinary: bool = False,
+    wantAck: bool = False,
 ) -> bool:
     """
     Sends one test packet between two nodes and then returns success or failure
@@ -97,7 +119,7 @@ def testSend(
     return False  # Failed to send
 
 
-def runTests(numTests: int=50, wantAck: bool=False, maxFailures: int=0) -> bool:
+def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
     """Run the tests."""
     logger.info(f"Running {numTests} tests with wantAck={wantAck}")
     numFail: int = 0
@@ -106,7 +128,7 @@ def runTests(numTests: int=50, wantAck: bool=False, maxFailures: int=0) -> bool:
         # pylint: disable=W0603
         global testNumber
         testNumber = testNumber + 1
-        isBroadcast:bool = True
+        isBroadcast: bool = True
         # asBinary=(i % 2 == 0)
         success = testSend(
             interfaces[0], interfaces[1], isBroadcast, asBinary=False, wantAck=wantAck
@@ -141,9 +163,10 @@ def testThread(numTests=50) -> bool:
     return result
 
 
-def onConnection(topic=pub.AUTO_TOPIC) -> None:
+def onConnection(topic: Any = pub.AUTO_TOPIC) -> None:
     """Callback invoked when we connect/disconnect from a radio"""
-    print(f"Connection changed: {topic.getName()}")
+    topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
+    print(f"Connection changed: {topic_name}")
 
 
 def openDebugLog(portName) -> io.TextIOWrapper:
@@ -153,7 +176,7 @@ def openDebugLog(portName) -> io.TextIOWrapper:
     return open(debugname, "w+", buffering=1, encoding="utf8")
 
 
-def testAll(numTests: int=5) -> bool:
+def testAll(numTests: int = 5) -> bool:
     """
     Run a series of tests using devices we can find.
     This is called from the cli with the "--test" option.
@@ -199,7 +222,7 @@ def testSimulator() -> None:
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")
     try:
-        iface: meshtastic.tcp_interface.TCPInterface = TCPInterface("localhost")
+        iface: TCPInterface = TCPInterface("localhost")
         iface.showInfo()
         iface.localNode.showInfo()
         iface.localNode.exitSimulator()

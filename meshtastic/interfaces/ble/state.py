@@ -29,6 +29,7 @@ class ConnectionState(Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     DISCONNECTING = "disconnecting"
+    # Reserved reconnect lifecycle state for compatibility/observability.
     RECONNECTING = "reconnecting"
     ERROR = "error"
 
@@ -44,6 +45,7 @@ class BLEStateManager:
         ConnectionState.DISCONNECTED: {
             ConnectionState.CONNECTING,
             ConnectionState.ERROR,
+            # Allow idempotent shutdown orchestration even before a successful connect.
             ConnectionState.DISCONNECTING,
         },
         ConnectionState.CONNECTING: {
@@ -267,6 +269,9 @@ class BLEStateManager:
         """
         with self._state_lock:
             old_state = self._state
-            self._state = ConnectionState.DISCONNECTED
-            logger.debug("State reset: %s → disconnected", old_state.value)
-            return True
+            # Prefer validated transition semantics; this is a no-op when already
+            # disconnected and remains resilient to future transition-map edits.
+            transitioned = self.transition_to(ConnectionState.DISCONNECTED)
+            if transitioned:
+                logger.debug("State reset: %s → disconnected", old_state.value)
+            return transitioned

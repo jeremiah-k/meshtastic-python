@@ -105,6 +105,18 @@ class TestAddrLock:
         assert _addr_key("temp-address") not in _ADDR_LOCKS
         assert _addr_key("temp-address") not in _LOCK_HOLDERS
 
+    def test_addr_lock_context_cleans_lock_on_exception(self):
+        """Address-lock holder tracking should unwind correctly when the context exits via exception."""
+        key = _addr_key("temp-exception-address")
+        assert key is not None
+
+        with pytest.raises(RuntimeError, match="boom"):
+            with _addr_lock_context("temp-exception-address"):
+                raise RuntimeError("boom")
+
+        assert key not in _ADDR_LOCKS
+        assert key not in _LOCK_HOLDERS
+
 
 @pytest.mark.usefixtures("clear_registry")
 class TestMarkConnected:
