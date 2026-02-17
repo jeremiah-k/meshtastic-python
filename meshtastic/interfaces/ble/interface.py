@@ -1029,7 +1029,7 @@ class BLEInterface(MeshInterface):
         Report whether the interface is shutting down or has already closed.
 
         Returns:
-            `true` if the interface is shutting down or closed, `false` otherwise.
+            `True` if the interface is shutting down or closed, `False` otherwise.
 
         """
         return self._state_manager.is_closing or self._closed
@@ -1214,7 +1214,7 @@ class BLEInterface(MeshInterface):
 
         Returns
         -------
-        `true` if the read loop should continue to allow auto-reconnect, `false` otherwise.
+        `True` if the read loop should continue to allow auto-reconnect, `False` otherwise.
 
         """
         logger.debug("Device disconnected: %s", error_message)

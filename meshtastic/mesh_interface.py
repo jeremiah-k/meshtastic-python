@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -436,12 +436,12 @@ class MeshInterface:  # pylint: disable=R0902
             Parameters
             ----------
                 node_dict (Dict[str, Any]): Dictionary to traverse.
-                key_path (str): Dotted path (e.g., "a.b.c"). If the path contains no dot,
-                    the function returns `None`.
+                key_path (str): Dotted path (e.g., "a.b.c"). Non-dotted paths are treated
+                    as a single-level lookup on node_dict.
 
             Returns
             -------
-                Any: The value found at the nested path, or `None` if any intermediate
+                Any: The value found at the given path, or `None` if any intermediate
                 key is missing or an intermediate value is not a dictionary.
 
             """
@@ -1665,7 +1665,7 @@ class MeshInterface:  # pylint: disable=R0902
                 nextPacketId & 0x3FF
             )  # Keep only low 10-bit counter (clear upper 22 bits)
             randomPart = (
-                random.randint(0, 0x3FFFFF) << 10
+                random.randint(0, 0x3FFFFF) << 10  # noqa: S311
             ) & 0xFFFFFFFF  # generate number with 10 zeros at end
             self.currentPacketId = nextPacketId | randomPart  # combine
             return self.currentPacketId
@@ -1764,9 +1764,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

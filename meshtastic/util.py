@@ -143,8 +143,8 @@ def catchAndIgnore(reason: str, closure) -> None:
     """Call a closure but if it throws an exception print it and continue."""
     try:
         closure()
-    except BaseException as ex:
-        logger.error(f"Exception thrown in {reason}: {ex}")
+    except BaseException:
+        logger.exception(f"Exception thrown in {reason}")
 
 
 def findPorts(eliminate_duplicates: bool = False) -> List[str]:

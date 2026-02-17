@@ -411,8 +411,7 @@ def test_main_onConnected_exception(capsys):
     Verify that running main with the QR option causes the process to exit when QR code generation raises an exception.
 
     This test patches SerialInterface and forces pyqrcode.create to raise an
-    Exception, then asserts that main() results in a SystemExit and prints an
-    abort message containing the exception text.
+    Exception, then asserts that main() results in a SystemExit with exit code 1.
 
     Parameters
     ----------
@@ -2972,9 +2971,9 @@ def test_tunnel_tunnel_arg(
                 with patch("time.sleep", side_effect=my_sleep):
                     with pytest.raises(SystemExit) as pytest_wrapped_e:
                         tunnelMain()
-                        mock_platform_system.assert_called()
                     assert pytest_wrapped_e.type is SystemExit
                     assert pytest_wrapped_e.value.code == 3
+                mock_platform_system.assert_called()
                 assert re.search(r"Not starting Tunnel", caplog.text, re.MULTILINE)
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)

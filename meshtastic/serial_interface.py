@@ -26,7 +26,7 @@ class SerialInterface(StreamInterface):
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
-        timeout: int = 300,
+        timeout: float = 300.0,
     ) -> None:
         """Constructor, opens a connection to a specified serial port, or if unspecified try to
         find one Meshtastic device by probing.
@@ -45,14 +45,12 @@ class SerialInterface(StreamInterface):
             ports: List[str] = meshtastic.util.findPorts(True)
             logger.debug(f"ports:{ports}")
             if len(ports) == 0:
-                print(
+                logger.warning(
                     "No Serial Meshtastic device detected, attempting TCP connection on localhost."
                 )
                 return
             elif len(ports) > 1:
-                message: str = (
-                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
-                )
+                message: str = "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
                 message += f"  Ports detected:{ports}"
                 meshtastic.util.our_exit(message)
             else:

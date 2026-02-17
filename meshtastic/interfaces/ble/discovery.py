@@ -405,6 +405,12 @@ class DiscoveryManager:
                 raise RuntimeError(
                     f"Discovery client factory returned None. Factory: {resolved_factory!r}"
                 )
+            if not isinstance(self._client, BLEClient):
+                raise RuntimeError(
+                    f"Discovery client factory returned invalid type. "
+                    f"Factory: {resolved_factory!r}, returned type: {type(self._client)!r}, "
+                    f"expected: BLEClient"
+                )
 
         client = self._client
         devices: List[BLEDevice] = []
