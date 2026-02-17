@@ -6,6 +6,7 @@
 
 import argparse
 import contextlib
+import getpass
 import importlib
 import logging
 import os
@@ -1796,8 +1797,6 @@ def common():
                         try:
                             username = os.getlogin()
                         except OSError:
-                            import getpass
-
                             username = getpass.getuser()
                         message = "Permission Error:\n"
                         message += "  Need to add yourself to the 'dialout' group by running:\n"
