@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -730,7 +730,10 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Send a payload to a mesh node and return the created MeshPacket.
 
-        Serializes protobuf payloads if necessary, validates payload size against the maximum allowed, assigns a generated packet id, and transmits the packet. If an onResponse callback is provided, registers it to be invoked when a matching response or (optionally) an ACK/NAK is received.
+        Serializes protobuf payloads if necessary, validates payload size against the maximum
+        allowed, assigns a generated packet id, and transmits the packet. If an onResponse callback
+        is provided, registers it to be invoked when a matching response or (optionally) an
+        ACK/NAK is received.
 
         Parameters
         ----------
@@ -947,7 +950,10 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Format and display route-trace results from a received RouteDiscovery payload.
 
-        Parses the RouteDiscovery protobuf found in p["decoded"]["payload"], prints a human-readable forward route from the response destination back to the origin and, when present, prints the traced return route back to this node. Also marks the interface acknowledgment flag for trace-route reception.
+        Parses the RouteDiscovery protobuf found in p["decoded"]["payload"], prints a human-readable
+        forward route from the response destination back to the origin and, when present, prints
+        the traced return route back to this node. Also marks the interface acknowledgment flag
+        for trace-route reception.
 
         Parameters
         ----------
@@ -1170,7 +1176,11 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Handle a received waypoint response packet.
 
-        Marks the waypoint acknowledgment as received, parses the Waypoint protobuf from decoded['payload'] and prints a human-readable representation when the packet's port is WAYPOINT_APP. If the packet's port is ROUTING_APP and decoded['routing']['errorReason'] == "NO_RESPONSE", exits with a message about the minimum firmware requirement on the destination node.
+        Marks the waypoint acknowledgment as received, parses the Waypoint protobuf from
+        decoded['payload'] and prints a human-readable representation when the packet's port is
+        WAYPOINT_APP. If the packet's port is ROUTING_APP and decoded['routing']['errorReason']
+        == "NO_RESPONSE", exits with a message about the minimum firmware requirement on the
+        destination node.
 
         Parameters
         ----------
@@ -1324,7 +1334,8 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             requestId (int): The request identifier used to match incoming responses to this handler.
             callback (Callable[[dict], Any]): Function invoked with the decoded response packet dictionary when a matching response is received.
-            ackPermitted (bool): If `True`, allow acknowledgement/negative-acknowledgement packets to trigger the callback; otherwise only full responses will invoke it.
+            ackPermitted (bool): If `True`, allow acknowledgement/negative-acknowledgement packets
+                to trigger the callback; otherwise only full responses will invoke it.
 
         """
         self.responseHandlers[requestId] = ResponseHandler(
@@ -1682,14 +1693,20 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Start a recurring daemon timer that sends a heartbeat to the radio every 300 seconds.
 
-        Schedules and runs the first heartbeat immediately and then re-schedules a daemon threading.Timer to invoke subsequent heartbeats at a fixed 300-second interval. The scheduler respects shutdown by checking self._closing and uses self._heartbeat_lock to avoid scheduling or storing timers after shutdown begins; the actual call to self.sendHeartbeat() is performed outside the lock.
+        Schedules and runs the first heartbeat immediately and then re-schedules a daemon
+        threading.Timer to invoke subsequent heartbeats at a fixed 300-second interval. The
+        scheduler respects shutdown by checking self._closing and uses self._heartbeat_lock to
+        avoid scheduling or storing timers after shutdown begins; the actual call to
+        self.sendHeartbeat() is performed outside the lock.
         """
 
         def callback():
             """
             Schedule the next heartbeat timer and emit a heartbeat unless the interface is shutting down.
 
-            Creates a daemon Timer that will re-invoke this callback after a fixed interval, stores it on self.heartbeatTimer, and then calls self.sendHeartbeat(). The callback respects shutdown state and avoids scheduling or sending heartbeats once self._closing is set.
+            Creates a daemon Timer that will re-invoke this callback after a fixed interval, stores
+            it on self.heartbeatTimer, and then calls self.sendHeartbeat(). The callback respects
+            shutdown state and avoids scheduling or sending heartbeats once self._closing is set.
             """
             interval = 300
             logger.debug(f"Sending heartbeat, interval {interval} seconds")
@@ -1745,9 +1762,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
@@ -1792,11 +1807,17 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Queue and transmit a ToRadio protobuf to the radio device.
 
-        If `toRadio` contains a MeshPacket in its `packet` field, the packet is enqueued for transmission and will be sent when transmit (TX) queue space becomes available; otherwise the message is sent immediately. This method may block while waiting for TX space, claims transmit queue slots for outgoing packets, and will requeue packets that remain unacknowledged. If protocol usage is disabled via `noProto`, the message is not transmitted.
+        If `toRadio` contains a MeshPacket in its `packet` field, the packet is enqueued for
+        transmission and will be sent when transmit (TX) queue space becomes available; otherwise
+        the message is sent immediately. This method may block while waiting for TX space, claims
+        transmit queue slots for outgoing packets, and will requeue packets that remain
+        unacknowledged. If protocol usage is disabled via `noProto`, the message is not
+        transmitted.
 
         Parameters
         ----------
-            toRadio (mesh_pb2.ToRadio): The ToRadio protobuf to send; if it has a `packet` field the contained MeshPacket will be queued for transmission.
+            toRadio (mesh_pb2.ToRadio): The ToRadio protobuf to send; if it has a `packet` field
+                the contained MeshPacket will be queued for transmission.
 
         """
         if self.noProto:
@@ -1879,7 +1900,11 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Update internal transmit-queue state from a received QueueStatus message.
 
-        Sets self.queueStatus to the provided queueStatus and logs the reported free/total slots and packet id. If queueStatus.res is truthy the method returns immediately. Otherwise it removes the entry for queueStatus.mesh_packet_id from self.queue; if no entry exists and mesh_packet_id is nonzero, it records a False marker for that id to indicate an unexpected reply was observed.
+        Sets self.queueStatus to the provided queueStatus and logs the reported free/total slots
+        and packet id. If queueStatus.res is truthy the method returns immediately. Otherwise it
+        removes the entry for queueStatus.mesh_packet_id from self.queue; if no entry exists and
+        mesh_packet_id is nonzero, it records a False marker for that id to indicate an
+        unexpected reply was observed.
 
         Parameters
         ----------
@@ -2117,15 +2142,19 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Map a mesh numeric node number to its node ID string or a broadcast/unknown literal.
 
-        If num equals the broadcast numeric constant, returns BROADCAST_ADDR when isDest is True or the string "Unknown" when isDest is False. Otherwise looks up and returns the stored user ID for that node number.
+        If num equals the broadcast numeric constant, returns BROADCAST_ADDR when isDest is True
+        or the string "Unknown" when isDest is False. Otherwise looks up and returns the stored
+        user ID for that node number.
 
         Parameters
         ----------
-            isDest (bool): When True treat the broadcast number as a destination (return BROADCAST_ADDR); when False treat it as an unknown source (return "Unknown").
+            isDest (bool): When True treat the broadcast number as a destination (return
+                BROADCAST_ADDR); when False treat it as an unknown source (return "Unknown").
 
         Returns
         -------
-            The node ID string, BROADCAST_ADDR for broadcast destinations, "Unknown" for broadcast sources, or `None` if the node number is not present in the local node map.
+            The node ID string, BROADCAST_ADDR for broadcast destinations, "Unknown" for
+            broadcast sources, or `None` if the node number is not present in the local node map.
 
         """
         if num == BROADCAST_NUM:

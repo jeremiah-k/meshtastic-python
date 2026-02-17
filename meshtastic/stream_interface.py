@@ -85,7 +85,9 @@ class StreamInterface(MeshInterface):
         """
         Establishes the connection to the radio and starts the background reader and configuration process.
 
-        Sends wake/resynchronization bytes to the device, starts the reader thread, begins protocol configuration, and — if the instance uses the protocol — waits for the protocol/database download to complete.
+        Sends wake/resynchronization bytes to the device, starts the reader thread, begins protocol
+        configuration, and — if the instance uses the protocol — waits for the protocol/database
+        download to complete.
         """
 
         # Send some bogus UART characters to force a sleeping device to wake, and
@@ -123,7 +125,9 @@ class StreamInterface(MeshInterface):
         """
         Write bytes to the underlying stream and ensure the device has time to process them.
 
-        If the stream is closed this call is ignored. The bytes are written and flushed; after flushing the method sleeps to give the device time to handle the data (1.0 second on Windows 11, 0.1 second otherwise).
+        If the stream is closed this call is ignored. The bytes are written and flushed; after
+        flushing the method sleeps to give the device time to handle the data (1.0 second on
+        Windows 11, 0.1 second otherwise).
 
         Parameters
         ----------

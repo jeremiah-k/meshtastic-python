@@ -75,11 +75,15 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
     """
     Handle an incoming mesh packet and perform optional reply or exit actions based on CLI options.
 
-    If the packet contains a decoded payload and the CLI was invoked to send text, this may close the interface when the packet is a text-message reply addressed to this node. If the CLI was invoked with reply enabled and the decoded payload contains text, send a reply containing the received text, the packet's rxSnr, and hopLimit.
+    If the packet contains a decoded payload and the CLI was invoked to send text, this may close
+    the interface when the packet is a text-message reply addressed to this node. If the CLI was
+    invoked with reply enabled and the decoded payload contains text, send a reply containing the
+    received text, the packet's rxSnr, and hopLimit.
 
     Parameters
     ----------
-        packet (dict): Incoming packet dictionary; expected keys used: "decoded" (dict or None), "to" (destination node number), "rxSnr", and "hopLimit".
+        packet (dict): Incoming packet dictionary; expected keys used: "decoded" (dict or None),
+            "to" (destination node number), "rxSnr", and "hopLimit".
         interface (MeshInterface): Interface instance used to send replies and to close the connection.
 
     """
@@ -148,17 +152,22 @@ def getPref(node, comp_name) -> bool:
     """
     Retrieve and display a channel or preference value for the given node.
 
-    If the requested preference exists in the node's local or module configuration, print the preference name and value(s).
-    If the preference is present locally, its current value(s) are printed; if the preference is not set locally but the field exists, a config request is sent to the remote node. If the preference name refers to an entire message (compound name), all populated subfields are printed.
+    If the requested preference exists in the node's local or module configuration, print the
+    preference name and value(s). If the preference is present locally, its current value(s) are
+    printed; if the preference is not set locally but the field exists, a config request is sent
+    to the remote node. If the preference name refers to an entire message (compound name), all
+    populated subfields are printed.
 
     Parameters
     ----------
         node: The node object containing `localConfig` and `moduleConfig`.
-        comp_name (str): Dot-separated preference name (e.g., "channel.label" or "label"); if only one name is provided it is used for both parts.
+        comp_name (str): Dot-separated preference name (e.g., "channel.label" or "label"); if only
+            one name is provided it is used for both parts.
 
     Returns
     -------
-        bool: `true` if the preference field exists and the function either printed local values or requested the remote config, `false` if the field was not found.
+        bool: `true` if the preference field exists and the function either printed local values or
+            requested the remote config, `false` if the field was not found.
 
     """
 
@@ -171,7 +180,8 @@ def getPref(node, comp_name) -> bool:
             config_type: An object with a `name` attribute identifying the configuration section (e.g., a protobuf config enum or type).
             uni_name (str): The preference name within the configuration section.
             pref_value: The preference value to print; if `repeated` is True this should be an iterable of values.
-            repeated (bool): If True, treat `pref_value` as a sequence and print a list of stringified values; otherwise print a single stringified value.
+            repeated (bool): If True, treat `pref_value` as a sequence and print a list of
+                stringified values; otherwise print a single stringified value.
 
         """
         if repeated:
@@ -294,17 +304,25 @@ def setPref(config, comp_name, raw_val) -> bool:
     """
     Set a preference or channel field on a protobuf config object identified by a (possibly compound) name.
 
-    This resolves a dot-separated comp_name into the appropriate nested protobuf field, converts raw_val to the field's expected type (including resolving enum names), validates certain fields (for example, rejects wifi_psk shorter than 8 characters), and applies the value. Repeated fields are updated by replacing or appending entries (use 0 to clear a repeated field). Field name resolution prefers camelCase or snake_case according to the global camel_case setting.
+    This resolves a dot-separated comp_name into the appropriate nested protobuf field, converts
+    raw_val to the field's expected type (including resolving enum names), validates certain
+    fields (for example, rejects wifi_psk shorter than 8 characters), and applies the value.
+    Repeated fields are updated by replacing or appending entries (use 0 to clear a repeated
+    field). Field name resolution prefers camelCase or snake_case according to the global
+    camel_case setting.
 
     Parameters
     ----------
         config: The protobuf config or channel object to modify.
-        comp_name (str): Dot-separated field path (e.g., "channel.security.wifi_psk" or "node.name"); if a single name is given it targets that top-level section.
-        raw_val: The value to set; may be a string, number, list (for repeated fields), or an already-typed value. String enum names will be resolved to their numeric values.
+        comp_name (str): Dot-separated field path (e.g., "channel.security.wifi_psk" or
+            "node.name"); if a single name is given it targets that top-level section.
+        raw_val: The value to set; may be a string, number, list (for repeated fields), or an
+            already-typed value. String enum names will be resolved to their numeric values.
 
     Returns
     -------
-        bool: `True` if a value was successfully set or updated; `False` if the named field was not found or validation failed.
+        bool: `True` if a value was successfully set or updated; `False` if the named field was not
+            found or validation failed.
 
     """
 
@@ -1053,7 +1071,9 @@ def onConnected(interface):
             """
             Set the modem preset for the device's primary channel and persist the change.
 
-            If a non-primary channel is selected, the function exits with a warning. The function ensures the node's local configuration is loaded, updates the LORA `modem_preset` field to the provided value, and writes the `lora` section back to the device.
+            If a non-primary channel is selected, the function exits with a warning. The function
+            ensures the node's local configuration is loaded, updates the LORA `modem_preset` field
+            to the provided value, and writes the `lora` section back to the device.
 
             Parameters
             ----------
@@ -1307,7 +1327,10 @@ def printConfig(config) -> None:
 
     Parameters
     ----------
-        config: A protobuf-like configuration message (must provide a DESCRIPTOR). The function skips the "version" section and prints each other section name followed by its fields in sorted order as "section.field". If mt_config.camel_case is true, field names are converted to camelCase before printing. Output is written to standard output.
+        config: A protobuf-like configuration message (must provide a DESCRIPTOR). The function
+            skips the "version" section and prints each other section name followed by its fields
+            in sorted order as "section.field". If mt_config.camel_case is true, field names are
+            converted to camelCase before printing. Output is written to standard output.
 
     """
     objDesc = config.DESCRIPTOR
@@ -1334,7 +1357,9 @@ def subscribe() -> None:
     """
     Register the default pub-sub handlers needed to receive incoming mesh messages.
 
-    Subscribes the local receive callback to the "meshtastic.receive" topic so incoming packets are delivered to the onReceive handler. Other topic subscriptions are intentionally left commented out.
+    Subscribes the local receive callback to the "meshtastic.receive" topic so incoming packets
+    are delivered to the onReceive handler. Other topic subscriptions are intentionally left
+    commented out.
     """
     pub.subscribe(onReceive, "meshtastic.receive")
     # pub.subscribe(onConnection, "meshtastic.connection")
@@ -1354,7 +1379,9 @@ def set_missing_flags_false(
     Parameters
     ----------
         config_dict (Dict[str, Any]): The nested configuration dictionary to modify in place.
-        true_defaults (Set[Tuple[str, str]]): A set of key paths (tuples of keys) where the final key is expected to be a boolean defaulted to True; any path not present in config_dict will have its final key created and set to False.
+        true_defaults (Set[Tuple[str, str]]): A set of key paths (tuples of keys) where the final
+            key is expected to be a boolean defaulted to True; any path not present in config_dict
+            will have its final key created and set to False.
 
     """
     for path in true_defaults:
@@ -1371,7 +1398,12 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     """
     Export the local node and module configuration as a YAML-formatted Meshtastic configuration string.
 
-    Produces a YAML document containing selected top-level metadata (owner, owner_short, channel URL, canned messages, ringtone, and location) plus `config` and `module_config` sections derived from the node's protobuf-backed settings. Key casing in the exported `config` and `module_config` follows mt_config.camel_case. Certain boolean flags are explicitly set to false if missing, and security key fields are normalized to include a "base64:" prefix when appropriate.
+    Produces a YAML document containing selected top-level metadata (owner, owner_short, channel
+    URL, canned messages, ringtone, and location) plus `config` and `module_config` sections
+    derived from the node's protobuf-backed settings. Key casing in the exported `config` and
+    `module_config` follows mt_config.camel_case. Certain boolean flags are explicitly set to
+    false if missing, and security key fields are normalized to include a "base64:" prefix when
+    appropriate.
 
     Parameters
     ----------
@@ -1535,9 +1567,17 @@ def create_power_meter():
 
 def common():
     """
-    Run shared CLI setup, validate arguments, establish logging and the transport interface, then invoke onConnected and optionally enter the main event loop.
+    Run shared CLI setup, validate arguments, establish logging and the transport interface, then
+    invoke onConnected and optionally enter the main event loop.
 
-    Performs early argument validation and actions (support/test handling, owner/name validations, optional power meter creation, channel/destination defaults), configures logging and serial logging output, subscribes to topics, handles BLE scan/connection, TCP host parsing/connection (including bracketed IPv6 and host:port forms), or serial connection (with user-friendly error messages), and constructs the appropriate Mesh interface. After creating the interface it calls onConnected(client). If the invocation requests a persistent session (listen, tunnel, noproto, or reply modes) this function enters a blocking wait loop until interrupted. On fatal errors it may terminate the process by calling meshtastic.util.our_exit.
+    Performs early argument validation and actions (support/test handling, owner/name validations,
+    optional power meter creation, channel/destination defaults), configures logging and serial
+    logging output, subscribes to topics, handles BLE scan/connection, TCP host
+    parsing/connection (including bracketed IPv6 and host:port forms), or serial connection (with
+    user-friendly error messages), and constructs the appropriate Mesh interface. After creating
+    the interface it calls onConnected(client). If the invocation requests a persistent session
+    (listen, tunnel, noproto, or reply modes) this function enters a blocking wait loop until
+    interrupted. On fatal errors it may terminate the process by calling meshtastic.util.our_exit.
     """
     logfile = None
     args = mt_config.args
@@ -2137,7 +2177,8 @@ def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     """
     Register CLI arguments for fixed-position and position-related configuration.
 
-    Adds --setalt, --setlat, --setlon to set a fixed position (enables fixed position), --remove-position to clear it, and --pos-fields to specify which position fields to send.
+    Adds --setalt, --setlat, --setlon to set a fixed position (enables fixed position),
+    --remove-position to clear it, and --pos-fields to specify which position fields to send.
 
     Parameters
     ----------
@@ -2239,7 +2280,8 @@ def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
 
     Parameters
     ----------
-        parser (argparse.ArgumentParser): The parser to extend with remote action arguments (e.g., sendtext, traceroute, request-telemetry, request-position, reply).
+        parser (argparse.ArgumentParser): The parser to extend with remote action arguments (e.g.,
+            sendtext, traceroute, request-telemetry, request-position, reply).
 
     Returns
     -------
@@ -2629,7 +2671,8 @@ def main():
     """
     Run the Meshtastic command-line entry point: initialize the argument parser, process CLI actions, and perform cleanup.
 
-    This function initializes the global parser via initParser(), executes the shared CLI flow in common(), and closes the configured logfile if one was opened.
+    This function initializes the global parser via initParser(), executes the shared CLI flow in
+    common(), and closes the configured logfile if one was opened.
     """
     parser = argparse.ArgumentParser(
         add_help=False,

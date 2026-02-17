@@ -226,7 +226,9 @@ def test_main_info(capsys, caplog):
     """
     Verify that running the CLI with --info prints a "Connected to radio" message and invokes SerialInterface.showInfo.
 
-    Patches SerialInterface to a mock whose showInfo prints a recognizable marker, then asserts the marker and the connection message appear on stdout, stderr is empty, and the SerialInterface constructor was called.
+    Patches SerialInterface to a mock whose showInfo prints a recognizable marker, then asserts
+    the marker and the connection message appear on stdout, stderr is empty, and the
+    SerialInterface constructor was called.
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv

@@ -24,7 +24,9 @@ class _FallbackDotMap(dict):
         """
         Provide attribute-style access for dictionary keys.
 
-        When an attribute is accessed, return the dictionary value for that key. If the key is missing, return an empty _FallbackDotMap. If the value is a dict, return a _FallbackDotMap wrapping that dict; otherwise return the value unchanged.
+        When an attribute is accessed, return the dictionary value for that key. If the key is
+        missing, return an empty _FallbackDotMap. If the value is a dict, return a _FallbackDotMap
+        wrapping that dict; otherwise return the value unchanged.
 
         Parameters
         ----------
@@ -72,7 +74,10 @@ def onReceive(packet: dict, interface: Any) -> None:
     """
     Handle an incoming packet and record clear-text messages.
 
-    If the packet originated from the current sendingInterface it is ignored. Otherwise the packet is converted to a DotMap and, when its decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level `receivedPackets` list is set, the converted packet is appended to `receivedPackets`.
+    If the packet originated from the current sendingInterface it is ignored. Otherwise the packet
+    is converted to a DotMap and, when its decoded.portnum equals "TEXT_MESSAGE_APP" and the
+    module-level `receivedPackets` list is set, the converted packet is appended to
+    `receivedPackets`.
 
     Parameters
     ----------
@@ -215,7 +220,8 @@ def testThread(numTests: int = 50) -> bool:
     """
     Run a two-stage test sequence across discovered devices.
 
-    First stage runs `numTests` with acknowledgments required; if that stage succeeds, a second stage runs `numTests` without acknowledgments and allows up to one failure.
+    First stage runs `numTests` with acknowledgments required; if that stage succeeds, a second
+    stage runs `numTests` without acknowledgments and allows up to one failure.
 
     Parameters
     ----------

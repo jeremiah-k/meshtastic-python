@@ -106,13 +106,13 @@ def test_stripnl():
 @pytest.mark.unit
 def test_pskToString_empty_string():
     """Test pskToString empty string."""
-    assert pskToString("") == "unencrypted"
+    assert pskToString(b"") == "unencrypted"
 
 
 @pytest.mark.unit
 def test_pskToString_string():
     """Test pskToString string."""
-    assert pskToString("hunter123") == "secret"
+    assert pskToString(b"hunter123") == "secret"
 
 
 @pytest.mark.unit
@@ -216,7 +216,7 @@ def test_remove_keys_from_dict_empty_keys_empty_dict():
 @pytest.mark.unitslow
 def test_remove_keys_from_dict_empty_dict():
     """Test when dict is empty."""
-    assert not remove_keys_from_dict(("a"), {})
+    assert not remove_keys_from_dict(("a",), {})
 
 
 @pytest.mark.unit
@@ -228,7 +228,7 @@ def test_remove_keys_from_dict_empty_keys():
 @pytest.mark.unitslow
 def test_remove_keys_from_dict():
     """Test remove_keys_from_dict()."""
-    assert remove_keys_from_dict(("b"), {"a": 1, "b": 2}) == {"a": 1}
+    assert remove_keys_from_dict(("b",), {"a": 1, "b": 2}) == {"a": 1}
 
 
 @pytest.mark.unitslow
@@ -242,7 +242,7 @@ def test_remove_keys_from_dict_multiple_keys():
 @pytest.mark.unit
 def test_remove_keys_from_dict_nested():
     """Test remove_keys_from_dict()."""
-    keys = "b"
+    keys = ("b",)
     adict = {"a": {"b": 1}, "b": 2, "c": 3}
     exp = {"a": {}, "c": 3}
     assert remove_keys_from_dict(keys, adict) == exp
@@ -251,7 +251,7 @@ def test_remove_keys_from_dict_nested():
 @pytest.mark.unitslow
 def test_Timeout_not_found():
     """Test Timeout()."""
-    to = Timeout(0.2)
+    to = Timeout(1)
     attrs = "foo"
     to.waitForSet("bar", attrs)
 
@@ -259,7 +259,7 @@ def test_Timeout_not_found():
 @pytest.mark.unitslow
 def test_Timeout_found():
     """Test Timeout()."""
-    to = Timeout(0.2)
+    to = Timeout(1)
     attrs = ()
     to.waitForSet("bar", attrs)
 
@@ -298,7 +298,9 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports
     """
     Verify that findPorts() removes duplicate serial devices when eliminate_duplicates is True.
 
-    Sets the patched comports() to return two port-like objects representing the same physical device and asserts findPorts(eliminate_duplicates=True) returns only the deduplicated device path.
+    Sets the patched comports() to return two port-like objects representing the same physical
+    device and asserts findPorts(eliminate_duplicates=True) returns only the deduplicated device
+    path.
 
     Parameters
     ----------
@@ -337,7 +339,8 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
     """
     Verifies that findPorts(eliminate_duplicates=True) returns the expected single port when duplicate devices are reported in reversed order.
 
-    Patches the comports listing to simulate two ports that should be considered duplicates and asserts the duplicate-elimination logic selects the correct remaining device.
+    Patches the comports listing to simulate two ports that should be considered duplicates and
+    asserts the duplicate-elimination logic selects the correct remaining device.
     """
 
     class TempPort:
