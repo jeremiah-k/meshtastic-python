@@ -299,6 +299,8 @@ class ConnectedStrategy(DiscoveryStrategy):
                         "name": device.name,
                     }
                     if supports_details:
+                        # Pass the original device object as details so the backend
+                        # can recognize it as an already-connected device.
                         params["details"] = device
                     if supports_rssi:
                         rssi = getattr(device, "rssi", None)
@@ -388,20 +390,20 @@ class DiscoveryManager:
             ble_mod = resolve_ble_module()
             if ble_mod is None:
                 logger.debug("No BLE module found; using default BLEClient")
-            client_factory: Callable[..., Any] = cast(
+            resolved_factory: Callable[..., Any] = cast(
                 Callable[..., Any],
                 self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
             )
             # Attempt to create client with log_if_no_address=False; fall back
             # for custom factories that don't accept this kwarg.
             try:
-                self._client = client_factory(log_if_no_address=False)
+                self._client = resolved_factory(log_if_no_address=False)
             except TypeError:
-                self._client = client_factory()
+                self._client = resolved_factory()
             # Validate factory returned a valid client
             if self._client is None:
                 raise RuntimeError(
-                    f"Discovery client factory returned None. Factory: {client_factory!r}"
+                    f"Discovery client factory returned None. Factory: {resolved_factory!r}"
                 )
 
         client = self._client

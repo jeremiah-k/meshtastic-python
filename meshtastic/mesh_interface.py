@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[
-            int, ResponseHandler
-        ] = {}  # A map from request ID to the handler
+        self.responseHandlers: Dict[int, ResponseHandler] = (
+            {}
+        )  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -393,16 +393,16 @@ class MeshInterface:  # pylint: disable=R0902
 
             Parameters
             ----------
-                ts (int | float | None): Seconds since the Unix epoch. If `None`, no timestamp is available; `0` is formatted normally.
+                ts (int | float | None): Seconds since the Unix epoch. If `None` or `0`, no timestamp is available.
 
             Returns
             -------
-                Optional[str]: Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is `None`.
+                Optional[str]: Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is `None` or `0`.
 
             """
             return (
                 datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-                if ts is not None
+                if ts is not None and ts != 0
                 else None
             )
 
@@ -412,16 +412,16 @@ class MeshInterface:  # pylint: disable=R0902
 
             Parameters
             ----------
-                ts (float|int|None): Unix timestamp in seconds since the epoch; if `None` no computation is performed.
+                ts (float|int|None): Unix timestamp in seconds since the epoch; if `None` or `0`, no computation is performed.
 
             Returns
             -------
                 Optional[str]: A concise relative time string like "now",
                     "5 sec ago", "2 min ago", etc., or `None` if `ts` is
-                    `None` or represents a time in the future.
+                    `None`, `0`, or represents a time in the future.
 
             """
-            if ts is None:
+            if ts is None or ts == 0:
                 return None
             delta = datetime.now() - datetime.fromtimestamp(ts)
             delta_secs = int(delta.total_seconds())
@@ -1764,7 +1764,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = (
+            []
+        )  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

@@ -658,9 +658,10 @@ def test_fuzz_camel_to_snake(a_string):
 def test_fuzz_snake_to_camel(a_string):
     """Test that snake_to_camel removes underscores."""
     result = snake_to_camel(a_string)
-    assert "_" not in result or result == a_string.split("_")[0] + "".join(
+    expected = a_string.split("_")[0] + "".join(
         ele.title() for ele in a_string.split("_")[1:]
     )
+    assert result == expected
 
 
 @given(st.text())

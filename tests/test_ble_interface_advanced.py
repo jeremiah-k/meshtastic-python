@@ -22,6 +22,7 @@ from meshtastic.interfaces.ble.constants import (
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
 )
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.protobuf import mesh_pb2
 
@@ -102,15 +103,15 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
     # Verify that only FROMNUM notification was registered
     registered_uuids = [call[0] for call in client.start_notify_calls]
 
-    assert FROMNUM_UUID in registered_uuids, (
-        "FROMNUM notification should still be registered"
-    )
-    assert LEGACY_LOGRADIO_UUID not in registered_uuids, (
-        "Legacy log notification should not be registered when characteristic is missing"
-    )
-    assert LOGRADIO_UUID not in registered_uuids, (
-        "Current log notification should not be registered when characteristic is missing"
-    )
+    assert (
+        FROMNUM_UUID in registered_uuids
+    ), "FROMNUM notification should still be registered"
+    assert (
+        LEGACY_LOGRADIO_UUID not in registered_uuids
+    ), "Legacy log notification should not be registered when characteristic is missing"
+    assert (
+        LOGRADIO_UUID not in registered_uuids
+    ), "Current log notification should not be registered when characteristic is missing"
 
     iface.close()
 
@@ -237,9 +238,9 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     # Build interface with auto_reconnect=True
     iface = _build_interface(monkeypatch, client)
     iface.auto_reconnect = True
-    assert _get_connect_stub_calls(iface) == ["dummy"], (
-        "Initial connect should occur on instantiation"
-    )
+    assert _get_connect_stub_calls(iface) == [
+        "dummy"
+    ], "Initial connect should occur on instantiation"
 
     # Track if close() was called
     close_called = []
@@ -272,9 +273,9 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
     # Assertions
     # 1. BLEInterface.close() should NOT be called when auto_reconnect=True
-    assert len(close_called) == 0, (
-        "close() should not be called when auto_reconnect=True"
-    )
+    assert (
+        len(close_called) == 0
+    ), "close() should not be called when auto_reconnect=True"
 
     # 2. Connection status event should be published with connected=False
     disconnect_events = [
@@ -282,17 +283,17 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
         for topic, kw in published_events
         if topic == "meshtastic.connection.status" and kw.get("connected") is False
     ]
-    assert len(disconnect_events) == 1, (
-        f"Expected exactly one disconnect event, got {len(disconnect_events)}"
-    )
+    assert (
+        len(disconnect_events) == 1
+    ), f"Expected exactly one disconnect event, got {len(disconnect_events)}"
 
     # 3. Auto-reconnect should have attempted a reconnect and restored the client
-    assert len(_get_connect_stub_calls(iface)) >= 2, (
-        f"Expected at least 2 connect calls, got {len(_get_connect_stub_calls(iface))}"
-    )
-    assert iface.client is client, (
-        "client should be restored after successful auto-reconnect"
-    )
+    assert (
+        len(_get_connect_stub_calls(iface)) >= 2
+    ), f"Expected at least 2 connect calls, got {len(_get_connect_stub_calls(iface))}"
+    assert (
+        iface.client is client
+    ), "client should be restored after successful auto-reconnect"
 
     # Simulate config completion to publish connected=True and verify it was emitted
     iface.isConnected.clear()
@@ -303,20 +304,20 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
         for topic, kw in published_events
         if topic == "meshtastic.connection.status" and kw.get("connected") is True
     ]
-    assert len(reconnect_events) == 1, (
-        f"Expected exactly one reconnect event, got {len(reconnect_events)}"
-    )
+    assert (
+        len(reconnect_events) == 1
+    ), f"Expected exactly one reconnect event, got {len(reconnect_events)}"
 
     # 4. Ensure disconnect flag resets for future disconnect handling
-    assert not iface._disconnect_notified, (
-        "_disconnect_notified should reset after auto-reconnect"
-    )
+    assert (
+        not iface._disconnect_notified
+    ), "_disconnect_notified should reset after auto-reconnect"
 
     # 5. Receive thread should remain alive, waiting for new connection
     # Check that _want_receive is still True and receive thread is alive
-    assert iface._want_receive is True, (
-        "_want_receive should remain True for auto_reconnect"
-    )
+    assert (
+        iface._want_receive is True
+    ), "_want_receive should remain True for auto_reconnect"
     assert iface._receiveThread is not None, "receive thread should still exist"
     # Wait up to ~1s for receive thread to be alive
     for _ in range(100):
@@ -593,9 +594,9 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """
 
     @contextmanager
-    def create_interface_with_auto_reconnect() -> Iterator[
-        Tuple[BLEInterface, "StressTestClient"]
-    ]:
+    def create_interface_with_auto_reconnect() -> (
+        Iterator[Tuple[BLEInterface, "StressTestClient"]]
+    ):
         """
         Create and yield a BLEInterface configured for stress testing with auto-reconnect enabled.
 
@@ -655,16 +656,18 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             client = cast("StressTestClient", iface.client)
             yield iface, client
         finally:
-            if iface is not None:
-                try:
-                    iface.close()
-                except Exception as e:  # noqa: BLE001 - teardown logging only
-                    logging.debug(
-                        "Error closing stress-test interface during cleanup: %s: %s",
-                        type(e).__name__,
-                        e,
-                    )
-            stack.close()
+            try:
+                if iface is not None:
+                    try:
+                        iface.close()
+                    except Exception as e:  # noqa: BLE001 - teardown logging only
+                        logging.debug(
+                            "Error closing stress-test interface during cleanup: %s: %s",
+                            type(e).__name__,
+                            e,
+                        )
+            finally:
+                stack.close()
 
     # Test 1: Rapid disconnect callbacks
     with create_interface_with_auto_reconnect() as (iface, client):
@@ -687,9 +690,9 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         # Verify that the interface handled rapid disconnects gracefully
         assert client.bleak_client is not None
         # Test reaching this point without crashing indicates success
-        assert len(_get_connect_stub_calls(iface)) >= 2, (
-            "Auto-reconnect should continue scheduling during rapid disconnects"
-        )
+        assert (
+            len(_get_connect_stub_calls(iface)) >= 2
+        ), "Auto-reconnect should continue scheduling during rapid disconnects"
 
     # Test 2: Concurrent connect/disconnect operations
     with create_interface_with_auto_reconnect() as (iface2, client2):
@@ -749,15 +752,15 @@ def test_rapid_connect_disconnect_stress_test(caplog):
                 )
 
         # Verify graceful handling of connection failures
-        assert len(_get_connect_stub_calls(iface3)) >= 1, (
-            "Failure path should still schedule reconnect attempts"
-        )
+        assert (
+            len(_get_connect_stub_calls(iface3)) >= 1
+        ), "Failure path should still schedule reconnect attempts"
 
     # Verify no critical errors in logs
     critical = [r for r in caplog.records if r.levelno >= logging.CRITICAL]
-    assert not critical, (
-        f"Critical errors found in logs: {[r.message for r in critical]}"
-    )
+    assert (
+        not critical
+    ), f"Critical errors found in logs: {[r.message for r in critical]}"
 
 
 def test_ble_client_is_connected_exception_handling(caplog):
@@ -796,9 +799,7 @@ def test_ble_client_is_connected_exception_handling(caplog):
     ble_client = BLEClient.__new__(BLEClient)
     ble_client.bleak_client = ExceptionBleakClient(AttributeError)
     # Initialize error_handler since __new__ bypasses __init__
-    # BLEErrorHandler already imported at top as ble_mod.BLEErrorHandler
-
-    ble_client.error_handler = ble_mod.BLEErrorHandler()
+    ble_client.error_handler = BLEErrorHandler()
 
     # Should return False and log debug message when AttributeError occurs
     result = ble_client.is_connected()

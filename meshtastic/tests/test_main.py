@@ -3050,8 +3050,10 @@ def test_main_set_owner_whitespace_only(capsys):
     sys.argv = ["", "--set-owner", "   "]
     mt_config.args = sys.argv
 
-    with pytest.raises(SystemExit) as excinfo:
-        main()
+    iface = MagicMock(autospec=SerialInterface)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
 
     out, _ = capsys.readouterr()
     assert (
@@ -3067,8 +3069,10 @@ def test_main_set_owner_empty_string(capsys):
     sys.argv = ["", "--set-owner", ""]
     mt_config.args = sys.argv
 
-    with pytest.raises(SystemExit) as excinfo:
-        main()
+    iface = MagicMock(autospec=SerialInterface)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
 
     out, _ = capsys.readouterr()
     assert (
@@ -3084,8 +3088,10 @@ def test_main_set_owner_short_whitespace_only(capsys):
     sys.argv = ["", "--set-owner-short", "   "]
     mt_config.args = sys.argv
 
-    with pytest.raises(SystemExit) as excinfo:
-        main()
+    iface = MagicMock(autospec=SerialInterface)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
 
     out, _ = capsys.readouterr()
     assert (
@@ -3101,8 +3107,10 @@ def test_main_set_owner_short_empty_string(capsys):
     sys.argv = ["", "--set-owner-short", ""]
     mt_config.args = sys.argv
 
-    with pytest.raises(SystemExit) as excinfo:
-        main()
+    iface = MagicMock(autospec=SerialInterface)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
 
     out, _ = capsys.readouterr()
     assert (
@@ -3118,8 +3126,10 @@ def test_main_set_ham_whitespace_only(capsys):
     sys.argv = ["", "--set-ham", "   "]
     mt_config.args = sys.argv
 
-    with pytest.raises(SystemExit) as excinfo:
-        main()
+    iface = MagicMock(autospec=SerialInterface)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
 
     out, _ = capsys.readouterr()
     assert (
@@ -3136,8 +3146,10 @@ def test_main_set_ham_empty_string(capsys):
     sys.argv = ["", "--set-ham", ""]
     mt_config.args = sys.argv
 
-    with pytest.raises(SystemExit) as excinfo:
-        main()
+    iface = MagicMock(autospec=SerialInterface)
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        with pytest.raises(SystemExit) as excinfo:
+            main()
 
     out, _ = capsys.readouterr()
     assert (

@@ -31,7 +31,7 @@ class StreamInterface(MeshInterface):
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
-        timeout: int = 300,
+        timeout: float = 300.0,
     ) -> None:
         """
         Initialize the StreamInterface, prepare its reader thread, and optionally open and configure the underlying stream connection.
@@ -42,7 +42,7 @@ class StreamInterface(MeshInterface):
             noProto (bool): If True, skip protocol-specific startup and allow using this class without a concrete stream implementation.
             connectNow (bool): If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration.
             noNodes (bool): Passed to the MeshInterface initializer to control node discovery behavior.
-            timeout (int): Seconds to wait for replies and configuration operations.
+            timeout (float): Seconds to wait for replies and configuration operations.
 
         Raises
         ------

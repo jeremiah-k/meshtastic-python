@@ -14,10 +14,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
-from google.protobuf.message import Message
 
 from meshtastic import publishingThread
-from meshtastic.protobuf import mesh_pb2
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
@@ -1713,3 +1711,48 @@ class BLEInterface(MeshInterface):
             publishingThread.queueWork(_publish_status)
         except Exception:
             logger.debug("Error queuing connect status publish", exc_info=True)
+
+    # CamelCase aliases for public API naming convention compatibility
+    def findDevice(self, address: Optional[str]) -> "BLEDevice":
+        """
+        CamelCase alias for find_device.
+
+        Locate a Meshtastic BLEDevice by address or device name.
+        """
+        return self.find_device(address)
+
+    @property
+    def connectionState(self) -> ConnectionState:
+        """
+        CamelCase alias for connection_state.
+
+        Retrieve the current BLE connection state.
+        """
+        return self.connection_state
+
+    @property
+    def isConnectionConnected(self) -> bool:
+        """
+        CamelCase alias for is_connection_connected.
+
+        Report whether the interface currently has an active BLE connection.
+        """
+        return self.is_connection_connected
+
+    @property
+    def isConnectionClosing(self) -> bool:
+        """
+        CamelCase alias for is_connection_closing.
+
+        Report whether the interface is shutting down or has already closed.
+        """
+        return self.is_connection_closing
+
+    @property
+    def canInitiateConnection(self) -> bool:
+        """
+        CamelCase alias for can_initiate_connection.
+
+        Indicates whether the interface can start a new BLE connection.
+        """
+        return self.can_initiate_connection

@@ -13,13 +13,12 @@ import traceback
 from queue import Queue
 from typing import Any, Dict, List, NoReturn, Optional, Set, Tuple, Union
 
-from google.protobuf.json_format import MessageToJson
-from google.protobuf.message import Message
-
 import packaging.version as pkg_version
 import requests
 import serial  # type: ignore[import-untyped]
 import serial.tools.list_ports  # type: ignore[import-untyped]
+from google.protobuf.json_format import MessageToJson
+from google.protobuf.message import Message
 
 from meshtastic.supported_device import supported_devices
 from meshtastic.version import get_active_version
@@ -45,7 +44,7 @@ DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
 
 def quoteBooleans(a_string: str) -> str:
     """Quote booleans
-    given a string that contains ": true", replace with ": 'true'" (or false)
+    given a string that contains ": true", replace with ": 'true'" (or false).
     """
     tmp: str = a_string.replace(": true", ": 'true'")
     tmp = tmp.replace(": false", ": 'false'")
@@ -53,13 +52,13 @@ def quoteBooleans(a_string: str) -> str:
 
 
 def genPSK256() -> bytes:
-    """Generate a random preshared key"""
+    """Generate a random preshared key."""
     return os.urandom(32)
 
 
 def fromPSK(valstr: str) -> Any:
     """A special version of fromStr that assumes the user is trying to set a PSK.
-    In that case we also allow "none", "default" or "random" (to have python generate one), or simpleN
+    In that case we also allow "none", "default" or "random" (to have python generate one), or simpleN.
     """
     if valstr == "random":
         return genPSK256()
@@ -75,12 +74,13 @@ def fromPSK(valstr: str) -> Any:
 
 
 def fromStr(valstr: str) -> Any:
-    """Try to parse as int, float or bool (and fallback to a string as last resort)
+    """Try to parse as int, float or bool (and fallback to a string as last resort).
 
     Returns: an int, bool, float, str or byte array (for strings of hex digits)
 
     Args:
         valstr (string): A user provided string
+
     """
     val: Any
     if len(valstr) == 0:  # Treat an emptystring as an empty bytes
@@ -106,14 +106,14 @@ def fromStr(valstr: str) -> Any:
 
 
 def toStr(raw_value):
-    """Convert a value to a string that can be used in a config file"""
+    """Convert a value to a string that can be used in a config file."""
     if isinstance(raw_value, bytes):
         return "base64:" + base64.b64encode(raw_value).decode("utf-8")
     return str(raw_value)
 
 
 def pskToString(psk: bytes) -> str:
-    """Given an array of PSK bytes, decode them into a human readable (but privacy protecting) string"""
+    """Given an array of PSK bytes, decode them into a human readable (but privacy protecting) string."""
     if len(psk) == 0:
         return "unencrypted"
     elif len(psk) == 1:
@@ -129,18 +129,18 @@ def pskToString(psk: bytes) -> str:
 
 
 def stripnl(s) -> str:
-    """Remove newlines from a string (and remove extra whitespace)"""
+    """Remove newlines from a string (and remove extra whitespace)."""
     s = str(s).replace("\n", " ")
     return " ".join(s.split())
 
 
 def fixme(message: str) -> None:
-    """Raise an exception for things that needs to be fixed"""
+    """Raise an exception for things that needs to be fixed."""
     raise Exception(f"FIXME: {message}")  # pylint: disable=W0719
 
 
 def catchAndIgnore(reason: str, closure) -> None:
-    """Call a closure but if it throws an exception print it and continue"""
+    """Call a closure but if it throws an exception print it and continue."""
     try:
         closure()
     except BaseException as ex:
@@ -149,10 +149,11 @@ def catchAndIgnore(reason: str, closure) -> None:
 
 def findPorts(eliminate_duplicates: bool = False) -> List[str]:
     """Find all ports that might have meshtastic devices
-       eliminate_duplicates will run the eliminate_duplicate_port() on the collection
+       eliminate_duplicates will run the eliminate_duplicate_port() on the collection.
 
     Returns:
         list -- a list of device paths
+
     """
     all_ports = serial.tools.list_ports.comports()
 
@@ -186,7 +187,7 @@ def findPorts(eliminate_duplicates: bool = False) -> List[str]:
 
 
 class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
+    """dot.notation access to dictionary attributes."""
 
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__  # type: ignore[assignment]
@@ -194,7 +195,7 @@ class dotdict(dict):
 
 
 class Timeout:
-    """Timeout class"""
+    """Timeout class."""
 
     def __init__(self, maxSecs: float = 20.0) -> None:
         self.expireTime: Union[int, float] = 0
@@ -202,7 +203,7 @@ class Timeout:
         self.expireTimeout: float = maxSecs
 
     def reset(self, expireTimeout=None):
-        """Restart the waitForSet timer"""
+        """Restart the waitForSet timer."""
         self.expireTime = time.time() + (
             self.expireTimeout if expireTimeout is None else expireTimeout
         )
@@ -272,10 +273,10 @@ class Timeout:
 
 
 class Acknowledgment:
-    "A class that records which type of acknowledgment was just received, if any."
+    """A class that records which type of acknowledgment was just received, if any."""
 
     def __init__(self) -> None:
-        """initialize"""
+        """Initialize."""
         self.receivedAck = False
         self.receivedNak = False
         self.receivedImplAck = False
@@ -285,7 +286,7 @@ class Acknowledgment:
         self.receivedWaypoint = False
 
     def reset(self) -> None:
-        """reset"""
+        """Reset."""
         self.receivedAck = False
         self.receivedNak = False
         self.receivedImplAck = False
@@ -296,7 +297,7 @@ class Acknowledgment:
 
 
 class DeferredExecution:
-    """A thread that accepts closures to run, and runs them as they are received"""
+    """A thread that accepts closures to run, and runs them as they are received."""
 
     def __init__(self, name) -> None:
         self.queue: Queue = Queue()
@@ -304,11 +305,10 @@ class DeferredExecution:
         self.thread = threading.Thread(
             target=self._run, args=(), name=name, daemon=True
         )
-        self.thread.daemon = True
         self.thread.start()
 
     def queueWork(self, runnable) -> None:
-        """Queue up the work"""
+        """Queue up the work."""
         self.queue.put(runnable)
 
     def _run(self) -> None:
@@ -325,7 +325,7 @@ class DeferredExecution:
 
 def our_exit(message, return_value=1) -> NoReturn:
     """Print the message and return a value.
-    return_value defaults to 1 (non-successful)
+    return_value defaults to 1 (non-successful).
     """
     print(message)
     sys.exit(return_value)
@@ -384,7 +384,7 @@ def channel_hash(data: bytes) -> int:
 
 
 def generate_channel_hash(name: Union[str, bytes], key: Union[str, bytes]) -> int:
-    """generate the channel number by hashing the channel name and psk (accepts str or bytes for both)"""
+    """Generate the channel number by hashing the channel name and psk (accepts str or bytes for both)."""
     # Handle key as str or bytes
     if isinstance(key, str):
         key = base64.b64decode(key.replace("-", "+").replace("_", "/").encode("utf-8"))
@@ -403,24 +403,24 @@ def generate_channel_hash(name: Union[str, bytes], key: Union[str, bytes]) -> in
 
 
 def hexstr(barray: bytes) -> str:
-    """Print a string of hex digits"""
+    """Print a string of hex digits."""
     return ":".join(f"{x:02x}" for x in barray)
 
 
 def ipstr(barray: bytes) -> str:
-    """Print a string of ip digits"""
+    """Print a string of ip digits."""
     return ".".join(f"{x}" for x in barray)
 
 
 def readnet_u16(p, offset: int) -> int:
-    """Read big endian u16 (network byte order)"""
+    """Read big endian u16 (network byte order)."""
     return p[offset] * 256 + p[offset + 1]
 
 
 def convert_mac_addr(val: str) -> Union[str, bytes]:
     """Convert the base 64 encoded value to a mac address
     val - base64 encoded value (ex: '/c0gFyhb'))
-    returns: a string formatted like a mac address (ex: 'fd:cd:20:17:28:5b')
+    returns: a string formatted like a mac address (ex: 'fd:cd:20:17:28:5b').
     """
     if not re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", val):
         val_as_bytes: bytes = base64.b64decode(val)
@@ -429,7 +429,7 @@ def convert_mac_addr(val: str) -> Union[str, bytes]:
 
 
 def snake_to_camel(a_string: str) -> str:
-    """convert snake_case to camelCase"""
+    """Convert snake_case to camelCase."""
     # split underscore using split
     temp = a_string.split("_")
     # joining result
@@ -438,14 +438,14 @@ def snake_to_camel(a_string: str) -> str:
 
 
 def camel_to_snake(a_string: str) -> str:
-    """convert camelCase to snake_case"""
+    """Convert camelCase to snake_case."""
     return "".join(["_" + i.lower() if i.isupper() else i for i in a_string]).lstrip(
         "_"
     )
 
 
 def detect_supported_devices() -> Set:
-    """detect supported devices based on vendor id"""
+    """Detect supported devices based on vendor id."""
     system: str = platform.system()
     # print(f'system:{system}')
 
@@ -505,7 +505,7 @@ def detect_supported_devices() -> Set:
 
 
 def detect_windows_needs_driver(sd, print_reason=False) -> bool:
-    """detect if Windows user needs to install driver for a supported device"""
+    """Detect if Windows user needs to install driver for a supported device."""
     need_to_install_driver: bool = False
 
     if sd:
@@ -522,7 +522,7 @@ def detect_windows_needs_driver(sd, print_reason=False) -> bool:
             # print(f'command:{command}')
             _, sp_output = subprocess.getstatusoutput(command)
             # print(f'sp_output:{sp_output}')
-            search = f"CM_PROB_FAILED_INSTALL"
+            search = "CM_PROB_FAILED_INSTALL"
             # print(f'search:"{search}"')
             if re.search(search, sp_output, re.MULTILINE):
                 need_to_install_driver = True
@@ -538,10 +538,11 @@ def eliminate_duplicate_port(ports: List) -> List:
     ports is a list of ports
     return a list with a single port to use, if it meets the duplicate port conditions
 
-     examples:
+     Examples:
          Ports: ['/dev/cu.usbserial-1430', '/dev/cu.wchusbserial1430'] => ['/dev/cu.wchusbserial1430']
          Ports: ['/dev/cu.usbmodem11301', '/dev/cu.wchusbserial11301'] => ['/dev/cu.wchusbserial11301']
          Ports: ['/dev/cu.SLAB_USBtoUART', '/dev/cu.usbserial-0001'] => ['/dev/cu.usbserial-0001']
+
     """
     new_ports = []
     if len(ports) != 2:
@@ -566,7 +567,7 @@ def eliminate_duplicate_port(ports: List) -> List:
 
 
 def is_windows11() -> bool:
-    """Detect if Windows 11"""
+    """Detect if Windows 11."""
     is_win11: bool = False
     if platform.system() == "Windows":
         try:
@@ -582,7 +583,7 @@ def is_windows11() -> bool:
 
 
 def get_unique_vendor_ids() -> Set[str]:
-    """Return a set of unique vendor ids"""
+    """Return a set of unique vendor ids."""
     vids = set()
     for d in supported_devices:
         if d.usb_vendor_id_in_hex:
@@ -591,7 +592,7 @@ def get_unique_vendor_ids() -> Set[str]:
 
 
 def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
-    """Return a set of unique devices with the vendor id"""
+    """Return a set of unique devices with the vendor id."""
     sd = set()
     for d in supported_devices:
         if d.usb_vendor_id_in_hex == vid:
@@ -600,7 +601,7 @@ def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
 
 
 def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[str]:
-    """Return a set of active ports based on the supplied supported devices"""
+    """Return a set of active ports based on the supplied supported devices."""
     ports: Set = set()
     baseports: Set = set()
     system: str = platform.system()
@@ -670,7 +671,7 @@ def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[st
 def detect_windows_port(
     sd,
 ) -> Set[str]:  # "sd" is a SupportedDevice from meshtastic.supported_device
-    """detect if Windows port"""
+    """Detect if Windows port."""
     ports = set()
 
     if sd:

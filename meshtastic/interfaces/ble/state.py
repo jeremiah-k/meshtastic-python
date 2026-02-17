@@ -301,7 +301,7 @@ class BLEStateManager:
         Indicates whether a connection may be initiated from the current state.
 
         Returns:
-            `true` if the current state is DISCONNECTED or ERROR, `false` otherwise.
+            `True` if the current state is DISCONNECTED or ERROR, `False` otherwise.
 
         """
         return self.can_connect

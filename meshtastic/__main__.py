@@ -1414,7 +1414,7 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
         str: A YAML string (prefixed with a header comment) representing the exported configuration.
 
     """
-    configObj = {}
+    configObj: Dict[str, Any] = {}
 
     # A list of configuration keys that should be set to False if they are missing
     config_true_defaults = {
@@ -1436,7 +1436,7 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     myinfo = interface.getMyNodeInfo()
     canned_messages = interface.getCannedMessage()
     ringtone = interface.getRingtone()
-    pos = myinfo.get("position")
+    pos = myinfo.get("position") if myinfo else None
     lat = None
     lon = None
     alt = None
@@ -1726,7 +1726,7 @@ def common():
                                 if not 1 <= tcp_port <= 65535:
                                     raise ValueError(f"Port {tcp_port} out of range")
                             except ValueError:
-                                # Not a valid port – treat the whole string as a hostname
+                                # Not a valid port - treat the whole string as a hostname
                                 tcp_hostname = args.host
                                 tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
                     else:
@@ -2516,8 +2516,8 @@ def initParser():
     group.add_argument(
         "--timeout",
         help="How long to wait for replies. Default %(default)ss.",
-        default=300,
-        type=int,
+        default=300.0,
+        type=float,
         metavar="SECONDS",
     )
 

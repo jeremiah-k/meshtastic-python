@@ -46,6 +46,36 @@ class _FallbackDotMap(dict):
             return _FallbackDotMap(value)
         return value
 
+    def __setattr__(self, key: str, value: Any) -> None:
+        """
+        Set dictionary keys via attribute-style access.
+
+        Parameters
+        ----------
+            key (str): Attribute name to set as a dictionary key.
+            value (Any): Value to store under the key.
+
+        """
+        self[key] = value
+
+    def __delattr__(self, key: str) -> None:
+        """
+        Delete dictionary keys via attribute-style access.
+
+        Parameters
+        ----------
+            key (str): Attribute name to delete as a dictionary key.
+
+        Raises
+        ------
+            AttributeError: If the key does not exist.
+
+        """
+        try:
+            del self[key]
+        except KeyError:
+            raise AttributeError(key) from None
+
 
 DotMap: type[Any]
 try:
