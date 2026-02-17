@@ -142,9 +142,13 @@ class BLEInterface(MeshInterface):
         #     4. Interface state lock (_state_lock)
         #     5. Interface disconnect lock (_disconnect_lock)
         #
-        # Note: _disconnect_lock is acquired non-blocking first for early-return
-        # optimization, then _state_lock is acquired. This is intentional for
-        # handling concurrent disconnect callbacks.
+        # EXCEPTION: In _handle_disconnect, _disconnect_lock is acquired FIRST
+        # (non-blocking) before _state_lock. This intentional inversion enables
+        # early-return optimization for concurrent disconnect callbacks without
+        # blocking on state_lock. Safe because _disconnect_lock uses non-blocking
+        # acquire-if other code needs both locks, it acquires state_lock first,
+        # then disconnect_lock, and _handle_disconnect's non-blocking acquire will
+        # simply fail and return early.
         #
         # _connect_lock Purpose:
         #     Serializes connection attempts within a single interface instance.

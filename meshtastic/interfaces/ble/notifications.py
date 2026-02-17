@@ -72,8 +72,18 @@ class NotificationManager:
             self._subscription_counter = (
                 self._subscription_counter + 1
             ) & self._MAX_SUBSCRIPTION_TOKEN
-            # Handle wraparound collision (extremely unlikely in practice)
+            # Handle wraparound collision with iteration guard to prevent infinite loop
+            # (extremely unlikely in practice - would require 2^31 active subscriptions)
+            collision_iterations = 0
+            _MAX_COLLISION_ITERATIONS = 1000
             while token in self._active_subscriptions:
+                collision_iterations += 1
+                if collision_iterations >= _MAX_COLLISION_ITERATIONS:
+                    raise RuntimeError(
+                        f"Failed to allocate unique subscription token after "
+                        f"{_MAX_COLLISION_ITERATIONS} attempts. Subscription registry "
+                        f"may be corrupted or exhausted."
+                    )
                 token = self._subscription_counter
                 self._subscription_counter = (
                     self._subscription_counter + 1

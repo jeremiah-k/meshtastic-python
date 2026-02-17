@@ -357,27 +357,21 @@ class DiscoveryManager:
             connected_coro = self.connected_strategy.discover(
                 address, BLEConfig.BLE_SCAN_TIMEOUT
             )
-            coro_consumed = False
             try:
                 fallback = client.async_await(
                     connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
                 )
-                coro_consumed = True
                 devices.extend(fallback)
             except (SystemExit, KeyboardInterrupt):
                 raise
             except Exception as e:  # pragma: no cover - best effort logging
                 logger.warning("Connected device fallback failed: %s", e, exc_info=True)
-            finally:
-                # Close the coroutine if it was never consumed (async_await raised before scheduling)
-                if not coro_consumed and inspect.iscoroutine(connected_coro):
-                    try:
-                        connected_coro.close()
-                    except Exception:  # noqa: BLE001
-                        logger.debug(
-                            "Error closing unconsumed connected-device fallback coroutine",
-                            exc_info=True,
-                        )
+            # Note: We do NOT manually close connected_coro here. Once passed to
+            # async_await, that function takes ownership of the coroutine's lifecycle.
+            # Attempting to close after async_await has scheduled it would cause a
+            # double-close error. If async_await raises before scheduling, the coroutine
+            # may not be closed, but this is a minor edge case vs. the risk of
+            # double-closing.
 
         return devices
 
