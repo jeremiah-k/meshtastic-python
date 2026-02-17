@@ -123,7 +123,7 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
             address (Optional[str]): BLE address or device name to connect to; if None, any discovered Meshtastic device may be used.
-            auto_reconnect (bool): If True, schedule automatic reconnection after unexpected disconnects; if False (default), the interface will not attempt automatic reconnects and will begin shutdown on disconnect.
+            auto_reconnect (bool): If True, schedule automatic reconnection after unexpected disconnects; if False (default), the interface will not attempt automatic reconnects and will remain disconnected until connect() is called again or the interface is closed.
 
         Raises
         ------

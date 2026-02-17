@@ -35,25 +35,107 @@ def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
     return ("details" in sig.parameters, "rssi" in sig.parameters)
 
 
+def _normalize_device_name_for_matching(name: Optional[str]) -> Optional[str]:
+    """
+    Normalize a device name for tolerant equality checks without collapsing punctuation.
+
+    Parameters
+    ----------
+        name (Optional[str]): Raw device name.
+
+    Returns
+    -------
+        Optional[str]: `casefold().strip()` form, or `None` if empty/unknown.
+
+    """
+    if name is None:
+        return None
+    normalized_name = name.strip().casefold()
+    return normalized_name or None
+
+
+def _filter_devices_for_target_identifier(
+    devices: List[BLEDevice], target_identifier: str
+) -> List[BLEDevice]:
+    """
+    Filter devices by target identifier using deterministic precedence rules.
+
+    Matching precedence:
+    1. Exact normalized address key match.
+    2. Exact name match (case-sensitive).
+    3. Name match using `casefold().strip()` only when there is a single match.
+
+    Parameters
+    ----------
+        devices (List[BLEDevice]): Candidate devices.
+        target_identifier (str): User-supplied address or name.
+
+    Returns
+    -------
+        List[BLEDevice]: Matching devices. Returns empty list on no match or
+            ambiguous normalized-name matches.
+
+    """
+    target_key = sanitize_address(target_identifier)
+    if target_key:
+        address_matches = [
+            device
+            for device in devices
+            if sanitize_address(getattr(device, "address", None)) == target_key
+        ]
+        if address_matches:
+            return address_matches
+
+    exact_name_matches = [
+        device
+        for device in devices
+        if getattr(device, "name", None) == target_identifier
+    ]
+    if exact_name_matches:
+        return exact_name_matches
+
+    normalized_target_name = _normalize_device_name_for_matching(target_identifier)
+    if normalized_target_name is None:
+        return []
+
+    normalized_name_matches = [
+        device
+        for device in devices
+        if _normalize_device_name_for_matching(getattr(device, "name", None))
+        == normalized_target_name
+    ]
+    if len(normalized_name_matches) == 1:
+        return normalized_name_matches
+    if len(normalized_name_matches) > 1:
+        logger.warning(
+            "Ambiguous device-name match for %r after normalized comparison (%d candidates); use exact BLE address or exact name.",
+            target_identifier,
+            len(normalized_name_matches),
+        )
+    return []
+
+
 def _parse_scan_response(
     response: Any, whitelist_address: Optional[str] = None
 ) -> List[BLEDevice]:
     """
     Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects.
 
-    When `whitelist_address` is provided, only exact address/name matches are
-    returned. Otherwise, devices advertising `SERVICE_UUID` are returned.
+    When `whitelist_address` is provided, matches are selected using
+    address-first and name-aware precedence:
+    1) exact normalized address key, 2) exact name, 3) normalized name
+    (`casefold().strip()`) only if unique. Otherwise, devices advertising
+    `SERVICE_UUID` are returned.
 
     Parameters
     ----------
         response (Any): The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
-        whitelist_address (Optional[str]): A sanitized address or device name
-            to match exactly against device address or name.
+        whitelist_address (Optional[str]): Raw address or device name target.
 
     Returns
     -------
-        List[BLEDevice]: Devices matching the whitelist (targeted mode) or
-            devices advertising SERVICE_UUID (broad scan mode).
+        List[BLEDevice]: Devices matching the target (targeted mode) or devices
+            advertising SERVICE_UUID (broad scan mode).
 
     """
     devices: List[BLEDevice] = []
@@ -66,7 +148,9 @@ def _parse_scan_response(
             type(response),
         )
         return devices
-    has_whitelist = bool(whitelist_address)
+    target_identifier = whitelist_address.strip() if whitelist_address else None
+    has_whitelist = bool(target_identifier)
+    target_candidates: List[BLEDevice] = []
     for _, value in response.items():
         if isinstance(value, tuple) and len(value) == 2:
             device, adv = value
@@ -82,25 +166,15 @@ def _parse_scan_response(
         suuids = getattr(adv, "service_uuids", None)
         has_service = SERVICE_UUID in (suuids or [])
 
-        # Check for whitelist match if provided
-        matches_whitelist = False
         if has_whitelist:
-            sanitized_addr = sanitize_address(device.address)
-            sanitized_name = sanitize_address(device.name)
-            # CRITICAL FIX: Use exact equality matching instead of substring matching to prevent
-            # connecting to wrong device when device name/address contains target address as substring.
-            # This is essential for scenarios where multiple BLE devices are present and user has
-            # pre-bonded the target device via bluetoothctl/blueman before starting the relay.
-            # Example vulnerability: if whitelist_address is "AA:BB:CC:DD:EE:FF" and device.name
-            # contains that string as a substring, it would incorrectly match and connect to wrong device.
-            if whitelist_address in (sanitized_addr, sanitized_name):
-                matches_whitelist = True
-
-        if has_whitelist:
-            if matches_whitelist:
-                devices.append(device)
+            target_candidates.append(device)
         elif has_service:
             devices.append(device)
+
+    if has_whitelist and target_identifier is not None:
+        return _filter_devices_for_target_identifier(
+            target_candidates, target_identifier
+        )
     return devices
 
 
@@ -110,16 +184,18 @@ class DiscoveryStrategy(ABC):
     @abstractmethod
     async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
         """
-        Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by a sanitized address or name.
+        Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by address or name.
 
         Parameters
         ----------
-            address (Optional[str]): Optional target device address or name; comparisons are performed on sanitized forms.
+            address (Optional[str]): Optional target device address or name.
             timeout (float): Maximum time in seconds to wait for backend device enumeration.
 
         Returns
         -------
-            List[BLEDevice]: Devices that advertise SERVICE_UUID and, if `address` is provided, whose sanitized address or name equals the sanitized target. Returns an empty list on error.
+            List[BLEDevice]: Devices that advertise SERVICE_UUID and, if
+            `address` is provided, match via address-first and name-aware
+            precedence rules. Returns an empty list on error.
 
         Raises
         ------
@@ -149,12 +225,16 @@ class ConnectedStrategy(DiscoveryStrategy):
 
         Parameters
         ----------
-            address (Optional[str]): Target BLE address or device name to filter results; comparison uses the same sanitation applied by the BLE client. If None, no address/name filtering is applied.
+            address (Optional[str]): Target BLE address or device name to
+                filter results. If None, no address/name filtering is applied.
             timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
 
         Returns
         -------
-            List[BLEDevice]: Connected devices that advertise SERVICE_UUID and, if `address` is provided, whose sanitized address or sanitized name exactly matches the sanitized target. Returns an empty list if the backend does not support connected-device enumeration or if an error occurs.
+            List[BLEDevice]: Connected devices that advertise SERVICE_UUID and,
+            if `address` is provided, match via address-first and name-aware
+            precedence rules. Returns an empty list if the backend does not
+            support connected-device enumeration or if an error occurs.
 
         """
         if not _bleak_supports_connected_fallback():
@@ -191,7 +271,8 @@ class ConnectedStrategy(DiscoveryStrategy):
                         "connected-device enumeration",
                     )
 
-                sanitized_target = sanitize_address(address) if address else None
+                target_candidates: List[BLEDevice] = []
+                target_identifier = address.strip() if address else None
                 # BLEDevice constructor signature varies across bleak versions.
                 # Handle both `details` and legacy `rssi` kwargs when present.
                 supports_details, supports_rssi = (
@@ -203,12 +284,16 @@ class ConnectedStrategy(DiscoveryStrategy):
                     if SERVICE_UUID not in uuids:
                         continue
 
-                    if sanitized_target:
-                        sanitized_addr = sanitize_address(device.address)
-                        sanitized_name = sanitize_address(device.name)
-                        if sanitized_target not in (sanitized_addr, sanitized_name):
-                            continue
+                    target_candidates.append(device)
 
+                if target_identifier:
+                    matched_candidates = _filter_devices_for_target_identifier(
+                        target_candidates, target_identifier
+                    )
+                else:
+                    matched_candidates = target_candidates
+
+                for device in matched_candidates:
                     params: Dict[str, Any] = {
                         "address": device.address,
                         "name": device.name,
@@ -312,7 +397,7 @@ class DiscoveryManager:
 
         client = self._client
         devices: List[BLEDevice] = []
-        sanitized_target = sanitize_address(address) if address else None
+        target_identifier = address.strip() if address else None
         try:
             scan_start = time.monotonic()
             logger.debug(
@@ -322,7 +407,7 @@ class DiscoveryManager:
 
             # If we are looking for a specific address, scan everything to ensure we find it
             # even if the Service UUID is missing from the advertisement.
-            scan_uuids = [SERVICE_UUID] if not sanitized_target else None
+            scan_uuids = [SERVICE_UUID] if not target_identifier else None
 
             response = client.discover(
                 timeout=BLEConfig.BLE_SCAN_TIMEOUT,
@@ -333,7 +418,9 @@ class DiscoveryManager:
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )
 
-            devices = _parse_scan_response(response, whitelist_address=sanitized_target)
+            devices = _parse_scan_response(
+                response, whitelist_address=target_identifier
+            )
         except BleakDBusError as e:
             # Bubble up BlueZ/DBus failures so callers can back off more aggressively
             logger.warning(
@@ -350,12 +437,12 @@ class DiscoveryManager:
             )
             devices = []
 
-        if not devices and address:
+        if not devices and target_identifier:
             logger.debug(
                 "Scan found no devices, trying fallback to already-connected devices"
             )
             connected_coro = self.connected_strategy.discover(
-                address, BLEConfig.BLE_SCAN_TIMEOUT
+                target_identifier, BLEConfig.BLE_SCAN_TIMEOUT
             )
             try:
                 fallback = client.async_await(

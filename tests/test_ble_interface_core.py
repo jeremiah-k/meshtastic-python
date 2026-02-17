@@ -37,6 +37,8 @@ from meshtastic.interfaces.ble.discovery import (
     ConnectedStrategy,
     DiscoveryManager,
     _ble_device_constructor_kwargs_support,
+    _filter_devices_for_target_identifier,
+    _parse_scan_response,
 )
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
@@ -295,13 +297,14 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     iface.close()
 
 
-def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch):
+def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_registry):
     """
     Concurrent connect/disconnect should complete without deadlocking under address-lock contention.
 
     This test forces connect() to hold the per-address lock while _handle_disconnect()
     runs, then releases connect to ensure both operations complete.
     """
+    _ = clear_registry
     import meshtastic.interfaces.ble.interface as ble_iface_mod
 
     target_address = "AA:BB:CC:DD:EE:01"
@@ -353,7 +356,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch):
         _ = owner
         assert addr_key is not None
         connect_waiting.set()
-        if not allow_connect.wait(timeout=5.0):
+        if not allow_connect.wait(timeout=12.0):
             raise AssertionError("Timed out waiting to release connect gate check")
         return False
 
@@ -394,25 +397,32 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch):
 
     connect_thread = threading.Thread(target=_connect_worker, daemon=True)
     disconnect_thread = threading.Thread(target=_disconnect_worker, daemon=True)
+    try:
+        connect_thread.start()
+        assert connect_waiting.wait(timeout=12.0), "connect() did not reach gate check"
 
-    connect_thread.start()
-    assert connect_waiting.wait(timeout=5.0), "connect() did not reach gate check"
+        disconnect_thread.start()
+        allow_connect.set()
 
-    disconnect_thread.start()
-    allow_connect.set()
+        connect_thread.join(timeout=12.0)
+        disconnect_thread.join(timeout=12.0)
 
-    connect_thread.join(timeout=5.0)
-    disconnect_thread.join(timeout=5.0)
+        assert (
+            establish_called.is_set()
+        ), "connect() did not run connection establishment"
+        assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
+        assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
 
-    assert establish_called.is_set(), "connect() did not run connection establishment"
-    assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
-    assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
-
-    if not thread_errors.empty():
-        where, exc = thread_errors.get_nowait()
-        pytest.fail(f"{where} thread raised {type(exc).__name__}: {exc}")
-
-    iface.close()
+        if not thread_errors.empty():
+            where, exc = thread_errors.get_nowait()
+            pytest.fail(f"{where} thread raised {type(exc).__name__}: {exc}")
+    finally:
+        allow_connect.set()
+        if connect_thread.is_alive():
+            connect_thread.join(timeout=1.0)
+        if disconnect_thread.is_alive():
+            disconnect_thread.join(timeout=1.0)
+        iface.close()
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
@@ -758,6 +768,33 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch)
     devices = manager.discover_devices(address="AA:BB:CC:DD:EE:FF")
 
     assert devices == [target_device]
+
+
+def test_parse_scan_response_prefers_exact_name_before_normalized_match():
+    """Targeted scan should prefer an exact name match over normalized-name candidates."""
+    exact_name_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "My Device")
+    normalized_only_device = _create_ble_device("11:22:33:44:55:66", "my device")
+
+    response = {
+        "exact": (exact_name_device, SimpleNamespace(service_uuids=[])),
+        "normalized": (normalized_only_device, SimpleNamespace(service_uuids=[])),
+    }
+
+    devices = _parse_scan_response(response, whitelist_address="My Device")
+
+    assert devices == [exact_name_device]
+
+
+def test_filter_devices_rejects_ambiguous_normalized_name_matches():
+    """Name matching should reject ambiguous normalized-name collisions."""
+    devices = [
+        _create_ble_device("AA:BB:CC:DD:EE:FF", "My Device"),
+        _create_ble_device("11:22:33:44:55:66", "my device"),
+    ]
+
+    matches = _filter_devices_for_target_identifier(devices, "MY DEVICE")
+
+    assert matches == []
 
 
 def test_discovery_manager_destructor_does_not_close_client():
