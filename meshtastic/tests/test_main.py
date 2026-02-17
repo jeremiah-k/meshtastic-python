@@ -250,6 +250,8 @@ def test_main_info(capsys, caplog):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
         print("inside mocked showInfo")
@@ -278,6 +280,8 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
     patched_getlogin.return_value = "me"
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             with patch(
@@ -301,6 +305,8 @@ def test_main_info_with_tcp_interface(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=TCPInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
         print("inside mocked showInfo")
@@ -323,6 +329,8 @@ def test_main_no_proto(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
         print("inside mocked showInfo")
@@ -354,6 +362,8 @@ def test_main_info_with_seriallog_stdout(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
         print("inside mocked showInfo")
@@ -376,6 +386,8 @@ def test_main_info_with_seriallog_output_txt(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
         print("inside mocked showInfo")
@@ -400,6 +412,8 @@ def test_main_qr(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     # TODO: could mock/check url
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
@@ -443,6 +457,8 @@ def test_main_onConnected_exception(capsys):
     pytest.importorskip("pyqrcode")
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with patch("pyqrcode.create", side_effect=throw_an_exception):
             with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -460,6 +476,8 @@ def test_main_nodes(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showNodes(includeSelf, showFields):
         print(f"inside mocked showNodes: {includeSelf} {showFields}")
@@ -482,6 +500,8 @@ def test_main_set_owner_to_bob(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -499,6 +519,8 @@ def test_main_set_owner_short_to_bob(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -516,6 +538,8 @@ def test_main_set_is_unmessageable_to_true(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -535,6 +559,8 @@ def test_main_set_is_unmessagable_to_true(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -554,6 +580,8 @@ def test_main_set_canned_messages(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -601,6 +629,8 @@ def test_main_set_ringtone(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -657,6 +687,8 @@ def test_main_set_ham_to_KI123(capsys):
     mocked_node.setOwner.side_effect = mock_setOwner
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -687,6 +719,8 @@ def test_main_reboot(capsys):
     mocked_node.reboot.side_effect = mock_reboot
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -713,6 +747,8 @@ def test_main_shutdown(capsys):
     mocked_node.shutdown.side_effect = mock_shutdown
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -739,6 +775,8 @@ def test_main_sendtext(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.sendText.side_effect = _mock_sendText_helper
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -774,6 +812,8 @@ def test_main_sendtext_with_channel(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.sendText.side_effect = _mock_sendText_helper
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -795,6 +835,8 @@ def test_main_sendtext_with_invalid_channel(caplog, capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.localNode.getChannelByChannelIndex.return_value = None
 
     with caplog.at_level(logging.DEBUG):
@@ -819,6 +861,8 @@ def test_main_sendtext_with_invalid_channel_nine(caplog, capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.localNode.getChannelByChannelIndex.return_value = None
 
     with caplog.at_level(logging.DEBUG):
@@ -880,6 +924,8 @@ def test_main_removeposition_remote(capsys):
     sys.argv = ["", "--remove-position", "--dest", "!12345678"]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -903,6 +949,8 @@ def test_main_setlat_remote(capsys):
     sys.argv = ["", "--setlat", "37.5", "--dest", "!12345678"]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -934,6 +982,8 @@ def test_main_removeposition(capsys):
     mocked_node.removeFixedPosition.side_effect = mock_removeFixedPosition
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -962,6 +1012,8 @@ def test_main_setlat(capsys):
     mocked_node.setFixedPosition.side_effect = mock_setFixedPosition
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -991,6 +1043,8 @@ def test_main_setlon(capsys):
     mocked_node.setFixedPosition.side_effect = mock_setFixedPosition
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1020,6 +1074,8 @@ def test_main_setalt(capsys):
     mocked_node.setFixedPosition.side_effect = mock_setFixedPosition
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1041,6 +1097,8 @@ def test_main_seturl(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         main()
         out, err = capsys.readouterr()
@@ -1286,6 +1344,8 @@ def test_main_ch_add_valid(capsys):
     mocked_node.getDisabledChannel.return_value = mocked_channel
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1314,6 +1374,8 @@ def test_main_ch_add_invalid_name_too_long(capsys):
     mocked_node.getDisabledChannel.return_value = mocked_channel
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1340,6 +1402,8 @@ def test_main_ch_add_but_name_already_exists(capsys):
     mocked_node.getChannelByName.return_value = True
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1368,6 +1432,8 @@ def test_main_ch_add_but_no_more_channels(capsys):
     mocked_node.getDisabledChannel.return_value = None
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1392,6 +1458,8 @@ def test_main_ch_del(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1413,6 +1481,8 @@ def test_main_ch_del_no_ch_index_specified(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1438,6 +1508,8 @@ def test_main_ch_del_primary_channel(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1462,6 +1534,8 @@ def test_main_ch_enable_valid_secondary_channel(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1484,6 +1558,8 @@ def test_main_ch_disable_valid_secondary_channel(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1506,6 +1582,8 @@ def test_main_ch_enable_without_a_ch_index(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1531,6 +1609,8 @@ def test_main_ch_enable_primary_channel(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1586,6 +1666,8 @@ def test_main_ch_longfast_on_non_primary_channel(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1781,6 +1863,8 @@ def test_main_get_with_invalid(capsys):
     mocked_node.moduleConfig = mocked_user_prefs
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1800,6 +1884,8 @@ def test_main_onReceive_empty(caplog, capsys):
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     # Need 'decoded' to be truthy so the code path reaches packet["to"]
     packet = {"decoded": {}}
     with caplog.at_level(logging.DEBUG):
@@ -1844,6 +1930,8 @@ def test_main_onReceive_with_sendtext(caplog, capsys):
     }
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.myInfo.my_node_num = 4294967295
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
@@ -1881,6 +1969,8 @@ def test_main_onReceive_with_text(caplog, capsys):
     }
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.myInfo.my_node_num = 4294967295
 
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
@@ -1899,6 +1989,8 @@ def test_main_onConnection(capsys):
     sys.argv = [""]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
 
     class TempTopic:
         """temp class for topic."""
@@ -1927,6 +2019,8 @@ def test_main_onConnection_with_non_topic(capsys):
     sys.argv = [""]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     onConnection(iface, topic="raw-topic")
     out, err = capsys.readouterr()
     assert re.search(r"Connection changed: raw-topic", out, re.MULTILINE)
@@ -1938,6 +2032,8 @@ def test_main_onConnection_with_non_topic(capsys):
 def test_main_export_config(capsys):
     """Test export_config() function directly."""
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.getLongName.return_value = "foo"
         mo.getShortName.return_value = "oof"
@@ -2083,6 +2179,8 @@ def test_main_gpio_rd_no_gpio_channel(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.localNode.getChannelByName.return_value = None
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -2106,6 +2204,8 @@ def test_main_gpio_rd_no_dest(capsys):
     channel.settings.name = "gpio"
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.localNode.getChannelByName.return_value = channel
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -2727,6 +2827,8 @@ def test_main_ch_set_psk_no_ch_index(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=TCPInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=iface) as mo:
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             main()
@@ -2756,6 +2858,8 @@ def test_main_ch_set_psk_with_ch_index(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=TCPInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.tcp_interface.TCPInterface", return_value=iface) as mo:
         main()
     out, err = capsys.readouterr()
@@ -2923,6 +3027,8 @@ def test_set_favorite_node():
     mt_config.args = sys.argv
     mocked_node = MagicMock(autospec=Node)
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
@@ -2938,6 +3044,8 @@ def test_remove_favorite_node():
     mt_config.args = sys.argv
     mocked_node = MagicMock(autospec=Node)
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
     mocked_node.iface = iface
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
@@ -2954,6 +3062,8 @@ def test_set_ignored_node():
     mt_config.args = sys.argv
     mocked_node = MagicMock(autospec=Node)
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
@@ -2969,6 +3079,8 @@ def test_remove_ignored_node():
     mt_config.args = sys.argv
     mocked_node = MagicMock(autospec=Node)
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     iface.getNode.return_value = mocked_node
     mocked_node.iface = iface
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
@@ -2985,6 +3097,8 @@ def test_main_set_owner_whitespace_only(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as excinfo:
             main()
@@ -3004,6 +3118,8 @@ def test_main_set_owner_empty_string(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as excinfo:
             main()
@@ -3023,6 +3139,8 @@ def test_main_set_owner_short_whitespace_only(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as excinfo:
             main()
@@ -3042,6 +3160,8 @@ def test_main_set_owner_short_empty_string(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as excinfo:
             main()
@@ -3061,6 +3181,8 @@ def test_main_set_ham_whitespace_only(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as excinfo:
             main()
@@ -3081,6 +3203,8 @@ def test_main_set_ham_empty_string(capsys):
     mt_config.args = sys.argv
 
     iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         with pytest.raises(SystemExit) as excinfo:
             main()

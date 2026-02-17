@@ -38,6 +38,7 @@ class SerialInterface(StreamInterface):
 
         """
         self.noProto = noProto
+        self.stream: Optional[serial.Serial] = None  # Initialize early for safe cleanup
 
         self.devPath: Optional[str] = devPath
 

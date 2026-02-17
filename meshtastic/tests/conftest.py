@@ -1,7 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
-from typing import ClassVar
+from typing import ClassVar, Type
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,6 +9,29 @@ import pytest
 from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
+
+
+def create_context_manager_mock(spec_class: Type) -> MagicMock:
+    """Create a MagicMock that properly supports context manager protocol.
+
+    When using ExitStack.enter_context(), the mock's __enter__ must return self,
+    otherwise the returned object is a different mock than what was configured.
+
+    This is needed because the CLI code now uses:
+        client = stack.enter_context(SerialInterface(...))
+
+    Without this fix, __enter__ returns a new MagicMock, breaking test assertions.
+
+    Args:
+        spec_class: The class to use as spec for the mock (e.g., SerialInterface)
+
+    Returns:
+        A MagicMock with __enter__ configured to return itself.
+    """
+    mock = MagicMock(autospec=spec_class)
+    mock.__enter__ = MagicMock(return_value=mock)
+    mock.__exit__ = MagicMock(return_value=None)
+    return mock
 
 
 class FakeTimer:

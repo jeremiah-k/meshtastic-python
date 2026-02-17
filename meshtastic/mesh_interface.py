@@ -171,14 +171,16 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Shut down the interface, cancel any pending heartbeat, mark the interface as closing, and send a disconnect to the radio.
         """
-        with self._heartbeat_lock:
-            self._closing = True
-            timer = self.heartbeatTimer
-            self.heartbeatTimer = None
-        if timer:
-            timer.cancel()
-
-        self._sendDisconnect()
+        # Handle case where __init__ returned early before parent initialization
+        heartbeat_lock = getattr(self, "_heartbeat_lock", None)
+        if heartbeat_lock is not None:
+            with heartbeat_lock:
+                self._closing = True
+                timer = self.heartbeatTimer
+                self.heartbeatTimer = None
+            if timer:
+                timer.cancel()
+            self._sendDisconnect()
 
     def __enter__(self) -> "MeshInterface":
         """

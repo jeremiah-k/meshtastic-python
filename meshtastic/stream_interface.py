@@ -204,9 +204,15 @@ class StreamInterface(MeshInterface):
         self._wantExit = True
         # close() can be called before connect() starts the reader thread
         # (e.g., tests using connectNow=False). In that case join() would raise.
-        if self._rxThread != threading.current_thread() and self._rxThread.is_alive():
-            self._rxThread.join(timeout=2.0)
-            if self._rxThread.is_alive():
+        # Also handle partially initialized objects from early __init__ returns.
+        rx_thread = getattr(self, "_rxThread", None)
+        if (
+            rx_thread is not None
+            and rx_thread != threading.current_thread()
+            and rx_thread.is_alive()
+        ):
+            rx_thread.join(timeout=2.0)
+            if rx_thread.is_alive():
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _handleLogByte(self, b: bytes) -> None:
