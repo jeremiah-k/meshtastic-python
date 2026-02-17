@@ -1050,136 +1050,156 @@ class BLEInterface(MeshInterface):
         """
         return self._state_manager.can_connect and not self._closed
 
-    def connect(self, address: Optional[str] = None) -> "BLEClient":
+    # ---------------------------------------------------------------------
+    # Connection helper methods (extracted from connect() for readability)
+    # ---------------------------------------------------------------------
+
+    def _validate_connection_preconditions(self) -> None:
         """
-        Connects to a Meshtastic device over BLE by explicit address or by performing device discovery.
+        Raise BLEError if the interface is closing.
 
-        Attempts to establish and return a connected BLE client for the requested device. If an existing compatible client is already connected, that client is returned. The method uses per-address gating to suppress duplicate concurrent connects and updates the interface's stored address and client reference on success. On failure any client opened during the attempt is closed before the error is propagated.
-
-        Parameters
-        ----------
-            address (Optional[str]): BLE address or device name to connect to; if None, discovery is used to select a device.
-
-        Returns
-        -------
-            BLEClient: The connected BLE client for the selected device.
-
-        Raises
-        ------
-            BLEInterface.BLEError: If the interface is closing, if connection is suppressed due to a recent connect elsewhere, or if the connection attempt fails.
-
+        Must be called before acquiring any locks to fail fast and prevent
+        blocking close() which needs the address lock to proceed.
         """
-
-        # EARLY CHECK: Fail fast if interface is closing before acquiring any locks
-        # This prevents blocking close() which needs the address lock to proceed
         if self._closed or self.is_connection_closing:
             raise self.BLEError("Cannot connect while interface is closing")
 
-        requested_identifier = address if address is not None else self.address
-        normalized_request = sanitize_address(requested_identifier)
+    def _should_suppress_duplicate_connect(self, addr_key: Optional[str]) -> bool:
+        """
+        Check if a connection should be suppressed due to a recent connect elsewhere.
 
-        # Only use address registry for explicit addresses, not discovery mode (None)
-        addr_key = _addr_key(requested_identifier) if requested_identifier else None
-        connected_client: Optional["BLEClient"] = None
-        connected_device_key: Optional[str] = None
-        connection_alias_key: Optional[str] = None
+        Parameters
+        ----------
+            addr_key (Optional[str]): The address key to check, or None for discovery mode.
 
-        # Apply address gating only for explicit-address connects.
-        # Discovery-mode connects intentionally skip gating to avoid holding the
-        # global registry lock during long-running scan/discovery operations.
-        with contextlib.ExitStack() as stack:
-            if addr_key is not None:
-                addr_lock = stack.enter_context(_addr_lock_context(addr_key))
-                stack.enter_context(addr_lock)
+        Returns
+        -------
+            bool: True if the connection should be suppressed, False otherwise.
 
-            # Fast suppression if a recent connect happened elsewhere.
-            # Check is performed inside addr_lock to ensure consistent lock ordering.
-            # Skip suppression check for discovery mode (addr_key is None)
-            if (
-                addr_key
-                and _is_currently_connected_elsewhere(addr_key, owner=self)
-                and not self._state_manager.is_connected
-            ):
-                logger.info(
-                    "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                    addr_key or "unknown",
-                )
-                raise self.BLEError(
-                    "Connection suppressed: recently connected elsewhere"
-                )
+        """
+        return bool(
+            addr_key
+            and _is_currently_connected_elsewhere(addr_key, owner=self)
+            and not self._state_manager.is_connected
+        )
 
-            with self._connect_lock:
-                # Re-check closing state inside connect_lock for extra safety
-                if self._closed or self.is_connection_closing:
-                    raise self.BLEError("Cannot connect while interface is closing")
+    def _get_existing_client_if_valid(
+        self, normalized_request: Optional[str]
+    ) -> Optional["BLEClient"]:
+        """
+        Return the existing client if it is still valid and connected.
 
-                with self._state_lock:
-                    existing_client = self.client
-                    if (
-                        existing_client
-                        and existing_client.is_connected()
-                        and self._connection_validator.check_existing_client(
-                            existing_client,
-                            normalized_request,
-                            self._last_connection_request,
-                            self.address,
-                        )
-                    ):
-                        logger.debug("Already connected, skipping connect call.")
-                        return existing_client
+        Parameters
+        ----------
+            normalized_request (Optional[str]): The sanitized connection request identifier.
 
-                client = self._connection_orchestrator.establish_connection(
-                    address,
-                    self.address,
-                    self._register_notifications,
-                    self._connected,
-                    self._on_ble_disconnect,
-                )
+        Returns
+        -------
+            Optional[BLEClient]: The existing client if valid, None otherwise.
 
-                device_address = getattr(
-                    getattr(client, "bleak_client", None), "address", None
-                )
-                previous_client = None
-                with self._state_lock:
-                    previous_client = self.client
-                    self.address = device_address
-                    self.client = client
-                    self._disconnect_notified = False
-                    normalized_device_address = sanitize_address(device_address or "")
-                    if normalized_request is not None:
-                        self._last_connection_request = normalized_request
-                    else:
-                        self._last_connection_request = normalized_device_address
+        """
+        existing_client = self.client
+        if (
+            existing_client
+            and existing_client.is_connected()
+            and self._connection_validator.check_existing_client(
+                existing_client,
+                normalized_request,
+                self._last_connection_request,
+                self.address,
+            )
+        ):
+            return existing_client
+        return None
 
-                if previous_client and previous_client is not client:
-                    self._client_manager.update_client_reference(
-                        client, previous_client
-                    )
+    def _establish_and_update_client(
+        self,
+        address: Optional[str],
+        normalized_request: Optional[str],
+        addr_key: Optional[str],
+    ) -> tuple["BLEClient", Optional[str], Optional[str]]:
+        """
+        Establish a new BLE connection and update interface state.
 
-                # Record keys for gate marking after releasing the initial request lock.
-                # This avoids nested per-address lock acquisition for different keys.
-                connected_device_key = (
-                    _addr_key(device_address) if device_address else None
-                )
-                connection_alias_key = (
-                    addr_key
-                    if connected_device_key
-                    and addr_key
-                    and addr_key != connected_device_key
-                    else None
-                )
-                # Mark that at least one successful connection has been established
-                self._ever_connected = True
-                self._read_retry_count = 0
-                connected_client = client
+        Coordinates with the connection orchestrator to establish the connection,
+        updates interface state under the state lock, and handles client reference
+        updates if a previous client existed.
 
-        if connected_client is None:
-            # Defensive: establish_connection should have returned a client or raised.
-            raise self.BLEError("Connection failed: no BLE client established")
+        Parameters
+        ----------
+            address (Optional[str]): The target BLE address or device name.
+            normalized_request (Optional[str]): The sanitized connection request identifier.
+            addr_key (Optional[str]): The address key for gate tracking.
 
-        # Mark connected keys with deterministic lock ordering only if the same client
-        # is still active and the interface hasn't been closed; this avoids stale claim
-        # resurrection on rapid disconnects or during concurrent close().
+        Returns
+        -------
+            tuple[BLEClient, Optional[str], Optional[str]]:
+                (client, connected_device_key, connection_alias_key)
+
+        Note
+        ----
+            Must be called while holding _connect_lock.
+
+        """
+        client = self._connection_orchestrator.establish_connection(
+            address,
+            self.address,
+            self._register_notifications,
+            self._connected,
+            self._on_ble_disconnect,
+        )
+
+        device_address = getattr(getattr(client, "bleak_client", None), "address", None)
+        previous_client = None
+        with self._state_lock:
+            previous_client = self.client
+            self.address = device_address
+            self.client = client
+            self._disconnect_notified = False
+            normalized_device_address = sanitize_address(device_address or "")
+            if normalized_request is not None:
+                self._last_connection_request = normalized_request
+            else:
+                self._last_connection_request = normalized_device_address
+
+        if previous_client and previous_client is not client:
+            self._client_manager.update_client_reference(client, previous_client)
+
+        connected_device_key = _addr_key(device_address) if device_address else None
+        connection_alias_key = (
+            addr_key
+            if connected_device_key and addr_key and addr_key != connected_device_key
+            else None
+        )
+        self._ever_connected = True
+        self._read_retry_count = 0
+
+        return client, connected_device_key, connection_alias_key
+
+    def _finalize_connection_gates(
+        self,
+        connected_client: "BLEClient",
+        connected_device_key: Optional[str],
+        connection_alias_key: Optional[str],
+    ) -> None:
+        """
+        Mark address keys as connected or clean up if the interface closed during connect.
+
+        This method handles the post-connection gate marking with deterministic lock
+        ordering. It verifies the client is still active before marking, and handles
+        cleanup if the interface was closed during the connection process.
+
+        Parameters
+        ----------
+            connected_client (BLEClient): The client that was connected.
+            connected_device_key (Optional[str]): The device address key for gate marking.
+            connection_alias_key (Optional[str]): The alias key for gate marking.
+
+        Note
+        ----
+            Called after all connection locks are released.
+
+        """
         with self._state_lock:
             still_active = (
                 not self._closed
@@ -1200,16 +1220,12 @@ class BLEInterface(MeshInterface):
                 ):
                     self._connection_alias_key = connection_alias_key
                 else:
-                    # Interface closed during connect() - clean up the stale gate claim
-                    # to prevent blocking future connections to the same address.
                     logger.debug(
                         "Interface closed during connect(), cleaning up gate claim for %s",
                         getattr(connected_client, "address", "unknown"),
                     )
                     self._connection_alias_key = None
                     needs_cleanup = True
-            # Release state lock before acquiring address locks for cleanup
-            # (lock ordering: address locks before state lock)
             if needs_cleanup:
                 self._mark_address_keys_disconnected(
                     connected_device_key, connection_alias_key
@@ -1219,6 +1235,88 @@ class BLEInterface(MeshInterface):
                 "Skipping connect gate marking for stale client result (%s).",
                 getattr(connected_client, "address", "unknown"),
             )
+
+    # ---------------------------------------------------------------------
+    # Main connection method
+    # ---------------------------------------------------------------------
+
+    def connect(self, address: Optional[str] = None) -> "BLEClient":
+        """
+        Connects to a Meshtastic device over BLE by explicit address or by performing device discovery.
+
+        Attempts to establish and return a connected BLE client for the requested device. If an existing compatible client is already connected, that client is returned. The method uses per-address gating to suppress duplicate concurrent connects and updates the interface's stored address and client reference on success. On failure any client opened during the attempt is closed before the error is propagated.
+
+        Parameters
+        ----------
+            address (Optional[str]): BLE address or device name to connect to; if None, discovery is used to select a device.
+
+        Returns
+        -------
+            BLEClient: The connected BLE client for the selected device.
+
+        Raises
+        ------
+            BLEInterface.BLEError: If the interface is closing, if connection is suppressed due to a recent connect elsewhere, or if the connection attempt fails.
+
+        """
+        # Fail fast if interface is closing before acquiring any locks
+        self._validate_connection_preconditions()
+
+        requested_identifier = address if address is not None else self.address
+        normalized_request = sanitize_address(requested_identifier)
+
+        # Only use address registry for explicit addresses, not discovery mode (None)
+        addr_key = _addr_key(requested_identifier) if requested_identifier else None
+        connected_client: Optional["BLEClient"] = None
+        connected_device_key: Optional[str] = None
+        connection_alias_key: Optional[str] = None
+
+        # Apply address gating only for explicit-address connects.
+        # Discovery-mode connects intentionally skip gating to avoid holding the
+        # global registry lock during long-running scan/discovery operations.
+        with contextlib.ExitStack() as stack:
+            if addr_key is not None:
+                addr_lock = stack.enter_context(_addr_lock_context(addr_key))
+                stack.enter_context(addr_lock)
+
+            # Fast suppression if a recent connect happened elsewhere.
+            if self._should_suppress_duplicate_connect(addr_key):
+                logger.info(
+                    "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                    addr_key or "unknown",
+                )
+                raise self.BLEError(
+                    "Connection suppressed: recently connected elsewhere"
+                )
+
+            with self._connect_lock:
+                # Re-check closing state inside connect_lock for extra safety
+                self._validate_connection_preconditions()
+
+                # Check for existing valid client
+                existing_client = self._get_existing_client_if_valid(normalized_request)
+                if existing_client:
+                    logger.debug("Already connected, skipping connect call.")
+                    return existing_client
+
+                # Establish new connection and update state
+                (
+                    connected_client,
+                    connected_device_key,
+                    connection_alias_key,
+                ) = self._establish_and_update_client(
+                    address, normalized_request, addr_key
+                )
+
+        if connected_client is None:
+            raise self.BLEError("Connection failed: no BLE client established")
+
+        # Mark connected keys with deterministic lock ordering
+        self._finalize_connection_gates(
+            connected_client, connected_device_key, connection_alias_key
+        )
+
+        return connected_client
 
         return connected_client
 
