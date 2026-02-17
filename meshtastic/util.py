@@ -9,7 +9,6 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
 from queue import Queue
 from typing import Any, Dict, List, NoReturn, Optional, Set, Tuple, Union
 
@@ -321,9 +320,7 @@ class DeferredExecution:
                 o = self.queue.get()
                 o()
             except Exception:
-                logger.error(
-                    f"Unexpected error in deferred execution: {traceback.format_exc()}"
-                )
+                logger.exception("Unexpected error in deferred execution")
 
 
 def our_exit(message, return_value=1) -> NoReturn:
