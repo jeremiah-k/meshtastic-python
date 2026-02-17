@@ -380,19 +380,17 @@ class TestBLEInterfaceStateIntegration:
         """
         Verify that BLEStateManager enforces allowed and disallowed transitions from DISCONNECTED.
 
-        Asserts that transitions permitted from DISCONNECTED (to CONNECTING and to DISCONNECTING) succeed, that direct transitions to CONNECTED or RECONNECTING are rejected, and that the current implementation allows ERROR from DISCONNECTED.
+        Asserts that transitions permitted from DISCONNECTED (to CONNECTING and ERROR) succeed,
+        that direct transitions to CONNECTED, RECONNECTING, or DISCONNECTING are rejected.
         """
 
         manager = BLEStateManager()
 
         # Valid transitions from DISCONNECTED
         assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.transition_to(
-            ConnectionState.DISCONNECTING
-        )  # Can close without connecting
-
-        # Reset to DISCONNECTED
-        manager.transition_to(ConnectionState.DISCONNECTED)
+        assert manager.transition_to(ConnectionState.DISCONNECTED)  # Reset
+        assert manager.transition_to(ConnectionState.ERROR)
+        assert manager.transition_to(ConnectionState.DISCONNECTED)  # Reset
 
         # Invalid transitions from DISCONNECTED
         assert not manager.transition_to(
@@ -401,7 +399,9 @@ class TestBLEInterfaceStateIntegration:
         assert not manager.transition_to(
             ConnectionState.RECONNECTING
         )  # Must have been connected first
-        # Note: ERROR state is actually allowed from DISCONNECTED in current implementation
+        assert not manager.transition_to(
+            ConnectionState.DISCONNECTING
+        )  # Cannot "begin disconnecting" from already-disconnected state
 
 
 class TestPhase3LockConsolidation:

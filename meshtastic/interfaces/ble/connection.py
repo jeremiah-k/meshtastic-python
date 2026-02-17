@@ -450,6 +450,9 @@ class ConnectionOrchestrator:
             self.state_manager.transition_to(ConnectionState.DISCONNECTED)
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            # Clean up client before re-raising to avoid resource leak
+            if client:
+                self.client_manager.safe_close_client(client)
             raise
         except Exception:
             logger.warning(

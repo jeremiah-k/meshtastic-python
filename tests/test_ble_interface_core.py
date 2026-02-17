@@ -218,7 +218,7 @@ def test_find_device_returns_single_scan_result():
     # without running BLEInterface.__init__ side effects.
     iface = object.__new__(ble_mod.BLEInterface)
     scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
-    iface._discovery_manager = SimpleNamespace(
+    iface._discovery_manager = SimpleNamespace(  # type: ignore[assignment]
         discover_devices=lambda _address: [scanned_device]
     )
 
@@ -255,11 +255,16 @@ def test_state_manager_closing_only_for_disconnect():
     """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()
     assert state_manager.is_closing is False
-    # Allow transition to DISCONNECTING from DISCONNECTED (shutdown path)
+    # DISCONNECTED -> DISCONNECTING is not allowed (semantically incorrect:
+    # you can't "begin disconnecting" from an already-disconnected state).
+    # The proper path is through a connected/active state first.
+    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager.is_closing is False
     assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
     assert state_manager.is_closing is True
     assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
     assert state_manager.is_closing is False
+    # ERROR state should also not be "closing"
     assert state_manager.transition_to(ConnectionState.ERROR) is True
     assert state_manager.is_closing is False
 
@@ -305,17 +310,17 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     )
 
     with iface._state_lock:
-        iface.client = active_client
+        iface.client = active_client  # type: ignore[assignment]
         iface._disconnect_notified = False
         iface._state_manager.reset_to_disconnected()
         assert iface._state_manager.transition_to(ConnectionState.CONNECTING) is True
         assert iface._state_manager.transition_to(ConnectionState.CONNECTED) is True
 
     # Stale callback by BLEClient instance should be ignored.
-    assert iface._handle_disconnect("stale-client", client=stale_client) is True
+    assert iface._handle_disconnect("stale-client", client=stale_client) is True  # type: ignore[arg-type]
     # Stale callback by bleak client identity should also be ignored.
     assert (
-        iface._handle_disconnect("stale-bleak", bleak_client=stale_client.bleak_client)
+        iface._handle_disconnect("stale-bleak", bleak_client=stale_client.bleak_client)  # type: ignore[arg-type]
         is True
     )
 
@@ -353,7 +358,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     ) -> DummyClient:
         _ = _address
         with iface._state_lock:
-            iface.client = initial_client
+            iface.client = initial_client  # type: ignore[assignment]
             iface._disconnect_notified = False
             iface._state_manager.reset_to_disconnected()
             iface._state_manager.transition_to(ConnectionState.CONNECTED)
@@ -437,9 +442,9 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         connect_thread.join(timeout=12.0)
         disconnect_thread.join(timeout=12.0)
 
-        assert (
-            establish_called.is_set()
-        ), "connect() did not run connection establishment"
+        assert establish_called.is_set(), (
+            "connect() did not run connection establishment"
+        )
         assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
         assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
 
@@ -494,7 +499,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
             delay_attempts.append(attempt)
             return 0.0
 
-    iface._transient_read_policy = StubTransientPolicy()
+    iface._transient_read_policy = StubTransientPolicy()  # type: ignore[assignment]
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface._sleep", lambda _delay: None
     )
@@ -596,7 +601,7 @@ def test_find_device_uses_connected_fallback_when_scan_empty():
     # Intentional constructor bypass for isolated find_device() behavior.
     iface = object.__new__(ble_mod.BLEInterface)
     fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
-    iface._discovery_manager = SimpleNamespace(
+    iface._discovery_manager = SimpleNamespace(  # type: ignore[assignment]
         discover_devices=lambda addr: [fallback_device] if addr else []
     )
 
@@ -615,7 +620,7 @@ def test_find_device_multiple_matches_raises():
         _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
         _create_ble_device(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
     ]
-    iface._discovery_manager = SimpleNamespace(discover_devices=lambda _addr: devices)
+    iface._discovery_manager = SimpleNamespace(discover_devices=lambda _addr: devices)  # type: ignore[assignment]
 
     with pytest.raises(BLEInterface.BLEError) as excinfo:
         BLEInterface.find_device(iface, "aa bb cc dd ee ff")
@@ -885,7 +890,7 @@ def test_connection_validator_existing_client_checks():
     assert validator.check_existing_client(ble_like, None, None, None) is True
     assert validator.check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
     assert (
-        validator.check_existing_client(client, "something-else", None, None) is False
+        validator.check_existing_client(client, "something-else", None, None) is False  # type: ignore[arg-type]
     )
 
 
@@ -996,9 +1001,9 @@ def test_close_clears_ble_threads(monkeypatch):
 
         time.sleep(poll_interval)
 
-    assert (
-        not lingering
-    ), f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
+    assert not lingering, (
+        f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
+    )
 
 
 @pytest.mark.parametrize("exc_type", [RuntimeError, OSError])
@@ -1048,15 +1053,15 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     # Exercise the receive loop synchronously for deterministic assertions.
     iface._want_receive = True
     with iface._state_lock:
-        iface.client = client
+        iface.client = client  # type: ignore[assignment]
 
     iface._read_trigger.set()
     iface._receiveFromRadioImpl()
 
     assert "Fatal error in BLE receive thread" in caplog.text
-    assert (
-        close_called.is_set()
-    ), f"Expected close() to be called for {exc_type.__name__}"
+    assert close_called.is_set(), (
+        f"Expected close() to be called for {exc_type.__name__}"
+    )
 
     # Clean up
     iface._want_receive = False
@@ -1109,7 +1114,7 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
     iface._want_receive = True
 
     with iface._state_lock:
-        iface.client = client
+        iface.client = client  # type: ignore[assignment]
 
     iface._read_trigger.set()
     iface._receiveFromRadioImpl()
@@ -1191,12 +1196,12 @@ def test_log_notification_registration(monkeypatch):
     registered_uuids = [call[0] for call in client.start_notify_calls]
 
     # Should have registered both log notifications and the critical FROMNUM notification
-    assert (
-        LEGACY_LOGRADIO_UUID in registered_uuids
-    ), "Legacy log notification should be registered"
-    assert (
-        LOGRADIO_UUID in registered_uuids
-    ), "Current log notification should be registered"
+    assert LEGACY_LOGRADIO_UUID in registered_uuids, (
+        "Legacy log notification should be registered"
+    )
+    assert LOGRADIO_UUID in registered_uuids, (
+        "Current log notification should be registered"
+    )
     assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should be registered"
 
     # Verify handlers are correctly associated
@@ -1210,15 +1215,15 @@ def test_log_notification_registration(monkeypatch):
         call for call in client.start_notify_calls if call[0] == FROMNUM_UUID
     )
 
-    assert callable(
-        legacy_call[1]
-    ), "Legacy log notification should register a callable handler"
-    assert callable(
-        current_call[1]
-    ), "Current log notification should register a callable handler"
-    assert callable(
-        fromnum_call[1]
-    ), "FROMNUM notification should register a callable handler"
+    assert callable(legacy_call[1]), (
+        "Legacy log notification should register a callable handler"
+    )
+    assert callable(current_call[1]), (
+        "Current log notification should register a callable handler"
+    )
+    assert callable(fromnum_call[1]), (
+        "FROMNUM notification should register a callable handler"
+    )
 
     iface.close()
 
@@ -1283,8 +1288,11 @@ def test_reconnect_scheduler_tracks_threads():
 
     worker = SimpleNamespace(attempt_reconnect_loop=lambda *_args, **_kwargs: None)
     coordinator = StubCoordinator()
-    scheduler = ReconnectScheduler(
-        state_manager, state_manager.lock, coordinator, worker
+    scheduler = ReconnectScheduler(  # noqa: PLR0913  # type: ignore[arg-type]
+        state_manager,
+        state_manager.lock,
+        coordinator,  # type: ignore[arg-type]
+        worker,  # type: ignore[arg-type]
     )
 
     assert scheduler.schedule_reconnect(True, shutdown_event) is True
@@ -1395,7 +1403,7 @@ def test_reconnect_worker_successful_attempt():
             self.connect_calls.append(address)
 
     iface = DummyInterface()
-    worker = ReconnectWorker(iface, iface._reconnect_policy)
+    worker = ReconnectWorker(iface, iface._reconnect_policy)  # type: ignore[arg-type]
     worker.attempt_reconnect_loop(True, threading.Event())
 
     assert iface.connect_calls == ["addr"]
@@ -1532,7 +1540,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             raise self.BLEError("boom")
 
     iface = FailingInterface()
-    worker = ReconnectWorker(iface, iface._reconnect_policy)
+    worker = ReconnectWorker(iface, iface._reconnect_policy)  # type: ignore[arg-type]
     shutdown_event = threading.Event()
     monkeypatch.setattr(shutdown_event, "wait", mock_wait)
 

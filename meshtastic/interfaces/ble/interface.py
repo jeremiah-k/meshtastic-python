@@ -1158,10 +1158,13 @@ class BLEInterface(MeshInterface):
             raise self.BLEError("Connection failed: no BLE client established")
 
         # Mark connected keys with deterministic lock ordering only if the same client
-        # is still active; this avoids stale claim resurrection on rapid disconnects.
+        # is still active and the interface hasn't been closed; this avoids stale claim
+        # resurrection on rapid disconnects or during concurrent close().
         with self._state_lock:
             still_active = (
-                self.client is connected_client and self._state_manager.is_connected
+                not self._closed
+                and self.client is connected_client
+                and self._state_manager.is_connected
             )
 
         if still_active:
@@ -1169,7 +1172,11 @@ class BLEInterface(MeshInterface):
                 connected_device_key, connection_alias_key
             )
             with self._state_lock:
-                if self.client is connected_client and self._state_manager.is_connected:
+                if (
+                    not self._closed
+                    and self.client is connected_client
+                    and self._state_manager.is_connected
+                ):
                     self._connection_alias_key = connection_alias_key
         else:
             logger.debug(

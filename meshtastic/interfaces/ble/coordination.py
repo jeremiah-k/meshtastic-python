@@ -34,10 +34,12 @@ class ThreadCoordinator:
             _lock (RLock): reentrant lock protecting internal state.
             _threads (List[Thread]): list of tracked Thread objects.
             _events (dict[str, Event]): mapping of event names to threading.Event objects for coordination.
+            _cleaned_up (bool): flag indicating cleanup() has been called.
         """
         self._lock = RLock()
         self._threads: List[Thread] = []
         self._events: Dict[str, Event] = {}
+        self._cleaned_up: bool = False
 
     def create_thread(
         self,
@@ -69,6 +71,15 @@ class ThreadCoordinator:
 
         """
         with self._lock:
+            # Prevent thread creation after cleanup to avoid orphaned threads
+            if self._cleaned_up:
+                logger.warning(
+                    "Cannot create thread '%s': coordinator has been cleaned up", name
+                )
+                # Return a dummy thread that won't be tracked to maintain API contract
+                return Thread(
+                    target=target, name=name, daemon=daemon, args=args, kwargs=kwargs
+                )
             # Prune dead threads to prevent unbounded growth in long-running processes
             self._threads = [t for t in self._threads if t.is_alive()]
             thread = Thread(
@@ -393,8 +404,14 @@ class ThreadCoordinator:
         thread and event registries under the coordinator lock, then joins the
         collected threads outside the lock using a short timeout defined by
         EVENT_THREAD_JOIN_TIMEOUT.
+
+        After cleanup() is called, subsequent create_thread() calls will log
+        a warning and return an untracked thread to prevent orphaned threads.
         """
         with self._lock:
+            # Mark as cleaned up to prevent new thread creation
+            self._cleaned_up = True
+
             # Signal all events
             for event in self._events.values():
                 event.set()

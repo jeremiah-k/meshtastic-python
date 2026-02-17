@@ -45,8 +45,9 @@ class BLEStateManager:
         ConnectionState.DISCONNECTED: {
             ConnectionState.CONNECTING,
             ConnectionState.ERROR,
-            # Allow idempotent shutdown orchestration even before a successful connect.
-            ConnectionState.DISCONNECTING,
+            # Note: DISCONNECTING is intentionally NOT allowed from DISCONNECTED.
+            # A disconnected interface cannot "begin disconnecting" - it's already disconnected.
+            # close() explicitly checks for DISCONNECTED state and skips the transition.
         },
         ConnectionState.CONNECTING: {
             ConnectionState.CONNECTED,
