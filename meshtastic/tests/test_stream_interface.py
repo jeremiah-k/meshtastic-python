@@ -22,8 +22,8 @@ def test_StreamInterface():
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
 def test_StreamInterface_with_noProto(caplog):
-    """Test that we can instantiate a StreamInterface based on nonProto
-    and we can read/write bytes from a mocked stream.
+    """
+    Verify that a StreamInterface can be instantiated with noProto and, when assigned a stream, can write and read bytes to and from that stream.
     """
     stream = MagicMock()
     test_data = b"hello"

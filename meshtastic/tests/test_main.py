@@ -105,7 +105,11 @@ def test_main_main_no_args(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_support(capsys):
-    """Test --support."""
+    """
+    Verify that the CLI --support option prints system information and exits with code 0.
+
+    Asserts that stdout contains "System", "Platform", "Machine", and "Executable", and that no stderr was produced.
+    """
     sys.argv = ["", "--support"]
     mt_config.args = sys.argv
 
@@ -219,7 +223,11 @@ def test_main_test_two_ports_fails(patched_test_all, capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info(capsys, caplog):
-    """Test --info."""
+    """
+    Verify that running the CLI with --info prints a "Connected to radio" message and invokes SerialInterface.showInfo.
+
+    Patches SerialInterface to a mock whose showInfo prints a recognizable marker, then asserts the marker and the connection message appear on stdout, stderr is empty, and the SerialInterface constructor was called.
+    """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
 
@@ -412,7 +420,18 @@ def test_main_onConnected_exception(capsys):
     mt_config.args = sys.argv
 
     def throw_an_exception(junk):
-        """Raise a deterministic exception for this test."""
+        """
+        Raise a deterministic exception used by tests.
+
+        Parameters
+        ----------
+            junk: Ignored; present to match call signature.
+
+        Raises
+        ------
+            Exception: Always raised with the message "Fake exception."
+
+        """
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
     pytest.importorskip("pyqrcode")
@@ -702,7 +721,14 @@ def test_main_shutdown(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_sendtext(capsys):
-    """Test --sendtext."""
+    """
+    Verify that the CLI `--sendtext` command sends a message through the radio interface and reports progress.
+
+    Runs meshtastic.main() with `--sendtext hello`, patches the SerialInterface to capture sendText calls, and asserts that:
+    - the output contains connection and "Sending text message" lines,
+    - the mocked sendText was invoked and its debug output appeared on stdout,
+    - no stderr output was produced.
+    """
     sys.argv = ["", "--sendtext", "hello"]
     mt_config.args = sys.argv
 
@@ -717,7 +743,20 @@ def test_main_sendtext(capsys):
         channelIndex=0,
         portNum=0,
     ):
-        """Mock sendText that prints arguments for assertion."""
+        """
+        Test helper that simulates sending a text message by printing its parameters to stdout for assertions.
+
+        Parameters
+        ----------
+            text (str): Message text to send.
+            dest: Destination node identifier or None for broadcast.
+            wantAck (bool): Whether an acknowledgment is requested.
+            wantResponse (bool): Whether a response is requested.
+            onResponse (callable|None): Optional callback for a response; this mock does not invoke it.
+            channelIndex (int): Channel index to use.
+            portNum (int): Port number to use.
+
+        """
         print("inside mocked sendText")
         print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
@@ -766,7 +805,20 @@ def test_main_sendtext_with_channel(capsys):
         channelIndex=0,
         portNum=0,
     ):
-        """Mock sendText that prints arguments for assertion."""
+        """
+        Test helper that simulates sending a text message by printing its parameters to stdout for assertions.
+
+        Parameters
+        ----------
+            text (str): Message text to send.
+            dest: Destination node identifier or None for broadcast.
+            wantAck (bool): Whether an acknowledgment is requested.
+            wantResponse (bool): Whether a response is requested.
+            onResponse (callable|None): Optional callback for a response; this mock does not invoke it.
+            channelIndex (int): Channel index to use.
+            portNum (int): Port number to use.
+
+        """
         print("inside mocked sendText")
         print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
 
@@ -1903,7 +1955,13 @@ def test_main_onConnection(capsys):
         """temp class for topic."""
 
         def getName(self):
-            """Return the fake name of a topic."""
+            """
+            Get the fake name for a topic.
+
+            Returns:
+                The fake topic name, "foo".
+
+            """
             return "foo"
 
     mytopic = TempTopic()
@@ -2878,6 +2936,20 @@ def test_tunnel_tunnel_arg(
 
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
+        """
+        Prints the given value and terminates the process with exit code 3.
+
+        Writes the string representation of `amount` to standard output, then exits the interpreter with status code 3.
+
+        Parameters
+        ----------
+            amount: The value to print; its string representation will be written to stdout.
+
+        Raises
+        ------
+            SystemExit: Always raised with exit code 3.
+
+        """
         print(f"{amount}")
         sys.exit(3)
 

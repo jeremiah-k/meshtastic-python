@@ -32,16 +32,14 @@ class ReconnectScheduler:
         interface: "BLEInterface",
     ) -> None:
         """
-        Initialize a ReconnectScheduler to manage background BLE reconnection attempts.
+        Create a ReconnectScheduler that coordinates background BLE reconnection attempts for a given interface.
 
         Parameters
         ----------
-            state_manager (BLEStateManager): Provides BLE state queries (e.g., is_closing, can_connect) used to decide whether to schedule reconnect attempts.
-            state_lock (RLock): Re-entrant lock protecting access to shared BLE state and the internal reconnect thread reference.
-            thread_coordinator (ThreadCoordinator): Factory/manager used to create threads for the reconnect worker.
-            interface (BLEInterface): BLE interface used to perform connection attempts and to attach the scheduler.
-
-        Initializes a ReconnectPolicy from BLEConfig, creates a ReconnectWorker with the policy and interface, and sets the internal reconnect thread reference to None.
+            state_manager (BLEStateManager): Queries BLE lifecycle state (e.g., whether the interface is closing or a connection is in progress) to decide if reconnects should be scheduled.
+            state_lock (RLock): Re-entrant lock that protects access to shared BLE state and the scheduler's internal thread reference.
+            thread_coordinator (ThreadCoordinator): Responsible for creating and managing the reconnect worker thread.
+            interface (BLEInterface): BLE interface used to perform connection attempts and to which the scheduler will be attached.
 
         """
         self.state_manager = state_manager
@@ -103,9 +101,9 @@ class ReconnectScheduler:
 
     def clear_thread_reference(self) -> None:
         """
-        Clear the scheduler's stored reconnect thread reference.
+        Mark that no reconnect worker is running by clearing the stored reconnect thread reference.
 
-        Sets the internal `_reconnect_thread` to `None` while holding `self.state_lock` to mark that the reconnect worker has exited.
+        Acquires self.state_lock and sets self._reconnect_thread to None to reflect that the background reconnect worker has exited.
         """
         with self.state_lock:
             # Always clear the reference once the worker loop exits to match legacy behavior.
@@ -119,12 +117,12 @@ class ReconnectWorker:
         self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy
     ) -> None:
         """
-        Bind a BLE interface and a reconnect policy to this worker.
+        Bind a BLE interface and a reconnect policy to the worker.
 
         Parameters
         ----------
-            interface ("BLEInterface"): Interface used to perform connection attempts and to query or modify connection state.
-            reconnect_policy (ReconnectPolicy): Policy that controls backoff timing, retry limits, and attempt state for reconnect attempts.
+            interface (BLEInterface): Interface used to initiate connection attempts and to query or modify connection state.
+            reconnect_policy (ReconnectPolicy): Backoff and retry policy that controls reconnect timing and attempt state.
 
         """
         self.interface = interface
@@ -132,18 +130,16 @@ class ReconnectWorker:
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """
-        Decides whether a reconnect attempt should be aborted.
-
-        Checks the interface state and the auto_reconnect flag and logs an explanatory debug message including optional context.
+        Determine whether the reconnect process should abort based on the interface state and the auto_reconnect flag.
 
         Parameters
         ----------
             auto_reconnect (bool): Whether automatic reconnect is enabled.
-            context (str): Optional context to include in debug logs.
+            context (str): Optional context included in debug logs.
 
         Returns
         -------
-            `true` if reconnection should be aborted, `false` otherwise.
+            True if reconnection should be aborted, False otherwise.
 
         """
         if self.interface.is_connection_closing:

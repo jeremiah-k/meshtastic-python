@@ -142,20 +142,19 @@ class BLEClient:
 
     def pair(self, **kwargs: Any) -> Any:  # pylint: disable=C0116
         """
-        Pair the underlying BLE client with the remote device.
+        Pair the BLE client with the remote device.
 
         Parameters
         ----------
-            **kwargs: dict
-                Backend-specific pairing options forwarded to the underlying BLE client.
+            **kwargs (Any): Backend-specific pairing options forwarded to the underlying BLE client.
 
         Returns
         -------
-            The backend pairing result (typically `None` for bleak >= 2.1.1).
+            The backend pairing result (often `None`).
 
         Raises
         ------
-            BLEError: If the BLE client is not initialized or if the pairing operation fails.
+            BLEError: If the BLE client is not initialized or the pairing operation fails.
 
         """
         if self.bleak_client is None:
@@ -166,16 +165,16 @@ class BLEClient:
         self, *, await_timeout: Optional[float] = None, **kwargs: Any
     ) -> Any:  # pylint: disable=C0116
         """
-        Connects to the remote BLE device.
+        Connect to the remote BLE device.
 
         Parameters
         ----------
             await_timeout (float | None): Maximum seconds to wait for the connect operation to complete; None to wait indefinitely.
             **kwargs: Forwarded to the underlying Bleak client's `connect` call.
 
-        Note:
-            In bleak >= 2.1.1, this method returns None. The operation raises
-            an exception on failure; success is indicated by normal return.
+        Returns
+        -------
+            The value returned by the underlying Bleak client's `connect` call (typically `None`). The method raises an exception on failure.
 
         """
         if self.bleak_client is None:
@@ -247,12 +246,12 @@ class BLEClient:
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> bytes:  # pylint: disable=C0116
         """
-        Read the value of a GATT characteristic from the connected BLE device.
+        Read a GATT characteristic value from the connected BLE device.
 
         Parameters
         ----------
             *args: Positional identifier(s) for the characteristic (commonly a UUID string or integer handle).
-            timeout (Optional[float]): Maximum seconds to wait for the read to complete; if None, waits indefinitely.
+            timeout (Optional[float]): Maximum seconds to wait for the read to complete; `None` means no timeout.
             **kwargs: Additional keyword arguments forwarded to the underlying read operation.
 
         Returns
@@ -261,7 +260,7 @@ class BLEClient:
 
         Raises
         ------
-            BLEClient.BLEError: If no underlying BLE client is initialized.
+            BLEClient.BLEError: If the BLE client is not initialized or the operation times out.
 
         """
         if self.bleak_client is None:
@@ -307,7 +306,11 @@ class BLEClient:
     def writeGattChar(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase compatibility wrapper for writing a GATT characteristic.
+
+        This function is retained for backwards compatibility and forwards all positional and keyword arguments to the canonical write_gatt_char implementation. Use write_gatt_char instead.
+        """
         warnings.warn(
             "writeGattChar is deprecated; use write_gatt_char instead",
             DeprecationWarning,
@@ -317,12 +320,15 @@ class BLEClient:
 
     def get_services(self, **kwargs: Any) -> Any:
         """
-        Retrieve the BLE client's discovered GATT services and characteristics.
+        Retrieve the underlying Bleak client's discovered GATT services and characteristics.
 
-        Keyword arguments are forwarded to the underlying BLE client's `get_services` call.
+        Keyword arguments are forwarded to the underlying Bleak client's `get_services` call.
 
         Returns:
-            The services collection object from the underlying BLE client containing discovered GATT services and their characteristics.
+            The services collection object from the underlying Bleak client containing discovered GATT services and their characteristics.
+
+        Raises:
+            BLEError: If the BLE client has not been initialized.
 
         """
         if self.bleak_client is None:
@@ -330,7 +336,13 @@ class BLEClient:
         return self.async_await(self.bleak_client.get_services(**kwargs))  # type: ignore[attr-defined]
 
     def getServices(self, **kwargs: Any) -> Any:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase compatibility wrapper that returns discovered GATT services and characteristics; use `get_services` instead.
+
+        Returns:
+            The discovered GATT services and characteristics.
+
+        """
         warnings.warn(
             "getServices is deprecated; use get_services instead",
             DeprecationWarning,
@@ -382,21 +394,19 @@ class BLEClient:
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:  # pylint: disable=C0116
         """
-        Subscribe to notifications for a GATT characteristic on the connected device.
+        Subscribe to notifications for a GATT characteristic.
+
+        Registers a notification callback for the connected device's characteristic and waits up to `timeout` seconds for the registration to complete.
 
         Parameters
         ----------
-            *args: Positional arguments passed to the underlying notification
-                registration, typically the characteristic UUID (or handle)
-                and a callback to receive byte payloads.
-            timeout (float | None): Maximum seconds to wait for the operation
-                to complete; if None, wait indefinitely.
-            **kwargs: Additional keyword arguments passed to the underlying
-                notification registration.
+            *args: Positional arguments passed to the notification registration (typically the characteristic UUID or handle followed by a callback to receive byte payloads).
+            timeout (float | None): Maximum seconds to wait for the operation to complete; if `None`, wait indefinitely.
+            **kwargs: Additional keyword arguments forwarded to the notification registration.
 
         Raises
         ------
-            BLEError: If no BLE client is initialized or if the operation times out or fails.
+            BLEError: If no BLE client is initialized, if the registration fails, or if the operation times out.
 
         """
         if self.bleak_client is None:
@@ -445,7 +455,11 @@ class BLEClient:
     def stopNotify(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase compatibility wrapper that stops notifications.
+
+        Issues a DeprecationWarning when called and performs the same notification-stop operation using the provided arguments.
+        """
         warnings.warn(
             "stopNotify is deprecated; use stop_notify instead",
             DeprecationWarning,
@@ -603,7 +617,21 @@ class BLEClient:
     def asyncAwait(
         self, coro: Coroutine[Any, Any, Any], timeout: Optional[float] = None
     ) -> Any:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated compatibility wrapper that forwards the given coroutine to async_await.
+
+        This method is provided for camelCase compatibility and emits a DeprecationWarning; use async_await instead.
+
+        Parameters
+        ----------
+            coro (Coroutine[Any, Any, Any]): The coroutine to schedule and await.
+            timeout (Optional[float]): Optional timeout in seconds for awaiting the coroutine.
+
+        Returns
+        -------
+            Any: The result returned by the awaited coroutine.
+
+        """
         warnings.warn(
             "asyncAwait is deprecated; use async_await instead",
             DeprecationWarning,
@@ -615,22 +643,19 @@ class BLEClient:
         self, coro: Coroutine[Any, Any, Any]
     ) -> Future[Any]:  # pylint: disable=C0116
         """
-        Schedule a coroutine on the shared BLE event loop.
+        Schedule the given coroutine to run on the shared BLE event loop.
 
         Parameters
         ----------
-        coro : Coroutine
-            The coroutine to schedule.
+            coro (Coroutine): The coroutine to schedule on the shared BLE event loop.
 
         Returns
         -------
-        concurrent.futures.Future
-            Future representing the scheduled coroutine's eventual result.
+            concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
 
         Raises
         ------
-        BLEClient.BLEError
-            If the client is closed or the runner is not available.
+            BLEClient.BLEError: If the BLEClient is closed or the coroutine cannot be scheduled.
 
         """
         if self._closed:
@@ -644,7 +669,13 @@ class BLEClient:
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
 
     def asyncRun(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Compatibility wrapper that schedules a coroutine on the shared BLE event loop using the camelCase name.
+
+        Returns:
+            Future[Any]: A Future representing the scheduled coroutine.
+
+        """
         warnings.warn(
             "asyncRun is deprecated; use async_run instead",
             DeprecationWarning,
@@ -655,7 +686,13 @@ class BLEClient:
 
 # Expose zombie tracking from runner module for backwards compatibility
 def get_zombie_thread_count() -> int:
-    """Return the zombie BLE runner count via get_zombie_runner_count()."""
+    """
+    Get the number of zombie BLE runner threads.
+
+    Returns:
+        int: Number of zombie BLE runner threads.
+
+    """
     from meshtastic.interfaces.ble.runner import get_zombie_runner_count
 
     return get_zombie_runner_count()

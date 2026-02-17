@@ -49,12 +49,12 @@ def _sleep(delay: float) -> None:
 
 def resolve_ble_module() -> Optional[ModuleType]:
     """
-    Locate and return the first importable BLE module used by the package.
+    Locate the first available BLE module for the package.
 
     Attempts to import "meshtastic.interfaces.ble" then "meshtastic.ble_interface" in order and returns the first module that can be imported.
 
     Returns:
-        The first importable BLE module as a ModuleType, or `None` if neither is available.
+        The imported module as a ModuleType if found, `None` otherwise.
 
     """
     for module_name in (

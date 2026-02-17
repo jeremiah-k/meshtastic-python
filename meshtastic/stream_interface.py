@@ -82,10 +82,10 @@ class StreamInterface(MeshInterface):
                 self.waitForConfig()
 
     def connect(self) -> None:
-        """Connect to our radio.
+        """
+        Establishes the connection to the radio and starts the background reader and configuration process.
 
-        Normally this is called automatically by the constructor, but if you
-        passed in connectNow=False you can manually start the reading thread later.
+        Sends wake/resynchronization bytes to the device, starts the reader thread, begins protocol configuration, and — if the instance uses the protocol — waits for the protocol/database download to complete.
         """
 
         # Send some bogus UART characters to force a sleeping device to wake, and
@@ -104,7 +104,11 @@ class StreamInterface(MeshInterface):
             self._waitConnected()
 
     def _disconnected(self) -> None:
-        """We override the superclass implementation to close our port."""
+        """
+        Perform disconnect cleanup for the stream interface, closing the underlying stream if one exists.
+
+        Calls the superclass disconnect handler, then closes self.stream (if not None) and sets it to None.
+        """
         MeshInterface._disconnected(self)
 
         logger.debug("Closing our port")
@@ -116,7 +120,16 @@ class StreamInterface(MeshInterface):
             self.stream = None
 
     def _writeBytes(self, b: bytes) -> None:
-        """Write an array of bytes to our stream and flush."""
+        """
+        Write bytes to the underlying stream and ensure the device has time to process them.
+
+        If the stream is closed this call is ignored. The bytes are written and flushed; after flushing the method sleeps to give the device time to handle the data (1.0 second on Windows 11, 0.1 second otherwise).
+
+        Parameters
+        ----------
+                b (bytes): Data to write to the stream.
+
+        """
         if self.stream:  # ignore writes when stream is closed
             self.stream.write(b)
             self.stream.flush()
@@ -128,14 +141,35 @@ class StreamInterface(MeshInterface):
                 time.sleep(0.1)
 
     def _readBytes(self, length: int) -> Optional[bytes]:
-        """Read an array of bytes from our stream."""
+        """
+        Read up to the specified number of bytes from the underlying stream.
+
+        Parameters
+        ----------
+            length (int): Maximum number of bytes to read.
+
+        Returns
+        -------
+            bytes_read (Optional[bytes]): The bytes returned by the stream (may be fewer than
+            `length`), or `None` if no underlying stream is configured.
+
+        """
         if self.stream:
             return self.stream.read(length)
         else:
             return None
 
     def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
-        """Send a ToRadio protobuf to the device."""
+        """
+        Serialize a ToRadio message, prepend the protocol frame header, and write the framed payload to the underlying stream.
+
+        The header consists of the START1 and START2 markers followed by a two-byte big-endian length of the serialized payload.
+
+        Parameters
+        ----------
+            toRadio (mesh_pb2.ToRadio): The protobuf message to serialize and send.
+
+        """
         logger.debug(f"Sending: {stripnl(toRadio)}")
         b: bytes = toRadio.SerializeToString()
         bufLen: int = len(b)

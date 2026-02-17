@@ -21,6 +21,20 @@ class _FallbackDotMap(dict):
     """Lightweight fallback used when dotmap is unavailable."""
 
     def __getattr__(self, key):
+        """
+        Provide attribute-style access for dictionary keys.
+
+        When an attribute is accessed, return the dictionary value for that key. If the key is missing, return an empty _FallbackDotMap. If the value is a dict, return a _FallbackDotMap wrapping that dict; otherwise return the value unchanged.
+
+        Parameters
+        ----------
+            key (str): Attribute name to retrieve as a dictionary key.
+
+        Returns
+        -------
+            The value stored under `key`, a `_FallbackDotMap` wrapping a nested dict, or an empty `_FallbackDotMap` if the key is absent.
+
+        """
         try:
             value = self[key]
         except KeyError:
@@ -55,7 +69,17 @@ logger = logging.getLogger(__name__)
 
 
 def onReceive(packet: dict, interface: Any) -> None:
-    """Callback invoked when a packet arrives."""
+    """
+    Handle an incoming packet and record clear-text messages.
+
+    If the packet originated from the current sendingInterface it is ignored. Otherwise the packet is converted to a DotMap and, when its decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level `receivedPackets` list is set, the converted packet is appended to `receivedPackets`.
+
+    Parameters
+    ----------
+        packet (dict): Raw packet data as received.
+        interface (Any): Interface object that delivered the packet.
+
+    """
     if sendingInterface == interface:
         pass
         # print("Ignoring sending interface")
@@ -70,12 +94,23 @@ def onReceive(packet: dict, interface: Any) -> None:
 
 
 def onNode(node: Any) -> None:
-    """Callback invoked when the node DB changes."""
+    """
+    Handle updates to the node database.
+
+    Parameters
+    ----------
+        node (Any): The node entry that changed or a payload describing the change (typically a node database record).
+
+    """
     print(f"Node changed: {node}")
 
 
 def subscribe() -> None:
-    """Subscribe to the topics the user probably wants to see, prints output to stdout."""
+    """
+    Subscribe to meshtastic pub/sub topics to receive node update notifications.
+
+    Registers the onNode callback for the "meshtastic.node" topic so node-change events are delivered to onNode.
+    """
 
     pub.subscribe(onNode, "meshtastic.node")
 
@@ -88,19 +123,19 @@ def testSend(
     wantAck: bool = False,
 ) -> bool:
     """
-    Sends one test packet between two nodes and then returns success or failure.
+    Send a single test packet from one interface to another.
 
     Parameters
     ----------
-        fromInterface (Any): The interface of the sending node.
-        toInterface (Any): The interface of the receiving node.
-        isBroadcast (bool): Whether to broadcast the packet. Defaults to False.
-        asBinary (bool): Whether to send as binary data. Defaults to False.
-        wantAck (bool): Whether to request acknowledgment. Defaults to False.
+        fromInterface (Any): Interface used to send the packet.
+        toInterface (Any): Interface targeted to receive the packet (ignored for broadcasts).
+        isBroadcast (bool): If True, send to the broadcast address.
+        asBinary (bool): If True, send the payload as binary data.
+        wantAck (bool): If True, request an acknowledgment from the recipient.
 
     Returns
     -------
-        bool: True for success.
+        bool: `True` if a response packet was received within 60 seconds, `False` otherwise.
 
     """
     # pylint: disable=W0603
@@ -131,7 +166,20 @@ def testSend(
 
 
 def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
-    """Run the tests."""
+    """
+    Execute a series of send/receive test iterations and evaluate overall success.
+
+    Parameters
+    ----------
+        numTests (int): Number of test iterations to run.
+        wantAck (bool): If True, request acknowledgments for sent test packets.
+        maxFailures (int): Maximum allowed failed tests before overall result is considered a failure.
+
+    Returns
+    -------
+        bool: `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
+
+    """
     logger.info(f"Running {numTests} tests with wantAck={wantAck}")
     numFail: int = 0
     numSuccess: int = 0
@@ -164,7 +212,20 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
 
 
 def testThread(numTests: int = 50) -> bool:
-    """Test thread."""
+    """
+    Run a two-stage test sequence across discovered devices.
+
+    First stage runs `numTests` with acknowledgments required; if that stage succeeds, a second stage runs `numTests` without acknowledgments and allows up to one failure.
+
+    Parameters
+    ----------
+        numTests (int): Number of tests to run in each stage.
+
+    Returns
+    -------
+        bool: `true` if the overall test sequence succeeded (both stages passed as required), `false` otherwise.
+
+    """
     logger.info("Found devices, starting tests...")
     result: bool = runTests(numTests, wantAck=True)
     if result:
@@ -175,13 +236,33 @@ def testThread(numTests: int = 50) -> bool:
 
 
 def onConnection(topic: Any = pub.AUTO_TOPIC) -> None:
-    """Callback invoked when we connect/disconnect from a radio."""
+    """
+    Notify about connection state changes by printing the topic name.
+
+    Parameters
+    ----------
+        topic (Any): The connection topic object or value; if it has a `getName()` method that name is used, otherwise `str(topic)` is printed.
+
+    """
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
     print(f"Connection changed: {topic_name}")
 
 
 def openDebugLog(portName: str) -> io.TextIOWrapper:
-    """Open the debug log file."""
+    """
+    Create and open a per-port debug log file.
+
+    The filename is formed by prefixing "log" to the provided port name with any "/" characters replaced by "_".
+
+    Parameters
+    ----------
+        portName (str): The serial port name used to derive the log filename.
+
+    Returns
+    -------
+        io.TextIOWrapper: An open text file for writing (UTF-8, line-buffered) for the debug log.
+
+    """
     debugname = "log" + portName.replace("/", "_")
     logger.info(f"Writing serial debugging to {debugname}")
     return open(debugname, "w+", buffering=1, encoding="utf8")
@@ -189,8 +270,15 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
 
 def testAll(numTests: int = 5) -> bool:
     """
-    Run a series of tests using devices we can find.
-    This is called from the cli with the "--test" option.
+    Discover connected Meshtastic devices, open interfaces, and run a series of integration tests.
+
+    Parameters
+    ----------
+        numTests (int): Number of test iterations to perform.
+
+    Returns
+    -------
+        True if the test run completed successfully, False otherwise.
 
     """
     ports: List[str] = meshtastic.util.findPorts(True)

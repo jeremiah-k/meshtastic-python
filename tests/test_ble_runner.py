@@ -18,9 +18,9 @@ from meshtastic.interfaces.ble.runner import (
 @pytest.fixture(autouse=True)
 def ensure_runner_running():
     """
-    Ensure the BLECoroutineRunner is running for the duration of a test.
+    Ensure the BLECoroutineRunner singleton is running for the duration of a test.
 
-    Used as an autouse pytest fixture to start the singleton runner before the test and to verify/restart it after the test, preventing singleton state leakage between tests.
+    Start the BLECoroutineRunner before the test and re-validate or restart it after the test to prevent singleton state leakage between tests. Intended for use as an autouse pytest fixture.
     """
     runner = BLECoroutineRunner()
     runner._ensure_running()
@@ -69,13 +69,13 @@ class TestBLECoroutineRunner:
 
         async def get_loop_id():
             """
-            Return the identifier of the currently running asyncio event loop.
+            Get the identifier of the currently running asyncio event loop.
 
             Returns:
-                int: The value of id() for the current running event loop.
+                int: The result of calling `id()` on the current running event loop.
 
             Raises:
-                RuntimeError: If there is no running event loop in the current context.
+                RuntimeError: If no event loop is running in the current context.
 
             """
             return id(asyncio.get_running_loop())
@@ -133,9 +133,9 @@ class TestBLECoroutineRunner:
         # Create a future that won't complete
         async def never_complete():
             """
-            Suspend forever; an awaitable that never completes.
+            A coroutine that suspends indefinitely.
 
-            Awaiting this coroutine never returns or raises and will wait indefinitely.
+            Awaiting this coroutine will block forever; it never completes and never raises.
             """
             await asyncio.Event().wait()
 
@@ -176,10 +176,10 @@ class TestBLECoroutineRunner:
             @staticmethod
             def is_running():
                 """
-                Check whether the BLE coroutine runner is currently active.
+                Report whether the BLE coroutine runner is currently active.
 
                 Returns:
-                    `true` if the runner is active, `false` otherwise.
+                    True if the runner is active, False otherwise.
 
                 """
                 return True
@@ -190,16 +190,16 @@ class TestBLECoroutineRunner:
 
         def _fake_submit(coro, _loop):
             """
-            Close the provided coroutine without running it and return an already-resolved Future with value None.
+            Close the provided coroutine without executing it and return a completed Future with result None.
 
             Parameters
             ----------
-                coro (coroutine): Coroutine object that will be closed and not scheduled for execution.
-                _loop (asyncio.AbstractEventLoop): Ignored loop parameter kept for signature compatibility.
+                coro (coroutine): Coroutine object to be closed and not scheduled for execution.
+                _loop (asyncio.AbstractEventLoop): Ignored; present for signature compatibility.
 
             Returns
             -------
-                future (asyncio.Future): A Future already completed with result `None`.
+                asyncio.Future: A Future already completed with result `None`.
 
             """
             coro.close()
@@ -211,11 +211,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that performs no operation.
-
-            Returns:
-                None
-
+            A coroutine that does nothing.
             """
             return None
 
@@ -236,10 +232,10 @@ class TestBLECoroutineRunner:
             @staticmethod
             def is_running():
                 """
-                Check whether the BLE coroutine runner is currently active.
+                Report whether the BLE coroutine runner is currently active.
 
                 Returns:
-                    `true` if the runner is active, `false` otherwise.
+                    True if the runner is active, False otherwise.
 
                 """
                 return True
@@ -250,16 +246,16 @@ class TestBLECoroutineRunner:
 
         def _fake_submit(coro, _loop):
             """
-            Close the provided coroutine without running it and return an already-resolved Future with value None.
+            Close the provided coroutine without executing it and return a completed Future with result None.
 
             Parameters
             ----------
-                coro (coroutine): Coroutine object that will be closed and not scheduled for execution.
-                _loop (asyncio.AbstractEventLoop): Ignored loop parameter kept for signature compatibility.
+                coro (coroutine): Coroutine object to be closed and not scheduled for execution.
+                _loop (asyncio.AbstractEventLoop): Ignored; present for signature compatibility.
 
             Returns
             -------
-                future (asyncio.Future): A Future already completed with result `None`.
+                asyncio.Future: A Future already completed with result `None`.
 
             """
             coro.close()
@@ -271,11 +267,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that performs no operation.
-
-            Returns:
-                None
-
+            A coroutine that does nothing.
             """
             return None
 
@@ -297,10 +289,10 @@ class TestBLECoroutineRunner:
             @staticmethod
             def is_running():
                 """
-                Check whether the BLE coroutine runner is currently active.
+                Report whether the BLE coroutine runner is currently active.
 
                 Returns:
-                    `true` if the runner is active, `false` otherwise.
+                    True if the runner is active, False otherwise.
 
                 """
                 return True
@@ -311,16 +303,16 @@ class TestBLECoroutineRunner:
 
         def _fake_submit(coro, _loop):
             """
-            Close the provided coroutine without running it and return an already-resolved Future with value None.
+            Close the provided coroutine without executing it and return a completed Future with result None.
 
             Parameters
             ----------
-                coro (coroutine): Coroutine object that will be closed and not scheduled for execution.
-                _loop (asyncio.AbstractEventLoop): Ignored loop parameter kept for signature compatibility.
+                coro (coroutine): Coroutine object to be closed and not scheduled for execution.
+                _loop (asyncio.AbstractEventLoop): Ignored; present for signature compatibility.
 
             Returns
             -------
-                future (asyncio.Future): A Future already completed with result `None`.
+                asyncio.Future: A Future already completed with result `None`.
 
             """
             coro.close()
@@ -332,11 +324,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that performs no operation.
-
-            Returns:
-                None
-
+            A coroutine that does nothing.
             """
             return None
 
@@ -355,11 +343,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that performs no operation.
-
-            Returns:
-                None
-
+            A coroutine that does nothing.
             """
             return None
 
@@ -424,22 +408,64 @@ class TestBLECoroutineRunner:
 
         class FakeLoop:
             def is_running(self) -> bool:
+                """
+                Report whether the runner's event loop thread is currently active.
+
+                Returns:
+                    bool: `True` if the runner is active and its thread is alive, `False` otherwise.
+
+                """
                 return True
 
             def stop(self) -> None:
+                """
+                Stop the background coroutine runner and clean up its resources.
+
+                Stops the runner's event loop and associated thread (if active), unregisters the atexit handler when registered, and marks the runner as not running.
+                """
                 return None
 
             def call_soon_threadsafe(self, fn):
+                """
+                Execute the provided callable immediately and synchronously.
+
+                Parameters
+                ----------
+                    fn (callable): Function or callable object to be invoked with no arguments.
+
+                """
                 fn()
 
         class FakeThread:
             def __init__(self):
+                """
+                Initialize the fake thread and prepare a list to record calls to `join`.
+
+                Attributes:
+                    join_calls (list): Appends each call's arguments when `join` is invoked (captures positional and keyword arguments).
+
+                """
                 self.join_calls = []
 
             def is_alive(self) -> bool:
+                """
+                Indicates whether the thread is currently alive.
+
+                Returns:
+                    bool: `True` if the thread is alive, `False` otherwise.
+
+                """
                 return True
 
             def join(self, timeout=None):
+                """
+                Record a join call for this fake thread by storing the provided timeout.
+
+                Parameters
+                ----------
+                    timeout (float | None): The maximum number of seconds to wait for the thread to join, or None to wait indefinitely. The value is appended to self.join_calls.
+
+                """
                 self.join_calls.append(timeout)
 
         runner = BLECoroutineRunner()
@@ -535,7 +561,7 @@ class TestBLEClientWithRunner:
 
         async def dummy():
             """
-            Return the constant 42.
+            Return the integer 42.
 
             Returns:
                 int: The integer 42.
@@ -559,7 +585,7 @@ class TestBLEClientWithRunner:
 
         async def dummy():
             """
-            Return the constant 42.
+            Return the integer 42.
 
             Returns:
                 int: The integer 42.
@@ -591,10 +617,21 @@ class TestBLEClientWithRunner:
 
         class ConnectedBleakClient:
             def __init__(self):
+                """
+                Initialize the mock connected bleak client state.
+
+                Sets `is_connected` to True and initializes `disconnect_calls` to 0.
+                """
                 self.is_connected = True
                 self.disconnect_calls = 0
 
             async def disconnect(self):
+                """
+                Mark the client as disconnected and record the disconnect invocation.
+
+                This method sets the client's connected state to False and increments an internal
+                disconnect call counter used for testing or tracking.
+                """
                 self.disconnect_calls += 1
                 self.is_connected = False
 
@@ -615,6 +652,13 @@ class TestBLEClientWithRunner:
 
             @staticmethod
             async def disconnect():
+                """
+                Always raise a RuntimeError with the message "boom".
+
+                Raises:
+                    RuntimeError: Always raised with the message "boom".
+
+                """
                 raise RuntimeError("boom")
 
         client = BLEClient()

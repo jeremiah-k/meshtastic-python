@@ -16,7 +16,13 @@ from meshtastic.interfaces.ble.gating import (
 
 
 def _clear_all_registries() -> None:
-    """Clear all BLE gating global registries."""
+    """
+    Clear BLE gating global registries.
+
+    Acquires the module registry lock and clears the following registries:
+    `_ADDR_LOCKS`, `_CONNECTED_ADDRS`, `_CONNECTED_MARKED_AT`, `_CONNECTED_OWNER_IDS`,
+    `_CONNECTED_OWNERS`, and `_LOCK_HOLDERS`.
+    """
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()
         _CONNECTED_ADDRS.clear()

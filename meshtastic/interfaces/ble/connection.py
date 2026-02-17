@@ -184,13 +184,13 @@ class ClientManager:
         old_client: Optional["BLEClient"],
     ) -> None:
         """
-        Schedule closure of a previous BLE client in a background daemon thread when replacing it with a new client.
+        Schedules safe_close_client(old_client) to run in a background daemon thread when replacing it with new_client.
 
-        If `old_client` is provided and is a different object than `new_client`, schedules `safe_close_client(old_client)` to run in a daemon thread after releasing the state lock.
+        If `old_client` is provided and is a different object than `new_client`, the previous client will be closed asynchronously to avoid blocking the caller.
 
         Parameters
         ----------
-            new_client (BLEClient): The client becoming active.
+            new_client (BLEClient): The client that will become active.
             old_client (Optional[BLEClient]): The previous client to close if different from `new_client`.
 
         """
@@ -214,14 +214,14 @@ class ClientManager:
         self, client: "BLEClient", event: Optional[Event] = None
     ) -> None:
         """
-        Close a BLE client while suppressing shutdown errors and optionally signal completion.
+        Attempt to disconnect and close a BLE client, suppressing any errors and optionally signaling completion.
 
-        Performs a best-effort disconnect followed by closing the client; any exceptions raised during disconnect or close are suppressed.
+        Performs a best-effort disconnect (skipped if the Python interpreter is finalizing) and then closes the client. Any exceptions raised during disconnect or close are suppressed.
 
         Parameters
         ----------
             client (BLEClient): The BLE client to disconnect and close.
-            event (Optional[Event]): If provided, will be set after the close attempt to signal completion.
+            event (Optional[Event]): If provided, will be set after the close attempt to signal that cleanup completed.
 
         """
         skip_disconnect = bool(getattr(sys, "is_finalizing", lambda: False)())
@@ -286,7 +286,7 @@ class ConnectionOrchestrator:
         on_connected_func: "Callable",
     ) -> None:
         """
-        Finalize a successful BLE connection by registering notifications, verifying the client remains connected, transitioning state to CONNECTED, invoking the connected callback, signaling a reconnection event if applicable, and logging success.
+        Finalize a successful BLE connection by registering notification handlers, verifying the client remains connected, transitioning the state to CONNECTED, and invoking post-connection callbacks.
 
         Parameters
         ----------
