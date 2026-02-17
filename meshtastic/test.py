@@ -89,12 +89,17 @@ def testSend(
     """
     Sends one test packet between two nodes and then returns success or failure.
 
-    Arguments:
-        fromInterface {[type]} -- [description]
-        toInterface {[type]} -- [description]
+    Parameters
+    ----------
+        fromInterface (Any): The interface of the sending node.
+        toInterface (Any): The interface of the receiving node.
+        isBroadcast (bool): Whether to broadcast the packet. Defaults to False.
+        asBinary (bool): Whether to send as binary data. Defaults to False.
+        wantAck (bool): Whether to request acknowledgment. Defaults to False.
 
-    Returns:
-        boolean -- True for success
+    Returns
+    -------
+        bool: True for success.
 
     """
     # pylint: disable=W0603

@@ -4,7 +4,6 @@ import io
 import logging
 import threading
 import time
-import traceback
 from typing import Optional, cast
 
 import serial  # type: ignore[import-untyped]
@@ -250,11 +249,10 @@ class StreamInterface(MeshInterface):
                         if len(self._rxBuf) != 0 and ptr + 1 >= packetlen + HEADER_LEN:
                             try:
                                 self._handleFromRadio(self._rxBuf[HEADER_LEN:])
-                            except Exception as ex:
-                                logger.error(
-                                    f"Error while handling message from radio {ex}"
+                            except Exception:
+                                logger.exception(
+                                    "Error while handling message from radio"
                                 )
-                                traceback.print_exc()
                             self._rxBuf = empty
                 else:
                     # logger.debug(f"timeout")

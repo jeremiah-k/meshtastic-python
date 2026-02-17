@@ -355,13 +355,13 @@ class MeshInterface:  # pylint: disable=R0902
 
             Parameters
             ----------
-                value (float | int | None): The numeric value to format. Falsy inputs (e.g., None or 0) produce no output.
+                value (float | int | None): The numeric value to format. `None` produces no output; zero is formatted normally.
                 precision (int): Number of digits after the decimal point. Defaults to 2.
                 unit (str): Suffix to append to the formatted number (e.g., "V", "m"). Defaults to empty string.
 
             Returns
             -------
-                str | None: `None` if `value` is falsy (for example `None` or `0`), otherwise the formatted string (e.g., "3.14V").
+                str | None: `None` if `value` is `None`, otherwise the formatted string (e.g., "3.14V", "0.00 dB").
 
             """
             return f"{value:.{precision}f}{unit}" if value is not None else None
@@ -843,7 +843,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.waitForPosition()
         return d
 
-    def onResponsePosition(self, p):
+    def onResponsePosition(self, p: dict) -> None:
         """
         Handle an incoming position response payload.
 
@@ -924,10 +924,11 @@ class MeshInterface:  # pylint: disable=R0902
             hopLimit=hopLimit,
         )
         # extend timeout based on number of nodes, limit by configured hopLimit
-        waitFactor = min(len(self.nodes) - 1 if self.nodes else 0, hopLimit)
+        nodeCount = len(self.nodes) if self.nodes else 0
+        waitFactor = min(max(nodeCount - 1, 0), hopLimit)
         self.waitForTraceRoute(waitFactor)
 
-    def onResponseTraceRoute(self, p: dict):
+    def onResponseTraceRoute(self, p: dict) -> None:
         """
         Handle a route-trace response and display human-readable forward and return paths.
 
@@ -1101,7 +1102,7 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             self.waitForTelemetry()
 
-    def onResponseTelemetry(self, p: dict):
+    def onResponseTelemetry(self, p: dict) -> None:
         """
         Handle an incoming telemetry response packet.
 
@@ -1155,7 +1156,7 @@ class MeshInterface:  # pylint: disable=R0902
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
                 )
 
-    def onResponseWaypoint(self, p: dict):
+    def onResponseWaypoint(self, p: dict) -> None:
         """
         Handle an incoming waypoint response packet.
 
@@ -1683,9 +1684,10 @@ class MeshInterface:  # pylint: disable=R0902
                 timer.daemon = True
                 self.heartbeatTimer = timer
                 timer.start()
+            # sendHeartbeat() is intentionally outside the lock to avoid
+            # holding the lock during I/O. close() handles timer cancellation.
             with self._heartbeat_lock:
                 if self._closing:
-                    timer.cancel()
                     return
                 self.sendHeartbeat()
 

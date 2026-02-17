@@ -78,7 +78,7 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
         logger.debug(f"in onReceive() d:{d}")
 
         # Exit once we receive a reply
-        if (
+        is_text_reply = (
             args
             and args.sendtext
             and d is not None
@@ -86,7 +86,8 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
             and packet["to"] == interface.myInfo.my_node_num
             and d.get("portnum", portnums_pb2.PortNum.UNKNOWN_APP)
             == portnums_pb2.PortNum.TEXT_MESSAGE_APP
-        ):
+        )
+        if is_text_reply:
             interface.close()  # after running command then exit
 
         # Reply to every received message with some stats
@@ -1233,7 +1234,7 @@ def subscribe() -> None:
 
 
 def set_missing_flags_false(
-    config_dict: dict, true_defaults: Set[Tuple[str, str]]
+    config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, str]]
 ) -> None:
     """Ensure that missing default=True keys are present in the config_dict and set to False."""
     for path in true_defaults:
@@ -1512,7 +1513,7 @@ def common():
                             tcp_hostname = tcp_hostname[1:-1]
                         try:
                             tcp_port = int(tcp_port_str)
-                            if not (1 <= tcp_port <= 65535):
+                            if not 1 <= tcp_port <= 65535:
                                 raise ValueError(f"Port {tcp_port} out of range")
                         except ValueError:
                             meshtastic.util.our_exit(
