@@ -2,7 +2,6 @@
 
 import gc
 import logging
-import os
 import threading
 import time
 
@@ -11,12 +10,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-
-RUN_STATE_MANAGER_PERF = os.getenv("BLE_STATE_MANAGER_PERF") == "1"
-PERF_ONLY = pytest.mark.skipif(
-    not RUN_STATE_MANAGER_PERF,
-    reason="Set BLE_STATE_MANAGER_PERF=1 to run BLE state manager performance tests",
-)
 
 
 class TestBLEStateManager:
@@ -517,18 +510,19 @@ class TestPhase3LockConsolidation:
         assert manager.state == ConnectionState.DISCONNECTED
 
 
-@pytest.mark.slow
-@PERF_ONLY
+@pytest.mark.unit
 def test_state_transition_performance():
     """
-    Measure the performance of repeated BLEStateManager state transitions.
+    Lightweight performance regression guard for repeated BLE state transitions.
 
-    This test cycles the manager through CONNECTING → CONNECTED → DISCONNECTED many times and asserts the total elapsed time and per-transition average are below predefined thresholds to detect regressions in transition throughput. It logs a summary with total transitions, elapsed time, and average time per transition.
+    This is intentionally a fast check (not a full benchmark): it validates
+    that transition throughput remains within reasonable bounds and catches
+    major regressions early in normal CI runs.
     """
     manager = BLEStateManager()
 
     # Measure state transition performance
-    iterations = 1000
+    iterations = 20_000
     start_time = time.perf_counter()
 
     for _i in range(iterations):
@@ -540,14 +534,14 @@ def test_state_transition_performance():
     end_time = time.perf_counter()
     elapsed = end_time - start_time
 
-    # Should complete quickly under typical CI conditions (allow headroom)
+    # Keep generous headroom for noisy CI hosts while still catching regressions.
     assert (
-        elapsed < 3.0
+        elapsed < 2.0
     ), f"State transitions too slow: {elapsed:.3f}s for {iterations * 3} transitions"
 
     # Calculate average transition time
     avg_time = elapsed / (iterations * 3)
-    assert avg_time < 0.0005, f"Average transition time too high: {avg_time:.6f}s"
+    assert avg_time < 0.00003, f"Average transition time too high: {avg_time:.6f}s"
 
     logging.info(
         "Performance: %d transitions in %.3fs, avg: %.6fs",
@@ -557,16 +551,15 @@ def test_state_transition_performance():
     )
 
 
-@pytest.mark.slow
-@PERF_ONLY
+@pytest.mark.unit
 def test_lock_contention_performance():
     """
-    Measure BLEStateManager throughput and correctness under lock contention.
+    Lightweight lock-contention regression guard for BLEStateManager.
 
-    Spawns 5 worker threads that each perform 100 iterations of CONNECTING → CONNECTED → DISCONNECTED
+    Spawns 5 worker threads that each perform 200 iterations of CONNECTING → CONNECTED → DISCONNECTED
     transition attempts (3 operations per iteration) with a short delay to simulate work. Asserts the total
     elapsed time stays below 5.0 seconds and that at least 80% of the expected operations
-    (5 * 100 * 3) succeeded. Prints a brief performance summary.
+    (5 * 200 * 3) succeeded. Prints a brief performance summary.
     """
 
     manager = BLEStateManager()
@@ -586,7 +579,7 @@ def test_lock_contention_performance():
         start_time = time.perf_counter()
         operations = 0
 
-        for _i in range(100):
+        for _i in range(200):
             # Simulate realistic state operations
             if manager.transition_to(ConnectionState.CONNECTING):
                 operations += 1
@@ -624,13 +617,13 @@ def test_lock_contention_performance():
     total_time = end_time - start_time
 
     # Verify reasonable performance under contention
-    assert total_time < 5.0, f"Contention test too slow: {total_time:.3f}s"
+    assert total_time < 4.0, f"Contention test too slow: {total_time:.3f}s"
 
     # Verify all operations completed
     total_operations = sum(r["operations"] for r in results)
-    expected_operations = 5 * 100 * 3  # 5 workers * 100 iterations * 3 operations
+    expected_operations = 5 * 200 * 3  # 5 workers * 200 iterations * 3 operations
     assert (
-        total_operations >= expected_operations * 0.8
+        total_operations >= expected_operations * 0.9
     ), f"Too many failed operations: {total_operations}/{expected_operations}"
 
     logging.info(
@@ -640,8 +633,7 @@ def test_lock_contention_performance():
     )
 
 
-@pytest.mark.slow
-@PERF_ONLY
+@pytest.mark.unit
 def test_memory_efficiency():
     """Verify that BLEStateManager does not leak memory during creation and destruction."""
     # Force garbage collection
@@ -677,20 +669,19 @@ def test_memory_efficiency():
     )
 
 
-@pytest.mark.slow
-@PERF_ONLY
+@pytest.mark.unit
 def test_property_access_performance():
     """
-    Measure and assert that accessing BLEStateManager's core state properties is performant.
+    Lightweight property-access performance regression guard.
 
     Performs repeated reads of `state`, `is_connected`, `is_closing`, and `can_connect` on a fresh BLEStateManager instance,
-    computes the average access time per property, asserts that the average is below 1e-5 seconds, and prints a short timing summary.
+    computes the average access time per property, asserts that the average remains within a reasonable bound, and prints a short timing summary.
     """
 
     manager = BLEStateManager()
 
     # Measure property access performance
-    iterations = 10000
+    iterations = 100000
     start_time = time.perf_counter()
 
     for _i in range(iterations):
@@ -705,7 +696,7 @@ def test_property_access_performance():
 
     # Property access should be very fast
     avg_time = elapsed / (iterations * 4)  # 4 properties per iteration
-    assert avg_time < 0.00001, f"Property access too slow: {avg_time:.9f}s"
+    assert avg_time < 0.000005, f"Property access too slow: {avg_time:.9f}s"
 
     logging.info(
         "Property access: %d accesses in %.3fs, avg: %.9fs",

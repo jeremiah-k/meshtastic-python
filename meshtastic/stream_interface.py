@@ -56,11 +56,10 @@ class StreamInterface(MeshInterface):
             raise StreamInterface.StreamInterfaceError(
                 "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
             )
-        self.stream: Optional[
-            serial.Serial
-        ]  # only serial uses this, TCPInterface overrides the relevant methods instead
-        if not hasattr(self, "stream"):
-            self.stream = None
+        self.stream: Optional[serial.Serial] = cast(
+            Optional[serial.Serial],
+            getattr(self, "stream", None),
+        )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
 

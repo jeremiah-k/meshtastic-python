@@ -9,29 +9,34 @@ import time
 import traceback
 from typing import Any, List, Optional
 
-try:
-    from dotmap import DotMap  # type: ignore[import-untyped]
-except ImportError:
-
-    class DotMap(dict):
-        """Lightweight fallback used when dotmap is unavailable."""
-
-        def __getattr__(self, key):
-            try:
-                value = self[key]
-            except KeyError as exc:
-                raise AttributeError(key) from exc
-            if isinstance(value, dict):
-                return DotMap(value)
-            return value
-
-
 from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
 from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface
+
+
+class _FallbackDotMap(dict):
+    """Lightweight fallback used when dotmap is unavailable."""
+
+    def __getattr__(self, key):
+        try:
+            value = self[key]
+        except KeyError as exc:
+            raise AttributeError(key) from exc
+        if isinstance(value, dict):
+            return _FallbackDotMap(value)
+        return value
+
+
+DotMap: type[Any]
+try:
+    from dotmap import DotMap as _ImportedDotMap  # type: ignore[import-untyped]
+except ImportError:
+    DotMap = _FallbackDotMap
+else:
+    DotMap = _ImportedDotMap
 
 """The interfaces we are using for our tests"""
 interfaces: List = []
