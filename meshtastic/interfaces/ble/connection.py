@@ -230,7 +230,7 @@ class ClientManager:
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            self.error_handler.safe_cleanup(
+            self.error_handler._safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
@@ -238,7 +238,7 @@ class ClientManager:
             logger.debug(
                 "Skipping BLE client disconnect during interpreter finalization."
             )
-        self.error_handler.safe_cleanup(client.close, "client close")
+        self.error_handler._safe_cleanup(client.close, "client close")
         if event:
             event.set()
 

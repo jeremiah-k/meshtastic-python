@@ -689,7 +689,7 @@ class BLEInterface(MeshInterface):
                 error_msg (str): Message forwarded to the error handler if the handler raises an exception.
 
             """
-            self.error_handler.safe_execute(
+            self.error_handler._safe_execute(
                 lambda: handler(sender, data),
                 error_msg=error_msg,
             )
@@ -761,7 +761,7 @@ class BLEInterface(MeshInterface):
                 Callable[[Any, Any], None]: The existing or newly created notification handler.
 
             """
-            handler = self._notification_manager.get_callback(uuid)
+            handler = self._notification_manager._get_callback(uuid)
             if handler is None:
                 handler = factory()
                 self._notification_manager.subscribe(uuid, handler)
@@ -1500,7 +1500,7 @@ class BLEInterface(MeshInterface):
             self._receiveThread = None
 
         # Close parent interface (stops publishing thread, etc.)
-        self.error_handler.safe_execute(
+        self.error_handler._safe_execute(
             lambda: MeshInterface.close(self), error_msg="Error closing mesh interface"
         )
 
@@ -1518,11 +1518,11 @@ class BLEInterface(MeshInterface):
         # Only close the client if we were the one who replaced it
         # If it was replaced by a reconnection, the new connection path will clean it up
         if client is not None:
-            self._notification_manager.unsubscribe_all(
+            self._notification_manager._unsubscribe_all(
                 client, timeout=NOTIFICATION_START_TIMEOUT
             )
             self._disconnect_and_close_client(client)
-        self._notification_manager.cleanup_all()
+        self._notification_manager._cleanup_all()
 
         # Use unified state lock
         # Send disconnected indicator if not already notified
@@ -1537,7 +1537,7 @@ class BLEInterface(MeshInterface):
             self._wait_for_disconnect_notifications()
 
         if self._discovery_manager is not None:
-            self.error_handler.safe_cleanup(
+            self.error_handler._safe_cleanup(
                 self._discovery_manager.close, "discovery manager close"
             )
             self._discovery_manager = None
@@ -1569,7 +1569,7 @@ class BLEInterface(MeshInterface):
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
-        self.error_handler.safe_execute(
+        self.error_handler._safe_execute(
             lambda: publishingThread.queueWork(flush_event.set),
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False,
@@ -1620,7 +1620,7 @@ class BLEInterface(MeshInterface):
             except Empty:
                 break
             iterations += 1
-            self.error_handler.safe_execute(
+            self.error_handler._safe_execute(
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
 

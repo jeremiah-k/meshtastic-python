@@ -30,7 +30,7 @@ class ReconnectScheduler:
         state_lock: RLock,
         thread_coordinator: ThreadCoordinator,
         interface: "BLEInterface",
-    ):
+    ) -> None:
         """
         Initialize a ReconnectScheduler to manage background BLE reconnection attempts.
 
@@ -115,7 +115,9 @@ class ReconnectScheduler:
 class ReconnectWorker:
     """Perform blocking reconnect attempts with policy-driven backoff."""
 
-    def __init__(self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy):
+    def __init__(
+        self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy
+    ) -> None:
         """
         Bind a BLE interface and a reconnect policy to this worker.
 

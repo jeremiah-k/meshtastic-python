@@ -418,7 +418,13 @@ class BLECoroutineRunner:
         if effective_startup_timeout is None:
             effective_startup_timeout = BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS
 
-        self._ensure_running(timeout=effective_startup_timeout)
+        try:
+            self._ensure_running(timeout=effective_startup_timeout)
+        except Exception:
+            # Close the coroutine to prevent "coroutine was never awaited" warning
+            with contextlib.suppress(Exception):
+                coro.close()
+            raise
 
         with self._instance_lock:
             loop = self._loop

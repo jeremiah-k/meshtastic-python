@@ -1,9 +1,15 @@
 """Retry and reconnection policies for BLE operations."""
 
 import random
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Protocol, Tuple
 
 from meshtastic.interfaces.ble.constants import BLEConfig
+
+
+class _RandomLike(Protocol):
+    """Protocol for objects that provide a random() method."""
+
+    def random(self) -> float: ...
 
 
 class ReconnectPolicy:
@@ -19,7 +25,7 @@ class ReconnectPolicy:
         backoff: float = 2.0,
         jitter_ratio: float = 0.1,
         max_retries: Optional[int] = None,
-        random_source=None,
+        random_source: Optional[_RandomLike] = None,
     ) -> None:
         """
         Initialize a jittered exponential-backoff reconnect policy.
@@ -57,7 +63,7 @@ class ReconnectPolicy:
         self.backoff = backoff
         self.jitter_ratio = jitter_ratio
         self.max_retries = max_retries
-        self._random = random_source or random
+        self._random: _RandomLike = random_source or random
         self._attempt_count = 0
 
     def reset(self) -> None:

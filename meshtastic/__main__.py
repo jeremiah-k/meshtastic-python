@@ -1538,16 +1538,21 @@ def common():
                         else:
                             tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
                     elif ":" in args.host:
-                        # Could be host:port or bare IPv6; try splitting on last colon
-                        tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
-                        try:
-                            tcp_port = int(tcp_port_str)
-                            if not 1 <= tcp_port <= 65535:
-                                raise ValueError(f"Port {tcp_port} out of range")
-                        except ValueError:
-                            # Not a valid port – treat the whole string as a hostname/IPv6 addr
+                        # Multiple colons → almost certainly an IPv6 address, not host:port
+                        if args.host.count(":") > 1:
                             tcp_hostname = args.host
                             tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        else:
+                            # Exactly one colon → host:port
+                            tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
+                            try:
+                                tcp_port = int(tcp_port_str)
+                                if not 1 <= tcp_port <= 65535:
+                                    raise ValueError(f"Port {tcp_port} out of range")
+                            except ValueError:
+                                # Not a valid port – treat the whole string as a hostname
+                                tcp_hostname = args.host
+                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
                     else:
                         tcp_hostname = args.host
                         tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT

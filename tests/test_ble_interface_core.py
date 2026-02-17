@@ -188,11 +188,11 @@ class _ReconnectTestNotificationManager:
         self.resubscribed: List[tuple[Any, float]] = []
         self._fail_on_resubscribe = fail_on_resubscribe
 
-    def cleanup_all(self) -> None:
+    def _cleanup_all(self) -> None:
         """Record notification cleanup calls."""
         self.cleaned += 1
 
-    def resubscribe_all(self, client: Any, timeout: float) -> None:
+    def _resubscribe_all(self, client: Any, timeout: float) -> None:
         """Record or reject resubscribe requests based on test configuration."""
         if self._fail_on_resubscribe:
             raise AssertionError("Should not resubscribe without a client")
@@ -210,7 +210,7 @@ class _ReconnectTestScheduler:
         self.cleared = True
 
 
-def test_find_device_returns_single_scan_result():
+def test_find_device_returns_single_scan_result() -> None:
     """find_device should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
@@ -442,9 +442,9 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         connect_thread.join(timeout=12.0)
         disconnect_thread.join(timeout=12.0)
 
-        assert establish_called.is_set(), (
-            "connect() did not run connection establishment"
-        )
+        assert (
+            establish_called.is_set()
+        ), "connect() did not run connection establishment"
         assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
         assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
 
@@ -1001,9 +1001,9 @@ def test_close_clears_ble_threads(monkeypatch):
 
         time.sleep(poll_interval)
 
-    assert not lingering, (
-        f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
-    )
+    assert (
+        not lingering
+    ), f"Found lingering BLE threads after {max_wait_time}s: {lingering}"
 
 
 @pytest.mark.parametrize("exc_type", [RuntimeError, OSError])
@@ -1059,9 +1059,9 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     iface._receiveFromRadioImpl()
 
     assert "Fatal error in BLE receive thread" in caplog.text
-    assert close_called.is_set(), (
-        f"Expected close() to be called for {exc_type.__name__}"
-    )
+    assert (
+        close_called.is_set()
+    ), f"Expected close() to be called for {exc_type.__name__}"
 
     # Clean up
     iface._want_receive = False
@@ -1196,12 +1196,12 @@ def test_log_notification_registration(monkeypatch):
     registered_uuids = [call[0] for call in client.start_notify_calls]
 
     # Should have registered both log notifications and the critical FROMNUM notification
-    assert LEGACY_LOGRADIO_UUID in registered_uuids, (
-        "Legacy log notification should be registered"
-    )
-    assert LOGRADIO_UUID in registered_uuids, (
-        "Current log notification should be registered"
-    )
+    assert (
+        LEGACY_LOGRADIO_UUID in registered_uuids
+    ), "Legacy log notification should be registered"
+    assert (
+        LOGRADIO_UUID in registered_uuids
+    ), "Current log notification should be registered"
     assert FROMNUM_UUID in registered_uuids, "FROMNUM notification should be registered"
 
     # Verify handlers are correctly associated
@@ -1215,15 +1215,15 @@ def test_log_notification_registration(monkeypatch):
         call for call in client.start_notify_calls if call[0] == FROMNUM_UUID
     )
 
-    assert callable(legacy_call[1]), (
-        "Legacy log notification should register a callable handler"
-    )
-    assert callable(current_call[1]), (
-        "Current log notification should register a callable handler"
-    )
-    assert callable(fromnum_call[1]), (
-        "FROMNUM notification should register a callable handler"
-    )
+    assert callable(
+        legacy_call[1]
+    ), "Legacy log notification should register a callable handler"
+    assert callable(
+        current_call[1]
+    ), "Current log notification should register a callable handler"
+    assert callable(
+        fromnum_call[1]
+    ), "FROMNUM notification should register a callable handler"
 
     iface.close()
 

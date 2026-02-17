@@ -12,7 +12,7 @@ if TYPE_CHECKING:  # pragma: no cover - import only for typing
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 
-def _get_ble_module():
+def _get_ble_module() -> types.ModuleType:
     """
     Import and return the meshtastic.interfaces.ble.interface module.
 

@@ -215,7 +215,7 @@ class BLEClient:
                 connected = connected()  # pylint: disable=E1102
             return bool(connected)
 
-        result = self.error_handler.safe_execute(
+        result = self.error_handler._safe_execute(
             _check_connection,
             default_return=False,
             error_msg="Unable to read bleak connection state",
@@ -360,7 +360,7 @@ class BLEClient:
 
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
-            services = self.error_handler.safe_execute(
+            services = self.error_handler._safe_execute(
                 lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
@@ -470,7 +470,7 @@ class BLEClient:
 
             # Best effort: disconnect active transport before closing this wrapper.
             if getattr(self, "bleak_client", None) is not None and self.is_connected():
-                self.error_handler.safe_cleanup(
+                self.error_handler._safe_cleanup(
                     lambda: self.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                     "client disconnect during close",
                 )
@@ -551,8 +551,11 @@ class BLEClient:
             # was happening, causing callbacks to never be processed.
             # TODO: Remove this workaround once upstream bleak/CoreBluetooth
             # callback starvation behavior is resolved.
-            with contextlib.suppress(ValueError, OSError):
-                sys.stdout.flush()
+            stdout = getattr(sys, "stdout", None)
+            if stdout is not None and hasattr(stdout, "flush"):
+                with contextlib.suppress(ValueError, OSError, AttributeError):
+                    if not getattr(stdout, "closed", False):
+                        stdout.flush()
             return future.result(timeout)
         except SystemExit:  # pylint: disable=W0706
             raise

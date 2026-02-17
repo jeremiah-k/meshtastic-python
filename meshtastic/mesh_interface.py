@@ -306,7 +306,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         """
 
-        def get_human_readable(name: str) -> str:
+        def _get_human_readable(name: str) -> str:
             """
             Map an internal dotted field path to a human-readable column label.
 
@@ -345,7 +345,7 @@ class MeshInterface:  # pylint: disable=R0902
             else:
                 return name
 
-        def formatFloat(
+        def _format_float(
             value: Optional[Union[int, float]],
             precision: int = 2,
             unit: str = "",
@@ -366,7 +366,7 @@ class MeshInterface:  # pylint: disable=R0902
             """
             return f"{value:.{precision}f}{unit}" if value is not None else None
 
-        def getLH(ts: Optional[Union[int, float]]) -> Optional[str]:
+        def _get_lh(ts: Optional[Union[int, float]]) -> Optional[str]:
             """
             Format a Unix timestamp into a human-readable 'YYYY-MM-DD HH:MM:SS' string.
 
@@ -385,7 +385,7 @@ class MeshInterface:  # pylint: disable=R0902
                 else None
             )
 
-        def getTimeAgo(ts: Optional[Union[int, float]]) -> Optional[str]:
+        def _get_time_ago(ts: Optional[Union[int, float]]) -> Optional[str]:
             """
             Produce a short human-readable relative time string for a Unix epoch timestamp.
 
@@ -408,7 +408,7 @@ class MeshInterface:  # pylint: disable=R0902
                 return None  # not handling a timestamp from the future
             return _timeago(delta_secs)
 
-        def getNestedValue(node_dict: Dict[str, Any], key_path: str) -> Any:
+        def _get_nested_value(node_dict: Dict[str, Any], key_path: str) -> Any:
             """
             Retrieve a value from a nested dict using a dotted key path.
 
@@ -425,7 +425,7 @@ class MeshInterface:  # pylint: disable=R0902
 
             """
             if "." not in key_path:
-                logger.debug("getNestedValue was called without a nested path.")
+                logger.debug("_get_nested_value was called without a nested path.")
                 return None
             keys = key_path.split(".")
             value: Optional[Union[str, dict]] = node_dict
@@ -478,7 +478,7 @@ class MeshInterface:  # pylint: disable=R0902
                 fields = {}
                 for field in showFields:
                     if "." in field:
-                        raw_value = getNestedValue(node, field)
+                        raw_value = _get_nested_value(node, field)
                     else:
                         # The "since" column is synthesized, it's not retrieved from the device. Get the
                         # lastHeard value here, and then we'll format it properly below.
@@ -494,28 +494,28 @@ class MeshInterface:  # pylint: disable=R0902
                         if raw_value is None:
                             formatted_value = "0"
                     elif field == "deviceMetrics.channelUtilization":
-                        formatted_value = formatFloat(raw_value, 2, "%")
+                        formatted_value = _format_float(raw_value, 2, "%")
                     elif field == "deviceMetrics.airUtilTx":
-                        formatted_value = formatFloat(raw_value, 2, "%")
+                        formatted_value = _format_float(raw_value, 2, "%")
                     elif field == "deviceMetrics.batteryLevel":
                         if raw_value in (0, 101):
                             formatted_value = "Powered"
                         else:
-                            formatted_value = formatFloat(raw_value, 0, "%")
+                            formatted_value = _format_float(raw_value, 0, "%")
                     elif field == "isFavorite":
                         formatted_value = "*" if raw_value else ""
                     elif field == "lastHeard":
-                        formatted_value = getLH(raw_value)
+                        formatted_value = _get_lh(raw_value)
                     elif field == "position.latitude":
-                        formatted_value = formatFloat(raw_value, 4, "°")
+                        formatted_value = _format_float(raw_value, 4, "°")
                     elif field == "position.longitude":
-                        formatted_value = formatFloat(raw_value, 4, "°")
+                        formatted_value = _format_float(raw_value, 4, "°")
                     elif field == "position.altitude":
-                        formatted_value = formatFloat(raw_value, 0, "m")
+                        formatted_value = _format_float(raw_value, 0, "m")
                     elif field == "since":
-                        formatted_value = getTimeAgo(raw_value) or "N/A"
+                        formatted_value = _get_time_ago(raw_value) or "N/A"
                     elif field == "snr":
-                        formatted_value = formatFloat(raw_value, 0, " dB")
+                        formatted_value = _format_float(raw_value, 0, " dB")
                     elif field == "user.shortName":
                         formatted_value = (
                             raw_value
@@ -533,7 +533,7 @@ class MeshInterface:  # pylint: disable=R0902
 
                 # Filter out any field in the data set that was not specified.
                 filteredData = {
-                    get_human_readable(k): v
+                    _get_human_readable(k): v
                     for k, v in fields.items()
                     if k in showFields
                 }

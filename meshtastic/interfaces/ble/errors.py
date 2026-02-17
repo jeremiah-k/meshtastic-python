@@ -37,7 +37,7 @@ class BLEErrorHandler:
     """
 
     @staticmethod
-    def safe_execute(
+    def _safe_execute(
         func: Callable[[], Any],
         default_return: Any = None,
         log_error: bool = True,
@@ -82,7 +82,7 @@ class BLEErrorHandler:
             return default_return
 
     @staticmethod
-    def safe_cleanup(
+    def _safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
         """
