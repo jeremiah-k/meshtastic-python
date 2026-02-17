@@ -3,8 +3,10 @@
 Lock Ordering Note:
     When acquiring multiple locks, always acquire in this order:
     1. _REGISTRY_LOCK (global registry lock)
-    2. Per-address locks from _ADDR_LOCKS
-    3. Interface-level locks (_state_lock, _connect_lock, _disconnect_lock)
+    2. Per-address locks from _ADDR_LOCKS (via _addr_lock_context)
+    3. Interface connect lock (_connect_lock)
+    4. Interface state lock (_state_lock)
+    5. Interface disconnect lock (_disconnect_lock)
 
     This ordering prevents deadlocks in concurrent connection scenarios.
 
