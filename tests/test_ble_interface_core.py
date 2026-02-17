@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from queue import Queue
 from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
@@ -243,6 +244,13 @@ def test_state_manager_allows_error_to_disconnecting_shutdown():
     assert state_manager.is_closing is False
 
 
+def test_ble_interface_defaults_auto_reconnect_disabled(monkeypatch):
+    """BLEInterface should default auto_reconnect to False."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    assert iface.auto_reconnect is False
+    iface.close()
+
+
 def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     """Stale disconnect callbacks must not clear the current active client."""
     stale_client = DummyClient()
@@ -283,6 +291,126 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     assert iface._disconnect_notified is False
     assert reconnect_calls == []
     assert disconnected_calls == []
+
+    iface.close()
+
+
+def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch):
+    """
+    Concurrent connect/disconnect should complete without deadlocking under address-lock contention.
+
+    This test forces connect() to hold the per-address lock while _handle_disconnect()
+    runs, then releases connect to ensure both operations complete.
+    """
+    import meshtastic.interfaces.ble.interface as ble_iface_mod
+
+    target_address = "AA:BB:CC:DD:EE:01"
+    initial_client = DummyClient()
+    initial_client.address = target_address
+    initial_client.bleak_client = SimpleNamespace(address=target_address)
+
+    connected_client = DummyClient()
+    connected_client.address = target_address
+    connected_client.bleak_client = SimpleNamespace(address=target_address)
+
+    real_connect = BLEInterface.connect
+
+    def _init_connect_stub(
+        iface: BLEInterface, _address: Optional[str] = None
+    ) -> DummyClient:
+        _ = _address
+        with iface._state_lock:
+            iface.client = initial_client
+            iface._disconnect_notified = False
+            iface._state_manager.reset_to_disconnected()
+            iface._state_manager.transition_to(ConnectionState.CONNECTED)
+        return initial_client
+
+    monkeypatch.setattr(BLEInterface, "connect", _init_connect_stub, raising=True)
+    monkeypatch.setattr(
+        BLEInterface,
+        "_start_receive_thread",
+        lambda _self, *, name: None,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_startConfig", lambda _self: None, raising=True)
+
+    iface = BLEInterface(address=target_address, noProto=True, auto_reconnect=False)
+    monkeypatch.setattr(BLEInterface, "connect", real_connect, raising=True)
+
+    with iface._state_lock:
+        iface.client = None
+        iface._disconnect_notified = False
+        iface._connection_alias_key = None
+        iface._state_manager.reset_to_disconnected()
+
+    connect_waiting = threading.Event()
+    allow_connect = threading.Event()
+    establish_called = threading.Event()
+    thread_errors: "Queue[tuple[str, Exception]]" = Queue()
+
+    def _gate_check_stub(addr_key: Optional[str], owner: Optional[Any] = None) -> bool:
+        _ = owner
+        assert addr_key is not None
+        connect_waiting.set()
+        if not allow_connect.wait(timeout=5.0):
+            raise AssertionError("Timed out waiting to release connect gate check")
+        return False
+
+    def _establish_connection_stub(*_args: Any, **_kwargs: Any) -> DummyClient:
+        with iface._state_lock:
+            assert iface._state_manager.transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager.transition_to(ConnectionState.CONNECTED)
+        establish_called.set()
+        return connected_client
+
+    monkeypatch.setattr(
+        ble_iface_mod,
+        "_is_currently_connected_elsewhere",
+        _gate_check_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface._connection_orchestrator,
+        "establish_connection",
+        _establish_connection_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(iface, "_register_notifications", lambda _client: None)
+    monkeypatch.setattr(iface, "_connected", lambda: None)
+    monkeypatch.setattr(iface, "_disconnected", lambda: None)
+
+    def _connect_worker() -> None:
+        try:
+            iface.connect(target_address)
+        except Exception as exc:  # noqa: BLE001 - test captures thread errors
+            thread_errors.put(("connect", exc))
+
+    def _disconnect_worker() -> None:
+        try:
+            iface._handle_disconnect("concurrency-test")
+        except Exception as exc:  # noqa: BLE001 - test captures thread errors
+            thread_errors.put(("disconnect", exc))
+
+    connect_thread = threading.Thread(target=_connect_worker, daemon=True)
+    disconnect_thread = threading.Thread(target=_disconnect_worker, daemon=True)
+
+    connect_thread.start()
+    assert connect_waiting.wait(timeout=5.0), "connect() did not reach gate check"
+
+    disconnect_thread.start()
+    allow_connect.set()
+
+    connect_thread.join(timeout=5.0)
+    disconnect_thread.join(timeout=5.0)
+
+    assert establish_called.is_set(), "connect() did not run connection establishment"
+    assert not connect_thread.is_alive(), "connect() thread appears deadlocked"
+    assert not disconnect_thread.is_alive(), "disconnect thread appears deadlocked"
+
+    if not thread_errors.empty():
+        where, exc = thread_errors.get_nowait()
+        pytest.fail(f"{where} thread raised {type(exc).__name__}: {exc}")
 
     iface.close()
 

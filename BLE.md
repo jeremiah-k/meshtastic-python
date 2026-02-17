@@ -6,8 +6,20 @@ This document summarizes the current BLE implementation, common pitfalls seen in
 
 - **Single connection gate per address (owner-aware + stale-pruning).** A process-wide registry prevents overlapping connects to the same normalized BLE address. Claims are owned by the active interface instance, ignore non-owner disconnect clears, and stale claims are pruned automatically (dead owners or unowned claims older than `BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS`, default 300s). When another live interface instance owns the address you will see `Connection suppressed: recently connected elsewhere`.
 - **Short direct connect, then discovery.** When an address is known we try a short direct connect (~12s). If that fails we run a 10s scan and then perform a full connect using the configured `BLEConfig.CONNECTION_TIMEOUT` (default 60s).
-- **Disconnect handling is serialized.** A per-interface lock drops stale duplicate disconnect callbacks and marks the address as disconnected before scheduling auto-reconnect.
+- **Disconnect handling is serialized.** A per-interface lock drops stale duplicate disconnect callbacks and marks the address as disconnected before optional auto-reconnect.
 - **Singleton BLE runner.** All BLE operations are managed by a singleton `BLECoroutineRunner` with a shared background thread and asyncio event loop. This reduces resource usage from N threads to 1 thread regardless of how many clients exist and simplifies cleanup.
+
+## Locking rules
+
+When code paths need multiple BLE locks, always acquire in this order:
+
+1. Global registry lock (`_REGISTRY_LOCK` in `gating.py`)
+1. Per-address lock (`_ADDR_LOCKS` via `_addr_lock_context`)
+1. Interface connect lock (`_connect_lock`)
+1. Interface state lock (`_state_lock`)
+1. Interface disconnect lock (`_disconnect_lock`)
+
+`_handle_disconnect()` intentionally acquires `_disconnect_lock` first in non-blocking mode. If another disconnect handler is active, it exits early instead of waiting, which prevents lock inversion while still deduplicating callbacks.
 
 ## Recommended usage
 
@@ -22,16 +34,17 @@ from pubsub import pub
 pub.subscribe(lambda packet, interface: print(packet), "meshtastic.receive")
 
 # Create a single long-lived interface for the process
-iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
+# auto_reconnect defaults to False
+iface = BLEInterface(address="DD:DD:13:27:74:29")
 
-# Connection is already established; auto-reconnect will take over after disconnects
+# Connection is already established
 ```
 
 Avoid creating new `BLEInterface` instances on every reconnect attempt. Reuse the same instance so the per-address gate and state manager can coordinate cleanly.
 
-### Let auto-reconnect run alone
+### Auto-reconnect is opt-in
 
-If you enable `auto_reconnect=True` (default), do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause `suppressed duplicate connect` logs and can interfere with the built-in recovery.
+If you enable `auto_reconnect=True`, do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause `suppressed duplicate connect` logs and can interfere with the built-in recovery.
 
 If your application manages reconnects itself, disable the built-in loop:
 
@@ -39,6 +52,12 @@ If your application manages reconnects itself, disable the built-in loop:
 # Note: With auto_reconnect=False, initial connection still happens in __init__
 iface = BLEInterface(address="AA:BB:CC:DD:EE:FF", auto_reconnect=False)
 # on disconnect: call iface.connect() again using the same instance
+```
+
+For CLI usage, opt in with `--ble-auto-reconnect`:
+
+```bash
+meshtastic --ble any --ble-auto-reconnect --listen
 ```
 
 **When to call `connect()` manually:** The BLEInterface constructor automatically calls `connect()`. You only need to call it manually after `close()` or when handling a disconnect with `auto_reconnect=False`.
@@ -71,7 +90,7 @@ def on_packet(packet, interface):
 pub.subscribe(on_packet, "meshtastic.receive")
 
 # BLEInterface automatically connects during construction
-iface = BLEInterface(address="DD:DD:13:27:74:29", auto_reconnect=True)
+iface = BLEInterface(address="DD:DD:13:27:74:29")
 
 try:
     # Keep your application alive; work is driven by callbacks

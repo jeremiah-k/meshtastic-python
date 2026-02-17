@@ -113,7 +113,7 @@ class BLEInterface(MeshInterface):
         noNodes: bool = False,
         timeout: int = 300,
         *,
-        auto_reconnect: bool = True,
+        auto_reconnect: bool = False,
     ) -> None:
         """
         Create and initialize a BLEInterface, start its background receive thread, and attempt an initial connection and configuration to a Meshtastic BLE device.
@@ -123,7 +123,7 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
             address (Optional[str]): BLE address or device name to connect to; if None, any discovered Meshtastic device may be used.
-            auto_reconnect (bool): If True, schedule automatic reconnection after unexpected disconnects; if False, the interface will not attempt automatic reconnects and will begin shutdown on disconnect.
+            auto_reconnect (bool): If True, schedule automatic reconnection after unexpected disconnects; if False (default), the interface will not attempt automatic reconnects and will begin shutdown on disconnect.
 
         Raises
         ------
@@ -278,8 +278,8 @@ class BLEInterface(MeshInterface):
             parts.append("noProto=True")
         if self.noNodes:
             parts.append("noNodes=True")
-        if not self.auto_reconnect:
-            parts.append("auto_reconnect=False")
+        if self.auto_reconnect:
+            parts.append("auto_reconnect=True")
         return f"BLEInterface({', '.join(parts)})"
 
     def _set_receive_wanted(self, want_receive: bool) -> None:

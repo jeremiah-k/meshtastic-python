@@ -102,7 +102,9 @@ def onReceive(packet, interface) -> None:
         print(f"Warning: Error processing received packet: {ex}.")
 
 
-def onConnection(interface, topic: Any = pub.AUTO_TOPIC) -> None:  # pylint: disable=W0613
+def onConnection(
+    interface, topic: Any = pub.AUTO_TOPIC
+) -> None:  # pylint: disable=W0613
     """Callback invoked when we connect/disconnect from a radio."""
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
     print(f"Connection changed: {topic_name}")
@@ -1499,6 +1501,7 @@ def common():
                     noProto=args.noproto,
                     noNodes=args.no_nodes,
                     timeout=args.timeout,
+                    auto_reconnect=args.ble_auto_reconnect,
                 )
             elif args.host:
                 try:
@@ -1629,6 +1632,12 @@ def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
     outer.add_argument(
         "--ble-scan",
         help="Scan for Meshtastic BLE devices that may be available to connect to",
+        action="store_true",
+    )
+
+    outer.add_argument(
+        "--ble-auto-reconnect",
+        help="Enable BLE auto-reconnect after unexpected disconnects (disabled by default)",
         action="store_true",
     )
 
