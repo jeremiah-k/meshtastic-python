@@ -1189,6 +1189,7 @@ class BLEInterface(MeshInterface):
             self._mark_address_keys_connected(
                 connected_device_key, connection_alias_key
             )
+            needs_cleanup = False
             with self._state_lock:
                 if (
                     not self._closed
@@ -1196,6 +1197,21 @@ class BLEInterface(MeshInterface):
                     and self._state_manager.is_connected
                 ):
                     self._connection_alias_key = connection_alias_key
+                else:
+                    # Interface closed during connect() - clean up the stale gate claim
+                    # to prevent blocking future connections to the same address.
+                    logger.debug(
+                        "Interface closed during connect(), cleaning up gate claim for %s",
+                        getattr(connected_client, "address", "unknown"),
+                    )
+                    self._connection_alias_key = None
+                    needs_cleanup = True
+            # Release state lock before acquiring address locks for cleanup
+            # (lock ordering: address locks before state lock)
+            if needs_cleanup:
+                self._mark_address_keys_disconnected(
+                    connected_device_key, connection_alias_key
+                )
         else:
             logger.debug(
                 "Skipping connect gate marking for stale client result (%s).",
