@@ -9,7 +9,7 @@ import threading
 import time
 from queue import Empty
 from threading import Event, Thread
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TypeVar
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -1117,7 +1117,7 @@ class BLEInterface(MeshInterface):
         address: Optional[str],
         normalized_request: Optional[str],
         addr_key: Optional[str],
-    ) -> tuple["BLEClient", Optional[str], Optional[str]]:
+    ) -> Tuple["BLEClient", Optional[str], Optional[str]]:
         """
         Establish a new BLE connection and update interface state.
 
@@ -1133,7 +1133,7 @@ class BLEInterface(MeshInterface):
 
         Returns
         -------
-            tuple[BLEClient, Optional[str], Optional[str]]:
+            Tuple[BLEClient, Optional[str], Optional[str]]:
                 (client, connected_device_key, connection_alias_key)
 
         Note
@@ -1315,8 +1315,6 @@ class BLEInterface(MeshInterface):
         self._finalize_connection_gates(
             connected_client, connected_device_key, connection_alias_key
         )
-
-        return connected_client
 
         return connected_client
 

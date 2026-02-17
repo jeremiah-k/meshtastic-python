@@ -5,6 +5,7 @@
 # pylint: disable=R0917,C0302
 
 import argparse
+import contextlib
 import importlib
 import logging
 import os
@@ -1682,141 +1683,157 @@ def common():
                 for x in BLEInterface.scan():
                     print(f"Found: name='{x.name}' address='{x.address}'")
                 meshtastic.util.our_exit("BLE scan finished", 0)
-            elif args.ble:
-                client = BLEInterface(
-                    args.ble if args.ble != "any" else None,
-                    debugOut=logfile,
-                    noProto=args.noproto,
-                    noNodes=args.no_nodes,
-                    timeout=args.timeout,
-                    auto_reconnect=args.ble_auto_reconnect,
-                )
-            elif args.host:
-                try:
-                    if args.host.startswith("["):
-                        # Bracketed IPv6: [addr] or [addr]:port
-                        bracket_end = args.host.find("]")
-                        if bracket_end == -1:
-                            meshtastic.util.our_exit(
-                                f"Error: malformed IPv6 address in --host '{args.host}'.",
-                                1,
-                            )
-                        tcp_hostname = args.host[1:bracket_end]
-                        remainder = args.host[bracket_end + 1 :]
-                        if remainder.startswith(":"):
-                            tcp_port_str = remainder[1:]
-                            try:
-                                tcp_port = int(tcp_port_str)
-                                if not 1 <= tcp_port <= 65535:
-                                    raise ValueError(f"Port {tcp_port} out of range")
-                            except ValueError:
-                                meshtastic.util.our_exit(
-                                    f"Error: invalid TCP port in --host '{args.host}'.",
-                                    1,
-                                )
-                        elif remainder:
-                            meshtastic.util.our_exit(
-                                f"Error: unexpected characters after IPv6 address in --host '{args.host}'.",
-                                1,
-                            )
-                        else:
-                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                    elif ":" in args.host:
-                        # Multiple colons → almost certainly an IPv6 address, not host:port
-                        if args.host.count(":") > 1:
-                            tcp_hostname = args.host
-                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                        else:
-                            # Exactly one colon → host:port
-                            tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
-                            try:
-                                tcp_port = int(tcp_port_str)
-                                if not 1 <= tcp_port <= 65535:
-                                    raise ValueError(f"Port {tcp_port} out of range")
-                            except ValueError:
-                                # Not a valid port - treat the whole string as a hostname
-                                tcp_hostname = args.host
-                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                    else:
-                        tcp_hostname = args.host
-                        tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                    client = meshtastic.tcp_interface.TCPInterface(
-                        tcp_hostname,
-                        portNumber=tcp_port,
-                        debugOut=logfile,
-                        noProto=args.noproto,
-                        noNodes=args.no_nodes,
-                        timeout=args.timeout,
-                    )
-                except Exception as ex:
-                    meshtastic.util.our_exit(f"Error connecting to {args.host}:{ex}", 1)
-            else:
-                try:
-                    client = meshtastic.serial_interface.SerialInterface(
-                        args.port,
-                        debugOut=logfile,
-                        noProto=args.noproto,
-                        noNodes=args.no_nodes,
-                        timeout=args.timeout,
-                    )
-                except FileNotFoundError:
-                    # Handle the case where the serial device is not found
-                    message = "File Not Found Error:\n"
-                    message += f"  The serial device at '{args.port}' was not found.\n"
-                    message += "  Please check the following:\n"
-                    message += "    1. Is the device connected properly?\n"
-                    message += "    2. Is the correct serial port specified?\n"
-                    message += "    3. Are the necessary drivers installed?\n"
-                    message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
-                    message += (
-                        "       Ensure you are using a **data-capable USB cable**.\n"
-                    )
-                    meshtastic.util.our_exit(message, 1)
-                except PermissionError as ex:
-                    username = os.getlogin()
-                    message = "Permission Error:\n"
-                    message += (
-                        "  Need to add yourself to the 'dialout' group by running:\n"
-                    )
-                    message += f"     sudo usermod -a -G dialout {username}\n"
-                    message += "  After running that command, log out and re-login for it to take effect.\n"
-                    message += f"Error was:{ex}"
-                    meshtastic.util.our_exit(message)
-                except OSError as ex:
-                    message = "OS Error:\n"
-                    message += "  The serial device couldn't be opened, it might be in use by another process.\n"
-                    message += "  Please close any applications or webpages that may be using the device and try again.\n"
-                    message += f"\nOriginal error: {ex}"
-                    meshtastic.util.our_exit(message)
-                if client.devPath is None:
-                    try:
-                        client = meshtastic.tcp_interface.TCPInterface(
-                            "localhost",
+
+            # Use ExitStack to guarantee interface cleanup on early exits or exceptions
+            with contextlib.ExitStack() as stack:
+                client: MeshInterface
+                if args.ble:
+                    client = stack.enter_context(
+                        BLEInterface(
+                            args.ble if args.ble != "any" else None,
                             debugOut=logfile,
                             noProto=args.noproto,
                             noNodes=args.no_nodes,
                             timeout=args.timeout,
+                            auto_reconnect=args.ble_auto_reconnect,
+                        )
+                    )
+                elif args.host:
+                    try:
+                        if args.host.startswith("["):
+                            # Bracketed IPv6: [addr] or [addr]:port
+                            bracket_end = args.host.find("]")
+                            if bracket_end == -1:
+                                meshtastic.util.our_exit(
+                                    f"Error: malformed IPv6 address in --host '{args.host}'.",
+                                    1,
+                                )
+                            tcp_hostname = args.host[1:bracket_end]
+                            remainder = args.host[bracket_end + 1 :]
+                            if remainder.startswith(":"):
+                                tcp_port_str = remainder[1:]
+                                try:
+                                    tcp_port = int(tcp_port_str)
+                                    if not 1 <= tcp_port <= 65535:
+                                        raise ValueError(
+                                            f"Port {tcp_port} out of range"
+                                        )
+                                except ValueError:
+                                    meshtastic.util.our_exit(
+                                        f"Error: invalid TCP port in --host '{args.host}'.",
+                                        1,
+                                    )
+                            elif remainder:
+                                meshtastic.util.our_exit(
+                                    f"Error: unexpected characters after IPv6 address in --host '{args.host}'.",
+                                    1,
+                                )
+                            else:
+                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        elif ":" in args.host:
+                            # Multiple colons → almost certainly an IPv6 address, not host:port
+                            if args.host.count(":") > 1:
+                                tcp_hostname = args.host
+                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                            else:
+                                # Exactly one colon → host:port
+                                tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
+                                try:
+                                    tcp_port = int(tcp_port_str)
+                                    if not 1 <= tcp_port <= 65535:
+                                        raise ValueError(
+                                            f"Port {tcp_port} out of range"
+                                        )
+                                except ValueError:
+                                    # Not a valid port - treat the whole string as a hostname
+                                    tcp_hostname = args.host
+                                    tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        else:
+                            tcp_hostname = args.host
+                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        client = stack.enter_context(
+                            meshtastic.tcp_interface.TCPInterface(
+                                tcp_hostname,
+                                portNumber=tcp_port,
+                                debugOut=logfile,
+                                noProto=args.noproto,
+                                noNodes=args.no_nodes,
+                                timeout=args.timeout,
+                            )
                         )
                     except Exception as ex:
                         meshtastic.util.our_exit(
-                            f"Error connecting to localhost:{ex}", 1
+                            f"Error connecting to {args.host}:{ex}", 1
                         )
+                else:
+                    try:
+                        client = stack.enter_context(
+                            meshtastic.serial_interface.SerialInterface(
+                                args.port,
+                                debugOut=logfile,
+                                noProto=args.noproto,
+                                noNodes=args.no_nodes,
+                                timeout=args.timeout,
+                            )
+                        )
+                    except FileNotFoundError:
+                        # Handle the case where the serial device is not found
+                        message = "File Not Found Error:\n"
+                        message += (
+                            f"  The serial device at '{args.port}' was not found.\n"
+                        )
+                        message += "  Please check the following:\n"
+                        message += "    1. Is the device connected properly?\n"
+                        message += "    2. Is the correct serial port specified?\n"
+                        message += "    3. Are the necessary drivers installed?\n"
+                        message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
+                        message += "       Ensure you are using a **data-capable USB cable**.\n"
+                        meshtastic.util.our_exit(message, 1)
+                    except PermissionError as ex:
+                        username = os.getlogin()
+                        message = "Permission Error:\n"
+                        message += "  Need to add yourself to the 'dialout' group by running:\n"
+                        message += f"     sudo usermod -a -G dialout {username}\n"
+                        message += "  After running that command, log out and re-login for it to take effect.\n"
+                        message += f"Error was:{ex}"
+                        meshtastic.util.our_exit(message)
+                    except OSError as ex:
+                        message = "OS Error:\n"
+                        message += "  The serial device couldn't be opened, it might be in use by another process.\n"
+                        message += "  Please close any applications or webpages that may be using the device and try again.\n"
+                        message += f"\nOriginal error: {ex}"
+                        meshtastic.util.our_exit(message)
+                    if client.devPath is None:
+                        try:
+                            client = stack.enter_context(
+                                meshtastic.tcp_interface.TCPInterface(
+                                    "localhost",
+                                    debugOut=logfile,
+                                    noProto=args.noproto,
+                                    noNodes=args.no_nodes,
+                                    timeout=args.timeout,
+                                )
+                            )
+                        except Exception as ex:
+                            meshtastic.util.our_exit(
+                                f"Error connecting to localhost:{ex}", 1
+                            )
 
-            # We assume client is fully connected now
-            onConnected(client)
+                # We assume client is fully connected now
+                onConnected(client)
 
-            have_tunnel = platform.system() == "Linux"
-            if (
-                args.noproto
-                or args.reply
-                or (have_tunnel and args.tunnel)
-                or args.listen
-            ):  # loop until someone presses ctrlc
-                try:
-                    while True:
-                        time.sleep(1000)
-                except KeyboardInterrupt:
-                    logger.info("Exiting due to keyboard interrupt")
+                have_tunnel = platform.system() == "Linux"
+                if (
+                    args.noproto
+                    or args.reply
+                    or (have_tunnel and args.tunnel)
+                    or args.listen
+                ):  # loop until someone presses ctrlc
+                    try:
+                        while True:
+                            time.sleep(1000)
+                    except KeyboardInterrupt:
+                        logger.info("Exiting due to keyboard interrupt")
 
         # don't call exit, background threads might be running still
         # sys.exit(0)

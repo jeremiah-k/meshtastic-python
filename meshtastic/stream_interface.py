@@ -25,12 +25,7 @@ class StreamInterface(MeshInterface):
     class StreamInterfaceError(MeshInterface.MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
-        def __init__(  # pylint: disable=useless-parent-delegation
-            # The override exists solely to supply a default msg; keep the suppression.
-            self,
-            msg: str = "StreamInterface is now abstract (to update existing code create SerialInterface instead)",
-        ):
-            super().__init__(msg)
+        DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
 
     def __init__(  # pylint: disable=R0917
         self,
@@ -61,7 +56,9 @@ class StreamInterface(MeshInterface):
         """
 
         if not hasattr(self, "stream") and not noProto:
-            raise StreamInterface.StreamInterfaceError()
+            raise StreamInterface.StreamInterfaceError(
+                StreamInterface.StreamInterfaceError.DEFAULT_MSG
+            )
         self.stream: Optional[serial.Serial] = cast(
             Optional[serial.Serial],
             getattr(self, "stream", None),
