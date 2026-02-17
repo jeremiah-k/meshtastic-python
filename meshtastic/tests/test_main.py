@@ -1797,7 +1797,8 @@ def test_main_onReceive_empty(caplog, capsys):
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
-    packet = {}
+    # Need 'decoded' to be truthy so the code path reaches packet["to"]
+    packet = {"decoded": {}}
     with caplog.at_level(logging.DEBUG):
         onReceive(packet, iface)
     assert re.search(r"in onReceive", caplog.text, re.MULTILINE)
