@@ -137,8 +137,6 @@ def stripnl(s) -> str:
 class FixmeError(Exception):
     """Exception for marking code that needs to be fixed."""
 
-    pass
-
 
 def fixme(message: str) -> None:
     """Raise an exception for things that needs to be fixed."""
