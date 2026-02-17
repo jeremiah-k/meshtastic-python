@@ -25,7 +25,7 @@ class StreamInterface(MeshInterface):
     class StreamInterfaceError(MeshInterface.MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
-        def __init__(
+        def __init__(  # pylint: disable=useless-parent-delegation
             self,
             msg: str = "StreamInterface is now abstract (to update existing code create SerialInterface instead)",
         ):

@@ -23,7 +23,6 @@ except ImportError:
 # TODO
 # from ..config import Config
 from ..util import Timeout
-from .conftest import FakeTimer
 
 
 @pytest.mark.unit
