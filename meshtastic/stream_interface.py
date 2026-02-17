@@ -26,6 +26,7 @@ class StreamInterface(MeshInterface):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
         def __init__(  # pylint: disable=useless-parent-delegation
+            # The override exists solely to supply a default msg; keep the suppression.
             self,
             msg: str = "StreamInterface is now abstract (to update existing code create SerialInterface instead)",
         ):

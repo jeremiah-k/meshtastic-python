@@ -207,14 +207,14 @@ def getPref(node: Any, comp_name: str) -> bool:
     found: bool = False
     config = localConfig
     config_type = None
-    pref = ""
+    pref = None
     for config in [localConfig, moduleConfig]:
         objDesc = config.DESCRIPTOR
         config_type = objDesc.fields_by_name.get(name[0])
-        pref = ""  # FIXME - is this correct to leave as an empty string if not found?
+        pref = None
         if config_type:
             pref = config_type.message_type.fields_by_name.get(snake_name)
-            if pref or wholeField:
+            if pref is not None or wholeField:
                 found = True
                 break
 
@@ -231,12 +231,12 @@ def getPref(node: Any, comp_name: str) -> bool:
     if config_type is None:
         return False
 
-    if len(config.ListFields()) != 0 and not isinstance(
-        pref, str
-    ):  # if str, it's still the empty string, I think
+    if len(config.ListFields()) != 0 and pref is not None:
         # read the value
         config_values = getattr(config, config_type.name)
         if not wholeField:
+            # pref is guaranteed non-None by the outer condition
+            assert pref is not None  # type narrowing for mypy
             pref_value = getattr(config_values, pref.name)
             repeated = pref.label == pref.LABEL_REPEATED
             _printSetting(config_type, uni_name, pref_value, repeated)
@@ -1464,9 +1464,12 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     if ringtone:
         configObj["ringtone"] = ringtone
     # lat and lon don't make much sense without the other (so fill with 0s), and alt isn't meaningful without both
-    if lat or lon:
-        configObj["location"] = {"lat": lat or float(0), "lon": lon or float(0)}
-        if alt:
+    if lat is not None or lon is not None:
+        configObj["location"] = {
+            "lat": lat if lat is not None else 0.0,
+            "lon": lon if lon is not None else 0.0,
+        }
+        if alt is not None:
             configObj["location"]["alt"] = alt
 
     config = MessageToDict(interface.localNode.localConfig)

@@ -178,11 +178,11 @@ class ReconnectPolicy:
 
 
 class _PolicyDescriptor:
-    """Descriptor that returns a fresh policy instance on each access."""
+    """Descriptor that memoizes and returns a policy instance on the owner class."""
 
     def __init__(self, factory_name: str) -> None:
         """
-        Record the name of a factory method on the owner class used to create fresh ReconnectPolicy instances.
+        Record the name of a factory method on the owner class used to create ReconnectPolicy instances.
 
         Parameters
         ----------
@@ -190,19 +190,29 @@ class _PolicyDescriptor:
 
         """
         self.factory_name = factory_name
+        self._cache_attr = f"_cached_{factory_name}"
 
     def __get__(self, _obj: Any, cls: type) -> ReconnectPolicy:
         """
-        Return a new ReconnectPolicy instance produced by the owner's factory method.
+        Return a memoized ReconnectPolicy instance produced by the owner's factory method.
 
-        Looks up the factory method named by this descriptor on the owner class and calls it to create a fresh policy instance.
+        Looks up the factory method named by this descriptor on the owner class and calls it
+        to create a policy instance. The instance is cached on the owner class so subsequent
+        accesses return the same instance.
 
         Returns:
-            ReconnectPolicy: A new policy instance created by the owner's factory method.
+            ReconnectPolicy: A policy instance created by the owner's factory method (cached).
 
         """
+        # Check if already cached on the class
+        cached = getattr(cls, self._cache_attr, None)
+        if cached is not None:
+            return cached
+        # Create and cache the instance
         factory: Callable[[], ReconnectPolicy] = getattr(cls, self.factory_name)
-        return factory()
+        instance = factory()
+        setattr(cls, self._cache_attr, instance)
+        return instance
 
 
 class RetryPolicy:

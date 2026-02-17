@@ -909,7 +909,8 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
         """
         return None
 
-    with pytest.raises((BLEInterface.BLEError, BLEClient.BLEError)) as excinfo:
+    # BLEClient.async_await raises BLEClient.BLEError for timeouts
+    with pytest.raises(BLEClient.BLEError) as excinfo:
         client.async_await(_test_coro(), timeout=0.01)
 
     assert "Async operation timed out" in str(excinfo.value)
@@ -988,7 +989,8 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
         """
         return None
 
-    with pytest.raises((BLEInterface.BLEError, BLEClient.BLEError)) as excinfo:
+    # BLEClient.async_await raises BLEClient.BLEError for runtime errors
+    with pytest.raises(BLEClient.BLEError) as excinfo:
         client.async_await(_test_coro(), timeout=0.01)
 
     assert "Async operation failed: loop is closed" in str(excinfo.value)

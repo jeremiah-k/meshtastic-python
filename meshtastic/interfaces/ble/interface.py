@@ -102,7 +102,7 @@ class BLEInterface(MeshInterface):
     need platform-specific setup for BLE operations.
     """
 
-    class BLEError(Exception):
+    class BLEError(MeshInterface.MeshInterfaceError):
         """An exception class for BLE errors."""
 
     def __init__(
@@ -447,11 +447,13 @@ class BLEInterface(MeshInterface):
         if not self._disconnect_lock.acquire(blocking=False):
             # Another disconnect handler is active; this is expected during concurrent
             # disconnect callbacks. The active handler will process the disconnect.
+            # Return False (neutral) rather than claiming reconnect will be scheduled,
+            # since the active handler may decide not to reconnect.
             logger.debug(
                 "Disconnect from %s skipped: another disconnect handler is active.",
                 source,
             )
-            return True
+            return False
         disconnect_lock_released = False
         target_client = client
         previous_client: Optional["BLEClient"] = None
