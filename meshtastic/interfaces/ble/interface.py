@@ -960,7 +960,10 @@ class BLEInterface(MeshInterface):
         # Surface DBus failures to allow higher-level backoff
         if self._discovery_manager is None:
             raise self.BLEError("Discovery manager not available")
-        addressed_devices = self._discovery_manager.discover_devices(sanitized)
+        # Pass raw target to discovery; the discovery matcher handles address
+        # normalization internally and uses the raw identifier for name matching
+        # to correctly match device names containing separators (_, -, spaces, :)
+        addressed_devices = self._discovery_manager.discover_devices(target)
 
         if len(addressed_devices) == 0:
             if address:
