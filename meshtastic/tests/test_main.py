@@ -424,6 +424,7 @@ def test_main_onConnected_exception(capsys):
                 main()
             _ = capsys.readouterr()  # consume output to avoid polluting test output
             assert pytest_wrapped_e.type is SystemExit
+            assert pytest_wrapped_e.value.code == 1
 
 
 @pytest.mark.unit

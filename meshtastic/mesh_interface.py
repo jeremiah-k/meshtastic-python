@@ -1409,7 +1409,7 @@ class MeshInterface:  # pylint: disable=R0902
             self._sendToRadio(toRadio)
         return meshPacket
 
-    def waitForConfig(self):
+    def waitForConfig(self) -> None:
         """
         Block until the radio configuration and the local node's configuration are available.
 
@@ -1426,7 +1426,7 @@ class MeshInterface:  # pylint: disable=R0902
                 "Timed out waiting for interface config"
             )
 
-    def waitForAckNak(self):
+    def waitForAckNak(self) -> None:
         """
         Block until an acknowledgement (ACK) or negative acknowledgement (NAK) is received.
 
@@ -1440,7 +1440,7 @@ class MeshInterface:  # pylint: disable=R0902
                 "Timed out waiting for an acknowledgment"
             )
 
-    def waitForTraceRoute(self, waitFactor):
+    def waitForTraceRoute(self, waitFactor: float) -> None:
         """
         Wait for trace route completion using the configured timeout.
 
@@ -1459,7 +1459,7 @@ class MeshInterface:  # pylint: disable=R0902
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for traceroute")
 
-    def waitForTelemetry(self):
+    def waitForTelemetry(self) -> None:
         """
         Block until a telemetry response is received or the configured timeout elapses.
 
@@ -1471,7 +1471,7 @@ class MeshInterface:  # pylint: disable=R0902
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for telemetry")
 
-    def waitForPosition(self):
+    def waitForPosition(self) -> None:
         """
         Block until a position acknowledgment is received.
 
@@ -1483,7 +1483,7 @@ class MeshInterface:  # pylint: disable=R0902
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for position")
 
-    def waitForWaypoint(self):
+    def waitForWaypoint(self) -> None:
         """
         Block until a waypoint acknowledgment is received.
 
@@ -1631,7 +1631,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.currentPacketId = nextPacketId | randomPart  # combine
             return self.currentPacketId
 
-    def _disconnected(self):
+    def _disconnected(self) -> None:
         """
         Mark the interface as disconnected and publish a meshtastic.connection.lost event.
 
@@ -1644,7 +1644,7 @@ class MeshInterface:  # pylint: disable=R0902
             lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
         )
 
-    def sendHeartbeat(self):
+    def sendHeartbeat(self) -> None:
         """
         Send a heartbeat message to the radio to indicate the interface is alive.
         """
@@ -1652,7 +1652,7 @@ class MeshInterface:  # pylint: disable=R0902
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
         self._sendToRadio(p)
 
-    def _startHeartbeat(self):
+    def _startHeartbeat(self) -> None:
         """
         Schedule and run periodic heartbeat transmissions to the radio device.
 
@@ -1690,14 +1690,11 @@ class MeshInterface:  # pylint: disable=R0902
                 timer.start()
             # sendHeartbeat() is intentionally outside the lock to avoid
             # holding the lock during I/O. close() handles timer cancellation.
-            with self._heartbeat_lock:
-                if self._closing:
-                    return
-                self.sendHeartbeat()
+            self.sendHeartbeat()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
 
-    def _connected(self):
+    def _connected(self) -> None:
         """
         Mark the interface as connected, start the heartbeat timer, and publish a connection-established event.
 
@@ -1721,7 +1718,7 @@ class MeshInterface:  # pylint: disable=R0902
                 )
             )
 
-    def _startConfig(self):
+    def _startConfig(self) -> None:
         """
         Initialize internal node/config state and request the radio's configuration.
 
@@ -1744,7 +1741,7 @@ class MeshInterface:  # pylint: disable=R0902
         startConfig.want_config_id = self.configId
         self._sendToRadio(startConfig)
 
-    def _sendDisconnect(self):
+    def _sendDisconnect(self) -> None:
         """
         Notify the radio device that this interface is disconnecting.
         """

@@ -69,7 +69,7 @@ def onReceive(packet: dict, interface: Any) -> None:
                 receivedPackets.append(p)
 
 
-def onNode(node) -> None:
+def onNode(node: Any) -> None:
     """Callback invoked when the node DB changes."""
     print(f"Node changed: {node}")
 
@@ -163,7 +163,7 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
     return True
 
 
-def testThread(numTests=50) -> bool:
+def testThread(numTests: int = 50) -> bool:
     """Test thread."""
     logger.info("Found devices, starting tests...")
     result: bool = runTests(numTests, wantAck=True)
@@ -180,7 +180,7 @@ def onConnection(topic: Any = pub.AUTO_TOPIC) -> None:
     print(f"Connection changed: {topic_name}")
 
 
-def openDebugLog(portName) -> io.TextIOWrapper:
+def openDebugLog(portName: str) -> io.TextIOWrapper:
     """Open the debug log file."""
     debugname = "log" + portName.replace("/", "_")
     logger.info(f"Writing serial debugging to {debugname}")
@@ -239,7 +239,7 @@ def testSimulator() -> None:
         iface.localNode.exitSimulator()
         iface.close()
         logger.info("Integration test successful!")
-    except (ConnectionError, OSError):
+    except OSError:
         print("Error while testing simulator:", sys.exc_info()[0])
         traceback.print_exc()
         sys.exit(1)

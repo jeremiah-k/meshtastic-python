@@ -1317,6 +1317,8 @@ def export_config(interface) -> str:
             # mark base64 encoded fields as such
             if pref == "security" and isinstance(prefs[pref_key], dict):
                 security = prefs[pref_key]
+                # Normalize keys to canonical camelCase for reliable lookup,
+                # since MessageToDict may produce inconsistent casing
                 normalized_key_map = {
                     meshtastic.util.snake_to_camel(
                         meshtastic.util.camel_to_snake(key)
