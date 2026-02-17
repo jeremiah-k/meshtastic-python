@@ -212,7 +212,9 @@ class MeshInterface:  # pylint: disable=R0902
                 print_color.print(line, color="red", end=None)  # type: ignore[call-arg]
             else:
                 print_color.print(line, end=None)  # type: ignore[call-arg]
-        else:
+        elif callable(interface.debugOut):
+            interface.debugOut(line)
+        elif hasattr(interface.debugOut, "write"):
             interface.debugOut.write(line + "\n")
 
     def _handleLogLine(self, line: str) -> None:

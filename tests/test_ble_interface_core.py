@@ -15,6 +15,7 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Tuple,
     cast,
 )
 
@@ -185,7 +186,7 @@ class _ReconnectTestNotificationManager:
 
     def __init__(self, *, fail_on_resubscribe: bool = False) -> None:
         self.cleaned = 0
-        self.resubscribed: List[tuple[Any, float]] = []
+        self.resubscribed: List[Tuple[Any, float]] = []
         self._fail_on_resubscribe = fail_on_resubscribe
 
     def _cleanup_all(self) -> None:
@@ -281,7 +282,9 @@ def test_state_manager_allows_error_to_disconnecting_shutdown():
     assert state_manager.is_closing is False
 
 
-def test_ble_interface_defaults_auto_reconnect_disabled(monkeypatch):
+def test_ble_interface_defaults_auto_reconnect_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """BLEInterface should default auto_reconnect to False."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     assert iface.auto_reconnect is False
@@ -517,7 +520,7 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
     """Outer receive-loop exceptions should use normal disconnect handling."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
-    disconnect_calls: List[tuple] = []
+    disconnect_calls: List[Tuple[str, Optional[Any], Optional[Any]]] = []
 
     def raising_wait_for_event(_name: str, timeout: Optional[float] = None) -> bool:
         """

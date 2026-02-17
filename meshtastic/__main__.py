@@ -1248,7 +1248,7 @@ def set_missing_flags_false(
             d[path[-1]] = False
 
 
-def export_config(interface) -> str:
+def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     """Used in --export-config."""
     configObj = {}
 

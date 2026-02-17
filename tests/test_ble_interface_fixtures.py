@@ -26,7 +26,7 @@ def _get_ble_module() -> types.ModuleType:
 
 
 @pytest.fixture
-def mock_serial(monkeypatch):
+def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """
     Inject a minimal fake `serial` package into sys.modules for tests.
 

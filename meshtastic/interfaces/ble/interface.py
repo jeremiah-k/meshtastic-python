@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
+from google.protobuf.message import Message
 
 from meshtastic import publishingThread
 from meshtastic.interfaces.ble.client import BLEClient
@@ -1394,7 +1395,7 @@ class BLEInterface(MeshInterface):
             cooldown,
         )
 
-    def _sendToRadioImpl(self, toRadio) -> None:
+    def _sendToRadioImpl(self, toRadio: Message) -> None:
         """
         Send a protobuf message to the radio over the TORADIO BLE characteristic.
 
