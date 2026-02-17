@@ -2,7 +2,7 @@
 
 import logging
 from threading import Event, RLock, Thread
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -89,6 +89,7 @@ class ReconnectScheduler:
             thread = self.thread_coordinator.create_thread(
                 target=self._reconnect_worker.attempt_reconnect_loop,
                 args=(auto_reconnect, shutdown_event),
+                kwargs={"on_exit": self.clear_thread_reference},
                 name="BLEAutoReconnect",
                 daemon=True,
             )
@@ -157,7 +158,11 @@ class ReconnectWorker:
         return False
 
     def attempt_reconnect_loop(  # pylint: disable=R0911
-        self, auto_reconnect: bool, shutdown_event: Event
+        self,
+        auto_reconnect: bool,
+        shutdown_event: Event,
+        *,
+        on_exit: Optional[Callable[[], None]] = None,
     ) -> None:
         """
         Run the blocking BLE auto-reconnect loop using the configured backoff policy.
@@ -172,6 +177,7 @@ class ReconnectWorker:
         ----------
             auto_reconnect (bool): If False, exit immediately without attempting reconnects.
             shutdown_event (threading.Event): Event that, when set, causes the loop to stop as soon as possible.
+            on_exit (Optional[Callable[[], None]]): Callback invoked when the loop exits.
 
         """
         self.reconnect_policy.reset()
@@ -276,4 +282,5 @@ class ReconnectWorker:
                     logger.debug("Reconnect wait interrupted by shutdown signal.")
                     return
         finally:
-            interface._reconnect_scheduler.clear_thread_reference()
+            if on_exit is not None:
+                on_exit()

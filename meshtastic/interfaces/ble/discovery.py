@@ -381,10 +381,10 @@ class DiscoveryManager:
         if self._client and getattr(self._client, "_closed", False):
             self._client = None
         if self._client is None:
-            # resolve_ble_module() may return a monkeypatched legacy
-            # meshtastic.ble_interface shim in tests/back-compat paths.
-            # Prefer self.client_factory, then ble_mod.BLEClient when present,
-            # and finally fall back to the directly imported BLEClient.
+            # Factory resolution precedence (back-compat and testability):
+            #   1. Explicit self.client_factory (injected for testing)
+            #   2. Monkeypatched ble_mod.BLEClient (legacy/back-compat shim)
+            #   3. Directly imported BLEClient (default)
             ble_mod = resolve_ble_module()
             if ble_mod is None:
                 logger.debug("No BLE module found; using default BLEClient")
@@ -392,7 +392,12 @@ class DiscoveryManager:
                 Callable[..., Any],
                 self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
             )
-            self._client = client_factory(log_if_no_address=False)
+            # Attempt to create client with log_if_no_address=False; fall back
+            # for custom factories that don't accept this kwarg.
+            try:
+                self._client = client_factory(log_if_no_address=False)
+            except TypeError:
+                self._client = client_factory()
             # Validate factory returned a valid client
             if self._client is None:
                 raise RuntimeError(

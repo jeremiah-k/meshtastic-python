@@ -1,5 +1,4 @@
-"""Node class
-"""
+"""Node class"""
 
 import base64
 import logging
@@ -7,7 +6,15 @@ import time
 
 from typing import Optional, Union, List
 
-from meshtastic.protobuf import admin_pb2, apponly_pb2, channel_pb2, config_pb2, localonly_pb2, mesh_pb2, portnums_pb2
+from meshtastic.protobuf import (
+    admin_pb2,
+    apponly_pb2,
+    channel_pb2,
+    config_pb2,
+    localonly_pb2,
+    mesh_pb2,
+    portnums_pb2,
+)
 from meshtastic.util import (
     Timeout,
     camel_to_snake,
@@ -23,13 +30,14 @@ from meshtastic.util import (
 
 logger = logging.getLogger(__name__)
 
+
 class Node:
     """A model of a (local or remote) node in the mesh
 
     Includes methods for localConfig, moduleConfig and channels
     """
 
-    def __init__(self, iface, nodeNum, noProto=False, timeout: int = 300):
+    def __init__(self, iface, nodeNum, noProto=False, timeout: float = 300.0):
         """Constructor"""
         self.iface = iface
         self.nodeNum = nodeNum
@@ -58,7 +66,9 @@ class Node:
     @staticmethod
     def position_flags_list(position_flags: int) -> List[str]:
         "Return a list of position flags from the given flags integer"
-        return flags_to_list(config_pb2.Config.PositionConfig.PositionFlags, position_flags)
+        return flags_to_list(
+            config_pb2.Config.PositionConfig.PositionFlags, position_flags
+        )
 
     @staticmethod
     def excluded_modules_list(excluded_modules: int) -> List[str]:
@@ -125,7 +135,7 @@ class Node:
         config_values = None
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
-                print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
+                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
                 self.iface._acknowledgment.receivedNak = True
         else:
             self.iface._acknowledgment.receivedAck = True
@@ -154,7 +164,9 @@ class Node:
                 )
                 return
             if config_values is not None:
-                raw_config = getattr(getattr(adminMessage['raw'], oneof), camel_to_snake(field))
+                raw_config = getattr(
+                    getattr(adminMessage["raw"], oneof), camel_to_snake(field)
+                )
                 config_values.CopyFrom(raw_config)
                 print(f"{str(camel_to_snake(field))}:\n{str(config_values)}")
 
@@ -240,9 +252,13 @@ class Node:
         elif config_name == "neighbor_info":
             p.set_module_config.neighbor_info.CopyFrom(self.moduleConfig.neighbor_info)
         elif config_name == "detection_sensor":
-            p.set_module_config.detection_sensor.CopyFrom(self.moduleConfig.detection_sensor)
+            p.set_module_config.detection_sensor.CopyFrom(
+                self.moduleConfig.detection_sensor
+            )
         elif config_name == "ambient_lighting":
-            p.set_module_config.ambient_lighting.CopyFrom(self.moduleConfig.ambient_lighting)
+            p.set_module_config.ambient_lighting.CopyFrom(
+                self.moduleConfig.ambient_lighting
+            )
         elif config_name == "paxcounter":
             p.set_module_config.paxcounter.CopyFrom(self.moduleConfig.paxcounter)
         else:
@@ -322,7 +338,13 @@ class Node:
                 return c.index
         return 0
 
-    def setOwner(self, long_name: Optional[str]=None, short_name: Optional[str]=None, is_licensed: bool=False, is_unmessagable: Optional[bool]=None):
+    def setOwner(
+        self,
+        long_name: Optional[str] = None,
+        short_name: Optional[str] = None,
+        is_licensed: bool = False,
+        is_unmessagable: Optional[bool] = None,
+    ):
         """Set device owner name"""
         logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
         self.ensureSessionKey()
@@ -333,14 +355,18 @@ class Node:
             long_name = long_name.strip()
             # Validate that long_name is not empty or whitespace-only
             if not long_name:
-                our_exit("ERROR: Long Name cannot be empty or contain only whitespace characters")
+                our_exit(
+                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
+                )
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
         if short_name is not None:
             short_name = short_name.strip()
             # Validate that short_name is not empty or whitespace-only
             if not short_name:
-                our_exit("ERROR: Short Name cannot be empty or contain only whitespace characters")
+                our_exit(
+                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                )
             if len(short_name) > nChars:
                 short_name = short_name[:nChars]
                 print(f"Maximum is 4 characters, truncated to {short_name}")
@@ -372,7 +398,7 @@ class Node:
                     channelSet.settings.append(c.settings)
 
         if len(self.localConfig.ListFields()) == 0:
-            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name.get('lora'))
+            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name.get("lora"))
         channelSet.lora_config.CopyFrom(self.localConfig.lora)
         some_bytes = channelSet.SerializeToString()
         s = base64.urlsafe_b64encode(some_bytes).decode("ascii")
@@ -414,7 +440,9 @@ class Node:
             for chs in channelSet.settings:
                 channelExists = self.getChannelByName(chs.name)
                 if channelExists or chs.name == "":
-                    print(f"Ignoring existing or empty channel \"{chs.name}\" from add URL")
+                    print(
+                        f'Ignoring existing or empty channel "{chs.name}" from add URL'
+                    )
                     continue
                 ch = self.getDisabledChannel()
                 if not ch:
@@ -451,7 +479,7 @@ class Node:
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 errorFound = True
-                print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
+                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
         if errorFound is False:
             if "decoded" in p:
                 if "admin" in p["decoded"]:
@@ -466,7 +494,9 @@ class Node:
         """Get the ringtone. Concatenate all pieces together and return a single string."""
         logger.debug(f"in get_ringtone()")
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logging.warning("External Notification module not present (excluded by firmware)")
+            logging.warning(
+                "External Notification module not present (excluded by firmware)"
+            )
             return None
 
         if not self.ringtone:
@@ -491,7 +521,9 @@ class Node:
     def set_ringtone(self, ringtone):
         """Set the ringtone. The ringtone length must be less than 230 character."""
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logging.warning("External Notification module not present (excluded by firmware)")
+            logging.warning(
+                "External Notification module not present (excluded by firmware)"
+            )
             return None
 
         if len(ringtone) > 230:
@@ -512,7 +544,7 @@ class Node:
             if i == 0:
                 p.set_ringtone_message = chunk
 
-            logger.debug(f"Setting ringtone '{chunk}' part {i+1}")
+            logger.debug(f"Setting ringtone '{chunk}' part {i + 1}")
             # If sending to a remote node, wait for ACK/NAK
             if self == self.iface.localNode:
                 onResponse = None
@@ -527,7 +559,7 @@ class Node:
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 errorFound = True
-                print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
+                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
         if errorFound is False:
             if "decoded" in p:
                 if "admin" in p["decoded"]:
@@ -593,7 +625,7 @@ class Node:
             if i == 0:
                 p.set_canned_message_module_messages = chunk
 
-            logger.debug(f"Setting canned message '{chunk}' part {i+1}")
+            logger.debug(f"Setting canned message '{chunk}' part {i + 1}")
             # If sending to a remote node, wait for ACK/NAK
             if self == self.iface.localNode:
                 onResponse = None
@@ -701,9 +733,7 @@ class Node:
         p.get_device_metadata_request = True
         logger.info(f"Requesting device metadata")
 
-        self._sendAdmin(
-            p, wantResponse=True, onResponse=self.onRequestGetMetadata
-        )
+        self._sendAdmin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
         self.iface.waitForAckNak()
 
     def factoryReset(self, full: bool = False):
@@ -808,7 +838,9 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setFixedPosition(self, lat: Union[int, float], lon: Union[int, float], alt: int):
+    def setFixedPosition(
+        self, lat: Union[int, float], lon: Union[int, float], alt: int
+    ):
         """Tell the node to set fixed position to the provided value and enable the fixed position setting"""
         self.ensureSessionKey()
 
@@ -891,7 +923,7 @@ class Node:
 
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
-                print(f'Error on response: {p["decoded"]["routing"]["errorReason"]}')
+                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
                 self.iface._acknowledgment.receivedNak = True
         else:
             self.iface._acknowledgment.receivedAck = True
@@ -900,7 +932,7 @@ class Node:
             ):
                 if p["decoded"]["routing"]["errorReason"] != "NONE":
                     logger.warning(
-                        f'Metadata request failed, error reason: {p["decoded"]["routing"]["errorReason"]}'
+                        f"Metadata request failed, error reason: {p['decoded']['routing']['errorReason']}"
                     )
                     self._timeout.expireTime = time.time()  # Do not wait any longer
                     return  # Don't try to parse this routing message
@@ -924,7 +956,9 @@ class Node:
                 print(f"hw_model: {c.hw_model}")
             print(f"hasPKC: {c.hasPKC}")
             if c.excluded_modules > 0:
-                print(f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}")
+                print(
+                    f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
+                )
 
     def onResponseRequestChannel(self, p):
         """Handle the response packet for requesting a channel _requestChannel()"""
@@ -935,7 +969,7 @@ class Node:
         ):
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 logger.warning(
-                    f'Channel request failed, error reason: {p["decoded"]["routing"]["errorReason"]}'
+                    f"Channel request failed, error reason: {p['decoded']['routing']['errorReason']}"
                 )
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 return  # Don't try to parse this routing message
@@ -964,7 +998,7 @@ class Node:
         """Informative handler for ACK/NAK responses"""
         if p["decoded"]["routing"]["errorReason"] != "NONE":
             print(
-                f'Received a NAK, error reason: {p["decoded"]["routing"]["errorReason"]}'
+                f"Received a NAK, error reason: {p['decoded']['routing']['errorReason']}"
             )
             self.iface._acknowledgment.receivedNak = True
         else:
@@ -1002,9 +1036,9 @@ class Node:
     def _sendAdmin(
         self,
         p: admin_pb2.AdminMessage,
-        wantResponse: bool=True,
+        wantResponse: bool = True,
         onResponse=None,
-        adminIndex: int=0,
+        adminIndex: int = 0,
     ):
         """Send an admin message to the specified node (or the local node if destNodeNum is zero)"""
 
@@ -1020,7 +1054,9 @@ class Node:
             logger.debug(f"adminIndex:{adminIndex}")
             nodeid = to_node_num(self.nodeNum)
             if "adminSessionPassKey" in self.iface._getOrCreateByNum(nodeid):
-                p.session_passkey = self.iface._getOrCreateByNum(nodeid).get("adminSessionPassKey")
+                p.session_passkey = self.iface._getOrCreateByNum(nodeid).get(
+                    "adminSessionPassKey"
+                )
             return self.iface.sendData(
                 p,
                 self.nodeNum,
@@ -1048,14 +1084,22 @@ class Node:
         result = []
         if self.channels:
             for c in self.channels:
-                if c.settings and hasattr(c.settings, "name") and hasattr(c.settings, "psk"):
+                if (
+                    c.settings
+                    and hasattr(c.settings, "name")
+                    and hasattr(c.settings, "psk")
+                ):
                     hash_val = generate_channel_hash(c.settings.name, c.settings.psk)
                 else:
                     hash_val = None
-                result.append({
-                    "index": c.index,
-                    "role": channel_pb2.Channel.Role.Name(c.role),
-                    "name": c.settings.name if c.settings and hasattr(c.settings, "name") else "",
-                    "hash": hash_val,
-                })
+                result.append(
+                    {
+                        "index": c.index,
+                        "role": channel_pb2.Channel.Role.Name(c.role),
+                        "name": c.settings.name
+                        if c.settings and hasattr(c.settings, "name")
+                        else "",
+                        "hash": hash_val,
+                    }
+                )
         return result

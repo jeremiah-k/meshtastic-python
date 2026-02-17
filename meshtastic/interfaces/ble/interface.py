@@ -17,6 +17,7 @@ from bleak.exc import BleakDBusError, BleakError
 from google.protobuf.message import Message
 
 from meshtastic import publishingThread
+from meshtastic.protobuf import mesh_pb2
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.connection import (
     ClientManager,
@@ -112,7 +113,7 @@ class BLEInterface(MeshInterface):
         noProto: bool = False,
         debugOut: Optional[io.TextIOWrapper] = None,
         noNodes: bool = False,
-        timeout: int = 300,
+        timeout: float = 300.0,
         *,
         auto_reconnect: bool = False,
     ) -> None:
@@ -218,6 +219,9 @@ class BLEInterface(MeshInterface):
         self._ever_connected = (
             False  # Track first successful connection to tune logging
         )
+        # Recovery throttling to prevent tight crash→spawn loops
+        self._receive_recovery_attempts = 0
+        self._last_recovery_time = 0.0
 
         # Initialize parent interface
         MeshInterface.__init__(
@@ -346,6 +350,8 @@ class BLEInterface(MeshInterface):
             )
             self._receiveThread = thread
         self.thread_coordinator.start_thread(thread)
+        # Reset recovery throttling on successful thread start
+        self._receive_recovery_attempts = 0
 
     @staticmethod
     def _sorted_address_keys(*keys: Optional[str]) -> List[str]:
@@ -1319,6 +1325,21 @@ class BLEInterface(MeshInterface):
                 if not should_continue:
                     self._set_receive_wanted(False)
                     return
+                # Recovery throttling to prevent tight crash→spawn loops
+                now = time.time()
+                self._receive_recovery_attempts += 1
+                if self._receive_recovery_attempts > 3:
+                    # Exponential backoff after 3 rapid failures
+                    backoff = min(2 ** (self._receive_recovery_attempts - 3), 30)
+                    if now - self._last_recovery_time < backoff:
+                        logger.warning(
+                            "Throttling BLE receive recovery: waiting %.1fs "
+                            "before retry (attempt %d)",
+                            backoff,
+                            self._receive_recovery_attempts,
+                        )
+                        time.sleep(backoff)
+                self._last_recovery_time = now
                 # If disconnect handling requests continuation (auto-reconnect path),
                 # replace this crashed receive thread so reads resume after reconnect.
                 if self._should_run_receive_loop():
@@ -1405,7 +1426,7 @@ class BLEInterface(MeshInterface):
             cooldown,
         )
 
-    def _sendToRadioImpl(self, toRadio: Message) -> None:
+    def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """
         Send a protobuf message to the radio over the TORADIO BLE characteristic.
 
@@ -1431,7 +1452,8 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             client = self.client
 
-        if not client or (self.is_connection_closing and not toRadio.disconnect):
+        is_disconnect_msg = hasattr(toRadio, "disconnect") and toRadio.disconnect
+        if not client or (self.is_connection_closing and not is_disconnect_msg):
             logger.debug(
                 "Skipping TORADIO write: no BLE client or interface is closing."
             )

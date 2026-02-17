@@ -224,11 +224,12 @@ def test_main_test_two_ports_fails(patched_test_all, capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info(capsys, caplog):
     """
-    Verify that running the CLI with --info prints a "Connected to radio" message and invokes SerialInterface.showInfo.
+    Verify that running the CLI with --info prints a "Connected to radio"
+    message and invokes SerialInterface.showInfo.
 
-    Patches SerialInterface to a mock whose showInfo prints a recognizable marker, then asserts
-    the marker and the connection message appear on stdout, stderr is empty, and the
-    SerialInterface constructor was called.
+    Patches SerialInterface to a mock whose showInfo prints a recognizable
+    marker, then asserts the marker and the connection message appear on stdout,
+    stderr is empty, and the SerialInterface constructor was called.
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -903,24 +904,23 @@ def test_main_sendtext_with_dest(
     sys.argv = ["", "--sendtext", "hello", "--dest", "foo"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        mocked_channel = MagicMock(autospec=Channel)
+        serialInterface.localNode.getChannelByChannelIndex = mocked_channel
 
-    mocked_channel = MagicMock(autospec=Channel)
-    serialInterface.localNode.getChannelByChannelIndex = mocked_channel
-
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ):
-        with caplog.at_level(logging.DEBUG):
-            main()
-            out, err = capsys.readouterr()
-            assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert not re.search(
-                r"Warning: 0 is not a valid channel", out, re.MULTILINE
-            )
-            assert not re.search(
-                r"There is a SECONDARY channel named 'admin'", out, re.MULTILINE
-            )
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ):
+            with caplog.at_level(logging.DEBUG):
+                main()
+                out, err = capsys.readouterr()
+                assert re.search(r"Connected to radio", out, re.MULTILINE)
+                assert not re.search(
+                    r"Warning: 0 is not a valid channel", out, re.MULTILINE
+                )
+                assert not re.search(
+                    r"There is a SECONDARY channel named 'admin'", out, re.MULTILINE
+                )
             assert re.search(r"Not sending packet because", caplog.text, re.MULTILINE)
             assert re.search(
                 r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE
@@ -1117,19 +1117,19 @@ def test_main_set_valid(
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Set network.wifi_ssid to foo", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert re.search(r"Set network.wifi_ssid to foo", out, re.MULTILINE)
+            assert err == ""
+            mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1145,19 +1145,19 @@ def test_main_set_valid_wifi_psk(
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Set network.wifi_psk to 123456789", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert re.search(r"Set network.wifi_psk to 123456789", out, re.MULTILINE)
+            assert err == ""
+            mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1173,24 +1173,24 @@ def test_main_set_invalid_wifi_psk(
     sys.argv = ["", "--set", "network.wifi_psk", "1234567"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert not re.search(r"Set network.wifi_psk to 1234567", out, re.MULTILINE)
-        assert re.search(
-            r"Warning: network.wifi_psk must be 8 or more characters.",
-            out,
-            re.MULTILINE,
-        )
-        assert err == ""
-        mo.assert_called()
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert not re.search(r"Set network.wifi_psk to 1234567", out, re.MULTILINE)
+            assert re.search(
+                r"Warning: network.wifi_psk must be 8 or more characters.",
+                out,
+                re.MULTILINE,
+            )
+            assert err == ""
+            mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1207,19 +1207,19 @@ def test_main_set_valid_camel_case(
     mt_config.args = sys.argv
     mt_config.camel_case = True
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Set network.wifiSsid to foo", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert re.search(r"Set network.wifiSsid to foo", out, re.MULTILINE)
+            assert err == ""
+            mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1235,19 +1235,19 @@ def test_main_set_with_invalid(
     sys.argv = ["", "--set", "foo", "foo"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"do not have attribute foo", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert re.search(r"do not have attribute foo", out, re.MULTILINE)
+            assert err == ""
+            mo.assert_called()
 
 
 # TODO: write some negative --configure tests
@@ -1264,19 +1264,19 @@ def test_main_configure_with_snake_case(
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        # should these come back? maybe a flag?
-        # assert re.search(r"Setting device owner", out, re.MULTILINE)
-        # assert re.search(r"Setting device owner short", out, re.MULTILINE)
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            # should these come back? maybe a flag?
+            # assert re.search(r"Setting device owner", out, re.MULTILINE)
+            # assert re.search(r"Setting device owner short", out, re.MULTILINE)
         # assert re.search(r"Setting channel url", out, re.MULTILINE)
         # assert re.search(r"Fixing altitude", out, re.MULTILINE)
         # assert re.search(r"Fixing latitude", out, re.MULTILINE)
@@ -1300,26 +1300,28 @@ def test_main_configure_with_camel_case_keys(
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-    anode = Node(serialInterface, 1234567890, noProto=True)
-    serialInterface.localNode = anode
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
 
-    with patch(
-        "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-    ) as mo:
-        main()
-        out, err = capsys.readouterr()
-        assert re.search(r"Connected to radio", out, re.MULTILINE)
-        # should these come back? maybe a flag?
-        # assert re.search(r"Setting device owner", out, re.MULTILINE)
-        # assert re.search(r"Setting device owner short", out, re.MULTILINE)
-        # assert re.search(r"Setting channel url", out, re.MULTILINE)
-        # assert re.search(r"Fixing altitude", out, re.MULTILINE)
-        # assert re.search(r"Fixing latitude", out, re.MULTILINE)
-        # assert re.search(r"Fixing longitude", out, re.MULTILINE)
-        assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
-        assert err == ""
-        mo.assert_called()
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            # should these come back? maybe a flag?
+            # assert re.search(r"Setting device owner", out, re.MULTILINE)
+            # assert re.search(r"Setting device owner short", out, re.MULTILINE)
+            # assert re.search(r"Setting channel url", out, re.MULTILINE)
+            # assert re.search(r"Fixing altitude", out, re.MULTILINE)
+            # assert re.search(r"Fixing latitude", out, re.MULTILINE)
+            # assert re.search(r"Fixing longitude", out, re.MULTILINE)
+            assert re.search(
+                r"Writing modified configuration to device", out, re.MULTILINE
+            )
+            assert err == ""
+            mo.assert_called()
 
 
 @pytest.mark.unit
@@ -2961,18 +2963,18 @@ def test_tunnel_tunnel_arg(
     sys.argv = ["", "--tunnel"]
     mt_config.args = sys.argv
 
-    serialInterface = SerialInterface(noProto=True, connectNow=False)
-
-    with caplog.at_level(logging.DEBUG):
-        with patch(
-            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
-        ):
-            with patch("time.sleep", side_effect=my_sleep):
-                with pytest.raises(SystemExit) as pytest_wrapped_e:
-                    tunnelMain()
-                    mock_platform_system.assert_called()
-                assert pytest_wrapped_e.type is SystemExit
-                assert pytest_wrapped_e.value.code == 3
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        with caplog.at_level(logging.DEBUG):
+            with patch(
+                "meshtastic.serial_interface.SerialInterface",
+                return_value=serialInterface,
+            ):
+                with patch("time.sleep", side_effect=my_sleep):
+                    with pytest.raises(SystemExit) as pytest_wrapped_e:
+                        tunnelMain()
+                        mock_platform_system.assert_called()
+                    assert pytest_wrapped_e.type is SystemExit
+                    assert pytest_wrapped_e.value.code == 3
                 assert re.search(r"Not starting Tunnel", caplog.text, re.MULTILINE)
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)

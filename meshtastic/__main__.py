@@ -99,8 +99,7 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
             and d is not None
             and interface.myInfo is not None
             and packet["to"] == interface.myInfo.my_node_num
-            and d.get("portnum", portnums_pb2.PortNum.UNKNOWN_APP)
-            == portnums_pb2.PortNum.TEXT_MESSAGE_APP
+            and d.get("portnum") == "TEXT_MESSAGE_APP"
         )
         if is_text_reply:
             interface.close()  # after running command then exit
@@ -127,7 +126,8 @@ def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
     Parameters
     ----------
         interface (MeshInterface): The interface whose connection state changed.
-        topic (Any): Pub/sub topic or identifier for the event; if the object provides a `getName()` method, that name will be used for display.
+        topic (Any): Pub/sub topic or identifier for the event; if the object
+            provides a `getName()` method, that name will be used for display.
 
     """
     _ = interface
@@ -140,7 +140,7 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     Determine whether the local node has the channel at the given index enabled.
 
     Returns:
-        `true` if the channel exists and its role is not DISABLED, `false` otherwise.
+        `True` if the channel exists and its role is not DISABLED, `False` otherwise.
 
     """
     ch = interface.localNode.getChannelByChannelIndex(channelIndex)

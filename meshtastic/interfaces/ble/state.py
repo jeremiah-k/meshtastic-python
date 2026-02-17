@@ -143,7 +143,7 @@ class BLEStateManager:
         Return whether a new BLE connection may be initiated.
 
         Returns:
-            True if the current state is CONNECTED is not required; `True` if the current state is DISCONNECTED or ERROR, `False` otherwise.
+            `True` if the current state is DISCONNECTED or ERROR, `False` otherwise.
 
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)

@@ -1,3 +1,5 @@
+# ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
+
 """Backwards compatibility layer for BLE interface.
 
 This module provides a stable public API for the BLE interface.

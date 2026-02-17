@@ -372,7 +372,7 @@ class DummyClient:
 
         Returns
         -------
-            `true` if the client exposes a characteristic matching `_specifier`, `false` otherwise. This mock always returns `false`.
+            True if the client exposes a characteristic matching `_specifier`, False otherwise. This mock always returns False.
 
         """
         return False

@@ -43,6 +43,14 @@ from meshtastic.util import (
 )
 
 
+class _TempPort:
+    """Stub port object for serial-port discovery tests."""
+
+    def __init__(self, device=None, vid=None):
+        self.device = device
+        self.vid = vid
+
+
 @pytest.mark.unit
 def test_genPSK256():
     """Test genPSK256."""
@@ -296,36 +304,21 @@ def test_findPorts_when_none_found(patch_comports):
 @patch("serial.tools.list_ports.comports")
 def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports):
     """
-    Verify that findPorts() removes duplicate serial devices when eliminate_duplicates is True.
+    Verify that findPorts() removes duplicate serial devices when
+    eliminate_duplicates is True.
 
-    Sets the patched comports() to return two port-like objects representing the same physical
-    device and asserts findPorts(eliminate_duplicates=True) returns only the deduplicated device
-    path.
+    Sets the patched comports() to return two port-like objects representing
+    the same physical device and asserts findPorts(eliminate_duplicates=True)
+    returns only the deduplicated device path.
 
     Parameters
     ----------
-        patch_comports: pytest fixture that patches and returns the serial.tools.list_ports.comports function.
+        patch_comports: pytest fixture that patches and returns the
+            serial.tools.list_ports.comports function.
 
     """
-
-    class TempPort:
-        """temp class for port."""
-
-        def __init__(self, device=None, vid=None):
-            """
-            Initialize the instance with optional device identifier and vendor id.
-
-            Parameters
-            ----------
-                device (str | None): Optional device identifier or path.
-                vid (int | str | None): Optional vendor identifier.
-
-            """
-            self.device = device
-            self.vid = vid
-
-    fake1 = TempPort("/dev/cu.usbserial-1430", vid="fake1")
-    fake2 = TempPort("/dev/cu.wchusbserial1430", vid="fake2")
+    fake1 = _TempPort("/dev/cu.usbserial-1430", vid="fake1")
+    fake2 = _TempPort("/dev/cu.wchusbserial1430", vid="fake2")
     patch_comports.return_value = [fake1, fake2]
     assert findPorts(eliminate_duplicates=True) == ["/dev/cu.wchusbserial1430"]
     patch_comports.assert_called()
@@ -337,30 +330,15 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
     patch_comports,
 ):
     """
-    Verifies that findPorts(eliminate_duplicates=True) returns the expected single port when duplicate devices are reported in reversed order.
+    Verifies that findPorts(eliminate_duplicates=True) returns the expected
+    single port when duplicate devices are reported in reversed order.
 
-    Patches the comports listing to simulate two ports that should be considered duplicates and
-    asserts the duplicate-elimination logic selects the correct remaining device.
+    Patches the comports listing to simulate two ports that should be
+    considered duplicates and asserts the duplicate-elimination logic
+    selects the correct remaining device.
     """
-
-    class TempPort:
-        """temp class for port."""
-
-        def __init__(self, device=None, vid=None):
-            """
-            Initialize the instance with optional device identifier and vendor id.
-
-            Parameters
-            ----------
-                device (str | None): Optional device identifier or path.
-                vid (int | str | None): Optional vendor identifier.
-
-            """
-            self.device = device
-            self.vid = vid
-
-    fake1 = TempPort("/dev/cu.usbserial-1430", vid="fake1")
-    fake2 = TempPort("/dev/cu.wchusbserial1430", vid="fake2")
+    fake1 = _TempPort("/dev/cu.usbserial-1430", vid="fake1")
+    fake2 = _TempPort("/dev/cu.wchusbserial1430", vid="fake2")
     patch_comports.return_value = [fake2, fake1]
     assert findPorts(eliminate_duplicates=True) == ["/dev/cu.wchusbserial1430"]
     patch_comports.assert_called()
@@ -370,25 +348,8 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
 @patch("serial.tools.list_ports.comports")
 def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(patch_comports):
     """Test findPorts()."""
-
-    class TempPort:
-        """temp class for port."""
-
-        def __init__(self, device=None, vid=None):
-            """
-            Initialize the instance with optional device identifier and vendor id.
-
-            Parameters
-            ----------
-                device (str | None): Optional device identifier or path.
-                vid (int | str | None): Optional vendor identifier.
-
-            """
-            self.device = device
-            self.vid = vid
-
-    fake1 = TempPort("/dev/cu.usbserial-1430", vid="fake1")
-    fake2 = TempPort("/dev/cu.wchusbserial1430", vid="fake2")
+    fake1 = _TempPort("/dev/cu.usbserial-1430", vid="fake1")
+    fake2 = _TempPort("/dev/cu.wchusbserial1430", vid="fake2")
     patch_comports.return_value = [fake1, fake2]
     assert findPorts() == ["/dev/cu.usbserial-1430", "/dev/cu.wchusbserial1430"]
     patch_comports.assert_called()

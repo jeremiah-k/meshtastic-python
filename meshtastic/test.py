@@ -229,7 +229,8 @@ def testThread(numTests: int = 50) -> bool:
 
     Returns
     -------
-        bool: `true` if the overall test sequence succeeded (both stages passed as required), `false` otherwise.
+        bool: True if the overall test sequence succeeded (both stages passed as
+            required), False otherwise.
 
     """
     logger.info("Found devices, starting tests...")
@@ -241,15 +242,18 @@ def testThread(numTests: int = 50) -> bool:
     return result
 
 
-def onConnection(topic: Any = pub.AUTO_TOPIC) -> None:
+def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
     """
     Notify about connection state changes by printing the topic name.
 
     Parameters
     ----------
-        topic (Any): The connection topic object or value; if it has a `getName()` method that name is used, otherwise `str(topic)` is printed.
+        interface (Any): The interface whose connection state changed.
+        topic (Any): The connection topic object or value; if it has a `getName()`
+            method that name is used, otherwise `str(topic)` is printed.
 
     """
+    _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
     print(f"Connection changed: {topic_name}")
 

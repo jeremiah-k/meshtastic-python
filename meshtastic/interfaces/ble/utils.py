@@ -26,13 +26,14 @@ def sanitize_address(address: Optional[str]) -> Optional[str]:
     stripped = address.strip()
     if not stripped:
         return None
-    return (
+    cleaned = (
         stripped.replace("-", "")
         .replace("_", "")
         .replace(":", "")
         .replace(" ", "")
         .lower()
     )
+    return cleaned if cleaned else None
 
 
 def _sleep(delay: float) -> None:

@@ -111,7 +111,7 @@ class MeshInterface:  # pylint: disable=R0902
         debugOut: Optional[Union[IO[str], Callable[[str], Any]]] = None,
         noProto: bool = False,
         noNodes: bool = False,
-        timeout: int = 300,
+        timeout: float = 300.0,
     ) -> None:
         """
         Initialize the MeshInterface and configure runtime options.
@@ -123,7 +123,7 @@ class MeshInterface:  # pylint: disable=R0902
                 publish device logs to this output.
             noProto (bool): If True, disable running the meshtastic protocol layer over the link (operate as a dumb serial client).
             noNodes (bool): If True, instruct the device not to send its node database on startup; only other configuration will be requested.
-            timeout (int): Default timeout in seconds for operations that wait for replies.
+            timeout (float): Default timeout in seconds for operations that wait for replies.
 
         """
         self.debugOut = debugOut
@@ -321,7 +321,9 @@ class MeshInterface:  # pylint: disable=R0902
 
         Returns
         -------
-            table (str): The rendered table string (also printed to stdout) containing one row per node and columns mapped to human-readable headings.
+            table (str): The rendered table string (also printed to stdout)
+                containing one row per node and columns mapped to human-readable
+                headings.
 
         """
 
@@ -444,8 +446,8 @@ class MeshInterface:  # pylint: disable=R0902
 
             """
             if "." not in key_path:
-                logger.debug("_get_nested_value was called without a nested path.")
-                return None
+                # Treat non-dotted path as a single-level lookup
+                return node_dict.get(key_path)
             keys = key_path.split(".")
             value: Optional[Union[str, dict]] = node_dict
             for key in keys:
@@ -1661,7 +1663,7 @@ class MeshInterface:  # pylint: disable=R0902
             nextPacketId = (self.currentPacketId + 1) & 0xFFFFFFFF
             nextPacketId = (
                 nextPacketId & 0x3FF
-            )  # == (0xFFFFFFFF >> 22), masks upper 22 bits
+            )  # Keep only low 10-bit counter (clear upper 22 bits)
             randomPart = (
                 random.randint(0, 0x3FFFFF) << 10
             ) & 0xFFFFFFFF  # generate number with 10 zeros at end

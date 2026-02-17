@@ -17,9 +17,7 @@ class _RandomLike(Protocol):
             A float x such that 0.0 <= x < 1.0.
 
         """
-
-
-...
+        ...
 
 
 class ReconnectPolicy:

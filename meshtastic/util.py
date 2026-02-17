@@ -1,5 +1,5 @@
-"""Utility functions.
-"""
+"""Utility functions."""
+
 import base64
 import logging
 import os
@@ -18,8 +18,8 @@ from google.protobuf.message import Message
 
 import packaging.version as pkg_version
 import requests
-import serial # type: ignore[import-untyped]
-import serial.tools.list_ports # type: ignore[import-untyped]
+import serial  # type: ignore[import-untyped]
+import serial.tools.list_ports  # type: ignore[import-untyped]
 
 from meshtastic.supported_device import supported_devices
 from meshtastic.version import get_active_version
@@ -31,16 +31,17 @@ from meshtastic.version import get_active_version
      0925 Lakeview Research Saleae Logic (logic analyzer)
 04b4:602a Cypress Semiconductor Corp. Hantek DSO-6022BL (oscilloscope)
 """
-blacklistVids: Dict = dict.fromkeys([0x1366, 0x0483, 0x1915, 0x0925, 0x04b4])
+blacklistVids: Dict = dict.fromkeys([0x1366, 0x0483, 0x1915, 0x0925, 0x04B4])
 
 """Some devices are highly likely to be meshtastic.
 0x239a RAK4631
 0x303a Heltec tracker"""
-whitelistVids = dict.fromkeys([0x239a, 0x303a])
+whitelistVids = dict.fromkeys([0x239A, 0x303A])
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
+
 
 def quoteBooleans(a_string: str) -> str:
     """Quote booleans
@@ -104,7 +105,6 @@ def fromStr(valstr: str) -> Any:
     return val
 
 
-
 def toStr(raw_value):
     """Convert a value to a string that can be used in a config file"""
     if isinstance(raw_value, bytes):
@@ -136,7 +136,7 @@ def stripnl(s) -> str:
 
 def fixme(message: str) -> None:
     """Raise an exception for things that needs to be fixed"""
-    raise Exception(f"FIXME: {message}") # pylint: disable=W0719
+    raise Exception(f"FIXME: {message}")  # pylint: disable=W0719
 
 
 def catchAndIgnore(reason: str, closure) -> None:
@@ -147,7 +147,7 @@ def catchAndIgnore(reason: str, closure) -> None:
         logger.error(f"Exception thrown in {reason}: {ex}")
 
 
-def findPorts(eliminate_duplicates: bool=False) -> List[str]:
+def findPorts(eliminate_duplicates: bool = False) -> List[str]:
     """Find all ports that might have meshtastic devices
        eliminate_duplicates will run the eliminate_duplicate_port() on the collection
 
@@ -189,21 +189,23 @@ class dotdict(dict):
     """dot.notation access to dictionary attributes"""
 
     __getattr__ = dict.get
-    __setattr__ = dict.__setitem__ # type: ignore[assignment]
-    __delattr__ = dict.__delitem__ # type: ignore[assignment]
+    __setattr__ = dict.__setitem__  # type: ignore[assignment]
+    __delattr__ = dict.__delitem__  # type: ignore[assignment]
 
 
 class Timeout:
     """Timeout class"""
 
-    def __init__(self, maxSecs: int=20) -> None:
+    def __init__(self, maxSecs: float = 20.0) -> None:
         self.expireTime: Union[int, float] = 0
         self.sleepInterval: float = 0.1
-        self.expireTimeout: int = maxSecs
+        self.expireTimeout: float = maxSecs
 
     def reset(self, expireTimeout=None):
         """Restart the waitForSet timer"""
-        self.expireTime = time.time() + (self.expireTimeout if expireTimeout is None else expireTimeout)
+        self.expireTime = time.time() + (
+            self.expireTimeout if expireTimeout is None else expireTimeout
+        )
 
     def waitForSet(self, target, attrs=()) -> bool:
         """Block until the specified attributes are set. Returns True if config has been received."""
@@ -226,7 +228,9 @@ class Timeout:
             time.sleep(self.sleepInterval)
         return False
 
-    def waitForTraceRoute(self, waitFactor, acknowledgment, attr="receivedTraceRoute") -> bool:
+    def waitForTraceRoute(
+        self, waitFactor, acknowledgment, attr="receivedTraceRoute"
+    ) -> bool:
         """Block until traceroute response is received. Returns True if traceroute response has been received."""
         self.reset(self.expireTimeout * waitFactor)
         while time.time() < self.expireTime:
@@ -266,6 +270,7 @@ class Timeout:
             time.sleep(self.sleepInterval)
         return False
 
+
 class Acknowledgment:
     "A class that records which type of acknowledgment was just received, if any."
 
@@ -296,7 +301,9 @@ class DeferredExecution:
     def __init__(self, name) -> None:
         self.queue: Queue = Queue()
         # this thread must be marked as daemon, otherwise it will prevent clients from exiting
-        self.thread = threading.Thread(target=self._run, args=(), name=name, daemon=True)
+        self.thread = threading.Thread(
+            target=self._run, args=(), name=name, daemon=True
+        )
         self.thread.daemon = True
         self.thread.start()
 
@@ -367,12 +374,14 @@ def remove_keys_from_dict(keys: Union[Tuple, List, Set], adict: Dict) -> Dict:
             remove_keys_from_dict(keys, val)
     return adict
 
+
 def channel_hash(data: bytes) -> int:
     """Compute an XOR hash from bytes for channel evaluation."""
     result = 0
     for char in data:
         result ^= char
     return result
+
 
 def generate_channel_hash(name: Union[str, bytes], key: Union[str, bytes]) -> int:
     """generate the channel number by hashing the channel name and psk (accepts str or bytes for both)"""
@@ -391,6 +400,7 @@ def generate_channel_hash(name: Union[str, bytes], key: Union[str, bytes]) -> in
     h_key = channel_hash(key)
     result: int = h_name ^ h_key
     return result
+
 
 def hexstr(barray: bytes) -> str:
     """Print a string of hex digits"""
@@ -580,7 +590,7 @@ def get_unique_vendor_ids() -> Set[str]:
     return vids
 
 
-def get_devices_with_vendor_id(vid: str) -> Set:	#Set[SupportedDevice]
+def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
     """Return a set of unique devices with the vendor id"""
     sd = set()
     for d in supported_devices:
@@ -657,7 +667,9 @@ def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[st
     return ports
 
 
-def detect_windows_port(sd) -> Set[str]:	#"sd" is a SupportedDevice from meshtastic.supported_device
+def detect_windows_port(
+    sd,
+) -> Set[str]:  # "sd" is a SupportedDevice from meshtastic.supported_device
     """detect if Windows port"""
     ports = set()
 
@@ -698,10 +710,10 @@ def check_if_newer_version() -> Optional[str]:
     try:
         parsed_act_version = pkg_version.parse(act_version)
         parsed_pypi_version = pkg_version.parse(pypi_version)
-        #Note: if handed "None" when we can't download the pypi_version,
-        #this gets a TypeError:
-        #"TypeError: expected string or bytes-like object, got 'NoneType'"
-        #Handle that below?
+        # Note: if handed "None" when we can't download the pypi_version,
+        # this gets a TypeError:
+        # "TypeError: expected string or bytes-like object, got 'NoneType'"
+        # Handle that below?
     except pkg_version.InvalidVersion:
         return pypi_version
 
@@ -711,12 +723,12 @@ def check_if_newer_version() -> Optional[str]:
     return pypi_version
 
 
-def message_to_json(message: Message, multiline: bool=False) -> str:
+def message_to_json(message: Message, multiline: bool = False) -> str:
     """Return protobuf message as JSON. Always print all fields, even when not present in data."""
     try:
         json = MessageToJson(message, always_print_fields_with_no_presence=True)
     except TypeError:
-        json = MessageToJson(message, including_default_value_fields=True) # type: ignore[call-arg] # pylint: disable=E1123
+        json = MessageToJson(message, including_default_value_fields=True)  # type: ignore[call-arg] # pylint: disable=E1123
     return stripnl(json) if not multiline else json
 
 
@@ -735,6 +747,7 @@ def to_node_num(node_id: Union[int, str]) -> int:
         return int(s, 10)
     except ValueError:
         return int(s, 16)
+
 
 def flags_to_list(flag_type, flags: int) -> List[str]:
     """Given a flag_type that's a protobuf EnumTypeWrapper, and a flag int, give a list of flags enabled."""
