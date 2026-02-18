@@ -179,7 +179,14 @@ class StructuredLogger:
         self._listen_glue = (
             listen_glue  # we must save this so it doesn't get garbage collected
         )
-        pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
+        try:
+            pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
+        except Exception:
+            # If subscription fails, close the file handle before re-raising
+            if self.raw_file:
+                self.raw_file.close()
+                self.raw_file = None
+            raise
 
     def close(self) -> None:
         """Stop logging."""
@@ -215,7 +222,7 @@ class StructuredLogger:
 
                 r = d.format.parse(args)  # get the values with the correct types
                 if r:
-                    di = r.named
+                    di = r.named  # type: ignore[union-attr]
                     if last_is_str:
                         di[last_field[0]] = di[
                             last_field[0]
@@ -241,7 +248,10 @@ class StructuredLogger:
                 self.power_logger.store_current_reading(now)
 
         if self.raw_file:
-            self.raw_file.write(line + "\n")  # Write the raw log
+            # Snapshot the reference to prevent TOCTOU race with close()
+            raw_file = self.raw_file
+            if raw_file:
+                raw_file.write(line + "\n")  # Write the raw log
 
 
 class LogSet:

@@ -4,7 +4,7 @@ test:
 
 # run all CI checks locally (same as CI pipeline)
 ci:
-	poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$$"
+	$(MAKE) lint
 	poetry run mypy meshtastic/
 	poetry run pytest --cov=meshtastic --cov-report=xml
 
@@ -46,7 +46,7 @@ cov:
 
 # run cli examples
 examples: FORCE
-	poetry run pytest -mexamples
+	poetry run pytest -m examples
 
 # Makefile hack to get the examples to always run
 FORCE: ;

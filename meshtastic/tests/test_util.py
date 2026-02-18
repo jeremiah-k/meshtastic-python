@@ -4,6 +4,7 @@ import binascii
 import json
 import logging
 import re
+from typing import Any, Optional
 from unittest.mock import patch
 
 import pytest
@@ -47,7 +48,7 @@ from meshtastic.util import (
 class _TempPort:
     """Stub port object for serial-port discovery tests."""
 
-    def __init__(self, device=None, vid=None):
+    def __init__(self, device: Optional[str] = None, vid: Optional[str] = None) -> None:
         self.device = device
         self.vid = vid
 
@@ -605,9 +606,9 @@ def test_message_to_json_shows_all():
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
 
 
 @pytest.mark.unit
@@ -698,6 +699,7 @@ def test_fuzz_pskToString(psk):
 @given(st.text())
 def test_fuzz_fromStr(valstr):
     """Test that fromStr produces mostly-useful output given any string."""
+    result: Any = None
     try:
         result = fromStr(valstr)
     except (ValueError, binascii.Error):

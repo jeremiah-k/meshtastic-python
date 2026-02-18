@@ -44,7 +44,7 @@ _CONNECTED_MARKED_AT: Dict[str, float] = {}
 _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
 
-def _addr_key(addr: Optional[str]) -> Optional[str]:
+def addr_key(addr: Optional[str]) -> Optional[str]:
     """
     Normalize a BLE address into a registry key.
 
@@ -88,7 +88,7 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
             registry lock if `key` is None.
 
     """
-    key = _addr_key(key)
+    key = addr_key(key)
     return _get_addr_lock_by_key(key)
 
 
@@ -131,7 +131,7 @@ def _release_addr_lock(key: Optional[str]) -> None:
         key (Optional[str]): An address or already-normalized key identifying the per-address lock; use None for the registry.
 
     """
-    key = _addr_key(key)
+    key = addr_key(key)
     _release_addr_lock_by_key(key)
 
 
@@ -269,7 +269,7 @@ def _mark_connected(addr: Optional[str], owner: Optional[Any] = None) -> None:
             is stored when the object supports weak references and the owner's `id` is recorded.
 
     """
-    key = _addr_key(addr)
+    key = addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
@@ -291,7 +291,7 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
         owner (Optional[Any]): Optional owner object; when provided, the recorded live owner must be the same object for the disconnect to be applied.
 
     """
-    key = _addr_key(addr)
+    key = addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
@@ -333,7 +333,7 @@ def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
         RLock: The per-address reentrant lock for the given address (not acquired).
 
     """
-    key = _addr_key(addr)
+    key = addr_key(addr)
     lock = _get_addr_lock_by_key(key)
     try:
         # NOTE: We intentionally yield WITHOUT acquiring the lock.
@@ -344,7 +344,7 @@ def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
         _release_addr_lock_by_key(key)
 
 
-def _is_currently_connected_elsewhere(
+def is_currently_connected_elsewhere(
     addr: Optional[str], owner: Optional[Any] = None
 ) -> bool:
     """
@@ -355,7 +355,7 @@ def _is_currently_connected_elsewhere(
 
     Parameters
     ----------
-        addr (Optional[str]): BLE address to check; will be normalized via _addr_key.
+        addr (Optional[str]): BLE address to check; will be normalized via addr_key.
         owner (Optional[Any]): The caller's owner instance used to determine whether a recorded claim belongs to the caller.
 
     Returns
@@ -363,7 +363,7 @@ def _is_currently_connected_elsewhere(
         True if the normalized address is marked connected by a different owner, False otherwise.
 
     """
-    key = _addr_key(addr)
+    key = addr_key(addr)
     if key is None:
         return False
     with _REGISTRY_LOCK:

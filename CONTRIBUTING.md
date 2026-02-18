@@ -20,7 +20,7 @@ Run all CI checks locally with a single command:
 make ci
 ```
 
-This runs the exact same checks as CI (pylint, mypy, pytest with coverage).
+This runs the same checks as CI (pylint, mypy, pytest with coverage).
 
 ### Manual checks
 
@@ -38,6 +38,6 @@ poetry run pytest --cov=meshtastic --cov-report=xml
 - on Linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
 - on Windows:
   - linux checks (linux docker): `act --matrix "python-version:3.12"`
-  - Windows checks (Windows host): `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
+  - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:3.12"`
 
 For more commands see [CI workflow](https://github.com/meshtastic/python/blob/master/.github/workflows/ci.yml)

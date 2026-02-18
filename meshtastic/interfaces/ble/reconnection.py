@@ -9,8 +9,8 @@ from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.gating import (
-    _addr_key,
-    _is_currently_connected_elsewhere,
+    addr_key,
+    is_currently_connected_elsewhere,
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
@@ -95,9 +95,9 @@ class ReconnectScheduler:
             )
             # Set the thread reference before starting to prevent race conditions
             self._reconnect_thread = thread
-            # Start while still holding state_lock so concurrent schedulers cannot
-            # overwrite the reference before this thread is started.
-            self.thread_coordinator.start_thread(thread)
+        # Start outside the lock: the reference is already set, so concurrent
+        # schedulers will see a non-None _reconnect_thread and exit early.
+        self.thread_coordinator.start_thread(thread)
         return True
 
     def clear_thread_reference(self) -> None:
@@ -193,18 +193,23 @@ class ReconnectWorker:
                 try:
                     if interface.is_connection_connected:
                         return
-                    addr_key = _addr_key(getattr(interface, "address", None))
+                    device_addr = addr_key(getattr(interface, "address", None))
                     # Check if already connected elsewhere before attempting.
                     # connect() enforces this gate as well; this early check avoids
                     # scheduling a full connect path when we already know it will fail.
-                    if addr_key and _is_currently_connected_elsewhere(
-                        addr_key, owner=interface
+                    if device_addr and is_currently_connected_elsewhere(
+                        device_addr, owner=interface
                     ):
                         logger.info(
                             "Skipping reconnect attempt %d: address %s already connected elsewhere",
                             attempt_num,
-                            addr_key,
+                            device_addr,
                         )
+                        # Avoid spinning; wait before re-checking the gate.
+                        if shutdown_event.wait(
+                            timeout=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
+                        ):
+                            return
                         continue
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).",

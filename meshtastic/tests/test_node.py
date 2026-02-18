@@ -264,7 +264,7 @@ def test_shutdown(caplog):
 
 @pytest.mark.unit
 def test_setURL_empty_url(capsys):
-    """Test reboot."""
+    """Test setURL with an empty URL."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         anode.setURL("")
@@ -353,7 +353,7 @@ def test_setURL_valid_URL_but_no_settings(capsys):
 @pytest.mark.unit
 def test_getChannelByChannelIndex():
     """Test getChannelByChannelIndex()."""
-    anode = Node(MagicMock(autospec=MeshInterface), "!12345678")
+    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
 
     channel1 = Channel(index=1, role=Channel.Role.PRIMARY)  # primary channel
     channel2 = Channel(index=2, role=Channel.Role.SECONDARY)  # secondary channel
@@ -1450,7 +1450,7 @@ def test_set_favorite(favorite):
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
 def test_remove_favorite(favorite):
-    """Test setFavorite."""
+    """Test removeFavorite."""
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
@@ -1464,7 +1464,7 @@ def test_remove_favorite(favorite):
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
 def test_set_ignored(ignored):
-    """Test setFavorite."""
+    """Test setIgnored."""
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
@@ -1477,7 +1477,7 @@ def test_set_ignored(ignored):
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
 def test_remove_ignored(ignored):
-    """Test setFavorite."""
+    """Test removeIgnored."""
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()

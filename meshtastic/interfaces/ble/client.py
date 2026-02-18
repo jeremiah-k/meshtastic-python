@@ -6,7 +6,7 @@ import sys
 import types
 import warnings
 import weakref
-from concurrent.futures import CancelledError, Future
+from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import RLock
 from typing import Any, Awaitable, Coroutine, Optional, Type, TypeVar, Union
@@ -128,7 +128,7 @@ class BLEClient:
         # Create underlying Bleak client for actual BLE communication
         self.bleak_client = BleakRootClient(address, **kwargs)
 
-    def discover(self, **kwargs: Any) -> Any:  # pylint: disable=C0116
+    def discover(self, **kwargs: Any) -> Any:
         """
         Discover nearby BLE devices.
 
@@ -140,7 +140,7 @@ class BLEClient:
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
-    def pair(self, **kwargs: Any) -> Any:  # pylint: disable=C0116
+    def pair(self, **kwargs: Any) -> Any:
         """
         Pair the BLE client with the remote device.
 
@@ -161,9 +161,7 @@ class BLEClient:
             raise self.BLEError("Cannot pair: BLE client not initialized")
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(
-        self, *, await_timeout: Optional[float] = None, **kwargs: Any
-    ) -> Any:  # pylint: disable=C0116
+    def connect(self, *, await_timeout: Optional[float] = None, **kwargs: Any) -> Any:
         """
         Connect to the remote BLE device.
 
@@ -224,7 +222,7 @@ class BLEClient:
 
     def disconnect(
         self, *, await_timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:  # pylint: disable=C0116
+    ) -> None:
         """
         Disconnect from the remote BLE device and wait until the operation completes.
 
@@ -244,7 +242,7 @@ class BLEClient:
 
     def read_gatt_char(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> bytes:  # pylint: disable=C0116
+    ) -> bytes:
         """
         Read a GATT characteristic value from the connected BLE device.
 
@@ -282,7 +280,7 @@ class BLEClient:
 
     def write_gatt_char(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:  # pylint: disable=C0116
+    ) -> None:
         """
         Write bytes to a GATT characteristic on the connected device and wait for completion.
 
@@ -322,10 +320,13 @@ class BLEClient:
         """
         Retrieve the underlying Bleak client's discovered GATT services and characteristics.
 
-        Keyword arguments are forwarded to the underlying Bleak client's `get_services` call.
+        In Bleak 2.1.1+, services are automatically enumerated during connect() and accessed
+        via the client.services property. Keyword arguments are ignored but accepted for
+        backward compatibility.
 
         Returns:
-            The services collection object from the underlying Bleak client containing discovered GATT services and their characteristics.
+            The services collection object from the underlying Bleak client containing
+            discovered GATT services and their characteristics.
 
         Raises:
             BLEError: If the BLE client has not been initialized.
@@ -333,7 +334,8 @@ class BLEClient:
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot get services: BLE client not initialized")
-        return self.async_await(self.bleak_client.get_services(**kwargs))  # type: ignore[attr-defined]
+        # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed as a property.
+        return self.bleak_client.services
 
     def getServices(self, **kwargs: Any) -> Any:
         """
@@ -350,9 +352,7 @@ class BLEClient:
         )
         return self.get_services(**kwargs)
 
-    def has_characteristic(
-        self, specifier: Union[str, UUID]
-    ) -> bool:  # pylint: disable=C0116
+    def has_characteristic(self, specifier: Union[str, UUID]) -> bool:
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -392,7 +392,7 @@ class BLEClient:
 
     def start_notify(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:  # pylint: disable=C0116
+    ) -> None:
         """
         Subscribe to notifications for a GATT characteristic.
 
@@ -428,7 +428,7 @@ class BLEClient:
 
     def stop_notify(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:  # pylint: disable=C0116
+    ) -> None:
         """
         Unsubscribe notifications for a GATT characteristic on the connected device.
 
@@ -467,7 +467,7 @@ class BLEClient:
         )
         self.stop_notify(*args, timeout=timeout, **kwargs)
 
-    def close(self) -> None:  # pylint: disable=C0116
+    def close(self) -> None:
         """
         Close the BLEClient, best-effort disconnecting transport first, then cancel pending operations.
 
@@ -524,7 +524,7 @@ class BLEClient:
 
     def async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: Optional[float] = None
-    ) -> Any:  # pylint: disable=C0116
+    ) -> Any:
         """
         Wait for the given coroutine to complete and return its result.
 
@@ -607,7 +607,7 @@ class BLEClient:
                     exc_info=True,
                 )
             raise self.BLEError(f"Async operation failed: {e}") from e
-        except (CancelledError, asyncio.CancelledError) as e:
+        except asyncio.CancelledError as e:
             # Propagate as timeout-style BLEError so callers handle uniformly
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         finally:
@@ -639,9 +639,7 @@ class BLEClient:
         )
         return self.async_await(coro, timeout=timeout)
 
-    def async_run(
-        self, coro: Coroutine[Any, Any, Any]
-    ) -> Future[Any]:  # pylint: disable=C0116
+    def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """
         Schedule the given coroutine to run on the shared BLE event loop.
 

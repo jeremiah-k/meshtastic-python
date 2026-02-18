@@ -9,6 +9,10 @@ from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 
 logger = logging.getLogger("meshtastic.ble")
 
+_INERT_THREAD_START_ERROR = (
+    "Cannot start inert thread '{name}': coordinator has been cleaned up"
+)
+
 
 class _InertThread:
     """
@@ -26,9 +30,7 @@ class _InertThread:
 
     def start(self) -> None:
         """Raise RuntimeError: inert threads cannot be started."""
-        raise RuntimeError(
-            f"Cannot start inert thread '{self.name}': coordinator has been cleaned up"
-        )
+        raise RuntimeError(_INERT_THREAD_START_ERROR.format(name=self.name))
 
     def is_alive(self) -> bool:
         """Return False: inert threads are never alive."""

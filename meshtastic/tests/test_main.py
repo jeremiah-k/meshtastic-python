@@ -899,14 +899,14 @@ def test_main_sendtext_with_dest(
     sys.argv = ["", "--sendtext", "hello", "--dest", "!12345678"]
     mt_config.args = sys.argv
 
-    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+    with SerialInterface(noProto=True, connectNow=False) as serial_interface:
         mocked_channel = MagicMock(autospec=Channel)
-        serialInterface.localNode.getChannelByChannelIndex = MagicMock(
+        serial_interface.localNode.getChannelByChannelIndex = MagicMock(
             return_value=mocked_channel
         )
 
         with patch(
-            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+            "meshtastic.serial_interface.SerialInterface", return_value=serial_interface
         ):
             with caplog.at_level(logging.DEBUG):
                 # Note: With noProto=True, the packet is not actually sent due to

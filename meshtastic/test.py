@@ -20,7 +20,7 @@ from meshtastic.tcp_interface import TCPInterface
 class _FallbackDotMap(dict):
     """Lightweight fallback used when dotmap is unavailable."""
 
-    def __getattr__(self, key):
+    def __getattr__(self, key: str) -> Any:
         """
         Provide attribute-style access for dictionary keys.
 

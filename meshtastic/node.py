@@ -403,7 +403,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def getURL(self, includeAll: bool = True):
+    def getURL(self, includeAll: bool = True) -> str:
         """Return the sharable URL that describes the current channel."""
         # Only keep the primary/secondary channels, assume primary is first
         channelSet = apponly_pb2.ChannelSet()
@@ -422,7 +422,7 @@ class Node:
         s = s.replace("=", "").replace("+", "-").replace("/", "_")
         return f"https://meshtastic.org/e/#{s}"
 
-    def setURL(self, url: str, addOnly: bool = False):
+    def setURL(self, url: str, addOnly: bool = False) -> None:
         """Set mesh network URL."""
         if self.localConfig is None or self.channels is None:
             our_exit("Warning: config or channels not loaded")

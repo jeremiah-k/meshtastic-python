@@ -94,33 +94,33 @@ from .protobuf import (
 )
 
 __all__ = [
-    "admin_pb2",
-    "apponly_pb2",
     "BROADCAST_ADDR",
     "BROADCAST_NUM",
-    "catchAndIgnore",
-    "channel_pb2",
-    "config_pb2",
     "DeferredExecution",
     "KnownProtocol",
     "LOCAL_ADDR",
-    "mesh_pb2",
     "MessageToJson",
-    "mqtt_pb2",
-    "Node",
     "NODELESS_WANT_CONFIG_ID",
+    "Node",
     "OUR_APP_VERSION",
+    "ResponseHandler",
+    "Timeout",
+    "admin_pb2",
+    "apponly_pb2",
+    "catchAndIgnore",
+    "channel_pb2",
+    "config_pb2",
+    "mesh_pb2",
+    "mqtt_pb2",
     "paxcount_pb2",
     "portnums_pb2",
     "powermon_pb2",
     "protocols",
     "pub",
     "remote_hardware_pb2",
-    "ResponseHandler",
     "storeforward_pb2",
     "stripnl",
     "telemetry_pb2",
-    "Timeout",
     "util",
 ]
 
@@ -352,9 +352,9 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
     if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

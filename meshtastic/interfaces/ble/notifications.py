@@ -17,6 +17,8 @@ class NotificationManager:
 
     # Maximum subscription token value (2^31 - 1) to prevent unbounded counter growth
     _MAX_SUBSCRIPTION_TOKEN = 0x7FFFFFFF
+    # Maximum attempts to find a non-colliding token after wraparound
+    _MAX_COLLISION_ITERATIONS = 1000
 
     def __init__(self) -> None:
         """
@@ -69,13 +71,12 @@ class NotificationManager:
             # Handle wraparound collision with iteration guard to prevent infinite loop
             # (extremely unlikely in practice - would require 2^31 active subscriptions)
             collision_iterations = 0
-            _MAX_COLLISION_ITERATIONS = 1000
             while token in self._active_subscriptions:
                 collision_iterations += 1
-                if collision_iterations >= _MAX_COLLISION_ITERATIONS:
+                if collision_iterations >= self._MAX_COLLISION_ITERATIONS:
                     raise RuntimeError(
                         f"Failed to allocate unique subscription token after "
-                        f"{_MAX_COLLISION_ITERATIONS} attempts. Subscription registry "
+                        f"{self._MAX_COLLISION_ITERATIONS} attempts. Subscription registry "
                         f"may be corrupted or exhausted."
                     )
                 token = self._subscription_counter
@@ -115,7 +116,9 @@ class NotificationManager:
         for characteristic in characteristics:
             try:
                 client.stop_notify(characteristic, timeout=timeout)
-            except Exception as e:  # pragma: no cover - best effort; noqa: BLE001
+            except (
+                Exception
+            ) as e:  # pragma: no cover  # noqa: BLE001 - best effort unsubscribe
                 logger.debug(
                     "Failed to unsubscribe %s during shutdown: %s",
                     characteristic,
@@ -147,7 +150,9 @@ class NotificationManager:
                     callback,
                     timeout=timeout,
                 )
-            except Exception as e:  # pragma: no cover - best effort; noqa: BLE001
+            except (
+                Exception
+            ) as e:  # pragma: no cover  # noqa: BLE001 - best effort resubscribe
                 logger.debug(
                     "Failed to resubscribe %s during reconnect: %s",
                     characteristic,

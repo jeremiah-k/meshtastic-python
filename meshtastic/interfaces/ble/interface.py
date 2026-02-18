@@ -52,11 +52,11 @@ from meshtastic.interfaces.ble.discovery import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
-    _addr_key,
     _addr_lock_context,
-    _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
+    addr_key,
+    is_currently_connected_elsewhere,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -533,13 +533,13 @@ class BLEInterface(MeshInterface):
                             previous_client, "address", self.address
                         )
                         device_key = (
-                            _addr_key(previous_address) if previous_address else None
+                            addr_key(previous_address) if previous_address else None
                         )
                         disconnect_keys = self._sorted_address_keys(
                             device_key, alias_key
                         )
                     else:
-                        fallback_key = _addr_key(self.address)
+                        fallback_key = addr_key(self.address)
                         disconnect_keys = self._sorted_address_keys(
                             fallback_key, alias_key
                         )
@@ -551,7 +551,7 @@ class BLEInterface(MeshInterface):
                         if previous_client
                         else (address if address != "unknown" else self.address)
                     )
-                    addr_disconnect_key = _addr_key(address_for_registry)
+                    addr_disconnect_key = addr_key(address_for_registry)
                     disconnect_keys = self._sorted_address_keys(
                         addr_disconnect_key, alias_key
                     )
@@ -1086,7 +1086,7 @@ class BLEInterface(MeshInterface):
         """
         return bool(
             addr_key
-            and _is_currently_connected_elsewhere(addr_key, owner=self)
+            and is_currently_connected_elsewhere(addr_key, owner=self)
             and not self._state_manager.is_connected
         )
 
@@ -1123,7 +1123,7 @@ class BLEInterface(MeshInterface):
         self,
         address: Optional[str],
         normalized_request: Optional[str],
-        addr_key: Optional[str],
+        address_key: Optional[str],
     ) -> Tuple["BLEClient", Optional[str], Optional[str]]:
         """
         Establish a new BLE connection and update interface state.
@@ -1136,7 +1136,7 @@ class BLEInterface(MeshInterface):
         ----------
             address (Optional[str]): The target BLE address or device name.
             normalized_request (Optional[str]): The sanitized connection request identifier.
-            addr_key (Optional[str]): The address key for gate tracking.
+            address_key (Optional[str]): The address key for gate tracking.
 
         Returns
         -------
@@ -1172,10 +1172,12 @@ class BLEInterface(MeshInterface):
         if previous_client and previous_client is not client:
             self._client_manager.update_client_reference(client, previous_client)
 
-        connected_device_key = _addr_key(device_address) if device_address else None
+        connected_device_key = addr_key(device_address) if device_address else None
         connection_alias_key = (
-            addr_key
-            if connected_device_key and addr_key and addr_key != connected_device_key
+            address_key
+            if connected_device_key
+            and address_key
+            and address_key != connected_device_key
             else None
         )
         self._ever_connected = True
@@ -1273,7 +1275,9 @@ class BLEInterface(MeshInterface):
         normalized_request = sanitize_address(requested_identifier)
 
         # Only use address registry for explicit addresses, not discovery mode (None)
-        addr_key = _addr_key(requested_identifier) if requested_identifier else None
+        address_registry_key = (
+            addr_key(requested_identifier) if requested_identifier else None
+        )
         connected_client: Optional["BLEClient"] = None
         connected_device_key: Optional[str] = None
         connection_alias_key: Optional[str] = None
@@ -1282,15 +1286,17 @@ class BLEInterface(MeshInterface):
         # Discovery-mode connects intentionally skip gating to avoid holding the
         # global registry lock during long-running scan/discovery operations.
         with contextlib.ExitStack() as stack:
-            if addr_key is not None:
-                addr_lock = stack.enter_context(_addr_lock_context(addr_key))
+            if address_registry_key is not None:
+                addr_lock = stack.enter_context(
+                    _addr_lock_context(address_registry_key)
+                )
                 stack.enter_context(addr_lock)
 
             # Fast suppression if a recent connect happened elsewhere.
-            if self._should_suppress_duplicate_connect(addr_key):
+            if self._should_suppress_duplicate_connect(address_registry_key):
                 logger.info(
                     "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                    addr_key or "unknown",
+                    address_registry_key or "unknown",
                 )
                 raise self.BLEError(
                     "Connection suppressed: recently connected elsewhere"
@@ -1312,7 +1318,7 @@ class BLEInterface(MeshInterface):
                     connected_device_key,
                     connection_alias_key,
                 ) = self._establish_and_update_client(
-                    address, normalized_request, addr_key
+                    address, normalized_request, address_registry_key
                 )
 
         if connected_client is None:
@@ -1707,7 +1713,7 @@ class BLEInterface(MeshInterface):
             self._state_manager.transition_to(ConnectionState.DISCONNECTED)
             alias_key = self._connection_alias_key
             self._connection_alias_key = None
-        close_key = _addr_key(self.address)
+        close_key = addr_key(self.address)
         self._mark_address_keys_disconnected(close_key, alias_key)
 
     def _wait_for_disconnect_notifications(

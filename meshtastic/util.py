@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from queue import Queue
-from typing import Any, Dict, List, NoReturn, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, NoReturn, Optional, Set, Tuple, Union
 
 import packaging.version as pkg_version
 import requests
@@ -142,7 +142,7 @@ def fixme(message: str) -> None:
     raise FixmeError("FIXME: " + message)
 
 
-def catchAndIgnore(reason: str, closure) -> None:
+def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
     """Call a closure but if it throws an exception print it and continue."""
     try:
         closure()
@@ -195,6 +195,10 @@ class dotdict(dict):
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__  # type: ignore[assignment]
     __delattr__ = dict.__delitem__  # type: ignore[assignment]
+
+
+# PascalCase alias for naming convention compliance
+DotDict = dotdict
 
 
 class Timeout:
@@ -729,7 +733,9 @@ def message_to_json(message: Message, multiline: bool = False) -> str:
     try:
         json = MessageToJson(message, always_print_fields_with_no_presence=True)
     except TypeError:
-        json = MessageToJson(message, including_default_value_fields=True)  # type: ignore[call-arg] # pylint: disable=E1123
+        json = MessageToJson(  # type: ignore[call-arg]  # pylint: disable=E1123
+            message, including_default_value_fields=True
+        )
     return stripnl(json) if not multiline else json
 
 

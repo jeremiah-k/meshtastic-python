@@ -49,9 +49,9 @@ def test_SerialInterface_single_port(
 def test_SerialInterface_no_ports(mocked_findPorts, caplog):
     """Test that we can instantiate a SerialInterface with no ports."""
     with caplog.at_level(logging.DEBUG):
-        serialInterface = SerialInterface(noProto=True)
+        serial_interface = SerialInterface(noProto=True)
     mocked_findPorts.assert_called()
-    assert serialInterface.devPath is None
+    assert serial_interface.devPath is None
     assert re.search(r"No.*Meshtastic.*device.*detected", caplog.text, re.MULTILINE)
 
 

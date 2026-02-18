@@ -1551,6 +1551,10 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     return config_txt
 
 
+# CamelCase alias for public API consistency
+exportConfig = export_config
+
+
 def create_power_meter():
     """Set up the power meter."""
 
