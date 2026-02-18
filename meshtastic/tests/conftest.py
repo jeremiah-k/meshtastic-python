@@ -1,7 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
-from typing import Callable, ClassVar, Type
+from typing import Callable, ClassVar, List, Type
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +11,7 @@ from meshtastic import mt_config
 from ..mesh_interface import MeshInterface
 
 
-def create_context_manager_mock(spec_class: Type) -> MagicMock:
+def _create_context_manager_mock(spec_class: Type) -> MagicMock:
     """Create a MagicMock that properly supports context manager protocol.
 
     When using ExitStack.enter_context(), the mock's __enter__ must return self,
@@ -39,7 +39,7 @@ def create_context_manager_mock(spec_class: Type) -> MagicMock:
 class FakeTimer:
     """Simple timer stub for heartbeat timer tests."""
 
-    created: ClassVar[list["FakeTimer"]] = []
+    created: ClassVar[List["FakeTimer"]] = []
 
     def __init__(self, interval: float, function: Callable[[], None]) -> None:
         """
@@ -62,11 +62,11 @@ class FakeTimer:
         self.cancelled = False
         FakeTimer.created.append(self)
 
-    def start(self):
+    def start(self) -> None:
         """Record that the fake timer was started."""
         self.started = True
 
-    def cancel(self):
+    def cancel(self) -> None:
         """
         Mark the fake timer as cancelled.
 
@@ -76,7 +76,7 @@ class FakeTimer:
 
 
 @pytest.fixture(name="fake_timer_cls")
-def _fake_timer_cls_fixture(monkeypatch):
+def _fake_timer_cls_fixture(monkeypatch) -> Type["FakeTimer"]:
     """
     Replace meshtastic.mesh_interface.threading.Timer with a deterministic FakeTimer for tests.
 

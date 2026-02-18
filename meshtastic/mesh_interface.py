@@ -1749,6 +1749,7 @@ class MeshInterface:  # pylint: disable=R0902
         internal connected event, start periodic heartbeats, and enqueue a
         "meshtastic.connection.established" publication.
         """
+        start_heartbeat = False
         with self._heartbeat_lock:
             if self._closing:
                 logger.debug("Skipping _connected(): interface is closing")
@@ -1758,7 +1759,9 @@ class MeshInterface:  # pylint: disable=R0902
             # for the local interface
             if not self.isConnected.is_set():
                 self.isConnected.set()
-                self._startHeartbeat()
+                start_heartbeat = True
+        if start_heartbeat:
+            self._startHeartbeat()
         if self.isConnected.is_set():
             publishingThread.queueWork(
                 lambda: pub.sendMessage(

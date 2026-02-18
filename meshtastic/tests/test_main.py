@@ -900,7 +900,9 @@ def test_main_sendtext_with_dest(
 
     with SerialInterface(noProto=True, connectNow=False) as serialInterface:
         mocked_channel = MagicMock(autospec=Channel)
-        serialInterface.localNode.getChannelByChannelIndex = mocked_channel
+        serialInterface.localNode.getChannelByChannelIndex = MagicMock(
+            return_value=mocked_channel
+        )
 
         with patch(
             "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
