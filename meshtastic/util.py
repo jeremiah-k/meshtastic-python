@@ -56,7 +56,7 @@ def genPSK256() -> bytes:
 
 
 def fromPSK(valstr: str) -> Any:
-    """A special version of fromStr that assumes the user is trying to set a PSK.
+    """Parse a PSK string assuming the user is trying to set a PSK.
     In that case we also allow "none", "default" or "random" (to have python generate one), or simpleN.
     """
     if valstr == "random":

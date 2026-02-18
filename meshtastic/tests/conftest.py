@@ -26,7 +26,6 @@ def _create_context_manager_mock(spec_class: Type) -> MagicMock:
         spec_class: The class to use as spec for the mock (e.g., SerialInterface)
 
     Returns:
-
         A MagicMock with __enter__ configured to return itself.
 
     """

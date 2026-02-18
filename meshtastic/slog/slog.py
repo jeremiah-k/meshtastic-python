@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
@@ -24,6 +24,7 @@ from meshtastic.powermon import PowerMeter
 from .arrow import FeatherWriter
 
 logger = logging.getLogger(__name__)
+
 
 def root_dir() -> str:
     """Return the root directory for slog files."""
@@ -129,7 +130,7 @@ TOPIC_MESHTASTIC_LOG_LINE = "meshtastic.log.line"
 
 class StructuredLogger:
     """Sniffs device logs for structured log messages, extracts those into apache arrow format.
-    Also writes the raw log messages to raw.txt"""
+    Also writes the raw log messages to raw.txt."""
 
     def __init__(
         self,
@@ -163,10 +164,10 @@ class StructuredLogger:
             pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
         )
 
-        self.raw_file: Optional[
-            io.TextIOWrapper
-        ] = open(  # pylint: disable=consider-using-with
-            os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
+        self.raw_file: Optional[io.TextIOWrapper] = (
+            open(  # pylint: disable=consider-using-with
+                os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
+            )
         )
 
         # We need a closure here because the subscription API is very strict about exact arg matching
@@ -258,7 +259,7 @@ class LogSet:
 
         if not dir_name:
             app_dir = root_dir()
-            app_time_dir = Path(app_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
+            app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S"))
             app_time_dir.mkdir(exist_ok=True)
             dir_name = str(app_time_dir)
 

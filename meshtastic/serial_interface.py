@@ -28,7 +28,7 @@ class SerialInterface(StreamInterface):
         noNodes: bool = False,
         timeout: float = 300.0,
     ) -> None:
-        """Constructor, opens a connection to a specified serial port, or if unspecified try to
+        """Open a connection to a specified serial port, or if unspecified try to
         find one Meshtastic device by probing.
 
         Keyword Arguments:

@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[
-            int, ResponseHandler
-        ] = {}  # A map from request ID to the handler
+        self.responseHandlers: Dict[int, ResponseHandler] = (
+            {}
+        )  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -1504,7 +1504,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def waitForTelemetry(self) -> None:
         """
-        Waits for a telemetry response or until the configured timeout elapses.
+        Wait for a telemetry response or until the configured timeout elapses.
 
         Raises:
             MeshInterface.MeshInterfaceError: If a telemetry response is not received before the configured timeout.
@@ -1632,7 +1632,7 @@ class MeshInterface:  # pylint: disable=R0902
 
     def _waitConnected(self, timeout: float = 30.0) -> None:
         """
-        Waits until the interface is marked connected or the timeout elapses.
+        Wait until the interface is marked connected or the timeout elapses.
 
         Parameters
         ----------
@@ -1780,7 +1780,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = (
+            []
+        )  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

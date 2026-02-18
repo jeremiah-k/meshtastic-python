@@ -498,7 +498,7 @@ class TestPhase3LockConsolidation:
 
         def contending_worker():
             """
-            Performs a short lock-holding workload against the shared manager to exercise lock contention.
+            Perform a short lock-holding workload against the shared manager to exercise lock contention.
 
             Acquires manager._state_lock, sleeps briefly, transitions the manager to ConnectionState.CONNECTING and then to ConnectionState.DISCONNECTED. If an unexpected exception occurs, increments contention_count[0].
             """

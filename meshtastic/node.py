@@ -1,10 +1,9 @@
-"""Node class"""
+"""Node class."""
 
 import base64
 import logging
 import time
-
-from typing import Optional, Union, List
+from typing import List, Optional, Union
 
 from meshtastic.protobuf import (
     admin_pb2,
@@ -18,27 +17,27 @@ from meshtastic.protobuf import (
 from meshtastic.util import (
     Timeout,
     camel_to_snake,
+    flags_to_list,
     fromPSK,
+    generate_channel_hash,
+    message_to_json,
     our_exit,
     pskToString,
     stripnl,
-    message_to_json,
-    generate_channel_hash,
     to_node_num,
-    flags_to_list,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class Node:
-    """A model of a (local or remote) node in the mesh
+    """A model of a (local or remote) node in the mesh.
 
     Includes methods for localConfig, moduleConfig and channels
     """
 
     def __init__(self, iface, nodeNum, noProto=False, timeout: float = 300.0):
-        """Constructor"""
+        """Initialize a node model."""
         self.iface = iface
         self.nodeNum = nodeNum
         self.localConfig = localonly_pb2.LocalConfig()
@@ -65,14 +64,14 @@ class Node:
 
     @staticmethod
     def position_flags_list(position_flags: int) -> List[str]:
-        "Return a list of position flags from the given flags integer"
+        """Return a list of position flags from the given flags integer."""
         return flags_to_list(
             config_pb2.Config.PositionConfig.PositionFlags, position_flags
         )
 
     @staticmethod
     def excluded_modules_list(excluded_modules: int) -> List[str]:
-        "Return a list of excluded modules from the given flags integer"
+        """Return a list of excluded modules from the given flags integer."""
         return flags_to_list(mesh_pb2.ExcludedModules, excluded_modules)
 
     def module_available(self, excluded_bit: int) -> bool:
@@ -104,7 +103,7 @@ class Node:
             print(f"Complete URL (includes all channels): {adminURL}")
 
     def showInfo(self):
-        """Show human readable description of our node"""
+        """Show human readable description of our node."""
         prefs = ""
         if self.localConfig:
             prefs = message_to_json(self.localConfig, multiline=True)
@@ -116,7 +115,7 @@ class Node:
         self.showChannels()
 
     def setChannels(self, channels):
-        """Set the channels for this node"""
+        """Set the channels for this node."""
         self.channels = channels
         self._fixupChannels()
 
@@ -126,11 +125,13 @@ class Node:
         # only initialize if we're starting out fresh
         if startingIndex == 0:
             self.channels = None
-            self.partialChannels = []  # We keep our channels in a temp array until finished
+            self.partialChannels = (
+                []
+            )  # We keep our channels in a temp array until finished
         self._requestChannel(startingIndex)
 
     def onResponseRequestSettings(self, p):
-        """Handle the response packets for requesting settings _requestSettings()"""
+        """Handle the response packets for requesting settings _requestSettings()."""
         logger.debug(f"onResponseRequestSetting() p:{p}")
         config_values = None
         if "routing" in p["decoded"]:
@@ -171,7 +172,7 @@ class Node:
                 print(f"{str(camel_to_snake(field))}:\n{str(config_values)}")
 
     def requestConfig(self, configType):
-        """Request the config from the node via admin message"""
+        """Request the config from the node via admin message."""
         if self == self.iface.localNode:
             onResponse = None
         else:
@@ -203,7 +204,7 @@ class Node:
         return self._timeout.waitForSet(self, attrs=("localConfig", attribute))
 
     def writeConfig(self, config_name):
-        """Write the current (edited) localConfig to the device"""
+        """Write the current (edited) localConfig to the device."""
         if self.localConfig is None:
             our_exit("Error: No localConfig has been read")
 
@@ -272,7 +273,7 @@ class Node:
         self._sendAdmin(p, onResponse=onResponse)
 
     def writeChannel(self, channelIndex, adminIndex=0):
-        """Write the current (edited) channel to the device"""
+        """Write the current (edited) channel to the device."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(self.channels[channelIndex])
@@ -282,7 +283,7 @@ class Node:
     def getChannelByChannelIndex(self, channelIndex):
         """Get channel by channelIndex
         channelIndex: number, typically 0-7; based on max number channels
-        returns: None if there is no channel found
+        returns: None if there is no channel found.
         """
         ch = None
         if self.channels and 0 <= channelIndex < len(self.channels):
@@ -290,7 +291,7 @@ class Node:
         return ch
 
     def deleteChannel(self, channelIndex):
-        """Delete the specified channelIndex and shift other channels up"""
+        """Delete the specified channelIndex and shift other channels up."""
         ch = self.channels[channelIndex]
         if ch.role not in (
             channel_pb2.Channel.Role.SECONDARY,
@@ -318,21 +319,21 @@ class Node:
                 adminIndex = 0
 
     def getChannelByName(self, name):
-        """Try to find the named channel or return None"""
+        """Try to find the named channel or return None."""
         for c in self.channels or []:
             if c.settings and c.settings.name == name:
                 return c
         return None
 
     def getDisabledChannel(self):
-        """Return the first channel that is disabled (i.e. available for some new use)"""
+        """Return the first channel that is disabled (i.e. available for some new use)."""
         for c in self.channels:
             if c.role == channel_pb2.Channel.Role.DISABLED:
                 return c
         return None
 
     def _getAdminChannelIndex(self):
-        """Return the channel number of the admin channel, or 0 if no reserved channel"""
+        """Return the channel number of the admin channel, or 0 if no reserved channel."""
         for c in self.channels or []:
             if c.settings and c.settings.name.lower() == "admin":
                 return c.index
@@ -345,7 +346,7 @@ class Node:
         is_licensed: bool = False,
         is_unmessagable: Optional[bool] = None,
     ):
-        """Set device owner name"""
+        """Set device owner name."""
         logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -387,7 +388,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def getURL(self, includeAll: bool = True):
-        """The sharable URL that describes the current channel"""
+        """Return the sharable URL that describes the current channel."""
         # Only keep the primary/secondary channels, assume primary is first
         channelSet = apponly_pb2.ChannelSet()
         if self.channels:
@@ -406,7 +407,7 @@ class Node:
         return f"https://meshtastic.org/e/#{s}"
 
     def setURL(self, url: str, addOnly: bool = False):
-        """Set mesh network URL"""
+        """Set mesh network URL."""
         if self.localConfig is None or self.channels is None:
             our_exit("Warning: config or channels not loaded")
 
@@ -473,7 +474,7 @@ class Node:
         self._sendAdmin(p)
 
     def onResponseRequestRingtone(self, p):
-        """Handle the response packet for requesting ringtone part 1"""
+        """Handle the response packet for requesting ringtone part 1."""
         logger.debug(f"onResponseRequestRingtone() p:{p}")
         errorFound = False
         if "routing" in p["decoded"]:
@@ -492,7 +493,7 @@ class Node:
 
     def get_ringtone(self):
         """Get the ringtone. Concatenate all pieces together and return a single string."""
-        logger.debug(f"in get_ringtone()")
+        logger.debug("in get_ringtone()")
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
             logger.warning(
                 "External Notification module not present (excluded by firmware)"
@@ -553,7 +554,7 @@ class Node:
             return self._sendAdmin(p, onResponse=onResponse)
 
     def onResponseRequestCannedMessagePluginMessageMessages(self, p):
-        """Handle the response packet for requesting canned message plugin message part 1"""
+        """Handle the response packet for requesting canned message plugin message part 1."""
         logger.debug(f"onResponseRequestCannedMessagePluginMessageMessages() p:{p}")
         errorFound = False
         if "routing" in p["decoded"]:
@@ -574,7 +575,7 @@ class Node:
 
     def get_canned_message(self):
         """Get the canned message string. Concatenate all pieces together and return a single string."""
-        logger.debug(f"in get_canned_message()")
+        logger.debug("in get_canned_message()")
         if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
             logging.warning("Canned Message module not present (excluded by firmware)")
             return None
@@ -635,7 +636,7 @@ class Node:
 
     def exitSimulator(self):
         """Tell a simulator node to exit (this message
-        is ignored for other nodes)"""
+        is ignored for other nodes)."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.exit_simulator = True
@@ -662,7 +663,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.begin_edit_settings = True
-        logger.info(f"Telling open a transaction to edit settings")
+        logger.info("Telling open a transaction to edit settings")
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -676,7 +677,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.commit_edit_settings = True
-        logger.info(f"Telling node to commit open transaction for editing settings")
+        logger.info("Telling node to commit open transaction for editing settings")
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -704,7 +705,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.enter_dfu_mode_request = True
-        logger.info(f"Telling node to enable DFU mode")
+        logger.info("Telling node to enable DFU mode")
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -731,7 +732,7 @@ class Node:
         """Get the node's metadata."""
         p = admin_pb2.AdminMessage()
         p.get_device_metadata_request = True
-        logger.info(f"Requesting device metadata")
+        logger.info("Requesting device metadata")
 
         self._sendAdmin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
         self.iface.waitForAckNak()
@@ -742,10 +743,10 @@ class Node:
         p = admin_pb2.AdminMessage()
         if full:
             p.factory_reset_device = True
-            logger.info(f"Telling node to factory reset (full device reset)")
+            logger.info("Telling node to factory reset (full device reset)")
         else:
             p.factory_reset_config = True
-            logger.info(f"Telling node to factory reset (config reset)")
+            logger.info("Telling node to factory reset (config reset)")
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -755,7 +756,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def removeNode(self, nodeId: Union[int, str]):
-        """Tell the node to remove a specific node by ID"""
+        """Tell the node to remove a specific node by ID."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
 
@@ -769,7 +770,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def setFavorite(self, nodeId: Union[int, str]):
-        """Tell the node to set the specified node ID to be favorited on the NodeDB on the device"""
+        """Tell the node to set the specified node ID to be favorited on the NodeDB on the device."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
 
@@ -783,7 +784,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def removeFavorite(self, nodeId: Union[int, str]):
-        """Tell the node to set the specified node ID to be un-favorited on the NodeDB on the device"""
+        """Tell the node to set the specified node ID to be un-favorited on the NodeDB on the device."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
 
@@ -797,7 +798,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def setIgnored(self, nodeId: Union[int, str]):
-        """Tell the node to set the specified node ID to be ignored on the NodeDB on the device"""
+        """Tell the node to set the specified node ID to be ignored on the NodeDB on the device."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
 
@@ -811,7 +812,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def removeIgnored(self, nodeId: Union[int, str]):
-        """Tell the node to set the specified node ID to be un-ignored on the NodeDB on the device"""
+        """Tell the node to set the specified node ID to be un-ignored on the NodeDB on the device."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
 
@@ -829,7 +830,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.nodedb_reset = True
-        logger.info(f"Telling node to reset the NodeDB")
+        logger.info("Telling node to reset the NodeDB")
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -841,7 +842,7 @@ class Node:
     def setFixedPosition(
         self, lat: Union[int, float], lon: Union[int, float], alt: int
     ):
-        """Tell the node to set fixed position to the provided value and enable the fixed position setting"""
+        """Tell the node to set fixed position to the provided value and enable the fixed position setting."""
         self.ensureSessionKey()
 
         p = mesh_pb2.Position()
@@ -868,11 +869,11 @@ class Node:
         return self._sendAdmin(a, onResponse=onResponse)
 
     def removeFixedPosition(self):
-        """Tell the node to remove the fixed position and set the fixed position setting to false"""
+        """Tell the node to remove the fixed position and set the fixed position setting to false."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.remove_fixed_position = True
-        logger.info(f"Telling node to remove fixed position")
+        logger.info("Telling node to remove fixed position")
 
         if self == self.iface.localNode:
             onResponse = None
@@ -896,7 +897,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def _fixupChannels(self):
-        """Fixup indexes and add disabled channels as needed"""
+        """Fixup indexes and add disabled channels as needed."""
 
         # Add extra disabled channels as needed
         # This is needed because the protobufs will have index **missing** if the channel number is zero
@@ -906,7 +907,7 @@ class Node:
         self._fillChannels()
 
     def _fillChannels(self):
-        """Mark unused channels as disabled"""
+        """Mark unused channels as disabled."""
 
         # Add extra disabled channels as needed
         index = len(self.channels)
@@ -918,7 +919,7 @@ class Node:
             index += 1
 
     def onRequestGetMetadata(self, p):
-        """Handle the response packet for requesting device metadata getMetadata()"""
+        """Handle the response packet for requesting device metadata getMetadata()."""
         logger.debug(f"onRequestGetMetadata() p:{p}")
 
         if "routing" in p["decoded"]:
@@ -936,7 +937,7 @@ class Node:
                     )
                     self._timeout.expireTime = time.time()  # Do not wait any longer
                     return  # Don't try to parse this routing message
-                logger.debug(f"Retrying metadata request.")
+                logger.debug("Retrying metadata request.")
                 self.getMetadata()
                 return
 
@@ -961,7 +962,7 @@ class Node:
                 )
 
     def onResponseRequestChannel(self, p):
-        """Handle the response packet for requesting a channel _requestChannel()"""
+        """Handle the response packet for requesting a channel _requestChannel()."""
         logger.debug(f"onResponseRequestChannel() p:{p}")
 
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
@@ -976,7 +977,7 @@ class Node:
             lastTried = 0
             if len(self.partialChannels) > 0:
                 lastTried = self.partialChannels[-1].index
-            logger.debug(f"Retrying previous channel request.")
+            logger.debug("Retrying previous channel request.")
             self._requestChannel(lastTried)
             return
 
@@ -995,7 +996,7 @@ class Node:
             self._requestChannel(index + 1)
 
     def onAckNak(self, p):
-        """Informative handler for ACK/NAK responses"""
+        """Informative handler for ACK/NAK responses."""
         if p["decoded"]["routing"]["errorReason"] != "NONE":
             print(
                 f"Received a NAK, error reason: {p['decoded']['routing']['errorReason']}"
@@ -1004,16 +1005,16 @@ class Node:
         else:
             if int(p["from"]) == self.iface.localNode.nodeNum:
                 print(
-                    f"Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
+                    "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
                 )
                 self.iface._acknowledgment.receivedImplAck = True
             else:
-                print(f"Received an ACK.")
+                print("Received an ACK.")
                 self.iface._acknowledgment.receivedAck = True
 
     def _requestChannel(self, channelNum: int):
         """Done with initial config messages, now send regular
-        MeshPackets to ask for settings"""
+        MeshPackets to ask for settings."""
         p = admin_pb2.AdminMessage()
         p.get_channel_request = channelNum + 1
 
@@ -1040,11 +1041,11 @@ class Node:
         onResponse=None,
         adminIndex: int = 0,
     ):
-        """Send an admin message to the specified node (or the local node if destNodeNum is zero)"""
+        """Send an admin message to the specified node (or the local node if destNodeNum is zero)."""
 
         if self.noProto:
             logger.warning(
-                f"Not sending packet because protocol use is disabled by noProto"
+                "Not sending packet because protocol use is disabled by noProto"
             )
         else:
             if (
@@ -1069,10 +1070,10 @@ class Node:
             )
 
     def ensureSessionKey(self):
-        """If our entry in iface.nodesByNum doesn't already have an adminSessionPassKey, make a request to get one"""
+        """If our entry in iface.nodesByNum doesn't already have an adminSessionPassKey, make a request to get one."""
         if self.noProto:
             logger.warning(
-                f"Not ensuring session key, because protocol use is disabled by noProto"
+                "Not ensuring session key, because protocol use is disabled by noProto"
             )
         else:
             nodeid = to_node_num(self.nodeNum)

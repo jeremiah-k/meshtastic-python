@@ -216,7 +216,7 @@ def mock_bleak(monkeypatch):
 
         async def write_gatt_char(self, *_args, **_kwargs):
             """
-            Accepts any positional and keyword arguments and performs no action.
+            Accept any positional and keyword arguments and perform no action.
             """
             return None
 
@@ -273,7 +273,7 @@ def mock_bleak(monkeypatch):
         @staticmethod
         async def discover(**_kwargs):
             """
-            Simulates BLE device discovery.
+            Simulate BLE device discovery.
 
             Returns:
                 list: Empty list of discovered BLE devices.
@@ -379,7 +379,7 @@ class DummyClient:
 
     def start_notify(self, *_args, **_kwargs):
         """
-        Simulates subscribing to a BLE characteristic notification for tests.
+        Simulate subscribing to a BLE characteristic notification for tests.
 
         Accepts any arguments and performs no action.
         """
@@ -407,7 +407,7 @@ class DummyClient:
 
     def is_connected(self) -> bool:
         """
-        Indicates whether the mock BLE client is currently connected.
+        Indicate whether the mock BLE client is currently connected.
 
         Returns:
             True if the client is connected, False otherwise.

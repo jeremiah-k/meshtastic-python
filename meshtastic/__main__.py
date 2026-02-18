@@ -175,7 +175,7 @@ def getPref(node: Any, comp_name: str) -> bool:
 
     def _printSetting(config_type, uni_name, pref_value, repeated):
         """
-        Prints a configuration preference and its value to stdout and the debug log.
+        Print a configuration preference and its value to stdout and the debug log.
 
         Parameters
         ----------
@@ -422,7 +422,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
 
 
 def onConnected(interface: MeshInterface) -> None:
-    """Callback invoked when we connect to a radio."""
+    """Handle a connection callback when we connect to a radio."""
     closeNow = False  # Should we drop the connection after we finish?
     waitForAckNak = (
         False  # Should we wait for an acknowledgment if we send to a remote node?
@@ -1328,7 +1328,7 @@ def onConnected(interface: MeshInterface) -> None:
 
 def printConfig(config: Any) -> None:
     """
-    Prints the top-level configuration sections and their field names.
+    Print the top-level configuration sections and their field names.
 
     Parameters
     ----------
@@ -1354,7 +1354,7 @@ def printConfig(config: Any) -> None:
 
 
 def onNode(node: Any) -> None:
-    """Callback invoked when the node DB changes."""
+    """Handle a callback when the node DB changes."""
     print(f"Node changed: {node}")
 
 
@@ -1539,7 +1539,7 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 
 
 def create_power_meter():
-    """Setup the power meter."""
+    """Set up the power meter."""
 
     global meter  # pylint: disable=global-statement
     args = mt_config.args

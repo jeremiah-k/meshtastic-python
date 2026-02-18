@@ -65,6 +65,7 @@ class StreamInterface(MeshInterface):
         )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
+        self._last_disconnect_source = "stream.initialized"
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
@@ -97,7 +98,7 @@ class StreamInterface(MeshInterface):
 
     def connect(self) -> None:
         """
-        Establishes the connection to the radio and starts the background
+        Establish the connection to the radio and start the background
         reader and configuration process.
 
         Sends wake/resynchronization bytes to the device, starts the reader

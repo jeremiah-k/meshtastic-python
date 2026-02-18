@@ -161,7 +161,9 @@ class BLEClient:
             raise self.BLEError("Cannot pair: BLE client not initialized")
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(self, *, await_timeout: Optional[float] = None, **kwargs: Any) -> Any:  # pylint: disable=C0116
+    def connect(
+        self, *, await_timeout: Optional[float] = None, **kwargs: Any
+    ) -> Any:  # pylint: disable=C0116
         """
         Connect to the remote BLE device.
 
@@ -348,7 +350,9 @@ class BLEClient:
         )
         return self.get_services(**kwargs)
 
-    def has_characteristic(self, specifier: Union[str, UUID]) -> bool:  # pylint: disable=C0116
+    def has_characteristic(
+        self, specifier: Union[str, UUID]
+    ) -> bool:  # pylint: disable=C0116
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -636,7 +640,9 @@ class BLEClient:
         )
         return self.async_await(coro, timeout=timeout)
 
-    def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:  # pylint: disable=C0116
+    def async_run(
+        self, coro: Coroutine[Any, Any, Any]
+    ) -> Future[Any]:  # pylint: disable=C0116
         """
         Schedule the given coroutine to run on the shared BLE event loop.
 

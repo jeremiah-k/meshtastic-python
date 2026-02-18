@@ -133,7 +133,7 @@ class TestBLECoroutineRunner:
         # Create a future that won't complete
         async def never_complete():
             """
-            A coroutine that suspends indefinitely.
+            Run a coroutine that suspends indefinitely.
 
             Awaiting this coroutine will block forever; it never completes and never raises.
             """
@@ -211,7 +211,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that does nothing.
+            Run a coroutine that does nothing.
             """
             return None
 
@@ -267,7 +267,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that does nothing.
+            Run a coroutine that does nothing.
             """
             return None
 
@@ -324,7 +324,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that does nothing.
+            Run a coroutine that does nothing.
             """
             return None
 
@@ -343,7 +343,7 @@ class TestBLECoroutineRunner:
 
         async def _noop():
             """
-            A coroutine that does nothing.
+            Run a coroutine that does nothing.
             """
             return None
 
@@ -449,7 +449,7 @@ class TestBLECoroutineRunner:
 
             def is_alive(self) -> bool:
                 """
-                Indicates whether the thread is currently alive.
+                Indicate whether the thread is currently alive.
 
                 Returns:
                     bool: `True` if the thread is alive, `False` otherwise.
@@ -653,7 +653,7 @@ class TestBLEClientWithRunner:
             @staticmethod
             async def disconnect():
                 """
-                Always raise a RuntimeError with the message "boom".
+                Raise a RuntimeError with the message "boom".
 
                 Raises:
                     RuntimeError: Always raised with the message "boom".
