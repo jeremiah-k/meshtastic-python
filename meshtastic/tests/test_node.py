@@ -20,12 +20,12 @@ from ..serial_interface import SerialInterface
 
 
 @pytest.mark.unit
-def test_node(capsys):
+def test_node(capsys, mock_serial_interface):
     """Test that we can instantiate a Node."""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
+    with patch(
+        "meshtastic.serial_interface.SerialInterface",
+        return_value=mock_serial_interface,
+    ) as mo:
         anode = Node(mo, "!12345678", noProto=True)
         lc = localonly_pb2.LocalConfig()
         anode.localConfig = lc
@@ -791,7 +791,7 @@ def test_writeConfig_with_no_radioConfig(capsys):
 def test_writeConfig_with_no_local_config_raises_mesh_error():
     """Test writeConfig raises when local config has not been loaded."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
-    anode.localConfig = None
+    anode.localConfig = None  # pyright: ignore[reportAttributeAccessIssue]
 
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Error: No localConfig has been read"

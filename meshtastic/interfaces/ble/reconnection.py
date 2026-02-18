@@ -1,7 +1,7 @@
 """BLE reconnection logic and scheduling."""
 
 import logging
-from threading import Event, RLock, Thread
+from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable, Optional
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError

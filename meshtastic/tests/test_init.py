@@ -7,8 +7,13 @@ from unittest.mock import MagicMock
 import pytest
 
 import meshtastic
-from meshtastic import _onNodeInfoReceive, _onPositionReceive, _onTextReceive, mt_config
-from meshtastic import serial_interface
+from meshtastic import (
+    _onNodeInfoReceive,
+    _onPositionReceive,
+    _onTextReceive,
+    mt_config,
+    serial_interface,
+)
 
 from ..serial_interface import SerialInterface
 

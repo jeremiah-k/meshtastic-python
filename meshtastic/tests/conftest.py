@@ -9,6 +9,7 @@ import pytest
 from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
+from ..serial_interface import SerialInterface
 
 
 def _create_context_manager_mock(spec_class: Type) -> MagicMock:
@@ -138,3 +139,20 @@ def iface_with_nodes():
     iface.myInfo = myInfo
     iface.myInfo.my_node_num = 2475227164
     return iface
+
+
+@pytest.fixture
+def mock_serial_interface():
+    """
+    Create a mock SerialInterface with pre-configured attributes for Node tests.
+
+    Returns:
+        A MagicMock with autospec=SerialInterface, configured with:
+        - localNode.getChannelByName returns None
+        - myInfo.max_channels = 8
+
+    """
+    mock_iface = MagicMock(autospec=SerialInterface)
+    mock_iface.localNode.getChannelByName.return_value = None
+    mock_iface.myInfo.max_channels = 8
+    return mock_iface

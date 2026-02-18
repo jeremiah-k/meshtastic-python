@@ -204,7 +204,7 @@ class Node:
     def turnOffEncryptionOnPrimaryChannel(self):
         """Turn off encryption on primary channel."""
         if self.channels is None:
-            our_exit("Error: No channels have been read")
+            self._raise_interface_error("Error: No channels have been read")
         self.channels[0].settings.psk = fromPSK("none")
         print("Writing modified channels to device")
         self.writeChannel(0)
@@ -324,13 +324,15 @@ class Node:
     def deleteChannel(self, channelIndex):
         """Delete the specified channelIndex and shift other channels up."""
         if self.channels is None:
-            our_exit("Error: No channels have been read")
+            self._raise_interface_error("Error: No channels have been read")
         ch = self.channels[channelIndex]
         if ch.role not in (
             channel_pb2.Channel.Role.SECONDARY,
             channel_pb2.Channel.Role.DISABLED,
         ):
-            our_exit("Warning: Only SECONDARY channels can be deleted")
+            self._raise_interface_error(
+                "Warning: Only SECONDARY channels can be deleted"
+            )
 
         # we are careful here because if we move the "admin" channel the channelIndex we need to use
         # for sending admin channels will also change

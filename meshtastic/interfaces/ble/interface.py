@@ -8,7 +8,7 @@ import struct
 import threading
 import time
 from queue import Empty
-from threading import Event, Thread
+from threading import Event
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 from bleak import BleakClient as BleakRootClient

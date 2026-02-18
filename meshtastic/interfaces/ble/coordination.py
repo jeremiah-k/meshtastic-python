@@ -29,7 +29,6 @@ class _InertThread:
         self.name = name
         self.daemon = True
         self.ident = None
-        self._started = False
 
     def start(self) -> None:
         """Raise RuntimeError: inert threads cannot be started."""
@@ -72,6 +71,7 @@ class ThreadCoordinator:
         """
         self._lock = RLock()
         self._threads: List[Thread] = []
+        self._pending_start: set = set()
         self._events: Dict[str, Event] = {}
         self._cleaned_up: bool = False
 
@@ -183,7 +183,7 @@ class ThreadCoordinator:
 
         Returns
         -------
-            Event: The newly created and registered Event.
+            Event: The Event registered under the given name — if an Event with that name already exists, the existing Event is returned.
 
         """
         warnings.warn(
@@ -246,12 +246,18 @@ class ThreadCoordinator:
                 return
             # thread.ident is None only if the thread has never been started
             # This prevents RuntimeError from calling start() on a completed thread
-            if thread.ident is None:
+            # Also check _pending_start to prevent TOCTOU race between checking ident and calling start()
+            if thread.ident is None and thread not in self._pending_start:
+                self._pending_start.add(thread)
                 should_start = True
         # Start outside the lock to prevent deadlocks if the new thread
         # immediately calls back into the coordinator
         if should_start:
-            thread.start()
+            try:
+                thread.start()
+            finally:
+                with self._lock:
+                    self._pending_start.discard(thread)
 
     def startThread(self, thread: ThreadLike) -> None:
         """Compatibility wrapper for callers using camelCase."""

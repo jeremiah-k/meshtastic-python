@@ -19,7 +19,7 @@ import serial.tools.list_ports  # type: ignore[import-untyped]
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
 
-from meshtastic.supported_device import supported_devices
+from meshtastic.supported_device import SupportedDevice, supported_devices
 from meshtastic.version import get_active_version
 
 """Some devices such as a seger jlink or st-link we never want to accidentally open
@@ -676,20 +676,23 @@ def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[st
 
 
 def detect_windows_port(
-    sd,
-) -> Set[str]:  # "sd" is a SupportedDevice from meshtastic.supported_device
+    sd: Optional[SupportedDevice],
+) -> Set[str]:
     """Detect if Windows port."""
     ports = set()
 
     if sd:
+        # Type narrowing: sd is not None inside this block
+        device = sd
         system = platform.system()
+        vendor_id = device.usb_vendor_id_in_hex
 
-        if system == "Windows":
+        if system == "Windows" and vendor_id is not None:
             command = (
                 'powershell.exe "[Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;'
                 "Get-PnpDevice -PresentOnly | Where-Object{ ($_.DeviceId -like "
             )
-            command += f"'*{sd.usb_vendor_id_in_hex.upper()}*'"
+            command += f"'*{vendor_id.upper()}*'"
             command += ')} | Format-List"'
 
             # print(f'command:{command}')
@@ -737,9 +740,16 @@ def message_to_json(message: Message, multiline: bool = False) -> str:
         json = MessageToJson(message, always_print_fields_with_no_presence=True)
     except TypeError:
         json = MessageToJson(  # type: ignore[call-arg]  # pylint: disable=E1123
-            message, including_default_value_fields=True
+            message,
+            # pyright: ignore[reportCallIssue]  # Older protobuf uses including_default_value_fields
+            including_default_value_fields=True,  # pyright: ignore[reportCallIssue]
         )
     return stripnl(json) if not multiline else json
+
+
+def messageToJson(message: Message, multiline: bool = False) -> str:
+    """CamelCase wrapper for message_to_json."""
+    return message_to_json(message, multiline=multiline)
 
 
 def to_node_num(node_id: Union[int, str]) -> int:
