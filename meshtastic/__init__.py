@@ -130,6 +130,8 @@ def __getattr__(name: str) -> Any:
     Provide lazy compatibility aliases for selected module attributes.
     """
     if name == "serial":
+        # Keep historical `meshtastic.serial` access, but map it to our
+        # internal serial interface module (not the third-party pyserial module).
         return import_module(".serial_interface", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -350,9 +352,9 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
     if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
-            adminMessage.session_passkey
-        )
+        iface._getOrCreateByNum(asDict["from"])[
+            "adminSessionPassKey"
+        ] = adminMessage.session_passkey
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""
