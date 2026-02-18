@@ -263,16 +263,13 @@ def test_shutdown(caplog):
 
 
 @pytest.mark.unit
-def test_setURL_empty_url(capsys):
+def test_setURL_empty_url():
     """Test setURL with an empty URL."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
+    ):
         anode.setURL("")
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: config or channels not loaded", out, re.MULTILINE)
-    assert err == ""
 
 
 # TODO
@@ -294,18 +291,15 @@ def test_setURL_empty_url(capsys):
 
 
 @pytest.mark.unit
-def test_setURL_valid_URL_but_no_settings(capsys):
+def test_setURL_valid_URL_but_no_settings():
     """Test setURL."""
     iface = MagicMock(autospec=SerialInterface)
     url = "https://www.meshtastic.org/d/#"
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
+    ):
         anode = Node(iface, "!12345678", noProto=True)
         anode.setURL(url)
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: config or channels not loaded", out, re.MULTILINE)
-    assert err == ""
 
 
 # TODO
@@ -792,6 +786,30 @@ def test_writeConfig_with_no_radioConfig(capsys):
     print(out)
     assert re.search(r"Error: No valid config with name foo", out)
     assert err == ""
+
+
+@pytest.mark.unit
+def test_writeConfig_with_no_local_config_raises_mesh_error():
+    """Test writeConfig raises when local config has not been loaded."""
+    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
+    anode.localConfig = None
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No localConfig has been read"
+    ):
+        anode.writeConfig("device")
+
+
+@pytest.mark.unit
+def test_writeChannel_with_no_channels_raises_mesh_error():
+    """Test writeChannel raises when channels have not been loaded."""
+    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.writeChannel(0)
 
 
 # TODO
@@ -1489,67 +1507,51 @@ def test_remove_ignored(ignored):
 
 
 @pytest.mark.unit
-def test_setOwner_whitespace_only_long_name(capsys):
+def test_setOwner_whitespace_only_long_name():
     """Test setOwner with whitespace-only long name."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
-    with pytest.raises(SystemExit) as excinfo:
+    with pytest.raises(
+        ValueError, match="Long Name cannot be empty or contain only whitespace characters"
+    ):
         anode.setOwner(long_name="   ")
-
-    out, _ = capsys.readouterr()
-    assert (
-        "ERROR: Long Name cannot be empty or contain only whitespace characters" in out
-    )
-    assert excinfo.value.code == 1
 
 
 @pytest.mark.unit
-def test_setOwner_empty_long_name(capsys):
+def test_setOwner_empty_long_name():
     """Test setOwner with empty long name."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
-    with pytest.raises(SystemExit) as excinfo:
+    with pytest.raises(
+        ValueError, match="Long Name cannot be empty or contain only whitespace characters"
+    ):
         anode.setOwner(long_name="")
-
-    out, _ = capsys.readouterr()
-    assert (
-        "ERROR: Long Name cannot be empty or contain only whitespace characters" in out
-    )
-    assert excinfo.value.code == 1
 
 
 @pytest.mark.unit
-def test_setOwner_whitespace_only_short_name(capsys):
+def test_setOwner_whitespace_only_short_name():
     """Test setOwner with whitespace-only short name."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
-    with pytest.raises(SystemExit) as excinfo:
+    with pytest.raises(
+        ValueError, match="Short Name cannot be empty or contain only whitespace characters"
+    ):
         anode.setOwner(short_name="   ")
-
-    out, _ = capsys.readouterr()
-    assert (
-        "ERROR: Short Name cannot be empty or contain only whitespace characters" in out
-    )
-    assert excinfo.value.code == 1
 
 
 @pytest.mark.unit
-def test_setOwner_empty_short_name(capsys):
+def test_setOwner_empty_short_name():
     """Test setOwner with empty short name."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
-    with pytest.raises(SystemExit) as excinfo:
+    with pytest.raises(
+        ValueError, match="Short Name cannot be empty or contain only whitespace characters"
+    ):
         anode.setOwner(short_name="")
-
-    out, _ = capsys.readouterr()
-    assert (
-        "ERROR: Short Name cannot be empty or contain only whitespace characters" in out
-    )
-    assert excinfo.value.code == 1
 
 
 @pytest.mark.unit

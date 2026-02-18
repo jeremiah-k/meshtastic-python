@@ -3,7 +3,7 @@
 import base64
 import logging
 import time
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, List, NoReturn, Optional, Union
 
 from meshtastic.protobuf import (
     admin_pb2,
@@ -213,10 +213,27 @@ class Node:
         """Block until radio config is received. Returns True if config has been received."""
         return self._timeout.waitForSet(self, attrs=("localConfig", attribute))
 
+    def _raise_interface_error(self, message: str) -> NoReturn:
+        """Raise a mesh-interface-style exception even when iface is a test double."""
+        candidates = (
+            getattr(self.iface, "MeshInterfaceError", None),
+            getattr(type(self.iface), "MeshInterfaceError", None),
+            getattr(getattr(self.iface, "_spec_class", None), "MeshInterfaceError", None),
+        )
+        for error_cls in candidates:
+            if isinstance(error_cls, type) and issubclass(error_cls, BaseException):
+                raise error_cls(message)
+        # Fallback for callers/test doubles that don't expose MeshInterfaceError.
+        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+            MeshInterface,
+        )
+
+        raise MeshInterface.MeshInterfaceError(message)
+
     def writeConfig(self, config_name):
         """Write the current (edited) localConfig to the device."""
         if self.localConfig is None:
-            our_exit("Error: No localConfig has been read")
+            self._raise_interface_error("Error: No localConfig has been read")
 
         p = admin_pb2.AdminMessage()
 
@@ -285,7 +302,7 @@ class Node:
     def writeChannel(self, channelIndex, adminIndex=0):
         """Write the current (edited) channel to the device."""
         if self.channels is None:
-            our_exit("Error: No channels have been read")
+            self._raise_interface_error("Error: No channels have been read")
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(self.channels[channelIndex])
@@ -372,8 +389,8 @@ class Node:
             long_name = long_name.strip()
             # Validate that long_name is not empty or whitespace-only
             if not long_name:
-                our_exit(
-                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
+                raise ValueError(
+                    "Long Name cannot be empty or contain only whitespace characters"
                 )
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
@@ -381,8 +398,8 @@ class Node:
             short_name = short_name.strip()
             # Validate that short_name is not empty or whitespace-only
             if not short_name:
-                our_exit(
-                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                raise ValueError(
+                    "Short Name cannot be empty or contain only whitespace characters"
                 )
             if len(short_name) > nChars:
                 short_name = short_name[:nChars]
@@ -425,7 +442,7 @@ class Node:
     def setURL(self, url: str, addOnly: bool = False) -> None:
         """Set mesh network URL."""
         if self.localConfig is None or self.channels is None:
-            our_exit("Warning: config or channels not loaded")
+            self._raise_interface_error("Warning: config or channels not loaded")
 
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
         # Split on '/#' to find the base64 encoded channel settings
