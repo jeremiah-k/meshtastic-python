@@ -992,7 +992,7 @@ def onConnected(interface: MeshInterface) -> None:
                 return
 
             closeNow = True
-            config_txt = _export_config(interface)
+            config_txt = export_config(interface)
 
             if args.export_config == "-":
                 # Output to stdout (preserves legacy use of `> file.yaml`)
@@ -1377,7 +1377,7 @@ def subscribe() -> None:
     # pub.subscribe(onNode, "meshtastic.node")
 
 
-def _set_missing_flags_false(
+def set_missing_flags_false(
     config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, str]]
 ) -> None:
     """
@@ -1401,13 +1401,13 @@ def _set_missing_flags_false(
             d[path[-1]] = False
 
 
-def _export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
+def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     """
-    Export the local node and module configuration as a YAML-formatted Meshtastic configuration string.
+    Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
 
     Produces a YAML document containing selected top-level metadata (owner, owner_short, channel
     URL, canned messages, ringtone, and location) plus `config` and `module_config` sections
-    derived from the node's protobuf-backed settings. Key casing in the exported `config` and
+    derived from node's protobuf-backed settings. Key casing in the exported `config` and
     `module_config` follows mt_config.camel_case. Certain boolean flags are explicitly set to
     false if missing, and security key fields are normalized to include a "base64:" prefix when
     appropriate.
@@ -1418,7 +1418,7 @@ def _export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 
     Returns
     -------
-        str: A YAML string (prefixed with a header comment) representing the exported configuration.
+        str: A YAML string (prefixed with a header comment) representing exported configuration.
 
     """
     configObj: Dict[str, Any] = {}
@@ -1477,7 +1477,7 @@ def _export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     config = MessageToDict(interface.localNode.localConfig)
     if config:
         # Ensure explicit false values are present before key conversion.
-        _set_missing_flags_false(config, config_true_defaults)
+        set_missing_flags_false(config, config_true_defaults)
 
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
@@ -1521,7 +1521,7 @@ def _export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
         # Ensure explicit false values are present before key conversion.
-        _set_missing_flags_false(module_config, module_true_defaults)
+        set_missing_flags_false(module_config, module_true_defaults)
 
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
