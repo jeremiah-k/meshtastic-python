@@ -566,7 +566,7 @@ class BLEInterface(MeshInterface):
         logger.debug("BLE client %s disconnected (source: %s).", address, source)
         # Expose the most recent disconnect source for external listeners that
         # only receive the generic meshtastic.connection.lost event.
-        self._last_disconnect_source = source
+        self._last_disconnect_source = f"ble.{source}"
 
         if disconnect_keys:
             self._mark_address_keys_disconnected(*disconnect_keys)

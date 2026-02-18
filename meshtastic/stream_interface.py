@@ -269,6 +269,7 @@ class StreamInterface(MeshInterface):
         """
         logger.debug("in __reader()")
         empty = bytes()
+        disconnect_source = "stream.reader_exit"
 
         try:
             while not self._wantExit:
@@ -322,18 +323,28 @@ class StreamInterface(MeshInterface):
             if (
                 not self._wantExit
             ):  # We might intentionally get an exception during shutdown
+                disconnect_source = "stream.serial_exception"
                 logger.warning(
                     f"Meshtastic serial port disconnected, disconnecting... {ex}"
                 )
+            else:
+                disconnect_source = "stream.close_requested"
         except OSError as ex:
             if (
                 not self._wantExit
             ):  # We might intentionally get an exception during shutdown
+                disconnect_source = "stream.os_error"
                 logger.error(
                     f"Unexpected OSError, terminating meshtastic reader... {ex}"
                 )
+            else:
+                disconnect_source = "stream.close_requested"
         except Exception:
+            disconnect_source = "stream.exception"
             logger.exception("Unexpected exception, terminating meshtastic reader...")
         finally:
+            if self._wantExit and disconnect_source == "stream.reader_exit":
+                disconnect_source = "stream.close_requested"
+            self._last_disconnect_source = disconnect_source
             logger.debug("reader is exiting")
             self._disconnected()
