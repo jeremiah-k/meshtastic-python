@@ -81,9 +81,19 @@ class StreamInterface(MeshInterface):
 
         # Start the reader thread after superclass constructor completes init
         if connectNow:
-            self.connect()
-            if not noProto:
-                self.waitForConfig()
+            has_default_stream_io = (
+                type(self)._readBytes is StreamInterface._readBytes
+                and type(self)._writeBytes is StreamInterface._writeBytes
+            )
+            if self.stream is None and has_default_stream_io:
+                logger.debug(
+                    "No stream configured for %s; deferring connect()",
+                    self.__class__.__name__,
+                )
+            else:
+                self.connect()
+                if not noProto:
+                    self.waitForConfig()
 
     def connect(self) -> None:
         """
@@ -216,7 +226,7 @@ class StreamInterface(MeshInterface):
             if rx_thread.is_alive():
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
-    def _handleLogByte(self, b: bytes) -> None:
+    def _handle_log_byte(self, b: bytes) -> None:
         r"""
         Process a single byte from the device's log stream, building log lines and dispatching complete lines.
 
@@ -252,7 +262,7 @@ class StreamInterface(MeshInterface):
 
         Dispatches device log bytes and framed radio packets for processing.
         This thread accumulates incoming bytes, treats bytes that do not start
-        a protocol frame as device log data (forwarded to _handleLogByte),
+        a protocol frame as device log data (forwarded to _handle_log_byte),
         recognizes framed messages prefixed by START1/START2 with a length
         header, and passes complete payloads to _handleFromRadio. On
         termination it calls _disconnected to clean up resources.
@@ -279,7 +289,7 @@ class StreamInterface(MeshInterface):
                             self._rxBuf = empty  # failed to find start
                             # This must be a log message from the device
 
-                            self._handleLogByte(b)
+                            self._handle_log_byte(b)
 
                     elif ptr == 1:  # looking for START2
                         if c != START2:

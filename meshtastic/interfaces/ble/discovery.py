@@ -414,10 +414,9 @@ class DiscoveryManager:
             if not isinstance(self._client, BLEClient):
                 required_attrs = (
                     "discover",
+                    "async_await",
                     "__enter__",
                     "__exit__",
-                    "start_notify",
-                    "stop_notify",
                 )
                 missing = [a for a in required_attrs if not hasattr(self._client, a)]
                 if missing:

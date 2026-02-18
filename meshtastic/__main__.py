@@ -237,8 +237,6 @@ def getPref(node: Any, comp_name: str) -> bool:
         # read the value
         config_values = getattr(config, config_type.name)
         if not wholeField:
-            # pref is guaranteed non-None by the outer condition
-            assert pref is not None  # type narrowing for mypy
             pref_value = getattr(config_values, pref.name)
             repeated = pref.label == pref.LABEL_REPEATED
             _printSetting(config_type, uni_name, pref_value, repeated)
@@ -1744,14 +1742,16 @@ def common():
                                 tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
                                 try:
                                     tcp_port = int(tcp_port_str)
-                                    if not 1 <= tcp_port <= 65535:
-                                        raise ValueError(
-                                            f"Port {tcp_port} out of range"
-                                        )
                                 except ValueError:
                                     # Not a valid port - treat the whole string as a hostname
                                     tcp_hostname = args.host
                                     tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                                else:
+                                    if not 1 <= tcp_port <= 65535:
+                                        meshtastic.util.our_exit(
+                                            f"Error: invalid TCP port in --host '{args.host}'.",
+                                            1,
+                                        )
                         else:
                             tcp_hostname = args.host
                             tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT

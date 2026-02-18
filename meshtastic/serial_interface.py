@@ -47,20 +47,22 @@ class SerialInterface(StreamInterface):
             logger.debug(f"ports:{ports}")
             if len(ports) == 0:
                 logger.warning(
-                    "No Serial Meshtastic device detected, attempting TCP connection on localhost."
+                    "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
                 )
                 # Ensure base classes are initialized so close() is safe
                 StreamInterface.__init__(
                     self,
                     debugOut=debugOut,
-                    noProto=True,
-                    connectNow=False,
+                    noProto=noProto,
+                    connectNow=connectNow,
                     noNodes=noNodes,
                     timeout=timeout,
                 )
                 return
             elif len(ports) > 1:
-                message: str = "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
+                message: str = (
+                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
+                )
                 message += f"  Ports detected:{ports}"
                 meshtastic.util.our_exit(message)
             else:

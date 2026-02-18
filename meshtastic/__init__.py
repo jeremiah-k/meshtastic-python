@@ -68,10 +68,8 @@ interface = meshtastic.serial_interface.SerialInterface()
 import logging
 from typing import Any, Callable, Dict, NamedTuple, Optional
 
-import serial  # type: ignore[import-untyped]
 from google.protobuf.json_format import MessageToJson
 from pubsub import pub  # type: ignore[import-untyped]
-from tabulate import tabulate
 
 from meshtastic.node import Node
 from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, stripnl
@@ -106,11 +104,11 @@ __all__ = [
     "KnownProtocol",
     "LOCAL_ADDR",
     "logger",
-    "MessageToJson",
     "mesh_pb2",
+    "MessageToJson",
     "mqtt_pb2",
-    "NODELESS_WANT_CONFIG_ID",
     "Node",
+    "NODELESS_WANT_CONFIG_ID",
     "OUR_APP_VERSION",
     "paxcount_pb2",
     "portnums_pb2",
@@ -120,14 +118,24 @@ __all__ = [
     "publishingThread",
     "remote_hardware_pb2",
     "ResponseHandler",
-    "serial",
     "storeforward_pb2",
     "stripnl",
-    "tabulate",
     "telemetry_pb2",
     "Timeout",
     "util",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """
+    Provide lazy compatibility aliases for selected module attributes.
+    """
+    if name == "serial":
+        from . import serial_interface
+
+        return serial_interface
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Note: To follow PEP224, comments should be after the module variable.
 
@@ -345,9 +353,9 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
     if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
-            adminMessage.session_passkey
-        )
+        iface._getOrCreateByNum(asDict["from"])[
+            "adminSessionPassKey"
+        ] = adminMessage.session_passkey
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

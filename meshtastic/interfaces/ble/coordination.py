@@ -199,9 +199,16 @@ class ThreadCoordinator:
 
         """
         with self._lock:
+            if thread not in self._threads:
+                logger.warning(
+                    "Cannot start untracked thread %r (ident=%s); coordinator may be cleaned up or a create_thread/cleanup race occurred",
+                    thread,
+                    thread.ident,
+                )
+                return
             # thread.ident is None only if the thread has never been started
             # This prevents RuntimeError from calling start() on a completed thread
-            if thread in self._threads and thread.ident is None:
+            if thread.ident is None:
                 thread.start()
 
     def startThread(self, thread: Thread) -> None:

@@ -104,9 +104,10 @@ class BLEErrorHandler:
         """
         try:
             func()
-            return True
         except (SystemExit, KeyboardInterrupt):
             raise
         except Exception as e:
             logger.debug("Error during %s: %s", cleanup_name, e)
             return False
+        else:
+            return True

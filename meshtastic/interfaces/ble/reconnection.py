@@ -215,7 +215,6 @@ class ReconnectWorker:
                         "BLE auto-reconnect succeeded after %d attempts.",
                         attempt_num,
                     )
-                    return
                 except interface.BLEError as err:
                     if self._should_abort_reconnect(auto_reconnect, "BLEError"):
                         return
@@ -266,6 +265,8 @@ class ReconnectWorker:
                         "Unexpected error during auto-reconnect attempt %d",
                         attempt_num,
                     )
+                else:
+                    return
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return

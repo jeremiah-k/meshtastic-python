@@ -988,7 +988,7 @@ class BLEInterface(MeshInterface):
                 # others differ in optional metadata fields). Use signature
                 # inspection to construct a compatible synthetic BLEDevice.
                 supports_details, _ = _ble_device_constructor_kwargs_support()
-                params: Dict[str, Any] = {"address": address, "name": address}
+                params: Dict[str, Any] = {}
                 if supports_details:
                     params["details"] = {}  # Empty details for synthetic device
                 logger.debug(
@@ -997,7 +997,7 @@ class BLEInterface(MeshInterface):
                     sanitized,
                     list(params.keys()),
                 )
-                return BLEDevice(**params)
+                return BLEDevice(address, address, **params)
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
@@ -1457,7 +1457,7 @@ class BLEInterface(MeshInterface):
                             backoff,
                             self._receive_recovery_attempts,
                         )
-                        time.sleep(backoff)
+                        self._shutdown_event.wait(timeout=backoff)
                 self._last_recovery_time = now
                 # If disconnect handling requests continuation (auto-reconnect path),
                 # replace this crashed receive thread so reads resume after reconnect.
