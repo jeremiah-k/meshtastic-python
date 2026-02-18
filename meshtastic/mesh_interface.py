@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -900,7 +900,9 @@ class MeshInterface:  # pylint: disable=R0902
                 `decoded["routing"]["errorReason"]` may be inspected.
 
         """
-        if p["decoded"]["portnum"] == "POSITION_APP":
+        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.POSITION_APP
+        ):
             self._acknowledgment.receivedPosition = True
             position = mesh_pb2.Position()
             position.ParseFromString(p["decoded"]["payload"])
@@ -924,7 +926,9 @@ class MeshInterface:  # pylint: disable=R0902
 
             print(ret)
 
-        elif p["decoded"]["portnum"] == "ROUTING_APP":
+        elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
                 our_exit(
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
@@ -1161,7 +1165,9 @@ class MeshInterface:  # pylint: disable=R0902
                   - for ROUTING_APP: "routing" containing routing info (used to detect a NO_RESPONSE routing error).
 
         """
-        if p["decoded"]["portnum"] == "TELEMETRY_APP":
+        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.TELEMETRY_APP
+        ):
             self._acknowledgment.receivedTelemetry = True
             telemetry = telemetry_pb2.Telemetry()
             telemetry.ParseFromString(p["decoded"]["payload"])
@@ -1196,7 +1202,9 @@ class MeshInterface:  # pylint: disable=R0902
                         for sub_key, sub_value in value.items():
                             print(f"  {sub_key}: {sub_value}")
 
-        elif p["decoded"]["portnum"] == "ROUTING_APP":
+        elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
                 our_exit(
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
@@ -1215,17 +1223,21 @@ class MeshInterface:  # pylint: disable=R0902
         Parameters
         ----------
             p (dict): Packet dictionary containing a 'decoded' mapping. Expected keys in decoded:
-                - 'portnum' (str): Port name ("WAYPOINT_APP" or "ROUTING_APP").
-                - 'payload' (bytes): Serialized Waypoint protobuf (present when portnum == "WAYPOINT_APP").
-                - 'routing' (dict): Routing info including 'errorReason' (present when portnum == "ROUTING_APP").
+                - 'portnum' (str): Port name (PortNum.Name(PortNum.WAYPOINT_APP) or PortNum.Name(PortNum.ROUTING_APP)).
+                - 'payload' (bytes): Serialized Waypoint protobuf (present when portnum is WAYPOINT_APP).
+                - 'routing' (dict): Routing info including 'errorReason' (present when portnum is ROUTING_APP).
 
         """
-        if p["decoded"]["portnum"] == "WAYPOINT_APP":
+        if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.WAYPOINT_APP
+        ):
             self._acknowledgment.receivedWaypoint = True
             w = mesh_pb2.Waypoint()
             w.ParseFromString(p["decoded"]["payload"])
             print(f"Waypoint received: {w}")
-        elif p["decoded"]["portnum"] == "ROUTING_APP":
+        elif p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
                 our_exit(
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
@@ -1799,9 +1811,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

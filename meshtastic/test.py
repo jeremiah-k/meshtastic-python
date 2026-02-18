@@ -13,6 +13,7 @@ from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
+from meshtastic.protobuf import portnums_pb2
 from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface
 
@@ -122,7 +123,9 @@ def onReceive(packet: dict, interface: Any) -> None:
         # print(f"From {interface.stream.port}: {packet}")
         p = DotMap(packet)
 
-        if p.decoded.portnum == "TEXT_MESSAGE_APP":
+        if p.decoded.portnum == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.TEXT_MESSAGE_APP
+        ):
             # We only care a about clear text packets
             if receivedPackets is not None:
                 receivedPackets.append(p)
