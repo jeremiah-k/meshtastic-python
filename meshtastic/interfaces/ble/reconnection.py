@@ -200,12 +200,12 @@ class ReconnectWorker:
                     if addr_key and _is_currently_connected_elsewhere(
                         addr_key, owner=interface
                     ):
-                        logger.debug(
+                        logger.info(
                             "Skipping reconnect attempt %d: address %s already connected elsewhere",
                             attempt_num,
                             addr_key,
                         )
-                        return
+                        continue
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).",
                         attempt_num,

@@ -3,7 +3,7 @@
 import base64
 import logging
 import time
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from meshtastic.protobuf import (
     admin_pb2,
@@ -27,6 +27,9 @@ from meshtastic.util import (
     to_node_num,
 )
 
+if TYPE_CHECKING:
+    from meshtastic.mesh_interface import MeshInterface
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +39,13 @@ class Node:
     Includes methods for localConfig, moduleConfig and channels
     """
 
-    def __init__(self, iface, nodeNum, noProto=False, timeout: float = 300.0):
+    def __init__(
+        self,
+        iface: "MeshInterface",
+        nodeNum: int,
+        noProto: bool = False,
+        timeout: float = 300.0,
+    ) -> None:
         """Initialize a node model."""
         self.iface = iface
         self.nodeNum = nodeNum
@@ -125,9 +134,7 @@ class Node:
         # only initialize if we're starting out fresh
         if startingIndex == 0:
             self.channels = None
-            self.partialChannels = (
-                []
-            )  # We keep our channels in a temp array until finished
+            self.partialChannels = []  # We keep our channels in a temp array until finished
         self._requestChannel(startingIndex)
 
     def onResponseRequestSettings(self, p):

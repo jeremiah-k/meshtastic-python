@@ -8,6 +8,7 @@ import os
 import platform
 import re
 import sys
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -38,14 +39,14 @@ from ..tcp_interface import TCPInterface
 
 
 def _mock_sendText_helper(
-    text,
-    dest,
-    wantAck=False,
-    wantResponse=False,
-    onResponse=None,
-    channelIndex=0,
-    portNum=0,
-):
+    text: str,
+    dest: Any,
+    wantAck: bool = False,
+    wantResponse: bool = False,
+    onResponse: Optional[Callable[..., Any]] = None,
+    channelIndex: int = 0,
+    portNum: int = 0,
+) -> None:
     """Shared helper for mocking sendText; prints parameters to stdout for test assertions."""
     _ = onResponse  # Mark as intentionally unused
     print("inside mocked sendText")
@@ -53,7 +54,7 @@ def _mock_sendText_helper(
 
 
 @pytest.fixture(autouse=True)
-def _mock_newer_version_check(monkeypatch):
+def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent external network calls during unit tests in this module."""
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
 

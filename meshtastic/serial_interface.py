@@ -1,6 +1,5 @@
 """Serial interface class."""
 
-# pylint: disable=R0917
 import logging
 import sys
 import time
@@ -19,6 +18,7 @@ logger = logging.getLogger(__name__)
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
+    # pylint: disable=R0917
     def __init__(
         self,
         devPath: Optional[str] = None,
@@ -54,15 +54,13 @@ class SerialInterface(StreamInterface):
                     self,
                     debugOut=debugOut,
                     noProto=noProto,
-                    connectNow=connectNow,
+                    connectNow=False,
                     noNodes=noNodes,
                     timeout=timeout,
                 )
                 return
             elif len(ports) > 1:
-                message: str = (
-                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
-                )
+                message: str = "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
                 message += f"  Ports detected:{ports}"
                 meshtastic.util.our_exit(message)
             else:
@@ -134,5 +132,5 @@ class SerialInterface(StreamInterface):
         exc_val: Optional[BaseException],
         exc_tb: Optional[types.TracebackType],
     ) -> None:
-        """Context manager exit - ensures connection is closed."""
-        self.close()
+        """Context manager exit - delegates to parent to preserve exception logging."""
+        super().__exit__(exc_type, exc_val, exc_tb)

@@ -104,7 +104,6 @@ __all__ = [
     "DeferredExecution",
     "KnownProtocol",
     "LOCAL_ADDR",
-    "logger",
     "mesh_pb2",
     "MessageToJson",
     "mqtt_pb2",
@@ -116,7 +115,6 @@ __all__ = [
     "powermon_pb2",
     "protocols",
     "pub",
-    "publishingThread",
     "remote_hardware_pb2",
     "ResponseHandler",
     "storeforward_pb2",
@@ -352,9 +350,9 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
     if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

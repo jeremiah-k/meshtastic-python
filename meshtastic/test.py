@@ -118,10 +118,7 @@ def onReceive(packet: dict, interface: Any) -> None:
         interface (Any): Interface object that delivered the packet.
 
     """
-    if sendingInterface == interface:
-        pass
-        # print("Ignoring sending interface")
-    else:
+    if sendingInterface != interface:
         # print(f"From {interface.stream.port}: {packet}")
         p = DotMap(packet)
 

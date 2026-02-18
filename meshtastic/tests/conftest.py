@@ -75,7 +75,7 @@ class FakeTimer:
 
 
 @pytest.fixture(name="fake_timer_cls")
-def _fake_timer_cls_fixture(monkeypatch) -> Type["FakeTimer"]:
+def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"]:
     """
     Replace meshtastic.mesh_interface.threading.Timer with a deterministic FakeTimer for tests.
 

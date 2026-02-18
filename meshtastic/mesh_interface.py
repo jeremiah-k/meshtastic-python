@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -175,6 +175,8 @@ class MeshInterface:  # pylint: disable=R0902
         heartbeat_lock = getattr(self, "_heartbeat_lock", None)
         if heartbeat_lock is not None:
             with heartbeat_lock:
+                if self._closing:
+                    return
                 self._closing = True
                 timer = self.heartbeatTimer
                 self.heartbeatTimer = None
@@ -363,10 +365,7 @@ class MeshInterface:  # pylint: disable=R0902
                 "isFavorite": "Fav",
             }
 
-            if name in name_map:
-                return name_map[name]  # Return known mapped name
-            else:
-                return name
+            return name_map.get(name, name)
 
         def _format_float(
             value: Optional[Union[int, float]],
@@ -779,7 +778,9 @@ class MeshInterface:  # pylint: disable=R0902
         if (
             portNum == portnums_pb2.PortNum.UNKNOWN_APP
         ):  # we are now more strict wrt port numbers
-            our_exit("Warning: A non-zero port number must be specified")
+            raise MeshInterface.MeshInterfaceError(
+                "A non-zero port number must be specified"
+            )
 
         meshPacket = mesh_pb2.MeshPacket()
         meshPacket.channel = channelIndex
@@ -1762,7 +1763,10 @@ class MeshInterface:  # pylint: disable=R0902
                 start_heartbeat = True
         if start_heartbeat:
             self._startHeartbeat()
-        if self.isConnected.is_set():
+        # Check _closing again before publishing to avoid race with close()
+        with self._heartbeat_lock:
+            should_publish = self.isConnected.is_set() and not self._closing
+        if should_publish:
             publishingThread.queueWork(
                 lambda: pub.sendMessage(
                     "meshtastic.connection.established", interface=self
@@ -1780,9 +1784,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

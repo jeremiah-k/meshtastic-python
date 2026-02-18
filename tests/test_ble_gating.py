@@ -90,13 +90,14 @@ class TestAddrLock:
 
     def test_lock_cleanup_removes_from_registry(self):
         """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
+        key = _addr_key("testaddress")
         _get_addr_lock("testaddress")
-        assert "testaddress" in _ADDR_LOCKS
+        assert key in _ADDR_LOCKS
         # Release the holder count that was incremented by _get_addr_lock
         _release_addr_lock("testaddress")
         # Now cleanup should work since no holders remain
         _cleanup_addr_lock("testaddress")
-        assert "testaddress" not in _ADDR_LOCKS
+        assert key not in _ADDR_LOCKS
 
     def test_addr_lock_context_cleans_unconnected_lock(self):
         """Address locks should be removed after context exit when not connected."""
@@ -142,7 +143,6 @@ class TestMarkConnected:
         assert len(_CONNECTED_ADDRS) == 0
 
 
-@pytest.mark.usefixtures("clear_registry")
 class TestMarkDisconnected:
     """Test cases for _mark_disconnected function."""
 

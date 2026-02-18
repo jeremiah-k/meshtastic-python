@@ -1322,7 +1322,6 @@ def onConnected(interface: MeshInterface) -> None:
             log_set.close()
 
     except Exception as ex:
-        interface.close()  # close the connection now, so that our app exits
         meshtastic.util.our_exit(f"Aborting due to: {ex}", 1)
 
 
@@ -1397,6 +1396,32 @@ def set_missing_flags_false(
             d = d[key]
         if path[-1] not in d:
             d[path[-1]] = False
+
+
+def _prefix_base64_key(
+    security: Dict[str, Any], normalized_key_map: Dict[str, str], camel_name: str
+) -> None:
+    """
+    Prefix a security key value with 'base64:' if it is a string or list of strings.
+
+    This helper normalizes base64-encoded security keys (privateKey, publicKey, adminKey)
+    so they are clearly marked as base64-encoded in exported configuration.
+
+    Parameters
+    ----------
+        security: The security configuration dictionary to modify in-place.
+        normalized_key_map: Mapping from canonical camelCase names to actual keys in security dict.
+        camel_name: The canonical camelCase name of the key to process (e.g., "privateKey").
+
+    """
+    key = normalized_key_map.get(camel_name)
+    if not key:
+        return
+    val = security.get(key)
+    if isinstance(val, str):
+        security[key] = "base64:" + val
+    elif isinstance(val, list):
+        security[key] = ["base64:" + v if isinstance(v, str) else v for v in val]
 
 
 def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
@@ -1499,21 +1524,9 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
                     if isinstance(key, str)
                 }
 
-                private_key = normalized_key_map.get("privateKey")
-                if private_key and isinstance(security.get(private_key), str):
-                    security[private_key] = "base64:" + security[private_key]
-
-                public_key = normalized_key_map.get("publicKey")
-                if public_key and isinstance(security.get(public_key), str):
-                    security[public_key] = "base64:" + security[public_key]
-
-                admin_key = normalized_key_map.get("adminKey")
-                admin_keys = security.get(admin_key) if admin_key else None
-                if isinstance(admin_keys, list):
-                    security[admin_key] = [
-                        "base64:" + key if isinstance(key, str) else key
-                        for key in admin_keys
-                    ]
+                _prefix_base64_key(security, normalized_key_map, "privateKey")
+                _prefix_base64_key(security, normalized_key_map, "publicKey")
+                _prefix_base64_key(security, normalized_key_map, "adminKey")
         configObj["config"] = prefs
 
     module_config = MessageToDict(interface.localNode.moduleConfig)

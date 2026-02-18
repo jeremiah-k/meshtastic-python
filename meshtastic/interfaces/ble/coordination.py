@@ -10,6 +10,35 @@ from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 logger = logging.getLogger("meshtastic.ble")
 
 
+class _InertThread:
+    """
+    A thread-like object that cannot be started.
+
+    Returned by create_thread after cleanup to maintain API contract while
+    preventing orphaned thread creation.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.daemon = True
+        self.ident = None
+        self._started = False
+
+    def start(self) -> None:
+        """Raise RuntimeError: inert threads cannot be started."""
+        raise RuntimeError(
+            f"Cannot start inert thread '{self.name}': coordinator has been cleaned up"
+        )
+
+    def is_alive(self) -> bool:
+        """Return False: inert threads are never alive."""
+        return False
+
+    def join(self, timeout: Optional[float] = None) -> None:
+        """No-op: inert threads cannot be joined."""
+        _ = timeout
+
+
 class ThreadCoordinator:
     """
     Simplified thread management for BLE operations.
@@ -68,6 +97,7 @@ class ThreadCoordinator:
         Returns
         -------
             Thread: The created Thread instance (registered with the coordinator, not started).
+                After cleanup, returns an inert thread that raises RuntimeError on start().
 
         """
         with self._lock:
@@ -76,10 +106,8 @@ class ThreadCoordinator:
                 logger.warning(
                     "Cannot create thread '%s': coordinator has been cleaned up", name
                 )
-                # Return a dummy thread that won't be tracked to maintain API contract
-                return Thread(
-                    target=target, name=name, daemon=daemon, args=args, kwargs=kwargs
-                )
+                # Return an inert thread that cannot be started
+                return _InertThread(name)  # type: ignore[return-value]
             # Prune dead threads to prevent unbounded growth in long-running processes
             self._threads = [t for t in self._threads if t.is_alive()]
             thread = Thread(
@@ -115,7 +143,10 @@ class ThreadCoordinator:
         """
         Register and return a new Event object under the given name.
 
-        If an event with the same name already exists, it will be replaced and a warning is logged.
+        If an event with the same name already exists, a warning is logged and
+        the existing Event instance is returned (no replacement occurs).
+
+        This method is thread-safe and uses the coordinator's internal lock.
 
         Parameters
         ----------
@@ -123,7 +154,8 @@ class ThreadCoordinator:
 
         Returns
         -------
-            Event: The created Event instance registered under `name`.
+            Event: The created Event instance registered under `name`, or the
+                existing Event if one was already registered with that name.
 
         """
         with self._lock:
@@ -198,6 +230,7 @@ class ThreadCoordinator:
             thread (Thread): The thread to start if it is tracked and not yet started.
 
         """
+        should_start = False
         with self._lock:
             if thread not in self._threads:
                 logger.warning(
@@ -209,7 +242,11 @@ class ThreadCoordinator:
             # thread.ident is None only if the thread has never been started
             # This prevents RuntimeError from calling start() on a completed thread
             if thread.ident is None:
-                thread.start()
+                should_start = True
+        # Start outside the lock to prevent deadlocks if the new thread
+        # immediately calls back into the coordinator
+        if should_start:
+            thread.start()
 
     def startThread(self, thread: Thread) -> None:
         """Compatibility wrapper for callers using camelCase."""

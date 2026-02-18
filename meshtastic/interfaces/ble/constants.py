@@ -112,7 +112,13 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     """
     Parse a version string into a three-integer (major, minor, patch) tuple.
 
-    Non-numeric segments are ignored. If fewer than three numeric components are found the result is padded with zeros so the returned tuple always has three integers.
+    Non-numeric segments are ignored. If fewer than three numeric components are found
+    the result is padded with zeros so the returned tuple always has three integers.
+
+    Note: Any numeric segments beyond the first three are silently truncated.
+    For example, "1.2.3.post4" would yield (1, 2, 3), ignoring the "4".
+    This is acceptable for version comparison purposes where we only care about
+    the major.minor.patch components.
 
     Returns:
         tuple[int, int, int]: (major, minor, patch) extracted from the version string.

@@ -139,7 +139,7 @@ class FixmeError(Exception):
 
 def fixme(message: str) -> None:
     """Raise an exception for things that needs to be fixed."""
-    raise FixmeError(f"FIXME: {message}")
+    raise FixmeError("FIXME: " + message)
 
 
 def catchAndIgnore(reason: str, closure) -> None:

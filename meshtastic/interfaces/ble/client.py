@@ -161,9 +161,7 @@ class BLEClient:
             raise self.BLEError("Cannot pair: BLE client not initialized")
         return self.async_await(self.bleak_client.pair(**kwargs))
 
-    def connect(
-        self, *, await_timeout: Optional[float] = None, **kwargs: Any
-    ) -> Any:  # pylint: disable=C0116
+    def connect(self, *, await_timeout: Optional[float] = None, **kwargs: Any) -> Any:  # pylint: disable=C0116
         """
         Connect to the remote BLE device.
 
@@ -350,9 +348,7 @@ class BLEClient:
         )
         return self.get_services(**kwargs)
 
-    def has_characteristic(
-        self, specifier: Union[str, UUID]
-    ) -> bool:  # pylint: disable=C0116
+    def has_characteristic(self, specifier: Union[str, UUID]) -> bool:  # pylint: disable=C0116
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -563,9 +559,8 @@ class BLEClient:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
             # was happening, causing callbacks to never be processed.
-            # TODO: Remove this workaround once upstream bleak/CoreBluetooth
-            # fixes callback starvation (tracked: remove when bleak issue
-            # addressing CoreBluetooth callback delivery is resolved).
+            # TODO: Remove this workaround once upstream bleak fixes callback
+            # starvation on macOS CoreBluetooth.
             stdout = getattr(sys, "stdout", None)
             if stdout is not None and hasattr(stdout, "flush"):
                 with contextlib.suppress(ValueError, OSError, AttributeError):
@@ -640,9 +635,7 @@ class BLEClient:
         )
         return self.async_await(coro, timeout=timeout)
 
-    def async_run(
-        self, coro: Coroutine[Any, Any, Any]
-    ) -> Future[Any]:  # pylint: disable=C0116
+    def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:  # pylint: disable=C0116
         """
         Schedule the given coroutine to run on the shared BLE event loop.
 

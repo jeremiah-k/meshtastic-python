@@ -209,7 +209,7 @@ def test_catchAndIgnore(caplog):
             Exception: Always raised with message "foo".
 
         """
-        raise Exception("foo")  # pylint: disable=W0719
+        raise Exception("foo")  # pylint: disable=W0719  # noqa: TRY002
 
     with caplog.at_level(logging.DEBUG):
         catchAndIgnore("something", some_closure)
@@ -605,9 +605,9 @@ def test_message_to_json_shows_all():
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
 
 
 @pytest.mark.unit

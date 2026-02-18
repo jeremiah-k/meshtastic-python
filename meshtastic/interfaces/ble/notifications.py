@@ -95,6 +95,7 @@ class NotificationManager:
         with self._lock:
             self._active_subscriptions.clear()
             self._characteristic_to_callback.clear()
+            self._subscription_counter = 0
 
     def _unsubscribe_all(
         self, client: "BLEClient", *, timeout: Optional[float]

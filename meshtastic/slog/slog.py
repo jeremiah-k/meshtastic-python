@@ -168,6 +168,8 @@ class StructuredLogger:
             open(  # pylint: disable=consider-using-with
                 os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
             )
+            if self.include_raw
+            else None
         )
 
         # We need a closure here because the subscription API is very strict about exact arg matching

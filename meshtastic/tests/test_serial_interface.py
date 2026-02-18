@@ -1,6 +1,5 @@
 """Meshtastic unit tests for serial_interface.py."""
 
-# pylint: disable=R0917
 import logging
 import re
 import sys
@@ -12,6 +11,7 @@ from ..protobuf import config_pb2
 from ..serial_interface import SerialInterface
 
 
+# pylint: disable=R0917
 @pytest.mark.unit
 @patch("time.sleep")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
