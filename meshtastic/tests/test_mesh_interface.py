@@ -443,16 +443,14 @@ def test_sendData_too_long(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendData_unknown_app(capsys):
+def test_sendData_unknown_app():
     """Test sendData when unknown app."""
     iface = MeshInterface(noProto=True)
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface.sendData(b"hello", portNum=portnums_pb2.PortNum.UNKNOWN_APP)
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: A non-zero port number", out, re.MULTILINE)
-    assert err == ""
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
+    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+    assert "A non-zero port number must be specified" in str(pytest_wrapped_e.value)
+    iface.close()
 
 
 @pytest.mark.unit
