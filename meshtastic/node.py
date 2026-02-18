@@ -177,7 +177,7 @@ class Node:
                     getattr(adminMessage["raw"], oneof), camel_to_snake(field)
                 )
                 config_values.CopyFrom(raw_config)
-                print(f"{str(camel_to_snake(field))}:\n{str(config_values)}")
+                print(f"{camel_to_snake(field)!s}:\n{config_values!s}")
 
     def requestConfig(self, configType):
         """Request the config from the node via admin message."""
@@ -218,7 +218,9 @@ class Node:
         candidates = (
             getattr(self.iface, "MeshInterfaceError", None),
             getattr(type(self.iface), "MeshInterfaceError", None),
-            getattr(getattr(self.iface, "_spec_class", None), "MeshInterfaceError", None),
+            getattr(
+                getattr(self.iface, "_spec_class", None), "MeshInterfaceError", None
+            ),
         )
         for error_cls in candidates:
             if isinstance(error_cls, type) and issubclass(error_cls, BaseException):

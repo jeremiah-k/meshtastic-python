@@ -783,7 +783,6 @@ def test_writeConfig_with_no_radioConfig(capsys):
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
-    print(out)
     assert re.search(r"Error: No valid config with name foo", out)
     assert err == ""
 
@@ -894,8 +893,11 @@ def test_requestChannels_non_localNode_starting_index(caplog):
             assert re.search(
                 "Requesting channel 3 info from remote node", caplog.text, re.MULTILINE
             )
-            # make sure it hasn't been initialized
-            assert anode.partialChannels == [sentinel_channel]
+            # make sure it hasn't been initialized (identity check ensures list wasn't replaced)
+            assert (
+                len(anode.partialChannels) == 1
+                and anode.partialChannels[0] is sentinel_channel
+            )
 
 
 # @pytest.mark.unit
@@ -1513,7 +1515,8 @@ def test_setOwner_whitespace_only_long_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError, match="Long Name cannot be empty or contain only whitespace characters"
+        ValueError,
+        match="Long Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(long_name="   ")
 
@@ -1525,7 +1528,8 @@ def test_setOwner_empty_long_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError, match="Long Name cannot be empty or contain only whitespace characters"
+        ValueError,
+        match="Long Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(long_name="")
 
@@ -1537,7 +1541,8 @@ def test_setOwner_whitespace_only_short_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError, match="Short Name cannot be empty or contain only whitespace characters"
+        ValueError,
+        match="Short Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(short_name="   ")
 
@@ -1549,7 +1554,8 @@ def test_setOwner_empty_short_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError, match="Short Name cannot be empty or contain only whitespace characters"
+        ValueError,
+        match="Short Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(short_name="")
 
@@ -1565,8 +1571,8 @@ def test_setOwner_valid_names(caplog):
 
     # Should not raise any exceptions
     # Note: When noProto=True, _sendAdmin is not called as the method returns early
-    assert re.search(r"p.set_owner.long_name:ValidName:", caplog.text, re.MULTILINE)
-    assert re.search(r"p.set_owner.short_name:VN:", caplog.text, re.MULTILINE)
+    assert re.search(r"p\.set_owner\.long_name:ValidName:", caplog.text, re.MULTILINE)
+    assert re.search(r"p\.set_owner\.short_name:VN:", caplog.text, re.MULTILINE)
 
 
 # TODO

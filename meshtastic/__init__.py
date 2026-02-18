@@ -132,7 +132,10 @@ def __getattr__(name: str) -> Any:
     if name == "serial":
         # Keep historical `meshtastic.serial` access, but map it to our
         # internal serial interface module (not the third-party pyserial module).
-        return import_module(".serial_interface", __name__)
+        serial_module = import_module(".serial_interface", __name__)
+        # Cache in module namespace so subsequent accesses bypass __getattr__
+        globals()["serial"] = serial_module
+        return serial_module
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

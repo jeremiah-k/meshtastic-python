@@ -44,7 +44,7 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
     logger,
 )
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
     _ble_device_constructor_kwargs_support,
@@ -240,7 +240,7 @@ class BLEInterface(MeshInterface):
         logger.debug("Threads starting")
         with self._state_lock:
             self._want_receive = True
-        self._receiveThread: Optional[Thread] = None
+        self._receiveThread: Optional[ThreadLike] = None
         self._start_receive_thread(name="BLEReceive")
         logger.debug("Threads running")
         try:
@@ -1071,13 +1071,13 @@ class BLEInterface(MeshInterface):
         if self._closed or self.is_connection_closing:
             raise self.BLEError("Cannot connect while interface is closing")
 
-    def _should_suppress_duplicate_connect(self, addr_key: Optional[str]) -> bool:
+    def _should_suppress_duplicate_connect(self, connection_key: Optional[str]) -> bool:
         """
         Check if a connection should be suppressed due to a recent connect elsewhere.
 
         Parameters
         ----------
-            addr_key (Optional[str]): The address key to check, or None for discovery mode.
+            connection_key (Optional[str]): The address key to check, or None for discovery mode.
 
         Returns
         -------
@@ -1085,8 +1085,8 @@ class BLEInterface(MeshInterface):
 
         """
         return bool(
-            addr_key
-            and is_currently_connected_elsewhere(addr_key, owner=self)
+            connection_key
+            and is_currently_connected_elsewhere(connection_key, owner=self)
             and not self._state_manager.is_connected
         )
 
@@ -1807,7 +1807,8 @@ class BLEInterface(MeshInterface):
                 )
             except Exception:
                 logger.debug(
-                    f"Error publishing {'connect' if connected else 'disconnect'} status",
+                    "Error publishing %s status",
+                    "connect" if connected else "disconnect",
                     exc_info=True,
                 )
 

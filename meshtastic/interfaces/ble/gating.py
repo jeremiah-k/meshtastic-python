@@ -17,7 +17,9 @@ Context Manager Usage:
         with _addr_lock_context(address) as lock:
             with lock:
                 # Connection logic here
-                # On success: _mark_connected(address) handles holder count
+                # On success: _mark_connected(address) records the address in _CONNECTED_ADDRS
+                # (it does not touch _LOCK_HOLDERS), which prevents _release_addr_lock_by_key
+                # from removing the lock entry when the context exits.
                 # On failure/exception: context manager releases holder count
 """
 
@@ -228,7 +230,7 @@ def _owner_connected_state(owner: Any) -> Optional[bool]:
     if callable(connection_state):
         try:
             connection_state = connection_state()
-        except Exception:
+        except (AttributeError, TypeError, RuntimeError):
             logger.debug(
                 "Failed to read owner connection state; preserving gate claim.",
                 exc_info=True,

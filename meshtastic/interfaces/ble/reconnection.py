@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
-from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.gating import (
     addr_key,
     is_currently_connected_elsewhere,
@@ -54,7 +54,7 @@ class ReconnectScheduler:
             max_retries=None,
         )
         self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
-        self._reconnect_thread: Optional[Thread] = None
+        self._reconnect_thread: Optional[ThreadLike] = None
 
     def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """

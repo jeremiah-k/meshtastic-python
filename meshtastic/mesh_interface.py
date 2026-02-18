@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -183,6 +183,15 @@ class MeshInterface:  # pylint: disable=R0902
             if timer:
                 timer.cancel()
             self._sendDisconnect()
+        # Close debugOut file handle if it was opened (e.g., by openDebugLog)
+        debug_out = getattr(self, "debugOut", None)
+        if debug_out is not None and hasattr(debug_out, "close"):
+            try:
+                debug_out.close()
+            except Exception as e:
+                logger.debug("Error closing debugOut: %s", e)
+            finally:
+                self.debugOut = None
 
     def __enter__(self) -> "MeshInterface":
         """
@@ -1784,9 +1793,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

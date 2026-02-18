@@ -3,11 +3,14 @@
 import logging
 import warnings
 from threading import Event, RLock, Thread, current_thread
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 
 logger = logging.getLogger("meshtastic.ble")
+
+# Type alias for objects that behave like Thread (Thread or _InertThread)
+ThreadLike = Union["Thread", "_InertThread"]
 
 _INERT_THREAD_START_ERROR = (
     "Cannot start inert thread '{name}': coordinator has been cleaned up"
@@ -80,7 +83,7 @@ class ThreadCoordinator:
         daemon: bool = True,
         args: Tuple[Any, ...] = (),
         kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Thread:
+    ) -> ThreadLike:
         """
         Create and register a Thread with the coordinator without starting it.
 
@@ -109,7 +112,7 @@ class ThreadCoordinator:
                     "Cannot create thread '%s': coordinator has been cleaned up", name
                 )
                 # Return an inert thread that cannot be started
-                return _InertThread(name)  # type: ignore[return-value]
+                return _InertThread(name)
             # Prune dead threads to prevent unbounded growth in long-running processes
             self._threads = [t for t in self._threads if t.is_alive()]
             thread = Thread(
@@ -126,7 +129,7 @@ class ThreadCoordinator:
         daemon: bool = True,
         args: Tuple[Any, ...] = (),
         kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Thread:
+    ) -> ThreadLike:
         """Compatibility wrapper for callers using camelCase."""
         warnings.warn(
             "createThread is deprecated; use create_thread instead",
@@ -221,7 +224,7 @@ class ThreadCoordinator:
         )
         return self.get_event(name)
 
-    def start_thread(self, thread: Thread) -> None:
+    def start_thread(self, thread: ThreadLike) -> None:
         """
         Start a tracked Thread if it has not been started yet.
 
@@ -229,7 +232,7 @@ class ThreadCoordinator:
 
         Parameters
         ----------
-            thread (Thread): The thread to start if it is tracked and not yet started.
+            thread (ThreadLike): The thread to start if it is tracked and not yet started.
 
         """
         should_start = False
@@ -250,7 +253,7 @@ class ThreadCoordinator:
         if should_start:
             thread.start()
 
-    def startThread(self, thread: Thread) -> None:
+    def startThread(self, thread: ThreadLike) -> None:
         """Compatibility wrapper for callers using camelCase."""
         warnings.warn(
             "startThread is deprecated; use start_thread instead",
@@ -259,7 +262,7 @@ class ThreadCoordinator:
         )
         self.start_thread(thread)
 
-    def join_thread(self, thread: Thread, timeout: Optional[float] = None) -> None:
+    def join_thread(self, thread: ThreadLike, timeout: Optional[float] = None) -> None:
         """
         Join a tracked thread if it is alive and not the current thread.
 
@@ -281,7 +284,7 @@ class ThreadCoordinator:
         if should_join:
             thread.join(timeout=timeout)
 
-    def joinThread(self, thread: Thread, timeout: Optional[float] = None) -> None:
+    def joinThread(self, thread: ThreadLike, timeout: Optional[float] = None) -> None:
         """
         Deprecated camelCase alias that joins a tracked Thread if it is alive and not the current thread; emits a DeprecationWarning and delegates to the new behavior.
 
@@ -499,7 +502,7 @@ class ThreadCoordinator:
         """
         Perform a coordinated shutdown by waking tracked events, joining live tracked threads (except the current thread), and clearing internal registries.
 
-        Sets every tracked Event to wake any waiting threads, collects live tracked Thread objects (excluding the current thread), clears the coordinator's thread and event registries under the coordinator lock, and then joins the collected threads outside the lock using the timeout defined by EVENT_THREAD_JOIN_TIMEOUT. After cleanup is called, create_thread will log a warning and return an untracked Thread to avoid creating orphaned threads.
+        Sets every tracked Event to wake any waiting threads, collects live tracked Thread objects (excluding the current thread), clears the coordinator's thread and event registries under the coordinator lock, and then joins the collected threads outside the lock using the timeout defined by EVENT_THREAD_JOIN_TIMEOUT. After cleanup is called, create_thread will log a warning and return an _InertThread that raises RuntimeError on start() to prevent orphaned thread creation.
         """
         with self._lock:
             # Mark as cleaned up to prevent new thread creation

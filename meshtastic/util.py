@@ -137,13 +137,13 @@ class FixmeError(Exception):
     """Exception for marking code that needs to be fixed."""
 
 
-def fixme(message: str) -> None:
-    """Raise an exception for things that needs to be fixed."""
+def fixme(message: str) -> NoReturn:
+    """Raise an exception for things that need to be fixed."""
     raise FixmeError("FIXME: " + message)
 
 
 def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
-    """Call a closure but if it throws an exception print it and continue."""
+    """Call a closure but if it throws an exception log it and continue."""
     try:
         closure()
     except Exception:
@@ -237,7 +237,10 @@ class Timeout:
         return False
 
     def waitForTraceRoute(
-        self, waitFactor, acknowledgment, attr="receivedTraceRoute"
+        self,
+        waitFactor: float,
+        acknowledgment: "Acknowledgment",
+        attr: str = "receivedTraceRoute",
     ) -> bool:
         """Block until traceroute response is received. Returns True if traceroute response has been received."""
         self.reset(self.expireTimeout * waitFactor)

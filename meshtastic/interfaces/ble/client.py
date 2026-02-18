@@ -316,7 +316,7 @@ class BLEClient:
         )
         self.write_gatt_char(*args, timeout=timeout, **kwargs)
 
-    def get_services(self, **kwargs: Any) -> Any:
+    def get_services(self, **_kwargs: Any) -> Any:
         """
         Retrieve the underlying Bleak client's discovered GATT services and characteristics.
 
@@ -578,7 +578,7 @@ class BLEClient:
         except FutureTimeoutError as e:
             try:
                 future.cancel()  # Clean up pending task to avoid resource leaks
-            except Exception:  # pragma: no cover - defensive
+            except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
                 logger.debug(
                     "Failed to cancel BLE future after timeout",
                     exc_info=True,
@@ -590,7 +590,7 @@ class BLEClient:
                         f.exception() if not f.cancelled() else None
                     )  # pragma: no cover - best effort suppression
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - best effort
                 # Event loop may be closing; ignore best-effort callback registration
                 logger.debug(
                     "Skipping callback registration after timeout",
@@ -601,7 +601,7 @@ class BLEClient:
             # RuntimeError here typically indicates loop shutdown/closure, not a timeout.
             try:
                 future.cancel()
-            except Exception:  # pragma: no cover - defensive
+            except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
                 logger.debug(
                     "Failed to cancel BLE future after runtime error",
                     exc_info=True,
