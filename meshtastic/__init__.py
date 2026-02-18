@@ -66,6 +66,7 @@ interface = meshtastic.serial_interface.SerialInterface()
 """
 
 import logging
+from importlib import import_module
 from typing import Any, Callable, Dict, NamedTuple, Optional
 
 from google.protobuf.json_format import MessageToJson
@@ -131,9 +132,7 @@ def __getattr__(name: str) -> Any:
     Provide lazy compatibility aliases for selected module attributes.
     """
     if name == "serial":
-        from . import serial_interface
-
-        return serial_interface
+        return import_module(".serial_interface", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
