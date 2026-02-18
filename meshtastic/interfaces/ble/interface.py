@@ -64,7 +64,7 @@ from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import _sleep, sanitize_address
-from meshtastic.mesh_interface import MeshInterface, pub as mesh_pub  # type: ignore[attr-defined]
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
@@ -1809,6 +1809,9 @@ class BLEInterface(MeshInterface):
             connected (bool): True if connected, False if disconnected.
 
         """
+        from meshtastic.mesh_interface import (
+            pub as mesh_pub,  # type: ignore[attr-defined]
+        )
 
         def _publish_status():
             try:
