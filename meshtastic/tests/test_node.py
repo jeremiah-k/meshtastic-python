@@ -858,7 +858,7 @@ def test_requestChannels_non_localNode(caplog):
             assert re.search(
                 "Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
             )
-            assert anode.partialChannels == []
+            assert not anode.partialChannels
 
 
 @pytest.mark.unit
