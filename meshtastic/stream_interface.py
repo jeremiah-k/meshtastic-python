@@ -55,6 +55,10 @@ class StreamInterface(MeshInterface):
 
         """
 
+        # Initialize disconnect provenance early so pylint (and callers) see a
+        # defined attribute even if initialization aborts before stream setup.
+        self._last_disconnect_source = "stream.initialized"
+
         if not hasattr(self, "stream") and not noProto:
             raise StreamInterface.StreamInterfaceError(
                 StreamInterface.StreamInterfaceError.DEFAULT_MSG
@@ -65,7 +69,6 @@ class StreamInterface(MeshInterface):
         )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
-        self._last_disconnect_source = "stream.initialized"
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
