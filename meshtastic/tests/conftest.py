@@ -141,7 +141,7 @@ def iface_with_nodes():
 
 
 @pytest.fixture
-def mock_serial_interface():
+def mock_serial_interface() -> MagicMock:
     """
     Create a mock SerialInterface with pre-configured attributes for Node tests.
 

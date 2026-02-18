@@ -137,4 +137,4 @@ class SerialInterface(StreamInterface):
         exc_tb: Optional[types.TracebackType],
     ) -> None:
         """Context manager exit - delegates to parent to preserve exception logging."""
-        super().__exit__(exc_type, exc_val, exc_tb)
+        return super().__exit__(exc_type, exc_val, exc_tb)

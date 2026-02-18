@@ -64,7 +64,7 @@ from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import _sleep, sanitize_address
-from meshtastic.mesh_interface import MeshInterface
+from meshtastic.mesh_interface import MeshInterface, pub as mesh_pub  # type: ignore[attr-defined]
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
@@ -172,6 +172,9 @@ class BLEInterface(MeshInterface):
         self._last_connection_request: Optional[str] = sanitize_address(address)
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
+        self._last_disconnect_source: str = (
+            ""  # Set by _handle_disconnect on each disconnect
+        )
         self._connection_alias_key: Optional[str] = None  # Track alias for cleanup
 
         # Error handling infrastructure
@@ -1806,9 +1809,6 @@ class BLEInterface(MeshInterface):
             connected (bool): True if connected, False if disconnected.
 
         """
-        from meshtastic.mesh_interface import (
-            pub as mesh_pub,  # type: ignore[attr-defined]
-        )
 
         def _publish_status():
             try:

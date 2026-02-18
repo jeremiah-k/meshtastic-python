@@ -31,6 +31,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Validation error messages for setOwner
+EMPTY_LONG_NAME_MSG = "Long Name cannot be empty or contain only whitespace characters"
+EMPTY_SHORT_NAME_MSG = (
+    "Short Name cannot be empty or contain only whitespace characters"
+)
+
 
 class Node:
     """A model of a (local or remote) node in the mesh.
@@ -214,17 +220,6 @@ class Node:
 
     def _raise_interface_error(self, message: str) -> NoReturn:
         """Raise a mesh-interface-style exception even when iface is a test double."""
-        candidates = (
-            getattr(self.iface, "MeshInterfaceError", None),
-            getattr(type(self.iface), "MeshInterfaceError", None),
-            getattr(
-                getattr(self.iface, "_spec_class", None), "MeshInterfaceError", None
-            ),
-        )
-        for error_cls in candidates:
-            if isinstance(error_cls, type) and issubclass(error_cls, BaseException):
-                raise error_cls(message)
-        # Fallback for callers/test doubles that don't expose MeshInterfaceError.
         from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
             MeshInterface,
         )
@@ -394,18 +389,14 @@ class Node:
             long_name = long_name.strip()
             # Validate that long_name is not empty or whitespace-only
             if not long_name:
-                raise ValueError(
-                    "Long Name cannot be empty or contain only whitespace characters"
-                )
+                raise ValueError(EMPTY_LONG_NAME_MSG)
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
         if short_name is not None:
             short_name = short_name.strip()
             # Validate that short_name is not empty or whitespace-only
             if not short_name:
-                raise ValueError(
-                    "Short Name cannot be empty or contain only whitespace characters"
-                )
+                raise ValueError(EMPTY_SHORT_NAME_MSG)
             if len(short_name) > nChars:
                 short_name = short_name[:nChars]
                 print(f"Maximum is 4 characters, truncated to {short_name}")
@@ -1085,7 +1076,7 @@ class Node:
     def _sendAdmin(
         self,
         p: admin_pb2.AdminMessage,
-        wantResponse: bool = True,
+        wantResponse: bool = False,
         onResponse=None,
         adminIndex: int = 0,
     ):
