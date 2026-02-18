@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from typing import Any, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from hypothesis import assume, given
@@ -183,7 +183,9 @@ def test_fixme():
 
 @pytest.mark.unit
 @patch("meshtastic.util.check_if_newer_version", return_value=None)
-def test_support_info(_mock_check_if_newer_version, capsys):
+def test_support_info(
+    _mock_check_if_newer_version: MagicMock, capsys: pytest.CaptureFixture[str]
+) -> None:
     """
     Verify support_info outputs system and environment information and writes no error output.
 
@@ -606,9 +608,9 @@ def test_message_to_json_shows_all():
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
 
 
 @pytest.mark.unit

@@ -60,9 +60,7 @@ class SerialInterface(StreamInterface):
                 )
                 return
             elif len(ports) > 1:
-                message: str = (
-                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
-                )
+                message: str = "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
                 message += f"  Ports detected:{ports}"
                 meshtastic.util.our_exit(message)
             else:
@@ -117,7 +115,11 @@ class SerialInterface(StreamInterface):
     def close(self) -> None:
         """Close a connection to the device."""
         if self.stream:  # Stream can be null if we were already closed
-            self.stream.flush()  # FIXME: why are there these  two flushes with 100ms sleeps?  This shouldn't be necessary
+            # Flush and sleep to ensure all pending data is transmitted before closing.
+            # This workaround ensures the device receives all data before the serial
+            # connection is terminated, particularly important for some USB-serial
+            # adapters and hardware configurations.
+            self.stream.flush()
             time.sleep(0.1)
             self.stream.flush()
             time.sleep(0.1)

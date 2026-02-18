@@ -265,7 +265,7 @@ def test_shutdown(caplog):
 @pytest.mark.unit
 def test_setURL_empty_url():
     """Test setURL with an empty URL."""
-    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
+    anode = Node(MagicMock(spec=MeshInterface), "!12345678", noProto=True)
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
     ):
@@ -774,17 +774,15 @@ def test_getChannelByChannelIndex():
 
 
 @pytest.mark.unit
-def test_writeConfig_with_no_radioConfig(capsys):
-    """Test writeConfig with no radioConfig."""
-    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
+def test_writeConfig_with_no_radioConfig():
+    """Test writeConfig raises MeshInterfaceError for invalid config name."""
+    anode = Node(MagicMock(spec=MeshInterface), "!12345678", noProto=True)
 
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Error: No valid config with name foo",
+    ):
         anode.writeConfig("foo")
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    assert re.search(r"Error: No valid config with name foo", out)
-    assert err == ""
 
 
 @pytest.mark.unit

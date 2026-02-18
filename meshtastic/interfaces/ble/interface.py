@@ -52,6 +52,7 @@ from meshtastic.interfaces.ble.discovery import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
+    _REGISTRY_LOCK,
     _addr_lock_context,
     _mark_connected,
     _mark_disconnected,
@@ -396,7 +397,9 @@ class BLEInterface(MeshInterface):
         """
         Mark the given address keys as connected in the interface's internal registry.
 
-        Ignores `None` or empty keys. Acquires per-address locks in a deterministic order to avoid lock-ordering races while updating connection state.
+        Ignores `None` or empty keys. Acquires the global registry lock first, then
+        per-address locks in a deterministic order to maintain consistent lock ordering
+        and prevent deadlocks.
 
         Parameters
         ----------
@@ -406,15 +409,19 @@ class BLEInterface(MeshInterface):
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
             return
-        with self._lock_ordered_address_keys(ordered_keys):
-            for key in ordered_keys:
-                _mark_connected(key, owner=self)
+        # Acquire registry lock first to maintain consistent lock ordering
+        # (registry -> per-address -> interface locks)
+        with _REGISTRY_LOCK:
+            with self._lock_ordered_address_keys(ordered_keys):
+                for key in ordered_keys:
+                    _mark_connected(key, owner=self)
 
     def _mark_address_keys_disconnected(self, *keys: Optional[str]) -> None:
         """
-        Mark the given address keys as disconnected while acquiring per-address locks in a deterministic order.
+        Mark the given address keys as disconnected while maintaining proper lock ordering.
 
-        Acquires each address's lock (using deterministic ordering to avoid deadlocks) and marks the address key as disconnected. None or empty keys are ignored.
+        Acquires the global registry lock first, then per-address locks in a deterministic
+        order to prevent deadlocks. None or empty keys are ignored.
 
         Parameters
         ----------
@@ -424,9 +431,12 @@ class BLEInterface(MeshInterface):
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
             return
-        with self._lock_ordered_address_keys(ordered_keys):
-            for key in ordered_keys:
-                _mark_disconnected(key, owner=self)
+        # Acquire registry lock first to maintain consistent lock ordering
+        # (registry -> per-address -> interface locks)
+        with _REGISTRY_LOCK:
+            with self._lock_ordered_address_keys(ordered_keys):
+                for key in ordered_keys:
+                    _mark_disconnected(key, owner=self)
 
     def _handle_disconnect(
         self,

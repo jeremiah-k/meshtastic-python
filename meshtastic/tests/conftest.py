@@ -146,13 +146,17 @@ def mock_serial_interface():
     """
     Create a mock SerialInterface with pre-configured attributes for Node tests.
 
+    Note: We use MagicMock without spec because localNode and myInfo are instance
+    attributes set in MeshInterface.__init__, not class attributes. Using spec would
+    prevent access to these attributes since they don't exist at the class level.
+
     Returns:
-        A MagicMock with autospec=SerialInterface, configured with:
+        A MagicMock configured with:
         - localNode.getChannelByName returns None
         - myInfo.max_channels = 8
 
     """
-    mock_iface = MagicMock(autospec=SerialInterface)
+    mock_iface = MagicMock()
     mock_iface.localNode.getChannelByName.return_value = None
     mock_iface.myInfo.max_channels = 8
     return mock_iface

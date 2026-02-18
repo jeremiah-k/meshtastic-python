@@ -21,7 +21,6 @@ from meshtastic.util import (
     fromPSK,
     generate_channel_hash,
     message_to_json,
-    our_exit,
     pskToString,
     stripnl,
     to_node_num,
@@ -292,7 +291,9 @@ class Node:
         elif config_name == "paxcounter":
             p.set_module_config.paxcounter.CopyFrom(self.moduleConfig.paxcounter)
         else:
-            our_exit(f"Error: No valid config with name {config_name}")
+            self._raise_interface_error(
+                f"Error: No valid config with name {config_name}"
+            )
 
         logger.debug(f"Wrote: {config_name}")
         if self == self.iface.localNode:
@@ -455,7 +456,7 @@ class Node:
         else:
             splitURL = url.split("/#")
         if len(splitURL) == 1:
-            our_exit(f"Warning: Invalid URL '{url}'")
+            self._raise_interface_error(f"Warning: Invalid URL '{url}'")
         b64 = splitURL[-1]
 
         # We normally strip padding to make for a shorter URL, but the python parser doesn't like
@@ -470,7 +471,7 @@ class Node:
         channelSet.ParseFromString(decodedURL)
 
         if len(channelSet.settings) == 0:
-            our_exit("Warning: There were no settings.")
+            self._raise_interface_error("Warning: There were no settings.")
 
         if addOnly:
             # Add new channels with names not already present
@@ -484,7 +485,7 @@ class Node:
                     continue
                 ch = self.getDisabledChannel()
                 if not ch:
-                    our_exit("Warning: No free channels were found")
+                    self._raise_interface_error("Warning: No free channels were found")
                 ch.settings.CopyFrom(chs)
                 ch.role = channel_pb2.Channel.Role.SECONDARY
                 print(f"Adding new channel '{chs.name}' to device")
@@ -565,7 +566,9 @@ class Node:
             return None
 
         if len(ringtone) > 230:
-            our_exit("Warning: The ringtone must be less than 230 characters.")
+            self._raise_interface_error(
+                "Warning: The ringtone must be less than 230 characters."
+            )
         self.ensureSessionKey()
         # split into chunks
         chunks = []
@@ -646,7 +649,9 @@ class Node:
             return None
 
         if len(message) > 200:
-            our_exit("Warning: The canned message must be less than 200 characters.")
+            self._raise_interface_error(
+                "Warning: The canned message must be less than 200 characters."
+            )
         self.ensureSessionKey()
         # split into chunks
         chunks = []
