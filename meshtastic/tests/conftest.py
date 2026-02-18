@@ -9,7 +9,6 @@ import pytest
 from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
-from ..serial_interface import SerialInterface
 
 
 def _create_context_manager_mock(spec_class: Type) -> MagicMock:
