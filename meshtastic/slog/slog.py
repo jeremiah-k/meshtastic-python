@@ -176,11 +176,11 @@ class StructuredLogger:
         self._listen_glue = (
             listen_glue  # we must save this so it doesn't get garbage collected
         )
-        self._listener = pub.subscribe(listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
+        pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
 
     def close(self) -> None:
         """Stop logging."""
-        pub.unsubscribe(self._listener, TOPIC_MESHTASTIC_LOG_LINE)
+        pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         self.writer.close()
         f = self.raw_file
         self.raw_file = None  # mark that we are shutting down
