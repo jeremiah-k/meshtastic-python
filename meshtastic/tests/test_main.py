@@ -896,7 +896,7 @@ def test_main_sendtext_with_dest(
     caplog,
 ):
     """Test --sendtext with --dest."""
-    sys.argv = ["", "--sendtext", "hello", "--dest", "foo"]
+    sys.argv = ["", "--sendtext", "hello", "--dest", "!12345678"]
     mt_config.args = sys.argv
 
     with SerialInterface(noProto=True, connectNow=False) as serialInterface:
@@ -915,9 +915,6 @@ def test_main_sendtext_with_dest(
                 out, err = capsys.readouterr()
                 assert re.search(r"Connected to radio", out, re.MULTILINE)
             assert re.search(r"Not sending packet", caplog.text, re.MULTILINE)
-            assert re.search(
-                r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE
-            )
             assert err == ""
 
 

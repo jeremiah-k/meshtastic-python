@@ -42,18 +42,18 @@ class Node:
     def __init__(
         self,
         iface: "MeshInterface",
-        nodeNum: int,
+        nodeNum: Union[int, str],
         noProto: bool = False,
         timeout: float = 300.0,
     ) -> None:
         """Initialize a node model."""
         self.iface = iface
-        self.nodeNum = nodeNum
+        self.nodeNum = to_node_num(nodeNum) if isinstance(nodeNum, str) else nodeNum
         self.localConfig = localonly_pb2.LocalConfig()
         self.moduleConfig = localonly_pb2.LocalModuleConfig()
-        self.channels = None
+        self.channels: Optional[List[channel_pb2.Channel]] = None
         self._timeout = Timeout(maxSecs=timeout)
-        self.partialChannels: Optional[List] = None
+        self.partialChannels: List[channel_pb2.Channel] = []
         self.noProto = noProto
         self.cannedPluginMessage = None
         self.cannedPluginMessageMessages = None
@@ -134,7 +134,8 @@ class Node:
         # only initialize if we're starting out fresh
         if startingIndex == 0:
             self.channels = None
-            self.partialChannels = []  # We keep our channels in a temp array until finished
+            # We keep our channels in a temp array until finished
+            self.partialChannels = []
         self._requestChannel(startingIndex)
 
     def onResponseRequestSettings(self, p):
@@ -187,14 +188,14 @@ class Node:
             print("Requesting current config from remote node (this can take a while).")
         p = admin_pb2.AdminMessage()
         if isinstance(configType, int):
-            p.get_config_request = configType
+            p.get_config_request = configType  # type: ignore[assignment]
 
         else:
             msgIndex = configType.index
             if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = msgIndex
+                p.get_config_request = msgIndex  # type: ignore[assignment]
             else:
-                p.get_module_config_request = msgIndex
+                p.get_module_config_request = msgIndex  # type: ignore[assignment]
 
         self._sendAdmin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:
@@ -202,6 +203,8 @@ class Node:
 
     def turnOffEncryptionOnPrimaryChannel(self):
         """Turn off encryption on primary channel."""
+        if self.channels is None:
+            our_exit("Error: No channels have been read")
         self.channels[0].settings.psk = fromPSK("none")
         print("Writing modified channels to device")
         self.writeChannel(0)
@@ -281,6 +284,8 @@ class Node:
 
     def writeChannel(self, channelIndex, adminIndex=0):
         """Write the current (edited) channel to the device."""
+        if self.channels is None:
+            our_exit("Error: No channels have been read")
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(self.channels[channelIndex])
@@ -299,6 +304,8 @@ class Node:
 
     def deleteChannel(self, channelIndex):
         """Delete the specified channelIndex and shift other channels up."""
+        if self.channels is None:
+            our_exit("Error: No channels have been read")
         ch = self.channels[channelIndex]
         if ch.role not in (
             channel_pb2.Channel.Role.SECONDARY,
@@ -334,6 +341,8 @@ class Node:
 
     def getDisabledChannel(self):
         """Return the first channel that is disabled (i.e. available for some new use)."""
+        if self.channels is None:
+            return None
         for c in self.channels:
             if c.role == channel_pb2.Channel.Role.DISABLED:
                 return c
@@ -905,24 +914,30 @@ class Node:
 
     def _fixupChannels(self):
         """Fixup indexes and add disabled channels as needed."""
+        channels = self.channels
+        if channels is None:
+            return
 
         # Add extra disabled channels as needed
         # This is needed because the protobufs will have index **missing** if the channel number is zero
-        for index, ch in enumerate(self.channels):
+        for index, ch in enumerate(channels):
             ch.index = index  # fixup indexes
 
         self._fillChannels()
 
     def _fillChannels(self):
         """Mark unused channels as disabled."""
+        channels = self.channels
+        if channels is None:
+            return
 
         # Add extra disabled channels as needed
-        index = len(self.channels)
+        index = len(channels)
         while index < 8:
             ch = channel_pb2.Channel()
             ch.role = channel_pb2.Channel.Role.DISABLED
             ch.index = index
-            self.channels.append(ch)
+            channels.append(ch)
             index += 1
 
     def onRequestGetMetadata(self, p):
@@ -1061,10 +1076,11 @@ class Node:
                 adminIndex = self.iface.localNode._getAdminChannelIndex()
             logger.debug(f"adminIndex:{adminIndex}")
             nodeid = to_node_num(self.nodeNum)
-            if "adminSessionPassKey" in self.iface._getOrCreateByNum(nodeid):
-                p.session_passkey = self.iface._getOrCreateByNum(nodeid).get(
-                    "adminSessionPassKey"
-                )
+            node_info = self.iface._getOrCreateByNum(nodeid)
+            if "adminSessionPassKey" in node_info:
+                passkey = node_info.get("adminSessionPassKey")
+                if isinstance(passkey, bytes):
+                    p.session_passkey = passkey
             return self.iface.sendData(
                 p,
                 self.nodeNum,
