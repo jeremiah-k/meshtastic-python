@@ -1,7 +1,7 @@
 """Error handling utilities for BLE operations."""
 
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Callable, Type
+from typing import Any, Callable, Optional, Type, TypeVar
 
 from bleak.exc import BleakError
 
@@ -23,6 +23,8 @@ else:
 
 __all__ = ["BLEErrorHandler", "DecodeError"]
 
+T = TypeVar("T")
+
 
 class BLEErrorHandler:
     """Helper class for consistent error handling in BLE operations.
@@ -38,12 +40,12 @@ class BLEErrorHandler:
 
     @staticmethod
     def _safe_execute(
-        func: Callable[[], Any],
-        default_return: Any = None,
+        func: Callable[[], T],
+        default_return: Optional[T] = None,
         log_error: bool = True,
         error_msg: str = "Error in operation",
         reraise: bool = False,
-    ) -> Any:
+    ) -> Optional[T]:
         """
         Execute a zero-argument callable and return its result, or fall back to a provided default or re-raise on error.
 

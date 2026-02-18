@@ -9,7 +9,7 @@ import threading
 import time
 from queue import Empty
 from threading import Event, Thread
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -715,7 +715,7 @@ class BLEInterface(MeshInterface):
                 error_msg=error_msg,
             )
 
-        def _safe_legacy_handler(sender, data):
+        def _safe_legacy_handler(sender: Any, data: Union[bytes, bytearray]) -> None:
             """
             Call the legacy log-radio notification handler for a received BLE notification and suppress any exceptions raised by the handler.
 
@@ -732,7 +732,7 @@ class BLEInterface(MeshInterface):
                 "Error in legacy log notification handler",
             )
 
-        def _safe_log_handler(sender, data):
+        def _safe_log_handler(sender: Any, data: Union[bytes, bytearray]) -> None:
             """
             Forward a BLE log-characteristic notification to the configured log handler and record an error if the handler raises.
 
@@ -749,7 +749,7 @@ class BLEInterface(MeshInterface):
                 "Error in log notification handler",
             )
 
-        def _safe_from_num_handler(sender, data):
+        def _safe_from_num_handler(sender: Any, data: bytes) -> None:
             """
             Call the FROMNUM notification handler and report any exceptions raised during its execution.
 

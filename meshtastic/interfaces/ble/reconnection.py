@@ -234,8 +234,10 @@ class ReconnectWorker:
                         exc_info=True,
                     )
                     # Use longer delay for DBus errors to allow system Bluetooth stack to recover
+                    # override_delay is None at loop start; coalesce to 0 for max() comparison
                     override_delay = max(
-                        override_delay or 0, DBUS_ERROR_RECONNECT_DELAY
+                        override_delay if override_delay is not None else 0,
+                        DBUS_ERROR_RECONNECT_DELAY,
                     )
                     # State transition to ERROR and DISCONNECTED is already handled by
                     # the connection orchestrator, so we don't need to do it here
@@ -253,7 +255,10 @@ class ReconnectWorker:
                         if isinstance(err, BleakDeviceNotFoundError)
                         else BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
                     )
-                    override_delay = max(override_delay or 0, delay_hint)
+                    # override_delay is None at loop start; coalesce to 0 for max() comparison
+                    override_delay = max(
+                        override_delay if override_delay is not None else 0, delay_hint
+                    )
                 except Exception:
                     if self._should_abort_reconnect(auto_reconnect, "unexpected error"):
                         return

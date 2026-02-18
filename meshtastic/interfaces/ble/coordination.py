@@ -128,7 +128,10 @@ class ThreadCoordinator:
         """
         with self._lock:
             if name in self._events:
-                logger.warning("Replacing existing event: %s", name)
+                logger.warning(
+                    "Event already exists: %s, returning existing instance", name
+                )
+                return self._events[name]
             event = Event()
             self._events[name] = event
             return event

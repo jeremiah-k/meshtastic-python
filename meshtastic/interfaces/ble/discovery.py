@@ -412,7 +412,13 @@ class DiscoveryManager:
             # Accept BLEClient instances or any object with the required interface
             # (duck typing allows test fixtures while still catching errors)
             if not isinstance(self._client, BLEClient):
-                required_attrs = ("discover", "__enter__", "__exit__")
+                required_attrs = (
+                    "discover",
+                    "__enter__",
+                    "__exit__",
+                    "start_notify",
+                    "stop_notify",
+                )
                 missing = [a for a in required_attrs if not hasattr(self._client, a)]
                 if missing:
                     raise RuntimeError(

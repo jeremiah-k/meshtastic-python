@@ -304,6 +304,15 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
                     key,
                 )
                 return
+            # Also check owner ID when weakref is unavailable (non-weakrefable objects)
+            if current_owner is None:
+                stored_id = _CONNECTED_OWNER_IDS.get(key)
+                if stored_id is not None and stored_id != id(owner):
+                    logger.debug(
+                        "Ignoring disconnect mark for %s from non-owner instance.",
+                        key,
+                    )
+                    return
         _remove_connected_record_locked(key)
         _cleanup_addr_lock(key)
 

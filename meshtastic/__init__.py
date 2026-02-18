@@ -283,7 +283,7 @@ def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
 
     toUpdate = None
 
-    telemetry = asDict.get("decoded", {}).get("telemetry", {})
+    telemetry = asDict.get("decoded", {}).get("telemetry") or {}
     node = iface._getOrCreateByNum(asDict["from"])
     if "deviceMetrics" in telemetry:
         toUpdate = "deviceMetrics"

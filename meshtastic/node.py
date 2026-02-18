@@ -59,7 +59,7 @@ class Node:
         if self.noProto:
             r += ", noProto=True"
         if self._timeout.expireTimeout != 300.0:
-            r += ", timeout={self._timeout.expireTimeout!r}"
+            r += f", timeout={self._timeout.expireTimeout!r}"
         r += ")"
         return r
 
@@ -494,7 +494,7 @@ class Node:
         """Get the ringtone. Concatenate all pieces together and return a single string."""
         logger.debug(f"in get_ringtone()")
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logging.warning(
+            logger.warning(
                 "External Notification module not present (excluded by firmware)"
             )
             return None
@@ -521,7 +521,7 @@ class Node:
     def set_ringtone(self, ringtone):
         """Set the ringtone. The ringtone length must be less than 230 character."""
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
-            logging.warning(
+            logger.warning(
                 "External Notification module not present (excluded by firmware)"
             )
             return None

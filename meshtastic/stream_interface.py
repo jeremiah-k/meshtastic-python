@@ -248,8 +248,9 @@ class StreamInterface(MeshInterface):
 
     def __reader(self) -> None:
         """
-        Continuously read from the configured stream in a background thread, dispatching device log bytes and framed radio packets for processing.
+        Continuously read from the configured stream in a background thread.
 
+        Dispatches device log bytes and framed radio packets for processing.
         This thread accumulates incoming bytes, treats bytes that do not start
         a protocol frame as device log data (forwarded to _handleLogByte),
         recognizes framed messages prefixed by START1/START2 with a length
