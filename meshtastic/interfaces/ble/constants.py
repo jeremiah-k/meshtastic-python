@@ -101,6 +101,11 @@ ERROR_CONNECTION_FAILED = "Connection failed: {0}"
 ERROR_NO_PERIPHERALS_FOUND = (
     "No Meshtastic BLE peripherals found. Try --ble-scan to find them."
 )
+ERROR_DISCOVERY_MANAGER_UNAVAILABLE = "Discovery manager not available"
+ERROR_ADDRESS_RESOLUTION_FAILED = "Address resolution failed, cannot create device"
+ERROR_INTERFACE_CLOSING = "Cannot connect while interface is closing"
+ERROR_CONNECTION_SUPPRESSED = "Connection suppressed: recently connected elsewhere"
+ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
 
 # BLEClient-specific constants
 # Alias preserves legacy access while sourcing value from BLEConfig

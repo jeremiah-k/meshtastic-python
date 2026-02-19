@@ -25,8 +25,13 @@ from meshtastic.interfaces.ble.connection import (
 from meshtastic.interfaces.ble.constants import (
     CONNECTION_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
+    ERROR_ADDRESS_RESOLUTION_FAILED,
     ERROR_CONNECTION_FAILED,
+    ERROR_CONNECTION_SUPPRESSED,
+    ERROR_DISCOVERY_MANAGER_UNAVAILABLE,
+    ERROR_INTERFACE_CLOSING,
     ERROR_MULTIPLE_DEVICES,
+    ERROR_NO_CLIENT_ESTABLISHED,
     ERROR_NO_PERIPHERALS_FOUND,
     ERROR_READING_BLE,
     ERROR_TIMEOUT,
@@ -664,7 +669,7 @@ class BLEInterface(MeshInterface):
             )
             self._malformed_notification_count = 0
 
-    def from_num_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
+    def from_num_handler(self, _: Any, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Process a FROMNUM characteristic notification and wake the receive loop.
 
@@ -843,7 +848,7 @@ class BLEInterface(MeshInterface):
             timeout=NOTIFICATION_START_TIMEOUT,
         )
 
-    def log_radio_handler(self, _, b: bytearray) -> None:  # pylint: disable=C0116
+    def log_radio_handler(self, _: Any, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
@@ -868,7 +873,7 @@ class BLEInterface(MeshInterface):
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
-    def legacy_log_radio_handler(self, _, b: bytearray) -> None:
+    def legacy_log_radio_handler(self, _: Any, b: bytearray) -> None:
         """
         Deliver a legacy UTF-8 log notification payload to the log handler.
 
@@ -981,7 +986,7 @@ class BLEInterface(MeshInterface):
 
         # Surface DBus failures to allow higher-level backoff
         if self._discovery_manager is None:
-            raise self.BLEError("Discovery manager not available")
+            raise self.BLEError(ERROR_DISCOVERY_MANAGER_UNAVAILABLE)
         # Pass raw target to discovery; the discovery matcher handles address
         # normalization internally and uses the raw identifier for name matching
         # to correctly match device names containing separators (_, -, spaces, :)
@@ -996,9 +1001,7 @@ class BLEInterface(MeshInterface):
                 # Create a synthetic BLEDevice only for direct address connection attempts
                 # This allows the connection logic to attempt direct connect without verification
                 if not sanitized:
-                    raise self.BLEError(
-                        "Address resolution failed, cannot create device"
-                    )
+                    raise self.BLEError(ERROR_ADDRESS_RESOLUTION_FAILED)
                 # Bleak BLEDevice constructor parameters vary across versions
                 # (for example, some versions require/accept "details" while
                 # others differ in optional metadata fields). Use signature
@@ -1082,7 +1085,7 @@ class BLEInterface(MeshInterface):
         blocking close() which needs the address lock to proceed.
         """
         if self._closed or self.is_connection_closing:
-            raise self.BLEError("Cannot connect while interface is closing")
+            raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
     def _should_suppress_duplicate_connect(self, connection_key: Optional[str]) -> bool:
         """
@@ -1311,9 +1314,7 @@ class BLEInterface(MeshInterface):
                     "Suppressing duplicate connect to %s: recently connected elsewhere.",
                     address_registry_key or "unknown",
                 )
-                raise self.BLEError(
-                    "Connection suppressed: recently connected elsewhere"
-                )
+                raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
 
             with self._connect_lock:
                 # Re-check closing state inside connect_lock for extra safety
@@ -1335,7 +1336,7 @@ class BLEInterface(MeshInterface):
                 )
 
         if connected_client is None:
-            raise self.BLEError("Connection failed: no BLE client established")
+            raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
 
         # Mark connected keys with deterministic lock ordering
         self._finalize_connection_gates(
@@ -1813,7 +1814,7 @@ class BLEInterface(MeshInterface):
             pub as mesh_pub,  # type: ignore[attr-defined]
         )
 
-        def _publish_status():
+        def _publish_status() -> None:
             try:
                 mesh_pub.sendMessage(
                     "meshtastic.connection.status", interface=self, connected=connected

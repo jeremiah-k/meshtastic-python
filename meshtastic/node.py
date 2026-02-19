@@ -228,9 +228,6 @@ class Node:
 
     def writeConfig(self, config_name):
         """Write the current (edited) localConfig to the device."""
-        if self.localConfig is None:
-            self._raise_interface_error("Error: No localConfig has been read")
-
         p = admin_pb2.AdminMessage()
 
         if config_name == "device":
@@ -437,7 +434,7 @@ class Node:
 
     def setURL(self, url: str, addOnly: bool = False) -> None:
         """Set mesh network URL."""
-        if self.localConfig is None or self.channels is None:
+        if self.channels is None:
             self._raise_interface_error("Warning: config or channels not loaded")
 
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
@@ -1125,8 +1122,8 @@ class Node:
         result = []
         if self.channels:
             for c in self.channels:
-                settings_has_name = c.settings and hasattr(c.settings, "name")
-                if settings_has_name and hasattr(c.settings, "psk"):
+                settings_has_name = bool(c.settings)
+                if settings_has_name:
                     hash_val = generate_channel_hash(c.settings.name, c.settings.psk)
                 else:
                     hash_val = None

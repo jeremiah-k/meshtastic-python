@@ -295,10 +295,10 @@ def test_setURL_valid_URL_but_no_settings():
     """Test setURL."""
     iface = MagicMock(autospec=SerialInterface)
     url = "https://www.meshtastic.org/d/#"
+    anode = Node(iface, "!12345678", noProto=True)
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
     ):
-        anode = Node(iface, "!12345678", noProto=True)
         anode.setURL(url)
 
 
@@ -783,18 +783,6 @@ def test_writeConfig_with_no_radioConfig():
         match="Error: No valid config with name foo",
     ):
         anode.writeConfig("foo")
-
-
-@pytest.mark.unit
-def test_writeConfig_with_no_local_config_raises_mesh_error():
-    """Test writeConfig raises when local config has not been loaded."""
-    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
-    anode.localConfig = None  # pyright: ignore[reportAttributeAccessIssue]
-
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Error: No localConfig has been read"
-    ):
-        anode.writeConfig("device")
 
 
 @pytest.mark.unit

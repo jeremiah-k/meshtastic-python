@@ -41,18 +41,11 @@ class FakeTimer:
     created: ClassVar[List["FakeTimer"]] = []
 
     def __init__(self, interval: float, function: Callable[[], None]) -> None:
-        """
-        Initialize a FakeTimer instance and register it in the class registry.
+        """Initialize a FakeTimer and register it in FakeTimer.created for test inspection.
 
-        Parameters
-        ----------
-            interval (float): Time interval in seconds for the timer.
-            function (Callable): Callback to be invoked when the timer fires.
-
-        Notes
-        -----
-            The new instance is appended to FakeTimer.created for test inspection.
-
+        Args:
+            interval: Time interval in seconds for the timer.
+            function: Callback that would be invoked when a real timer fires.
         """
         self.interval = interval
         self.function = function
@@ -62,7 +55,11 @@ class FakeTimer:
         FakeTimer.created.append(self)
 
     def start(self) -> None:
-        """Record that the fake timer was started."""
+        """Record that the fake timer was started.
+
+        Note: the callback is *not* invoked automatically. To exercise the
+        callback in a test, call ``FakeTimer.created[i].function()`` directly.
+        """
         self.started = True
 
     def cancel(self) -> None:
