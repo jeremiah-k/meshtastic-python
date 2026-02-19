@@ -104,9 +104,11 @@ class NotificationManager:
         """
         Stop notifications for every characteristic currently tracked and ignore any errors.
 
-        Parameters:
+        Parameters
+        ----------
             client (BLEClient): BLE client used to stop notifications.
             timeout (Optional[float]): Per-unsubscribe timeout passed to the client's `stop_notify` method; may be None.
+
         """
         with self._lock:
             characteristics = list(self._characteristic_to_callback.keys())
@@ -163,6 +165,7 @@ class NotificationManager:
 
         Returns:
             int: The number of active subscriptions currently tracked.
+
         """
         with self._lock:
             return len(self._active_subscriptions)

@@ -71,11 +71,14 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
     its internal holder count is incremented to prevent premature cleanup; callers that obtain
     the lock object but do not acquire it must call `_release_addr_lock()` when finished.
 
-    Parameters:
+    Parameters
+    ----------
         key (Optional[str]): A raw or already-normalized address key; `None` selects the global registry lock.
 
-    Returns:
+    Returns
+    -------
         RLock: The per-address reentrant lock for `key`, or the global registry lock if `key` is None.
+
     """
     key = addr_key(key)
     return _get_addr_lock_by_key(key)
@@ -87,11 +90,14 @@ def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
 
     If `key` is None, returns the global registry lock. For per-address locks, ensures a lock exists and increments an internal holder count to prevent premature cleanup.
 
-    Parameters:
+    Parameters
+    ----------
         key (Optional[str]): Normalized address key; `None` selects the global registry lock.
 
-    Returns:
+    Returns
+    -------
         RLock: The reentrant lock for `key`, or the global registry lock when `key` is `None`.
+
     """
     if key is None:
         # The registry lock is a process-wide singleton and is not ref-counted.
@@ -112,8 +118,10 @@ def _release_addr_lock(key: Optional[str]) -> None:
 
     If key is None, operates on the global registry lock. The input is normalized to a registry key; when the holder count reaches zero and the address is not marked connected, the per-address lock entry may be removed by cleanup logic.
 
-    Parameters:
+    Parameters
+    ----------
         key (Optional[str]): An address or already-normalized key identifying the per-address lock; use None for the registry.
+
     """
     key = addr_key(key)
     _release_addr_lock_by_key(key)
@@ -147,8 +155,10 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
 
     If `key` is None this function does nothing. When `key` is provided, the registry entries for that address (the lock and its holder count) are removed only if the tracked holder count is less than or equal to zero; otherwise the entries are left intact.
 
-    Parameters:
+    Parameters
+    ----------
         key (Optional[str]): Normalized address key identifying the per-address lock, or `None` to indicate no action.
+
     """
     if key is None:
         return
@@ -173,6 +183,7 @@ def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
 
     Returns:
         Optional[weakref.ReferenceType[Any]]: A weak reference to `owner`, or `None` if `owner` is `None` or not weak-referenceable.
+
     """
     if owner is None:
         return None
@@ -217,11 +228,14 @@ def _remove_connected_record_locked(key: str) -> None:
     """
     Remove all connected-state bookkeeping associated with the normalized address key.
 
-    Parameters:
+    Parameters
+    ----------
         key (str): Normalized address key whose connected-state records should be removed.
 
-    Notes:
+    Notes
+    -----
         Must be called while holding the module-level `_REGISTRY_LOCK`.
+
     """
     _CONNECTED_ADDRS.discard(key)
     _CONNECTED_OWNERS.pop(key, None)
@@ -329,12 +343,15 @@ def is_currently_connected_elsewhere(
 
     Normalizes the provided address via addr_key; if normalization yields None the function returns False. While checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an unowned claim has expired.
 
-    Parameters:
+    Parameters
+    ----------
         addr (Optional[str]): BLE address to check; will be normalized via addr_key.
         owner (Optional[Any]): Caller’s owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere.
 
-    Returns:
+    Returns
+    -------
         True if the normalized address is marked connected by a different owner, False otherwise.
+
     """
     key = addr_key(addr)
     if key is None:

@@ -42,6 +42,7 @@ def get_zombie_runner_count() -> int:
 
     Returns:
         int: Number of zombie runner threads currently recorded.
+
     """
     with _zombie_lock:
         return _zombie_runner_count
@@ -55,6 +56,7 @@ def getZombieRunnerCount() -> int:
 
     Returns:
         int: Current number of zombie runner threads.
+
     """
     warnings.warn(
         "getZombieRunnerCount is deprecated; use get_zombie_runner_count instead",
@@ -111,6 +113,7 @@ class BLECoroutineRunner:
 
         Returns:
             BLECoroutineRunner: The singleton runner instance.
+
         """
         with cls._singleton_lock:
             if cls._instance is None:
@@ -158,6 +161,7 @@ class BLECoroutineRunner:
 
         Returns:
             threading.RLock: The instance's reentrant lock used to synchronize access to internal attributes.
+
         """
         # Lock is always initialized in __init__, but keep property for access
         return self._internal_lock
@@ -238,6 +242,7 @@ class BLECoroutineRunner:
 
         Returns:
             threading.Event | None: Event that will be set when the runner's loop is ready, or `None` if the runner is already running.
+
         """
         # Check if already running
         if (
@@ -277,8 +282,10 @@ class BLECoroutineRunner:
 
         Creates and installs a new event loop for this thread, publishes it to the runner only if this thread remains the active runner and a stop has not been requested, signals readiness via `ready_event`, runs the loop until stopped, then cancels remaining tasks and closes the loop.
 
-        Parameters:
+        Parameters
+        ----------
             ready_event (threading.Event): Event that will be set when the loop is ready and cleared after shutdown to signal the thread's lifecycle.
+
         """
         loop: Optional[asyncio.AbstractEventLoop] = None
         try:
@@ -345,8 +352,10 @@ class BLECoroutineRunner:
 
         Exceptions raised while cancelling or awaiting tasks are suppressed and logged at debug level.
 
-        Parameters:
+        Parameters
+        ----------
             loop (asyncio.AbstractEventLoop): Event loop whose pending tasks should be cancelled.
+
         """
         try:
             tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
@@ -367,17 +376,21 @@ class BLECoroutineRunner:
         """
         Submit a coroutine to the shared BLE runner event loop.
 
-        Parameters:
+        Parameters
+        ----------
             coro (Coroutine[None, None, T]): Coroutine to execute on the runner loop.
             timeout (Optional[float]): Deprecated alias for `startup_timeout`; if provided a DeprecationWarning is emitted.
             startup_timeout (Optional[float]): Maximum seconds to wait for the runner loop to become ready before submission.
 
-        Returns:
+        Returns
+        -------
             Future[T]: Future that will resolve to the coroutine's result.
 
-        Raises:
+        Raises
+        ------
             ValueError: If both `timeout` and `startup_timeout` are provided.
             RuntimeError: If the runner loop cannot be started or is not available.
+
         """
         if timeout is not None and startup_timeout is not None:
             raise ValueError("Specify only one of timeout or startup_timeout")
@@ -535,11 +548,14 @@ class BLECoroutineRunner:
 
         Requests shutdown of the runner, cancels any tracked pending futures, signals the background asyncio loop to stop, and waits up to `timeout` seconds for the background thread to exit. If called from the runner thread, joining is skipped to avoid deadlock. If the thread does not exit within `timeout`, the thread is recorded as a zombie for diagnostics. Final internal references and the atexit handler are cleared only if they still refer to the stopped thread/loop to avoid interfering with concurrent restarts.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (float): Maximum number of seconds to wait for the background thread to join.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the background thread exited within `timeout`, `False` if it did not (thread considered a zombie).
+
         """
         # Capture state and schedule stop under lock, but join OUTSIDE the lock
         # to avoid deadlock if the runner thread needs _instance_lock
@@ -632,6 +648,7 @@ class BLECoroutineRunner:
 
         Raises:
             RuntimeError: If the event loop fails to become ready within the configured timeout.
+
         """
         with self._instance_lock:
             if self.is_running:

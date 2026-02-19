@@ -15,11 +15,14 @@ def _create_context_manager_mock(spec_class: Type) -> MagicMock:
     """
     Create a MagicMock that supports the context manager protocol for the given spec class.
 
-    Parameters:
+    Parameters
+    ----------
         spec_class (Type): Class used as the mock's spec (e.g., SerialInterface).
 
-    Returns:
+    Returns
+    -------
         MagicMock: A mock configured so its `__enter__` returns the mock itself and its `__exit__` returns None.
+
     """
     mock = MagicMock(spec=spec_class)
     mock.__enter__ = MagicMock(return_value=mock)
@@ -36,9 +39,11 @@ class FakeTimer:
         """
         Create a FakeTimer and record it in FakeTimer.created for test inspection.
 
-        Parameters:
+        Parameters
+        ----------
             interval (float): Time interval in seconds that the timer represents.
             function (Callable[[], None]): Callback that would be invoked when a real timer fires.
+
         """
         self.interval = interval
         self.function = function
@@ -101,6 +106,7 @@ def iface_with_nodes():
 
     Returns:
         MeshInterface: Instance with prepared node dictionaries and a mocked `myInfo`.
+
     """
     nodesById = {
         "!9388f81c": {
@@ -151,6 +157,7 @@ def mock_serial_interface() -> MagicMock:
 
     Returns:
         MagicMock: A mock acting like a SerialInterface with the above attributes.
+
     """
     mock_iface = MagicMock()
     mock_iface.localNode.getChannelByName.return_value = None

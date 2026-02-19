@@ -49,19 +49,23 @@ class BLEErrorHandler:
         """
         Execute a zero-argument callable, returning its result or a fallback on handled errors.
 
-        Parameters:
+        Parameters
+        ----------
             func: Zero-argument callable to execute.
             default_return: Value to return if execution fails due to a handled exception.
             log_error: If True, log caught exceptions using the configured logger.
             error_msg: Message prefix used when logging errors.
             reraise: If True, re-raise caught exceptions instead of returning `default_return`.
 
-        Notes:
+        Notes
+        -----
             SystemExit and KeyboardInterrupt are re-raised and not swallowed.
             Specifically handles BleakError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated per `log_error`/`reraise`.
 
-        Returns:
+        Returns
+        -------
             The value returned by `func()` on success, or `default_return` if execution fails.
+
         """
         try:
             return func()

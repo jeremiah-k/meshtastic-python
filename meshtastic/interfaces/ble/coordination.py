@@ -29,13 +29,16 @@ class _InertThread:
         """
         Create an inert thread placeholder returned after cleanup to preserve the thread-like API while preventing new threads from starting.
 
-        Parameters:
+        Parameters
+        ----------
             name (str): Human-readable name for the inert thread; stored on the object as the `name` attribute.
 
-        Attributes:
+        Attributes
+        ----------
             name (str): The provided thread name.
             daemon (bool): Always True to match typical thread daemon status.
             ident (None): Always None to indicate the inert thread has no identity and cannot be started.
+
         """
         self.name = name
         self.daemon = True
@@ -47,6 +50,7 @@ class _InertThread:
 
         Raises:
             RuntimeError: always raised to indicate this inert thread cannot be started.
+
         """
         raise RuntimeError(_INERT_THREAD_START_ERROR.format(name=self.name))
 
@@ -56,6 +60,7 @@ class _InertThread:
 
         Returns:
             bool: False always; inert threads cannot be alive.
+
         """
         return False
 
@@ -63,8 +68,10 @@ class _InertThread:
         """
         No-op join for an inert thread; joining has no effect.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (Optional[float]): Ignored. Included for API compatibility.
+
         """
         _ = timeout
 
@@ -116,15 +123,18 @@ class ThreadCoordinator:
 
         If the coordinator has already been cleaned up, returns an inert thread that cannot be started. The returned thread is registered for lifecycle management but is not started by this call.
 
-        Parameters:
+        Parameters
+        ----------
             target (Callable): Callable to be executed by the thread.
             name (str): Name assigned to the thread.
             daemon (bool): Whether the thread should run as a daemon.
             args (tuple): Positional arguments to pass to the target.
             kwargs (Optional[dict]): Keyword arguments to pass to the target.
 
-        Returns:
+        Returns
+        -------
             Thread: The created Thread instance (registered with the coordinator, not started). After cleanup, an inert thread is returned whose start() raises RuntimeError.
+
         """
         with self._lock:
             # Prevent thread creation after cleanup to avoid orphaned threads
@@ -161,6 +171,7 @@ class ThreadCoordinator:
             ThreadLike: A Thread-like object configured with the provided target and
             name; may be an inert placeholder if the coordinator has already been
             cleaned up.
+
         """
         warnings.warn(
             "createThread is deprecated; use create_thread instead",
@@ -181,11 +192,14 @@ class ThreadCoordinator:
 
         If an Event with the same name already exists, the existing Event is returned and no replacement occurs. This operation is thread-safe via the coordinator's lock.
 
-        Parameters:
+        Parameters
+        ----------
             name (str): Name to register the Event under.
 
-        Returns:
+        Returns
+        -------
             Event: The Event instance registered under `name`, or the existing instance if one was already registered.
+
         """
         with self._lock:
             if name in self._events:
@@ -378,8 +392,10 @@ class ThreadCoordinator:
 
         If no event is registered under `name`, this is a no-op. This method clears the event so waiting threads will block until it is set again.
 
-        Parameters:
+        Parameters
+        ----------
             name (str): The name of the event to clear.
+
         """
         event = self._events.get(name)
         if event is not None:
@@ -439,12 +455,15 @@ class ThreadCoordinator:
         """
         Waits for the tracked event named `name` to be set or until `timeout` seconds elapse.
 
-        Parameters:
+        Parameters
+        ----------
             name (str): Name of the tracked event.
             timeout (float | None): Maximum time in seconds to wait; `None` means wait indefinitely.
 
-        Returns:
+        Returns
+        -------
             `true` if the event was set before the timeout, `false` otherwise (also `false` if no event with that name is tracked).
+
         """
         event = self.get_event(name)
         if event:
@@ -457,6 +476,7 @@ class ThreadCoordinator:
 
         Returns:
             True if the event was set within the optional timeout, False otherwise.
+
         """
         warnings.warn(
             "waitForEvent is deprecated; use wait_for_event instead",
@@ -517,11 +537,13 @@ class ThreadCoordinator:
         """
         Compatibility camelCase method that wakes the named events to wake any waiting threads.
 
-        Parameters:
+        Parameters
+        ----------
             event_names (str): One or more event names to signal.
 
         Deprecated:
             This method is deprecated; prefer the snake_case equivalent.
+
         """
         warnings.warn(
             "wakeWaitingThreads is deprecated; use wake_waiting_threads instead",
@@ -536,8 +558,10 @@ class ThreadCoordinator:
 
         Ignores names that are not registered.
 
-        Parameters:
+        Parameters
+        ----------
             event_names (str): One or more event names to clear.
+
         """
         with self._lock:
             for name in event_names:
@@ -549,8 +573,10 @@ class ThreadCoordinator:
 
         Emits a DeprecationWarning and clears each event whose name is provided.
 
-        Parameters:
+        Parameters
+        ----------
             event_names (str): One or more event names to clear.
+
         """
         warnings.warn(
             "clearEvents is deprecated; use clear_events instead",

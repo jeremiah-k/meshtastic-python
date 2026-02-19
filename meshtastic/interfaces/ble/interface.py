@@ -3,13 +3,23 @@
 import asyncio
 import atexit
 import contextlib
-import io
 import struct
 import threading
 import time
 from queue import Empty
 from threading import Event
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import (
+    IO,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from bleak import BleakClient as BleakRootClient
 from bleak.backends.device import BLEDevice
@@ -115,7 +125,7 @@ class BLEInterface(MeshInterface):
         self,
         address: Optional[str],
         noProto: bool = False,
-        debugOut: Optional[io.TextIOWrapper] = None,
+        debugOut: Optional[IO[str]] = None,
         noNodes: bool = False,
         timeout: float = 300.0,
         *,
@@ -126,12 +136,15 @@ class BLEInterface(MeshInterface):
 
         If an address or device name is provided, attempt to connect to that device; otherwise use discovery to select any available Meshtastic device. Registers an atexit handler to ensure an orderly disconnect on process exit.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): BLE address or device name to connect to; if None, discovery may select any compatible device.
             auto_reconnect (bool): If True, schedule automatic reconnection after unexpected disconnects; defaults to False.
 
-        Raises:
+        Raises
+        ------
             BLEInterface.BLEError: If the initial connection or configuration fails.
+
         """
 
         # Thread safety and state management
@@ -280,6 +293,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             A string formatted as "BLEInterface(address=<address>, ...)" containing the present fields, e.g. "BLEInterface(address='AA:BB:CC:DD:EE:FF', debugOut='...', noProto=True)".
+
         """
         parts = [f"address={self.address!r}"]
         if self.debugOut is not None:
@@ -310,6 +324,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             `true` if the receive loop is desired and the interface is not closed, `false` otherwise.
+
         """
         with self._state_lock:
             return self._want_receive and not self._closed
@@ -383,11 +398,14 @@ class BLEInterface(MeshInterface):
 
         The returned ExitStack contains the acquired per-address lock contexts; keep the stack open (or use it as a context manager) for the duration the locks are required so they remain held and are released when the stack is closed.
 
-        Parameters:
+        Parameters
+        ----------
             ordered_keys (List[str]): Address keys in the exact order locks should be acquired.
 
-        Returns:
+        Returns
+        -------
             contextlib.ExitStack: An active ExitStack with the acquired address-lock contexts.
+
         """
         stack = contextlib.ExitStack()
         for key in ordered_keys:
@@ -401,8 +419,10 @@ class BLEInterface(MeshInterface):
 
         Ignores None or empty strings. Acquires the global registry lock first, then per-address locks in a deterministic order to avoid deadlocks, and updates the registry to record this interface as the owner for each key.
 
-        Parameters:
+        Parameters
+        ----------
             *keys: One or more address registry keys to mark as connected.
+
         """
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
@@ -421,8 +441,10 @@ class BLEInterface(MeshInterface):
         This acquires the global registry lock and then per-address locks in a deterministic order
         to avoid deadlocks; None or empty keys are ignored.
 
-        Parameters:
+        Parameters
+        ----------
             *keys (Optional[str]): One or more address key strings to mark disconnected; None or empty values are skipped.
+
         """
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
@@ -711,11 +733,13 @@ class BLEInterface(MeshInterface):
             """
             Execute a notification handler and route any exceptions it raises to the interface's error handler.
 
-            Parameters:
+            Parameters
+            ----------
                 handler (Callable[[Any, Any], None]): Function to invoke with (sender, data).
                 sender (Any): Origin of the notification forwarded to the handler.
                 data (Any): Notification payload (e.g., bytes, bytearray, or parsed object).
                 error_msg (str): Message supplied to the error handler if the handler raises an exception.
+
             """
             self.error_handler._safe_execute(
                 lambda: handler(sender, data),
@@ -743,9 +767,11 @@ class BLEInterface(MeshInterface):
             """
             Forward a BLE log-characteristic notification to the configured log handler and record an error if the handler raises.
 
-            Parameters:
+            Parameters
+            ----------
                 sender (Any): Notification sender (characteristic or client); may be unused by the handler.
                 data (bytes | bytearray): Raw notification payload from the BLE device.
+
             """
             _safe_call(
                 self.log_radio_handler,
@@ -773,12 +799,15 @@ class BLEInterface(MeshInterface):
 
             If no handler is registered for uuid, call factory() to create one, subscribe it, and return it.
 
-            Parameters:
+            Parameters
+            ----------
                 uuid (str): Characteristic UUID to look up or register.
                 factory (Callable[[], Callable[[Any, Any], None]]): Callable that returns a handler taking (sender, data).
 
-            Returns:
+            Returns
+            -------
                 Callable[[Any, Any], None]: The existing or newly created notification handler.
+
             """
             handler = self._notification_manager._get_callback(uuid)
             if handler is None:
@@ -1046,6 +1075,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             bool: `True` if a new connection may be started, `False` otherwise.
+
         """
         return self._state_manager.can_connect and not self._closed
 
@@ -1066,11 +1096,14 @@ class BLEInterface(MeshInterface):
         """
         Determine whether a connection attempt for the given connection key should be suppressed because another active connection exists elsewhere.
 
-        Parameters:
+        Parameters
+        ----------
             connection_key (Optional[str]): Address or alias key to check; pass None for discovery-mode connects.
 
-        Returns:
+        Returns
+        -------
             True if the connection should be suppressed because the key is connected elsewhere and this interface is not the active connection, False otherwise.
+
         """
         return bool(
             connection_key
@@ -1084,11 +1117,14 @@ class BLEInterface(MeshInterface):
         """
         Return the currently held BLE client when it represents a connected, usable connection for the given request.
 
-        Parameters:
+        Parameters
+        ----------
             normalized_request (Optional[str]): The sanitized connection request identifier to validate compatibility with the current client.
 
-        Returns:
+        Returns
+        -------
             Optional[BLEClient]: The existing connected client if it is compatible with the provided request, `None` otherwise.
+
         """
         existing_client = self.client
         if (
@@ -1115,18 +1151,21 @@ class BLEInterface(MeshInterface):
 
         Establishes a new connection, stores the resulting client and device address under the state lock, updates the last connection request, transfers any previous client references to the new client, and computes address gating keys for the connected device.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): Target BLE address or device name requested for the connection.
             normalized_request (Optional[str]): Sanitized identifier for the connection request; used to update last connection request.
             address_key (Optional[str]): Optional registry key representing the requested address for gate tracking.
 
-        Returns:
+        Returns
+        -------
             Tuple[BLEClient, Optional[str], Optional[str]]: A tuple of (client, connected_device_key, connection_alias_key),
                 where `connected_device_key` is the registry key derived from the connected device's address (or None if unavailable),
                 and `connection_alias_key` is the provided address_key when it differs from the connected_device_key (otherwise None).
 
         Note:
             Must be called while holding _connect_lock.
+
         """
         client = self._connection_orchestrator.establish_connection(
             address,
@@ -1461,6 +1500,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             bytes: The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
+
         """
         for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
             payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
@@ -1480,6 +1520,7 @@ class BLEInterface(MeshInterface):
 
         Raises:
             BLEInterface.BLEError: When the retry policy is exhausted and the read should be treated as persistent.
+
         """
         transient_policy = self._transient_read_policy
         if transient_policy.should_retry(self._read_retry_count):
@@ -1533,11 +1574,14 @@ class BLEInterface(MeshInterface):
 
         No-op if the serialized payload is empty or the interface is closing; on success the receive loop is signaled to process any response.
 
-        Parameters:
+        Parameters
+        ----------
             toRadio (mesh_pb2.ToRadio): Protobuf message providing SerializeToString() for the outbound payload.
 
-        Raises:
+        Raises
+        ------
             BLEError: If the BLE write operation fails.
+
         """
         b: bytes = toRadio.SerializeToString()
         if not b:
@@ -1690,8 +1734,10 @@ class BLEInterface(MeshInterface):
 
         Requests a flush on the publishing thread and waits for a flush event. If the wait times out and the publishing thread is still alive, a debug message is logged; if the publishing thread is not running when the timeout elapses, the publish queue is drained synchronously on the current thread. Exceptions raised while requesting the flush are caught and logged by the error handler.
 
-        Parameters:
+        Parameters
+        ----------
             timeout (float | None): Maximum seconds to wait for the publish queue to flush. If `None`, uses `DISCONNECT_TIMEOUT_SECONDS`.
+
         """
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
@@ -1807,11 +1853,14 @@ class BLEInterface(MeshInterface):
         """
         Locate a Meshtastic BLEDevice by address or device name.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): Bluetooth address or device name to resolve; if None, discovery may return a default device.
 
-        Returns:
+        Returns
+        -------
             BLEDevice: The matched BLE device.
+
         """
         return self.find_device(address)
 
@@ -1822,6 +1871,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             connection_state (ConnectionState): The current BLE connection state.
+
         """
         return self.connection_state
 
@@ -1832,6 +1882,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             bool: `True` if the interface has an active BLE connection, `False` otherwise.
+
         """
         return self.is_connection_connected
 
@@ -1842,6 +1893,7 @@ class BLEInterface(MeshInterface):
 
         Returns:
             bool: True if the interface is shutting down or closed, False otherwise.
+
         """
         return self.is_connection_closing
 
@@ -1852,5 +1904,6 @@ class BLEInterface(MeshInterface):
 
         Returns:
             `true` if a new connection may be started, `false` otherwise.
+
         """
         return self.can_initiate_connection

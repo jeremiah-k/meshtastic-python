@@ -46,11 +46,14 @@ def read_pandas(filepath: str) -> pd.DataFrame:
     Converts Arrow column types to pandas nullable dtypes so integer/boolean columns keep nullability
     instead of being cast to float during conversion.
 
-    Parameters:
+    Parameters
+    ----------
         filepath (str): Path to the Feather file.
 
-    Returns:
+    Returns
+    -------
         pd.DataFrame: DataFrame with column dtypes mapped to pandas nullable dtypes where applicable.
+
     """
     # per https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
     # use this to get nullable int fields treated as ints rather than floats in pandas
@@ -79,12 +82,15 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     """
     Return rows from the slog DataFrame corresponding to power-monitor raise events.
 
-    Parameters:
+    Parameters
+    ----------
         dslog (pd.DataFrame): Slog DataFrame containing a 'pm_mask' column and a 'time' column.
 
-    Returns:
+    Returns
+    -------
         pd.DataFrame: A DataFrame with rows where one or more power monitors transitioned to the raised state.
         Columns are 'time' and 'pm_raises' (a list of raised power-monitor names for that timestamp).
+
     """
     pmon_events = dslog[dslog["pm_mask"].notnull()]
 

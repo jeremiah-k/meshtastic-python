@@ -31,7 +31,8 @@ class SerialInterface(StreamInterface):
         """
         Initialize the SerialInterface and, if a device is available, open a serial connection to a Meshtastic device.
 
-        Parameters:
+        Parameters
+        ----------
             devPath (Optional[str]): Filesystem path to a serial device (e.g., "/dev/ttyUSB0"). If None, a single available Meshtastic port will be auto-detected; if none are found a fallback StreamInterface without a serial connection is created.
             debugOut: Optional stream to which raw debug serial output will be emitted.
             noProto (bool): If True, disable higher-level protocol handling.
@@ -98,8 +99,10 @@ class SerialInterface(StreamInterface):
 
         This modifies the terminal control flags of the provided file handle so the hang-up-on-close behavior is disabled. On Windows this function is a no-op.
 
-        Parameters:
+        Parameters
+        ----------
             f (TextIOWrapper): Open file-like handle for the serial device whose terminal attributes will be adjusted.
+
         """
         if sys.platform == "win32":
             return
@@ -118,6 +121,7 @@ class SerialInterface(StreamInterface):
 
         Returns:
             str: A representation string of the form "SerialInterface(devPath=..., debugOut=..., noProto=True, noNodes=True)" with only the applicable fields included.
+
         """
         rep = f"SerialInterface(devPath={self.devPath!r}"
         if hasattr(self, "debugOut") and self.debugOut is not None:
@@ -153,6 +157,7 @@ class SerialInterface(StreamInterface):
 
         Returns:
             SerialInterface: The same SerialInterface instance.
+
         """
         return self
 

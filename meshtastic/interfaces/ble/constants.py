@@ -145,6 +145,7 @@ def _bleak_supports_connected_fallback() -> bool:
 
     Returns:
         True if the installed Bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, False otherwise.
+
     """
     return (
         _parse_version_triplet(BLEAK_VERSION)

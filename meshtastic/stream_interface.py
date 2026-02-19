@@ -170,6 +170,7 @@ class StreamInterface(MeshInterface):
 
         Returns:
             `bytes` containing up to `length` bytes read from the stream, or `None` if no stream is configured.
+
         """
         if self.stream:
             return self.stream.read(length)
@@ -182,8 +183,10 @@ class StreamInterface(MeshInterface):
 
         The header is START1, START2, then a two-byte big-endian payload length followed by the serialized message.
 
-        Parameters:
+        Parameters
+        ----------
             toRadio (mesh_pb2.ToRadio): The protobuf message to serialize and transmit.
+
         """
         logger.debug(f"Sending: {stripnl(toRadio)}")
         b: bytes = toRadio.SerializeToString()
@@ -197,7 +200,9 @@ class StreamInterface(MeshInterface):
         """
         Shut down the stream connection and request the background reader thread to exit.
 
-        Sets the internal shutdown flag to request reader termination, attempts to join the reader thread for up to 2 seconds (skipping join if the thread was never started), and logs a warning if the reader remains alive after the timeout.
+        Sets the internal shutdown flag to request reader termination, attempts to join the reader thread
+        for up to 2 seconds (skipping join if the thread was never started), and logs a warning if the
+        reader remains alive after the timeout.
         """
         logger.debug("Closing stream")
         MeshInterface.close(self)
@@ -218,13 +223,16 @@ class StreamInterface(MeshInterface):
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _handle_log_byte(self, b: bytes) -> None:
-        """
+        r"""
         Process a single byte from the device log stream, accumulate characters into the current log line, and dispatch complete lines.
 
-        Undecodable bytes are replaced with '?'. Carriage return ('\r') bytes are ignored; newline ('\n') completes the current line and dispatches it via self._handleLogLine, after which the accumulator is cleared.
+        Undecodable bytes are replaced with '?'. Carriage return ('\r') bytes are ignored; newline ('\n')
+        completes the current line and dispatches it via self._handleLogLine, after which the accumulator is cleared.
 
-        Parameters:
+        Parameters
+        ----------
             b (bytes): Single-byte bytes object from the device.
+
         """
 
         utf = "?"  # assume we might fail
@@ -245,7 +253,10 @@ class StreamInterface(MeshInterface):
         """
         Background reader loop that reads from the configured stream and dispatches device log bytes and framed radio messages.
 
-        Runs in a daemon background thread, reading incoming bytes and forwarding non-protocol bytes to _handle_log_byte. Recognizes protocol frames prefixed by START1/START2 with a two-byte length header and delivers complete payloads to _handleFromRadio. On termination updates _last_disconnect_source, logs the exit, and invokes _disconnected() to perform cleanup.
+        Runs in a daemon background thread, reading incoming bytes and forwarding non-protocol bytes
+        to _handle_log_byte. Recognizes protocol frames prefixed by START1/START2 with a two-byte length
+        header and delivers complete payloads to _handleFromRadio. On termination updates _last_disconnect_source,
+        logs the exit, and invokes _disconnected() to perform cleanup.
         """
         logger.debug("in __reader()")
         empty = bytes()

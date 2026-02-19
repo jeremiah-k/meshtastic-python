@@ -32,6 +32,7 @@ def root_dir() -> str:
 
     Returns:
         path (str): Filesystem path to the "slogs" directory.
+
     """
 
     app_name = "meshtastic"
@@ -147,11 +148,13 @@ class StructuredLogger:
         """
         Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
 
-        Parameters:
+        Parameters
+        ----------
             client (MeshInterface): Source of device log lines to monitor.
             dir_path (str): Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
             power_logger (Optional[PowerLogger]): If provided, used to record a power sample with each structured log entry.
             include_raw (bool): If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
+
         """
         self.client = client
         self.power_logger = power_logger
@@ -221,8 +224,10 @@ class StructuredLogger:
 
         Parses the input line for a structured slog. If parsing yields fields, adds a "time" timestamp and writes the record to the configured Arrow writer. If raw logging is enabled, includes the original raw line in the record and appends it to the raw log file. If a power logger is present, records a power measurement using the exact same timestamp as the written slog record. Unknown or unparsable structured slog lines are logged as warnings.
 
-        Parameters:
+        Parameters
+        ----------
             line (str): The raw log line to process.
+
         """
 
         di = {}  # the dictionary of the fields we found to log
@@ -288,10 +293,12 @@ class LogSet:
 
         If dir_name is not provided, a timestamped directory is created under the slog root and a "latest" symlink is updated to point to it. A StructuredLogger is created and bound to the provided client; if power_meter is supplied, a PowerLogger is created that writes to a "power" subdirectory. An atexit handler pointing to this instance's close() is registered for later teardown.
 
-        Parameters:
+        Parameters
+        ----------
             client: MeshInterface client whose log lines will be monitored and recorded.
             dir_name: Optional path for storing logs; when omitted a new timestamped directory is created under the slog root and "latest" is updated to point to it.
             power_meter: Optional PowerMeter; when provided a PowerLogger is started to record power samples alongside slog entries.
+
         """
 
         if not dir_name:

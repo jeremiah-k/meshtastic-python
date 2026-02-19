@@ -109,6 +109,7 @@ class BLEStateManager:
 
         Returns:
             ConnectionState: The current ConnectionState.
+
         """
         with self._state_lock:
             return self._state
@@ -143,6 +144,7 @@ class BLEStateManager:
 
         Returns:
             True if the current state is DISCONNECTED or ERROR, False otherwise.
+
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
@@ -153,6 +155,7 @@ class BLEStateManager:
 
         Returns:
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
+
         """
         return self.state in (ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
 
@@ -232,12 +235,15 @@ class BLEStateManager:
 
         Performs an atomic check-and-transition under the internal lock to avoid time-of-check-to-time-of-use races.
 
-        Parameters:
+        Parameters
+        ----------
             expected_states (Set[ConnectionState]): States from which the transition is permitted.
             new_state (ConnectionState): Target state to transition to.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the current state was in expected_states and transition_to(new_state) returned `True`, `False` otherwise.
+
         """
         with self._state_lock:
             if self._state not in expected_states:
@@ -255,6 +261,7 @@ class BLEStateManager:
 
         Returns:
             True if the resulting state is DISCONNECTED, False otherwise.
+
         """
         with self._state_lock:
             # Prefer validated transition semantics; this is a no-op when already
@@ -269,6 +276,7 @@ class BLEStateManager:
 
         Returns:
             True if the current state is CONNECTED, False otherwise.
+
         """
         return self.is_connected
 
@@ -301,6 +309,7 @@ class BLEStateManager:
 
         Returns:
             `True` if the current state is CONNECTING or RECONNECTING, `False` otherwise.
+
         """
         return self.is_connecting
 
@@ -354,5 +363,6 @@ class BLEStateManager:
 
         Returns:
             bool: `True` if the resulting state is DISCONNECTED (either by transition or already disconnected), `False` otherwise.
+
         """
         return self.reset_to_disconnected()

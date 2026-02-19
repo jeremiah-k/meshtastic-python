@@ -516,11 +516,13 @@ def test_main_nodes(capsys):
 
     def mock_showNodes(includeSelf, showFields):
         """
-        Prints a test marker indicating a mocked node listing and its options.
+        Print a test marker indicating a mocked node listing and its options.
 
-        Parameters:
+        Parameters
+        ----------
                 includeSelf (bool): Whether the local node would be included in the listing.
                 showFields (Any): Representation of which node fields would be shown; forwarded verbatim into the printed marker.
+
         """
         print(f"inside mocked showNodes: {includeSelf} {showFields}")
 
@@ -2045,6 +2047,7 @@ def test_main_onConnection(capsys):
 
             Returns:
                 The fixed fake topic name `'foo'`.
+
             """
             return "foo"
 
@@ -3037,12 +3040,14 @@ def test_tunnel_tunnel_arg(
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
         """
-        Helper used in tests to simulate a sleep by printing the provided value and terminating the process.
+        Simulate a sleep in tests by printing the provided value and terminating the process.
 
         Prints `amount` to stdout and then exits the process with exit code 3.
 
-        Parameters:
+        Parameters
+        ----------
             amount: The value (typically a sleep duration) to print before exiting.
+
         """
         print(f"{amount}")
         sys.exit(3)

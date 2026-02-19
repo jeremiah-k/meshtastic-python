@@ -55,10 +55,12 @@ def quoteBooleans(a_string: str) -> str:
     """
     Convert boolean literals in a string to quoted boolean tokens.
 
-    Replaces occurrences of ": true" with ": 'true'" and ": false" with ": 'false'". Matching is case-sensitive and only affects those exact substrings.
+    Replaces occurrences of ": true" with ": 'true'" and ": false" with ": 'false'".
+    Matching is case-sensitive and only affects those exact substrings.
 
     Returns:
         The modified string with quoted boolean tokens.
+
     """
     tmp: str = a_string.replace(": true", ": 'true'")
     tmp = tmp.replace(": false", ": 'false'")
@@ -71,6 +73,7 @@ def genPSK256() -> bytes:
 
     Returns:
         psk (bytes): 32 bytes of cryptographically secure random data to use as a PSK.
+
     """
     return os.urandom(32)
 
@@ -85,13 +88,19 @@ def fromPSK(valstr: str) -> Any:
     - "default": return a single byte with value 1 to indicate the default channel PSK.
     - "simpleN": where N is an integer; return a single byte with value (N + 1).
 
-    For any other input, parse using general string-to-value rules (e.g., hex, base64, numeric, boolean, or plain string) and return the corresponding value.
+    For any other input, parse using general string-to-value rules (e.g., hex, base64,
+    numeric, boolean, or plain string) and return the corresponding value.
 
-    Parameters:
+    Parameters
+    ----------
         valstr (str): PSK specification string provided by the user.
 
-    Returns:
-        bytes or other parsed value: The PSK as bytes for recognized PSK forms; otherwise the parsed value according to general string parsing rules (hex/base64/numeric/boolean/string).
+    Returns
+    -------
+        bytes or other parsed value: The PSK as bytes for recognized PSK forms;
+        otherwise the parsed value according to general string parsing rules
+        (hex/base64/numeric/boolean/string).
+
     """
     if valstr == "random":
         return genPSK256()
@@ -117,10 +126,12 @@ def fromStr(valstr: str) -> Any:
     - Case-insensitive "t", "true", "yes" -> `True`; "f", "false", "no" -> `False`.
     - Otherwise attempts integer parsing, then float parsing, and falls back to the original string.
 
-    Parameters:
+    Parameters
+    ----------
         valstr (str): The input string to parse.
 
-    Returns:
+    Returns
+    -------
         An int, float, bool, bytes, or str corresponding to the interpreted value.
     """
     val: Any
@@ -154,6 +165,7 @@ def toStr(raw_value: Any) -> str:
 
     Returns:
         A string representation suitable for storing in configuration, e.g. `"base64:<data>"` for bytes.
+
     """
     if isinstance(raw_value, bytes):
         return "base64:" + base64.b64encode(raw_value).decode("utf-8")
@@ -164,15 +176,18 @@ def pskToString(psk: bytes) -> str:
     """
     Return a privacy-preserving label for a preshared key (PSK).
 
-    Parameters:
+    Parameters
+    ----------
         psk (bytes): PSK byte sequence to describe.
 
-    Returns:
+    Returns
+    -------
         str: One of:
             - `"unencrypted"` for an empty PSK or a single zero byte,
             - `"default"` for a single byte equal to 1,
             - `"simpleN"` for a single byte >1 where N is the byte value minus one,
             - `"secret"` for any multi-byte PSK.
+
     """
     if len(psk) == 0:
         return "unencrypted"
@@ -192,11 +207,14 @@ def stripnl(s: Any) -> str:
     """
     Normalize input by replacing newlines with spaces and collapsing consecutive whitespace into single spaces.
 
-    Parameters:
+    Parameters
+    ----------
         s (Any): Value to normalize; will be converted to a string.
 
-    Returns:
+    Returns
+    -------
         str: Single-line string with no newline characters and with consecutive whitespace collapsed to single spaces.
+
     """
     s = str(s).replace("\n", " ")
     return " ".join(s.split())
@@ -212,6 +230,7 @@ def fixme(message: str) -> NoReturn:
 
     Raises:
         FixmeError: Always raised with the message prefixed by "FIXME: ".
+
     """
     raise FixmeError("FIXME: " + message)
 
@@ -220,9 +239,11 @@ def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
     """
     Execute a callable and suppress any exception it raises, logging the failure.
 
-    Parameters:
+    Parameters
+    ----------
         reason (str): Contextual message included in the log if the callable raises an exception.
         closure (Callable[[], Any]): Zero-argument callable to execute; its exceptions are caught and logged.
+
     """
     try:
         closure()
@@ -234,12 +255,16 @@ def findPorts(eliminate_duplicates: bool = False) -> List[str]:
     """
     Return a sorted list of serial port device paths that may correspond to Meshtastic devices.
 
-    If any connected ports have vendor IDs in whitelistVids, only those ports are returned; otherwise returns all ports whose vendor IDs are not in blacklistVids. If eliminate_duplicates is True, runs eliminate_duplicate_port on the result before returning.
+    If any connected ports have vendor IDs in whitelistVids, only those ports are returned;
+    otherwise returns all ports whose vendor IDs are not in blacklistVids.
+    If eliminate_duplicates is True, runs eliminate_duplicate_port on the result before returning.
 
-    Parameters:
+    Parameters
+    ----------
         eliminate_duplicates (bool): If True, reduce likely-duplicate port entries.
 
-    Returns:
+    Returns
+    -------
         List[str]: Sorted list of device path strings.
     """
     all_ports = serial.tools.list_ports.comports()
@@ -292,13 +317,16 @@ class Timeout:
         """
         Initialize a Timeout helper that manages expiration timing and polling intervals.
 
-        Parameters:
+        Parameters
+        ----------
             maxSecs (float): Maximum number of seconds to wait before the timeout expires (default 20.0).
 
-        Attributes:
+        Attributes
+        ----------
             expireTime (float): Timestamp when the timeout will expire (initially 0.0).
             sleepInterval (float): Polling sleep interval in seconds (default 0.1).
             expireTimeout (float): Configured timeout duration in seconds (set from `maxSecs`).
+
         """
         self.expireTime: float = 0.0
         self.sleepInterval: float = 0.1
@@ -308,8 +336,10 @@ class Timeout:
         """
         Reset the expiration time used by wait loops.
 
-        Parameters:
+        Parameters
+        ----------
             expireTimeout (float, optional): Number of seconds from now until expiration. If omitted, uses the instance's configured expireTimeout.
+
         """
         self.expireTime = time.time() + (
             self.expireTimeout if expireTimeout is None else expireTimeout
@@ -319,12 +349,15 @@ class Timeout:
         """
         Wait until the specified attributes on `target` are present and truthy or until the timeout expires.
 
-        Parameters:
+        Parameters
+        ----------
             target (object): Object whose attributes will be checked.
             attrs (iterable[str]): Names of attributes to wait for; if empty, the function returns immediately.
 
-        Returns:
+        Returns
+        -------
             `true` if all named attributes are present on `target` and evaluate to true before the timeout, `false` otherwise.
+
         """
         self.reset()
         while time.time() < self.expireTime:
@@ -337,17 +370,20 @@ class Timeout:
         self, acknowledgment, attrs=("receivedAck", "receivedNak", "receivedImplAck")
     ) -> bool:
         """
-        Waits until any of the specified acknowledgment flags becomes set or the timeout expires.
+        Wait until any of the specified acknowledgment flags becomes set or the timeout expires.
 
-        Parameters:
+        Parameters
+        ----------
                 acknowledgment: An Acknowledgment-like object whose boolean attributes are checked.
                 attrs (tuple[str]): Attribute names to check on `acknowledgment` (defaults to ("receivedAck", "receivedNak", "receivedImplAck")).
 
-        Returns:
+        Returns
+        -------
                 True if any specified acknowledgment flag was set before the timeout elapsed, False otherwise.
 
         Side effects:
                 Resets the `acknowledgment` (calls its `reset()` method) when a flag is observed.
+
         """
         self.reset()
         while time.time() < self.expireTime:
@@ -364,18 +400,22 @@ class Timeout:
         attr: str = "receivedTraceRoute",
     ) -> bool:
         """
-        Waits until a traceroute acknowledgment flag on the provided acknowledgment object becomes set or the adjusted timeout expires.
+        Wait until a traceroute acknowledgment flag on the provided acknowledgment object becomes set or the adjusted timeout expires.
 
-        Parameters:
+        Parameters
+        ----------
             waitFactor (float): Multiplier applied to this Timeout's configured expire timeout before waiting.
             acknowledgment (Acknowledgment): Object whose attribute named by `attr` will be polled.
             attr (str): Attribute name on `acknowledgment` to check (default "receivedTraceRoute").
 
-        Returns:
+        Returns
+        -------
             True if the specified acknowledgment attribute became set before the timeout expired, False otherwise.
 
-        Notes:
+        Notes
+        -----
             On success this method calls `acknowledgment.reset()` to clear acknowledgment flags.
+
         """
         self.reset(self.expireTimeout * waitFactor)
         while time.time() < self.expireTime:
@@ -409,11 +449,15 @@ class Timeout:
         """
         Wait until a waypoint acknowledgement is observed or the timeout expires.
 
-        Parameters:
-            acknowledgment: Object that exposes a boolean `receivedWaypoint` attribute and a `reset()` method; the attribute is polled and reset on success.
+        Parameters
+        ----------
+            acknowledgment: Object that exposes a boolean `receivedWaypoint` attribute and a `reset()`
+            method; the attribute is polled and reset on success.
 
-        Returns:
+        Returns
+        -------
             True if a waypoint acknowledgement was received before the timeout, False otherwise.
+
         """
         self.reset()
         while time.time() < self.expireTime:
@@ -431,7 +475,8 @@ class Acknowledgment:
         """
         Create an Acknowledgment instance with all acknowledgment flags initialized to False.
 
-        Tracks the following boolean flags: receivedAck, receivedNak, receivedImplAck, receivedTraceRoute, receivedTelemetry, receivedPosition, and receivedWaypoint.
+        Tracks the following boolean flags: receivedAck, receivedNak, receivedImplAck,
+        receivedTraceRoute, receivedTelemetry, receivedPosition, and receivedWaypoint.
         """
         self.receivedAck = False
         self.receivedNak = False
@@ -467,8 +512,10 @@ class DeferredExecution:
         Initializes an internal work queue and launches a daemon thread (named by
         the `name` parameter) that runs the instance's _run method to process queued work.
 
-        Parameters:
+        Parameters
+        ----------
             name (str): Name assigned to the worker thread.
+
         """
         self.queue: Queue = Queue()
         # this thread must be marked as daemon, otherwise it will prevent clients from exiting
@@ -481,8 +528,10 @@ class DeferredExecution:
         """
         Enqueue a callable to be executed by the background worker thread.
 
-        Parameters:
+        Parameters
+        ----------
             runnable (Callable[[], Any]): A zero-argument callable to be executed later.
+
         """
         self.queue.put(runnable)
 
@@ -504,9 +553,11 @@ def our_exit(message, return_value=1) -> NoReturn:
     """
     Exit the process after printing a message.
 
-    Parameters:
+    Parameters
+    ----------
         message (str): Message to print to standard output before exiting.
         return_value (int): Process exit code; 0 indicates success, non-zero indicates failure (defaults to 1).
+
     """
     print(message)
     sys.exit(return_value)
@@ -545,12 +596,15 @@ def remove_keys_from_dict(keys: Union[Tuple, List, Set], adict: Dict) -> Dict:
     """
     Remove specified keys from a dictionary and its nested dictionaries.
 
-    Parameters:
+    Parameters
+    ----------
         keys (Union[Tuple, List, Set]): Iterable of keys to remove from the dictionary and any nested dict values.
         adict (Dict): Dictionary to process; entries matching any key in `keys` will be deleted. This dictionary is modified in place.
 
-    Returns:
+    Returns
+    -------
         Dict: The same dictionary `adict` after removal of matching keys.
+
     """
     for key in keys:
         try:
@@ -569,6 +623,7 @@ def channel_hash(data: bytes) -> int:
 
     Returns:
         int: Integer hash produced by XORing all bytes in `data`.
+
     """
     result = 0
     for char in data:
@@ -580,12 +635,16 @@ def generate_channel_hash(name: Union[str, bytes], key: Union[str, bytes]) -> in
     """
     Compute a channel number by hashing a channel name and a preshared key.
 
-    Parameters:
+    Parameters
+    ----------
         name (str | bytes): Channel name as a UTF-8 string or raw bytes.
-        key (str | bytes): PSK provided as raw bytes or a base64 string (URL-safe '-'/'_' accepted). If the key is a single byte, it is combined with DEFAULT_KEY to form a full key.
+        key (str | bytes): PSK provided as raw bytes or a base64 string (URL-safe '-'/'_' accepted).
+        If the key is a single byte, it is combined with DEFAULT_KEY to form a full key.
 
-    Returns:
+    Returns
+    -------
         int: Channel hash computed by XOR-ing the name hash and key hash.
+
     """
     # Handle key as str or bytes
     if isinstance(key, str):
@@ -610,16 +669,18 @@ def hexstr(barray: bytes) -> str:
 
     Returns:
         str: Colon-separated two-digit lowercase hexadecimal pairs representing the input bytes (e.g., "01:ab:ff").
+
     """
     return ":".join(f"{x:02x}" for x in barray)
 
 
 def ipstr(barray: bytes) -> str:
-    """
+    r"""
     Produce a dotted-decimal IPv4-style string representation of a byte sequence.
 
     Returns:
         A string of decimal octets separated by dots, one for each byte in `barray` (e.g., b'\xc0\xa8\x01\x01' -> "192.168.1.1").
+
     """
     return ".".join(f"{x}" for x in barray)
 
@@ -628,12 +689,15 @@ def readnet_u16(p: Union[bytes, bytearray, memoryview], offset: int) -> int:
     """
     Read an unsigned 16-bit big-endian integer from a buffer at a byte offset.
 
-    Parameters:
+    Parameters
+    ----------
         p (bytes | bytearray | memoryview): Buffer containing at least two bytes at the given offset.
         offset (int): Byte index within `p` where the 2-byte big-endian value starts.
 
-    Returns:
+    Returns
+    -------
         int: The 16-bit unsigned integer read from `p[offset:offset+2]`.
+
     """
     return p[offset] * 256 + p[offset + 1]
 
@@ -642,13 +706,18 @@ def convert_mac_addr(val: str) -> Union[str, bytes]:
     """
     Convert a value into a colon-separated MAC address string.
 
-    If `val` already matches a hexadecimal MAC address format (with optional separators), it is returned unchanged; otherwise `val` is interpreted as base64-encoded bytes and decoded to a colon-separated hexadecimal MAC string (e.g., 'fd:cd:20:17:28:5b').
+    If `val` already matches a hexadecimal MAC address format (with optional separators),
+    it is returned unchanged; otherwise `val` is interpreted as base64-encoded bytes and
+    decoded to a colon-separated hexadecimal MAC string (e.g., 'fd:cd:20:17:28:5b').
 
-    Parameters:
+    Parameters
+    ----------
         val (str): A hexadecimal MAC-like string or a base64-encoded byte string.
 
-    Returns:
+    Returns
+    -------
         str: A colon-separated hexadecimal MAC address.
+
     """
     if not re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", val):
         val_as_bytes: bytes = base64.b64decode(val)
@@ -660,11 +729,14 @@ def snake_to_camel(a_string: str) -> str:
     """
     Convert a snake_case identifier to camelCase.
 
-    Parameters:
+    Parameters
+    ----------
         a_string (str): Input string in snake_case.
 
-    Returns:
+    Returns
+    -------
         str: camelCase version of the input string.
+
     """
     # split underscore using split
     temp = a_string.split("_")
@@ -684,9 +756,14 @@ def detect_supported_devices() -> Set:
     """
     Detect supported devices present on the host by vendor ID.
 
-    Queries the host OS for attached USB devices (using lsusb on Linux, PowerShell Get-PnpDevice on Windows, and system_profiler on macOS) and matches discovered vendor IDs against the module's known supported vendor IDs. Returns a set of supported device descriptors for any matching devices; returns an empty set if none are found.
+    Queries the host OS for attached USB devices (using lsusb on Linux, PowerShell Get-PnpDevice
+    on Windows, and system_profiler on macOS) and matches discovered vendor IDs against the module's
+    known supported vendor IDs. Returns a set of supported device descriptors for any matching devices;
+    returns an empty set if none are found.
+
     Returns:
         Set: A set of supported device entries (one per matching supported device).
+
     """
     system: str = platform.system()
     # print(f'system:{system}')
@@ -750,15 +827,18 @@ def detect_windows_needs_driver(sd, print_reason=False) -> bool:
     """
     Determine whether a Windows driver must be installed for the given supported device.
 
-    Parameters:
+    Parameters
+    ----------
         sd (object | None): Supported device object (or None). If provided, its
             `usb_vendor_id_in_hex` attribute is used to look up matching PnP devices.
         print_reason (bool): If True and a driver-install failure is detected, print
             the detailed PowerShell output explaining the failure.
 
-    Returns:
+    Returns
+    -------
         bool: `true` if Windows indicates the device has a failed installation and
             a driver likely needs to be installed, `false` otherwise.
+
     """
     need_to_install_driver: bool = False
 
@@ -790,12 +870,17 @@ def eliminate_duplicate_port(ports: List) -> List:
     """
     Reduce paired serial port paths to a single representative when they likely refer to the same physical device.
 
-    This function examines a list of serial port path strings and, when the list contains exactly two entries that match known duplicate naming patterns (e.g., usbserial vs wchusbserial, usbmodem vs wchusbserial, SLAB_USBtoUART vs usbserial), returns a list containing a single preferred port. If no duplicate pattern is detected or the list length is not two, the original list is returned unchanged.
+    This function examines a list of serial port path strings and, when the list contains exactly two entries
+    that match known duplicate naming patterns (e.g., usbserial vs wchusbserial, usbmodem vs wchusbserial,
+    SLAB_USBtoUART vs usbserial), returns a list containing a single preferred port.
+    If no duplicate pattern is detected or the list length is not two, the original list is returned unchanged.
 
-    Parameters:
+    Parameters
+    ----------
         ports (List[str]): A list of serial port device path strings.
 
-    Returns:
+    Returns
+    -------
         List[str]: Either the original list of ports or a list containing one representative port when a duplicate pair is recognized.
     """
     new_ports = []
@@ -826,6 +911,7 @@ def is_windows11() -> bool:
 
     Returns:
         `true` if the OS is Windows and the system version patch is 22000 or greater, `false` otherwise (including when detection fails).
+
     """
     is_win11: bool = False
     if platform.system() == "Windows":
@@ -847,6 +933,7 @@ def get_unique_vendor_ids() -> Set[str]:
 
     Returns:
         Set[str]: A set of vendor ID strings in hex form (for example, "0x239A").
+
     """
     vids = set()
     for d in supported_devices:
@@ -859,11 +946,14 @@ def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
     """
     Return the set of supported devices that match the given USB vendor ID.
 
-    Parameters:
+    Parameters
+    ----------
         vid (str): USB vendor ID as a hex string (for example, "0x239A").
 
-    Returns:
+    Returns
+    -------
         Set[SupportedDevice]: A set of SupportedDevice entries whose usb_vendor_id_in_hex equals `vid`.
+
     """
     sd = set()
     for d in supported_devices:
@@ -876,15 +966,18 @@ def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[st
     """
     Return the set of active serial port paths for the provided supported devices, resolving ports according to the current operating system.
 
-    Parameters:
+    Parameters
+    ----------
         sds (Iterable): An iterable of SupportedDevice-like objects; each must expose
             platform-specific base port attributes (e.g., baseport_on_linux,
             baseport_on_mac, baseport_on_windows) used to discover matching ports.
         eliminate_duplicates (bool): If True, collapse likely duplicate port entries
             (platform-dependent heuristics) before returning.
 
-    Returns:
+    Returns
+    -------
         Set[str]: A set of active port path strings (e.g., "/dev/ttyUSB0" or "COM3").
+
     """
     ports: Set = set()
     baseports: Set = set()
@@ -961,15 +1054,18 @@ def detect_windows_port(
     Searches present PnP devices on Windows for entries containing the device's
     usb_vendor_id_in_hex and returns any discovered COM port identifiers.
 
-    Parameters:
+    Parameters
+    ----------
         sd (Optional[SupportedDevice]): SupportedDevice whose `usb_vendor_id_in_hex`
             will be used to find matching PnP devices. If `None` or if the system
             is not Windows or the vendor id is missing, the function returns an
             empty set.
 
-    Returns:
+    Returns
+    -------
         Set[str]: A set of COM port names (e.g., "COM3", "COM4") discovered for the
         device; empty if none found.
+
     """
     ports = set()
 
@@ -1007,6 +1103,7 @@ def check_if_newer_version() -> Optional[str]:
 
     Returns:
         pypi_version (Optional[str]): The newer PyPI version string if available, `None` otherwise.
+
     """
     pypi_version: Optional[str] = None
     try:
@@ -1039,12 +1136,15 @@ def message_to_json(message: Message, multiline: bool = False) -> str:
     """
     Serialize a protobuf Message to JSON while including fields that have no presence.
 
-    Parameters:
+    Parameters
+    ----------
         message (Message): The protobuf message to serialize.
         multiline (bool): Preserve the original multi-line JSON formatting when True; collapse newlines and extra whitespace when False.
 
-    Returns:
+    Returns
+    -------
         str: JSON string representation of the message.
+
     """
     try:
         json = MessageToJson(message, always_print_fields_with_no_presence=True)
@@ -1061,12 +1161,15 @@ def messageToJson(message: Message, multiline: bool = False) -> str:
     """
     Serialize a protobuf Message to a JSON string.
 
-    Parameters:
+    Parameters
+    ----------
         message (Message): The protobuf Message to serialize.
         multiline (bool): If True, preserve multiline formatting; if False, collapse newlines and extra whitespace into a single line.
 
-    Returns:
+    Returns
+    -------
         json_str (str): JSON representation of the message.
+
     """
     return message_to_json(message, multiline=multiline)
 
@@ -1081,11 +1184,14 @@ def to_node_num(node_id: Union[int, str]) -> int:
     - hexadecimal without "0x" (e.g., "2A")
     - optional leading "!" (e.g., "!0x2A" or "!42")
 
-    Parameters:
+    Parameters
+    ----------
         node_id (int | str): The node identifier to normalize.
 
-    Returns:
+    Returns
+    -------
         int: The parsed integer node number.
+
     """
     if isinstance(node_id, int):
         return node_id
@@ -1104,13 +1210,16 @@ def flags_to_list(flag_type: Any, flags: int) -> List[str]:
     """
     Convert a protobuf enum bitfield into a list of active flag names.
 
-    Parameters:
+    Parameters
+    ----------
         flag_type (Any): Protobuf EnumTypeWrapper providing `.keys()` and `.Value(name)` for enum members.
         flags (int): Integer bitfield containing combined enum flag values.
 
-    Returns:
+    Returns
+    -------
         List[str]: Ordered list of enum member names present in `flags`. If any bits remain that do not match known members,
         a single string of the form `UNKNOWN_ADDITIONAL_FLAGS(<remaining>)` is appended.
+
     """
     ret = []
     for key in flag_type.keys():

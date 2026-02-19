@@ -1454,7 +1454,8 @@ def test_set_favorite(favorite):
     """
     Verify setFavorite sends an admin message marking the given node as a favorite and transmits it.
 
-    Parameters:
+    Parameters
+    ----------
         favorite (int): Node ID to mark as favorite.
 
     """
@@ -1473,8 +1474,10 @@ def test_remove_favorite(favorite):
     """
     Verify that removing a favorite node creates an AdminMessage with the expected node ID and sends it via the interface.
 
-    Parameters:
+    Parameters
+    ----------
         favorite (int): Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
+
     """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
@@ -1492,8 +1495,10 @@ def test_set_ignored(ignored):
     """
     Verify that Node.setIgnored constructs an AdminMessage marking the given node ID as ignored and sends it.
 
-    Parameters:
+    Parameters
+    ----------
         ignored (int): Numeric node identifier passed to setIgnored.
+
     """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
@@ -1510,8 +1515,10 @@ def test_remove_ignored(ignored):
     """
     Verify that calling removeIgnored sends an admin message to remove a node from the ignored list and transmits it.
 
-    Parameters:
+    Parameters
+    ----------
         ignored: Node identifier (e.g., node ID or address) that will be encoded into `remove_ignored_node` on the AdminMessage.
+
     """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)

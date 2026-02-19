@@ -120,9 +120,11 @@ class ReconnectWorker:
         """
         Create a ReconnectWorker bound to a BLE interface and a reconnect policy.
 
-        Parameters:
+        Parameters
+        ----------
             interface (BLEInterface): Interface used to initiate connection attempts and to query or modify connection state.
             reconnect_policy (ReconnectPolicy): Backoff and retry policy that controls reconnect timing and attempt state.
+
         """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
@@ -131,12 +133,15 @@ class ReconnectWorker:
         """
         Decide whether the reconnect process should stop based on the interface state and the auto_reconnect flag.
 
-        Parameters:
+        Parameters
+        ----------
             auto_reconnect (bool): Whether automatic reconnect is enabled.
             context (str): Optional context string used in debug messages.
 
-        Returns:
+        Returns
+        -------
             bool: True if reconnection should be aborted, False otherwise.
+
         """
         if self.interface.is_connection_closing:
             logger.debug(
@@ -164,10 +169,12 @@ class ReconnectWorker:
 
         Attempts reconnects until a connection succeeds, the reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect is False. Between failed attempts the loop waits according to the policy (adjusted for certain BLE/DBus errors) and exits promptly if shutdown_event is signaled. The optional on_exit callback is invoked when the loop terminates.
 
-        Parameters:
+        Parameters
+        ----------
             auto_reconnect (bool): If False, the loop will exit immediately without attempting reconnects.
             shutdown_event (threading.Event): Event that causes the loop to stop as soon as it is set.
             on_exit (Optional[Callable[[], None]]): Callback invoked once when the loop ends.
+
         """
         self.reconnect_policy.reset()
         interface = self.interface

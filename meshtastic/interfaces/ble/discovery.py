@@ -42,11 +42,14 @@ def _normalize_device_name_for_matching(name: Optional[str]) -> Optional[str]:
 
     Strips leading/trailing whitespace and applies casefolding; preserves punctuation. If the input is None or reduces to an empty string after normalization, returns `None`.
 
-    Parameters:
+    Parameters
+    ----------
         name (Optional[str]): Raw device name.
 
-    Returns:
+    Returns
+    -------
         Optional[str]: The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
+
     """
     if name is None:
         return None
@@ -65,12 +68,15 @@ def _filter_devices_for_target_identifier(
     2) Exact name match (case-sensitive).
     3) Normalized name match (casefolded and stripped) only when exactly one candidate matches.
 
-    Parameters:
+    Parameters
+    ----------
         devices (List[BLEDevice]): Candidate devices to search.
         target_identifier (str): User-supplied address or device name to match.
 
-    Returns:
+    Returns
+    -------
         List[BLEDevice]: Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
+
     """
     target_key = sanitize_address(target_identifier)
     if target_key:

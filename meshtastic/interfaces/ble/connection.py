@@ -40,10 +40,12 @@ class ConnectionValidator:
         """
         Create a ConnectionValidator that enforces pre-connection checks for BLE operations.
 
-        Parameters:
+        Parameters
+        ----------
             state_manager (BLEStateManager): Manager for BLE connection state and transitions.
             state_lock (RLock): Reentrant lock for synchronizing access to shared BLE state.
             error_class (type): Exception class raised when validation fails.
+
         """
         self.state_manager = state_manager
         self.state_lock = state_lock
@@ -134,12 +136,15 @@ class ClientManager:
         """
         Create a BLEClient bound to the given device address and register a disconnect callback.
 
-        Parameters:
+        Parameters
+        ----------
             device_address (str): Target BLE device address to bind the client to.
             disconnect_callback (Callable): Function invoked when the client disconnects.
 
-        Returns:
+        Returns
+        -------
             BLEClient: A BLEClient instance bound to device_address with the disconnect callback set.
+
         """
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
@@ -183,9 +188,11 @@ class ClientManager:
 
         If `old_client` is provided and is a different object than `new_client`, schedules `safe_close_client(old_client)` to run in a background daemon thread so the caller is not blocked.
 
-        Parameters:
+        Parameters
+        ----------
             new_client (BLEClient): The client that will become active.
             old_client (Optional[BLEClient]): The previous client to close if different from `new_client`.
+
         """
         # Compute the decision under lock, but start the thread after releasing
         # to avoid holding the lock during thread creation/start
@@ -209,13 +216,16 @@ class ClientManager:
         """
         Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signaling when cleanup is complete.
 
-        Parameters:
+        Parameters
+        ----------
             client (BLEClient): The BLE client to disconnect and close.
             event (Optional[Event]): If provided, it will be set after cleanup completes to signal completion.
 
-        Notes:
+        Notes
+        -----
             - Performs a best-effort disconnect unless the Python interpreter is finalizing.
             - Any exceptions raised during disconnect or close are suppressed.
+
         """
         skip_disconnect = bool(getattr(sys, "is_finalizing", lambda: False)())
         if (
@@ -283,14 +293,17 @@ class ConnectionOrchestrator:
 
         Register notification handlers on the provided client, re-check that the orchestrator is still in CONNECTING state and that the client is connected, transition the connection state to CONNECTED, then call the provided on-connected callback and signal a reconnection event if applicable. Logs the successful connection using the sanitized device address.
 
-        Parameters:
+        Parameters
+        ----------
             client (BLEClient): The connected BLE client instance.
             device_address (str): Device address used for logging.
             register_notifications_func (Callable): Function that registers notification handlers on `client`.
             on_connected_func (Callable): Callback invoked after the state transitions to CONNECTED.
 
-        Raises:
+        Raises
+        ------
             BLEInterface.BLEError: If the orchestrator is no longer in CONNECTING state or if the client disconnects during finalization.
+
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:
@@ -352,19 +365,23 @@ class ConnectionOrchestrator:
         """
         Establishes a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalizes notification registration and lifecycle callbacks.
 
-        Parameters:
+        Parameters
+        ----------
             address (Optional[str]): Explicit device address to connect to; when None discovery mode is used.
             current_address (Optional[str]): Fallback address used when `address` is None.
             register_notifications_func (Callable): Function called with the connected `BLEClient` to register notification handlers.
             on_connected_func (Callable): Callback invoked after the connection has been finalized and state updated to CONNECTED.
             on_disconnect_func (Callable): Callback passed to the `BLEClient` to be invoked when the client disconnects.
 
-        Returns:
+        Returns
+        -------
             BLEClient: The connected BLE client instance.
 
-        Raises:
+        Raises
+        ------
             BLEError: If the request is invalid (e.g., empty address) or a concurrent connection state prevents establishing a connection.
             BleakDBusError: If a DBus-level BLE error occurs during connection.
+
         """
         self.validator.validate_connection_request()
 

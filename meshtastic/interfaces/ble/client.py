@@ -56,16 +56,20 @@ class BLEClient:
         """
         Await an awaitable and raise BLEClient.BLEError if it does not complete within the given timeout.
 
-        Parameters:
+        Parameters
+        ----------
             awaitable (Awaitable[T]): The awaitable to run.
             timeout (float | None): Maximum seconds to wait; if None, wait indefinitely.
             label (str): Short description used in the timeout error message.
 
-        Returns:
+        Returns
+        -------
             T: The value produced by the awaitable.
 
-        Raises:
+        Raises
+        ------
             BLEClient.BLEError: If the awaitable does not complete before the timeout elapses.
+
         """
         if timeout is None:
             return await awaitable
@@ -132,6 +136,7 @@ class BLEClient:
 
         Returns:
             list: A list of discovered `BLEDevice` objects.
+
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
@@ -182,6 +187,7 @@ class BLEClient:
 
         Returns:
             `true` if the bleak client reports an active connection, `false` otherwise (also `false` when no bleak client exists or the connection state cannot be read).
+
         """
         # Keep getattr() defensive: some tests instantiate via object.__new__
         # and bypass __init__, so bleak_client may legitimately be absent.
@@ -218,12 +224,15 @@ class BLEClient:
         """
         Disconnect from the remote BLE device and wait for the operation to complete.
 
-        Parameters:
+        Parameters
+        ----------
             await_timeout (float | None): Maximum seconds to wait for the disconnect to finish. If None, wait indefinitely.
             **kwargs: Additional keyword arguments forwarded to the underlying Bleak client's disconnect method.
 
-        Raises:
+        Raises
+        ------
             BLEError: If the BLE client is not initialized or if the underlying disconnect fails.
+
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
@@ -264,6 +273,7 @@ class BLEClient:
 
         Returns:
             bytes: The characteristic value as raw bytes.
+
         """
         warnings.warn(
             "readGattChar is deprecated; use read_gatt_char instead",
@@ -379,11 +389,14 @@ class BLEClient:
         """
         CamelCase compatibility wrapper for has_characteristic.
 
-        Parameters:
+        Parameters
+        ----------
             specifier (str | UUID): Characteristic identifier to look up (UUID string or UUID object).
 
-        Returns:
+        Returns
+        -------
             `true` if the connected device exposes the specified characteristic, `false` otherwise.
+
         """
         warnings.warn(
             "hasCharacteristic is deprecated; use has_characteristic instead",
@@ -504,6 +517,7 @@ class BLEClient:
 
         Returns:
             The BLEClient instance.
+
         """
         return self
 
@@ -641,14 +655,18 @@ class BLEClient:
         """
         Schedule a coroutine to run on the shared BLE event loop.
 
-        Parameters:
+        Parameters
+        ----------
             coro (Coroutine[Any, Any, Any]): Coroutine to schedule on the shared BLE event loop.
 
-        Returns:
+        Returns
+        -------
             concurrent.futures.Future[Any]: Future representing the scheduled coroutine's eventual result.
 
-        Raises:
+        Raises
+        ------
             BLEClient.BLEError: If the BLEClient is closed or the coroutine cannot be scheduled.
+
         """
         if self._closed:
             raise self.BLEError("Cannot schedule operation: BLE client is closed")

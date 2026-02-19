@@ -79,9 +79,11 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
 
     If the packet contains a decoded payload and the CLI request was a text send, the interface will be closed when the packet is a text message addressed to this node. If reply mode is enabled and the decoded payload contains text, a reply containing the received text plus the packet's `rxSnr` and `hopLimit` will be sent and printed.
 
-    Parameters:
+    Parameters
+    ----------
         packet (dict): Incoming packet; expected keys include `"decoded"` (dict or None), `"to"` (destination node number), `"rxSnr"`, and `"hopLimit"`.
         interface (MeshInterface): Interface used to send replies and to close the connection.
+
     """
     args = mt_config.args
     try:
@@ -123,10 +125,12 @@ def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
     Prints a "Connection changed: <name>" message where <name> is obtained from
     topic.getName() if available, otherwise str(topic).
 
-    Parameters:
+    Parameters
+    ----------
         interface (MeshInterface): The interface whose connection state changed.
         topic (Any): Event topic or identifier; if it provides `getName()` that
             value is used for display.
+
     """
     _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
@@ -152,25 +156,30 @@ def getPref(node: Any, comp_name: str) -> bool:
 
     If the field exists locally, print its current value(s); if the field exists but is not populated locally, request the remote node's configuration. If the compound name refers to a message (e.g., "channel.label" or "channel"), populated subfields are printed when available.
 
-    Parameters:
+    Parameters
+    ----------
         node (Any): Node object containing `localConfig` and `moduleConfig`.
         comp_name (str): Dot-separated preference name or path (e.g., "channel.label" or "label"). If a single name is provided, it is used for both section and field resolution.
 
-    Returns:
+    Returns
+    -------
         bool: `True` if the preference field exists and the function printed local values or requested remote config; `False` if the field was not found.
+
     """
 
     def _printSetting(config_type, uni_name, pref_value, repeated):
         """
-        Prints a configuration preference and its value to both stdout and the debug log.
+        Print a configuration preference and its value to both stdout and the debug log.
 
         If `repeated` is True, `pref_value` is treated as an iterable and each element is stringified before printing; otherwise the single value is stringified.
 
-        Parameters:
+        Parameters
+        ----------
             config_type: Object with a `name` attribute identifying the configuration section (e.g., a protobuf config type).
             uni_name (str): The preference name within the configuration section.
             pref_value: The preference value to print; an iterable when `repeated` is True.
             repeated (bool): When True, treat `pref_value` as a sequence and print a list of stringified values.
+
         """
         if repeated:
             pref_value = [meshtastic.util.toStr(v) for v in pref_value]
@@ -245,6 +254,7 @@ def splitCompoundName(comp_name: str) -> List[str]:
 
     Returns:
         List[str]: The name segments, or `[comp_name, comp_name]` when no dot is present.
+
     """
     name: List[str] = comp_name.split(".")
     if len(name) < 2:
@@ -259,13 +269,16 @@ def traverseConfig(
     """
     Recursively apply values from a nested mapping onto a target configuration by walking dot-separated paths.
 
-    Parameters:
+    Parameters
+    ----------
         config_root (str): Dot-separated prefix for the current configuration path (e.g., "channel.0").
         config (Dict[str, Any]): Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
         interface_config: Target configuration object that will receive the applied leaf values.
 
-    Returns:
+    Returns
+    -------
         bool: `True` when traversal completes and all leaf values have been processed.
+
     """
     snake_name = meshtastic.util.camel_to_snake(config_root)
     for pref in config:
@@ -287,13 +300,16 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     >= 8), and applies the value. Repeated fields are replaced, appended to, or cleared according to
     the provided value.
 
-    Parameters:
+    Parameters
+    ----------
         config: The protobuf config or channel message to modify.
         comp_name (str): Dot-separated field path (for example "channel.security.wifi_psk" or "node.name").
         raw_val: The value to set; may be a string, number, list (for repeated fields), or an already-typed value.
 
-    Returns:
+    Returns
+    -------
         `True` if the named field was found and successfully set or updated, `False` otherwise.
+
     """
 
     name = splitCompoundName(comp_name)
@@ -395,8 +411,10 @@ def onConnected(interface: MeshInterface) -> None:
 
     Reads mt_config.args and executes any requested operations against the provided MeshInterface (for example: update time or owner, set or remove fixed position, write configuration or channel changes, send text/telemetry/position messages, manage nodes, export configuration, perform reboots/shutdowns, and start tunnels or power-monitoring tasks). Actions may write to remote devices, send radio messages, start long-running services (tunnel, GPIO watch, power stress), and adjust local state. The function may close the interface when work is complete, wait for remote acknowledgments when required, or terminate the process on fatal errors.
 
-    Parameters:
+    Parameters
+    ----------
         interface (MeshInterface): An established mesh interface used to perform the requested device and network operations.
+
     """
     closeNow = False  # Should we drop the connection after we finish?
     waitForAckNak = (
@@ -780,12 +798,15 @@ def onConnected(interface: MeshInterface) -> None:
             node = interface.getNode(args.dest, False, **getNode_kwargs)
 
             # Handle the int/float/bool arguments
-            pref: Optional[Tuple[str, str]] = None
+            last_pref: Optional[List[str]] = None
             fields: Set[str] = set()
             found = False
-            for pref in args.set:
+            for pref_item in args.set:
+                if pref_item is None or len(pref_item) < 2:
+                    continue
+                last_pref = pref_item
                 found = False
-                field = splitCompoundName(pref[0].lower())[0]
+                field = splitCompoundName(pref_item[0].lower())[0]
                 for config in [node.localConfig, node.moduleConfig]:
                     config_type = config.DESCRIPTOR.fields_by_name.get(field)
                     if config_type:
@@ -793,7 +814,7 @@ def onConnected(interface: MeshInterface) -> None:
                             node.requestConfig(
                                 config.DESCRIPTOR.fields_by_name.get(field)
                             )
-                        found = setPref(config, pref[0], pref[1])
+                        found = setPref(config, pref_item[0], pref_item[1])
                         if found:
                             fields.add(field)
                             break
@@ -808,14 +829,14 @@ def onConnected(interface: MeshInterface) -> None:
                     node.writeConfig(field)
                 if len(fields) > 1:
                     node.commitSettingsTransaction()
-            elif pref is not None:
+            elif last_pref is not None:
                 if mt_config.camel_case:
                     print(
-                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {pref[0]}."
+                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
                     )
                 else:
                     print(
-                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have attribute {pref[0]}."
+                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have attribute {last_pref[0]}."
                     )
                 print("Choices are...")
                 printConfig(node.localConfig)
@@ -1106,6 +1127,7 @@ def onConnected(interface: MeshInterface) -> None:
             node = interface.getNode(args.dest, **getNode_kwargs)
             ch = node.channels[_idx]  # type: ignore[index]
 
+            enable: bool = True  # default to enable
             if args.ch_enable or args.ch_disable:
                 print(
                     "Warning: --ch-enable and --ch-disable can produce noncontiguous channels, "
@@ -1306,8 +1328,10 @@ def printConfig(config: Any) -> None:
 
     Skips the "version" section. For each other top-level section, prints the section name and a sorted list of its fields as "section.field"; if mt_config.camel_case is true, field names are converted to camelCase before printing.
 
-    Parameters:
+    Parameters
+    ----------
         config (Any): A protobuf-like configuration message that exposes a DESCRIPTOR with top-level fields.
+
     """
     objDesc = config.DESCRIPTOR
     for config_section in objDesc.fields:
@@ -1330,8 +1354,10 @@ def onNode(node: Any) -> None:
 
     Prints the changed node to standard output.
 
-    Parameters:
+    Parameters
+    ----------
         node (Any): The node object or identifier that changed.
+
     """
     print(f"Node changed: {node}")
 
@@ -1547,6 +1573,10 @@ def create_power_meter():
 
     global meter  # pylint: disable=global-statement
     args = mt_config.args
+    if args is None:
+        raise RuntimeError(
+            "mt_config.args must be initialized before calling create_power_meter()"
+        )
 
     # If the user specified a voltage, make sure it is valid
     v = 0.0
@@ -1586,6 +1616,13 @@ def common():
     logfile = None
     args = mt_config.args
     parser = mt_config.parser
+    if args is None:
+        raise RuntimeError("mt_config.args must be initialized before calling common()")
+    if parser is None:
+        raise RuntimeError(
+            "mt_config.parser must be initialized before calling common()"
+        )
+
     logging.basicConfig(
         level=logging.DEBUG if (args.debug or args.listen) else logging.INFO,
         format="%(levelname)s file:%(filename)s %(funcName)s line:%(lineno)s %(message)s",
@@ -1937,11 +1974,14 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
     """
     Register CLI options for importing a YAML configuration file and exporting device configuration as YAML.
 
-    Parameters:
+    Parameters
+    ----------
         parser (argparse.ArgumentParser): The argument parser to extend.
 
-    Returns:
+    Returns
+    -------
         argparse.ArgumentParser: The same parser instance with the import/export arguments added.
+
     """
     group = parser.add_argument_group(
         "Import/Export",
@@ -1971,11 +2011,14 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     canned messages and ringtones, modem preset shortcuts, owner/ham settings, messageability flag,
     and channel URL helpers.
 
-    Parameters:
+    Parameters
+    ----------
         parser (argparse.ArgumentParser): ArgumentParser to extend with configuration-related options.
 
-    Returns:
+    Returns
+    -------
         argparse.ArgumentParser: The same parser instance with configuration arguments added.
+
     """
 
     group = parser.add_argument_group(
@@ -2125,11 +2168,14 @@ def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     Adds arguments for adding/deleting channels, setting channel parameters (including PSK),
     QR display for channels, enable/disable flags, and a retry count for fetching channel settings.
 
-    Parameters:
+    Parameters
+    ----------
         parser (argparse.ArgumentParser): The argument parser to extend.
 
-    Returns:
+    Returns
+    -------
         argparse.ArgumentParser: The same parser instance with channel configuration options added.
+
     """
 
     group = parser.add_argument_group(
@@ -2382,11 +2428,14 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     device metadata query, factory reset variants, node DB edits (remove/favorite/ignore), reset NodeDB,
     and setting the node's time.
 
-    Parameters:
+    Parameters
+    ----------
         parser (argparse.ArgumentParser): The argument parser to extend.
 
-    Returns:
+    Returns
+    -------
         argparse.ArgumentParser: The same parser instance with the remote-admin arguments added.
+
     """
 
     outer = parser.add_argument_group(
@@ -2494,7 +2543,10 @@ def initParser():
     arguments on mt_config.parser and mt_config.args.
     """
     parser = mt_config.parser
-    args = mt_config.args
+    if parser is None:
+        raise RuntimeError(
+            "mt_config.parser must be initialized before calling initParser()"
+        )
 
     # The "Help" group includes the help option and other informational stuff about the CLI itself
     outerHelpGroup = parser.add_argument_group("Help")
@@ -2733,6 +2785,8 @@ def tunnelMain():
     mt_config.parser = parser
     initParser()
     args = mt_config.args
+    if args is None:
+        raise RuntimeError("initParser() did not set mt_config.args")
     args.tunnel = True
     mt_config.args = args
     common()

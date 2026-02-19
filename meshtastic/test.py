@@ -29,11 +29,14 @@ class _FallbackDotMap(dict):
         If the key exists and its value is not a dict, return the value unchanged.
         If the key is missing, return an empty _FallbackDotMap.
 
-        Parameters:
+        Parameters
+        ----------
             key (str): Attribute name to retrieve as a dictionary key.
 
-        Returns:
+        Returns
+        -------
             Any: The value stored under `key`, or a `_FallbackDotMap` for nested dicts or missing keys.
+
         """
         # Guard dunder names to avoid interfering with copy, pickle, etc.
         if key.startswith("__") and key.endswith("__"):
@@ -51,9 +54,11 @@ class _FallbackDotMap(dict):
         """
         Assign a value to a dictionary key using attribute-style access.
 
-        Parameters:
+        Parameters
+        ----------
             key (str): Attribute name to store as a dictionary key.
             value (Any): Value to assign to the key.
+
         """
         self[key] = value
 
@@ -61,11 +66,14 @@ class _FallbackDotMap(dict):
         """
         Delete a mapping entry using attribute-style access.
 
-        Parameters:
+        Parameters
+        ----------
             key (str): Name of the key to remove.
 
-        Raises:
+        Raises
+        ------
             AttributeError: If the key does not exist.
+
         """
         try:
             del self[key]
@@ -102,9 +110,11 @@ def onReceive(packet: dict, interface: Any) -> None:
 
     Ignores packets that originated from the current sendingInterface. Converts the packet to a DotMap and, if its decoded.portnum matches PortNum.TEXT_MESSAGE_APP, appends the converted packet to the module-level receivedPackets list when that list is set.
 
-    Parameters:
+    Parameters
+    ----------
         packet (dict): Raw packet data as received.
         interface (Any): Interface object that delivered the packet.
+
     """
     if sendingInterface != interface:
         # print(f"From {interface.stream.port}: {packet}")
@@ -122,8 +132,10 @@ def onNode(node: Any) -> None:
     """
     Notify that a node database entry changed.
 
-    Parameters:
+    Parameters
+    ----------
         node (Any): The node entry that changed or a payload describing the change (typically a node database record).
+
     """
     print(f"Node changed: {node}")
 
@@ -280,11 +292,14 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
     """
     Create a per-port debug log file and return its open file handle.
 
-    Parameters:
+    Parameters
+    ----------
         portName (str): Serial port name used to derive the filename; '/' characters will be replaced with '_'.
 
-    Returns:
+    Returns
+    -------
         io.TextIOWrapper: An open text file for writing the debug log.
+
     """
     debugname = "log" + portName.replace("/", "_")
     logger.info(f"Writing serial debugging to {debugname}")
@@ -295,11 +310,14 @@ def testAll(numTests: int = 5) -> bool:
     """
     Discover connected Meshtastic devices, open serial interfaces for each, run integration tests, and close interfaces.
 
-    Parameters:
+    Parameters
+    ----------
         numTests (int): Number of test iterations to run in the test thread.
 
-    Returns:
+    Returns
+    -------
         bool: `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
+
     """
     ports: List[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:

@@ -55,9 +55,11 @@ class _TempPort:
         """
         Initialize the temporary port stub with an optional device path and vendor ID.
 
-        Parameters:
+        Parameters
+        ----------
             device (Optional[str]): The port device path (for example '/dev/ttyUSB0') or None.
             vid (Optional[int]): The USB vendor ID as an integer, or None.
+
         """
         self.device = device
         self.vid = vid
