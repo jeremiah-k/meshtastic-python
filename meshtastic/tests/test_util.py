@@ -52,6 +52,13 @@ class _TempPort:
     vid: Optional[int]
 
     def __init__(self, device: Optional[str] = None, vid: Optional[int] = None) -> None:
+        """
+        Initialize the temporary port stub with an optional device path and vendor ID.
+        
+        Parameters:
+            device (Optional[str]): The port device path (for example '/dev/ttyUSB0') or None.
+            vid (Optional[int]): The USB vendor ID as an integer, or None.
+        """
         self.device = device
         self.vid = vid
 

@@ -65,30 +65,17 @@ def addr_key(addr: Optional[str]) -> Optional[str]:
 
 def _get_addr_lock(key: Optional[str]) -> RLock:
     """
-    Get the process-wide RLock associated with the given normalized address.
-
-    This function ensures a per-address RLock exists (created lazily) and increments
-    its internal holder count to prevent premature cleanup. If `key` is None, the
-    global registry lock is returned.
-
-    .. warning::
-        Callers that obtain the lock object but do not acquire it MUST call
-        `_release_addr_lock()` when finished to decrement the holder count.
-        Failure to do so will prevent cleanup of the per-address lock.
-
-        **Prefer using `_addr_lock_context()` instead** - it handles holder count
-        management automatically via try/finally.
-
-    Parameters
-    ----------
-        key (Optional[str]): A raw address or already-normalized address key;
-            `None` selects the global registry lock.
-
-    Returns
-    -------
-        RLock: The per-address lock for the normalized key, or the global
-            registry lock if `key` is None.
-
+    Get the process-wide reentrant lock for a normalized address key.
+    
+    If `key` is None the global registry lock is returned. When a per-address lock is returned,
+    its internal holder count is incremented to prevent premature cleanup; callers that obtain
+    the lock object but do not acquire it must call `_release_addr_lock()` when finished.
+    
+    Parameters:
+        key (Optional[str]): A raw or already-normalized address key; `None` selects the global registry lock.
+    
+    Returns:
+        RLock: The per-address reentrant lock for `key`, or the global registry lock if `key` is None.
     """
     key = addr_key(key)
     return _get_addr_lock_by_key(key)
@@ -96,18 +83,15 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
 
 def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
     """
-    Return the process-wide reentrant lock associated with a normalized address key.
-
-    If `key` is None, the global registry lock is returned. For per-address locks, this function increments an internal holder count for the returned lock to prevent its premature cleanup.
-
-    Parameters
-    ----------
+    Get the process-wide reentrant lock for a normalized address key.
+    
+    If `key` is None, returns the global registry lock. For per-address locks, ensures a lock exists and increments an internal holder count to prevent premature cleanup.
+    
+    Parameters:
         key (Optional[str]): Normalized address key; `None` selects the global registry lock.
-
-    Returns
-    -------
-        RLock: The per-address reentrant lock for `key`, or the global registry lock when `key` is None.
-
+    
+    Returns:
+        RLock: The reentrant lock for `key`, or the global registry lock when `key` is `None`.
     """
     if key is None:
         # The registry lock is a process-wide singleton and is not ref-counted.
@@ -125,13 +109,11 @@ def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
 def _release_addr_lock(key: Optional[str]) -> None:
     """
     Decrement the holder count for the per-address lock identified by key.
-
-    The input is normalized to a registry key; passing None refers to the registry-level lock. If the holder count reaches zero and the address is not currently marked connected, the per-address lock entry may be removed as part of cleanup.
-
-    Parameters
-    ----------
+    
+    If key is None, operates on the global registry lock. The input is normalized to a registry key; when the holder count reaches zero and the address is not marked connected, the per-address lock entry may be removed by cleanup logic.
+    
+    Parameters:
         key (Optional[str]): An address or already-normalized key identifying the per-address lock; use None for the registry.
-
     """
     key = addr_key(key)
     _release_addr_lock_by_key(key)
@@ -161,17 +143,12 @@ def _release_addr_lock_by_key(key: Optional[str]) -> None:
 
 def _cleanup_addr_lock(key: Optional[str]) -> None:
     """
-    Remove the per-address lock from the registry when there are no remaining holders.
-
-    If `key` is None this function is a no-op. When `key` is provided, the registry entry
-    for that address (both the lock and its holder count) is removed only if the tracked
-    holder count is less than or equal to zero; otherwise the lock is left in place.
-
-    Parameters
-    ----------
-        key (Optional[str]): Normalized address key identifying the per-address lock,
-            or `None` to indicate no target (no action).
-
+    Remove a per-address lock from the registry when there are no remaining holders.
+    
+    If `key` is None this function does nothing. When `key` is provided, the registry entries for that address (the lock and its holder count) are removed only if the tracked holder count is less than or equal to zero; otherwise the entries are left intact.
+    
+    Parameters:
+        key (Optional[str]): Normalized address key identifying the per-address lock, or `None` to indicate no action.
     """
     if key is None:
         return
@@ -192,16 +169,10 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
 
 def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
     """
-    Create a weak reference to the given owner if supported.
-
-    Parameters
-    ----------
-        owner (Optional[Any]): Object to create a weak reference for.
-
-    Returns
-    -------
-        Optional[weakref.ReferenceType[Any]]: A weak reference to `owner`, or `None` if `owner` is `None` or does not support weak references.
-
+    Return a weak reference to `owner` if it is provided and supports weak references.
+    
+    Returns:
+        Optional[weakref.ReferenceType[Any]]: A weak reference to `owner`, or `None` if `owner` is `None` or not weak-referenceable.
     """
     if owner is None:
         return None
@@ -244,9 +215,13 @@ def _owner_connected_state(owner: Any) -> Optional[bool]:
 
 def _remove_connected_record_locked(key: str) -> None:
     """
-    Remove all connected-state bookkeeping for a normalized address key.
-
-    Must be called while `_REGISTRY_LOCK` is held.
+    Remove all connected-state bookkeeping associated with the normalized address key.
+    
+    Parameters:
+        key (str): Normalized address key whose connected-state records should be removed.
+    
+    Notes:
+        Must be called while holding the module-level `_REGISTRY_LOCK`.
     """
     _CONNECTED_ADDRS.discard(key)
     _CONNECTED_OWNERS.pop(key, None)
@@ -350,20 +325,16 @@ def is_currently_connected_elsewhere(
     addr: Optional[str], owner: Optional[Any] = None
 ) -> bool:
     """
-    Check whether a BLE address is currently recorded as connected by a different owner.
-
-    Normalizes the provided address; if normalization yields None the function returns False.
-    If an owner is provided and matches the recorded owner (by identity or recorded id), the address is not considered "connected elsewhere". Stale claims are pruned during the check when the recorded owner has been garbage-collected, reports it is disconnected, or an unowned claim has expired.
-
-    Parameters
-    ----------
+    Determine whether a BLE address is recorded as connected by a different owner.
+    
+    Normalizes the provided address via addr_key; if normalization yields None the function returns False. While checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an unowned claim has expired.
+    
+    Parameters:
         addr (Optional[str]): BLE address to check; will be normalized via addr_key.
-        owner (Optional[Any]): The caller's owner instance used to determine whether a recorded claim belongs to the caller.
-
-    Returns
-    -------
+        owner (Optional[Any]): Caller’s owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere.
+    
+    Returns:
         True if the normalized address is marked connected by a different owner, False otherwise.
-
     """
     key = addr_key(addr)
     if key is None:

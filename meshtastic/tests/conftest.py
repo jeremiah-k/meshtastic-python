@@ -12,22 +12,14 @@ from ..mesh_interface import MeshInterface
 
 
 def _create_context_manager_mock(spec_class: Type) -> MagicMock:
-    """Create a MagicMock that properly supports context manager protocol.
-
-    When using ExitStack.enter_context(), the mock's __enter__ must return self,
-    otherwise the returned object is a different mock than what was configured.
-
-    This is needed because the CLI code now uses:
-        client = stack.enter_context(SerialInterface(...))
-
-    Without this fix, __enter__ returns a new MagicMock, breaking test assertions.
-
-    Args:
-        spec_class: The class to use as spec for the mock (e.g., SerialInterface)
-
+    """
+    Create a MagicMock that supports the context manager protocol for the given spec class.
+    
+    Parameters:
+        spec_class (Type): Class used as the mock's spec (e.g., SerialInterface).
+    
     Returns:
-        A MagicMock with __enter__ configured to return itself.
-
+        MagicMock: A mock configured so its `__enter__` returns the mock itself and its `__exit__` returns None.
     """
     mock = MagicMock(spec=spec_class)
     mock.__enter__ = MagicMock(return_value=mock)
@@ -41,11 +33,12 @@ class FakeTimer:
     created: ClassVar[List["FakeTimer"]] = []
 
     def __init__(self, interval: float, function: Callable[[], None]) -> None:
-        """Initialize a FakeTimer and register it in FakeTimer.created for test inspection.
-
-        Args:
-            interval: Time interval in seconds for the timer.
-            function: Callback that would be invoked when a real timer fires.
+        """
+        Create a FakeTimer and record it in FakeTimer.created for test inspection.
+        
+        Parameters:
+            interval (float): Time interval in seconds that the timer represents.
+            function (Callable[[], None]): Callback that would be invoked when a real timer fires.
         """
         self.interval = interval
         self.function = function
@@ -55,18 +48,17 @@ class FakeTimer:
         FakeTimer.created.append(self)
 
     def start(self) -> None:
-        """Record that the fake timer was started.
-
-        Note: the callback is *not* invoked automatically. To exercise the
-        callback in a test, call ``FakeTimer.created[i].function()`` directly.
+        """Mark the FakeTimer as started.
+        
+        The timer's callback is not executed automatically. To invoke the callback in a test, call `FakeTimer.created[i].function()` directly.
         """
         self.started = True
 
     def cancel(self) -> None:
         """
         Mark the fake timer as cancelled.
-
-        Sets the instance's cancelled flag to True so tests can detect that the timer has been cancelled.
+        
+        Sets the instance's `cancelled` flag to True so tests can detect that the timer was cancelled.
         """
         self.cancelled = True
 
@@ -89,7 +81,11 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
 
 @pytest.fixture
 def reset_mt_config():
-    """Fixture to reset mt_config."""
+    """
+    Reset the global mt_config state and install a fresh ArgumentParser for tests.
+    
+    Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns the new parser to mt_config.parser so tests start with a clean configuration.
+    """
     parser = None
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.reset()
@@ -98,7 +94,14 @@ def reset_mt_config():
 
 @pytest.fixture
 def iface_with_nodes():
-    """Fixture to setup some nodes."""
+    """
+    Provide a MeshInterface pre-populated with a sample node and a mocked myInfo.
+    
+    The returned MeshInterface has `nodes` and `nodesByNum` populated with a single node (numeric id 2475227164). `myInfo` is a MagicMock and its `my_node_num` attribute is set to 2475227164.
+    
+    Returns:
+        MeshInterface: Instance with prepared node dictionaries and a mocked `myInfo`.
+    """
     nodesById = {
         "!9388f81c": {
             "num": 2475227164,
@@ -140,17 +143,14 @@ def iface_with_nodes():
 @pytest.fixture
 def mock_serial_interface() -> MagicMock:
     """
-    Create a mock SerialInterface with pre-configured attributes for Node tests.
-
-    Note: We use MagicMock without spec because localNode and myInfo are instance
-    attributes set in MeshInterface.__init__, not class attributes. Using spec would
-    prevent access to these attributes since they don't exist at the class level.
-
+    Provide a mock SerialInterface configured for node-related tests.
+    
+    Configured behavior:
+    - localNode.getChannelByName returns None
+    - myInfo.max_channels is set to 8
+    
     Returns:
-        A MagicMock configured with:
-        - localNode.getChannelByName returns None
-        - myInfo.max_channels = 8
-
+        MagicMock: A mock acting like a SerialInterface with the above attributes.
     """
     mock_iface = MagicMock()
     mock_iface.localNode.getChannelByName.return_value = None

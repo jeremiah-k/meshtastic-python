@@ -206,7 +206,11 @@ def test_getNode_not_local_timeout_attempts(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendPosition(caplog):
-    """Test sendPosition."""
+    """
+    Verify that MeshInterface.sendPosition() executes without error and emits position-related debug logs.
+    
+    Creates a MeshInterface(noProto=True), calls sendPosition() while capturing DEBUG logs, and then closes the interface.
+    """
     iface = MeshInterface(noProto=True)
     with caplog.at_level(logging.DEBUG):
         iface.sendPosition()
@@ -408,7 +412,11 @@ def test_MeshInterface_sendToRadioImpl(caplog):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_MeshInterface_sendToRadio_no_proto(caplog):
-    """Test sendToRadio()."""
+    """
+    Verify the default MeshInterface._sendToRadioImpl logs that subclasses must implement radio sending.
+    
+    Asserts that invoking the base implementation produces a log message containing "Subclass must provide toradio".
+    """
     iface = MeshInterface()
     with caplog.at_level(logging.DEBUG):
         iface._sendToRadioImpl("foo")  # type: ignore[arg-type]
@@ -444,7 +452,9 @@ def test_sendData_too_long(caplog):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendData_unknown_app():
-    """Test sendData when unknown app."""
+    """
+    Verify that calling sendData with PortNum.UNKNOWN_APP raises MeshInterface.MeshInterfaceError and the error message contains "A non-zero port number must be specified".
+    """
     iface = MeshInterface(noProto=True)
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface.sendData(b"hello", portNum=portnums_pb2.PortNum.UNKNOWN_APP)
@@ -603,9 +613,9 @@ def test_getCannedMessage():
 @pytest.mark.usefixtures("reset_mt_config")
 def test_getRingtone():
     """
-    Verifies MeshInterface.getRingtone returns the ringtone provided by the local node.
-
-    Asserts that when the local node's get_ringtone() returns a string, MeshInterface.getRingtone() forwards that exact string.
+    Ensure MeshInterface.getRingtone delegates to the local node and returns its ringtone string.
+    
+    The local node's get_ringtone() return value is forwarded unchanged.
     """
     iface = MeshInterface(noProto=True)
     node = MagicMock()
@@ -743,11 +753,9 @@ def test_getOrCreateByNum(iface_with_nodes):
 @pytest.mark.unit
 def test_exit_with_exception(caplog):
     """
-    Verify MeshInterface.__exit__ logs exception details when an exception is raised inside its context.
-
-    Asserts that an error-level log entry contains the raised ValueError
-    message and a traceback that includes the line where the exception was
-    raised in this test.
+    Verify that MeshInterface.__exit__ logs the exception type, value, and traceback when an exception is raised inside its context.
+    
+    Asserts an ERROR-level log entry contains the ValueError message and a traceback that includes the line where the exception was raised.
     """
     with caplog.at_level(logging.ERROR):
         try:
