@@ -93,6 +93,7 @@ from .protobuf import (
     telemetry_pb2,
 )
 
+# Keep exports sorted for lint stability and easier scanning.
 __all__ = [
     "admin_pb2",
     "apponly_pb2",
@@ -228,8 +229,8 @@ def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     try:
         asBytes = asDict["decoded"]["payload"]
         asDict["decoded"]["text"] = asBytes.decode("utf-8")
-    except (UnicodeDecodeError, KeyError, AttributeError) as ex:
-        logger.exception("Malformatted utf8 in text message: %s", ex)
+    except (UnicodeDecodeError, KeyError, AttributeError):
+        logger.exception("Malformatted utf8 in text message")
     _receiveInfoUpdate(iface, asDict)
 
 

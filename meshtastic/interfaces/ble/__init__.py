@@ -2,17 +2,16 @@
 Stable BLE public API for Meshtastic.
 
 This package intentionally exports only the same user-facing BLE symbols exposed
-by `meshtastic.ble_interface` (main classes, UUID constants, BLE error strings,
-and logger). Internal managers/helpers live in submodules under
+by `meshtastic.ble_interface` (main classes, UUID constants, BLE error
+strings, plus a legacy logger export for backward compatibility). Internal
+managers/helpers live in submodules under
 `meshtastic.interfaces.ble.*` and are not part of the compatibility surface.
 """
 
 # ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
 
-import importlib
-
 try:
-    importlib.import_module("bleak")
+    import bleak as _bleak  # noqa: F401
 except ImportError as exc:  # pragma: no cover - environment/dependency guard
     raise ImportError(
         "BLE support requires the 'bleak' package, but it is missing. "
@@ -62,6 +61,6 @@ __all__ = [
     "ERROR_CONNECTION_FAILED",
     "ERROR_NO_PERIPHERALS_FOUND",
     "BLECLIENT_ERROR_ASYNC_TIMEOUT",
-    # Utility
+    # Legacy export retained for compatibility with meshtastic.ble_interface.
     "logger",
 ]

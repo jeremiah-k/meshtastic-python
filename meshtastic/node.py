@@ -5,7 +5,7 @@
 import base64
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Optional, Sequence, Union
 
 from meshtastic.protobuf import (
     admin_pb2,
@@ -153,7 +153,7 @@ class Node:
         except Exception:
             return True
 
-    def showChannels(self):
+    def showChannels(self) -> None:
         """
         Print a human-readable list of configured channels and their shareable URLs.
 
@@ -177,7 +177,7 @@ class Node:
         if adminURL != publicURL:
             print(f"Complete URL (includes all channels): {adminURL}")
 
-    def showInfo(self):
+    def showInfo(self) -> None:
         """
         Print the node's local and module configuration and its channels to standard output.
 
@@ -193,7 +193,7 @@ class Node:
         print(f"Module preferences: {prefs}\n")
         self.showChannels()
 
-    def setChannels(self, channels):
+    def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
         """
         Set the node's channel list and normalize channel entries.
 
@@ -204,10 +204,10 @@ class Node:
                 channel count.
 
         """
-        self.channels = channels
+        self.channels = list(channels)
         self._fixupChannels()
 
-    def requestChannels(self, startingIndex: int = 0):
+    def requestChannels(self, startingIndex: int = 0) -> None:
         """
         Request channel definitions from the node, starting at the given channel index.
 
@@ -284,7 +284,7 @@ class Node:
                 config_values.CopyFrom(raw_config)
                 print(f"{camel_to_snake(field)!s}:\n{config_values!s}")
 
-    def requestConfig(self, configType):
+    def requestConfig(self, configType: Any) -> None:
         """
         Request a configuration subset or whole configuration from the node via an admin message.
 
@@ -727,9 +727,17 @@ class Node:
         if missing_padding:
             b64 += "=" * (4 - missing_padding)
 
-        decodedURL = base64.urlsafe_b64decode(b64)
+        try:
+            decodedURL = base64.urlsafe_b64decode(b64)
+        except Exception as ex:
+            self._raise_interface_error(f"Warning: Invalid URL '{url}': {ex}")
         channelSet = apponly_pb2.ChannelSet()
-        channelSet.ParseFromString(decodedURL)
+        try:
+            channelSet.ParseFromString(decodedURL)
+        except Exception as ex:
+            self._raise_interface_error(
+                f"Warning: Unable to parse channel settings from URL '{url}': {ex}"
+            )
 
         if len(channelSet.settings) == 0:
             self._raise_interface_error("Warning: There were no settings.")
@@ -882,13 +890,10 @@ class Node:
             chunks.append(ringtone[i : i + chunks_size])
 
         # for each chunk, send a message to set the values
-        # for i in range(0, len(chunks)):
+        send_result = None
         for i, chunk in enumerate(chunks):
             p = admin_pb2.AdminMessage()
-
-            # TODO: should be a way to improve this
-            if i == 0:
-                p.set_ringtone_message = chunk
+            p.set_ringtone_message = chunk
 
             logger.debug(f"Setting ringtone '{chunk}' part {i + 1}")
             # If sending to a remote node, wait for ACK/NAK
@@ -896,7 +901,8 @@ class Node:
                 onResponse = None
             else:
                 onResponse = self.onAckNak
-            return self._sendAdmin(p, onResponse=onResponse)
+            send_result = self._sendAdmin(p, onResponse=onResponse)
+        return send_result
 
     def onResponseRequestCannedMessagePluginMessageMessages(self, p):
         """
@@ -1005,13 +1011,10 @@ class Node:
             chunks.append(message[i : i + chunks_size])
 
         # for each chunk, send a message to set the values
-        # for i in range(0, len(chunks)):
+        send_result = None
         for i, chunk in enumerate(chunks):
             p = admin_pb2.AdminMessage()
-
-            # TODO: should be a way to improve this
-            if i == 0:
-                p.set_canned_message_module_messages = chunk
+            p.set_canned_message_module_messages = chunk
 
             logger.debug(f"Setting canned message '{chunk}' part {i + 1}")
             # If sending to a remote node, wait for ACK/NAK
@@ -1019,7 +1022,8 @@ class Node:
                 onResponse = None
             else:
                 onResponse = self.onAckNak
-            return self._sendAdmin(p, onResponse=onResponse)
+            send_result = self._sendAdmin(p, onResponse=onResponse)
+        return send_result
 
     def exitSimulator(self):
         """
@@ -1654,7 +1658,7 @@ class Node:
                 - "index" (int): Channel index.
                 - "role" (str): Channel role name.
                 - "name" (str): Channel settings name (empty string if missing).
-                - "hash" (str or None): Computed channel hash when name and PSK are present, otherwise None.
+                - "hash" (int or None): Computed channel hash when name and PSK are present, otherwise None.
 
         """
         result: List[Dict[str, Any]] = []
@@ -1677,3 +1681,9 @@ class Node:
                     }
                 )
         return result
+
+    def getChannelsWithHash(self) -> List[Dict[str, Any]]:
+        """
+        Return channel entries with hashes via the camelCase compatibility wrapper.
+        """
+        return self.get_channels_with_hash()

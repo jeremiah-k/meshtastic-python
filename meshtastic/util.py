@@ -939,8 +939,8 @@ def is_windows11() -> bool:
                 patch = patch[:5]
                 if int(patch) >= 22000:
                     is_win11 = True
-        except Exception as e:
-            print(f"problem detecting win11 e:{e}")
+        except Exception:
+            logger.exception("Problem detecting Windows 11")
     return is_win11
 
 

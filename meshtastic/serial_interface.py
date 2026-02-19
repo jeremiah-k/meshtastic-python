@@ -50,7 +50,7 @@ class SerialInterface(StreamInterface):
 
         if self.devPath is None:
             ports: List[str] = meshtastic.util.findPorts(True)
-            logger.debug(f"ports:{ports}")
+            logger.debug("ports: %s", ports)
             if len(ports) == 0:
                 logger.warning(
                     "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
@@ -74,7 +74,7 @@ class SerialInterface(StreamInterface):
             else:
                 self.devPath = ports[0]
 
-        logger.debug(f"Connecting to {self.devPath}")
+        logger.debug("Connecting to %s", self.devPath)
 
         if sys.platform != "win32":
             with open(self.devPath, encoding="utf8") as f:

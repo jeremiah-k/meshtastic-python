@@ -270,8 +270,12 @@ class BLEStateManager:
         """
         Force the connection state to DISCONNECTED for recovery or cleanup.
 
+        This always returns True with the current transition model because
+        transition_to() permits a no-op when already disconnected and
+        _VALID_TRANSITIONS allows all state -> DISCONNECTED transitions.
+
         Returns:
-            True if the resulting state is DISCONNECTED, False otherwise.
+            bool: Always True.
 
         """
         with self._state_lock:

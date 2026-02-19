@@ -108,10 +108,10 @@ def test_getShortName(iface_with_nodes):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handlePacketFromRadio_no_from(caplog):
     """Test _handlePacketFromRadio with no 'from' in the mesh packet."""
-    iface = MeshInterface(noProto=True)
-    meshPacket = mesh_pb2.MeshPacket()
-    with caplog.at_level(logging.ERROR):
-        iface._handlePacketFromRadio(meshPacket)
+    with MeshInterface(noProto=True) as iface:
+        meshPacket = mesh_pb2.MeshPacket()
+        with caplog.at_level(logging.ERROR):
+            iface._handlePacketFromRadio(meshPacket)
     assert re.search(
         r"Device returned a packet we sent, ignoring", caplog.text, re.MULTILINE
     )
@@ -124,12 +124,12 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
     Since we have an attribute called 'from', we cannot simply 'set' it.
     Had to implement a hack just to be able to test some code.
     """
-    iface = MeshInterface(noProto=True)
-    meshPacket = mesh_pb2.MeshPacket()
-    meshPacket.decoded.payload = b""
-    meshPacket.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
-    with caplog.at_level(logging.WARNING):
-        iface._handlePacketFromRadio(meshPacket, hack=True)
+    with MeshInterface(noProto=True) as iface:
+        meshPacket = mesh_pb2.MeshPacket()
+        meshPacket.decoded.payload = b""
+        meshPacket.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
+        with caplog.at_level(logging.WARNING):
+            iface._handlePacketFromRadio(meshPacket, hack=True)
     assert re.search(r"Not populating fromId", caplog.text, re.MULTILINE)
 
 
@@ -137,11 +137,11 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handlePacketFromRadio_no_portnum(caplog):
     """Test _handlePacketFromRadio without a portnum."""
-    iface = MeshInterface(noProto=True)
-    meshPacket = mesh_pb2.MeshPacket()
-    meshPacket.decoded.payload = b""
-    with caplog.at_level(logging.WARNING):
-        iface._handlePacketFromRadio(meshPacket, hack=True)
+    with MeshInterface(noProto=True) as iface:
+        meshPacket = mesh_pb2.MeshPacket()
+        meshPacket.decoded.payload = b""
+        with caplog.at_level(logging.WARNING):
+            iface._handlePacketFromRadio(meshPacket, hack=True)
     assert re.search(r"Not populating fromId", caplog.text, re.MULTILINE)
 
 
@@ -149,21 +149,21 @@ def test_handlePacketFromRadio_no_portnum(caplog):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_getNode_with_local():
     """Test getNode."""
-    iface = MeshInterface(noProto=True)
-    anode = iface.getNode(LOCAL_ADDR)
-    assert anode == iface.localNode
+    with MeshInterface(noProto=True) as iface:
+        anode = iface.getNode(LOCAL_ADDR)
+        assert anode == iface.localNode
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_getNode_not_local(caplog):
     """Test getNode not local."""
-    iface = MeshInterface(noProto=True)
-    anode = MagicMock(autospec=Node)
-    with caplog.at_level(logging.DEBUG):
-        with patch("meshtastic.node.Node", return_value=anode):
-            another_node = iface.getNode("bar2")
-            assert another_node != iface.localNode
+    with MeshInterface(noProto=True) as iface:
+        anode = MagicMock(autospec=Node)
+        with caplog.at_level(logging.DEBUG):
+            with patch("meshtastic.node.Node", return_value=anode):
+                another_node = iface.getNode("bar2")
+                assert another_node != iface.localNode
     assert re.search(r"About to requestChannels", caplog.text, re.MULTILINE)
 
 
@@ -171,37 +171,37 @@ def test_getNode_not_local(caplog):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_getNode_not_local_timeout(capsys):
     """Test getNode not local, simulate timeout."""
-    iface = MeshInterface(noProto=True)
-    anode = MagicMock(autospec=Node)
-    anode.waitForConfig.return_value = False
-    with patch("meshtastic.node.Node", return_value=anode):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            iface.getNode("bar2")
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
-        assert re.match(r"Timed out trying to retrieve channel info, retrying", out)
-        assert err == ""
+    with MeshInterface(noProto=True) as iface:
+        anode = MagicMock(autospec=Node)
+        anode.waitForConfig.return_value = False
+        with patch("meshtastic.node.Node", return_value=anode):
+            with pytest.raises(SystemExit) as pytest_wrapped_e:
+                iface.getNode("bar2")
+            assert pytest_wrapped_e.type is SystemExit
+            assert pytest_wrapped_e.value.code == 1
+            out, err = capsys.readouterr()
+            assert re.match(r"Timed out trying to retrieve channel info, retrying", out)
+            assert err == ""
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_getNode_not_local_timeout_attempts(capsys):
     """Test getNode not local, simulate timeout."""
-    iface = MeshInterface(noProto=True)
-    anode = MagicMock(autospec=Node)
-    anode.waitForConfig.return_value = False
-    with patch("meshtastic.node.Node", return_value=anode):
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            iface.getNode("bar2", requestChannelAttempts=2)
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
-        assert (
-            out
-            == "Timed out trying to retrieve channel info, retrying\nError: Timed out waiting for channels, giving up\n"
-        )
-        assert err == ""
+    with MeshInterface(noProto=True) as iface:
+        anode = MagicMock(autospec=Node)
+        anode.waitForConfig.return_value = False
+        with patch("meshtastic.node.Node", return_value=anode):
+            with pytest.raises(SystemExit) as pytest_wrapped_e:
+                iface.getNode("bar2", requestChannelAttempts=2)
+            assert pytest_wrapped_e.type is SystemExit
+            assert pytest_wrapped_e.value.code == 1
+            out, err = capsys.readouterr()
+            assert (
+                out
+                == "Timed out trying to retrieve channel info, retrying\nError: Timed out waiting for channels, giving up\n"
+            )
+            assert err == ""
 
 
 @pytest.mark.unit

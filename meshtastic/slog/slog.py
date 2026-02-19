@@ -219,12 +219,14 @@ class StructuredLogger:
         try:
             pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         finally:
-            self.writer.close()
-            with self._raw_file_lock:
-                f = self.raw_file
-                self.raw_file = None  # mark that we are shutting down
-            if f:
-                f.close()  # Close the raw.txt file
+            try:
+                self.writer.close()
+            finally:
+                with self._raw_file_lock:
+                    f = self.raw_file
+                    self.raw_file = None  # mark that we are shutting down
+                if f:
+                    f.close()  # Close the raw.txt file
 
     def _onLogMessage(self, line: str) -> None:
         """

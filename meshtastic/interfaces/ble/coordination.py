@@ -612,6 +612,7 @@ class ThreadCoordinator:
             # Clear tracking
             self._threads.clear()
             self._events.clear()
+            self._pending_start.clear()
 
         # Join threads outside the lock to avoid deadlocks if threads touch the coordinator during shutdown
         for thread in threads_to_join:

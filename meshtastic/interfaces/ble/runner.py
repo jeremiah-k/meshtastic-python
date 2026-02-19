@@ -21,7 +21,7 @@ import threading
 import warnings
 import weakref
 from concurrent.futures import Future
-from typing import Callable, Coroutine, Optional, TypeVar
+from typing import Any, Callable, Coroutine, Optional, TypeVar
 
 from bleak.exc import BleakDBusError
 
@@ -479,7 +479,7 @@ class BLECoroutineRunner:
             self._pending_futures.discard(future)
 
     def _handle_loop_exception(
-        self, loop: asyncio.AbstractEventLoop, context: dict
+        self, loop: asyncio.AbstractEventLoop, context: dict[str, Any]
     ) -> None:
         """
         Handle exceptions raised in the runner's asyncio event loop.

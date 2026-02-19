@@ -1,6 +1,7 @@
 """Retry and reconnection policies for BLE operations."""
 
 import random
+import warnings
 from typing import Any, Callable, Optional, Protocol, Tuple
 
 from meshtastic.interfaces.ble.constants import BLEConfig
@@ -87,9 +88,9 @@ class ReconnectPolicy:
         """Reset internal state to begin a fresh retry cycle."""
         self._attempt_count = 0
 
-    def get_delay(self, attempt: Optional[int] = None) -> float:
+    def _get_delay(self, attempt: Optional[int] = None) -> float:
         """
-        Compute jittered exponential-backoff delay for a retry attempt.
+        Internal helper: compute jittered exponential-backoff delay.
 
         Computes initial_delay * backoff**attempt, applies symmetric jitter based on
         jitter_ratio and the configured random source, and clamps the result to the
@@ -116,9 +117,9 @@ class ReconnectPolicy:
             self.max_delay, max(0.001, delay + jitter)
         )  # Clamp to [0.001, max_delay]
 
-    def should_retry(self, attempt: Optional[int] = None) -> bool:
+    def _should_retry(self, attempt: Optional[int] = None) -> bool:
         """
-        Determine whether another retry attempt is permitted by this policy.
+        Internal helper: determine whether another retry attempt is permitted.
 
         Parameters
         ----------
@@ -133,9 +134,9 @@ class ReconnectPolicy:
             attempt = self._attempt_count
         return self.max_retries is None or attempt < self.max_retries
 
-    def next_attempt(self) -> Tuple[float, bool]:
+    def _next_attempt(self) -> Tuple[float, bool]:
         """
-        Compute the jittered backoff delay for the current attempt, indicate whether
+        Internal helper: compute the jittered backoff delay for the current attempt, indicate whether
         another retry is permitted, and then advance the internal attempt counter.
 
         Returns:
@@ -143,14 +144,14 @@ class ReconnectPolicy:
             should_retry (bool): `True` if another retry is permitted, `False` otherwise.
 
         """
-        delay = self.get_delay()
-        should_retry = self.should_retry()
+        delay = self._get_delay()
+        should_retry = self._should_retry()
         self._attempt_count += 1
         return delay, should_retry
 
-    def get_attempt_count(self) -> int:
+    def _get_attempt_count(self) -> int:
         """
-        Return the number of attempts that have been performed by this policy.
+        Internal helper: return the number of attempts performed by this policy.
 
         Returns:
             int: The number of attempts performed so far.
@@ -158,9 +159,9 @@ class ReconnectPolicy:
         """
         return self._attempt_count
 
-    def sleep_with_backoff(self, attempt: int) -> None:
+    def _sleep_with_backoff(self, attempt: int) -> None:
         """
-        Sleep for the policy's jittered exponential-backoff delay for the specified attempt.
+        Internal helper: sleep for the policy's jittered exponential-backoff delay.
 
         Parameters
         ----------
@@ -169,7 +170,63 @@ class ReconnectPolicy:
         """
         from meshtastic.interfaces.ble.utils import _sleep
 
-        _sleep(self.get_delay(attempt))
+        _sleep(self._get_delay(attempt))
+
+    # Backward-compatible snake_case wrappers
+    def get_delay(self, attempt: Optional[int] = None) -> float:
+        """
+        Deprecated compatibility wrapper for _get_delay().
+        """
+        warnings.warn(
+            "ReconnectPolicy.get_delay is deprecated; use getDelay or internal _get_delay",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._get_delay(attempt)
+
+    def should_retry(self, attempt: Optional[int] = None) -> bool:
+        """
+        Deprecated compatibility wrapper for _should_retry().
+        """
+        warnings.warn(
+            "ReconnectPolicy.should_retry is deprecated; use shouldRetry or internal _should_retry",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._should_retry(attempt)
+
+    def next_attempt(self) -> Tuple[float, bool]:
+        """
+        Deprecated compatibility wrapper for _next_attempt().
+        """
+        warnings.warn(
+            "ReconnectPolicy.next_attempt is deprecated; use nextAttempt or internal _next_attempt",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._next_attempt()
+
+    def get_attempt_count(self) -> int:
+        """
+        Deprecated compatibility wrapper for _get_attempt_count().
+        """
+        warnings.warn(
+            "ReconnectPolicy.get_attempt_count is deprecated; use getAttemptCount or internal _get_attempt_count",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._get_attempt_count()
+
+    def sleep_with_backoff(self, attempt: int) -> None:
+        """
+        Deprecated compatibility wrapper for _sleep_with_backoff().
+        """
+        warnings.warn(
+            "ReconnectPolicy.sleep_with_backoff is deprecated; use sleepWithBackoff or internal _sleep_with_backoff",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._sleep_with_backoff(attempt)
 
     # CamelCase aliases for public API compatibility
     def getDelay(self, attempt: Optional[int] = None) -> float:
@@ -185,7 +242,7 @@ class ReconnectPolicy:
             float: Delay in seconds, after applying exponential backoff, jitter, and clamping to the range [0.001, max_delay].
 
         """
-        return self.get_delay(attempt)
+        return self._get_delay(attempt)
 
     def shouldRetry(self, attempt: Optional[int] = None) -> bool:
         """
@@ -200,7 +257,7 @@ class ReconnectPolicy:
             True if another retry is allowed for the specified attempt, False otherwise.
 
         """
-        return self.should_retry(attempt)
+        return self._should_retry(attempt)
 
     def nextAttempt(self) -> Tuple[float, bool]:
         """
@@ -210,7 +267,7 @@ class ReconnectPolicy:
             tuple: (delay, should_retry) where `delay` is the computed backoff delay in seconds (float) and `should_retry` is `True` if another retry is allowed, `False` otherwise.
 
         """
-        return self.next_attempt()
+        return self._next_attempt()
 
     def getAttemptCount(self) -> int:
         """
@@ -220,7 +277,7 @@ class ReconnectPolicy:
             attempt_count (int): The number of attempts already performed.
 
         """
-        return self.get_attempt_count()
+        return self._get_attempt_count()
 
     def sleepWithBackoff(self, attempt: int) -> None:
         """
@@ -231,7 +288,7 @@ class ReconnectPolicy:
             attempt (int): The attempt index (0-based) used to compute the jittered exponential backoff delay.
 
         """
-        self.sleep_with_backoff(attempt)
+        self._sleep_with_backoff(attempt)
 
 
 class _PolicyDescriptor:

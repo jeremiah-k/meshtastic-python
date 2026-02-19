@@ -16,29 +16,35 @@ with rather more easily once the code is simplified by this change.
 import argparse
 from typing import IO, Any, Optional
 
+MODULE_STATE_DEFAULTS: dict[str, Any] = {
+    "args": None,
+    "parser": None,
+    "channel_index": None,
+    "logfile": None,
+    "tunnelInstance": None,
+    # TODO: to migrate to camel_case for v1.3 change this value to True
+    "camel_case": False,
+}
+
 
 def reset() -> None:
     """
     Reset the module-level namespace to its initial pristine state.
 
-    Sets the globals `args`, `parser`, `channel_index`, `logfile`, and `tunnelInstance` to `None` and `camel_case` to `False`.
+    Uses MODULE_STATE_DEFAULTS as the single source of truth for tracked
+    module state so declarations and reset behavior cannot silently drift.
     """
-    # pylint: disable=W0603
-    global args, parser, channel_index, logfile, tunnelInstance, camel_case
-    args = None
-    parser = None
-    channel_index = None
-    logfile = None
-    tunnelInstance = None
-    # TODO: to migrate to camel_case for v1.3 change this value to True
-    camel_case = False
+    module_globals = globals()
+    for name, default in MODULE_STATE_DEFAULTS.items():
+        module_globals[name] = default
 
 
-# These assignments are used instead of calling reset()
-# purely to shut pylint up.
-args: Optional[argparse.Namespace] = None
-parser: Optional[argparse.ArgumentParser] = None
-channel_index: Optional[int] = None
-logfile: Optional[IO[str]] = None
-tunnelInstance: Optional[Any] = None
-camel_case: bool = False
+# Declared module state managed via reset().
+args: Optional[argparse.Namespace]
+parser: Optional[argparse.ArgumentParser]
+channel_index: Optional[int]
+logfile: Optional[IO[str]]
+tunnelInstance: Optional[Any]
+camel_case: bool
+
+reset()

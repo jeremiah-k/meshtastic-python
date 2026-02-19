@@ -186,7 +186,12 @@ class ReconnectWorker:
                 override_delay = None
                 if self._should_abort_reconnect(auto_reconnect, "loop start"):
                     return
-                attempt_num = self.reconnect_policy.get_attempt_count() + 1
+                attempt_counter = getattr(
+                    self.reconnect_policy,
+                    "_get_attempt_count",
+                    self.reconnect_policy.get_attempt_count,
+                )
+                attempt_num = attempt_counter() + 1
                 try:
                     if interface.is_connection_connected:
                         return
@@ -267,7 +272,11 @@ class ReconnectWorker:
                 (
                     sleep_delay,
                     should_retry,
-                ) = self.reconnect_policy.next_attempt()
+                ) = getattr(
+                    self.reconnect_policy,
+                    "_next_attempt",
+                    self.reconnect_policy.next_attempt,
+                )()
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:

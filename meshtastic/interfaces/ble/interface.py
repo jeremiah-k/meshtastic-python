@@ -1016,10 +1016,14 @@ class BLEInterface(MeshInterface):
                 # (for example, some versions require/accept "details" while
                 # others differ in optional metadata fields). Use signature
                 # inspection to construct a compatible synthetic BLEDevice.
-                supports_details, _ = _ble_device_constructor_kwargs_support()
+                supports_details, supports_rssi = (
+                    _ble_device_constructor_kwargs_support()
+                )
                 params: Dict[str, Any] = {}
                 if supports_details:
                     params["details"] = {}  # Empty details for synthetic device
+                if supports_rssi:
+                    params["rssi"] = 0
                 logger.debug(
                     "Creating synthetic BLEDevice for direct connect: address=%s, sanitized=%s, params=%s",
                     address,
@@ -1519,7 +1523,12 @@ class BLEInterface(MeshInterface):
                 self._suppressed_empty_read_warnings = 0
                 return payload
             if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
-                _sleep(self._empty_read_policy.get_delay(attempt))
+                delay_fn = getattr(
+                    self._empty_read_policy,
+                    "_get_delay",
+                    self._empty_read_policy.get_delay,
+                )
+                _sleep(delay_fn(attempt))
         self._log_empty_read_warning()
         return None
 
@@ -1534,7 +1543,10 @@ class BLEInterface(MeshInterface):
 
         """
         transient_policy = self._transient_read_policy
-        if transient_policy.should_retry(self._read_retry_count):
+        should_retry_fn = getattr(
+            transient_policy, "_should_retry", transient_policy.should_retry
+        )
+        if should_retry_fn(self._read_retry_count):
             attempt_index = self._read_retry_count
             self._read_retry_count += 1
             logger.debug(
@@ -1542,7 +1554,10 @@ class BLEInterface(MeshInterface):
                 self._read_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
-            _sleep(transient_policy.get_delay(attempt_index))
+            delay_fn = getattr(
+                transient_policy, "_get_delay", transient_policy.get_delay
+            )
+            _sleep(delay_fn(attempt_index))
             return
         self._read_retry_count = 0
         logger.debug("Persistent BLE read error after retries", exc_info=True)

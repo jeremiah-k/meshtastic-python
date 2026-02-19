@@ -9,6 +9,7 @@ import pytest
 from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
+from ..serial_interface import SerialInterface
 
 
 def _create_context_manager_mock(spec_class: Type) -> MagicMock:
@@ -145,12 +146,15 @@ def iface_with_nodes():
         }
     }
     iface = MeshInterface(noProto=True)
-    iface.nodes = nodesById
-    iface.nodesByNum = nodesByNum
-    myInfo = MagicMock()
-    iface.myInfo = myInfo
-    iface.myInfo.my_node_num = 2475227164
-    return iface
+    try:
+        iface.nodes = nodesById
+        iface.nodesByNum = nodesByNum
+        myInfo = MagicMock()
+        iface.myInfo = myInfo
+        iface.myInfo.my_node_num = 2475227164
+        yield iface
+    finally:
+        iface.close()
 
 
 @pytest.fixture
@@ -166,7 +170,9 @@ def mock_serial_interface() -> MagicMock:
         MagicMock: A mock acting like a SerialInterface with the above attributes.
 
     """
-    mock_iface = MagicMock()
+    mock_iface = MagicMock(spec=SerialInterface)
+    mock_iface.localNode = MagicMock()
     mock_iface.localNode.getChannelByName.return_value = None
+    mock_iface.myInfo = MagicMock()
     mock_iface.myInfo.max_channels = 8
     return mock_iface

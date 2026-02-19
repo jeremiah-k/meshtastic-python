@@ -3,8 +3,8 @@ test:
 	poetry run pytest -m unit
 
 # run all CI checks locally (same as CI pipeline)
-# Note: Order differs from .github/workflows/ci.yml (which runs pytest first)
-# to match historical Makefile convention. Both achieve the same validation.
+# Runs the same checks in the same order as .github/workflows/ci.yml:
+# pytest (with coverage) -> pylint -> mypy
 ci:
 	poetry run pytest --cov=meshtastic --cov-report=xml
 	$(MAKE) lint
