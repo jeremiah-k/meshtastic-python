@@ -165,7 +165,7 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
     with _REGISTRY_LOCK:
         # Only cleanup if no holders remain
         holder_count = _LOCK_HOLDERS.get(key, 0)
-        if holder_count <= 0:
+        if holder_count <= 0 and key not in _CONNECTED_ADDRS:
             _ADDR_LOCKS.pop(key, None)
             _LOCK_HOLDERS.pop(key, None)
             logger.debug("Cleaned up address lock for %s", key)
@@ -356,6 +356,8 @@ def is_currently_connected_elsewhere(
     key = addr_key(addr)
     if key is None:
         return False
+
+    owner_to_check: Optional[Any] = None
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
             return False
@@ -382,22 +384,61 @@ def is_currently_connected_elsewhere(
             _cleanup_addr_lock(key)
             return False
 
-        # If owner exposes connection state and no longer appears connected,
-        # treat the claim as stale and remove it.
         if current_owner is not None:
-            connection_state = _owner_connected_state(current_owner)
-            if connection_state is False:
+            # Evaluate owner connection state outside _REGISTRY_LOCK to avoid
+            # crossing into interface state locks while holding the registry lock.
+            owner_to_check = current_owner
+        else:
+            # Fallback for unowned claims: prune after a safety window.
+            # NOTE: If _CONNECTED_MARKED_AT lacks the key (out-of-sync records),
+            # marked_at defaults to 0.0 which is falsy, causing the timed-prune check
+            # to be skipped. This intentionally keeps the claim alive to avoid
+            # premature removal when records are inconsistent, trading off immediate
+            # cleanup for safety.
+            marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
+            if marked_at and (
+                time.monotonic() - marked_at
+                > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
+            ):
                 _remove_connected_record_locked(key)
                 _cleanup_addr_lock(key)
                 return False
+
             return True
 
-        # Fallback for unowned claims: prune after a safety window.
-        # NOTE: If _CONNECTED_MARKED_AT lacks the key (out-of-sync records),
-        # marked_at defaults to 0.0 which is falsy, causing the timed-prune check
-        # to be skipped. This intentionally keeps the claim alive to avoid
-        # premature removal when records are inconsistent, trading off immediate
-        # cleanup for safety.
+    if owner_to_check is None:
+        return False
+    connection_state = _owner_connected_state(owner_to_check)
+
+    with _REGISTRY_LOCK:
+        if key not in _CONNECTED_ADDRS:
+            return False
+
+        owner_ref = _CONNECTED_OWNERS.get(key)
+        current_owner = owner_ref() if owner_ref is not None else None
+        current_owner_id = _CONNECTED_OWNER_IDS.get(key)
+
+        if owner is not None and (
+            current_owner is owner
+            or (current_owner_id is not None and current_owner_id == id(owner))
+        ):
+            return False
+
+        if owner_ref is not None and current_owner is None:
+            _remove_connected_record_locked(key)
+            _cleanup_addr_lock(key)
+            return False
+
+        # Only apply the sampled owner state if the claim still belongs to the
+        # same owner object we checked outside _REGISTRY_LOCK.
+        if current_owner is owner_to_check and connection_state is False:
+            _remove_connected_record_locked(key)
+            _cleanup_addr_lock(key)
+            return False
+
+        if current_owner is not None:
+            return True
+
         marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
         if marked_at and (
             time.monotonic() - marked_at

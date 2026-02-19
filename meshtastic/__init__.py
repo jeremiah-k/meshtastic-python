@@ -229,7 +229,7 @@ def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asBytes = asDict["decoded"]["payload"]
         asDict["decoded"]["text"] = asBytes.decode("utf-8")
     except (UnicodeDecodeError, KeyError, AttributeError) as ex:
-        logger.error(f"Malformatted utf8 in text message: {ex}")
+        logger.exception("Malformatted utf8 in text message: %s", ex)
     _receiveInfoUpdate(iface, asDict)
 
 

@@ -116,9 +116,7 @@ class NotificationManager:
         for characteristic in characteristics:
             try:
                 client.stop_notify(characteristic, timeout=timeout)
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - best effort unsubscribe  # pragma: no cover
+            except Exception as e:  # noqa: BLE001
                 logger.debug(
                     "Failed to unsubscribe %s during shutdown: %s",
                     characteristic,
@@ -150,9 +148,7 @@ class NotificationManager:
                     callback,
                     timeout=timeout,
                 )
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - best effort resubscribe  # pragma: no cover
+            except Exception as e:  # noqa: BLE001
                 logger.debug(
                     "Failed to resubscribe %s during reconnect: %s",
                     characteristic,

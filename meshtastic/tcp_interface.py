@@ -1,5 +1,5 @@
-"""TCPInterface class for interfacing with http endpoint
-"""
+"""TCPInterface class for interfacing with http endpoint."""
+
 # pylint: disable=R0917
 import contextlib
 import logging
@@ -12,6 +12,7 @@ from meshtastic.stream_interface import StreamInterface
 DEFAULT_TCP_PORT = 4403
 logger = logging.getLogger(__name__)
 
+
 class TCPInterface(StreamInterface):
     """Interface class for meshtastic devices over a TCP link"""
 
@@ -19,10 +20,10 @@ class TCPInterface(StreamInterface):
         self,
         hostname: str,
         debugOut=None,
-        noProto: bool=False,
-        connectNow: bool=True,
-        portNumber: int=DEFAULT_TCP_PORT,
-        noNodes:bool=False,
+        noProto: bool = False,
+        connectNow: bool = True,
+        portNumber: int = DEFAULT_TCP_PORT,
+        noNodes: bool = False,
         timeout: int = 300,
     ):
         """Constructor, opens a connection to a specified IP address/hostname
@@ -33,6 +34,7 @@ class TCPInterface(StreamInterface):
         """
 
         self.stream = None
+        self._provides_own_stream = True
 
         self.hostname: str = hostname
         self.portNumber: int = portNumber
@@ -44,7 +46,13 @@ class TCPInterface(StreamInterface):
         else:
             self.socket = None
 
-        super().__init__(debugOut=debugOut, noProto=noProto, connectNow=connectNow, noNodes=noNodes, timeout=timeout)
+        super().__init__(
+            debugOut=debugOut,
+            noProto=noProto,
+            connectNow=connectNow,
+            noNodes=noNodes,
+            timeout=timeout,
+        )
 
     def __repr__(self):
         rep = f"TCPInterface({self.hostname!r}"
@@ -70,7 +78,7 @@ class TCPInterface(StreamInterface):
 
     def myConnect(self) -> None:
         """Connect to socket"""
-        logger.debug(f"Connecting to {self.hostname}") # type: ignore[str-bytes-safe]
+        logger.debug(f"Connecting to {self.hostname}")  # type: ignore[str-bytes-safe]
         server_address = (self.hostname, self.portNumber)
         self.socket = socket.create_connection(server_address)
 
@@ -82,7 +90,9 @@ class TCPInterface(StreamInterface):
         # Therefore we force the shutdown by closing the socket here
         self._wantExit = True
         if self.socket is not None:
-            with contextlib.suppress(Exception):  # Ignore errors in shutdown, because we might have a race with the server
+            with contextlib.suppress(
+                Exception
+            ):  # Ignore errors in shutdown, because we might have a race with the server
                 self._socket_shutdown()
             self.socket.close()
 
@@ -99,7 +109,7 @@ class TCPInterface(StreamInterface):
             data = self.socket.recv(length)
             # empty byte indicates a disconnected socket,
             # we need to handle it to avoid an infinite loop reading from null socket
-            if data == b'':
+            if data == b"":
                 logger.debug("dead socket, re-connecting")
                 # cleanup and reconnect socket without breaking reader thread
                 with contextlib.suppress(Exception):

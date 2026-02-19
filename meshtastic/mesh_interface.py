@@ -139,6 +139,10 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
+        # responseHandlers is shared by _addResponseHandler (sendData path) and
+        # _handlePacketFromRadio (receive thread). Use this lock to serialize
+        # responseHandlers access across those call sites.
+        self._response_handlers_lock = threading.RLock()
         self.responseHandlers: Dict[int, ResponseHandler] = (
             {}
         )  # A map from request ID to the handler
@@ -609,7 +613,7 @@ class MeshInterface:  # pylint: disable=R0902
         nodeId: str,
         requestChannels: bool = True,
         requestChannelAttempts: int = 3,
-        timeout: int = 300,
+        timeout: float = 300.0,
     ) -> meshtastic.node.Node:
         """
         Get the Node object for the given node identifier.
@@ -624,7 +628,7 @@ class MeshInterface:  # pylint: disable=R0902
             nodeId (str): Node identifier (hex/node-id string, or LOCAL_ADDR/BROADCAST_ADDR).
             requestChannels (bool): If True, request channel settings from the remote node.
             requestChannelAttempts (int): Number of attempts to retrieve channel info before giving up.
-            timeout (int): Timeout in seconds passed to the Node constructor and used while waiting for responses.
+            timeout (float): Timeout in seconds passed to the Node constructor and used while waiting for responses.
 
         Returns
         -------
@@ -1401,9 +1405,10 @@ class MeshInterface:  # pylint: disable=R0902
                 to invoke the callback; if False, only full responses will invoke it.
 
         """
-        self.responseHandlers[requestId] = ResponseHandler(
-            callback=callback, ackPermitted=ackPermitted
-        )
+        with self._response_handlers_lock:
+            self.responseHandlers[requestId] = ResponseHandler(
+                callback=callback, ackPermitted=ackPermitted
+            )
 
     def _sendPacket(
         self,
@@ -2388,14 +2393,18 @@ class MeshInterface:  # pylint: disable=R0902
                     "errorReason" not in routing or routing["errorReason"] == "NONE"
                 )
                 # we keep the responseHandler in dict until we actually call it
-                response_handler = self.responseHandlers.get(requestId, None)
+                with self._response_handlers_lock:
+                    response_handler = self.responseHandlers.get(requestId, None)
                 if response_handler is not None:
                     if (
                         (not isAck)
                         or response_handler.callback.__name__ == "onAckNak"
                         or response_handler.ackPermitted
                     ):
-                        response_handler = self.responseHandlers.pop(requestId, None)
+                        with self._response_handlers_lock:
+                            response_handler = self.responseHandlers.pop(
+                                requestId, None
+                            )
                         if response_handler is not None:
                             logger.debug(
                                 f"Calling response handler for requestId {requestId}"

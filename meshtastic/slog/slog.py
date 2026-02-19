@@ -150,10 +150,14 @@ class StructuredLogger:
 
         Parameters
         ----------
-            client (MeshInterface): Source of device log lines to monitor.
-            dir_path (str): Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
-            power_logger (Optional[PowerLogger]): If provided, used to record a power sample with each structured log entry.
-            include_raw (bool): If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
+        client : MeshInterface
+            Source of device log lines to monitor.
+        dir_path : str
+            Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
+        power_logger : Optional[PowerLogger], optional
+            If provided, used to record a power sample with each structured log entry.
+        include_raw : bool, optional
+            If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
 
         """
         self.client = client
@@ -208,17 +212,19 @@ class StructuredLogger:
         """
         Shut down the StructuredLogger and release its resources.
 
-        Unsubscribes the log listener, closes the Arrow writer, and safely close(s) and clears the
+        Unsubscribes the log listener, closes the Arrow writer, and safely closes and clears the
         raw log file reference while holding the internal lock so concurrent writers cannot race
         with shutdown.
         """
-        pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
-        self.writer.close()
-        with self._raw_file_lock:
-            f = self.raw_file
-            self.raw_file = None  # mark that we are shutting down
-        if f:
-            f.close()  # Close the raw.txt file
+        try:
+            pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
+        finally:
+            self.writer.close()
+            with self._raw_file_lock:
+                f = self.raw_file
+                self.raw_file = None  # mark that we are shutting down
+            if f:
+                f.close()  # Close the raw.txt file
 
     def _onLogMessage(self, line: str) -> None:
         """
@@ -307,10 +313,13 @@ class LogSet:
 
         Parameters
         ----------
-            client: MeshInterface client whose log lines will be monitored and recorded.
-            dir_name: Optional path for storing logs; when omitted a new timestamped directory is
-                created under the slog root and "latest" is updated to point to it.
-            power_meter: Optional PowerMeter; when provided a PowerLogger is started to record power samples alongside slog entries.
+        client : MeshInterface
+            MeshInterface client whose log lines will be monitored and recorded.
+        dir_name : Optional[str], optional
+            Path for storing logs; when omitted a new timestamped directory is
+            created under the slog root and "latest" is updated to point to it.
+        power_meter : Optional[PowerMeter], optional
+            When provided, a PowerLogger is started to record power samples alongside slog entries.
 
         """
 

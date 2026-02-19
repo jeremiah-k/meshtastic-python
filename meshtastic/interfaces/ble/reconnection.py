@@ -80,7 +80,7 @@ class ReconnectScheduler:
                     "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
                 )
                 return False
-            if self._reconnect_thread and self._reconnect_thread.is_alive():
+            if self._reconnect_thread is not None:
                 logger.debug(
                     "Auto-reconnect already in progress; skipping new attempt."
                 )
@@ -217,6 +217,7 @@ class ReconnectWorker:
                         "BLE auto-reconnect succeeded after %d attempts.",
                         attempt_num,
                     )
+                    return
                 except interface.BLEError as err:
                     if self._should_abort_reconnect(auto_reconnect, "BLEError"):
                         return
@@ -235,11 +236,7 @@ class ReconnectWorker:
                         exc_info=True,
                     )
                     # Use longer delay for DBus errors to allow system Bluetooth stack to recover
-                    # override_delay is None at loop start; coalesce to 0 for max() comparison
-                    override_delay = max(
-                        override_delay if override_delay is not None else 0,
-                        DBUS_ERROR_RECONNECT_DELAY,
-                    )
+                    override_delay = DBUS_ERROR_RECONNECT_DELAY
                     # State transition to ERROR and DISCONNECTED is already handled by
                     # the connection orchestrator, so we don't need to do it here
                 except BleakError as err:
@@ -256,10 +253,7 @@ class ReconnectWorker:
                         if isinstance(err, BleakDeviceNotFoundError)
                         else BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
                     )
-                    # override_delay is None at loop start; coalesce to 0 for max() comparison
-                    override_delay = max(
-                        override_delay if override_delay is not None else 0, delay_hint
-                    )
+                    override_delay = delay_hint
                 except Exception:
                     if self._should_abort_reconnect(auto_reconnect, "unexpected error"):
                         return
@@ -267,8 +261,6 @@ class ReconnectWorker:
                         "Unexpected error during auto-reconnect attempt %d",
                         attempt_num,
                     )
-                else:
-                    return
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return

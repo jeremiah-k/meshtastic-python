@@ -73,7 +73,7 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
     """
     Replace meshtastic.mesh_interface.threading.Timer with a deterministic FakeTimer for tests.
 
-    Clears any previously created FakeTimer instances and installs FakeTimer in place of threading.Timer so tests can control timer behavior.
+    Installs a per-fixture FakeTimer subclass in place of threading.Timer so tests can control timer behavior with isolated class-level state.
 
     Returns:
         The FakeTimer class that was installed.
@@ -85,7 +85,6 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
 
         created: ClassVar[List["FakeTimer"]] = []
 
-    FakeTimerForTest.created.clear()
     monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimerForTest)
     return FakeTimerForTest
 

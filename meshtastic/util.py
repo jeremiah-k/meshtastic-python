@@ -713,7 +713,7 @@ def readnet_u16(p: Union[bytes, bytearray, memoryview], offset: int) -> int:
     return p[offset] * 256 + p[offset + 1]
 
 
-def convert_mac_addr(val: str) -> Union[str, bytes]:
+def convert_mac_addr(val: str) -> str:
     """
     Convert a value into a colon-separated MAC address string.
 

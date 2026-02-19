@@ -1661,20 +1661,18 @@ class Node:
         if self.channels:
             for c in self.channels:
                 settings = getattr(c, "settings", None)
-                has_name = bool(getattr(settings, "name", ""))
-                has_psk = bool(getattr(settings, "psk", ""))
+                name = getattr(settings, "name", "")
+                psk = getattr(settings, "psk", b"")
+                has_name = bool(name)
+                has_psk = bool(psk)
                 hash_val = (
-                    generate_channel_hash(settings.name, settings.psk)
-                    if has_name and has_psk and settings is not None
-                    else None
+                    generate_channel_hash(name, psk) if has_name and has_psk else None
                 )
                 result.append(
                     {
                         "index": c.index,
                         "role": channel_pb2.Channel.Role.Name(c.role),
-                        "name": (
-                            settings.name if has_name and settings is not None else ""
-                        ),
+                        "name": name if has_name else "",
                         "hash": hash_val,
                     }
                 )

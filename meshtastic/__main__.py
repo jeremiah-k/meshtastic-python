@@ -1443,9 +1443,13 @@ def _prefix_base64_key(
         return
     val = security.get(key)
     if isinstance(val, str):
-        security[key] = "base64:" + val
+        if not val.startswith("base64:"):
+            security[key] = "base64:" + val
     elif isinstance(val, list):
-        security[key] = ["base64:" + v if isinstance(v, str) else v for v in val]
+        security[key] = [
+            ("base64:" + v if isinstance(v, str) and not v.startswith("base64:") else v)
+            for v in val
+        ]
 
 
 def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
@@ -1626,6 +1630,79 @@ def create_power_meter():
             time.sleep(5)
 
 
+def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
+    """
+    Parse a host string into a TCP hostname and port.
+
+    Supports bracketed IPv6 (`[addr]` or `[addr]:port`), bare IPv6 (`addr:...`),
+    and single-colon host:port forms. Port-range and malformed IPv6/bracket syntax
+    errors exit via `meshtastic.util.our_exit` with existing CLI messages.
+
+    Parameters
+    ----------
+        host_str (str): Raw host string from CLI (`--host`).
+        default_port (int): Port to use when no explicit valid port is provided.
+
+    Returns
+    -------
+        Tuple[str, int]: Parsed hostname/address and resolved TCP port.
+
+    """
+    if host_str.startswith("["):
+        # Bracketed IPv6: [addr] or [addr]:port
+        bracket_end = host_str.find("]")
+        if bracket_end == -1:
+            meshtastic.util.our_exit(
+                f"Error: malformed IPv6 address in --host '{host_str}'.",
+                1,
+            )
+        tcp_hostname = host_str[1:bracket_end]
+        remainder = host_str[bracket_end + 1 :]
+        if remainder.startswith(":"):
+            tcp_port_str = remainder[1:]
+            try:
+                tcp_port = int(tcp_port_str)
+            except ValueError:
+                meshtastic.util.our_exit(
+                    f"Error: invalid TCP port in --host '{host_str}'.",
+                    1,
+                )
+            if not 1 <= tcp_port <= 65535:
+                meshtastic.util.our_exit(
+                    f"Error: invalid TCP port in --host '{host_str}'.",
+                    1,
+                )
+            return tcp_hostname, tcp_port
+        if remainder:
+            meshtastic.util.our_exit(
+                f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
+                1,
+            )
+        return tcp_hostname, default_port
+
+    if ":" in host_str:
+        # Multiple colons -> treat as bare IPv6 address, not host:port
+        if host_str.count(":") > 1:
+            return host_str, default_port
+
+        # Exactly one colon -> host:port
+        tcp_hostname, tcp_port_str = host_str.rsplit(":", 1)
+        try:
+            tcp_port = int(tcp_port_str)
+        except ValueError:
+            # Not a valid integer port; treat the entire string as hostname.
+            return host_str, default_port
+
+        if not 1 <= tcp_port <= 65535:
+            meshtastic.util.our_exit(
+                f"Error: invalid TCP port in --host '{host_str}'.",
+                1,
+            )
+        return tcp_hostname, tcp_port
+
+    return host_str, default_port
+
+
 def common():
     """
     Configure logging, validate CLI arguments, establish the chosen transport interface, invoke onConnected, and optionally enter the main event loop.
@@ -1742,7 +1819,7 @@ def common():
 
             # Use ExitStack to guarantee interface cleanup on early exits or exceptions
             with contextlib.ExitStack() as stack:
-                client: MeshInterface
+                client: Optional[MeshInterface] = None
                 if args.ble:
                     try:
                         client = stack.enter_context(
@@ -1759,59 +1836,10 @@ def common():
                         meshtastic.util.our_exit(str(e), 1)
                 elif args.host:
                     try:
-                        if args.host.startswith("["):
-                            # Bracketed IPv6: [addr] or [addr]:port
-                            bracket_end = args.host.find("]")
-                            if bracket_end == -1:
-                                meshtastic.util.our_exit(
-                                    f"Error: malformed IPv6 address in --host '{args.host}'.",
-                                    1,
-                                )
-                            tcp_hostname = args.host[1:bracket_end]
-                            remainder = args.host[bracket_end + 1 :]
-                            if remainder.startswith(":"):
-                                tcp_port_str = remainder[1:]
-                                try:
-                                    tcp_port = int(tcp_port_str)
-                                    if not 1 <= tcp_port <= 65535:
-                                        raise ValueError(
-                                            f"Port {tcp_port} out of range"
-                                        )
-                                except ValueError:
-                                    meshtastic.util.our_exit(
-                                        f"Error: invalid TCP port in --host '{args.host}'.",
-                                        1,
-                                    )
-                            elif remainder:
-                                meshtastic.util.our_exit(
-                                    f"Error: unexpected characters after IPv6 address in --host '{args.host}'.",
-                                    1,
-                                )
-                            else:
-                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                        elif ":" in args.host:
-                            # Multiple colons → almost certainly an IPv6 address, not host:port
-                            if args.host.count(":") > 1:
-                                tcp_hostname = args.host
-                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                            else:
-                                # Exactly one colon → host:port
-                                tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
-                                try:
-                                    tcp_port = int(tcp_port_str)
-                                except ValueError:
-                                    # Not a valid port - treat the whole string as a hostname
-                                    tcp_hostname = args.host
-                                    tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                                else:
-                                    if not 1 <= tcp_port <= 65535:
-                                        meshtastic.util.our_exit(
-                                            f"Error: invalid TCP port in --host '{args.host}'.",
-                                            1,
-                                        )
-                        else:
-                            tcp_hostname = args.host
-                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        tcp_hostname, tcp_port = _parse_host_port(
+                            args.host,
+                            meshtastic.tcp_interface.DEFAULT_TCP_PORT,
+                        )
                         client = stack.enter_context(
                             meshtastic.tcp_interface.TCPInterface(
                                 tcp_hostname,
@@ -1883,6 +1911,8 @@ def common():
                                 f"Error connecting to localhost:{ex}", 1
                             )
 
+                if client is None:
+                    meshtastic.util.our_exit("Error: no interface was established", 1)
                 # We assume client is fully connected now
                 onConnected(client)
 
