@@ -13,9 +13,8 @@ from ..stream_interface import StreamInterface
 @pytest.mark.unit
 def test_StreamInterface():
     """Test that we cannot instantiate a StreamInterface based on noProto."""
-    with pytest.raises(StreamInterface.StreamInterfaceError) as pytest_wrapped_e:
+    with pytest.raises(StreamInterface.StreamInterfaceError):
         StreamInterface()
-    assert pytest_wrapped_e.type is StreamInterface.StreamInterfaceError
 
 
 # Note: This takes a bit, so moving from unit to slow
@@ -30,10 +29,13 @@ def test_StreamInterface_with_noProto(caplog):
     stream.read.return_value = test_data
     with caplog.at_level(logging.DEBUG):
         iface = StreamInterface(noProto=True, connectNow=False)
-        iface.stream = stream
-        iface._writeBytes(test_data)
-        data = iface._readBytes(len(test_data))
-        assert data == test_data
+        try:
+            iface.stream = stream
+            iface._writeBytes(test_data)
+            data = iface._readBytes(len(test_data))
+            assert data == test_data
+        finally:
+            iface.close()
 
 
 # TODO

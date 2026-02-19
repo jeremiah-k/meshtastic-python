@@ -167,13 +167,14 @@ class ReconnectWorker:
         """
         Perform the blocking auto-reconnect loop for the bound BLE interface using the configured backoff policy.
 
-        Attempts reconnects until a connection succeeds, the reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect is False. Between failed attempts the loop waits according to the policy (adjusted for certain BLE/DBus errors) and exits promptly if shutdown_event is signaled. The optional on_exit callback is invoked when the loop terminates.
+        Attempts reconnects until a connection succeeds, the reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect is False. Between failed attempts the loop waits according to the policy (adjusted for certain BLE/DBus errors) and exits promptly if shutdown_event is signaled.
 
         Parameters
         ----------
             auto_reconnect (bool): If False, the loop will exit immediately without attempting reconnects.
             shutdown_event (threading.Event): Event that causes the loop to stop as soon as it is set.
-            on_exit (Optional[Callable[[], None]]): Callback invoked once when the loop ends.
+            on_exit (Optional[Callable[[], None]]): Callback invoked unconditionally when the loop ends,
+                whether due to successful connection, explicit abort, or exception. Called from the finally block.
 
         """
         self.reconnect_policy.reset()

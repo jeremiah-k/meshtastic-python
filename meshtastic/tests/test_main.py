@@ -15,13 +15,13 @@ import pytest
 
 from meshtastic import mt_config
 from meshtastic.__main__ import (
+    _set_missing_flags_false,
     export_config,
     initParser,
     main,
     onConnection,
     onNode,
     onReceive,
-    set_missing_flags_false,
     tunnelMain,
 )
 
@@ -2196,7 +2196,7 @@ position_flags: 35"""
 
 @pytest.mark.unit
 def test_set_missing_flags_false():
-    """Test set_missing_flags_false() function."""
+    """Test _set_missing_flags_false() function."""
     config = {"bluetooth": {"enabled": True}, "lora": {"txEnabled": True}}
 
     false_defaults = {
@@ -2209,7 +2209,7 @@ def test_set_missing_flags_false():
         ("mqtt", "encryptionEnabled"),
     }
 
-    set_missing_flags_false(config, false_defaults)
+    _set_missing_flags_false(config, false_defaults)
 
     # Preserved
     assert config["bluetooth"]["enabled"] is True

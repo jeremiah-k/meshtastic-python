@@ -3,10 +3,12 @@ test:
 	poetry run pytest -m unit
 
 # run all CI checks locally (same as CI pipeline)
+# Note: Order differs from .github/workflows/ci.yml (which runs pytest first)
+# to match historical Makefile convention. Both achieve the same validation.
 ci:
+	poetry run pytest --cov=meshtastic --cov-report=xml
 	$(MAKE) lint
 	poetry run mypy meshtastic/
-	poetry run pytest --cov=meshtastic --cov-report=xml
 
 # only run the smoke tests against the virtual device
 virt:

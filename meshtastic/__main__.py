@@ -1397,7 +1397,7 @@ def subscribe() -> None:
     # pub.subscribe(onNode, "meshtastic.node")
 
 
-def set_missing_flags_false(
+def _set_missing_flags_false(
     config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, str]]
 ) -> None:
     """
@@ -1523,7 +1523,7 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     config = MessageToDict(interface.localNode.localConfig)
     if config:
         # Ensure explicit false values are present before key conversion.
-        set_missing_flags_false(config, config_true_defaults)
+        _set_missing_flags_false(config, config_true_defaults)
 
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
@@ -1555,7 +1555,7 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
         # Ensure explicit false values are present before key conversion.
-        set_missing_flags_false(module_config, module_true_defaults)
+        _set_missing_flags_false(module_config, module_true_defaults)
 
         # Convert inner keys to correct snake/camelCase.
         prefs = {}

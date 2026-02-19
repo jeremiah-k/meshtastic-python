@@ -13,7 +13,6 @@ from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
-from meshtastic.protobuf import portnums_pb2
 from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface
 
@@ -60,6 +59,12 @@ class _FallbackDotMap(dict):
             value (Any): Value to assign to the key.
 
         """
+        # Guard dunder names to avoid interfering with Python internals.
+        # Note: This asymmetry with __getattr__ (which raises) is intentional
+        # to match real DotMap behavior for compatibility.
+        if key.startswith("__") and key.endswith("__"):
+            object.__setattr__(self, key, value)
+            return
         self[key] = value
 
     def __delattr__(self, key: str) -> None:
@@ -122,9 +127,7 @@ def onReceive(packet: dict, interface: Any) -> None:
         # print(f"From {interface.stream.port}: {packet}")
         p = DotMap(packet)
 
-        if p.decoded.portnum == portnums_pb2.PortNum.Name(
-            portnums_pb2.PortNum.TEXT_MESSAGE_APP
-        ):
+        if p.decoded.portnum == "TEXT_MESSAGE_APP":
             # We only care a about clear text packets
             if receivedPackets is not None:
                 receivedPackets.append(p)
@@ -331,20 +334,20 @@ def testAll(numTests: int = 5) -> bool:
     pub.subscribe(onReceive, "meshtastic.receive")
     # pylint: disable=W0603
     global interfaces
-    interfaces = list(
-        map(
-            lambda port: SerialInterface(
-                port, debugOut=openDebugLog(port), connectNow=True
-            ),
-            ports,
+    interfaces = []
+
+    # Build interfaces incrementally to ensure cleanup on failure
+    for port in ports:
+        interfaces.append(
+            SerialInterface(port, debugOut=openDebugLog(port), connectNow=True)
         )
-    )
 
     logger.info("Ports opened, starting test")
-    result: bool = testThread(numTests)
-
-    for i in interfaces:
-        i.close()
+    try:
+        result: bool = testThread(numTests)
+    finally:
+        for i in interfaces:
+            i.close()
 
     return result
 
@@ -366,7 +369,7 @@ def testSimulator() -> None:
         iface.localNode.exitSimulator()
         iface.close()
         logger.info("Integration test successful!")
-    except OSError:
+    except Exception:
         print("Error while testing simulator:", sys.exc_info()[0])
         traceback.print_exc()
         sys.exit(1)

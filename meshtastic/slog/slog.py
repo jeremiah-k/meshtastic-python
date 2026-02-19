@@ -280,8 +280,9 @@ class StructuredLogger:
             if self.power_logger:
                 self.power_logger.store_current_reading(now)
 
-        with self._raw_file_lock:
-            if self.raw_file:
+        # Only acquire lock and write if raw logging is enabled
+        if self.include_raw and self.raw_file:
+            with self._raw_file_lock:
                 self.raw_file.write(line + "\n")  # Write the raw log
 
 
@@ -344,6 +345,7 @@ class LogSet:
 
         # Store a lambda so we can find it again to unregister
         self.atexit_handler = lambda: self.close()  # pylint: disable=unnecessary-lambda
+        atexit.register(self.atexit_handler)
 
     def close(self) -> None:
         """Close the log set."""

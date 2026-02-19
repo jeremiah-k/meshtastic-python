@@ -144,8 +144,11 @@ class ThreadCoordinator:
                 )
                 # Return an inert thread that cannot be started
                 return _InertThread(name)
-            # Prune dead threads to prevent unbounded growth in long-running processes
-            self._threads = [t for t in self._threads if t.is_alive()]
+            # Prune dead threads to prevent unbounded growth in long-running processes.
+            # Keep threads that are alive OR not yet started (ident is None).
+            self._threads = [
+                t for t in self._threads if t.is_alive() or t.ident is None
+            ]
             thread = Thread(
                 target=target, name=name, daemon=daemon, args=args, kwargs=kwargs
             )

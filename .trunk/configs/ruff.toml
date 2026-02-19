@@ -9,9 +9,6 @@ ignore = ["E501", "D417"]
 
 # Generated protobuf modules rely on import side effects during descriptor loading.
 # BLE interface package has relaxed docstring requirements.
-per-file-ignores = { "meshtastic/protobuf/*_pb2.py" = [
-  "F401",
-], "meshtastic/interfaces/ble/**/*.py" = [
-  "D401",
-  "D417",
-] }
+[lint.per-file-ignores]
+"meshtastic/protobuf/*_pb2.py" = ["F401"]
+"meshtastic/interfaces/ble/**/*.py" = ["D401"]

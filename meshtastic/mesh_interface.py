@@ -139,9 +139,9 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: Optional[mesh_pb2.DeviceMetadata] = (
             None  # We don't have device metadata yet
         )
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -485,7 +485,7 @@ class MeshInterface:  # pylint: disable=R0902
                 # Treat non-dotted path as a single-level lookup
                 return node_dict.get(key_path)
             keys = key_path.split(".")
-            value: Optional[Union[str, dict]] = node_dict
+            value: Optional[Union[str, Dict[str, Any]]] = node_dict
             for key in keys:
                 if isinstance(value, dict):
                     value = value.get(key)
@@ -589,12 +589,12 @@ class MeshInterface:  # pylint: disable=R0902
                     fields[field] = formatted_value
 
                 # Filter out any field in the data set that was not specified.
-                filteredData = {
+                filtered_data = {
                     _get_human_readable(k): v
                     for k, v in fields.items()
                     if k in showFields
                 }
-                rows.append(filteredData)
+                rows.append(filtered_data)
 
         rows.sort(key=lambda r: r.get("LastHeard") or "0000", reverse=True)
         for i, row in enumerate(rows):
@@ -665,7 +665,7 @@ class MeshInterface:  # pylint: disable=R0902
         destinationId: Union[int, str] = BROADCAST_ADDR,
         wantAck: bool = False,
         wantResponse: bool = False,
-        onResponse: Optional[Callable[[dict], Any]] = None,
+        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
         channelIndex: int = 0,
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.TEXT_MESSAGE_APP,
         replyId: Optional[int] = None,
@@ -700,7 +700,7 @@ class MeshInterface:  # pylint: disable=R0902
         self,
         text: str,
         destinationId: Union[int, str] = BROADCAST_ADDR,
-        onResponse: Optional[Callable[[dict], Any]] = None,
+        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
         channelIndex: int = 0,
     ) -> mesh_pb2.MeshPacket:
         """
@@ -710,7 +710,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             text (str): Alert text to send.
             destinationId (int | str): Node ID or node number to receive the alert (defaults to broadcast).
-            onResponse (Optional[Callable[[dict], Any]]): Optional callback invoked if a response is received for this message.
+            onResponse (Optional[Callable[[Dict[str, Any]], Any]]): Optional callback invoked if a response is received for this message.
             channelIndex (int): Channel index to use when sending.
 
         Returns
@@ -754,7 +754,7 @@ class MeshInterface:  # pylint: disable=R0902
         portNum: portnums_pb2.PortNum.ValueType = portnums_pb2.PortNum.PRIVATE_APP,
         wantAck: bool = False,
         wantResponse: bool = False,
-        onResponse: Optional[Callable[[dict], Any]] = None,
+        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
         onResponseAckPermitted: bool = False,
         channelIndex: int = 0,
         hopLimit: Optional[int] = None,
@@ -900,7 +900,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.waitForPosition()
         return d
 
-    def onResponsePosition(self, p: dict) -> None:
+    def onResponsePosition(self, p: Dict[str, Any]) -> None:
         """
         Process a position response packet and display a concise human-readable summary.
 
@@ -987,7 +987,7 @@ class MeshInterface:  # pylint: disable=R0902
         waitFactor = min(max(nodeCount - 1, 0), hopLimit)
         self.waitForTraceRoute(waitFactor)
 
-    def onResponseTraceRoute(self, p: dict) -> None:
+    def onResponseTraceRoute(self, p: Dict[str, Any]) -> None:
         """
         Display human-readable traceroute results from a RouteDiscovery payload.
 
@@ -1171,7 +1171,7 @@ class MeshInterface:  # pylint: disable=R0902
         if wantResponse:
             self.waitForTelemetry()
 
-    def onResponseTelemetry(self, p: dict) -> None:
+    def onResponseTelemetry(self, p: Dict[str, Any]) -> None:
         """
         Handle an incoming telemetry response: mark telemetry as received and print human-readable telemetry values.
 
@@ -1233,7 +1233,7 @@ class MeshInterface:  # pylint: disable=R0902
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
                 )
 
-    def onResponseWaypoint(self, p: dict) -> None:
+    def onResponseWaypoint(self, p: Dict[str, Any]) -> None:
         """
         Handle a waypoint response or routing error contained in a received packet.
 
@@ -1386,7 +1386,7 @@ class MeshInterface:  # pylint: disable=R0902
     def _addResponseHandler(
         self,
         requestId: int,
-        callback: Callable[[dict], Any],
+        callback: Callable[[Dict[str, Any]], Any],
         ackPermitted: bool = False,
     ) -> None:
         """
@@ -1827,9 +1827,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
@@ -2313,9 +2311,6 @@ class MeshInterface:  # pylint: disable=R0902
             asDict["from"] = 0
             logger.error(
                 f"Device returned a packet we sent, ignoring: {stripnl(asDict)}"
-            )
-            print(
-                f"Error: Device returned a packet we sent, ignoring: {stripnl(asDict)}"
             )
             return
         if "to" not in asDict:

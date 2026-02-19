@@ -25,7 +25,10 @@ class StreamInterface(MeshInterface):
     class StreamInterfaceError(MeshInterface.MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
-        DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
+        DEFAULT_MSG: str = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
+
+        def __init__(self, message: str = DEFAULT_MSG) -> None:
+            super().__init__(message)
 
     def __init__(  # pylint: disable=R0917
         self,
@@ -60,9 +63,7 @@ class StreamInterface(MeshInterface):
         self._last_disconnect_source = "stream.initialized"
 
         if not hasattr(self, "stream") and not noProto:
-            raise StreamInterface.StreamInterfaceError(
-                StreamInterface.StreamInterfaceError.DEFAULT_MSG
-            )
+            raise StreamInterface.StreamInterfaceError()
         self.stream: Optional[serial.Serial] = cast(
             Optional[serial.Serial],
             getattr(self, "stream", None),
@@ -85,11 +86,10 @@ class StreamInterface(MeshInterface):
 
         # Start the reader thread after superclass constructor completes init
         if connectNow:
-            has_default_stream_io = (
-                type(self)._readBytes is StreamInterface._readBytes
-                and type(self)._writeBytes is StreamInterface._writeBytes
-            )
-            if self.stream is None and has_default_stream_io:
+            # Use a sentinel attribute to detect if subclass provides its own stream I/O.
+            # This is more robust than method identity checks which break with decorators.
+            _provides_own_stream = getattr(self, "_provides_own_stream", False)
+            if self.stream is None and not _provides_own_stream:
                 logger.debug(
                     "No stream configured for %s; deferring connect()",
                     self.__class__.__name__,
@@ -188,12 +188,12 @@ class StreamInterface(MeshInterface):
             toRadio (mesh_pb2.ToRadio): The protobuf message to serialize and transmit.
 
         """
-        logger.debug(f"Sending: {stripnl(toRadio)}")
+        logger.debug("Sending: %s", stripnl(toRadio))
         b: bytes = toRadio.SerializeToString()
         bufLen: int = len(b)
         # We convert into a string, because the TCP code doesn't work with byte arrays
         header: bytes = bytes([START1, START2, (bufLen >> 8) & 0xFF, bufLen & 0xFF])
-        logger.debug(f"sending header:{header!r} b:{b!r}")
+        logger.debug("sending header:%r b:%r", header, b)
         self._writeBytes(header + b)
 
     def close(self) -> None:
@@ -205,10 +205,12 @@ class StreamInterface(MeshInterface):
         reader remains alive after the timeout.
         """
         logger.debug("Closing stream")
+        # Set _wantExit before calling MeshInterface.close() to prevent the
+        # reader thread from misinterpreting intentional shutdown as a spurious disconnect
+        self._wantExit = True
         MeshInterface.close(self)
         # pyserial cancel_read doesn't seem to work, therefore we ask the
         # reader thread to close things for us
-        self._wantExit = True
         # close() can be called before connect() starts the reader thread
         # (e.g., tests using connectNow=False). In that case join() would raise.
         # Also handle partially initialized objects from early __init__ returns.

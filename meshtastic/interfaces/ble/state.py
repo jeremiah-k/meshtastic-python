@@ -101,6 +101,17 @@ class BLEStateManager:
         return self._state_lock
 
     @property
+    def stateLock(self) -> RLock:
+        """
+        Alias exposing the state lock using a camelCase name for compatibility.
+
+        Returns:
+            RLock: The internal reentrant lock protecting state changes.
+
+        """
+        return self.lock
+
+    @property
     def state(self) -> ConnectionState:
         """
         Return the current BLE connection state.

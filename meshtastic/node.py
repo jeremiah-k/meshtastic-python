@@ -528,9 +528,7 @@ class Node:
             channel_pb2.Channel.Role.SECONDARY,
             channel_pb2.Channel.Role.DISABLED,
         ):
-            self._raise_interface_error(
-                "Warning: Only SECONDARY channels can be deleted"
-            )
+            self._raise_interface_error("Only SECONDARY channels can be deleted")
 
         # we are careful here because if we move the "admin" channel the channelIndex we need to use
         # for sending admin channels will also change
@@ -997,7 +995,7 @@ class Node:
 
         if len(message) > 200:
             self._raise_interface_error(
-                "Warning: The canned message must be less than 200 characters."
+                "The canned message must be less than 200 characters."
             )
         self.ensureSessionKey()
         # split into chunks

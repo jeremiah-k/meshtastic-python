@@ -162,7 +162,7 @@ class BLEInterface(MeshInterface):
         # (non-blocking) before _state_lock. This intentional inversion enables
         # early-return optimization for concurrent disconnect callbacks without
         # blocking on state_lock. Safe because _disconnect_lock uses non-blocking
-        # acquire-if other code needs both locks, it acquires state_lock first,
+        # acquire. If other code needs both locks, it acquires state_lock first,
         # then disconnect_lock, and _handle_disconnect's non-blocking acquire will
         # simply fail and return early.
         #
@@ -408,9 +408,13 @@ class BLEInterface(MeshInterface):
 
         """
         stack = contextlib.ExitStack()
-        for key in ordered_keys:
-            addr_lock = stack.enter_context(_addr_lock_context(key))
-            stack.enter_context(addr_lock)
+        try:
+            for key in ordered_keys:
+                addr_lock = stack.enter_context(_addr_lock_context(key))
+                stack.enter_context(addr_lock)
+        except BaseException:
+            stack.close()
+            raise
         return stack
 
     def _mark_address_keys_connected(self, *keys: Optional[str]) -> None:
@@ -1470,7 +1474,14 @@ class BLEInterface(MeshInterface):
                 if not should_continue:
                     self._set_receive_wanted(False)
                     return
-                # Recovery throttling to prevent tight crash→spawn loops
+                # Recovery throttling to prevent tight crash→spawn loops.
+                # Thread safety note: _receive_recovery_attempts and _last_recovery_time
+                # are mutated here without a lock, but this is safe because:
+                # 1. This crashing thread is about to exit (or spawn a recovery thread and exit)
+                # 2. The newly spawned BLEReceiveRecovery thread will be the only thread
+                #    that continues to mutate these fields (reset_recovery=False preserves counters)
+                # 3. If this behavior changes in future (e.g., other threads mutate these fields),
+                #    a threading lock or atomic update should be introduced to avoid races.
                 now = time.monotonic()
                 self._receive_recovery_attempts += 1
                 if self._receive_recovery_attempts > 3:

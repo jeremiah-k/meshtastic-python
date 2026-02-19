@@ -106,14 +106,15 @@ def test_getShortName(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handlePacketFromRadio_no_from(capsys):
+def test_handlePacketFromRadio_no_from(caplog):
     """Test _handlePacketFromRadio with no 'from' in the mesh packet."""
     iface = MeshInterface(noProto=True)
     meshPacket = mesh_pb2.MeshPacket()
-    iface._handlePacketFromRadio(meshPacket)
-    out, err = capsys.readouterr()
-    assert re.search(r"Device returned a packet we sent, ignoring", out, re.MULTILINE)
-    assert err == ""
+    with caplog.at_level(logging.ERROR):
+        iface._handlePacketFromRadio(meshPacket)
+    assert re.search(
+        r"Device returned a packet we sent, ignoring", caplog.text, re.MULTILINE
+    )
 
 
 @pytest.mark.unit
@@ -444,7 +445,7 @@ def test_sendData_too_long(caplog):
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
             iface.sendData(some_large_text)
-        assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+        assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
         assert "Data payload too big" in str(pytest_wrapped_e.value)
     iface.close()
 
@@ -459,7 +460,7 @@ def test_sendData_unknown_app():
     iface = MeshInterface(noProto=True)
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface.sendData(b"hello", portNum=portnums_pb2.PortNum.UNKNOWN_APP)
-    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+    assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
     assert "A non-zero port number must be specified" in str(pytest_wrapped_e.value)
     iface.close()
 

@@ -228,7 +228,7 @@ def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     try:
         asBytes = asDict["decoded"]["payload"]
         asDict["decoded"]["text"] = asBytes.decode("utf-8")
-    except Exception as ex:
+    except (UnicodeDecodeError, KeyError, AttributeError) as ex:
         logger.error(f"Malformatted utf8 in text message: {ex}")
     _receiveInfoUpdate(iface, asDict)
 
@@ -366,16 +366,14 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
 
     """
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
-    if (
-        "decoded" in asDict
-        and "from" in asDict
-        and "admin" in asDict["decoded"]
-        and "raw" in asDict["decoded"]["admin"]
-    ):
+    try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
+    except (KeyError, AttributeError):
+        # Expected fields not present - this is normal for non-admin packets
+        pass
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""
