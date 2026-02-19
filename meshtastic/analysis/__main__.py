@@ -40,11 +40,17 @@ def to_pmon_names(arr) -> List[str]:
 
 
 def read_pandas(filepath: str) -> pd.DataFrame:
-    """Read a feather file and convert it to a pandas DataFrame.
-
-    filepath (str): Path to the feather file.
-
-    Returns the pandas DataFrame.
+    """
+    Read a Feather file into a pandas DataFrame using pandas nullable dtypes.
+    
+    Converts Arrow column types to pandas nullable dtypes so integer/boolean columns keep nullability
+    instead of being cast to float during conversion.
+    
+    Parameters:
+        filepath (str): Path to the Feather file.
+    
+    Returns:
+        pd.DataFrame: DataFrame with column dtypes mapped to pandas nullable dtypes where applicable.
     """
     # per https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
     # use this to get nullable int fields treated as ints rather than floats in pandas
@@ -70,11 +76,15 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 
 
 def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
-    """Get the power monitor raises from the slog DataFrame.
-
-        dslog (pd.DataFrame): The slog DataFrame.
-
-    Returns the DataFrame containing the power monitor raises.
+    """
+    Return rows from the slog DataFrame corresponding to power-monitor raise events.
+    
+    Parameters:
+        dslog (pd.DataFrame): Slog DataFrame containing a 'pm_mask' column and a 'time' column.
+    
+    Returns:
+        pd.DataFrame: A DataFrame with rows where one or more power monitors transitioned to the raised state.
+        Columns are 'time' and 'pm_raises' (a list of raised power-monitor names for that timestamp).
     """
     pmon_events = dslog[dslog["pm_mask"].notnull()]
 

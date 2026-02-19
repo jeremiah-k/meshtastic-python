@@ -812,7 +812,15 @@ def test_writeChannel_with_no_channels_raises_mesh_error():
 
 @pytest.mark.unit
 def test_requestChannel_not_localNode(caplog, capsys):
-    """Test _requestChannel()."""
+    """
+    Verify that requesting channel 0 on a non-local node logs and prints a remote channel info request.
+    
+    Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
+    calls _requestChannel(0), and asserts that:
+    - a DEBUG log contains "Requesting channel 0 info from remote node",
+    - stdout contains "Requesting channel 0 info",
+    - stderr is empty.
+    """
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.localNode.getChannelByName.return_value = None
@@ -1443,7 +1451,13 @@ def test_requestChannels_non_localNode_starting_index(caplog):
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
 def test_set_favorite(favorite):
-    """Test setFavorite."""
+    """
+    Verify setFavorite sends an admin message marking the given node as a favorite and transmits it.
+    
+    Parameters:
+        favorite (int): Node ID to mark as favorite.
+    
+    """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
@@ -1456,7 +1470,12 @@ def test_set_favorite(favorite):
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
 def test_remove_favorite(favorite):
-    """Test removeFavorite."""
+    """
+    Verify that removing a favorite node creates an AdminMessage with the expected node ID and sends it via the interface.
+    
+    Parameters:
+        favorite (int): Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
+    """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
@@ -1470,7 +1489,12 @@ def test_remove_favorite(favorite):
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
 def test_set_ignored(ignored):
-    """Test setIgnored."""
+    """
+    Verify that Node.setIgnored constructs an AdminMessage marking the given node ID as ignored and sends it.
+    
+    Parameters:
+        ignored (int): Numeric node identifier passed to setIgnored.
+    """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
@@ -1483,7 +1507,12 @@ def test_set_ignored(ignored):
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
 def test_remove_ignored(ignored):
-    """Test removeIgnored."""
+    """
+    Verify that calling removeIgnored sends an admin message to remove a node from the ignored list and transmits it.
+    
+    Parameters:
+        ignored: Node identifier (e.g., node ID or address) that will be encoded into `remove_ignored_node` on the AdminMessage.
+    """
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()

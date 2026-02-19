@@ -47,20 +47,21 @@ class BLEErrorHandler:
         reraise: bool = False,
     ) -> Optional[T]:
         """
-        Execute a zero-argument callable and return its result, or fall back to a provided default or re-raise on error.
-
-        Parameters
-        ----------
-            func (Callable[[], Any]): Zero-argument callable to execute.
-            default_return (Any): Value to return if execution fails.
-            log_error (bool): If True, log caught exceptions.
-            error_msg (str): Message prefix used when logging errors.
-            reraise (bool): If True, re-raise caught exceptions instead of returning `default_return`.
-
-        Returns
-        -------
-            Any: The value returned by `func()` on success, or `default_return` if execution fails.
-
+        Execute a zero-argument callable, returning its result or a fallback on handled errors.
+        
+        Parameters:
+            func: Zero-argument callable to execute.
+            default_return: Value to return if execution fails due to a handled exception.
+            log_error: If True, log caught exceptions using the configured logger.
+            error_msg: Message prefix used when logging errors.
+            reraise: If True, re-raise caught exceptions instead of returning `default_return`.
+        
+        Notes:
+            SystemExit and KeyboardInterrupt are re-raised and not swallowed.
+            Specifically handles BleakError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated per `log_error`/`reraise`.
+        
+        Returns:
+            The value returned by `func()` on success, or `default_return` if execution fails.
         """
         try:
             return func()
