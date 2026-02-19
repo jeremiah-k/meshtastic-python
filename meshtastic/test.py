@@ -108,7 +108,9 @@ def onReceive(packet: dict, interface: Any) -> None:
     """
     Handle an incoming packet and record clear-text messages.
 
-    Ignores packets that originated from the current sendingInterface. Converts the packet to a DotMap and, if its decoded.portnum matches PortNum.TEXT_MESSAGE_APP, appends the converted packet to the module-level receivedPackets list when that list is set.
+    Ignores packets that originated from the current sendingInterface. Converts the packet to a
+    DotMap and, if its decoded.portnum matches PortNum.TEXT_MESSAGE_APP, appends the converted
+    packet to the module-level receivedPackets list when that list is set.
 
     Parameters
     ----------
@@ -351,7 +353,9 @@ def testSimulator() -> None:
     """
     Connect to a Meshtastic simulator on localhost over TCP and run a short integration check.
 
-    Attempts to open a TCP connection to a local meshtastic-native simulator, query node information, request the simulator to exit, and close the connection. Exits the process with status 0 on success and status 1 if a connection or I/O error occurs.
+    Attempts to open a TCP connection to a local meshtastic-native simulator, query node
+    information, request the simulator to exit, and close the connection. Exits the process with
+    status 0 on success and status 1 if a connection or I/O error occurs.
     """
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")

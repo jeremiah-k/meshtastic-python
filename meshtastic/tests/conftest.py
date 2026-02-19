@@ -89,7 +89,8 @@ def reset_mt_config():
     """
     Reset the global mt_config state and install a fresh ArgumentParser for tests.
 
-    Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns the new parser to mt_config.parser so tests start with a clean configuration.
+    Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns
+    the new parser to mt_config.parser so tests start with a clean configuration.
     """
     parser = None
     parser = argparse.ArgumentParser(add_help=False)
@@ -102,7 +103,9 @@ def iface_with_nodes():
     """
     Provide a MeshInterface pre-populated with a sample node and a mocked myInfo.
 
-    The returned MeshInterface has `nodes` and `nodesByNum` populated with a single node (numeric id 2475227164). `myInfo` is a MagicMock and its `my_node_num` attribute is set to 2475227164.
+    The returned MeshInterface has `nodes` and `nodesByNum` populated with a single node
+    (numeric id 2475227164). `myInfo` is a MagicMock and its `my_node_num` attribute is set to
+    2475227164.
 
     Returns:
         MeshInterface: Instance with prepared node dictionaries and a mocked `myInfo`.

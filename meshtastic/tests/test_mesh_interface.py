@@ -453,7 +453,8 @@ def test_sendData_too_long(caplog):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendData_unknown_app():
     """
-    Verify that calling sendData with PortNum.UNKNOWN_APP raises MeshInterface.MeshInterfaceError and the error message contains "A non-zero port number must be specified".
+    Verify that calling sendData with PortNum.UNKNOWN_APP raises MeshInterface.MeshInterfaceError
+    and the error message contains "A non-zero port number must be specified".
     """
     iface = MeshInterface(noProto=True)
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:

@@ -208,7 +208,9 @@ class StructuredLogger:
         """
         Shut down the StructuredLogger and release its resources.
 
-        Unsubscribes the log listener, closes the Arrow writer, and safely close(s) and clears the raw log file reference while holding the internal lock so concurrent writers cannot race with shutdown.
+        Unsubscribes the log listener, closes the Arrow writer, and safely close(s) and clears the
+        raw log file reference while holding the internal lock so concurrent writers cannot race
+        with shutdown.
         """
         pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         self.writer.close()
@@ -222,7 +224,11 @@ class StructuredLogger:
         """
         Process a single raw log line, extract any structured slog fields, and persist the resulting record.
 
-        Parses the input line for a structured slog. If parsing yields fields, adds a "time" timestamp and writes the record to the configured Arrow writer. If raw logging is enabled, includes the original raw line in the record and appends it to the raw log file. If a power logger is present, records a power measurement using the exact same timestamp as the written slog record. Unknown or unparsable structured slog lines are logged as warnings.
+        Parses the input line for a structured slog. If parsing yields fields, adds a "time"
+        timestamp and writes the record to the configured Arrow writer. If raw logging is enabled,
+        includes the original raw line in the record and appends it to the raw log file. If a power
+        logger is present, records a power measurement using the exact same timestamp as the
+        written slog record. Unknown or unparsable structured slog lines are logged as warnings.
 
         Parameters
         ----------
@@ -249,7 +255,7 @@ class StructuredLogger:
 
                 r = d.format.parse(args)  # get the values with the correct types
                 if r:
-                    di = r.named  # type: ignore[union-attr]
+                    di = r.named  # type: ignore[union-attr] # pyright: ignore[reportAttributeAccessIssue]
                     if last_is_str:
                         di[last_field[0]] = di[
                             last_field[0]
@@ -291,12 +297,17 @@ class LogSet:
         """
         Create a LogSet: prepare a directory for slog files, start structured slogging, and optionally start power logging.
 
-        If dir_name is not provided, a timestamped directory is created under the slog root and a "latest" symlink is updated to point to it. A StructuredLogger is created and bound to the provided client; if power_meter is supplied, a PowerLogger is created that writes to a "power" subdirectory. An atexit handler pointing to this instance's close() is registered for later teardown.
+        If dir_name is not provided, a timestamped directory is created under the slog root and a
+        "latest" symlink is updated to point to it. A StructuredLogger is created and bound to the
+        provided client; if power_meter is supplied, a PowerLogger is created that writes to a
+        "power" subdirectory. An atexit handler pointing to this instance's close() is registered
+        for later teardown.
 
         Parameters
         ----------
             client: MeshInterface client whose log lines will be monitored and recorded.
-            dir_name: Optional path for storing logs; when omitted a new timestamped directory is created under the slog root and "latest" is updated to point to it.
+            dir_name: Optional path for storing logs; when omitted a new timestamped directory is
+                created under the slog root and "latest" is updated to point to it.
             power_meter: Optional PowerMeter; when provided a PowerLogger is started to record power samples alongside slog entries.
 
         """

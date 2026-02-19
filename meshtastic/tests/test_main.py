@@ -249,7 +249,9 @@ def test_main_info(capsys, caplog):
     """
     Tests that invoking the CLI with `--info` connects to a radio and calls SerialInterface.showInfo.
 
-    Patches SerialInterface with a mock that prints a recognizable marker from showInfo, then asserts stdout contains "Connected to radio" and the marker, stderr is empty, and the SerialInterface constructor was invoked.
+    Patches SerialInterface with a mock that prints a recognizable marker from showInfo, then
+    asserts stdout contains "Connected to radio" and the marker, stderr is empty, and the
+    SerialInterface constructor was invoked.
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -284,9 +286,11 @@ def test_main_info(capsys, caplog):
 @patch("os.getlogin")
 def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
     """
-    Verify that invoking the CLI with --info exits with code 1 and prints a permission-related message when the serial interface cannot be opened due to a PermissionError.
+    Verify that invoking the CLI with --info exits with code 1 and prints a permission-related
+    message when the serial interface cannot be opened due to a PermissionError.
 
-    Asserts that a SystemExit with code 1 is raised, the current user lookup was attempted, stdout contains guidance matching "Need to add yourself", and stderr is empty.
+    Asserts that a SystemExit with code 1 is raised, the current user lookup was attempted,
+    stdout contains guidance matching "Need to add yourself", and stderr is empty.
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -1016,7 +1020,9 @@ def test_main_removeposition(capsys):
     """
     Verify that invoking the CLI with --remove-position connects to the radio, removes the node's fixed position, and prints confirmation.
 
-    Asserts that "Connected to radio" and "Removing fixed position" appear on stdout, that the node's removeFixedPosition was invoked (observable via its printed output), stderr is empty, and a SerialInterface instance was created.
+    Asserts that "Connected to radio" and "Removing fixed position" appear on stdout, that the
+    node's removeFixedPosition was invoked (observable via its printed output), stderr is empty,
+    and a SerialInterface instance was created.
     """
     sys.argv = ["", "--remove-position"]
     mt_config.args = sys.argv
@@ -2871,7 +2877,8 @@ def test_main_ch_set_psk_no_ch_index(capsys):
     """
     Verify that invoking the CLI with `--ch-set psk` but without a `--ch-index` prints a warning and exits with code 1.
 
-    Asserts that the tool reports a successful connection, emits a warning that `--ch-index` must be specified, produces no stderr output, and raises SystemExit with code 1.
+    Asserts that the tool reports a successful connection, emits a warning that `--ch-index` must
+    be specified, produces no stderr output, and raises SystemExit with code 1.
     """
     sys.argv = ["", "--ch-set", "psk", "foo", "--host", "meshtastic.local"]
     mt_config.args = sys.argv
@@ -3238,7 +3245,8 @@ def test_main_set_ham_whitespace_only(capsys):
     """
     Verify that invoking the CLI with --set-ham and a whitespace-only callsign prints an appropriate error and exits with code 1.
 
-    Asserts the error message "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters" appears on stdout and that the process exits with code 1.
+    Asserts the error message "ERROR: Ham radio callsign cannot be empty or contain only
+    whitespace characters" appears on stdout and that the process exits with code 1.
     """
     sys.argv = ["", "--set-ham", "   "]
     mt_config.args = sys.argv

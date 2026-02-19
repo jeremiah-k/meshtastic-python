@@ -33,7 +33,9 @@ class SerialInterface(StreamInterface):
 
         Parameters
         ----------
-            devPath (Optional[str]): Filesystem path to a serial device (e.g., "/dev/ttyUSB0"). If None, a single available Meshtastic port will be auto-detected; if none are found a fallback StreamInterface without a serial connection is created.
+            devPath (Optional[str]): Filesystem path to a serial device (e.g., "/dev/ttyUSB0").
+                If None, a single available Meshtastic port will be auto-detected; if none are
+                found a fallback StreamInterface without a serial connection is created.
             debugOut: Optional stream to which raw debug serial output will be emitted.
             noProto (bool): If True, disable higher-level protocol handling.
             connectNow (bool): If True, perform connection/setup actions immediately after opening the serial stream.
@@ -63,9 +65,7 @@ class SerialInterface(StreamInterface):
                 )
                 return
             elif len(ports) > 1:
-                message: str = (
-                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
-                )
+                message: str = "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
                 message += f"  Ports detected:{ports}"
                 meshtastic.util.our_exit(message)
             else:
@@ -97,11 +97,13 @@ class SerialInterface(StreamInterface):
         """
         Clear the terminal's HUPCL flag for the given device file to prevent the device from rebooting when RTS/DTR change.
 
-        This modifies the terminal control flags of the provided file handle so the hang-up-on-close behavior is disabled. On Windows this function is a no-op.
+        This modifies the terminal control flags of the provided file handle so the hang-up-on-close
+        behavior is disabled. On Windows this function is a no-op.
 
         Parameters
         ----------
-            f (TextIOWrapper): Open file-like handle for the serial device whose terminal attributes will be adjusted.
+            f (TextIOWrapper): Open file-like handle for the serial device whose terminal attributes
+                will be adjusted.
 
         """
         if sys.platform == "win32":
@@ -120,7 +122,8 @@ class SerialInterface(StreamInterface):
         Includes the device path and, when present, the debug output target. Also notes the `noProto` and `noNodes` flags when they are true.
 
         Returns:
-            str: A representation string of the form "SerialInterface(devPath=..., debugOut=..., noProto=True, noNodes=True)" with only the applicable fields included.
+            str: A representation string of the form "SerialInterface(devPath=..., debugOut=...,
+                noProto=True, noNodes=True)" with only the applicable fields included.
 
         """
         rep = f"SerialInterface(devPath={self.devPath!r}"
@@ -137,7 +140,9 @@ class SerialInterface(StreamInterface):
         """
         Close the serial connection and ensure any pending outgoing data is transmitted.
 
-        If a serial stream is present, flushes the stream and waits briefly to allow outstanding data to reach the device before closing; then logs the closure and delegates final cleanup to the base StreamInterface.close(). This operation may block briefly while flushing.
+        If a serial stream is present, flushes the stream and waits briefly to allow outstanding
+        data to reach the device before closing; then logs the closure and delegates final cleanup
+        to the base StreamInterface.close(). This operation may block briefly while flushing.
         """
         if self.stream:  # Stream can be null if we were already closed
             # Flush and sleep to ensure all pending data is transmitted before closing.
@@ -170,6 +175,7 @@ class SerialInterface(StreamInterface):
         """
         Handle exit from a context manager and preserve exception handling and logging behavior.
 
-        This method processes any exception information provided by the context manager and lets the base implementation perform the actual cleanup and logging.
+        This method processes any exception information provided by the context manager and lets
+        the base implementation perform the actual cleanup and logging.
         """
         return super().__exit__(exc_type, exc_val, exc_tb)

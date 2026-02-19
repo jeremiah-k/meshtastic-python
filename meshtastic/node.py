@@ -82,7 +82,9 @@ class Node:
         Return a developer-oriented string representing the Node including its interface, node number, and active non-default flags.
 
         Returns:
-            str: A debug-friendly representation containing the iface repr, the node number formatted as eight-hex digits (prefixed with '0x'), and any non-default flags such as `noProto` or a non-default `timeout`.
+            str: A debug-friendly representation containing the iface repr, the node number
+                formatted as eight-hex digits (prefixed with '0x'), and any non-default flags such
+                as `noProto` or a non-default `timeout`.
 
         """
         r = f"Node({self.iface!r}, 0x{self.nodeNum:08x}"
@@ -137,7 +139,8 @@ class Node:
 
         Returns
         -------
-            bool: `True` if the bit is not set in the interface metadata (module available), or if metadata is missing or an error occurs; `False` if the bit is set (module excluded).
+            bool: `True` if the bit is not set in the interface metadata (module available), or if
+                metadata is missing or an error occurs; `False` if the bit is set (module excluded).
 
         """
         meta = getattr(self.iface, "metadata", None)
@@ -152,7 +155,9 @@ class Node:
         """
         Print a human-readable list of configured channels and their shareable URLs.
 
-        Each non-disabled channel is printed with its index, role, masked PSK, and settings as JSON. After listing channels, the primary channel URL is printed; if the full URL that includes all channels differs, it is printed as the "Complete URL".
+        Each non-disabled channel is printed with its index, role, masked PSK, and settings as JSON.
+        After listing channels, the primary channel URL is printed; if the full URL that includes
+        all channels differs, it is printed as the "Complete URL".
         """
         print("Channels:")
         if self.channels:
@@ -192,7 +197,9 @@ class Node:
 
         Parameters
         ----------
-            channels (list): Sequence of channel protobufs to assign to this node. The assigned list will be normalized (indices fixed) and padded as needed to meet expected channel count.
+            channels (list): Sequence of channel protobufs to assign to this node. The assigned
+                list will be normalized (indices fixed) and padded as needed to meet expected
+                channel count.
 
         """
         self.channels = channels
@@ -202,7 +209,9 @@ class Node:
         """
         Request channel definitions from the node, starting at the given channel index.
 
-        When called with startingIndex 0, clears any cached channels and begins a fresh fetch into an internal partialChannels list. The method initiates the network request for the specified channel index.
+        When called with startingIndex 0, clears any cached channels and begins a fresh fetch into
+        an internal partialChannels list. The method initiates the network request for the
+        specified channel index.
 
         Parameters
         ----------
@@ -221,11 +230,17 @@ class Node:
         """
         Process an admin response for a settings request and update the node's config objects.
 
-        Parses the decoded response packet `p` to determine whether the request was acknowledged or rejected, marks the interface acknowledgment flags accordingly, and if the response contains `getConfigResponse` or `getModuleConfigResponse` copies the returned raw config into `self.localConfig` or `self.moduleConfig` respectively and prints the populated field.
+        Parses the decoded response packet `p` to determine whether the request was acknowledged or
+        rejected, marks the interface acknowledgment flags accordingly, and if the response contains
+        `getConfigResponse` or `getModuleConfigResponse` copies the returned raw config into
+        `self.localConfig` or `self.moduleConfig` respectively and prints the populated field.
 
         Parameters
         ----------
-            p (dict): Decoded response packet containing at least a `"decoded"` mapping with optional `"routing"` and `"admin"` entries. The `"admin"` entry is expected to contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying `raw` bytes for the returned field.
+            p (dict): Decoded response packet containing at least a `"decoded"` mapping with
+                optional `"routing"` and `"admin"` entries. The `"admin"` entry is expected to
+                contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
+                `raw` bytes for the returned field.
 
         """
         logger.debug(f"onResponseRequestSetting() p:{p}")
@@ -271,11 +286,18 @@ class Node:
         """
         Request a configuration subset or whole configuration from the node via an admin message.
 
-        If configType is an integer, it is treated as a config index to request. If configType is a protobuf field descriptor (an object with an `index` and a `containing_type.name`), the descriptor's `index` is used and the request targets LocalConfig when `containing_type.name == "LocalConfig"`, otherwise it targets the module config. For the local node the request is sent without an on-response handler; for remote nodes the method registers a response handler and waits for an ACK/NAK before returning.
+        If configType is an integer, it is treated as a config index to request. If configType is
+        a protobuf field descriptor (an object with an `index` and a `containing_type.name`), the
+        descriptor's `index` is used and the request targets LocalConfig when
+        `containing_type.name == "LocalConfig"`, otherwise it targets the module config. For the
+        local node the request is sent without an on-response handler; for remote nodes the method
+        registers a response handler and waits for an ACK/NAK before returning.
 
         Parameters
         ----------
-            configType (int or protobuf field descriptor): The config identifier to request; either a numeric config index or a protobuf field descriptor indicating which config field to fetch.
+            configType (int or protobuf field descriptor): The config identifier to request; either
+                a numeric config index or a protobuf field descriptor indicating which config field
+                to fetch.
 
         """
         if self == self.iface.localNode:
@@ -285,14 +307,14 @@ class Node:
             print("Requesting current config from remote node (this can take a while).")
         p = admin_pb2.AdminMessage()
         if isinstance(configType, int):
-            p.get_config_request = configType  # type: ignore[assignment]
+            p.get_config_request = configType  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
 
         else:
             msgIndex = configType.index
             if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = msgIndex  # type: ignore[assignment]
+                p.get_config_request = msgIndex  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
             else:
-                p.get_module_config_request = msgIndex  # type: ignore[assignment]
+                p.get_module_config_request = msgIndex  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
 
         self._sendAdmin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:
@@ -492,7 +514,9 @@ class Node:
             MeshInterfaceError: If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
 
         Description:
-            Removes the channel, normalizes the channel list back to the device's channel count, and rewrites affected channels to the device. When operating on the local node, the method adjusts admin-channel handling so ongoing writes use the correct admin index.
+            Removes the channel, normalizes the channel list back to the device's channel count, and
+            rewrites affected channels to the device. When operating on the local node, the method
+            adjusts admin-channel handling so ongoing writes use the correct admin index.
 
         """
         if self.channels is None:
@@ -578,8 +602,11 @@ class Node:
 
         Parameters
         ----------
-            long_name (Optional[str]): Owner long name; leading/trailing whitespace is trimmed. If provided and empty after trimming, a ValueError is raised.
-            short_name (Optional[str]): Owner short name; leading/trailing whitespace is trimmed. If provided and longer than 4 characters it will be truncated to 4 characters. If empty after trimming, a ValueError is raised.
+            long_name (Optional[str]): Owner long name; leading/trailing whitespace is trimmed. If
+                provided and empty after trimming, a ValueError is raised.
+            short_name (Optional[str]): Owner short name; leading/trailing whitespace is trimmed.
+                If provided and longer than 4 characters it will be truncated to 4 characters. If
+                empty after trimming, a ValueError is raised.
             is_licensed (bool): Whether the owner is licensed; applied when `long_name` is provided.
             is_unmessagable (Optional[bool]): If provided, sets the owner's unmessagable flag.
 
@@ -664,7 +691,10 @@ class Node:
         """
         Parse a Mesh URL and apply its channel and LoRa configuration to this node.
 
-        If addOnly is False, replace the node's channel list with the channels encoded in the URL (first becomes PRIMARY, subsequent become SECONDARY) and write each channel to the device. If addOnly is True, add only channels from the URL whose names are not already present, placing each into the first available DISABLED channel and writing it.
+        If addOnly is False, replace the node's channel list with the channels encoded in the URL
+        (first becomes PRIMARY, subsequent become SECONDARY) and write each channel to the device.
+        If addOnly is True, add only channels from the URL whose names are not already present,
+        placing each into the first available DISABLED channel and writing it.
 
         Parameters
         ----------
@@ -673,7 +703,8 @@ class Node:
 
         Raises
         ------
-            MeshInterfaceError: If channels or configuration are not loaded, the URL is invalid or contains no settings, or no free channel slot is available when adding.
+            MeshInterfaceError: If channels or configuration are not loaded, the URL is invalid or
+                contains no settings, or no free channel slot is available when adding.
 
         """
         if self.channels is None:
@@ -745,7 +776,9 @@ class Node:
         """
         Handle an incoming admin response containing a ringtone part and record it on the Node.
 
-        Checks the decoded packet for routing errors; if none are present and the packet contains an admin.raw get_ringtone_response, stores that value in self.ringtonePart and sets self.gotResponse to True. If a routing error is present, prints the error reason.
+        Checks the decoded packet for routing errors; if none are present and the packet contains
+        an admin.raw get_ringtone_response, stores that value in self.ringtonePart and sets
+        self.gotResponse to True. If a routing error is present, prints the error reason.
 
         Parameters
         ----------
@@ -775,7 +808,8 @@ class Node:
         """
         Retrieve the node's ringtone as a single concatenated string.
 
-        This may block while waiting for the device to respond. If the External Notification module is excluded by firmware, no request is made and the method returns None.
+        This may block while waiting for the device to respond. If the External Notification
+        module is excluded by firmware, no request is made and the method returns None.
 
         Returns:
             ringtone (str | None): The complete ringtone string if available, `None` if the module is not present or ringtone is unavailable.
@@ -811,7 +845,11 @@ class Node:
         """
         Set the node's ringtone by sending one or more admin-message chunks.
 
-        Validates that the External Notification module is available and that the ringtone length is 230 characters or fewer; ensures an admin session key, then sends the ringtone in 230-character chunks. Observably this sends an AdminMessage for the first chunk and returns that send result; returns None if the External Notification module is not available. For remote nodes the send waits for an ACK/NAK response.
+        Validates that the External Notification module is available and that the ringtone length
+        is 230 characters or fewer; ensures an admin session key, then sends the ringtone in
+        230-character chunks. Observably this sends an AdminMessage for the first chunk and returns
+        that send result; returns None if the External Notification module is not available. For
+        remote nodes the send waits for an ACK/NAK response.
 
         Parameters
         ----------
@@ -933,7 +971,10 @@ class Node:
         """
         Set the device's canned message by sending it in up to 200-character chunks.
 
-        If the canned-message module is not available on the device, the method logs a warning and returns None. If the provided message is longer than 200 characters, a MeshInterfaceError is raised. The message is split into 200-character chunks and the first chunk is sent (waiting for an ACK/NAK when targeting a remote node).
+        If the canned-message module is not available on the device, the method logs a warning and
+        returns None. If the provided message is longer than 200 characters, a MeshInterfaceError
+        is raised. The message is split into 200-character chunks and the first chunk is sent
+        (waiting for an ACK/NAK when targeting a remote node).
 
         Parameters
         ----------
@@ -1011,7 +1052,8 @@ class Node:
         """
         Open a settings edit transaction on the node.
 
-        Ensures an admin session key exists before sending the request. For remote nodes, the call waits for an ACK/NAK response; for the local node it does not wait.
+        Ensures an admin session key exists before sending the request. For remote nodes, the call
+        waits for an ACK/NAK response; for the local node it does not wait.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1061,7 +1103,8 @@ class Node:
         """
         Request the node to enter DFU (NRF52) mode.
 
-        Ensures an admin session key exists and sends an AdminMessage asking the node to enter DFU; when targeting a remote node this will wait for an ACK/NAK response.
+        Ensures an admin session key exists and sends an AdminMessage asking the node to enter DFU;
+        when targeting a remote node this will wait for an ACK/NAK response.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1093,7 +1136,8 @@ class Node:
         """
         Request the node's device metadata and wait for an acknowledgement.
 
-        Sends a metadata request to the node and blocks until an ACK or NAK is received; the received metadata is processed asynchronously when the response arrives.
+        Sends a metadata request to the node and blocks until an ACK or NAK is received; the
+        received metadata is processed asynchronously when the response arrives.
         """
         p = admin_pb2.AdminMessage()
         p.get_device_metadata_request = True
@@ -1106,7 +1150,9 @@ class Node:
         """
         Request a factory reset on the node.
 
-        Ensures an admin session key exists, then sends a factory-reset request to the node. If `full` is True, requests a full device reset; otherwise requests a configuration-only reset. For remote targets the send is performed with ACK/NAK response handling.
+        Ensures an admin session key exists, then sends a factory-reset request to the node. If
+        `full` is True, requests a full device reset; otherwise requests a configuration-only reset.
+        For remote targets the send is performed with ACK/NAK response handling.
 
         Parameters
         ----------
@@ -1133,7 +1179,9 @@ class Node:
         """
         Request that this node remove the mesh node identified by nodeId.
 
-        nodeId is converted to a numeric node number before sending. This method sends a remove-by-node-number admin request to the device; for remote targets it uses ACK/NAK handling, for the local node no response callback is used.
+        nodeId is converted to a numeric node number before sending. This method sends a
+        remove-by-node-number admin request to the device; for remote targets it uses ACK/NAK
+        handling, for the local node no response callback is used.
 
         Parameters
         ----------
@@ -1334,7 +1382,9 @@ class Node:
         """
         Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
 
-        If `channels` is None this is a no-op. Otherwise this method sets each channel's `index` field to its position in the list (starting at 0) and then appends disabled channels as needed so the channel list reaches the required length.
+        If `channels` is None this is a no-op. Otherwise this method sets each channel's `index`
+        field to its position in the list (starting at 0) and then appends disabled channels as
+        needed so the channel list reaches the required length.
         """
         channels = self.channels
         if channels is None:
@@ -1366,11 +1416,16 @@ class Node:
         """
         Handle a device metadata response packet and surface its contents.
 
-        Parses the provided decoded packet, updates interface acknowledgment state, and either retries the metadata request on routing-app retry indications or prints the received device metadata fields (firmware_version, device_state_version, role, position_flags, hw_model, hasPKC, and excluded_modules). Also resets or expires the internal timeout depending on progress.
+        Parses the provided decoded packet, updates interface acknowledgment state, and either
+        retries the metadata request on routing-app retry indications or prints the received device
+        metadata fields (firmware_version, device_state_version, role, position_flags, hw_model,
+        hasPKC, and excluded_modules). Also resets or expires the internal timeout depending on
+        progress.
 
         Parameters
         ----------
-            p (dict): Decoded packet structure containing at least a 'decoded' key with routing and admin/raw get_device_metadata_response fields.
+            p (dict): Decoded packet structure containing at least a 'decoded' key with routing and
+                admin/raw get_device_metadata_response fields.
 
         """
         logger.debug(f"onRequestGetMetadata() p:{p}")
@@ -1418,7 +1473,11 @@ class Node:
         """
         Process a response packet for a previously requested channel and update the Node's channel state.
 
-        If the packet is a routing message with an error, expire the request timeout and retry the last requested channel. If the packet contains an admin get_channel_response, append that channel to the node's partial channel list, reset the request timeout, and either continue requesting the next channel or, when the final channel is received, replace the node's channels with the collected channels and normalize them.
+        If the packet is a routing message with an error, expire the request timeout and retry the
+        last requested channel. If the packet contains an admin get_channel_response, append that
+        channel to the node's partial channel list, reset the request timeout, and either continue
+        requesting the next channel or, when the final channel is received, replace the node's
+        channels with the collected channels and normalize them.
 
         Parameters
         ----------
@@ -1464,8 +1523,10 @@ class Node:
         Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
 
         Inspect the routing error reason in the parsed packet `p` and:
-        - If the errorReason is not "NONE", print a NAK message and set iface._acknowledgment.receivedNak to True.
-        - If the errorReason is "NONE" and the packet originates from the local node, print an implicit-ACK message and set iface._acknowledgment.receivedImplAck to True.
+        - If the errorReason is not "NONE", print a NAK message and set
+          iface._acknowledgment.receivedNak to True.
+        - If the errorReason is "NONE" and the packet originates from the local node, print an
+          implicit-ACK message and set iface._acknowledgment.receivedImplAck to True.
         - Otherwise print a normal ACK message and set iface._acknowledgment.receivedAck to True.
 
         Parameters
@@ -1572,7 +1633,8 @@ class Node:
         """
         Ensure an admin session key exists for this node, requesting one if missing.
 
-        If protocol use is disabled (`noProto`), no action is taken. Otherwise, if the node has no `adminSessionPassKey` recorded, a session-key request is sent.
+        If protocol use is disabled (`noProto`), no action is taken. Otherwise, if the node has no
+        `adminSessionPassKey` recorded, a session-key request is sent.
         """
         if self.noProto:
             logger.warning(

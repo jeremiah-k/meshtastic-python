@@ -77,11 +77,15 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
     """
     Handle an incoming mesh packet and optionally send a text reply or close the interface.
 
-    If the packet contains a decoded payload and the CLI request was a text send, the interface will be closed when the packet is a text message addressed to this node. If reply mode is enabled and the decoded payload contains text, a reply containing the received text plus the packet's `rxSnr` and `hopLimit` will be sent and printed.
+    If the packet contains a decoded payload and the CLI request was a text send, the interface
+    will be closed when the packet is a text message addressed to this node. If reply mode is
+    enabled and the decoded payload contains text, a reply containing the received text plus the
+    packet's `rxSnr` and `hopLimit` will be sent and printed.
 
     Parameters
     ----------
-        packet (dict): Incoming packet; expected keys include `"decoded"` (dict or None), `"to"` (destination node number), `"rxSnr"`, and `"hopLimit"`.
+        packet (dict): Incoming packet; expected keys include `"decoded"` (dict or None),
+            `"to"` (destination node number), `"rxSnr"`, and `"hopLimit"`.
         interface (MeshInterface): Interface used to send replies and to close the connection.
 
     """
@@ -154,16 +158,20 @@ def getPref(node: Any, comp_name: str) -> bool:
     """
     Retrieve and display a preference or channel field for the given node.
 
-    If the field exists locally, print its current value(s); if the field exists but is not populated locally, request the remote node's configuration. If the compound name refers to a message (e.g., "channel.label" or "channel"), populated subfields are printed when available.
+    If the field exists locally, print its current value(s); if the field exists but is not
+    populated locally, request the remote node's configuration. If the compound name refers to a
+    message (e.g., "channel.label" or "channel"), populated subfields are printed when available.
 
     Parameters
     ----------
         node (Any): Node object containing `localConfig` and `moduleConfig`.
-        comp_name (str): Dot-separated preference name or path (e.g., "channel.label" or "label"). If a single name is provided, it is used for both section and field resolution.
+        comp_name (str): Dot-separated preference name or path (e.g., "channel.label" or "label").
+            If a single name is provided, it is used for both section and field resolution.
 
     Returns
     -------
-        bool: `True` if the preference field exists and the function printed local values or requested remote config; `False` if the field was not found.
+        bool: `True` if the preference field exists and the function printed local values or
+            requested remote config; `False` if the field was not found.
 
     """
 
@@ -171,7 +179,8 @@ def getPref(node: Any, comp_name: str) -> bool:
         """
         Print a configuration preference and its value to both stdout and the debug log.
 
-        If `repeated` is True, `pref_value` is treated as an iterable and each element is stringified before printing; otherwise the single value is stringified.
+        If `repeated` is True, `pref_value` is treated as an iterable and each element is
+        stringified before printing; otherwise the single value is stringified.
 
         Parameters
         ----------
@@ -250,7 +259,8 @@ def splitCompoundName(comp_name: str) -> List[str]:
     """
     Split a dot-separated preference name into segments.
 
-    If `comp_name` contains at least one dot, returns the list of segments produced by splitting on '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
+    If `comp_name` contains at least one dot, returns the list of segments produced by splitting
+    on '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
 
     Returns:
         List[str]: The name segments, or `[comp_name, comp_name]` when no dot is present.
@@ -409,7 +419,13 @@ def onConnected(interface: MeshInterface) -> None:
     """
     Perform post-connection CLI actions driven by the parsed command-line arguments.
 
-    Reads mt_config.args and executes any requested operations against the provided MeshInterface (for example: update time or owner, set or remove fixed position, write configuration or channel changes, send text/telemetry/position messages, manage nodes, export configuration, perform reboots/shutdowns, and start tunnels or power-monitoring tasks). Actions may write to remote devices, send radio messages, start long-running services (tunnel, GPIO watch, power stress), and adjust local state. The function may close the interface when work is complete, wait for remote acknowledgments when required, or terminate the process on fatal errors.
+    Reads mt_config.args and executes any requested operations against the provided MeshInterface
+    (for example: update time or owner, set or remove fixed position, write configuration or
+    channel changes, send text/telemetry/position messages, manage nodes, export configuration,
+    perform reboots/shutdowns, and start tunnels or power-monitoring tasks). Actions may write to
+    remote devices, send radio messages, start long-running services (tunnel, GPIO watch, power
+    stress), and adjust local state. The function may close the interface when work is complete,
+    wait for remote acknowledgments when required, or terminate the process on fatal errors.
 
     Parameters
     ----------
@@ -1326,7 +1342,9 @@ def printConfig(config: Any) -> None:
     """
     Display top-level configuration sections and their field names.
 
-    Skips the "version" section. For each other top-level section, prints the section name and a sorted list of its fields as "section.field"; if mt_config.camel_case is true, field names are converted to camelCase before printing.
+    Skips the "version" section. For each other top-level section, prints the section name and a
+    sorted list of its fields as "section.field"; if mt_config.camel_case is true, field names
+    are converted to camelCase before printing.
 
     Parameters
     ----------
@@ -1611,7 +1629,12 @@ def common():
     """
     Configure logging, validate CLI arguments, establish the chosen transport interface, invoke onConnected, and optionally enter the main event loop.
 
-    Performs argument validation (early checks for support/test and name fields), initializes optional subsystems (power meter, serial logging), subscribes to message topics, selects and opens the requested transport (BLE, TCP, or serial), and calls onConnected with the established MeshInterface. If a persistent session mode is requested (listen, tunnel, noproto, or reply), blocks until interrupted. On fatal errors calls meshtastic.util.our_exit with an explanatory message.
+    Performs argument validation (early checks for support/test and name fields), initializes
+    optional subsystems (power meter, serial logging), subscribes to message topics, selects and
+    opens the requested transport (BLE, TCP, or serial), and calls onConnected with the established
+    MeshInterface. If a persistent session mode is requested (listen, tunnel, noproto, or reply),
+    blocks until interrupted. On fatal errors calls meshtastic.util.our_exit with an explanatory
+    message.
     """
     logfile = None
     args = mt_config.args
