@@ -375,7 +375,7 @@ class Node:
         short_name: Optional[str] = None,
         is_licensed: bool = False,
         is_unmessagable: Optional[bool] = None,
-    ):
+    ) -> Optional[mesh_pb2.MeshPacket]:
         """Set device owner name."""
         logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
         self.ensureSessionKey()
@@ -871,7 +871,7 @@ class Node:
 
     def setFixedPosition(
         self, lat: Union[int, float], lon: Union[int, float], alt: int
-    ):
+    ) -> Optional[mesh_pb2.MeshPacket]:
         """Tell the node to set fixed position to the provided value and enable the fixed position setting."""
         self.ensureSessionKey()
 

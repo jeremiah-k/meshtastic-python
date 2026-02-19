@@ -14,7 +14,7 @@ with rather more easily once the code is simplified by this change.
 """
 
 import argparse
-from typing import Any, Optional
+from typing import IO, Any, Optional
 
 
 def reset() -> None:
@@ -37,6 +37,6 @@ def reset() -> None:
 args: Optional[argparse.Namespace] = None
 parser: Optional[argparse.ArgumentParser] = None
 channel_index: Optional[int] = None
-logfile: Optional[Any] = None
+logfile: Optional[IO[str]] = None
 tunnelInstance: Optional[Any] = None
 camel_case: bool = False

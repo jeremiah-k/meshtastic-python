@@ -164,6 +164,7 @@ class StructuredLogger:
             pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
         )
 
+        self._raw_file_lock = threading.Lock()
         self.raw_file: Optional[io.TextIOWrapper] = (
             open(  # pylint: disable=consider-using-with
                 os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
@@ -182,18 +183,21 @@ class StructuredLogger:
         try:
             pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         except Exception:
-            # If subscription fails, close the file handle before re-raising
+            # If subscription fails, close file handles before re-raising
             if self.raw_file:
                 self.raw_file.close()
                 self.raw_file = None
+            if self.writer:
+                self.writer.close()
             raise
 
     def close(self) -> None:
         """Stop logging."""
         pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         self.writer.close()
-        f = self.raw_file
-        self.raw_file = None  # mark that we are shutting down
+        with self._raw_file_lock:
+            f = self.raw_file
+            self.raw_file = None  # mark that we are shutting down
         if f:
             f.close()  # Close the raw.txt file
 
@@ -247,11 +251,9 @@ class StructuredLogger:
             if self.power_logger:
                 self.power_logger.store_current_reading(now)
 
-        if self.raw_file:
-            # Snapshot the reference to prevent TOCTOU race with close()
-            raw_file = self.raw_file
-            if raw_file:
-                raw_file.write(line + "\n")  # Write the raw log
+        with self._raw_file_lock:
+            if self.raw_file:
+                self.raw_file.write(line + "\n")  # Write the raw log
 
 
 class LogSet:

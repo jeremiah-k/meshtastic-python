@@ -63,7 +63,10 @@ def read_pandas(filepath: str) -> pd.DataFrame:
         pa.string(): pd.StringDtype(),
     }
 
-    return cast(pd.DataFrame, feather.read_table(filepath).to_pandas(types_mapper=dtype_mapping.get))  # type: ignore[arg-type]
+    return cast(
+        pd.DataFrame,
+        feather.read_table(filepath).to_pandas(types_mapper=dtype_mapping.get),
+    )  # type: ignore[arg-type]
 
 
 def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:

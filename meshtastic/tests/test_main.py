@@ -1881,21 +1881,20 @@ def test_main_get_with_invalid(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onReceive_empty(caplog, capsys):
-    """Test onReceive."""
+    """Test onReceive with empty packet - should handle gracefully without error."""
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
-    # Need 'decoded' to be truthy so the code path reaches packet["to"]
+    # Need 'decoded' to be truthy so the code path reaches packet.get("to")
     packet = {"decoded": {}}
     with caplog.at_level(logging.DEBUG):
         onReceive(packet, iface)
     assert re.search(r"in onReceive", caplog.text, re.MULTILINE)
     out, err = capsys.readouterr()
-    assert re.search(
-        r"Warning: Error processing received packet: 'to'.", out, re.MULTILINE
-    )
+    # Should not print any warnings - packet.get("to") returns None gracefully
+    assert out == ""
     assert err == ""
 
 

@@ -3,7 +3,7 @@
 import logging
 import warnings
 from threading import Event, RLock, Thread, current_thread
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from meshtastic.interfaces.ble.constants import EVENT_THREAD_JOIN_TIMEOUT
 
@@ -71,7 +71,7 @@ class ThreadCoordinator:
         """
         self._lock = RLock()
         self._threads: List[Thread] = []
-        self._pending_start: set = set()
+        self._pending_start: Set[ThreadLike] = set()
         self._events: Dict[str, Event] = {}
         self._cleaned_up: bool = False
 

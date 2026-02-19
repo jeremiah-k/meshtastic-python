@@ -100,7 +100,7 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
             and args.sendtext
             and d is not None
             and interface.myInfo is not None
-            and packet["to"] == interface.myInfo.my_node_num
+            and packet.get("to") == interface.myInfo.my_node_num
             and d.get("portnum")
             == portnums_pb2.PortNum.Name(portnums_pb2.PortNum.TEXT_MESSAGE_APP)
         )

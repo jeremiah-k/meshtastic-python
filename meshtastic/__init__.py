@@ -353,11 +353,16 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
 
     """
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
-    if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
+    if (
+        "decoded" in asDict
+        and "from" in asDict
+        and "admin" in asDict["decoded"]
+        and "raw" in asDict["decoded"]["admin"]
+    ):
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

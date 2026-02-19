@@ -10,7 +10,17 @@ import sys
 import threading
 import time
 from queue import Queue
-from typing import Any, Callable, Dict, List, NoReturn, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import packaging.version as pkg_version
 import requests
@@ -104,7 +114,7 @@ def fromStr(valstr: str) -> Any:
     return val
 
 
-def toStr(raw_value):
+def toStr(raw_value: Any) -> str:
     """Convert a value to a string that can be used in a config file."""
     if isinstance(raw_value, bytes):
         return "base64:" + base64.b64encode(raw_value).decode("utf-8")
@@ -127,7 +137,7 @@ def pskToString(psk: bytes) -> str:
         return "secret"
 
 
-def stripnl(s) -> str:
+def stripnl(s: Any) -> str:
     """Remove newlines from a string (and remove extra whitespace)."""
     s = str(s).replace("\n", " ")
     return " ".join(s.split())
@@ -419,7 +429,7 @@ def ipstr(barray: bytes) -> str:
     return ".".join(f"{x}" for x in barray)
 
 
-def readnet_u16(p, offset: int) -> int:
+def readnet_u16(p: Union[bytes, bytearray, memoryview], offset: int) -> int:
     """Read big endian u16 (network byte order)."""
     return p[offset] * 256 + p[offset + 1]
 
@@ -769,7 +779,7 @@ def to_node_num(node_id: Union[int, str]) -> int:
         return int(s, 16)
 
 
-def flags_to_list(flag_type, flags: int) -> List[str]:
+def flags_to_list(flag_type: Any, flags: int) -> List[str]:
     """Given a flag_type that's a protobuf EnumTypeWrapper, and a flag int, give a list of flags enabled."""
     ret = []
     for key in flag_type.keys():

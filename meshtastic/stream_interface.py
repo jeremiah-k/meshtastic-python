@@ -333,15 +333,12 @@ class StreamInterface(MeshInterface):
                 )
             else:
                 disconnect_source = "stream.close_requested"
-        except OSError as ex:
+        except OSError:
             if (
                 not self._wantExit
             ):  # We might intentionally get an exception during shutdown
                 disconnect_source = "stream.os_error"
-                logger.exception(
-                    "Unexpected OSError, terminating meshtastic reader... %s",
-                    ex,
-                )
+                logger.exception("Unexpected OSError, terminating meshtastic reader...")
             else:
                 disconnect_source = "stream.close_requested"
         except Exception:
