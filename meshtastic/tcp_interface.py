@@ -1,12 +1,14 @@
-"""TCPInterface class for interfacing with http endpoint."""
+"""TCPInterface class for interfacing with a TCP endpoint."""
 
 # pylint: disable=R0917
 import contextlib
 import logging
 import socket
+import threading
 import time
 from typing import Optional
 
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.stream_interface import StreamInterface
 
 DEFAULT_TCP_PORT = 4403
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class TCPInterface(StreamInterface):
-    """Interface class for meshtastic devices over a TCP link"""
+    """Interface class for meshtastic devices over a TCP link."""
 
     def __init__(
         self,
@@ -24,13 +26,14 @@ class TCPInterface(StreamInterface):
         connectNow: bool = True,
         portNumber: int = DEFAULT_TCP_PORT,
         noNodes: bool = False,
-        timeout: int = 300,
+        timeout: float = 300.0,
     ):
-        """Constructor, opens a connection to a specified IP address/hostname
+        """Open a connection to a specified IP address/hostname.
 
         Keyword Arguments:
             hostname {string} -- Hostname/IP address of the device to connect to
             timeout -- How long to wait for replies (default: 300 seconds)
+
         """
 
         self.stream = None
@@ -54,7 +57,7 @@ class TCPInterface(StreamInterface):
             timeout=timeout,
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         rep = f"TCPInterface({self.hostname!r}"
         if self.debugOut is not None:
             rep += f", debugOut={self.debugOut!r}"
@@ -77,34 +80,50 @@ class TCPInterface(StreamInterface):
             self.socket.shutdown(socket.SHUT_RDWR)
 
     def myConnect(self) -> None:
-        """Connect to socket"""
-        logger.debug(f"Connecting to {self.hostname}")  # type: ignore[str-bytes-safe]
+        """Connect to socket."""
+        logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
         self.socket = socket.create_connection(server_address)
 
     def close(self) -> None:
-        """Close a connection to the device"""
+        """Close a connection to the device."""
         logger.debug("Closing TCP stream")
-        super().close()
+        # Request reader shutdown before parent close() to prevent reconnect-on-close behavior.
+        self._wantExit = True
+        MeshInterface.close(self)
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
-        self._wantExit = True
         if self.socket is not None:
             with contextlib.suppress(
                 Exception
             ):  # Ignore errors in shutdown, because we might have a race with the server
                 self._socket_shutdown()
-            self.socket.close()
+            with contextlib.suppress(
+                Exception
+            ):  # Ignore close races if the socket is already torn down
+                self.socket.close()
 
         self.socket = None
 
-    def _writeBytes(self, b: bytes) -> None:
-        """Write an array of bytes to our stream and flush"""
-        if self.socket is not None:
-            self.socket.send(b)
+        # Join after socket teardown so a blocking recv() can exit promptly.
+        rx_thread = getattr(self, "_rxThread", None)
+        if (
+            rx_thread is not None
+            and rx_thread.is_alive()
+            and rx_thread != threading.current_thread()
+        ):
+            rx_thread.join(timeout=2.0)
+            if rx_thread.is_alive():
+                logger.warning("Reader thread did not exit within shutdown timeout")
 
-    def _readBytes(self, length) -> Optional[bytes]:
-        """Read an array of bytes from our stream"""
+    def _writeBytes(self, b: bytes) -> None:
+        """Write an array of bytes to our stream and flush."""
+        if self.socket is not None:
+            # sendall() guarantees full payload transmission or raises.
+            self.socket.sendall(b)
+
+    def _readBytes(self, length: int) -> Optional[bytes]:
+        """Read an array of bytes from our stream."""
         if self.socket is not None:
             data = self.socket.recv(length)
             # empty byte indicates a disconnected socket,
@@ -114,9 +133,14 @@ class TCPInterface(StreamInterface):
                 # cleanup and reconnect socket without breaking reader thread
                 with contextlib.suppress(Exception):
                     self._socket_shutdown()
-                self.socket.close()
+                with contextlib.suppress(Exception):
+                    self.socket.close()
                 self.socket = None
+                if self._wantExit:
+                    return None
                 time.sleep(1)
+                if self._wantExit:
+                    return None
                 self.myConnect()
                 self._startConfig()
                 return None

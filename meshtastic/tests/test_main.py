@@ -12,9 +12,11 @@ from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
+import yaml
 
 from meshtastic import mt_config
 from meshtastic.__main__ import (
+    _prefix_base64_key,
     _set_missing_flags_false,
     export_config,
     initParser,
@@ -22,11 +24,13 @@ from meshtastic.__main__ import (
     onConnection,
     onNode,
     onReceive,
+    traverseConfig,
     tunnelMain,
 )
 
 # from ..ble_interface import BLEInterface
 from ..node import Node
+from ..protobuf import localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 
 # from ..radioconfig_pb2 import UserPreferences
@@ -2127,6 +2131,88 @@ position_flags: 35"""
     # assert re.search(r"fixed_position: 'true'", out, re.MULTILINE)
     # assert re.search(r"position_flags: 35", out, re.MULTILINE)
     assert err == ""
+
+
+def _build_export_interface(
+    local_config: localonly_pb2.LocalConfig,
+    module_config: localonly_pb2.LocalModuleConfig,
+) -> MagicMock:
+    """Build a minimal interface mock compatible with export_config()."""
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode = MagicMock()
+    iface.localNode.localConfig = local_config
+    iface.localNode.moduleConfig = module_config
+    iface.localNode.getURL.return_value = "https://meshtastic.org/e/#Cgo"
+    iface.getLongName.return_value = "Roundtrip Node"
+    iface.getShortName.return_value = "RT"
+    iface.getMyNodeInfo.return_value = {}
+    iface.getCannedMessage.return_value = ""
+    iface.getRingtone.return_value = ""
+    return iface
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_export_config_configure_round_trip_security_keys(capsys):
+    """Ensure export->configure->export preserves security keys and structure."""
+    source_local = localonly_pb2.LocalConfig()
+    source_module = localonly_pb2.LocalModuleConfig()
+    source_local.bluetooth.enabled = True
+    source_local.security.serial_enabled = True
+    source_local.security.private_key = b"\x01" * 32
+    source_local.security.public_key = b"\x02" * 32
+    source_local.security.admin_key.extend([b"\x03" * 32, b"\x04" * 32])
+    source_module.mqtt.address = "mqtt.meshtastic.org"
+
+    exported_yaml = export_config(_build_export_interface(source_local, source_module))
+    exported = yaml.safe_load(exported_yaml)
+    security = exported["config"]["security"]
+    assert security["privateKey"].startswith("base64:")
+    assert security["publicKey"].startswith("base64:")
+    assert all(
+        isinstance(item, str) and item.startswith("base64:")
+        for item in security["adminKey"]
+    )
+    assert "base64:base64:" not in security["privateKey"]
+    assert "base64:base64:" not in security["publicKey"]
+
+    restored_local = localonly_pb2.LocalConfig()
+    restored_module = localonly_pb2.LocalModuleConfig()
+    for section, values in exported["config"].items():
+        traverseConfig(section, values, restored_local)
+    for section, values in exported["module_config"].items():
+        traverseConfig(section, values, restored_module)
+
+    assert restored_local.security.private_key == source_local.security.private_key
+    assert restored_local.security.public_key == source_local.security.public_key
+    assert list(restored_local.security.admin_key) == list(
+        source_local.security.admin_key
+    )
+
+    exported_round_trip = yaml.safe_load(
+        export_config(_build_export_interface(restored_local, restored_module))
+    )
+    assert exported_round_trip == exported
+    _, err = capsys.readouterr()
+    assert err == ""
+
+
+@pytest.mark.unit
+def test_prefix_base64_key_skips_existing_prefixes():
+    """Ensure _prefix_base64_key does not double-prefix already-normalized values."""
+    security = {
+        "privateKey": "base64:abc123==",
+        "adminKey": ["base64:def456==", "ghi789==", 7],
+    }
+    normalized_key_map = {
+        "privateKey": "privateKey",
+        "adminKey": "adminKey",
+    }
+    _prefix_base64_key(security, normalized_key_map, "privateKey")
+    _prefix_base64_key(security, normalized_key_map, "adminKey")
+
+    assert security["privateKey"] == "base64:abc123=="
+    assert security["adminKey"] == ["base64:def456==", "base64:ghi789==", 7]
 
 
 # TODO
