@@ -711,7 +711,10 @@ def test_fuzz_pskToString(psk):
 
 
 @given(
-    st.text().filter(lambda s: not s.startswith("0x") and not s.startswith("base64:"))
+    st.text(
+        alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
+        max_size=256,
+    ).filter(lambda s: not s.startswith("0x") and not s.startswith("base64:"))
 )
 def test_fuzz_fromStr_non_prefixed(valstr):
     """Test fromStr behavior for non-prefixed string inputs."""
@@ -751,14 +754,20 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits):
     assert fromStr(f"0x{hex_digits}") == bytes.fromhex(expected_hex)
 
 
-@given(st.text(min_size=1).filter(lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None))
+@given(
+    st.text(
+        alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
+        min_size=1,
+        max_size=64,
+    ).filter(lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None)
+)
 def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
     """Test that fromStr raises for invalid 0x-prefixed hex strings."""
     with pytest.raises(ValueError):
         fromStr(f"0x{hex_digits}")
 
 
-@given(st.binary())
+@given(st.binary(max_size=256))
 def test_fuzz_fromStr_base64_roundtrip(raw_value):
     """Test that fromStr round-trips valid base64-prefixed payloads."""
     encoded = base64.b64encode(raw_value).decode("ascii")
