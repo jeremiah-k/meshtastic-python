@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
@@ -25,8 +25,15 @@ from .arrow import FeatherWriter
 
 logger = logging.getLogger(__name__)
 
+
 def root_dir() -> str:
-    """Return the root directory for slog files."""
+    """
+    Determine and ensure the root slog directory exists under the user data directory.
+
+    Returns:
+        path (str): Filesystem path to the "slogs" directory.
+
+    """
 
     app_name = "meshtastic"
     app_author = "meshtastic"
@@ -129,7 +136,7 @@ TOPIC_MESHTASTIC_LOG_LINE = "meshtastic.log.line"
 
 class StructuredLogger:
     """Sniffs device logs for structured log messages, extracts those into apache arrow format.
-    Also writes the raw log messages to raw.txt"""
+    Also writes the raw log messages to raw.txt."""
 
     def __init__(
         self,
@@ -138,9 +145,16 @@ class StructuredLogger:
         power_logger: Optional[PowerLogger] = None,
         include_raw=True,
     ) -> None:
-        """Initialize the StructuredLogger object.
+        """
+        Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
 
-        client (MeshInterface): The MeshInterface object to monitor.
+        Parameters
+        ----------
+            client (MeshInterface): Source of device log lines to monitor.
+            dir_path (str): Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
+            power_logger (Optional[PowerLogger]): If provided, used to record a power sample with each structured log entry.
+            include_raw (bool): If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
+
         """
         self.client = client
         self.power_logger = power_logger
@@ -163,10 +177,13 @@ class StructuredLogger:
             pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
         )
 
-        self.raw_file: Optional[
-            io.TextIOWrapper
-        ] = open(  # pylint: disable=consider-using-with
-            os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
+        self._raw_file_lock = threading.Lock()
+        self.raw_file: Optional[io.TextIOWrapper] = (
+            open(  # pylint: disable=consider-using-with
+                os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
+            )
+            if self.include_raw
+            else None
         )
 
         # We need a closure here because the subscription API is very strict about exact arg matching
@@ -176,21 +193,47 @@ class StructuredLogger:
         self._listen_glue = (
             listen_glue  # we must save this so it doesn't get garbage collected
         )
-        self._listener = pub.subscribe(listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
+        try:
+            pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
+        except Exception:
+            # If subscription fails, close file handles before re-raising
+            if self.raw_file:
+                self.raw_file.close()
+                self.raw_file = None
+            if self.writer:
+                self.writer.close()
+            raise
 
     def close(self) -> None:
-        """Stop logging."""
-        pub.unsubscribe(self._listener, TOPIC_MESHTASTIC_LOG_LINE)
+        """
+        Shut down the StructuredLogger and release its resources.
+
+        Unsubscribes the log listener, closes the Arrow writer, and safely close(s) and clears the
+        raw log file reference while holding the internal lock so concurrent writers cannot race
+        with shutdown.
+        """
+        pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         self.writer.close()
-        f = self.raw_file
-        self.raw_file = None  # mark that we are shutting down
+        with self._raw_file_lock:
+            f = self.raw_file
+            self.raw_file = None  # mark that we are shutting down
         if f:
             f.close()  # Close the raw.txt file
 
     def _onLogMessage(self, line: str) -> None:
-        """Handle log messages.
+        """
+        Process a single raw log line, extract any structured slog fields, and persist the resulting record.
 
-        line (str): the line of log output
+        Parses the input line for a structured slog. If parsing yields fields, adds a "time"
+        timestamp and writes the record to the configured Arrow writer. If raw logging is enabled,
+        includes the original raw line in the record and appends it to the raw log file. If a power
+        logger is present, records a power measurement using the exact same timestamp as the
+        written slog record. Unknown or unparsable structured slog lines are logged as warnings.
+
+        Parameters
+        ----------
+            line (str): The raw log line to process.
+
         """
 
         di = {}  # the dictionary of the fields we found to log
@@ -212,7 +255,7 @@ class StructuredLogger:
 
                 r = d.format.parse(args)  # get the values with the correct types
                 if r:
-                    di = r.named
+                    di = r.named  # type: ignore[union-attr] # pyright: ignore[reportAttributeAccessIssue]
                     if last_is_str:
                         di[last_field[0]] = di[
                             last_field[0]
@@ -237,8 +280,9 @@ class StructuredLogger:
             if self.power_logger:
                 self.power_logger.store_current_reading(now)
 
-        if self.raw_file:
-            self.raw_file.write(line + "\n")  # Write the raw log
+        with self._raw_file_lock:
+            if self.raw_file:
+                self.raw_file.write(line + "\n")  # Write the raw log
 
 
 class LogSet:
@@ -250,15 +294,27 @@ class LogSet:
         dir_name: Optional[str] = None,
         power_meter: Optional[PowerMeter] = None,
     ) -> None:
-        """Initialize the PowerMonClient object.
+        """
+        Create a LogSet: prepare a directory for slog files, start structured slogging, and optionally start power logging.
 
-        power (PowerSupply): The power supply object.
-        client (MeshInterface): The MeshInterface object to monitor.
+        If dir_name is not provided, a timestamped directory is created under the slog root and a
+        "latest" symlink is updated to point to it. A StructuredLogger is created and bound to the
+        provided client; if power_meter is supplied, a PowerLogger is created that writes to a
+        "power" subdirectory. An atexit handler pointing to this instance's close() is registered
+        for later teardown.
+
+        Parameters
+        ----------
+            client: MeshInterface client whose log lines will be monitored and recorded.
+            dir_name: Optional path for storing logs; when omitted a new timestamped directory is
+                created under the slog root and "latest" is updated to point to it.
+            power_meter: Optional PowerMeter; when provided a PowerLogger is started to record power samples alongside slog entries.
+
         """
 
         if not dir_name:
             app_dir = root_dir()
-            app_time_dir = Path(app_dir, datetime.now().strftime('%Y%m%d-%H%M%S'))
+            app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S"))
             app_time_dir.mkdir(exist_ok=True)
             dir_name = str(app_time_dir)
 

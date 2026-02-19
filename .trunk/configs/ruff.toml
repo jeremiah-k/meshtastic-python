@@ -1,5 +1,17 @@
 # Generic, formatter-friendly config.
+[lint]
 select = ["B", "D3", "D4", "E", "F"]
 
 # Never enforce `E501` (line length violations). This should be handled by formatters.
-ignore = ["E501"]
+# D417 is intentionally disabled for this codebase because many legacy/Numpy-style
+# docstrings document behavior without per-argument blocks.
+ignore = ["E501", "D417"]
+
+# Generated protobuf modules rely on import side effects during descriptor loading.
+# BLE interface package has relaxed docstring requirements.
+per-file-ignores = { "meshtastic/protobuf/*_pb2.py" = [
+  "F401",
+], "meshtastic/interfaces/ble/**/*.py" = [
+  "D401",
+  "D417",
+] }

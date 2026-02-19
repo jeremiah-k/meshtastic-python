@@ -13,11 +13,15 @@ with rather more easily once the code is simplified by this change.
 
 """
 
-from typing import Any, Optional
+import argparse
+from typing import IO, Any, Optional
 
-def reset():
+
+def reset() -> None:
     """
-    Restore the namespace to pristine condition.
+    Reset the module-level namespace to its initial pristine state.
+
+    Sets the globals `args`, `parser`, `channel_index`, `logfile`, and `tunnelInstance` to `None` and `camel_case` to `False`.
     """
     # pylint: disable=W0603
     global args, parser, channel_index, logfile, tunnelInstance, camel_case
@@ -29,11 +33,12 @@ def reset():
     # TODO: to migrate to camel_case for v1.3 change this value to True
     camel_case = False
 
+
 # These assignments are used instead of calling reset()
 # purely to shut pylint up.
-args = None
-parser = None
-channel_index = None
-logfile = None
+args: Optional[argparse.Namespace] = None
+parser: Optional[argparse.ArgumentParser] = None
+channel_index: Optional[int] = None
+logfile: Optional[IO[str]] = None
 tunnelInstance: Optional[Any] = None
-camel_case = False
+camel_case: bool = False
