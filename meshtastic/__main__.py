@@ -1,84 +1,104 @@
-""" Main Meshtastic
-"""
+"""Main Meshtastic."""
 
 # We just hit the 1600 line limit for main.py, but I currently have a huge set of powermon/structured logging changes
 # later we can have a separate changelist to refactor main.py into smaller files
 # pylint: disable=R0917,C0302
 
-from typing import List, Optional, Union
-from types import ModuleType
-
 import argparse
-
-argcomplete: Union[None, ModuleType] = None
-try:
-    import argcomplete # type: ignore
-except ImportError as e:
-    pass # already set to None by default above
-
+import contextlib
+import getpass
+import importlib
 import logging
 import os
 import platform
 import sys
 import time
-
-try:
-    import pyqrcode  # type: ignore[import-untyped]
-except ImportError as e:
-    pyqrcode = None
+from types import ModuleType
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 from google.protobuf.json_format import MessageToDict
 from pubsub import pub  # type: ignore[import-untyped]
 
-try:
-    import meshtastic.test
-    have_test = True
-except ImportError as e:
-    have_test = False
-
-import meshtastic.util
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
-
+import meshtastic.util
 from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.ble_interface import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
+from meshtastic.version import get_active_version
+
+argcomplete: Optional[ModuleType] = None
 try:
-    from meshtastic.powermon import (
-        PowerMeter,
-        PowerStress,
-        PPK2PowerSupply,
-        RidenPowerSupply,
-        SimPowerSupply,
-    )
-    from meshtastic.slog import LogSet
+    import argcomplete as _argcomplete  # type: ignore
+
+    argcomplete = _argcomplete
+except ImportError:
+    pass
+
+pyqrcode: Optional[ModuleType] = None
+try:
+    import pyqrcode as _pyqrcode  # type: ignore[import-untyped]
+
+    pyqrcode = _pyqrcode
+except ImportError:
+    pass
+
+meshtastic_test: Optional[ModuleType] = None
+try:
+    meshtastic_test = importlib.import_module("meshtastic.test")
+except ImportError:
+    pass
+
+try:
+    powermon_module = importlib.import_module("meshtastic.powermon")
+    slog_module = importlib.import_module("meshtastic.slog")
+    PowerMeter = powermon_module.PowerMeter
+    PowerStress = powermon_module.PowerStress
+    PPK2PowerSupply = powermon_module.PPK2PowerSupply
+    RidenPowerSupply = powermon_module.RidenPowerSupply
+    SimPowerSupply = powermon_module.SimPowerSupply
+    LogSet = slog_module.LogSet
+
     have_powermon = True
     powermon_exception = None
-    meter: Optional[PowerMeter] = None
-except ImportError as e:
-    have_powermon = False
-    powermon_exception = e
     meter = None
-from meshtastic.protobuf import channel_pb2, config_pb2, portnums_pb2, mesh_pb2
-from meshtastic.version import get_active_version
+except (ImportError, AttributeError) as exc:
+    have_powermon = False
+    powermon_exception = exc
+    meter = None
+    logging.getLogger(__name__).debug("powermon/slog not available: %s", exc)
 
 logger = logging.getLogger(__name__)
 
-def onReceive(packet, interface) -> None:
-    """Callback invoked when a packet arrives"""
+
+def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
+    """
+    Handle an incoming mesh packet and optionally send a text reply or close the interface.
+    
+    If the packet contains a decoded payload and the CLI request was a text send, the interface will be closed when the packet is a text message addressed to this node. If reply mode is enabled and the decoded payload contains text, a reply containing the received text plus the packet's `rxSnr` and `hopLimit` will be sent and printed.
+    
+    Parameters:
+        packet (dict): Incoming packet; expected keys include `"decoded"` (dict or None), `"to"` (destination node number), `"rxSnr"`, and `"hopLimit"`.
+        interface (MeshInterface): Interface used to send replies and to close the connection.
+    """
     args = mt_config.args
     try:
         d = packet.get("decoded")
         logger.debug(f"in onReceive() d:{d}")
 
         # Exit once we receive a reply
-        if (
+        is_text_reply = (
             args
             and args.sendtext
-            and packet["to"] == interface.myInfo.my_node_num
-            and d.get("portnum", portnums_pb2.PortNum.UNKNOWN_APP) == portnums_pb2.PortNum.TEXT_MESSAGE_APP
-        ):
+            and d is not None
+            and interface.myInfo is not None
+            and packet.get("to") == interface.myInfo.my_node_num
+            and d.get("portnum")
+            == portnums_pb2.PortNum.Name(portnums_pb2.PortNum.TEXT_MESSAGE_APP)
+        )
+        if is_text_reply:
             interface.close()  # after running command then exit
 
         # Reply to every received message with some stats
@@ -96,22 +116,62 @@ def onReceive(packet, interface) -> None:
         print(f"Warning: Error processing received packet: {ex}.")
 
 
-def onConnection(interface, topic=pub.AUTO_TOPIC) -> None:  # pylint: disable=W0613
-    """Callback invoked when we connect/disconnect from a radio"""
-    print(f"Connection changed: {topic.getName()}")
+def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
+    """
+    Notify about a change in the radio connection state.
+    
+    Prints a "Connection changed: <name>" message where <name> is obtained from
+    topic.getName() if available, otherwise str(topic).
+    
+    Parameters:
+        interface (MeshInterface): The interface whose connection state changed.
+        topic (Any): Event topic or identifier; if it provides `getName()` that
+            value is used for display.
+    """
+    _ = interface
+    topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
+    print(f"Connection changed: {topic_name}")
 
 
 def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
-    """Given an interface and channel index, return True if that channel is non-disabled on the local node"""
+    """
+    Determine whether the local node has the channel at the given index enabled.
+
+    Returns:
+        `True` if the channel exists and its role is not DISABLED, `False` otherwise.
+
+    """
     ch = interface.localNode.getChannelByChannelIndex(channelIndex)
     logger.debug(f"ch:{ch}")
-    return ch and ch.role != channel_pb2.Channel.Role.DISABLED
+    return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
-def getPref(node, comp_name) -> bool:
-    """Get a channel or preferences value"""
+def getPref(node: Any, comp_name: str) -> bool:
+    """
+    Retrieve and display a preference or channel field for the given node.
+    
+    If the field exists locally, print its current value(s); if the field exists but is not populated locally, request the remote node's configuration. If the compound name refers to a message (e.g., "channel.label" or "channel"), populated subfields are printed when available.
+    
+    Parameters:
+        node (Any): Node object containing `localConfig` and `moduleConfig`.
+        comp_name (str): Dot-separated preference name or path (e.g., "channel.label" or "label"). If a single name is provided, it is used for both section and field resolution.
+    
+    Returns:
+        bool: `True` if the preference field exists and the function printed local values or requested remote config; `False` if the field was not found.
+    """
+
     def _printSetting(config_type, uni_name, pref_value, repeated):
-        """Pretty print the setting"""
+        """
+        Prints a configuration preference and its value to both stdout and the debug log.
+        
+        If `repeated` is True, `pref_value` is treated as an iterable and each element is stringified before printing; otherwise the single value is stringified.
+        
+        Parameters:
+            config_type: Object with a `name` attribute identifying the configuration section (e.g., a protobuf config type).
+            uni_name (str): The preference name within the configuration section.
+            pref_value: The preference value to print; an iterable when `repeated` is True.
+            repeated (bool): When True, treat `pref_value` as a sequence and print a list of stringified values.
+        """
         if repeated:
             pref_value = [meshtastic.util.toStr(v) for v in pref_value]
         else:
@@ -133,13 +193,16 @@ def getPref(node, comp_name) -> bool:
     localConfig = node.localConfig
     moduleConfig = node.moduleConfig
     found: bool = False
+    config = localConfig
+    config_type = None
+    pref = None
     for config in [localConfig, moduleConfig]:
         objDesc = config.DESCRIPTOR
         config_type = objDesc.fields_by_name.get(name[0])
-        pref = ""		#FIXME - is this correct to leave as an empty string if not found?
+        pref = None
         if config_type:
             pref = config_type.message_type.fields_by_name.get(snake_name)
-            if pref or wholeField:
+            if pref is not None or wholeField:
                 found = True
                 break
 
@@ -153,7 +216,10 @@ def getPref(node, comp_name) -> bool:
         return False
 
     # Check if we need to request the config
-    if len(config.ListFields()) != 0 and not isinstance(pref, str): # if str, it's still the empty string, I think
+    if config_type is None:
+        return False
+
+    if len(config.ListFields()) != 0 and pref is not None:
         # read the value
         config_values = getattr(config, config_type.name)
         if not wholeField:
@@ -172,7 +238,14 @@ def getPref(node, comp_name) -> bool:
 
 
 def splitCompoundName(comp_name: str) -> List[str]:
-    """Split compound (dot separated) preference name into parts"""
+    """
+    Split a dot-separated preference name into segments.
+    
+    If `comp_name` contains at least one dot, returns the list of segments produced by splitting on '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
+    
+    Returns:
+        List[str]: The name segments, or `[comp_name, comp_name]` when no dot is present.
+    """
     name: List[str] = comp_name.split(".")
     if len(name) < 2:
         name[0] = comp_name
@@ -180,8 +253,20 @@ def splitCompoundName(comp_name: str) -> List[str]:
     return name
 
 
-def traverseConfig(config_root, config, interface_config) -> bool:
-    """Iterate through current config level preferences and either traverse deeper if preference is a dict or set preference"""
+def traverseConfig(
+    config_root: str, config: Dict[str, Any], interface_config: Any
+) -> bool:
+    """
+    Recursively apply values from a nested mapping onto a target configuration by walking dot-separated paths.
+    
+    Parameters:
+        config_root (str): Dot-separated prefix for the current configuration path (e.g., "channel.0").
+        config (Dict[str, Any]): Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
+        interface_config: Target configuration object that will receive the applied leaf values.
+    
+    Returns:
+        bool: `True` when traversal completes and all leaf values have been processed.
+    """
     snake_name = meshtastic.util.camel_to_snake(config_root)
     for pref in config:
         pref_name = f"{snake_name}.{pref}"
@@ -193,8 +278,23 @@ def traverseConfig(config_root, config, interface_config) -> bool:
     return True
 
 
-def setPref(config, comp_name, raw_val) -> bool:
-    """Set a channel or preferences value"""
+def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
+    """
+    Set a configuration or channel field on a protobuf config object identified by a dot-separated name.
+    
+    Resolves a possibly-nested field path, converts the provided value to the field's expected type
+    (including resolving enum names), validates certain fields (for example, requires wifi_psk length
+    >= 8), and applies the value. Repeated fields are replaced, appended to, or cleared according to
+    the provided value.
+    
+    Parameters:
+        config: The protobuf config or channel message to modify.
+        comp_name (str): Dot-separated field path (for example "channel.security.wifi_psk" or "node.name").
+        raw_val: The value to set; may be a string, number, list (for repeated fields), or an already-typed value.
+    
+    Returns:
+        `True` if the named field was found and successfully set or updated, `False` otherwise.
+    """
 
     name = splitCompoundName(comp_name)
 
@@ -233,8 +333,7 @@ def setPref(config, comp_name, raw_val) -> bool:
         return False
 
     enumType = pref.enum_type
-    # pylint: disable=C0123
-    if enumType and type(val) == str:
+    if enumType and isinstance(val, str):
         # We've failed so far to convert this string into an enum, try to find it by reflection
         e = enumType.values_by_name.get(val)
         if e:
@@ -243,7 +342,7 @@ def setPref(config, comp_name, raw_val) -> bool:
             print(
                 f"{name[0]}.{uni_name} does not have an enum called {val}, so you can not set it."
             )
-            print(f"Choices in sorted order are:")
+            print("Choices in sorted order are:")
             names = []
             for f in enumType.values:
                 # Note: We must use the value of the enum (regardless if camel or snake case)
@@ -264,7 +363,7 @@ def setPref(config, comp_name, raw_val) -> bool:
             # The setter didn't like our arg type guess try again as a string
             config_values = getattr(config_part, config_type.name)
             setattr(config_values, pref.name, str(val))
-    elif type(val) == list:
+    elif isinstance(val, list):
         new_vals = [meshtastic.util.fromStr(x) for x in val]
         config_values = getattr(config, config_type.name)
         getattr(config_values, pref.name)[:] = new_vals
@@ -276,7 +375,9 @@ def setPref(config, comp_name, raw_val) -> bool:
             del getattr(config_values, pref.name)[:]
         else:
             print(f"Adding '{raw_val}' to the {pref.name} list")
-            cur_vals = [x for x in getattr(config_values, pref.name) if x not in [0, "", b""]]
+            cur_vals = [
+                x for x in getattr(config_values, pref.name) if x not in [0, "", b""]
+            ]
             if val not in cur_vals:
                 cur_vals.append(val)
             getattr(config_values, pref.name)[:] = cur_vals
@@ -288,19 +389,28 @@ def setPref(config, comp_name, raw_val) -> bool:
     return True
 
 
-def onConnected(interface):
-    """Callback invoked when we connect to a radio"""
+def onConnected(interface: MeshInterface) -> None:
+    """
+    Perform post-connection CLI actions driven by the parsed command-line arguments.
+    
+    Reads mt_config.args and executes any requested operations against the provided MeshInterface (for example: update time or owner, set or remove fixed position, write configuration or channel changes, send text/telemetry/position messages, manage nodes, export configuration, perform reboots/shutdowns, and start tunnels or power-monitoring tasks). Actions may write to remote devices, send radio messages, start long-running services (tunnel, GPIO watch, power stress), and adjust local state. The function may close the interface when work is complete, wait for remote acknowledgments when required, or terminate the process on fatal errors.
+    
+    Parameters:
+        interface (MeshInterface): An established mesh interface used to perform the requested device and network operations.
+    """
     closeNow = False  # Should we drop the connection after we finish?
     waitForAckNak = (
         False  # Should we wait for an acknowledgment if we send to a remote node?
     )
     try:
         args = mt_config.args
+        if args is None:
+            raise RuntimeError("onConnected called without args being set up")
 
         # convenient place to store any keyword args we pass to getNode
         getNode_kwargs = {
             "requestChannelAttempts": args.channel_fetch_attempts,
-            "timeout": args.timeout
+            "timeout": args.timeout,
         }
 
         # do not print this line if we are exporting the config
@@ -321,8 +431,8 @@ def onConnected(interface):
             waitForAckNak = True
 
             alt = 0
-            lat = 0
-            lon = 0
+            lat = 0.0
+            lon = 0.0
             if args.setalt:
                 alt = int(args.setalt)
                 print(f"Fixing altitude at {alt} meters")
@@ -341,7 +451,9 @@ def onConnected(interface):
 
             print("Setting device position and enabling fixed position setting")
             # can include lat/long/alt etc: latitude = 37.5, longitude = -122.1
-            interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(lat, lon, alt)
+            interface.getNode(args.dest, False, **getNode_kwargs).setFixedPosition(
+                lat, lon, alt
+            )
 
         if args.set_owner or args.set_owner_short or args.set_is_unmessageable:
             closeNow = True
@@ -351,13 +463,19 @@ def onConnected(interface):
             short_name = args.set_owner_short.strip() if args.set_owner_short else None
 
             if long_name is not None and not long_name:
-                meshtastic.util.our_exit("ERROR: Long Name cannot be empty or contain only whitespace characters")
+                meshtastic.util.our_exit(
+                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
+                )
 
             if short_name is not None and not short_name:
-                meshtastic.util.our_exit("ERROR: Short Name cannot be empty or contain only whitespace characters")
+                meshtastic.util.our_exit(
+                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                )
 
             if long_name and short_name:
-                print(f"Setting device owner to {long_name} and short name to {short_name}")
+                print(
+                    f"Setting device owner to {long_name} and short name to {short_name}"
+                )
             elif long_name:
                 print(f"Setting device owner to {long_name}")
             elif short_name:
@@ -373,9 +491,7 @@ def onConnected(interface):
                 print(f"Setting device owner is_unmessageable to {unmessagable}")
 
             interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
-                long_name=long_name,
-                short_name=short_name,
-                is_unmessagable=unmessagable
+                long_name=long_name, short_name=short_name, is_unmessagable=unmessagable
             )
 
         if args.set_canned_message:
@@ -396,12 +512,16 @@ def onConnected(interface):
                 print(f"Setting ringtone to {args.set_ringtone}")
                 node.set_ringtone(args.set_ringtone)
             else:
-                print("External Notification is excluded by firmware; skipping ringtone set.")
+                print(
+                    "External Notification is excluded by firmware; skipping ringtone set."
+                )
 
         if args.pos_fields:
             # If --pos-fields invoked with args, set position fields
             closeNow = True
-            positionConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig.position
+            positionConfig = interface.getNode(
+                args.dest, **getNode_kwargs
+            ).localConfig.position
             allFields = 0
 
             try:
@@ -425,7 +545,9 @@ def onConnected(interface):
         elif args.pos_fields is not None:
             # If --pos-fields invoked without args, read and display current value
             closeNow = True
-            positionConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig.position
+            positionConfig = interface.getNode(
+                args.dest, **getNode_kwargs
+            ).localConfig.position
 
             fieldNames = []
             for bit in positionConfig.PositionFlags.values():
@@ -435,12 +557,18 @@ def onConnected(interface):
 
         if args.set_ham:
             if not args.set_ham.strip():
-                meshtastic.util.our_exit("ERROR: Ham radio callsign cannot be empty or contain only whitespace characters")
+                meshtastic.util.our_exit(
+                    "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
+                )
             closeNow = True
             print(f"Setting Ham ID to {args.set_ham} and turning off encryption")
-            interface.getNode(args.dest, **getNode_kwargs).setOwner(args.set_ham, is_licensed=True)
+            interface.getNode(args.dest, **getNode_kwargs).setOwner(
+                args.set_ham, is_licensed=True
+            )
             # Must turn off encryption on primary channel
-            interface.getNode(args.dest, **getNode_kwargs).turnOffEncryptionOnPrimaryChannel()
+            interface.getNode(
+                args.dest, **getNode_kwargs
+            ).turnOffEncryptionOnPrimaryChannel()
 
         if args.reboot:
             closeNow = True
@@ -468,43 +596,59 @@ def onConnected(interface):
 
         if args.begin_edit:
             closeNow = True
-            interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
+            interface.getNode(
+                args.dest, False, **getNode_kwargs
+            ).beginSettingsTransaction()
 
         if args.commit_edit:
             closeNow = True
-            interface.getNode(args.dest, False, **getNode_kwargs).commitSettingsTransaction()
+            interface.getNode(
+                args.dest, False, **getNode_kwargs
+            ).commitSettingsTransaction()
 
         if args.factory_reset or args.factory_reset_device:
             closeNow = True
             waitForAckNak = True
 
             full = bool(args.factory_reset_device)
-            interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(full=full)
+            interface.getNode(args.dest, False, **getNode_kwargs).factoryReset(
+                full=full
+            )
 
         if args.remove_node:
             closeNow = True
             waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeNode(args.remove_node)
+            interface.getNode(args.dest, False, **getNode_kwargs).removeNode(
+                args.remove_node
+            )
 
         if args.set_favorite_node:
             closeNow = True
             waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).setFavorite(args.set_favorite_node)
+            interface.getNode(args.dest, False, **getNode_kwargs).setFavorite(
+                args.set_favorite_node
+            )
 
         if args.remove_favorite_node:
             closeNow = True
             waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeFavorite(args.remove_favorite_node)
+            interface.getNode(args.dest, False, **getNode_kwargs).removeFavorite(
+                args.remove_favorite_node
+            )
 
         if args.set_ignored_node:
             closeNow = True
             waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).setIgnored(args.set_ignored_node)
+            interface.getNode(args.dest, False, **getNode_kwargs).setIgnored(
+                args.set_ignored_node
+            )
 
         if args.remove_ignored_node:
             closeNow = True
             waitForAckNak = True
-            interface.getNode(args.dest, False, **getNode_kwargs).removeIgnored(args.remove_ignored_node)
+            interface.getNode(args.dest, False, **getNode_kwargs).removeIgnored(
+                args.remove_ignored_node
+            )
 
         if args.reset_nodedb:
             closeNow = True
@@ -524,8 +668,14 @@ def onConnected(interface):
                     args.dest,
                     wantAck=True,
                     channelIndex=channelIndex,
-                    onResponse=interface.getNode(args.dest, False, **getNode_kwargs).onAckNak,
-                    portNum=portnums_pb2.PortNum.PRIVATE_APP if args.private else portnums_pb2.PortNum.TEXT_MESSAGE_APP
+                    onResponse=interface.getNode(
+                        args.dest, False, **getNode_kwargs
+                    ).onAckNak,
+                    portNum=(
+                        portnums_pb2.PortNum.PRIVATE_APP
+                        if args.private
+                        else portnums_pb2.PortNum.TEXT_MESSAGE_APP
+                    ),
                 )
             else:
                 meshtastic.util.our_exit(
@@ -533,8 +683,8 @@ def onConnected(interface):
                 )
 
         if args.traceroute:
-            loraConfig = getattr(interface.localNode.localConfig, "lora")
-            hopLimit = getattr(loraConfig, "hop_limit")
+            loraConfig = interface.localNode.localConfig.lora
+            hopLimit = loraConfig.hop_limit
             dest = str(args.traceroute)
             channelIndex = mt_config.channel_index or 0
             if checkChannel(interface, channelIndex):
@@ -612,7 +762,7 @@ def onConnected(interface):
                         time.sleep(1)
                         if interface.gotResponse:
                             break
-                    logger.debug(f"end of gpio_rd")
+                    logger.debug("end of gpio_rd")
 
                 if args.gpio_watch:
                     bitmask = int(args.gpio_watch, 16)
@@ -630,8 +780,9 @@ def onConnected(interface):
             node = interface.getNode(args.dest, False, **getNode_kwargs)
 
             # Handle the int/float/bool arguments
-            pref = None
-            fields = set()
+            pref: Optional[Tuple[str, str]] = None
+            fields: Set[str] = set()
+            found = False
             for pref in args.set:
                 found = False
                 field = splitCompoundName(pref[0].lower())[0]
@@ -657,7 +808,7 @@ def onConnected(interface):
                     node.writeConfig(field)
                 if len(fields) > 1:
                     node.commitSettingsTransaction()
-            else:
+            elif pref is not None:
                 if mt_config.camel_case:
                     print(
                         f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {pref[0]}."
@@ -675,23 +826,31 @@ def onConnected(interface):
                 configuration = yaml.safe_load(file)
                 closeNow = True
 
-                interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
+                interface.getNode(
+                    args.dest, False, **getNode_kwargs
+                ).beginSettingsTransaction()
 
                 if "owner" in configuration:
                     # Validate owner name before setting
                     owner_name = str(configuration["owner"]).strip()
                     if not owner_name:
-                        meshtastic.util.our_exit("ERROR: Long Name cannot be empty or contain only whitespace characters")
+                        meshtastic.util.our_exit(
+                            "ERROR: Long Name cannot be empty or contain only whitespace characters"
+                        )
                     print(f"Setting device owner to {configuration['owner']}")
                     waitForAckNak = True
-                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(configuration["owner"])
+                    interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
+                        configuration["owner"]
+                    )
                     time.sleep(0.5)
 
                 if "owner_short" in configuration:
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["owner_short"]).strip()
                     if not owner_short_name:
-                        meshtastic.util.our_exit("ERROR: Short Name cannot be empty or contain only whitespace characters")
+                        meshtastic.util.our_exit(
+                            "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                        )
                     print(
                         f"Setting device owner short to {configuration['owner_short']}"
                     )
@@ -705,7 +864,9 @@ def onConnected(interface):
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["ownerShort"]).strip()
                     if not owner_short_name:
-                        meshtastic.util.our_exit("ERROR: Short Name cannot be empty or contain only whitespace characters")
+                        meshtastic.util.our_exit(
+                            "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                        )
                     print(
                         f"Setting device owner short to {configuration['ownerShort']}"
                     )
@@ -717,22 +878,33 @@ def onConnected(interface):
 
                 if "channel_url" in configuration:
                     print("Setting channel url to", configuration["channel_url"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(configuration["channel_url"])
+                    interface.getNode(args.dest, **getNode_kwargs).setURL(
+                        configuration["channel_url"]
+                    )
                     time.sleep(0.5)
 
                 if "channelUrl" in configuration:
                     print("Setting channel url to", configuration["channelUrl"])
-                    interface.getNode(args.dest, **getNode_kwargs).setURL(configuration["channelUrl"])
+                    interface.getNode(args.dest, **getNode_kwargs).setURL(
+                        configuration["channelUrl"]
+                    )
                     time.sleep(0.5)
 
                 if "canned_messages" in configuration:
-                    print("Setting canned message messages to", configuration["canned_messages"])
-                    interface.getNode(args.dest, **getNode_kwargs).set_canned_message(configuration["canned_messages"])
+                    print(
+                        "Setting canned message messages to",
+                        configuration["canned_messages"],
+                    )
+                    interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
+                        configuration["canned_messages"]
+                    )
                     time.sleep(0.5)
 
                 if "ringtone" in configuration:
                     print("Setting ringtone to", configuration["ringtone"])
-                    interface.getNode(args.dest, **getNode_kwargs).set_ringtone(configuration["ringtone"])
+                    interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
+                        configuration["ringtone"]
+                    )
                     time.sleep(0.5)
 
                 if "location" in configuration:
@@ -755,7 +927,9 @@ def onConnected(interface):
                     time.sleep(0.5)
 
                 if "config" in configuration:
-                    localConfig = interface.getNode(args.dest, **getNode_kwargs).localConfig
+                    localConfig = interface.getNode(
+                        args.dest, **getNode_kwargs
+                    ).localConfig
                     for section in configuration["config"]:
                         traverseConfig(
                             section, configuration["config"][section], localConfig
@@ -766,7 +940,9 @@ def onConnected(interface):
                         time.sleep(0.5)
 
                 if "module_config" in configuration:
-                    moduleConfig = interface.getNode(args.dest, **getNode_kwargs).moduleConfig
+                    moduleConfig = interface.getNode(
+                        args.dest, **getNode_kwargs
+                    ).moduleConfig
                     for section in configuration["module_config"]:
                         traverseConfig(
                             section,
@@ -778,7 +954,9 @@ def onConnected(interface):
                         )
                         time.sleep(0.5)
 
-                interface.getNode(args.dest, False, **getNode_kwargs).commitSettingsTransaction()
+                interface.getNode(
+                    args.dest, False, **getNode_kwargs
+                ).commitSettingsTransaction()
                 print("Writing modified configuration to device")
 
         if args.export_config:
@@ -802,17 +980,21 @@ def onConnected(interface):
 
         if args.ch_set_url:
             closeNow = True
-            interface.getNode(args.dest, **getNode_kwargs).setURL(args.ch_set_url, addOnly=False)
+            interface.getNode(args.dest, **getNode_kwargs).setURL(
+                args.ch_set_url, addOnly=False
+            )
 
         # handle changing channels
 
         if args.ch_add_url:
             closeNow = True
-            interface.getNode(args.dest, **getNode_kwargs).setURL(args.ch_add_url, addOnly=True)
+            interface.getNode(args.dest, **getNode_kwargs).setURL(
+                args.ch_add_url, addOnly=True
+            )
 
         if args.ch_add:
-            channelIndex = mt_config.channel_index
-            if channelIndex is not None:
+            ch_add_idx = mt_config.channel_index
+            if ch_add_idx is not None:
                 # Since we set the channel index after adding a channel, don't allow --ch-index
                 meshtastic.util.our_exit(
                     "Warning: '--ch-add' and '--ch-index' are incompatible. Channel not added."
@@ -838,9 +1020,9 @@ def onConnected(interface):
                 chs.name = args.ch_add
                 ch.settings.CopyFrom(chs)
                 ch.role = channel_pb2.Channel.Role.SECONDARY
-                print(f"Writing modified channels to device")
+                print("Writing modified channels to device")
                 n.writeChannel(ch.index)
-                if channelIndex is None:
+                if ch_add_idx is None:
                     print(
                         f"Setting newly-added channel's {ch.index} as '--ch-index' for further modifications"
                     )
@@ -849,22 +1031,35 @@ def onConnected(interface):
         if args.ch_del:
             closeNow = True
 
-            channelIndex = mt_config.channel_index
-            if channelIndex is None:
+            ch_del_idx = mt_config.channel_index
+            if ch_del_idx is None:
                 meshtastic.util.our_exit(
                     "Warning: Need to specify '--ch-index' for '--ch-del'.", 1
                 )
             else:
-                if channelIndex == 0:
+                if ch_del_idx == 0:
                     meshtastic.util.our_exit(
                         "Warning: Cannot delete primary channel.", 1
                     )
                 else:
-                    print(f"Deleting channel {channelIndex}")
-                    ch = interface.getNode(args.dest, **getNode_kwargs).deleteChannel(channelIndex)
+                    print(f"Deleting channel {ch_del_idx}")
+                    ch = interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
+                        ch_del_idx
+                    )
 
         def setSimpleConfig(modem_preset):
-            """Set one of the simple modem_config"""
+            """
+            Set the modem preset for the device's primary channel and persist the change.
+
+            If a non-primary channel is selected, the function exits with a warning. The function
+            ensures the node's local configuration is loaded, updates the LORA `modem_preset` field
+            to the provided value, and writes the `lora` section back to the device.
+
+            Parameters
+            ----------
+                modem_preset: The modem preset identifier to apply (numeric or enum value expected).
+
+            """
             channelIndex = mt_config.channel_index
             if channelIndex is not None and channelIndex > 0:
                 meshtastic.util.our_exit(
@@ -873,7 +1068,9 @@ def onConnected(interface):
             # Overwrite modem_preset
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if len(node.localConfig.ListFields()) == 0:
-                node.requestConfig(node.localConfig.DESCRIPTOR.fields_by_name.get("lora"))
+                node.requestConfig(
+                    node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
+                )
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
@@ -902,18 +1099,19 @@ def onConnected(interface):
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True
 
-            channelIndex = mt_config.channel_index
-            if channelIndex is None:
+            _idx: Optional[int] = mt_config.channel_index
+            if _idx is None:
                 meshtastic.util.our_exit("Warning: Need to specify '--ch-index'.", 1)
+            # _idx is now narrowed to int due to NoReturn from our_exit
             node = interface.getNode(args.dest, **getNode_kwargs)
-            ch = node.channels[channelIndex]
+            ch = node.channels[_idx]  # type: ignore[index]
 
             if args.ch_enable or args.ch_disable:
                 print(
                     "Warning: --ch-enable and --ch-disable can produce noncontiguous channels, "
                     "which can cause errors in some clients. Whenever possible, use --ch-add and --ch-del instead."
                 )
-                if channelIndex == 0:
+                if _idx == 0:
                     meshtastic.util.our_exit(
                         "Warning: Cannot enable/disable PRIMARY channel."
                     )
@@ -957,19 +1155,21 @@ def onConnected(interface):
             if enable:
                 ch.role = (
                     channel_pb2.Channel.Role.PRIMARY
-                    if (channelIndex == 0)
+                    if (_idx == 0)
                     else channel_pb2.Channel.Role.SECONDARY
                 )
             else:
                 ch.role = channel_pb2.Channel.Role.DISABLED
 
-            print(f"Writing modified channels to device")
-            node.writeChannel(channelIndex)
+            print("Writing modified channels to device")
+            node.writeChannel(_idx)  # type: ignore[index]
 
         if args.get_canned_message:
             closeNow = True
             print("")
-            messages = interface.getNode(args.dest, **getNode_kwargs).get_canned_message()
+            messages = interface.getNode(
+                args.dest, **getNode_kwargs
+            ).get_canned_message()
             print(f"canned_plugin_message:{messages}")
 
         if args.get_ringtone:
@@ -1002,6 +1202,7 @@ def onConnected(interface):
         if args.get:
             closeNow = True
             node = interface.getNode(args.dest, False, **getNode_kwargs)
+            found = False
             for pref in args.get:
                 found = getPref(node, pref[0])
 
@@ -1021,7 +1222,9 @@ def onConnected(interface):
 
         if args.qr or args.qr_all:
             closeNow = True
-            url = interface.getNode(args.dest, True, **getNode_kwargs).getURL(includeAll=args.qr_all)
+            url = interface.getNode(args.dest, True, **getNode_kwargs).getURL(
+                includeAll=args.qr_all
+            )
             if args.qr_all:
                 urldesc = "Complete URL (includes all channels)"
             else:
@@ -1033,7 +1236,7 @@ def onConnected(interface):
             else:
                 print("Install pyqrcode to view a QR code printed to terminal.")
 
-        log_set: Optional = None  # type: ignore[annotation-unchecked]
+        log_set: Any = None
         # we need to keep a reference to the logset so it doesn't get GCed early
 
         if args.slog or args.power_stress:
@@ -1049,10 +1252,11 @@ def onConnected(interface):
                     stress.run()
                     closeNow = True  # exit immediately after stress test
             else:
-                meshtastic.util.our_exit("The powermon module could not be loaded. "
-                                         "You may need to run `poetry install --with powermon`. "
-                                         "Import Error was: " + powermon_exception)
-
+                meshtastic.util.our_exit(
+                    "The powermon module could not be loaded. "
+                    "You may need to run `poetry install --with powermon`. "
+                    f"Import Error was: {powermon_exception}"
+                )
 
         if args.listen:
             closeNow = False
@@ -1062,14 +1266,13 @@ def onConnected(interface):
             if args.dest != BROADCAST_ADDR:
                 print("A tunnel can only be created using the local node.")
                 return
-            # pylint: disable=C0415
-            from . import tunnel
-
             # Even if others said we could close, stay open if the user asked for a tunnel
             closeNow = False
             if interface.noProto:
-                logger.warning(f"Not starting Tunnel - disabled by noProto")
+                logger.warning("Not starting Tunnel - disabled by noProto")
             else:
+                from . import tunnel  # pylint: disable=C0415
+
                 if args.tunnel_net:
                     tunnel.Tunnel(interface, subnet=args.tunnel_net)
                 else:
@@ -1077,7 +1280,7 @@ def onConnected(interface):
 
         if args.ack or (args.dest != BROADCAST_ADDR and waitForAckNak):
             print(
-                f"Waiting for an acknowledgment from remote node (this could take a while)"
+                "Waiting for an acknowledgment from remote node (this could take a while)"
             )
             interface.getNode(args.dest, False, **getNode_kwargs).iface.waitForAckNak()
 
@@ -1094,13 +1297,18 @@ def onConnected(interface):
             log_set.close()
 
     except Exception as ex:
-        print(f"Aborting due to: {ex}")
-        interface.close()  # close the connection now, so that our app exits
-        sys.exit(1)
+        meshtastic.util.our_exit(f"Aborting due to: {ex}", 1)
 
 
-def printConfig(config) -> None:
-    """print configuration"""
+def printConfig(config: Any) -> None:
+    """
+    Display top-level configuration sections and their field names.
+    
+    Skips the "version" section. For each other top-level section, prints the section name and a sorted list of its fields as "section.field"; if mt_config.camel_case is true, field names are converted to camelCase before printing.
+    
+    Parameters:
+        config (Any): A protobuf-like configuration message that exposes a DESCRIPTOR with top-level fields.
+    """
     objDesc = config.DESCRIPTOR
     for config_section in objDesc.fields:
         if config_section.name != "version":
@@ -1116,13 +1324,26 @@ def printConfig(config) -> None:
                 print(f"    {temp_name}")
 
 
-def onNode(node) -> None:
-    """Callback invoked when the node DB changes"""
+def onNode(node: Any) -> None:
+    """
+    Handle node database change notifications.
+    
+    Prints the changed node to standard output.
+    
+    Parameters:
+        node (Any): The node object or identifier that changed.
+    """
     print(f"Node changed: {node}")
 
 
 def subscribe() -> None:
-    """Subscribe to the topics the user probably wants to see, prints output to stdout"""
+    """
+    Register the default pub-sub handlers needed to receive incoming mesh messages.
+
+    Subscribes the local receive callback to the "meshtastic.receive" topic so incoming packets
+    are delivered to the onReceive handler. Other topic subscriptions are intentionally left
+    commented out.
+    """
     pub.subscribe(onReceive, "meshtastic.receive")
     # pub.subscribe(onConnection, "meshtastic.connection")
 
@@ -1131,8 +1352,21 @@ def subscribe() -> None:
 
     # pub.subscribe(onNode, "meshtastic.node")
 
-def set_missing_flags_false(config_dict: dict, true_defaults: set[tuple[str, str]]) -> None:
-    """Ensure that missing default=True keys are present in the config_dict and set to False."""
+
+def set_missing_flags_false(
+    config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, str]]
+) -> None:
+    """
+    Ensure specified boolean flags exist in a nested config dictionary and set any missing ones to False.
+
+    Parameters
+    ----------
+        config_dict (Dict[str, Any]): The nested configuration dictionary to modify in place.
+        true_defaults (Set[Tuple[str, str]]): A set of key paths (tuples of keys) where the final
+            key is expected to be a boolean defaulted to True; any path not present in config_dict
+            will have its final key created and set to False.
+
+    """
     for path in true_defaults:
         d = config_dict
         for key in path[:-1]:
@@ -1142,9 +1376,54 @@ def set_missing_flags_false(config_dict: dict, true_defaults: set[tuple[str, str
         if path[-1] not in d:
             d[path[-1]] = False
 
-def export_config(interface) -> str:
-    """used in --export-config"""
-    configObj = {}
+
+def _prefix_base64_key(
+    security: Dict[str, Any], normalized_key_map: Dict[str, str], camel_name: str
+) -> None:
+    """
+    Prefix a security key value with 'base64:' if it is a string or list of strings.
+
+    This helper normalizes base64-encoded security keys (privateKey, publicKey, adminKey)
+    so they are clearly marked as base64-encoded in exported configuration.
+
+    Parameters
+    ----------
+        security: The security configuration dictionary to modify in-place.
+        normalized_key_map: Mapping from canonical camelCase names to actual keys in security dict.
+        camel_name: The canonical camelCase name of the key to process (e.g., "privateKey").
+
+    """
+    key = normalized_key_map.get(camel_name)
+    if not key:
+        return
+    val = security.get(key)
+    if isinstance(val, str):
+        security[key] = "base64:" + val
+    elif isinstance(val, list):
+        security[key] = ["base64:" + v if isinstance(v, str) else v for v in val]
+
+
+def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
+    """
+    Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
+
+    Produces a YAML document containing selected top-level metadata (owner, owner_short, channel
+    URL, canned messages, ringtone, and location) plus `config` and `module_config` sections
+    derived from node's protobuf-backed settings. Key casing in the exported `config` and
+    `module_config` follows mt_config.camel_case. Certain boolean flags are explicitly set to
+    false if missing, and security key fields are normalized to include a "base64:" prefix when
+    appropriate.
+
+    Parameters
+    ----------
+        interface (MeshInterface): The connected interface whose local node and module configuration will be exported.
+
+    Returns
+    -------
+        str: A YAML string (prefixed with a header comment) representing exported configuration.
+
+    """
+    configObj: Dict[str, Any] = {}
 
     # A list of configuration keys that should be set to False if they are missing
     config_true_defaults = {
@@ -1166,7 +1445,7 @@ def export_config(interface) -> str:
     myinfo = interface.getMyNodeInfo()
     canned_messages = interface.getCannedMessage()
     ringtone = interface.getRingtone()
-    pos = myinfo.get("position")
+    pos = myinfo.get("position") if myinfo else None
     lat = None
     lon = None
     alt = None
@@ -1189,59 +1468,82 @@ def export_config(interface) -> str:
     if ringtone:
         configObj["ringtone"] = ringtone
     # lat and lon don't make much sense without the other (so fill with 0s), and alt isn't meaningful without both
-    if lat or lon:
-        configObj["location"] = {"lat": lat or float(0), "lon": lon or float(0)}
-        if alt:
+    if lat is not None or lon is not None:
+        configObj["location"] = {
+            "lat": lat if lat is not None else 0.0,
+            "lon": lon if lon is not None else 0.0,
+        }
+        if alt is not None:
             configObj["location"]["alt"] = alt
 
-    config = MessageToDict(interface.localNode.localConfig)	#checkme - Used as a dictionary here and a string below
-                                                                        #was used as a string here and a Dictionary above
+    config = MessageToDict(interface.localNode.localConfig)
     if config:
-        # Convert inner keys to correct snake/camelCase
-        prefs = {}
-        for pref in config:
-            if mt_config.camel_case:
-                prefs[meshtastic.util.snake_to_camel(pref)] = config[pref]
-            else:
-                prefs[pref] = config[pref]
-            # mark base64 encoded fields as such
-            if pref == "security":
-                if 'privateKey' in prefs[pref]:
-                    prefs[pref]['privateKey'] = 'base64:' + prefs[pref]['privateKey']
-                if 'publicKey' in prefs[pref]:
-                    prefs[pref]['publicKey'] = 'base64:' + prefs[pref]['publicKey']
-                if 'adminKey' in prefs[pref]:
-                    for i in range(len(prefs[pref]['adminKey'])):
-                        prefs[pref]['adminKey'][i] = 'base64:' + prefs[pref]['adminKey'][i]
-        if mt_config.camel_case:
-            configObj["config"] = config		#Identical command here and 2 lines below?
-        else:
-            configObj["config"] = config
+        # Ensure explicit false values are present before key conversion.
+        set_missing_flags_false(config, config_true_defaults)
 
-        set_missing_flags_false(configObj["config"], config_true_defaults)
+        # Convert inner keys to correct snake/camelCase.
+        prefs = {}
+        for pref, value in config.items():
+            pref_key = (
+                meshtastic.util.snake_to_camel(pref)
+                if mt_config.camel_case
+                else meshtastic.util.camel_to_snake(pref)
+            )
+            prefs[pref_key] = value
+            # mark base64 encoded fields as such
+            if pref == "security" and isinstance(prefs[pref_key], dict):
+                security = prefs[pref_key]
+                # Normalize keys to canonical camelCase for reliable lookup,
+                # since MessageToDict may produce inconsistent casing
+                normalized_key_map = {
+                    meshtastic.util.snake_to_camel(
+                        meshtastic.util.camel_to_snake(key)
+                    ): key
+                    for key in security
+                    if isinstance(key, str)
+                }
+
+                _prefix_base64_key(security, normalized_key_map, "privateKey")
+                _prefix_base64_key(security, normalized_key_map, "publicKey")
+                _prefix_base64_key(security, normalized_key_map, "adminKey")
+        configObj["config"] = prefs
 
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
-        # Convert inner keys to correct snake/camelCase
+        # Ensure explicit false values are present before key conversion.
+        set_missing_flags_false(module_config, module_true_defaults)
+
+        # Convert inner keys to correct snake/camelCase.
         prefs = {}
-        for pref in module_config:
-            if len(module_config[pref]) > 0:
-                prefs[pref] = module_config[pref]
-        if mt_config.camel_case:
-            configObj["module_config"] = prefs
-        else:
-            configObj["module_config"] = prefs
+        for pref, value in module_config.items():
+            pref_key = (
+                meshtastic.util.snake_to_camel(pref)
+                if mt_config.camel_case
+                else meshtastic.util.camel_to_snake(pref)
+            )
+            prefs[pref_key] = value
+        configObj["module_config"] = prefs
 
-        set_missing_flags_false(configObj["module_config"], module_true_defaults)
-
-    config_txt = "# start of Meshtastic configure yaml\n"		#checkme - "config" (now changed to config_out)
-                                                                        #was used as a string here and a Dictionary above
+    config_txt = "# start of Meshtastic configure yaml\n"
+    # was used as a string here and a Dictionary above
     config_txt += yaml.dump(configObj)
     return config_txt
 
 
+# CamelCase alias for public API consistency
+exportConfig = export_config
+
+
 def create_power_meter():
-    """Setup the power meter."""
+    """
+    Configure and initialize the global power meter according to CLI arguments.
+    
+    Validates an optional voltage argument (must be between 0.8 and 5.0) and exits on invalid input.
+    Creates and assigns the appropriate global `meter` instance based on power-related arguments;
+    if a voltage is specified the meter is set to that voltage and powered on. When powering on,
+    the function either waits for user confirmation or delays briefly depending on the
+    power-wait CLI flag.
+    """
 
     global meter  # pylint: disable=global-statement
     args = mt_config.args
@@ -1276,7 +1578,11 @@ def create_power_meter():
 
 
 def common():
-    """Shared code for all of our command line wrappers."""
+    """
+    Configure logging, validate CLI arguments, establish the chosen transport interface, invoke onConnected, and optionally enter the main event loop.
+    
+    Performs argument validation (early checks for support/test and name fields), initializes optional subsystems (power meter, serial logging), subscribes to message topics, selects and opens the requested transport (BLE, TCP, or serial), and calls onConnected with the established MeshInterface. If a persistent session mode is requested (listen, tunnel, noproto, or reply), blocks until interrupted. On fatal errors calls meshtastic.util.our_exit with an explanatory message.
+    """
     logfile = None
     args = mt_config.args
     parser = mt_config.parser
@@ -1287,7 +1593,7 @@ def common():
 
     # set all meshtastic loggers to DEBUG
     if not (args.debug or args.listen) and args.debuglib:
-        logging.getLogger('meshtastic').setLevel(logging.DEBUG)
+        logging.getLogger("meshtastic").setLevel(logging.DEBUG)
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -1298,20 +1604,26 @@ def common():
             meshtastic.util.our_exit("", 0)
 
         # Early validation for owner names before attempting device connection
-        if hasattr(args, 'set_owner') and args.set_owner is not None:
+        if args.set_owner is not None:
             stripped_long_name = args.set_owner.strip()
             if not stripped_long_name:
-                meshtastic.util.our_exit("ERROR: Long Name cannot be empty or contain only whitespace characters")
+                meshtastic.util.our_exit(
+                    "ERROR: Long Name cannot be empty or contain only whitespace characters"
+                )
 
-        if hasattr(args, 'set_owner_short') and args.set_owner_short is not None:
+        if args.set_owner_short is not None:
             stripped_short_name = args.set_owner_short.strip()
             if not stripped_short_name:
-                meshtastic.util.our_exit("ERROR: Short Name cannot be empty or contain only whitespace characters")
+                meshtastic.util.our_exit(
+                    "ERROR: Short Name cannot be empty or contain only whitespace characters"
+                )
 
-        if hasattr(args, 'set_ham') and args.set_ham is not None:
+        if args.set_ham is not None:
             stripped_ham_name = args.set_ham.strip()
             if not stripped_ham_name:
-                meshtastic.util.our_exit("ERROR: Ham radio callsign cannot be empty or contain only whitespace characters")
+                meshtastic.util.our_exit(
+                    "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
+                )
 
         if have_powermon:
             create_power_meter()
@@ -1336,10 +1648,12 @@ def common():
             parser.print_help(sys.stderr)
             meshtastic.util.our_exit("", 1)
         elif args.test:
-            if not have_test:
-                meshtastic.util.our_exit("Test module could not be important. Ensure you have the 'dotmap' module installed.")
+            if meshtastic_test is None:
+                meshtastic.util.our_exit(
+                    "Test module could not be imported. Ensure you have the 'dotmap' module installed."
+                )
             else:
-                result = meshtastic.test.testAll()
+                result = meshtastic_test.testAll()
                 if not result:
                     meshtastic.util.our_exit("Warning: Test was not successful.")
                 else:
@@ -1364,105 +1678,172 @@ def common():
                 for x in BLEInterface.scan():
                     print(f"Found: name='{x.name}' address='{x.address}'")
                 meshtastic.util.our_exit("BLE scan finished", 0)
-            elif args.ble:
-                client = BLEInterface(
-                    args.ble if args.ble != "any" else None,
-                    debugOut=logfile,
-                    noProto=args.noproto,
-                    noNodes=args.no_nodes,
-                    timeout=args.timeout,
-                )
-            elif args.host:
-                try:
-                    if ":" in args.host:
-                        tcp_hostname, tcp_port = args.host.split(':')
-                    else:
-                        tcp_hostname = args.host
-                        tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
-                    client = meshtastic.tcp_interface.TCPInterface(
-                        tcp_hostname,
-                        portNumber=tcp_port,
-                        debugOut=logfile,
-                        noProto=args.noproto,
-                        noNodes=args.no_nodes,
-                        timeout=args.timeout,
-                    )
-                except Exception as ex:
-                    meshtastic.util.our_exit(f"Error connecting to {args.host}:{ex}", 1)
-            else:
-                try:
-                    client = meshtastic.serial_interface.SerialInterface(
-                        args.port,
-                        debugOut=logfile,
-                        noProto=args.noproto,
-                        noNodes=args.no_nodes,
-                        timeout=args.timeout,
-                    )
-                except FileNotFoundError:
-                    # Handle the case where the serial device is not found
-                    message = (
-                        f"File Not Found Error:\n"
-                    )
-                    message += f"  The serial device at '{args.port}' was not found.\n"
-                    message += "  Please check the following:\n"
-                    message += "    1. Is the device connected properly?\n"
-                    message += "    2. Is the correct serial port specified?\n"
-                    message += "    3. Are the necessary drivers installed?\n"
-                    message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
-                    message += "       Ensure you are using a **data-capable USB cable**.\n"
-                    meshtastic.util.our_exit(message, 1)
-                except PermissionError as ex:
-                    username = os.getlogin()
-                    message = "Permission Error:\n"
-                    message += (
-                        "  Need to add yourself to the 'dialout' group by running:\n"
-                    )
-                    message += f"     sudo usermod -a -G dialout {username}\n"
-                    message += "  After running that command, log out and re-login for it to take effect.\n"
-                    message += f"Error was:{ex}"
-                    meshtastic.util.our_exit(message)
-                except OSError as ex:
-                    message = f"OS Error:\n"
-                    message += "  The serial device couldn't be opened, it might be in use by another process.\n"
-                    message += "  Please close any applications or webpages that may be using the device and try again.\n"
-                    message += f"\nOriginal error: {ex}"
-                    meshtastic.util.our_exit(message)
-                if client.devPath is None:
+
+            # Use ExitStack to guarantee interface cleanup on early exits or exceptions
+            with contextlib.ExitStack() as stack:
+                client: MeshInterface
+                if args.ble:
                     try:
-                        client = meshtastic.tcp_interface.TCPInterface(
-                            "localhost",
-                            debugOut=logfile,
-                            noProto=args.noproto,
-                            noNodes=args.no_nodes,
-                            timeout=args.timeout,
+                        client = stack.enter_context(
+                            BLEInterface(
+                                args.ble if args.ble != "any" else None,
+                                debugOut=logfile,
+                                noProto=args.noproto,
+                                noNodes=args.no_nodes,
+                                timeout=args.timeout,
+                                auto_reconnect=args.ble_auto_reconnect,
+                            )
+                        )
+                    except BLEInterface.BLEError as e:
+                        meshtastic.util.our_exit(str(e), 1)
+                elif args.host:
+                    try:
+                        if args.host.startswith("["):
+                            # Bracketed IPv6: [addr] or [addr]:port
+                            bracket_end = args.host.find("]")
+                            if bracket_end == -1:
+                                meshtastic.util.our_exit(
+                                    f"Error: malformed IPv6 address in --host '{args.host}'.",
+                                    1,
+                                )
+                            tcp_hostname = args.host[1:bracket_end]
+                            remainder = args.host[bracket_end + 1 :]
+                            if remainder.startswith(":"):
+                                tcp_port_str = remainder[1:]
+                                try:
+                                    tcp_port = int(tcp_port_str)
+                                    if not 1 <= tcp_port <= 65535:
+                                        raise ValueError(
+                                            f"Port {tcp_port} out of range"
+                                        )
+                                except ValueError:
+                                    meshtastic.util.our_exit(
+                                        f"Error: invalid TCP port in --host '{args.host}'.",
+                                        1,
+                                    )
+                            elif remainder:
+                                meshtastic.util.our_exit(
+                                    f"Error: unexpected characters after IPv6 address in --host '{args.host}'.",
+                                    1,
+                                )
+                            else:
+                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        elif ":" in args.host:
+                            # Multiple colons → almost certainly an IPv6 address, not host:port
+                            if args.host.count(":") > 1:
+                                tcp_hostname = args.host
+                                tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                            else:
+                                # Exactly one colon → host:port
+                                tcp_hostname, tcp_port_str = args.host.rsplit(":", 1)
+                                try:
+                                    tcp_port = int(tcp_port_str)
+                                except ValueError:
+                                    # Not a valid port - treat the whole string as a hostname
+                                    tcp_hostname = args.host
+                                    tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                                else:
+                                    if not 1 <= tcp_port <= 65535:
+                                        meshtastic.util.our_exit(
+                                            f"Error: invalid TCP port in --host '{args.host}'.",
+                                            1,
+                                        )
+                        else:
+                            tcp_hostname = args.host
+                            tcp_port = meshtastic.tcp_interface.DEFAULT_TCP_PORT
+                        client = stack.enter_context(
+                            meshtastic.tcp_interface.TCPInterface(
+                                tcp_hostname,
+                                portNumber=tcp_port,
+                                debugOut=logfile,
+                                noProto=args.noproto,
+                                noNodes=args.no_nodes,
+                                timeout=args.timeout,
+                            )
                         )
                     except Exception as ex:
                         meshtastic.util.our_exit(
-                            f"Error connecting to localhost:{ex}", 1
+                            f"Error connecting to {args.host}:{ex}", 1
                         )
+                else:
+                    try:
+                        client = stack.enter_context(
+                            meshtastic.serial_interface.SerialInterface(
+                                args.port,
+                                debugOut=logfile,
+                                noProto=args.noproto,
+                                noNodes=args.no_nodes,
+                                timeout=args.timeout,
+                            )
+                        )
+                    except FileNotFoundError:
+                        # Handle the case where the serial device is not found
+                        message = "File Not Found Error:\n"
+                        message += (
+                            f"  The serial device at '{args.port}' was not found.\n"
+                        )
+                        message += "  Please check the following:\n"
+                        message += "    1. Is the device connected properly?\n"
+                        message += "    2. Is the correct serial port specified?\n"
+                        message += "    3. Are the necessary drivers installed?\n"
+                        message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
+                        message += "       Ensure you are using a **data-capable USB cable**.\n"
+                        meshtastic.util.our_exit(message, 1)
+                    except PermissionError as ex:
+                        try:
+                            username = os.getlogin()
+                        except OSError:
+                            username = getpass.getuser()
+                        message = "Permission Error:\n"
+                        message += "  Need to add yourself to the 'dialout' group by running:\n"
+                        message += f"     sudo usermod -a -G dialout {username}\n"
+                        message += "  After running that command, log out and re-login for it to take effect.\n"
+                        message += f"Error was:{ex}"
+                        meshtastic.util.our_exit(message)
+                    except OSError as ex:
+                        message = "OS Error:\n"
+                        message += "  The serial device couldn't be opened, it might be in use by another process.\n"
+                        message += "  Please close any applications or webpages that may be using the device and try again.\n"
+                        message += f"\nOriginal error: {ex}"
+                        meshtastic.util.our_exit(message)
+                    if client.devPath is None:
+                        try:
+                            client = stack.enter_context(
+                                meshtastic.tcp_interface.TCPInterface(
+                                    "localhost",
+                                    debugOut=logfile,
+                                    noProto=args.noproto,
+                                    noNodes=args.no_nodes,
+                                    timeout=args.timeout,
+                                )
+                            )
+                        except Exception as ex:
+                            meshtastic.util.our_exit(
+                                f"Error connecting to localhost:{ex}", 1
+                            )
 
-            # We assume client is fully connected now
-            onConnected(client)
+                # We assume client is fully connected now
+                onConnected(client)
 
-            have_tunnel = platform.system() == "Linux"
-            if (
-                args.noproto
-                or args.reply
-                or (have_tunnel and args.tunnel)
-                or args.listen
-            ):  # loop until someone presses ctrlc
-                try:
-                    while True:
-                        time.sleep(1000)
-                except KeyboardInterrupt:
-                    logger.info("Exiting due to keyboard interrupt")
+                have_tunnel = platform.system() == "Linux"
+                if (
+                    args.noproto
+                    or args.reply
+                    or (have_tunnel and args.tunnel)
+                    or args.listen
+                ):  # loop until someone presses ctrlc
+                    try:
+                        while True:
+                            time.sleep(1000)
+                    except KeyboardInterrupt:
+                        logger.info("Exiting due to keyboard interrupt")
 
         # don't call exit, background threads might be running still
         # sys.exit(0)
 
 
 def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add connection specification arguments"""
+    """Add connection specification arguments."""
 
     outer = parser.add_argument_group(
         "Connection",
@@ -1504,13 +1885,34 @@ def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
         action="store_true",
     )
 
+    outer.add_argument(
+        "--ble-auto-reconnect",
+        help="Enable BLE auto-reconnect after unexpected disconnects (disabled by default)",
+        action="store_true",
+    )
+
     return parser
 
+
 def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add node/channel specification arguments"""
+    """
+    Add CLI arguments for selecting a destination node and a channel index.
+
+    Adds:
+    - `--dest`: Specify the destination node (node ID with '!' or '0x' prefix, or node number). If omitted, '^all' or '^local' is assumed by callers.
+    - `--ch-index`: Specify the channel index to target (0 is the PRIMARY channel).
+
+    Parameters
+    ----------
+        parser (argparse.ArgumentParser): The argument parser to extend.
+
+    Returns
+    -------
+        argparse.ArgumentParser: The same parser instance with the selection arguments added.
+
+    """
     group = parser.add_argument_group(
-        "Selection",
-        "Arguments that select channels to use, destination nodes, etc."
+        "Selection", "Arguments that select channels to use, destination nodes, etc."
     )
 
     group.add_argument(
@@ -1530,8 +1932,17 @@ def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
     return parser
 
+
 def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add import/export config arguments"""
+    """
+    Register CLI options for importing a YAML configuration file and exporting device configuration as YAML.
+    
+    Parameters:
+        parser (argparse.ArgumentParser): The argument parser to extend.
+    
+    Returns:
+        argparse.ArgumentParser: The same parser instance with the import/export arguments added.
+    """
     group = parser.add_argument_group(
         "Import/Export",
         "Arguments that concern importing and exporting configuration of Meshtastic devices",
@@ -1547,12 +1958,25 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         nargs="?",
         const="-",  # default to "-" if no value provided
         metavar="FILE",
-        help="Export device config as YAML (to stdout if no file given)"
+        help="Export device config as YAML (to stdout if no file given)",
     )
     return parser
 
+
 def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add arguments to do with configuring a device"""
+    """
+    Add CLI arguments for device configuration to the provided ArgumentParser.
+    
+    Adds options for reading and writing preference fields, beginning/committing configuration transactions,
+    canned messages and ringtones, modem preset shortcuts, owner/ham settings, messageability flag,
+    and channel URL helpers.
+    
+    Parameters:
+        parser (argparse.ArgumentParser): ArgumentParser to extend with configuration-related options.
+    
+    Returns:
+        argparse.ArgumentParser: The same parser instance with configuration arguments added.
+    """
 
     group = parser.add_argument_group(
         "Configuration",
@@ -1567,7 +1991,7 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         ),
         nargs=1,
         action="append",
-        metavar="FIELD"
+        metavar="FIELD",
     )
 
     group.add_argument(
@@ -1670,15 +2094,18 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
 
     group.add_argument(
-        "--set-is-unmessageable", "--set-is-unmessagable",
-        help="Set if a node is messageable or not", action="store"
+        "--set-is-unmessageable",
+        "--set-is-unmessagable",
+        help="Set if a node is messageable or not",
+        action="store",
     )
 
     group.add_argument(
-        "--ch-set-url", "--seturl",
+        "--ch-set-url",
+        "--seturl",
         help="Set all channels and set LoRa config from a supplied URL",
         metavar="URL",
-        action="store"
+        action="store",
     )
 
     group.add_argument(
@@ -1688,11 +2115,22 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default=None,
     )
 
-
     return parser
 
+
 def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add arguments to do with configuring channels"""
+    """
+    Add channel-related CLI options to the provided argument parser.
+    
+    Adds arguments for adding/deleting channels, setting channel parameters (including PSK),
+    QR display for channels, enable/disable flags, and a retry count for fetching channel settings.
+    
+    Parameters:
+        parser (argparse.ArgumentParser): The argument parser to extend.
+    
+    Returns:
+        argparse.ArgumentParser: The same parser instance with channel configuration options added.
+    """
 
     group = parser.add_argument_group(
         "Channel Configuration",
@@ -1725,7 +2163,9 @@ def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
 
     group.add_argument(
         "--channel-fetch-attempts",
-        help=("Attempt to retrieve channel settings for --ch-set this many times before giving up. Default %(default)s."),
+        help=(
+            "Attempt to retrieve channel settings for --ch-set this many times before giving up. Default %(default)s."
+        ),
         default=3,
         type=int,
         metavar="ATTEMPTS",
@@ -1765,8 +2205,23 @@ def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
 
     return parser
 
+
 def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add arguments to do with fixed positions and position config"""
+    """
+    Register CLI arguments for fixed-position and position-related configuration.
+
+    Adds --setalt, --setlat, --setlon to set a fixed position (enables fixed position),
+    --remove-position to clear it, and --pos-fields to specify which position fields to send.
+
+    Parameters
+    ----------
+        parser (argparse.ArgumentParser): The argument parser to extend.
+
+    Returns
+    -------
+        argparse.ArgumentParser: The same parser instance with position-related arguments added.
+
+    """
 
     group = parser.add_argument_group(
         "Position Configuration",
@@ -1806,8 +2261,25 @@ def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentP
     )
     return parser
 
+
 def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add arguments concerning local-only information & actions"""
+    """
+    Register CLI arguments for local-only actions and information display.
+
+    Adds options to query or display information from the local node (radio):
+    - --info: display radio configuration
+    - --nodes: print the node list in a formatted table
+    - --show-fields: select comma-separated fields to display with --nodes
+
+    Parameters
+    ----------
+        parser (argparse.ArgumentParser): The argument parser to extend.
+
+    Returns
+    -------
+        argparse.ArgumentParser: The same parser instance with local-action arguments added.
+
+    """
     group = parser.add_argument_group(
         "Local Actions",
         "Arguments that take actions or request information from the local node only.",
@@ -1828,14 +2300,27 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     group.add_argument(
         "--show-fields",
         help="Specify fields to show (comma-separated) when using --nodes",
-        type=lambda s: s.split(','),
-        default=None
+        type=lambda s: s.split(","),
+        default=None,
     )
 
     return parser
 
+
 def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add arguments concerning information & actions that may interact with the mesh"""
+    """
+    Register remote-action CLI flags on the provided ArgumentParser.
+
+    Parameters
+    ----------
+        parser (argparse.ArgumentParser): The parser to extend with remote action arguments (e.g.,
+            sendtext, traceroute, request-telemetry, request-position, reply).
+
+    Returns
+    -------
+        argparse.ArgumentParser: The same parser instance with remote-action arguments added.
+
+    """
     group = parser.add_argument_group(
         "Remote Actions",
         "Arguments that take actions or request information from either the local node or remote nodes via the mesh.",
@@ -1850,7 +2335,7 @@ def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
     group.add_argument(
         "--private",
         help="Optional argument for sending text messages to the PRIVATE_APP port. Use in combination with --sendtext.",
-        action="store_true"
+        action="store_true",
     )
 
     group.add_argument(
@@ -1888,8 +2373,21 @@ def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
 
     return parser
 
+
 def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add arguments concerning admin actions that may interact with the mesh"""
+    """
+    Add command-line options for remote administrative actions that require admin privileges.
+    
+    Adds a mutually exclusive group of flags for operations such as reboot, reboot-OTA, enter DFU, shutdown,
+    device metadata query, factory reset variants, node DB edits (remove/favorite/ignore), reset NodeDB,
+    and setting the node's time.
+    
+    Parameters:
+        parser (argparse.ArgumentParser): The argument parser to extend.
+    
+    Returns:
+        argparse.ArgumentParser: The same parser instance with the remote-admin arguments added.
+    """
 
     outer = parser.add_argument_group(
         "Remote Admin Actions",
@@ -1925,7 +2423,8 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     )
 
     group.add_argument(
-        "--factory-reset", "--factory-reset-config",
+        "--factory-reset",
+        "--factory-reset-config",
         help="Tell the destination node to install the default config, preserving BLE bonds & PKI keys",
         action="store_true",
     )
@@ -1940,31 +2439,31 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
         "--remove-node",
         help="Tell the destination node to remove a specific node from its NodeDB. "
         "Use the node ID with a '!' or '0x' prefix or the node number.",
-        metavar="!xxxxxxxx"
+        metavar="!xxxxxxxx",
     )
     group.add_argument(
         "--set-favorite-node",
         help="Tell the destination node to set the specified node to be favorited on the NodeDB. "
         "Use the node ID with a '!' or '0x' prefix or the node number.",
-        metavar="!xxxxxxxx"
+        metavar="!xxxxxxxx",
     )
     group.add_argument(
         "--remove-favorite-node",
         help="Tell the destination node to set the specified node to be un-favorited on the NodeDB. "
         "Use the node ID with a '!' or '0x' prefix or the node number.",
-        metavar="!xxxxxxxx"
+        metavar="!xxxxxxxx",
     )
     group.add_argument(
         "--set-ignored-node",
         help="Tell the destination node to set the specified node to be ignored on the NodeDB. "
         "Use the node ID with a '!' or '0x' prefix or the node number.",
-        metavar="!xxxxxxxx"
+        metavar="!xxxxxxxx",
     )
     group.add_argument(
         "--remove-ignored-node",
         help="Tell the destination node to set the specified node to be un-ignored on the NodeDB. "
         "Use the node ID with a '!' or '0x' prefix or the node number.",
-        metavar="!xxxxxxxx"
+        metavar="!xxxxxxxx",
     )
     group.add_argument(
         "--reset-nodedb",
@@ -1985,8 +2484,15 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
     return parser
 
+
 def initParser():
-    """Initialize the command line argument parsing."""
+    """
+    Configure and parse the command-line interface for the Meshtastic CLI.
+    
+    Sets up all argument groups and options, enables shell autocompletion if available,
+    parses command-line arguments, and stores the resulting ArgumentParser and parsed
+    arguments on mt_config.parser and mt_config.args.
+    """
     parser = mt_config.parser
     args = mt_config.args
 
@@ -2046,8 +2552,8 @@ def initParser():
     group.add_argument(
         "--timeout",
         help="How long to wait for replies. Default %(default)ss.",
-        default=300,
-        type=int,
+        default=300.0,
+        type=float,
         metavar="SECONDS",
     )
 
@@ -2063,7 +2569,9 @@ def initParser():
     )
 
     group.add_argument(
-        "--debuglib", help="Show only API library debug log messages", action="store_true"
+        "--debuglib",
+        help="Show only API library debug log messages",
+        action="store_true",
     )
 
     group.add_argument(
@@ -2153,7 +2661,6 @@ def initParser():
         const="default",
     )
 
-
     remoteHardwareArgs = parser.add_argument_group(
         "Remote Hardware", "Arguments related to the Remote Hardware module"
     )
@@ -2197,7 +2704,12 @@ def initParser():
 
 
 def main():
-    """Perform command line meshtastic operations"""
+    """
+    Run the Meshtastic command-line entry point: initialize the argument parser, process CLI actions, and perform cleanup.
+
+    This function initializes the global parser via initParser(), executes the shared CLI flow in
+    common(), and closes the configured logfile if one was opened.
+    """
     parser = argparse.ArgumentParser(
         add_help=False,
         epilog="If no connection arguments are specified, we search for a compatible serial device, "
@@ -2212,7 +2724,11 @@ def main():
 
 
 def tunnelMain():
-    """Run a meshtastic IP tunnel"""
+    """
+    Start the Meshtastic command-line tool in IP-tunnel mode.
+
+    Enable tunnel mode on the parsed CLI arguments and run the shared command-line flow that establishes connections and processes requested actions.
+    """
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.parser = parser
     initParser()

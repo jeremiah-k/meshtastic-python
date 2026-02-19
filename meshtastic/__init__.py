@@ -1,5 +1,5 @@
 """
-# A library for the Meshtastic Client API
+# A library for the Meshtastic Client API.
 
 Primary interfaces: SerialInterface, TCPInterface, BLEInterface
 
@@ -65,29 +65,19 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 """
 
-import base64
 import logging
-import os
-import platform
-import random
-import socket
-import stat
-import sys
-import threading
-import time
-import traceback
-from datetime import datetime
-from typing import *
+from importlib import import_module
+from typing import Any, Callable, Dict, NamedTuple, Optional
 
-import google.protobuf.json_format
-import serial # type: ignore[import-untyped]
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub # type: ignore[import-untyped]
-from tabulate import tabulate
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.node import Node
-from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, fixme, stripnl
+from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, stripnl
 
+from . import (
+    util,
+)
 from .protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -97,14 +87,68 @@ from .protobuf import (
     mqtt_pb2,
     paxcount_pb2,
     portnums_pb2,
+    powermon_pb2,
     remote_hardware_pb2,
     storeforward_pb2,
     telemetry_pb2,
-    powermon_pb2
 )
-from . import (
-    util,
-)
+
+__all__ = [
+    "BROADCAST_ADDR",
+    "BROADCAST_NUM",
+    "DeferredExecution",
+    "KnownProtocol",
+    "LOCAL_ADDR",
+    "MessageToJson",
+    "NODELESS_WANT_CONFIG_ID",
+    "Node",
+    "OUR_APP_VERSION",
+    "ResponseHandler",
+    "Timeout",
+    "admin_pb2",
+    "apponly_pb2",
+    "catchAndIgnore",
+    "channel_pb2",
+    "config_pb2",
+    "mesh_pb2",
+    "mqtt_pb2",
+    "paxcount_pb2",
+    "portnums_pb2",
+    "powermon_pb2",
+    "protocols",
+    "pub",
+    "remote_hardware_pb2",
+    "storeforward_pb2",
+    "stripnl",
+    "telemetry_pb2",
+    "util",
+]
+
+
+def __getattr__(name: str) -> Any:
+    """
+    Expose legacy module attributes on demand.
+    
+    When asked for the name "serial", lazily imports the internal serial_interface module, caches it on the module globals under "serial", and returns it; for any other name, raises AttributeError.
+    
+    Parameters:
+        name (str): Attribute name being accessed.
+    
+    Returns:
+        module: The resolved module object for the requested attribute.
+    
+    Raises:
+        AttributeError: If the requested attribute is not provided by this lazy loader.
+    """
+    if name == "serial":
+        # Keep historical `meshtastic.serial` access, but map it to our
+        # internal serial interface module (not the third-party pyserial module).
+        serial_module = import_module(".serial_interface", __name__)
+        # Cache in module namespace so subsequent accesses bypass __getattr__
+        globals()["serial"] = serial_module
+        return serial_module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Note: To follow PEP224, comments should be after the module variable.
 
@@ -131,8 +175,9 @@ publishingThread = DeferredExecution("publishing")
 
 logger = logging.getLogger(__name__)
 
+
 class ResponseHandler(NamedTuple):
-    """A pending response callback, waiting for a response to one of our messages"""
+    """A pending response callback, waiting for a response to one of our messages."""
 
     # requestId: int - used only as a key
     #: a callable to call when a response is received
@@ -143,7 +188,7 @@ class ResponseHandler(NamedTuple):
 
 
 class KnownProtocol(NamedTuple):
-    """Used to automatically decode known protocol payloads"""
+    """Used to automatically decode known protocol payloads."""
 
     #: A descriptive name (e.g. "text", "user", "admin")
     name: str
@@ -153,8 +198,20 @@ class KnownProtocol(NamedTuple):
     onReceive: Optional[Callable] = None
 
 
-def _onTextReceive(iface, asDict):
-    """Special text auto parsing for received messages"""
+def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+    """
+    Decode text payloads from a received packet and update per-node metadata.
+
+    If the packet's decoded.payload contains valid UTF-8, store the decoded string in
+    asDict["decoded"]["text"]. If decoding fails, leave that field unset and log an error.
+    Always invokes the interface's info-update path to refresh node metadata based on the packet.
+
+    Parameters
+    ----------
+        iface: The interface instance that received the packet.
+        asDict (dict): Packet dictionary expected to contain decoded.payload (bytes) where the text is stored.
+
+    """
     # We don't throw if the utf8 is invalid in the text message.  Instead we just don't populate
     # the decoded.data.text and we log an error message.  This at least allows some delivery to
     # the app and the app can deal with the missing decoded representation.
@@ -170,8 +227,16 @@ def _onTextReceive(iface, asDict):
     _receiveInfoUpdate(iface, asDict)
 
 
-def _onPositionReceive(iface, asDict):
-    """Special auto parsing for received messages"""
+def _onPositionReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+    """
+    Update the sender node's stored position when a received packet contains position data.
+    
+    If asDict contains a "from" field and a decoded "position", the position is normalized using the interface's fixup routine and written to that node's "position" entry.
+    
+    Parameters:
+        iface: Interface instance that provides position normalization and node lookup helpers.
+        asDict (dict): Packet dictionary expected to contain "from" and "decoded"->"position".
+    """
     logger.debug(f"in _onPositionReceive() asDict:{asDict}")
     if "decoded" in asDict:
         if "position" in asDict["decoded"] and "from" in asDict:
@@ -183,8 +248,16 @@ def _onPositionReceive(iface, asDict):
             iface._getOrCreateByNum(asDict["from"])["position"] = p
 
 
-def _onNodeInfoReceive(iface, asDict):
-    """Special auto parsing for received messages"""
+def _onNodeInfoReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+    """
+    Update interface node records from a received NodeInfo ("user") payload.
+    
+    If the packet contains a decoded `user` entry and a `from` sender, the function ensures a node exists for the sender, stores the decoded user protobuf on that node under `node["user"]`, updates `iface.nodes` to map the user's `id` to the node, and refreshes per-node metadata via _receiveInfoUpdate(iface, asDict).
+    
+    Parameters:
+        iface (Any): Interface instance whose node database will be updated.
+        asDict (Dict[str, Any]): Received packet dictionary (expected to contain `"decoded" -> "user"` and `"from"`).
+    """
     logger.debug(f"in _onNodeInfoReceive() asDict:{asDict}")
     if "decoded" in asDict:
         if "user" in asDict["decoded"] and "from" in asDict:
@@ -197,15 +270,24 @@ def _onNodeInfoReceive(iface, asDict):
             iface.nodes[p["id"]] = n
             _receiveInfoUpdate(iface, asDict)
 
-def _onTelemetryReceive(iface, asDict):
-    """Automatically update device metrics on received packets"""
+
+def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+    """
+    Update the appropriate telemetry section on the sender node when a telemetry packet is received.
+    
+    Merges metrics from the packet's `decoded.telemetry` into one of the node's telemetry sections: `deviceMetrics`, `environmentMetrics`, `airQualityMetrics`, `powerMetrics`, or `localStats`. If the packet lacks a `from` field or none of these sections are present, no change is made.
+    
+    Parameters:
+        iface: Interface instance used to look up or create the target node.
+        asDict (dict): Received packet dictionary; expected to include a `from` key and may include `decoded.telemetry`.
+    """
     logger.debug(f"in _onTelemetryReceive() asDict:{asDict}")
     if "from" not in asDict:
         return
 
     toUpdate = None
 
-    telemetry = asDict.get("decoded", {}).get("telemetry", {})
+    telemetry = asDict.get("decoded", {}).get("telemetry") or {}
     node = iface._getOrCreateByNum(asDict["from"])
     if "deviceMetrics" in telemetry:
         toUpdate = "deviceMetrics"
@@ -226,19 +308,54 @@ def _onTelemetryReceive(iface, asDict):
     logger.debug(f"updating {toUpdate} metrics for {asDict['from']} to {newMetrics}")
     node[toUpdate] = newMetrics
 
-def _receiveInfoUpdate(iface, asDict):
-    if "from" in asDict:
-        iface._getOrCreateByNum(asDict["from"])["lastReceived"] = asDict
-        iface._getOrCreateByNum(asDict["from"])["lastHeard"] = asDict.get("rxTime")
-        iface._getOrCreateByNum(asDict["from"])["snr"] = asDict.get("rxSnr")
-        iface._getOrCreateByNum(asDict["from"])["hopLimit"] = asDict.get("hopLimit")
 
-def _onAdminReceive(iface, asDict):
-    """Special auto parsing for received messages"""
+def _receiveInfoUpdate(iface: Any, asDict: Dict[str, Any]) -> None:
+    """
+    Update per-node metadata fields based on information present in a received packet dictionary.
+
+    Parameters
+    ----------
+        iface: The interface instance whose node store will be updated.
+        asDict (dict): A parsed packet dictionary; if it contains a "from" key, the node identified by that value will have these fields set:
+                - lastReceived: the full packet dictionary
+                - lastHeard: value of `rxTime` from the packet (or None)
+                - snr: value of `rxSnr` from the packet (or None)
+                - hopLimit: value of `hopLimit` from the packet (or None)
+
+    """
+    if "from" in asDict:
+        node = iface._getOrCreateByNum(asDict["from"])
+        node["lastReceived"] = asDict
+        node["lastHeard"] = asDict.get("rxTime")
+        node["snr"] = asDict.get("rxSnr")
+        node["hopLimit"] = asDict.get("hopLimit")
+
+
+def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+    """
+    Store the admin session passkey from an admin packet on the sending node.
+    
+    Parameters:
+        iface (Any): Interface instance used to look up or create the sender node.
+        asDict (dict): Parsed packet dictionary expected to contain a "from" sender ID and
+            a nested "decoded" -> "admin" -> "raw" structure with a `session_passkey` attribute.
+    
+    Description:
+        If the expected fields are present in `asDict`, sets the sender node's
+        "adminSessionPassKey" to the extracted `session_passkey`.
+    """
     logger.debug(f"in _onAdminReceive() asDict:{asDict}")
-    if "decoded" in asDict and "from" in asDict and "admin" in asDict["decoded"]:
+    if (
+        "decoded" in asDict
+        and "from" in asDict
+        and "admin" in asDict["decoded"]
+        and "raw" in asDict["decoded"]["admin"]
+    ):
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
+
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""
 protocols = {
@@ -251,7 +368,6 @@ protocols = {
     portnums_pb2.PortNum.DETECTION_SENSOR_APP: KnownProtocol(
         "detectionsensor", onReceive=_onTextReceive
     ),
-
     portnums_pb2.PortNum.POSITION_APP: KnownProtocol(
         "position", mesh_pb2.Position, _onPositionReceive
     ),
@@ -276,8 +392,14 @@ protocols = {
         "powerstress", powermon_pb2.PowerStressMessage
     ),
     portnums_pb2.PortNum.WAYPOINT_APP: KnownProtocol("waypoint", mesh_pb2.Waypoint),
-    portnums_pb2.PortNum.PAXCOUNTER_APP: KnownProtocol("paxcounter", paxcount_pb2.Paxcount),
-    portnums_pb2.PortNum.STORE_FORWARD_APP: KnownProtocol("storeforward", storeforward_pb2.StoreAndForward),
-    portnums_pb2.PortNum.NEIGHBORINFO_APP: KnownProtocol("neighborinfo", mesh_pb2.NeighborInfo),
+    portnums_pb2.PortNum.PAXCOUNTER_APP: KnownProtocol(
+        "paxcounter", paxcount_pb2.Paxcount
+    ),
+    portnums_pb2.PortNum.STORE_FORWARD_APP: KnownProtocol(
+        "storeforward", storeforward_pb2.StoreAndForward
+    ),
+    portnums_pb2.PortNum.NEIGHBORINFO_APP: KnownProtocol(
+        "neighborinfo", mesh_pb2.NeighborInfo
+    ),
     portnums_pb2.PortNum.MAP_REPORT_APP: KnownProtocol("mapreport", mqtt_pb2.MapReport),
 }
