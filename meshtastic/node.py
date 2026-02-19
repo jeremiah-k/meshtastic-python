@@ -1,5 +1,7 @@
 """Node class."""
 
+# pylint: disable=too-many-lines
+
 import base64
 import logging
 import time

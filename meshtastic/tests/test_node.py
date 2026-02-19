@@ -1,5 +1,7 @@
 """Meshtastic unit tests for node.py."""
 
+# pylint: disable=too-many-lines
+
 import logging
 import re
 from unittest.mock import MagicMock, patch
