@@ -23,6 +23,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
+from meshtastic.interfaces.ble.utils import with_timeout
 
 T = TypeVar("T")
 
@@ -71,12 +72,14 @@ class BLEClient:
             BLEClient.BLEError: If the awaitable does not complete before the timeout elapses.
 
         """
-        if timeout is None:
-            return await awaitable
-        try:
-            return await asyncio.wait_for(awaitable, timeout=timeout)
-        except asyncio.TimeoutError as exc:
-            raise BLEClient.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
+        return await with_timeout(
+            awaitable,
+            timeout,
+            label,
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEClient.BLEError(
+                ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
+            ),
+        )
 
     def __init__(
         self,
@@ -135,7 +138,8 @@ class BLEClient:
 
         Keyword arguments are forwarded to the underlying scanner (for example: `timeout`, `adapter`) to configure discovery.
 
-        Returns:
+        Returns
+        -------
             list: A list of discovered `BLEDevice` objects.
 
         """
@@ -186,7 +190,8 @@ class BLEClient:
         """
         Report whether the underlying Bleak client currently has an active connection.
 
-        Returns:
+        Returns
+        -------
             `true` if the bleak client reports an active connection, `false` otherwise (also `false` when no bleak client exists or the connection state cannot be read).
 
         """
@@ -202,7 +207,8 @@ class BLEClient:
 
             This interprets either a boolean `is_connected` attribute or an `is_connected()` method on the client and coerces the result to a boolean.
 
-            Returns:
+            Returns
+            -------
                 bool: `True` if the client reports an active connection, `False` otherwise.
 
             """
@@ -283,7 +289,8 @@ class BLEClient:
         """
         Compatibility wrapper retained for backward compatibility that emits a DeprecationWarning and reads a GATT characteristic.
 
-        Returns:
+        Returns
+        -------
             bytes: The characteristic value as raw bytes.
 
         """
@@ -340,11 +347,13 @@ class BLEClient:
         via the client.services property. Keyword arguments are ignored but accepted for
         backward compatibility.
 
-        Returns:
+        Returns
+        -------
             The services collection object from the underlying Bleak client containing
             discovered GATT services and their characteristics.
 
-        Raises:
+        Raises
+        ------
             BLEError: If the BLE client has not been initialized.
 
         """
@@ -357,7 +366,8 @@ class BLEClient:
         """
         Deprecated camelCase compatibility wrapper that returns discovered GATT services and characteristics; use `get_services` instead.
 
-        Returns:
+        Returns
+        -------
             The discovered GATT services and characteristics.
 
         """
@@ -533,7 +543,8 @@ class BLEClient:
         """
         Return the BLEClient instance when entering a context.
 
-        Returns:
+        Returns
+        -------
             The BLEClient instance.
 
         """
@@ -598,8 +609,12 @@ class BLEClient:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
             # was happening, causing callbacks to never be processed.
-            # TODO: Remove this workaround once upstream bleak fixes callback
-            # starvation on macOS CoreBluetooth.
+            # TODO: Track and remove once the upstream Bleak CoreBluetooth callback
+            # starvation issue is fixed and released:
+            # https://github.com/hbldh/bleak/issues?q=is%3Aissue+CoreBluetooth+callback
+            # Limitation: this only helps when stdout exists and supports flush();
+            # redirected/non-flushable outputs (e.g., /dev/null wrappers) may not
+            # provide the I/O nudge needed for callback progress.
             stdout = getattr(sys, "stdout", None)
             if stdout is not None and hasattr(stdout, "flush"):
                 with contextlib.suppress(ValueError, OSError, AttributeError):
@@ -710,7 +725,8 @@ class BLEClient:
         """
         Compatibility wrapper that schedules a coroutine on the shared BLE event loop using the camelCase name.
 
-        Returns:
+        Returns
+        -------
             Future[Any]: A Future representing the scheduled coroutine.
 
         """
@@ -727,7 +743,8 @@ def get_zombie_thread_count() -> int:
     """
     Get the number of zombie BLE runner threads.
 
-    Returns:
+    Returns
+    -------
         int: Number of zombie BLE runner threads.
 
     """
@@ -740,7 +757,8 @@ def getZombieThreadCount() -> int:
     """
     Report the number of BLE event threads that failed to stop cleanly.
 
-    Returns:
+    Returns
+    -------
         int: Number of zombie BLE event threads (typically 0 or 1 due to the singleton runner).
 
     """

@@ -71,10 +71,12 @@ class TestBLECoroutineRunner:
             """
             Get the identifier of the currently running asyncio event loop.
 
-            Returns:
+            Returns
+            -------
                 int: The result of calling `id()` on the current running event loop.
 
-            Raises:
+            Raises
+            ------
                 RuntimeError: If no event loop is running in the current context.
 
             """
@@ -178,7 +180,8 @@ class TestBLECoroutineRunner:
                 """
                 Report whether the BLE coroutine runner is currently active.
 
-                Returns:
+                Returns
+                -------
                     True if the runner is active, False otherwise.
 
                 """
@@ -234,7 +237,8 @@ class TestBLECoroutineRunner:
                 """
                 Report whether the BLE coroutine runner is currently active.
 
-                Returns:
+                Returns
+                -------
                     True if the runner is active, False otherwise.
 
                 """
@@ -291,7 +295,8 @@ class TestBLECoroutineRunner:
                 """
                 Report whether the BLE coroutine runner is currently active.
 
-                Returns:
+                Returns
+                -------
                     True if the runner is active, False otherwise.
 
                 """
@@ -411,7 +416,8 @@ class TestBLECoroutineRunner:
                 """
                 Report whether the runner's event loop thread is currently active.
 
-                Returns:
+                Returns
+                -------
                     bool: `True` if the runner is active and its thread is alive, `False` otherwise.
 
                 """
@@ -441,7 +447,8 @@ class TestBLECoroutineRunner:
                 """
                 Initialize the fake thread and prepare a list to record calls to `join`.
 
-                Attributes:
+                Attributes
+                ----------
                     join_calls (list): Appends each call's arguments when `join` is invoked (captures positional and keyword arguments).
 
                 """
@@ -451,7 +458,8 @@ class TestBLECoroutineRunner:
                 """
                 Indicate whether the thread is currently alive.
 
-                Returns:
+                Returns
+                -------
                     bool: `True` if the thread is alive, `False` otherwise.
 
                 """
@@ -563,7 +571,8 @@ class TestBLEClientWithRunner:
             """
             Return the integer 42.
 
-            Returns:
+            Returns
+            -------
                 int: The integer 42.
 
             """
@@ -587,7 +596,8 @@ class TestBLEClientWithRunner:
             """
             Return the integer 42.
 
-            Returns:
+            Returns
+            -------
                 int: The integer 42.
 
             """
@@ -655,7 +665,8 @@ class TestBLEClientWithRunner:
                 """
                 Raise a RuntimeError with the message "boom".
 
-                Raises:
+                Raises
+                ------
                     RuntimeError: Always raised with the message "boom".
 
                 """

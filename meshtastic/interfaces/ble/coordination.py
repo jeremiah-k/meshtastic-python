@@ -48,7 +48,8 @@ class _InertThread:
         """
         Prevent starting an inert thread returned after coordinator cleanup.
 
-        Raises:
+        Raises
+        ------
             RuntimeError: always raised to indicate this inert thread cannot be started.
 
         """
@@ -58,7 +59,8 @@ class _InertThread:
         """
         Indicates that this inert thread is not alive.
 
-        Returns:
+        Returns
+        -------
             bool: False always; inert threads cannot be alive.
 
         """
@@ -170,7 +172,8 @@ class ThreadCoordinator:
         This method emits a DeprecationWarning and returns a Thread-like object configured
         with the provided target, name, and options.
 
-        Returns:
+        Returns
+        -------
             ThreadLike: A Thread-like object configured with the provided target and
             name; may be an inert placeholder if the coordinator has already been
             cleaned up.
@@ -238,7 +241,8 @@ class ThreadCoordinator:
         """
         Retrieve the Event registered under the given name.
 
-        Returns:
+        Returns
+        -------
             Event or None: `Event` if the name is tracked, `None` otherwise.
 
         """
@@ -272,6 +276,7 @@ class ThreadCoordinator:
         If the thread is not registered or has already been started, this method does nothing. Logs a warning when an untracked thread is provided.
         """
         should_start = False
+        must_join_after_start = False
         with self._lock:
             if thread not in self._threads:
                 logger.warning(
@@ -294,6 +299,16 @@ class ThreadCoordinator:
             finally:
                 with self._lock:
                     self._pending_start.discard(thread)
+                    # cleanup() may have run after we released the lock but before
+                    # thread.start(); if so, join this now-started thread below so
+                    # we don't leave it detached from coordinator shutdown.
+                    must_join_after_start = self._cleaned_up
+            if (
+                must_join_after_start
+                and thread.is_alive()
+                and thread is not current_thread()
+            ):
+                thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
 
     def startThread(self, thread: ThreadLike) -> None:
         """
@@ -477,7 +492,8 @@ class ThreadCoordinator:
         """
         Compatibility wrapper for camelCase callers that waits for the named event and emits a deprecation warning.
 
-        Returns:
+        Returns
+        -------
             True if the event was set within the optional timeout, False otherwise.
 
         """
@@ -492,7 +508,8 @@ class ThreadCoordinator:
         """
         Clears the named tracked event if it exists and is currently set.
 
-        Returns:
+        Returns
+        -------
             True if the named event existed and was set (and was cleared), False otherwise.
 
         """

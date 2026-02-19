@@ -207,7 +207,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Enter a context for use with the with statement and return this MeshInterface instance.
 
-        Returns:
+        Returns
+        -------
             MeshInterface: This MeshInterface instance.
 
         """
@@ -1510,7 +1511,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Block until the radio configuration and the local node's configuration are available.
 
-        Raises:
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If the configuration is not received before the interface timeout.
 
         """
@@ -1527,7 +1529,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.
 
-        Raises:
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If waiting times out before an ACK/NAK is received.
 
         """
@@ -1560,7 +1563,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Wait for a telemetry response or until the configured timeout elapses.
 
-        Raises:
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If a telemetry response is not received before the configured timeout.
 
         """
@@ -1572,7 +1576,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Block until a position acknowledgment is received.
 
-        Raises:
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If waiting for the position times out.
 
         """
@@ -1594,7 +1599,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the stored node-info dictionary for the local node.
 
-        Returns:
+        Returns
+        -------
             dict: The local node's node-info entry from `nodesByNum`, or `None` if `myInfo`
             or `nodesByNum` is unset or the local node entry is missing.
 
@@ -1608,7 +1614,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the user information for the local node.
 
-        Returns:
+        Returns
+        -------
             user (dict): The local node's `user` dictionary, or `None` if no local node info or no `user` field is present.
 
         """
@@ -1621,7 +1628,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the local user's configured long name.
 
-        Returns:
+        Returns
+        -------
             The long name string if configured, `None` otherwise.
 
         """
@@ -1634,7 +1642,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the local node user's short name.
 
-        Returns:
+        Returns
+        -------
             Optional[str]: The user's `shortName` if present, `None` otherwise.
 
         """
@@ -1647,7 +1656,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Return the local node's public key if available.
 
-        Returns:
+        Returns
+        -------
             bytes: The local node's public key bytes if present, `None` otherwise.
 
         """
@@ -1660,7 +1670,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Retrieve the canned (predefined) message configured for the local node.
 
-        Returns:
+        Returns
+        -------
             str: The canned message text, or `None` if there is no local node or no canned message configured.
 
         """
@@ -1673,7 +1684,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the local node's ringtone name or identifier.
 
-        Returns:
+        Returns
+        -------
             The ringtone name or identifier as a string, or None if the local node or ringtone is unavailable.
 
         """
@@ -1710,10 +1722,12 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Generate a new 32-bit packet identifier combining a 10-bit monotonic counter with randomized upper bits.
 
-        Returns:
+        Returns
+        -------
             packet_id (int): New packet id where the low 10 bits are a monotonic counter and the remaining bits are randomized.
 
-        Raises:
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If `currentPacketId` is None and a packet id cannot be generated.
 
         """
@@ -1857,7 +1871,8 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Indicate whether the cached transmit queue has free slots.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if at least one free slot is available or the queue status is unknown, `False` otherwise.
 
         """
@@ -2234,10 +2249,12 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists.
 
-        Returns:
+        Returns
+        -------
             dict: The node info dictionary stored in self.nodesByNum for the given nodeNum.
 
-        Raises:
+        Raises
+        ------
             MeshInterface.MeshInterfaceError: If nodeNum is the broadcast node number or if the node database has not been initialized.
 
         """

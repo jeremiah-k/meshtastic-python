@@ -30,7 +30,8 @@ def root_dir() -> str:
     """
     Determine and ensure the root slog directory exists under the user data directory.
 
-    Returns:
+    Returns
+    -------
         path (str): Filesystem path to the "slogs" directory.
 
     """

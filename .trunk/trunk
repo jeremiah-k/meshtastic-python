@@ -105,6 +105,7 @@ check_os() {
 }
 
 check_os_flaky_tests() {
+  FLAKY_TESTS_PLATFORM=""
   if [[ ${KERNEL} == "darwin" ]]; then
     if [[ ${MACHINE} == "arm64" ]]; then
       FLAKY_TESTS_PLATFORM="aarch64-apple-darwin"

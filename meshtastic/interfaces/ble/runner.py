@@ -40,7 +40,8 @@ def get_zombie_runner_count() -> int:
     """
     Get the number of runner threads that failed to stop cleanly.
 
-    Returns:
+    Returns
+    -------
         int: Number of zombie runner threads currently recorded.
 
     """
@@ -54,7 +55,8 @@ def getZombieRunnerCount() -> int:
 
     Deprecated: use get_zombie_runner_count instead.
 
-    Returns:
+    Returns
+    -------
         int: Current number of zombie runner threads.
 
     """
@@ -111,7 +113,8 @@ class BLECoroutineRunner:
 
         On first creation, allocates the instance and sets its `_initialized` attribute to False.
 
-        Returns:
+        Returns
+        -------
             BLECoroutineRunner: The singleton runner instance.
 
         """
@@ -159,7 +162,8 @@ class BLECoroutineRunner:
         """
         Reentrant lock that protects the runner instance's internal state.
 
-        Returns:
+        Returns
+        -------
             threading.RLock: The instance's reentrant lock used to synchronize access to internal attributes.
 
         """
@@ -194,7 +198,8 @@ class BLECoroutineRunner:
         """
         Check if the runner's background thread and asyncio event loop are active.
 
-        Returns:
+        Returns
+        -------
             True if the background thread exists and is alive and the event loop exists and is running, False otherwise.
 
         """
@@ -240,7 +245,8 @@ class BLECoroutineRunner:
 
         Must be called while holding the instance lock (`_instance_lock`). If the runner is already running, returns `None`. If a startup is already in progress on another thread, returns that startup's readiness `threading.Event`. If this call initiates a new thread, starts a daemon thread and returns a new `threading.Event` that will be set when the loop is ready.
 
-        Returns:
+        Returns
+        -------
             threading.Event | None: Event that will be set when the runner's loop is ready, or `None` if the runner is already running.
 
         """
@@ -451,7 +457,8 @@ class BLECoroutineRunner:
 
         Deprecated: use run_coroutine_threadsafe instead.
 
-        Returns:
+        Returns
+        -------
             Future[T]: Future that will resolve to the coroutine's result.
 
         """
@@ -643,10 +650,12 @@ class BLECoroutineRunner:
         """
         Restart the singleton runner if it is not currently running.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the runner was restarted and the event loop became ready, `False` if the runner was already running.
 
-        Raises:
+        Raises
+        ------
             RuntimeError: If the event loop fails to become ready within the configured timeout.
 
         """

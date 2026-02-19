@@ -55,7 +55,8 @@ class ConnectionValidator:
         """
         Validate that a new BLE connection may be started.
 
-        Raises:
+        Raises
+        ------
             BLEError: If connections are not permitted. If the interface is closing the error message will be
                 "Cannot connect while interface is closing". If a connection is already established or in progress
                 the error message will be "Already connected or connection in progress".

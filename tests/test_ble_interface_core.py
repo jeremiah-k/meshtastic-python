@@ -75,7 +75,8 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
 
     If the installed bleak's BLEDevice constructor accepts `details` and/or `rssi`, this function supplies an empty dict for `details` and `0` for `rssi` so the returned instance is compatible across bleak versions.
 
-    Returns:
+    Returns
+    -------
         BLEDevice: A BLEDevice instance constructed with the arguments supported by the installed bleak version.
 
     """
@@ -113,7 +114,8 @@ class _FakeDiscoveryClient:
         """
         Enter the context for the fake discovery client and return the client instance.
 
-        Returns:
+        Returns
+        -------
             _FakeDiscoveryClient: The fake discovery client instance to be used inside the context manager.
 
         """
@@ -141,7 +143,8 @@ class _FakeDiscoveryClient:
         """
         Provide the preconfigured discovery result for use in tests.
 
-        Returns:
+        Returns
+        -------
             dict: The stored discovery result dictionary that this fake discovery client will return.
 
         """
@@ -213,7 +216,8 @@ def _assert_no_fallback(message: str) -> Callable[[Any, Optional[float]], Any]:
     """
     Create a callable that raises an AssertionError with the given message when invoked.
 
-    Returns:
+    Returns
+    -------
         callable: A function taking (coro, timeout=None) that always raises AssertionError(message).
 
     """
@@ -550,7 +554,8 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
 
         Also sets the `establish_called` event to signal completion.
 
-        Returns:
+        Returns
+        -------
             connected_client (DummyClient): A DummyClient instance representing the established connection.
 
         """
@@ -691,7 +696,8 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
         """
         Simulate a fatal receive-loop failure by always raising a RuntimeError.
 
-        Raises:
+        Raises
+        ------
             RuntimeError: Always raised to emulate an unexpected fatal error in the receive loop.
 
         """
@@ -706,7 +712,8 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
         """
         Record the disconnect invocation and stop the receive loop.
 
-        Returns:
+        Returns
+        -------
             `False` indicating the handler did not handle the disconnect.
 
         """
@@ -746,7 +753,8 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
         """
         Fail if thread creation is attempted after the interface has been closed.
 
-        Raises:
+        Raises
+        ------
             AssertionError: Always raised with the message "create_thread should not be called after close()".
 
         """
@@ -811,7 +819,8 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
             """
             Prevent creating the scanner when the guard condition fails.
 
-            Raises:
+            Raises
+            ------
                 AssertionError: Always raised with message "BleakScanner should not be instantiated when guard fails".
 
             """
@@ -1214,7 +1223,8 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
             """
             Raise the client's configured exception to simulate a failing GATT characteristic read.
 
-            Raises:
+            Raises
+            ------
                 Exception: An instance of `self.exception_type` constructed with the message "test".
 
             """
@@ -1273,7 +1283,8 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
 
             Increments self.read_count and then raises a BleakError with the message "transient error".
 
-            Raises:
+            Raises
+            ------
                 BleakError: Always raised with message "transient error".
 
             """
@@ -1315,7 +1326,8 @@ def test_log_notification_registration(monkeypatch):
             """
             Initialize the mock BLE client and its notification/characteristic tracking.
 
-            Attributes:
+            Attributes
+            ----------
                 start_notify_calls (list): Recorded calls to start_notify as tuples of the arguments passed.
                 has_characteristic_map (dict): Maps characteristic UUID strings to booleans indicating presence. Initially sets
                     LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
@@ -1498,7 +1510,8 @@ def test_reconnect_worker_successful_attempt():
 
             Sets initial state for test assertions.
 
-            Attributes:
+            Attributes
+            ----------
                 reset_called: True if reset() has been invoked.
                 _attempt_count: Number of connection attempts recorded.
 
@@ -1519,7 +1532,8 @@ def test_reconnect_worker_successful_attempt():
             """
             Get the number of reconnect attempts recorded by this policy.
 
-            Returns:
+            Returns
+            -------
                 int: The number of reconnect attempts recorded.
 
             """
@@ -1531,7 +1545,8 @@ def test_reconnect_worker_successful_attempt():
 
             Increments the internal attempt counter as a side effect.
 
-            Returns:
+            Returns
+            -------
                 tuple: (delay_seconds, continue_retry)
                     delay_seconds (float): Seconds to wait before the next attempt.
                     continue_retry (bool): `True` to perform another attempt, `False` otherwise.
@@ -1549,7 +1564,8 @@ def test_reconnect_worker_successful_attempt():
 
             Initializes lightweight test doubles and records connect invocations.
 
-            Attributes:
+            Attributes
+            ----------
                 _reconnect_policy (StubPolicy): Retry/backoff policy used by reconnect attempts.
                 _notification_manager (_ReconnectTestNotificationManager): Tracks cleanup and resubscribe requests.
                 _state_manager (types.SimpleNamespace): Exposes `is_closing` (bool) to simulate shutdown state.
@@ -1639,7 +1655,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             Initialize a stub reconnect policy for tests, resetting counters and flags.
 
-            Attributes:
+            Attributes
+            ----------
                 reset_called (bool): True if reset() has been invoked.
                 attempts (int): Number of connection attempts recorded.
 
@@ -1660,7 +1677,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             Report the number of reconnect attempts recorded by the policy.
 
-            Returns:
+            Returns
+            -------
                 int: The number of attempts recorded so far.
 
             """
@@ -1670,7 +1688,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             Return the delay before the next retry and whether another retry should be attempted.
 
-            Returns:
+            Returns
+            -------
                 tuple: (delay_seconds, continue_flag)
                     delay_seconds (float): Seconds to wait before the next retry (0.25).
                     continue_flag (bool): `True` if another retry should be attempted for the current policy cycle, `False` otherwise.
@@ -1686,7 +1705,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             Initialize a minimal stub interface used by reconnect tests.
 
-            Attributes:
+            Attributes
+            ----------
                 _reconnect_policy (LimitedPolicy): Policy controlling reconnect attempts.
                 _notification_manager (_ReconnectTestNotificationManager): Manages notification cleanup and resubscription.
                 _state_manager (SimpleNamespace): Runtime state flags (contains `is_closing`).
@@ -1718,7 +1738,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
             Increments the instance's `connect_attempts` counter and raises an error to emulate a failed connection.
 
-            Raises:
+            Raises
+            ------
                 self.BLEError: raised with message "boom".
 
             """

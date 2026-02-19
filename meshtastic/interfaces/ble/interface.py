@@ -291,7 +291,8 @@ class BLEInterface(MeshInterface):
 
         Includes the `address`, `debugOut` when set, and the boolean flags `noProto`, `noNodes`, and `auto_reconnect` only when they differ from their defaults.
 
-        Returns:
+        Returns
+        -------
             A string formatted as "BLEInterface(address=<address>, ...)" containing the present fields, e.g. "BLEInterface(address='AA:BB:CC:DD:EE:FF', debugOut='...', noProto=True)".
 
         """
@@ -322,7 +323,8 @@ class BLEInterface(MeshInterface):
         """
         Report whether the receive loop should run.
 
-        Returns:
+        Returns
+        -------
             `true` if the receive loop is desired and the interface is not closed, `false` otherwise.
 
         """
@@ -1048,7 +1050,8 @@ class BLEInterface(MeshInterface):
         """
         Retrieve the current BLE connection state.
 
-        Returns:
+        Returns
+        -------
             ConnectionState: The current connection state held by the internal state manager.
 
         """
@@ -1059,7 +1062,8 @@ class BLEInterface(MeshInterface):
         """
         Report whether the interface currently has an active BLE connection.
 
-        Returns:
+        Returns
+        -------
             True if a connection is active, False otherwise.
 
         """
@@ -1070,7 +1074,8 @@ class BLEInterface(MeshInterface):
         """
         Report whether the interface is shutting down or has already closed.
 
-        Returns:
+        Returns
+        -------
             `True` if the interface is shutting down or closed, `False` otherwise.
 
         """
@@ -1081,7 +1086,8 @@ class BLEInterface(MeshInterface):
         """
         Return whether the interface may start a new BLE connection.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if a new connection may be started, `False` otherwise.
 
         """
@@ -1513,7 +1519,8 @@ class BLEInterface(MeshInterface):
 
         Attempts repeated reads with backoff according to the empty-read policy; if a non-empty payload is read the suppressed-empty-read counter is reset. If all attempts return empty, a throttled warning is emitted.
 
-        Returns:
+        Returns
+        -------
             bytes: The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
 
         """
@@ -1538,7 +1545,8 @@ class BLEInterface(MeshInterface):
 
         If the policy permits another attempt, increments the internal retry counter and sleeps the configured delay to allow the caller to retry. If the policy indicates retries are exhausted, resets the counter and raises BLEInterface.BLEError(ERROR_READING_BLE).
 
-        Raises:
+        Raises
+        ------
             BLEInterface.BLEError: When the retry policy is exhausted and the read should be treated as persistent.
 
         """
@@ -1846,17 +1854,20 @@ class BLEInterface(MeshInterface):
                 mesh_pub.sendMessage(
                     "meshtastic.connection.status", interface=self, connected=connected
                 )
-            except Exception:
+            except (AttributeError, RuntimeError, ValueError):
                 logger.debug(
-                    "Error publishing %s status",
+                    "Error publishing %s status via mesh_pub.sendMessage",
                     "connect" if connected else "disconnect",
                     exc_info=True,
                 )
 
         try:
             publishingThread.queueWork(_publish_status)
-        except Exception:
-            logger.debug("Error queuing connection status publish", exc_info=True)
+        except (AttributeError, RuntimeError, ValueError):
+            logger.debug(
+                "Error queuing connection status publish via publishingThread.queueWork",
+                exc_info=True,
+            )
 
     def _disconnected(self) -> None:
         """
@@ -1895,7 +1906,8 @@ class BLEInterface(MeshInterface):
         """
         Get the current BLE connection state.
 
-        Returns:
+        Returns
+        -------
             connection_state (ConnectionState): The current BLE connection state.
 
         """
@@ -1906,7 +1918,8 @@ class BLEInterface(MeshInterface):
         """
         Indicate whether the interface currently has an active BLE connection.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the interface has an active BLE connection, `False` otherwise.
 
         """
@@ -1917,7 +1930,8 @@ class BLEInterface(MeshInterface):
         """
         Report whether the interface is shutting down or has already closed.
 
-        Returns:
+        Returns
+        -------
             bool: True if the interface is shutting down or closed, False otherwise.
 
         """
@@ -1928,7 +1942,8 @@ class BLEInterface(MeshInterface):
         """
         Report whether a new BLE connection can be initiated.
 
-        Returns:
+        Returns
+        -------
             `true` if a new connection may be started, `false` otherwise.
 
         """

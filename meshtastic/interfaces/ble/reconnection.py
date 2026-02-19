@@ -97,7 +97,11 @@ class ReconnectScheduler:
             self._reconnect_thread = thread
         # Start outside the lock: the reference is already set, so concurrent
         # schedulers will see a non-None _reconnect_thread and exit early.
-        self.thread_coordinator.start_thread(thread)
+        try:
+            self.thread_coordinator.start_thread(thread)
+        except Exception:
+            self.clear_thread_reference()
+            raise
         return True
 
     def clear_thread_reference(self) -> None:
@@ -218,11 +222,6 @@ class ReconnectWorker:
                         attempt_num,
                     )
                     interface.connect(interface.address)
-                    logger.info(
-                        "BLE auto-reconnect succeeded after %d attempts.",
-                        attempt_num,
-                    )
-                    return
                 except interface.BLEError as err:
                     if self._should_abort_reconnect(auto_reconnect, "BLEError"):
                         return
@@ -266,6 +265,12 @@ class ReconnectWorker:
                         "Unexpected error during auto-reconnect attempt %d",
                         attempt_num,
                     )
+                else:
+                    logger.info(
+                        "BLE auto-reconnect succeeded after %d attempts.",
+                        attempt_num,
+                    )
+                    return
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return

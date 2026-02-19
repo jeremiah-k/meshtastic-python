@@ -15,12 +15,17 @@ from bleak.exc import BleakDBusError, BleakError
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     BLEAK_VERSION,
+    ERROR_TIMEOUT,
     SERVICE_UUID,
     BLEConfig,
     _bleak_supports_connected_fallback,
     logger,
 )
-from meshtastic.interfaces.ble.utils import resolve_ble_module, sanitize_address
+from meshtastic.interfaces.ble.utils import (
+    resolve_ble_module,
+    sanitize_address,
+    with_timeout,
+)
 
 
 @lru_cache(maxsize=1)
@@ -28,7 +33,8 @@ def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
     """
     Determine whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
 
-    Returns:
+    Returns
+    -------
         Tuple[bool, bool]: (supports_details, supports_rssi) where the first element is True if the constructor accepts a `details` kwarg and the second is True if it accepts an `rssi` kwarg.
 
     """
@@ -260,17 +266,23 @@ class ConnectedStrategy(DiscoveryStrategy):
                 getter = backend.get_devices
                 # TODO: Replace this private backend access if bleak adds a public API for enumerating connected devices.
                 if inspect.iscoroutinefunction(getter):
-                    backend_devices = await BLEClient._with_timeout(
+                    backend_devices = await with_timeout(
                         getter(),
                         timeout,
                         "connected-device enumeration",
+                        timeout_error_factory=lambda label, timeout_secs: RuntimeError(
+                            ERROR_TIMEOUT.format(label, timeout_secs)
+                        ),
                     )
                 else:
                     loop = asyncio.get_running_loop()
-                    backend_devices = await BLEClient._with_timeout(
+                    backend_devices = await with_timeout(
                         loop.run_in_executor(None, getter),
                         timeout,
                         "connected-device enumeration",
+                        timeout_error_factory=lambda label, timeout_secs: RuntimeError(
+                            ERROR_TIMEOUT.format(label, timeout_secs)
+                        ),
                     )
 
                 target_candidates: List[BLEDevice] = []

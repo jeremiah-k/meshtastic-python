@@ -1,9 +1,12 @@
 """Utility functions for BLE operations."""
 
+import asyncio
 import importlib
 import time
 from types import ModuleType
-from typing import Optional
+from typing import Awaitable, Callable, Optional, TypeVar
+
+T = TypeVar("T")
 
 
 def sanitize_address(address: Optional[str]) -> Optional[str]:
@@ -46,13 +49,50 @@ def _sleep(delay: float) -> None:
     time.sleep(delay)
 
 
+async def with_timeout(
+    awaitable: Awaitable[T],
+    timeout: Optional[float],
+    label: str,
+    timeout_error_factory: Optional[Callable[[str, float], Exception]] = None,
+) -> T:
+    """
+    Await an awaitable with an optional timeout.
+
+    Parameters
+    ----------
+        awaitable (Awaitable[T]): Awaitable to run.
+        timeout (Optional[float]): Maximum seconds to wait; if None, wait indefinitely.
+        label (str): Short operation label used by timeout_error_factory.
+        timeout_error_factory (Optional[Callable[[str, float], Exception]]): Optional factory
+            used to map timeout to a specific exception type.
+
+    Returns
+    -------
+        T: The awaitable result.
+
+    Raises
+    ------
+        Exception: Raises asyncio.TimeoutError on timeout unless timeout_error_factory is supplied.
+
+    """
+    if timeout is None:
+        return await awaitable
+    try:
+        return await asyncio.wait_for(awaitable, timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        if timeout_error_factory is None:
+            raise
+        raise timeout_error_factory(label, timeout) from exc
+
+
 def resolve_ble_module() -> Optional[ModuleType]:
     """
     Locate the first available BLE module for the package.
 
     Attempts to import "meshtastic.interfaces.ble" then "meshtastic.ble_interface" in order and returns the first module that can be imported.
 
-    Returns:
+    Returns
+    -------
         The imported module as a ModuleType if found, `None` otherwise.
 
     """

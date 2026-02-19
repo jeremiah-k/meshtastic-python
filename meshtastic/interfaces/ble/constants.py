@@ -125,10 +125,31 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
     This is acceptable for version comparison purposes where we only care about
     the major.minor.patch components.
 
-    Returns:
+    Returns
+    -------
         tuple[int, int, int]: (major, minor, patch) extracted from the version string.
 
     """
+    # Prefer packaging.version when available (PEP 440-aware), with a regex
+    # fallback for minimal environments where packaging is unavailable.
+    try:
+        from packaging.version import (  # type: ignore[import-untyped]
+            InvalidVersion,
+            Version,
+        )
+
+        try:
+            parsed = Version(version_str or "0")
+            release = parsed.release
+            major = release[0] if len(release) > 0 else 0
+            minor = release[1] if len(release) > 1 else 0
+            patch = release[2] if len(release) > 2 else 0
+            return major, minor, patch
+        except InvalidVersion:
+            pass
+    except ImportError:
+        pass
+
     matches = re.findall(r"\d+", version_str or "")
     while len(matches) < 3:
         matches.append("0")
@@ -143,7 +164,8 @@ def _bleak_supports_connected_fallback() -> bool:
     """
     Report whether the installed Bleak version meets the minimum required version for the connected-device fallback.
 
-    Returns:
+    Returns
+    -------
         True if the installed Bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, False otherwise.
 
     """

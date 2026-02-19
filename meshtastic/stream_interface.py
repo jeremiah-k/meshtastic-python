@@ -168,7 +168,8 @@ class StreamInterface(MeshInterface):
         """
         Read up to the specified number of bytes from the configured underlying stream.
 
-        Returns:
+        Returns
+        -------
             `bytes` containing up to `length` bytes read from the stream, or `None` if no stream is configured.
 
         """

@@ -59,7 +59,8 @@ def quoteBooleans(a_string: str) -> str:
     Replaces occurrences of ": true" with ": 'true'" and ": false" with ": 'false'".
     Matching is case-sensitive and only affects those exact substrings.
 
-    Returns:
+    Returns
+    -------
         The modified string with quoted boolean tokens.
 
     """
@@ -72,7 +73,8 @@ def genPSK256() -> bytes:
     """
     Generate a 32-byte random preshared key.
 
-    Returns:
+    Returns
+    -------
         psk (bytes): 32 bytes of cryptographically secure random data to use as a PSK.
 
     """
@@ -170,7 +172,8 @@ def toStr(raw_value: Any) -> str:
 
     If `raw_value` is `bytes`, returns `"base64:"` followed by its base64 encoding; otherwise returns `str(raw_value)`.
 
-    Returns:
+    Returns
+    -------
         A string representation suitable for storing in configuration, e.g. `"base64:<data>"` for bytes.
 
     """
@@ -235,7 +238,8 @@ def fixme(message: str) -> NoReturn:
     """
     Raise a FixmeError with a prefixed message indicating a required fix.
 
-    Raises:
+    Raises
+    ------
         FixmeError: Always raised with the message prefixed by "FIXME: ".
 
     """
@@ -637,7 +641,8 @@ def channel_hash(data: bytes) -> int:
     """
     Compute an XOR-based hash of the given byte sequence for channel selection.
 
-    Returns:
+    Returns
+    -------
         int: Integer hash produced by XORing all bytes in `data`.
 
     """
@@ -683,7 +688,8 @@ def hexstr(barray: bytes) -> str:
     """
     Convert a byte sequence to a colon-separated lowercase hex string.
 
-    Returns:
+    Returns
+    -------
         str: Colon-separated two-digit lowercase hexadecimal pairs representing the input bytes (e.g., "01:ab:ff").
 
     """
@@ -694,7 +700,8 @@ def ipstr(barray: bytes) -> str:
     r"""
     Produce a dotted-decimal IPv4-style string representation of a byte sequence.
 
-    Returns:
+    Returns
+    -------
         A string of decimal octets separated by dots, one for each byte in `barray` (e.g., b'\xc0\xa8\x01\x01' -> "192.168.1.1").
 
     """
@@ -777,7 +784,8 @@ def detect_supported_devices() -> Set:
     known supported vendor IDs. Returns a set of supported device descriptors for any matching devices;
     returns an empty set if none are found.
 
-    Returns:
+    Returns
+    -------
         Set: A set of supported device entries (one per matching supported device).
 
     """
@@ -926,7 +934,8 @@ def is_windows11() -> bool:
     """
     Determine whether the running OS is Windows 11.
 
-    Returns:
+    Returns
+    -------
         `true` if the OS is Windows and the system version patch is 22000 or greater, `false` otherwise (including when detection fails).
 
     """
@@ -948,7 +957,8 @@ def get_unique_vendor_ids() -> Set[str]:
     """
     Collect unique USB vendor ID strings from the module's supported_devices.
 
-    Returns:
+    Returns
+    -------
         Set[str]: A set of vendor ID strings in hex form (for example, "0x239A").
 
     """
@@ -1118,7 +1128,8 @@ def check_if_newer_version() -> Optional[str]:
     to the currently active version. Returns the PyPI version string when it is newer;
     returns None if no newer version is available or if the check fails.
 
-    Returns:
+    Returns
+    -------
         pypi_version (Optional[str]): The newer PyPI version string if available, `None` otherwise.
 
     """

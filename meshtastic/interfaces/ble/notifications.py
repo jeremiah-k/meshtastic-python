@@ -159,7 +159,8 @@ class NotificationManager:
         """
         Report the number of active BLE notification subscriptions being tracked.
 
-        Returns:
+        Returns
+        -------
             int: The number of active subscriptions currently tracked.
 
         """
@@ -172,7 +173,8 @@ class NotificationManager:
         """
         Get the most recently registered callback for a BLE characteristic.
 
-        Returns:
+        Returns
+        -------
             The callback for the given characteristic, or `None` if no callback is registered.
 
         """

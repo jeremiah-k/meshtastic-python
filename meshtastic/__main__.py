@@ -145,7 +145,8 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     """
     Determine whether the local node has the channel at the given index enabled.
 
-    Returns:
+    Returns
+    -------
         `True` if the channel exists and its role is not DISABLED, `False` otherwise.
 
     """
@@ -262,7 +263,8 @@ def splitCompoundName(comp_name: str) -> List[str]:
     If `comp_name` contains at least one dot, returns the list of segments produced by splitting
     on '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
 
-    Returns:
+    Returns
+    -------
         List[str]: The name segments, or `[comp_name, comp_name]` when no dot is present.
 
     """

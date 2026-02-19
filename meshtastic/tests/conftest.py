@@ -1,7 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
-from typing import Callable, ClassVar, List, Type
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type
 from unittest.mock import MagicMock
 
 import pytest
@@ -36,18 +36,28 @@ class FakeTimer:
 
     created: ClassVar[List["FakeTimer"]] = []
 
-    def __init__(self, interval: float, function: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        interval: float,
+        function: Callable[..., Any],
+        args: Optional[Tuple[Any, ...]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """
         Create a FakeTimer and record it in this class's `created` list for test inspection.
 
         Parameters
         ----------
             interval (float): Time interval in seconds that the timer represents.
-            function (Callable[[], None]): Callback that would be invoked when a real timer fires.
+            function (Callable[..., Any]): Callback that would be invoked when a real timer fires.
+            args (Optional[Tuple[Any, ...]]): Optional positional arguments passed to callback.
+            kwargs (Optional[Dict[str, Any]]): Optional keyword arguments passed to callback.
 
         """
         self.interval = interval
         self.function = function
+        self.args = args or ()
+        self.kwargs = kwargs or {}
         self.daemon = False
         self.started = False
         self.cancelled = False
@@ -76,7 +86,8 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
 
     Installs a per-fixture FakeTimer subclass in place of threading.Timer so tests can control timer behavior with isolated class-level state.
 
-    Returns:
+    Returns
+    -------
         The FakeTimer class that was installed.
 
     """
@@ -112,7 +123,8 @@ def iface_with_nodes():
     (numeric id 2475227164). `myInfo` is a MagicMock and its `my_node_num` attribute is set to
     2475227164.
 
-    Returns:
+    Returns
+    -------
         MeshInterface: Instance with prepared node dictionaries and a mocked `myInfo`.
 
     """
@@ -166,13 +178,14 @@ def mock_serial_interface() -> MagicMock:
     - localNode.getChannelByName returns None
     - myInfo.max_channels is set to 8
 
-    Returns:
+    Returns
+    -------
         MagicMock: A mock acting like a SerialInterface with the above attributes.
 
     """
     mock_iface = MagicMock(spec=SerialInterface)
-    mock_iface.localNode = MagicMock()
+    mock_iface.localNode = MagicMock(spec=["getChannelByName"])
     mock_iface.localNode.getChannelByName.return_value = None
-    mock_iface.myInfo = MagicMock()
+    mock_iface.myInfo = MagicMock(spec=["max_channels"])
     mock_iface.myInfo.max_channels = 8
     return mock_iface

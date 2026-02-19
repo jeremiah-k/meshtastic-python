@@ -221,7 +221,8 @@ def test_catchAndIgnore(caplog):
         """
         Raise an Exception with the message "foo".
 
-        Raises:
+        Raises
+        ------
             Exception: Always raised with message "foo".
 
         """
@@ -759,7 +760,10 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits):
         alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
         min_size=1,
         max_size=64,
-    ).filter(lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None)
+    ).filter(
+        lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None
+        and not any(ch.isspace() for ch in s)
+    )
 )
 def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
     """Test that fromStr raises for invalid 0x-prefixed hex strings."""

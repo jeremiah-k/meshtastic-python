@@ -111,7 +111,7 @@ class BLEErrorHandler:
             func()
         except (SystemExit, KeyboardInterrupt):
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cleanup must never raise
             logger.debug("Error during %s: %s", cleanup_name, e)
             return False
         else:

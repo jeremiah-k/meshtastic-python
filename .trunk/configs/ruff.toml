@@ -3,9 +3,10 @@
 select = ["B", "D3", "D4", "E", "F"]
 
 # Never enforce `E501` (line length violations). This should be handled by formatters.
-# D417 is intentionally disabled for this codebase because many legacy/Numpy-style
-# docstrings document behavior without per-argument blocks.
-ignore = ["E501", "D417"]
+ignore = ["E501"]
+
+[lint.pydocstyle]
+convention = "numpy"
 
 # Generated protobuf modules rely on import side effects during descriptor loading.
 # BLE interface package has relaxed docstring requirements.

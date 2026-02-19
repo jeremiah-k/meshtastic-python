@@ -14,7 +14,8 @@ class _RandomLike(Protocol):
         """
         Produce a pseudo-random floating-point value in the half-open interval [0.0, 1.0).
 
-        Returns:
+        Returns
+        -------
             float: A value x such that 0.0 <= x < 1.0.
 
         """
@@ -139,7 +140,8 @@ class ReconnectPolicy:
         Internal helper: compute the jittered backoff delay for the current attempt, indicate whether
         another retry is permitted, and then advance the internal attempt counter.
 
-        Returns:
+        Returns
+        -------
             delay (float): Computed jittered backoff delay for the current attempt.
             should_retry (bool): `True` if another retry is permitted, `False` otherwise.
 
@@ -153,7 +155,8 @@ class ReconnectPolicy:
         """
         Internal helper: return the number of attempts performed by this policy.
 
-        Returns:
+        Returns
+        -------
             int: The number of attempts performed so far.
 
         """
@@ -263,7 +266,8 @@ class ReconnectPolicy:
         """
         Compute and advance to the next retry attempt, returning the delay and whether another retry is permitted.
 
-        Returns:
+        Returns
+        -------
             tuple: (delay, should_retry) where `delay` is the computed backoff delay in seconds (float) and `should_retry` is `True` if another retry is allowed, `False` otherwise.
 
         """
@@ -273,7 +277,8 @@ class ReconnectPolicy:
         """
         Return the number of attempts performed by this policy.
 
-        Returns:
+        Returns
+        -------
             attempt_count (int): The number of attempts already performed.
 
         """
@@ -311,7 +316,8 @@ class _PolicyDescriptor:
 
         Each access invokes the named factory on the owner class and returns a new ReconnectPolicy instance to avoid shared state.
 
-        Returns:
+        Returns
+        -------
             ReconnectPolicy: A new policy instance created by the owner's factory method.
 
         """
@@ -336,7 +342,8 @@ class RetryPolicy:
 
         The policy uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to 1.0 second, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
 
-        Returns:
+        Returns
+        -------
             ReconnectPolicy: A ReconnectPolicy configured for empty-read retries.
 
         """
@@ -353,7 +360,8 @@ class RetryPolicy:
         """
         ReconnectPolicy tuned for transient BLE read errors.
 
-        Returns:
+        Returns
+        -------
             ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay 2.0, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
 
         """
@@ -370,7 +378,8 @@ class RetryPolicy:
         """
         Create a ReconnectPolicy configured for automatic BLE reconnection.
 
-        Returns:
+        Returns
+        -------
             ReconnectPolicy: Configured using BLEConfig AUTO_RECONNECT_* values with unlimited retries.
 
         """

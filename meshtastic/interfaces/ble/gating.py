@@ -181,7 +181,8 @@ def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
     """
     Return a weak reference to `owner` if it is provided and supports weak references.
 
-    Returns:
+    Returns
+    -------
         Optional[weakref.ReferenceType[Any]]: A weak reference to `owner`, or `None` if `owner` is `None` or not weak-referenceable.
 
     """

@@ -83,7 +83,8 @@ class Node:
         """
         Return a developer-oriented string representing the Node including its interface, node number, and active non-default flags.
 
-        Returns:
+        Returns
+        -------
             str: A debug-friendly representation containing the iface repr, the node number
                 formatted as eight-hex digits (prefixed with '0x'), and any non-default flags such
                 as `noProto` or a non-default `timeout`.
@@ -271,7 +272,8 @@ class Node:
                 config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
                     camel_to_snake(field)
                 )
-                config_values = getattr(self.moduleConfig, config_type.name)
+                if config_type is not None:
+                    config_values = getattr(self.moduleConfig, config_type.name)
             else:
                 print(
                     "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
@@ -326,7 +328,8 @@ class Node:
         """
         Disable encryption on the primary channel and write the updated channel to the device.
 
-        Raises:
+        Raises
+        ------
             MeshInterfaceError: if channel data has not been loaded.
 
         """
@@ -553,7 +556,8 @@ class Node:
         """
         Find a channel whose settings.name exactly matches the provided name.
 
-        Returns:
+        Returns
+        -------
             The matching channel object if found, `None` otherwise.
 
         """
@@ -566,7 +570,8 @@ class Node:
         """
         Return the first channel whose role is DISABLED.
 
-        Returns:
+        Returns
+        -------
             channel (Channel | None): The first disabled Channel object if present, otherwise `None`.
 
         """
@@ -581,7 +586,8 @@ class Node:
         """
         Get the index of the channel named "admin", or 0 if no such channel exists.
 
-        Returns:
+        Returns
+        -------
             int: Index of the admin channel, or 0 if no channel with name "admin" is present.
 
         """
@@ -819,7 +825,8 @@ class Node:
         This may block while waiting for the device to respond. If the External Notification
         module is excluded by firmware, no request is made and the method returns None.
 
-        Returns:
+        Returns
+        -------
             ringtone (str | None): The complete ringtone string if available, `None` if the module is not present or ringtone is unavailable.
 
         """
@@ -851,13 +858,12 @@ class Node:
 
     def set_ringtone(self, ringtone):
         """
-        Set the node's ringtone by sending one or more admin-message chunks.
+        Set the node's ringtone.
 
         Validates that the External Notification module is available and that the ringtone length
-        is 230 characters or fewer; ensures an admin session key, then sends the ringtone in
-        230-character chunks. Observably this sends an AdminMessage for the first chunk and returns
-        that send result; returns None if the External Notification module is not available. For
-        remote nodes the send waits for an ACK/NAK response.
+        is 230 characters or fewer; ensures an admin session key, then sends one admin message.
+        Returns None if the External Notification module is not available. For remote nodes the
+        send waits for an ACK/NAK response.
 
         Parameters
         ----------
@@ -883,26 +889,16 @@ class Node:
                 "Warning: The ringtone must be less than 230 characters."
             )
         self.ensureSessionKey()
-        # split into chunks
-        chunks = []
-        chunks_size = 230
-        for i in range(0, len(ringtone), chunks_size):
-            chunks.append(ringtone[i : i + chunks_size])
+        p = admin_pb2.AdminMessage()
+        p.set_ringtone_message = ringtone
 
-        # for each chunk, send a message to set the values
-        send_result = None
-        for i, chunk in enumerate(chunks):
-            p = admin_pb2.AdminMessage()
-            p.set_ringtone_message = chunk
-
-            logger.debug(f"Setting ringtone '{chunk}' part {i + 1}")
-            # If sending to a remote node, wait for ACK/NAK
-            if self == self.iface.localNode:
-                onResponse = None
-            else:
-                onResponse = self.onAckNak
-            send_result = self._sendAdmin(p, onResponse=onResponse)
-        return send_result
+        logger.debug("Setting ringtone '%s'", ringtone)
+        # If sending to a remote node, wait for ACK/NAK
+        if self == self.iface.localNode:
+            onResponse = None
+        else:
+            onResponse = self.onAckNak
+        return self._sendAdmin(p, onResponse=onResponse)
 
     def onResponseRequestCannedMessagePluginMessageMessages(self, p):
         """
@@ -942,7 +938,8 @@ class Node:
 
         Blocks until the device responds when a request is made.
 
-        Returns:
+        Returns
+        -------
             str: The assembled canned message, or `None` if the canned message module is unavailable.
 
         """
@@ -975,12 +972,12 @@ class Node:
 
     def set_canned_message(self, message):
         """
-        Set the device's canned message by sending it in up to 200-character chunks.
+        Set the device's canned message.
 
         If the canned-message module is not available on the device, the method logs a warning and
         returns None. If the provided message is longer than 200 characters, a MeshInterfaceError
-        is raised. The message is split into 200-character chunks and the first chunk is sent
-        (waiting for an ACK/NAK when targeting a remote node).
+        is raised. The message is sent with one admin request (waiting for an ACK/NAK when
+        targeting a remote node).
 
         Parameters
         ----------
@@ -1004,26 +1001,16 @@ class Node:
                 "The canned message must be less than 200 characters."
             )
         self.ensureSessionKey()
-        # split into chunks
-        chunks = []
-        chunks_size = 200
-        for i in range(0, len(message), chunks_size):
-            chunks.append(message[i : i + chunks_size])
+        p = admin_pb2.AdminMessage()
+        p.set_canned_message_module_messages = message
 
-        # for each chunk, send a message to set the values
-        send_result = None
-        for i, chunk in enumerate(chunks):
-            p = admin_pb2.AdminMessage()
-            p.set_canned_message_module_messages = chunk
-
-            logger.debug(f"Setting canned message '{chunk}' part {i + 1}")
-            # If sending to a remote node, wait for ACK/NAK
-            if self == self.iface.localNode:
-                onResponse = None
-            else:
-                onResponse = self.onAckNak
-            send_result = self._sendAdmin(p, onResponse=onResponse)
-        return send_result
+        logger.debug("Setting canned message '%s'", message)
+        # If sending to a remote node, wait for ACK/NAK
+        if self == self.iface.localNode:
+            onResponse = None
+        else:
+            onResponse = self.onAckNak
+        return self._sendAdmin(p, onResponse=onResponse)
 
     def exitSimulator(self):
         """
@@ -1653,7 +1640,8 @@ class Node:
         """
         Provide channel entries with index, role, name, and a computed hash.
 
-        Returns:
+        Returns
+        -------
             list[dict]: A list of dictionaries, each with keys:
                 - "index" (int): Channel index.
                 - "role" (str): Channel role name.

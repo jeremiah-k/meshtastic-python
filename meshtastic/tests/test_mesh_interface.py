@@ -731,7 +731,7 @@ def test_getOrCreateByNum_not_found(iface_with_nodes):
     iface.myInfo.my_node_num = 2475227164
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface._getOrCreateByNum(0xFFFFFFFF)
-    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+    assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
 
 
 @pytest.mark.unit
@@ -797,7 +797,7 @@ def test_waitForConfig():
     iface._timeout = Timeout(1)
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface.waitForConfig()
-    assert pytest_wrapped_e.type == MeshInterface.MeshInterfaceError
+    assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
     assert "Timed out waiting for interface config" in str(pytest_wrapped_e.value)
 
 

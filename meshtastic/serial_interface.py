@@ -118,13 +118,14 @@ class SerialInterface(StreamInterface):
         attrs[2] = attrs[2] & ~termios.HUPCL
         termios.tcsetattr(f, termios.TCSAFLUSH, attrs)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Return a concise, machine-readable representation of the SerialInterface instance.
 
         Includes the device path and, when present, the debug output target. Also notes the `noProto` and `noNodes` flags when they are true.
 
-        Returns:
+        Returns
+        -------
             str: A representation string of the form "SerialInterface(devPath=..., debugOut=...,
                 noProto=True, noNodes=True)" with only the applicable fields included.
 
@@ -163,7 +164,8 @@ class SerialInterface(StreamInterface):
         """
         Return the SerialInterface instance for use in a with-statement.
 
-        Returns:
+        Returns
+        -------
             SerialInterface: The same SerialInterface instance.
 
         """

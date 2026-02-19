@@ -94,7 +94,8 @@ class BLEStateManager:
         """
         Access the reentrant lock used to serialize BLE state transitions.
 
-        Returns:
+        Returns
+        -------
             RLock: The internal reentrant lock protecting state changes.
 
         """
@@ -105,7 +106,8 @@ class BLEStateManager:
         """
         Alias exposing the state lock using a camelCase name for compatibility.
 
-        Returns:
+        Returns
+        -------
             RLock: The internal reentrant lock protecting state changes.
 
         """
@@ -118,7 +120,8 @@ class BLEStateManager:
 
         This value is read while holding the manager's internal reentrant lock to ensure thread safety.
 
-        Returns:
+        Returns
+        -------
             ConnectionState: The current ConnectionState.
 
         """
@@ -130,7 +133,8 @@ class BLEStateManager:
         """
         Report whether the BLE interface is in the CONNECTED state.
 
-        Returns:
+        Returns
+        -------
             True if the current connection state is ConnectionState.CONNECTED,
             False otherwise.
 
@@ -142,7 +146,8 @@ class BLEStateManager:
         """
         Indicates whether the BLE interface is in the DISCONNECTING state.
 
-        Returns:
+        Returns
+        -------
             True if the current connection state is DISCONNECTING, False otherwise.
 
         """
@@ -153,7 +158,8 @@ class BLEStateManager:
         """
         Whether a new BLE connection may be initiated.
 
-        Returns:
+        Returns
+        -------
             True if the current state is DISCONNECTED or ERROR, False otherwise.
 
         """
@@ -164,7 +170,8 @@ class BLEStateManager:
         """
         Report whether the BLE interface is in a connecting state.
 
-        Returns:
+        Returns
+        -------
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
 
         """
@@ -274,7 +281,8 @@ class BLEStateManager:
         transition_to() permits a no-op when already disconnected and
         _VALID_TRANSITIONS allows all state -> DISCONNECTED transitions.
 
-        Returns:
+        Returns
+        -------
             bool: Always True.
 
         """
@@ -289,7 +297,8 @@ class BLEStateManager:
         """
         Indicates whether the BLE connection is currently CONNECTED.
 
-        Returns:
+        Returns
+        -------
             True if the current state is CONNECTED, False otherwise.
 
         """
@@ -300,7 +309,8 @@ class BLEStateManager:
         """
         Whether the BLE connection is in the disconnecting state.
 
-        Returns:
+        Returns
+        -------
             True if the current state is DISCONNECTING, False otherwise.
 
         """
@@ -311,7 +321,8 @@ class BLEStateManager:
         """
         Indicates whether a connection may be initiated from the current state.
 
-        Returns:
+        Returns
+        -------
             `True` if the current state is DISCONNECTED or ERROR, `False` otherwise.
 
         """
@@ -322,7 +333,8 @@ class BLEStateManager:
         """
         CamelCase alias for the is_connecting property.
 
-        Returns:
+        Returns
+        -------
             `True` if the current state is CONNECTING or RECONNECTING, `False` otherwise.
 
         """
@@ -333,7 +345,8 @@ class BLEStateManager:
         """
         Alias exposing the active connection status using a camelCase name for compatibility.
 
-        Returns:
+        Returns
+        -------
             True if the state is CONNECTING, RECONNECTING, or CONNECTED, False otherwise.
 
         """
@@ -376,7 +389,8 @@ class BLEStateManager:
         """
         Force the manager's state to DISCONNECTED.
 
-        Returns:
+        Returns
+        -------
             bool: `True` if the resulting state is DISCONNECTED (either by transition or already disconnected), `False` otherwise.
 
         """
