@@ -37,7 +37,7 @@ class FakeTimer:
 
     def __init__(self, interval: float, function: Callable[[], None]) -> None:
         """
-        Create a FakeTimer and record it in FakeTimer.created for test inspection.
+        Create a FakeTimer and record it in this class's `created` list for test inspection.
 
         Parameters
         ----------
@@ -50,12 +50,12 @@ class FakeTimer:
         self.daemon = False
         self.started = False
         self.cancelled = False
-        FakeTimer.created.append(self)
+        type(self).created.append(self)
 
     def start(self) -> None:
         """Mark the FakeTimer as started.
 
-        The timer's callback is not executed automatically. To invoke the callback in a test, call `FakeTimer.created[i].function()` directly.
+        The timer's callback is not executed automatically. To invoke the callback in a test, call `type(timer).created[i].function()` directly.
         """
         self.started = True
 
@@ -79,9 +79,15 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
         The FakeTimer class that was installed.
 
     """
-    FakeTimer.created.clear()
-    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimer)
-    return FakeTimer
+
+    class FakeTimerForTest(FakeTimer):
+        """Per-fixture timer class with isolated created-state."""
+
+        created: ClassVar[List["FakeTimer"]] = []
+
+    FakeTimerForTest.created.clear()
+    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimerForTest)
+    return FakeTimerForTest
 
 
 @pytest.fixture
@@ -92,7 +98,6 @@ def reset_mt_config():
     Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns
     the new parser to mt_config.parser so tests start with a clean configuration.
     """
-    parser = None
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.reset()
     mt_config.parser = parser

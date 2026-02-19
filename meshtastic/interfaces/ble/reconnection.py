@@ -72,14 +72,14 @@ class ReconnectScheduler:
         """
         if not auto_reconnect:
             return False
-        # Use state manager instead of boolean flag
-        if self.state_manager.is_closing or not self.state_manager.can_connect:
-            logger.debug(
-                "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
-            )
-            return False
 
         with self.state_lock:
+            # Use state manager instead of boolean flag
+            if self.state_manager.is_closing or not self.state_manager.can_connect:
+                logger.debug(
+                    "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
+                )
+                return False
             if self._reconnect_thread and self._reconnect_thread.is_alive():
                 logger.debug(
                     "Auto-reconnect already in progress; skipping new attempt."

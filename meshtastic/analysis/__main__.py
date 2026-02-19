@@ -22,11 +22,19 @@ pd.options.mode.copy_on_write = True
 
 
 def to_pmon_names(arr) -> List[str]:
-    """Convert the power monitor state numbers to their corresponding names.
+    """
+    Convert power-monitor state bitmasks to their corresponding enum names.
 
-    arr (list): List of power monitor state numbers.
+    Parameters
+    ----------
+    arr : list
+        List of power monitor state numbers.
 
-    Returns the List of corresponding power monitor state names.
+    Returns
+    -------
+    List[str]
+        Corresponding power monitor state names.
+
     """
 
     def to_pmon_name(n):
@@ -48,11 +56,13 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 
     Parameters
     ----------
-        filepath (str): Path to the Feather file.
+    filepath : str
+        Path to the Feather file.
 
     Returns
     -------
-        pd.DataFrame: DataFrame with column dtypes mapped to pandas nullable dtypes where applicable.
+    pd.DataFrame
+        DataFrame with column dtypes mapped to pandas nullable dtypes where applicable.
 
     """
     # per https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
@@ -84,12 +94,14 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
 
     Parameters
     ----------
-        dslog (pd.DataFrame): Slog DataFrame containing a 'pm_mask' column and a 'time' column.
+    dslog : pd.DataFrame
+        Slog DataFrame containing a ``pm_mask`` column and a ``time`` column.
 
     Returns
     -------
-        pd.DataFrame: A DataFrame with rows where one or more power monitors transitioned to the raised state.
-        Columns are 'time' and 'pm_raises' (a list of raised power-monitor names for that timestamp).
+    pd.DataFrame
+        Rows where one or more power monitors transitioned to the raised state.
+        Columns are ``time`` and ``pm_raises`` (a list of raised power-monitor names).
 
     """
     pmon_events = dslog[dslog["pm_mask"].notnull()]
@@ -125,11 +137,19 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_board_info(dslog: pd.DataFrame) -> tuple:
-    """Get the board information from the slog DataFrame.
+    """
+    Get board metadata from the slog DataFrame.
 
-    dslog (pd.DataFrame): The slog DataFrame.
+    Parameters
+    ----------
+    dslog : pd.DataFrame
+        Slog DataFrame.
 
-    Returns a tuple containing the board ID and software version.
+    Returns
+    -------
+    tuple
+        Tuple containing the board ID and software version.
+
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     sw_version = board_info.iloc[0]["sw_version"]
@@ -138,7 +158,15 @@ def get_board_info(dslog: pd.DataFrame) -> tuple:
 
 
 def create_argparser() -> argparse.ArgumentParser:
-    """Create the argument parser for the script."""
+    """
+    Create the command-line argument parser for analysis tools.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        Configured argument parser instance.
+
+    """
     parser = argparse.ArgumentParser(description="Meshtastic power analysis tools")
     group = parser
     group.add_argument(
@@ -155,11 +183,19 @@ def create_argparser() -> argparse.ArgumentParser:
 
 
 def create_dash(slog_path: str) -> Dash:
-    """Create a Dash application for visualizing power consumption data.
+    """
+    Create a Dash application for visualizing power-consumption data.
 
-    slog_path (str): Path to the slog directory.
+    Parameters
+    ----------
+    slog_path : str
+        Path to the slog directory.
 
-    Returns the Dash application.
+    Returns
+    -------
+    Dash
+        Configured Dash application instance.
+
     """
     app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 

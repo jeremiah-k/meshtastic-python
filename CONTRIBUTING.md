@@ -40,4 +40,4 @@ poetry run pytest --cov=meshtastic --cov-report=xml
   - linux checks (linux docker): `act --matrix "python-version:3.12"`
   - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:3.12"`
 
-For more commands see [CI workflow](https://github.com/meshtastic/python/blob/master/.github/workflows/ci.yml)
+For more commands see [CI workflow](.github/workflows/ci.yml)

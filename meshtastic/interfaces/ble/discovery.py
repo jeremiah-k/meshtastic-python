@@ -413,6 +413,8 @@ class DiscoveryManager:
             # Accept BLEClient instances or any object with the required interface
             # (duck typing allows test fixtures while still catching errors)
             if not isinstance(self._client, BLEClient):
+                # Duck-typed discovery clients must support scan + fallback operations:
+                # discover(), async_await(), and context manager protocol (__enter__/__exit__).
                 required_attrs = (
                     "discover",
                     "async_await",

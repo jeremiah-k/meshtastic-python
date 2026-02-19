@@ -25,7 +25,7 @@ class StreamInterface(MeshInterface):
     class StreamInterfaceError(MeshInterface.MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
-        DEFAULT_MSG: str = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
+        DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
 
         def __init__(self, message: str = DEFAULT_MSG) -> None:
             super().__init__(message)

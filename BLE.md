@@ -28,6 +28,7 @@ When code paths need multiple BLE locks, always acquire in this order:
 ```python
 from meshtastic.interfaces.ble import BLEInterface
 from pubsub import pub
+import time
 
 # Subscribe BEFORE constructing BLEInterface to ensure early packets aren't missed
 # BLEInterface automatically attempts connection during construction
@@ -94,7 +95,6 @@ iface = BLEInterface(address="DD:DD:13:27:74:29")
 
 try:
     # Keep your application alive; work is driven by callbacks
-    import time
     while True:
         time.sleep(1)
 except KeyboardInterrupt:

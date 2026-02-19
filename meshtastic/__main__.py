@@ -816,7 +816,7 @@ def onConnected(interface: MeshInterface) -> None:
             # Handle the int/float/bool arguments
             last_pref: Optional[List[str]] = None
             fields: Set[str] = set()
-            found = False
+            any_found = False
             for pref_item in args.set:
                 if pref_item is None or len(pref_item) < 2:
                     continue
@@ -832,10 +832,11 @@ def onConnected(interface: MeshInterface) -> None:
                             )
                         found = setPref(config, pref_item[0], pref_item[1])
                         if found:
+                            any_found = True
                             fields.add(field)
                             break
 
-            if found:
+            if any_found:
                 print("Writing modified preferences to device")
                 if len(fields) > 1:
                     print("Using a configuration transaction")

@@ -5,7 +5,7 @@ import sys
 import time
 import types
 from io import TextIOWrapper
-from typing import List, Optional
+from typing import List, Optional, Type
 
 import serial  # type: ignore[import-untyped]
 
@@ -41,6 +41,7 @@ class SerialInterface(StreamInterface):
             connectNow (bool): If True, perform connection/setup actions immediately after opening the serial stream.
             noNodes (bool): If True, disable node discovery/management.
             timeout (float): Time in seconds to wait for replies or operations.
+
         """
         self.noProto = noProto
         self.stream: Optional[serial.Serial] = None  # Initialize early for safe cleanup
@@ -59,13 +60,15 @@ class SerialInterface(StreamInterface):
                     self,
                     debugOut=debugOut,
                     noProto=noProto,
-                    connectNow=False,
+                    connectNow=connectNow,
                     noNodes=noNodes,
                     timeout=timeout,
                 )
                 return
             elif len(ports) > 1:
-                message: str = "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
+                message: str = (
+                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
+                )
                 message += f"  Ports detected:{ports}"
                 meshtastic.util.our_exit(message)
             else:
@@ -168,7 +171,7 @@ class SerialInterface(StreamInterface):
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
+        exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException],
         exc_tb: Optional[types.TracebackType],
     ) -> None:

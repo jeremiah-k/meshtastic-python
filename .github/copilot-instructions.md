@@ -63,8 +63,8 @@ protobufs/            # Protocol Buffer source definitions
 ### Type Annotations
 
 - Add type hints to all new code
-- Use `Optional[T]` for nullable types (consistent with existing codebase); `X | None` is also acceptable in new code
-- Use built-in generics (`dict[K, V]`, `list[T]`, `tuple[T, ...]`) instead of `typing.Dict`/`List`/`Tuple` — these are deprecated since Python 3.9
+- Prefer `X | None` for nullable types in new code; use `Optional[T]` only when editing older code that already follows that style
+- Use built-in generics (`dict[K, V]`, `list[T]`, `tuple[T, ...]`) instead of `typing.Dict`/`List`/`Tuple` — these are deprecated since Python 3.9; consider enforcing this with a follow-up lint/mypy rule or a targeted migration
 - Protobuf types are in `meshtastic.protobuf.*_pb2` modules
 
 ### Naming Conventions

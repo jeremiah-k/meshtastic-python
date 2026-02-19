@@ -1458,7 +1458,7 @@ def test_set_favorite(favorite):
 
     Parameters
     ----------
-        favorite (int): Node ID to mark as favorite.
+        favorite (str | int): Node ID to mark as favorite.
 
     """
     iface = MagicMock(autospec=SerialInterface)
@@ -1478,7 +1478,7 @@ def test_remove_favorite(favorite):
 
     Parameters
     ----------
-        favorite (int): Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
+        favorite (str | int): Identifier of the favorite node to remove; used to populate the admin message sent to the interface.
 
     """
     iface = MagicMock(autospec=SerialInterface)
@@ -1499,7 +1499,7 @@ def test_set_ignored(ignored):
 
     Parameters
     ----------
-        ignored (int): Numeric node identifier passed to setIgnored.
+        ignored (str | int): Node identifier passed to setIgnored.
 
     """
     iface = MagicMock(autospec=SerialInterface)

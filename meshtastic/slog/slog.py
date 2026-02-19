@@ -143,7 +143,7 @@ class StructuredLogger:
         client: MeshInterface,
         dir_path: str,
         power_logger: Optional[PowerLogger] = None,
-        include_raw=True,
+        include_raw: bool = True,
     ) -> None:
         """
         Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
@@ -281,9 +281,10 @@ class StructuredLogger:
                 self.power_logger.store_current_reading(now)
 
         # Only acquire lock and write if raw logging is enabled
-        if self.include_raw and self.raw_file:
+        if self.include_raw:
             with self._raw_file_lock:
-                self.raw_file.write(line + "\n")  # Write the raw log
+                if self.raw_file:
+                    self.raw_file.write(line + "\n")  # Write the raw log
 
 
 class LogSet:

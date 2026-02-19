@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 from queue import Queue
 from typing import (
     Any,
@@ -133,6 +134,7 @@ def fromStr(valstr: str) -> Any:
     Returns
     -------
         An int, float, bool, bytes, or str corresponding to the interpreted value.
+
     """
     val: Any
     if len(valstr) == 0:  # Treat an emptystring as an empty bytes
@@ -266,6 +268,7 @@ def findPorts(eliminate_duplicates: bool = False) -> List[str]:
     Returns
     -------
         List[str]: Sorted list of device path strings.
+
     """
     all_ports = serial.tools.list_ports.comports()
 
@@ -298,7 +301,7 @@ def findPorts(eliminate_duplicates: bool = False) -> List[str]:
     return ports
 
 
-class dotdict(dict):
+class DotDict(dict):
     """dot.notation access to dictionary attributes."""
 
     __getattr__ = dict.get
@@ -306,8 +309,16 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__  # type: ignore[assignment]
 
 
-# PascalCase alias for naming convention compliance
-DotDict = dotdict
+class dotdict(DotDict):  # pylint: disable=invalid-name
+    """Backward-compatible deprecated alias for DotDict."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "dotdict is deprecated; use DotDict instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
 
 class Timeout:
@@ -882,6 +893,7 @@ def eliminate_duplicate_port(ports: List) -> List:
     Returns
     -------
         List[str]: Either the original list of ports or a list containing one representative port when a duplicate pair is recognized.
+
     """
     new_ports = []
     if len(ports) != 2:
@@ -1147,14 +1159,14 @@ def message_to_json(message: Message, multiline: bool = False) -> str:
 
     """
     try:
-        json = MessageToJson(message, always_print_fields_with_no_presence=True)
+        json_str = MessageToJson(message, always_print_fields_with_no_presence=True)
     except TypeError:
-        json = MessageToJson(  # type: ignore[call-arg]  # pylint: disable=E1123
+        json_str = MessageToJson(  # type: ignore[call-arg]  # pylint: disable=E1123
             message,
             # pyright: ignore[reportCallIssue]  # Older protobuf uses including_default_value_fields
             including_default_value_fields=True,  # pyright: ignore[reportCallIssue]
         )
-    return stripnl(json) if not multiline else json
+    return stripnl(json_str) if not multiline else json_str
 
 
 def messageToJson(message: Message, multiline: bool = False) -> str:

@@ -5,7 +5,7 @@
 import base64
 import logging
 import time
-from typing import TYPE_CHECKING, List, NoReturn, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Optional, Union
 
 from meshtastic.protobuf import (
     admin_pb2,
@@ -657,7 +657,7 @@ class Node:
 
     def getURL(self, includeAll: bool = True) -> str:
         """
-        Builds a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
+        Build a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
 
         Includes the secondary channels in the URL when requested.
 
@@ -1645,7 +1645,7 @@ class Node:
             if self.iface._getOrCreateByNum(nodeid).get("adminSessionPassKey") is None:
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
 
-    def get_channels_with_hash(self):
+    def get_channels_with_hash(self) -> List[Dict[str, Any]]:
         """
         Provide channel entries with index, role, name, and a computed hash.
 
@@ -1657,19 +1657,24 @@ class Node:
                 - "hash" (str or None): Computed channel hash when name and PSK are present, otherwise None.
 
         """
-        result = []
+        result: List[Dict[str, Any]] = []
         if self.channels:
             for c in self.channels:
-                settings_has_name = bool(c.settings)
-                if settings_has_name:
-                    hash_val = generate_channel_hash(c.settings.name, c.settings.psk)
-                else:
-                    hash_val = None
+                settings = getattr(c, "settings", None)
+                has_name = bool(getattr(settings, "name", ""))
+                has_psk = bool(getattr(settings, "psk", ""))
+                hash_val = (
+                    generate_channel_hash(settings.name, settings.psk)
+                    if has_name and has_psk and settings is not None
+                    else None
+                )
                 result.append(
                     {
                         "index": c.index,
                         "role": channel_pb2.Channel.Role.Name(c.role),
-                        "name": c.settings.name if settings_has_name else "",
+                        "name": (
+                            settings.name if has_name and settings is not None else ""
+                        ),
                         "hash": hash_val,
                     }
                 )

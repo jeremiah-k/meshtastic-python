@@ -346,7 +346,7 @@ def is_currently_connected_elsewhere(
     Parameters
     ----------
         addr (Optional[str]): BLE address to check; will be normalized via addr_key.
-        owner (Optional[Any]): Caller’s owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere.
+        owner (Optional[Any]): Caller's owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere.
 
     Returns
     -------
@@ -365,6 +365,11 @@ def is_currently_connected_elsewhere(
         current_owner_id = _CONNECTED_OWNER_IDS.get(key)
 
         # Same owner is not "connected elsewhere".
+        # CPython can reuse id() values after GC; stale _CONNECTED_OWNER_IDS matches
+        # are mitigated by immediate weakref-dead pruning via
+        # _remove_connected_record_locked/_cleanup_addr_lock, connection-state
+        # validation via _owner_connected_state, and timed stale-claim cleanup
+        # using _CONNECTED_MARKED_AT + BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS.
         if owner is not None and (
             current_owner is owner
             or (current_owner_id is not None and current_owner_id == id(owner))

@@ -113,6 +113,7 @@ class BLEClient:
         self.address = address
         self._closed = False
         self._pending_futures: weakref.WeakSet[Future] = weakref.WeakSet()
+        self._pending_futures_lock = RLock()
         self._close_lock = RLock()
 
         # Use singleton runner for all BLE operations
@@ -217,6 +218,17 @@ class BLEClient:
             reraise=False,
         )
         return bool(result)  # type: ignore[arg-type]
+
+    def isConnected(self) -> bool:
+        """
+        Deprecated camelCase compatibility wrapper for is_connected.
+        """
+        warnings.warn(
+            "isConnected is deprecated; use is_connected instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.is_connected()
 
     def disconnect(
         self, *, await_timeout: Optional[float] = None, **kwargs: Any
@@ -507,7 +519,13 @@ class BLEClient:
 
             # Cancel any pending futures to unblock waiting threads immediately.
             if hasattr(self, "_pending_futures"):
-                for future in list(self._pending_futures):
+                pending_futures_lock = getattr(self, "_pending_futures_lock", None)
+                if pending_futures_lock is not None:
+                    with pending_futures_lock:
+                        pending_futures = list(self._pending_futures)
+                else:
+                    pending_futures = list(self._pending_futures)
+                for future in pending_futures:
                     if not future.done():
                         future.cancel()
 
@@ -570,7 +588,12 @@ class BLEClient:
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
         future = self.async_run(coro)
         if hasattr(self, "_pending_futures"):
-            self._pending_futures.add(future)
+            pending_futures_lock = getattr(self, "_pending_futures_lock", None)
+            if pending_futures_lock is not None:
+                with pending_futures_lock:
+                    self._pending_futures.add(future)
+            else:
+                self._pending_futures.add(future)
         try:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
@@ -624,7 +647,12 @@ class BLEClient:
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         finally:
             if hasattr(self, "_pending_futures"):
-                self._pending_futures.discard(future)
+                pending_futures_lock = getattr(self, "_pending_futures_lock", None)
+                if pending_futures_lock is not None:
+                    with pending_futures_lock:
+                        self._pending_futures.discard(future)
+                else:
+                    self._pending_futures.discard(future)
 
     def asyncAwait(
         self, coro: Coroutine[Any, Any, Any], timeout: Optional[float] = None
