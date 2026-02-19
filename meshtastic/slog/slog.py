@@ -27,7 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 def root_dir() -> str:
-    """Return the root directory for slog files."""
+    """
+    Determine and ensure the root slog directory exists under the user data directory.
+
+    Returns:
+        path (str): Filesystem path to the "slogs" directory.
+    """
 
     app_name = "meshtastic"
     app_author = "meshtastic"
@@ -139,9 +144,14 @@ class StructuredLogger:
         power_logger: Optional[PowerLogger] = None,
         include_raw=True,
     ) -> None:
-        """Initialize the StructuredLogger object.
+        """
+        Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
 
-        client (MeshInterface): The MeshInterface object to monitor.
+        Parameters:
+            client (MeshInterface): Source of device log lines to monitor.
+            dir_path (str): Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
+            power_logger (Optional[PowerLogger]): If provided, used to record a power sample with each structured log entry.
+            include_raw (bool): If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
         """
         self.client = client
         self.power_logger = power_logger
@@ -192,7 +202,11 @@ class StructuredLogger:
             raise
 
     def close(self) -> None:
-        """Stop logging."""
+        """
+        Shut down the StructuredLogger and release its resources.
+
+        Unsubscribes the log listener, closes the Arrow writer, and safely close(s) and clears the raw log file reference while holding the internal lock so concurrent writers cannot race with shutdown.
+        """
         pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         self.writer.close()
         with self._raw_file_lock:
@@ -202,9 +216,13 @@ class StructuredLogger:
             f.close()  # Close the raw.txt file
 
     def _onLogMessage(self, line: str) -> None:
-        """Handle log messages.
+        """
+        Process a single raw log line, extract any structured slog fields, and persist the resulting record.
 
-        line (str): the line of log output
+        Parses the input line for a structured slog. If parsing yields fields, adds a "time" timestamp and writes the record to the configured Arrow writer. If raw logging is enabled, includes the original raw line in the record and appends it to the raw log file. If a power logger is present, records a power measurement using the exact same timestamp as the written slog record. Unknown or unparsable structured slog lines are logged as warnings.
+
+        Parameters:
+            line (str): The raw log line to process.
         """
 
         di = {}  # the dictionary of the fields we found to log
@@ -265,10 +283,15 @@ class LogSet:
         dir_name: Optional[str] = None,
         power_meter: Optional[PowerMeter] = None,
     ) -> None:
-        """Initialize the PowerMonClient object.
+        """
+        Create a LogSet: prepare a directory for slog files, start structured slogging, and optionally start power logging.
 
-        power (PowerSupply): The power supply object.
-        client (MeshInterface): The MeshInterface object to monitor.
+        If dir_name is not provided, a timestamped directory is created under the slog root and a "latest" symlink is updated to point to it. A StructuredLogger is created and bound to the provided client; if power_meter is supplied, a PowerLogger is created that writes to a "power" subdirectory. An atexit handler pointing to this instance's close() is registered for later teardown.
+
+        Parameters:
+            client: MeshInterface client whose log lines will be monitored and recorded.
+            dir_name: Optional path for storing logs; when omitted a new timestamped directory is created under the slog root and "latest" is updated to point to it.
+            power_meter: Optional PowerMeter; when provided a PowerLogger is started to record power samples alongside slog entries.
         """
 
         if not dir_name:

@@ -141,11 +141,10 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
 
 def _bleak_supports_connected_fallback() -> bool:
     """
-    Determine whether the installed Bleak library version supports the connected-device fallback.
+    Report whether the installed Bleak version meets the minimum required version for the connected-device fallback.
 
     Returns:
-        `True` if the installed Bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, `False` otherwise.
-
+        True if the installed Bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, False otherwise.
     """
     return (
         _parse_version_triplet(BLEAK_VERSION)

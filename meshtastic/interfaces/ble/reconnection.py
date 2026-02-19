@@ -102,9 +102,9 @@ class ReconnectScheduler:
 
     def clear_thread_reference(self) -> None:
         """
-        Mark that no reconnect worker is running by clearing the stored reconnect thread reference.
+        Clear the internal reference to the running reconnect thread.
 
-        Acquires self.state_lock and sets self._reconnect_thread to None to reflect that the background reconnect worker has exited.
+        This operation acquires the scheduler's state_lock and sets the internal reconnect thread reference to None to record that no background reconnect worker is active.
         """
         with self.state_lock:
             # Always clear the reference once the worker loop exits to match legacy behavior.
@@ -118,30 +118,25 @@ class ReconnectWorker:
         self, interface: "BLEInterface", reconnect_policy: ReconnectPolicy
     ) -> None:
         """
-        Bind a BLE interface and a reconnect policy to the worker.
+        Create a ReconnectWorker bound to a BLE interface and a reconnect policy.
 
-        Parameters
-        ----------
+        Parameters:
             interface (BLEInterface): Interface used to initiate connection attempts and to query or modify connection state.
             reconnect_policy (ReconnectPolicy): Backoff and retry policy that controls reconnect timing and attempt state.
-
         """
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """
-        Determine whether the reconnect process should abort based on the interface state and the auto_reconnect flag.
+        Decide whether the reconnect process should stop based on the interface state and the auto_reconnect flag.
 
-        Parameters
-        ----------
+        Parameters:
             auto_reconnect (bool): Whether automatic reconnect is enabled.
-            context (str): Optional context included in debug logs.
+            context (str): Optional context string used in debug messages.
 
-        Returns
-        -------
-            True if reconnection should be aborted, False otherwise.
-
+        Returns:
+            bool: True if reconnection should be aborted, False otherwise.
         """
         if self.interface.is_connection_closing:
             logger.debug(
@@ -165,20 +160,14 @@ class ReconnectWorker:
         on_exit: Optional[Callable[[], None]] = None,
     ) -> None:
         """
-        Run the blocking BLE auto-reconnect loop using the configured backoff policy.
+        Perform the blocking auto-reconnect loop for the bound BLE interface using the configured backoff policy.
 
-        The loop repeatedly attempts to reconnect the interface until a connection succeeds, the
-        reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect
-        is False. Between failed attempts the loop respects the policy's backoff delay (adjusted for
-        specific BLE/DBus errors) and allows early exit when shutdown_event is signaled. On exit the
-        scheduler's thread reference is cleared.
+        Attempts reconnects until a connection succeeds, the reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect is False. Between failed attempts the loop waits according to the policy (adjusted for certain BLE/DBus errors) and exits promptly if shutdown_event is signaled. The optional on_exit callback is invoked when the loop terminates.
 
-        Parameters
-        ----------
-            auto_reconnect (bool): If False, exit immediately without attempting reconnects.
-            shutdown_event (threading.Event): Event that, when set, causes the loop to stop as soon as possible.
-            on_exit (Optional[Callable[[], None]]): Callback invoked when the loop exits.
-
+        Parameters:
+            auto_reconnect (bool): If False, the loop will exit immediately without attempting reconnects.
+            shutdown_event (threading.Event): Event that causes the loop to stop as soon as it is set.
+            on_exit (Optional[Callable[[], None]]): Callback invoked once when the loop ends.
         """
         self.reconnect_policy.reset()
         interface = self.interface

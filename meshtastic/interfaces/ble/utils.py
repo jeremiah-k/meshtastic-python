@@ -10,16 +10,11 @@ def sanitize_address(address: Optional[str]) -> Optional[str]:
     """
     Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 
-    Strips leading and trailing whitespace; if the resulting string is empty or the input is None, returns None. Removes hyphens, underscores, colons, and spaces before lowercasing.
-
-    Parameters
-    ----------
+    Parameters:
         address (Optional[str]): Address or identifier to normalize.
 
-    Returns
-    -------
-        Optional[str]: Normalized address string, or None if `address` is None or empty after stripping.
-
+    Returns:
+        Optional[str]: Normalized address string with hyphens, underscores, colons, and spaces removed and lowercased, or None if `address` is None or empty after stripping.
     """
     if address is None:
         return None
@@ -38,12 +33,10 @@ def sanitize_address(address: Optional[str]) -> Optional[str]:
 
 def _sleep(delay: float) -> None:
     """
-    Pause execution for a given number of seconds.
+    Block execution for the specified number of seconds.
 
-    Parameters
-    ----------
-        delay (float): Number of seconds to sleep; may be fractional.
-
+    Parameters:
+        delay (float): Time to sleep in seconds; may be fractional.
     """
     time.sleep(delay)
 

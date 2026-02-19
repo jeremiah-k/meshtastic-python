@@ -82,9 +82,9 @@ class BLEStateManager:
 
     def __init__(self) -> None:
         """
-        Set up the BLEStateManager's synchronization primitive and initial connection state.
+        Initialize the BLEStateManager by creating its reentrant lock and setting the initial connection state.
 
-        Create a reentrant lock used to serialize state transitions and set the initial state to ConnectionState.DISCONNECTED.
+        Creates an RLock for serializing state transitions and sets the internal state to ConnectionState.DISCONNECTED.
         """
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED
@@ -103,13 +103,12 @@ class BLEStateManager:
     @property
     def state(self) -> ConnectionState:
         """
-        Get the current BLE connection state.
+        Return the current BLE connection state.
 
-        The state is read while holding the manager's internal reentrant lock to ensure thread safety.
+        This value is read while holding the manager's internal reentrant lock to ensure thread safety.
 
         Returns:
-            ConnectionState: The current connection state.
-
+            ConnectionState: The current ConnectionState.
         """
         with self._state_lock:
             return self._state
@@ -140,22 +139,20 @@ class BLEStateManager:
     @property
     def can_connect(self) -> bool:
         """
-        Return whether a new BLE connection may be initiated.
+        Whether a new BLE connection may be initiated.
 
         Returns:
-            `True` if the current state is DISCONNECTED or ERROR, `False` otherwise.
-
+            True if the current state is DISCONNECTED or ERROR, False otherwise.
         """
         return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
     @property
     def is_connecting(self) -> bool:
         """
-        Determine if the BLE interface is in a connecting state.
+        Report whether the BLE interface is in a connecting state.
 
         Returns:
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
-
         """
         return self.state in (ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
 
@@ -231,23 +228,16 @@ class BLEStateManager:
         self, expected_states: Set[ConnectionState], new_state: ConnectionState
     ) -> bool:
         """
-        Atomically check current state and transition if in expected states.
+        Atomically check the current state and transition to new_state if it is in expected_states.
 
-        This is a convenience method that combines state checking and transition
-        into a single atomic operation, preventing TOCTOU race conditions.
+        Performs an atomic check-and-transition under the internal lock to avoid time-of-check-to-time-of-use races.
 
-        Parameters
-        ----------
-        expected_states : Set[ConnectionState]
-            Set of states from which the transition is allowed.
-        new_state : ConnectionState
-            Target state to transition to.
+        Parameters:
+            expected_states (Set[ConnectionState]): States from which the transition is permitted.
+            new_state (ConnectionState): Target state to transition to.
 
-        Returns
-        -------
-        bool: True if the current state was in expected_states and the transition
-            succeeded, False otherwise.
-
+        Returns:
+            bool: `True` if the current state was in expected_states and transition_to(new_state) returned `True`, `False` otherwise.
         """
         with self._state_lock:
             if self._state not in expected_states:
@@ -264,8 +254,7 @@ class BLEStateManager:
         Force the connection state to DISCONNECTED for recovery or cleanup.
 
         Returns:
-            True if the state was set to DISCONNECTED.
-
+            True if the resulting state is DISCONNECTED, False otherwise.
         """
         with self._state_lock:
             # Prefer validated transition semantics; this is a no-op when already
@@ -279,8 +268,7 @@ class BLEStateManager:
         Indicates whether the BLE connection is currently CONNECTED.
 
         Returns:
-            bool: `True` if the current state is CONNECTED, `False` otherwise.
-
+            True if the current state is CONNECTED, False otherwise.
         """
         return self.is_connected
 
@@ -312,8 +300,7 @@ class BLEStateManager:
         CamelCase alias for the is_connecting property.
 
         Returns:
-            `True` if the manager's state is CONNECTING or RECONNECTING, `False` otherwise.
-
+            `True` if the current state is CONNECTING or RECONNECTING, `False` otherwise.
         """
         return self.is_connecting
 
@@ -366,7 +353,6 @@ class BLEStateManager:
         Force the manager's state to DISCONNECTED.
 
         Returns:
-            bool: `True` if the state changed to DISCONNECTED, `False` otherwise.
-
+            bool: `True` if the resulting state is DISCONNECTED (either by transition or already disconnected), `False` otherwise.
         """
         return self.reset_to_disconnected()

@@ -38,16 +38,15 @@ def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
 
 def _normalize_device_name_for_matching(name: Optional[str]) -> Optional[str]:
     """
-    Normalize a device name for tolerant equality checks without collapsing punctuation.
+    Normalize a Bluetooth device name for tolerant comparisons.
 
-    Parameters
-    ----------
+    Strips leading/trailing whitespace and applies casefolding; preserves punctuation. If the input is None or reduces to an empty string after normalization, returns `None`.
+
+    Parameters:
         name (Optional[str]): Raw device name.
 
-    Returns
-    -------
-        Optional[str]: `casefold().strip()` form, or `None` if empty/unknown.
-
+    Returns:
+        Optional[str]: The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
     """
     if name is None:
         return None
@@ -59,23 +58,19 @@ def _filter_devices_for_target_identifier(
     devices: List[BLEDevice], target_identifier: str
 ) -> List[BLEDevice]:
     """
-    Filter devices by target identifier using deterministic precedence rules.
+    Selects BLEDevice objects matching a user-supplied address or name using deterministic precedence.
 
     Matching precedence:
-    1. Exact normalized address key match.
-    2. Exact name match (case-sensitive).
-    3. Name match using `casefold().strip()` only when there is a single match.
+    1) Exact normalized address match.
+    2) Exact name match (case-sensitive).
+    3) Normalized name match (casefolded and stripped) only when exactly one candidate matches.
 
-    Parameters
-    ----------
-        devices (List[BLEDevice]): Candidate devices.
-        target_identifier (str): User-supplied address or name.
+    Parameters:
+        devices (List[BLEDevice]): Candidate devices to search.
+        target_identifier (str): User-supplied address or device name to match.
 
-    Returns
-    -------
-        List[BLEDevice]: Matching devices. Returns empty list on no match or
-            ambiguous normalized-name matches.
-
+    Returns:
+        List[BLEDevice]: Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
     """
     target_key = sanitize_address(target_identifier)
     if target_key:
@@ -493,6 +488,8 @@ class DiscoveryManager:
     def close(self) -> None:
         """
         Close the manager's persistent discovery client and clear the internal reference.
+
+        If a persistent client exists, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
         """
         if self._client:
             try:

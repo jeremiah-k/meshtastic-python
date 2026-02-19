@@ -26,20 +26,46 @@ class _InertThread:
     """
 
     def __init__(self, name: str) -> None:
+        """
+        Create an inert thread placeholder returned after cleanup to preserve the thread-like API while preventing new threads from starting.
+
+        Parameters:
+            name (str): Human-readable name for the inert thread; stored on the object as the `name` attribute.
+
+        Attributes:
+            name (str): The provided thread name.
+            daemon (bool): Always True to match typical thread daemon status.
+            ident (None): Always None to indicate the inert thread has no identity and cannot be started.
+        """
         self.name = name
         self.daemon = True
         self.ident = None
 
     def start(self) -> None:
-        """Raise RuntimeError: inert threads cannot be started."""
+        """
+        Prevent starting an inert thread returned after coordinator cleanup.
+
+        Raises:
+            RuntimeError: always raised to indicate this inert thread cannot be started.
+        """
         raise RuntimeError(_INERT_THREAD_START_ERROR.format(name=self.name))
 
     def is_alive(self) -> bool:
-        """Return False: inert threads are never alive."""
+        """
+        Indicates that this inert thread is not alive.
+
+        Returns:
+            bool: False always; inert threads cannot be alive.
+        """
         return False
 
     def join(self, timeout: Optional[float] = None) -> None:
-        """No-op: inert threads cannot be joined."""
+        """
+        No-op join for an inert thread; joining has no effect.
+
+        Parameters:
+            timeout (Optional[float]): Ignored. Included for API compatibility.
+        """
         _ = timeout
 
 
@@ -61,13 +87,14 @@ class ThreadCoordinator:
 
     def __init__(self) -> None:
         """
-        Initialize the ThreadCoordinator that centralizes thread and event management.
+        Create a ThreadCoordinator that centralizes thread and event management.
 
-        Initializes internal state:
-            _lock (RLock): reentrant lock protecting coordinator state.
-            _threads (List[Thread]): list of tracked Thread objects (initially empty).
-            _events (Dict[str, Event]): mapping of event names to threading.Event objects (initially empty).
-            _cleaned_up (bool): flag indicating whether cleanup() has been performed (initially False).
+        Initializes internal coordinator state:
+        - a reentrant lock protecting coordinator state
+        - an empty list of tracked threads
+        - an empty set of threads pending start
+        - an empty mapping of event names to Event objects
+        - a boolean flag indicating cleanup has not been performed
         """
         self._lock = RLock()
         self._threads: List[Thread] = []
@@ -85,25 +112,19 @@ class ThreadCoordinator:
         kwargs: Optional[Dict[str, Any]] = None,
     ) -> ThreadLike:
         """
-        Create and register a Thread with the coordinator without starting it.
+        Create and register a Thread configured with the given target and arguments without starting it.
 
-        The returned Thread is configured with the provided target, name,
-        daemon flag, and arguments and is registered for later lifecycle
-        management; it is not started.
+        If the coordinator has already been cleaned up, returns an inert thread that cannot be started. The returned thread is registered for lifecycle management but is not started by this call.
 
-        Parameters
-        ----------
+        Parameters:
             target (Callable): Callable to be executed by the thread.
             name (str): Name assigned to the thread.
             daemon (bool): Whether the thread should run as a daemon.
-            args (tuple): Positional arguments to pass to `target`.
-            kwargs (Optional[dict]): Keyword arguments to pass to `target`.
+            args (tuple): Positional arguments to pass to the target.
+            kwargs (Optional[dict]): Keyword arguments to pass to the target.
 
-        Returns
-        -------
-            Thread: The created Thread instance (registered with the coordinator, not started).
-                After cleanup, returns an inert thread that raises RuntimeError on start().
-
+        Returns:
+            Thread: The created Thread instance (registered with the coordinator, not started). After cleanup, an inert thread is returned whose start() raises RuntimeError.
         """
         with self._lock:
             # Prevent thread creation after cleanup to avoid orphaned threads
@@ -130,7 +151,17 @@ class ThreadCoordinator:
         args: Tuple[Any, ...] = (),
         kwargs: Optional[Dict[str, Any]] = None,
     ) -> ThreadLike:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Compatibility wrapper for camelCase callers that issues a DeprecationWarning.
+
+        This method emits a DeprecationWarning and returns a Thread-like object configured
+        with the provided target, name, and options.
+
+        Returns:
+            ThreadLike: A Thread-like object configured with the provided target and
+            name; may be an inert placeholder if the coordinator has already been
+            cleaned up.
+        """
         warnings.warn(
             "createThread is deprecated; use create_thread instead",
             DeprecationWarning,
@@ -146,22 +177,15 @@ class ThreadCoordinator:
 
     def create_event(self, name: str) -> Event:
         """
-        Register and return a new Event object under the given name.
+        Register a new Event under the given name and return it.
 
-        If an event with the same name already exists, a warning is logged and
-        the existing Event instance is returned (no replacement occurs).
+        If an Event with the same name already exists, the existing Event is returned and no replacement occurs. This operation is thread-safe via the coordinator's lock.
 
-        This method is thread-safe and uses the coordinator's internal lock.
+        Parameters:
+            name (str): Name to register the Event under.
 
-        Parameters
-        ----------
-            name (str): Key under which the Event will be stored.
-
-        Returns
-        -------
-            Event: The created Event instance registered under `name`, or the
-                existing Event if one was already registered with that name.
-
+        Returns:
+            Event: The Event instance registered under `name`, or the existing instance if one was already registered.
         """
         with self._lock:
             if name in self._events:
@@ -226,14 +250,9 @@ class ThreadCoordinator:
 
     def start_thread(self, thread: ThreadLike) -> None:
         """
-        Start a tracked Thread if it has not been started yet.
+        Start a tracked thread if it is registered with the coordinator and has not yet been started.
 
-        If the given thread is not registered with this coordinator or has already been started, no action is taken.
-
-        Parameters
-        ----------
-            thread (ThreadLike): The thread to start if it is tracked and not yet started.
-
+        If the thread is not registered or has already been started, this method does nothing. Logs a warning when an untracked thread is provided.
         """
         should_start = False
         with self._lock:
@@ -260,7 +279,11 @@ class ThreadCoordinator:
                     self._pending_start.discard(thread)
 
     def startThread(self, thread: ThreadLike) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase wrapper that starts a tracked thread.
+
+        Emits a DeprecationWarning and attempts to start the provided thread if it is registered and not already started.
+        """
         warnings.warn(
             "startThread is deprecated; use start_thread instead",
             DeprecationWarning,
@@ -327,7 +350,11 @@ class ThreadCoordinator:
             thread.join(timeout=timeout)
 
     def joinAll(self, timeout: Optional[float] = None) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase wrapper that joins all tracked, alive threads except the current thread.
+
+        Waits up to `timeout` seconds per thread while joining; if `timeout` is None it will block indefinitely for each thread. Emits a DeprecationWarning advising use of the snake_case `join_all` method.
+        """
         warnings.warn(
             "joinAll is deprecated; use join_all instead",
             DeprecationWarning,
@@ -346,7 +373,14 @@ class ThreadCoordinator:
             event.set()
 
     def _clear_event_no_lock(self, name: str) -> None:
-        """Clear a tracked event without acquiring the coordinator lock."""
+        """
+        Clear the tracked event named `name` without acquiring the coordinator lock.
+
+        If no event is registered under `name`, this is a no-op. This method clears the event so waiting threads will block until it is set again.
+
+        Parameters:
+            name (str): The name of the event to clear.
+        """
         event = self._events.get(name)
         if event is not None:
             event.clear()
@@ -366,7 +400,11 @@ class ThreadCoordinator:
             self._set_event_no_lock(name)
 
     def setEvent(self, name: str) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase wrapper that delegates to set_event.
+
+        Issues a DeprecationWarning and forwards the call to set_event(name).
+        """
         warnings.warn(
             "setEvent is deprecated; use set_event instead",
             DeprecationWarning,
@@ -401,15 +439,12 @@ class ThreadCoordinator:
         """
         Waits for the tracked event named `name` to be set or until `timeout` seconds elapse.
 
-        Parameters
-        ----------
+        Parameters:
             name (str): Name of the tracked event.
             timeout (float | None): Maximum time in seconds to wait; `None` means wait indefinitely.
 
-        Returns
-        -------
-            `True` if the event was set before the timeout, `False` otherwise.
-
+        Returns:
+            `true` if the event was set before the timeout, `false` otherwise (also `false` if no event with that name is tracked).
         """
         event = self.get_event(name)
         if event:
@@ -417,7 +452,12 @@ class ThreadCoordinator:
         return False
 
     def waitForEvent(self, name: str, timeout: Optional[float] = None) -> bool:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Compatibility wrapper for camelCase callers that waits for the named event and emits a deprecation warning.
+
+        Returns:
+            True if the event was set within the optional timeout, False otherwise.
+        """
         warnings.warn(
             "waitForEvent is deprecated; use wait_for_event instead",
             DeprecationWarning,
@@ -474,7 +514,15 @@ class ThreadCoordinator:
                 self._set_event_no_lock(name)
 
     def wakeWaitingThreads(self, *event_names: str) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Compatibility camelCase method that wakes the named events to wake any waiting threads.
+
+        Parameters:
+            event_names (str): One or more event names to signal.
+
+        Deprecated:
+            This method is deprecated; prefer the snake_case equivalent.
+        """
         warnings.warn(
             "wakeWaitingThreads is deprecated; use wake_waiting_threads instead",
             DeprecationWarning,
@@ -484,19 +532,26 @@ class ThreadCoordinator:
 
     def clear_events(self, *event_names: str) -> None:
         """
-        Clear the named tracked events, ignoring any names that are not registered.
+        Clear the named tracked events.
 
-        Parameters
-        ----------
+        Ignores names that are not registered.
+
+        Parameters:
             event_names (str): One or more event names to clear.
-
         """
         with self._lock:
             for name in event_names:
                 self._clear_event_no_lock(name)
 
     def clearEvents(self, *event_names: str) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase wrapper that clears the specified named events.
+
+        Emits a DeprecationWarning and clears each event whose name is provided.
+
+        Parameters:
+            event_names (str): One or more event names to clear.
+        """
         warnings.warn(
             "clearEvents is deprecated; use clear_events instead",
             DeprecationWarning,
@@ -506,9 +561,9 @@ class ThreadCoordinator:
 
     def cleanup(self) -> None:
         """
-        Perform a coordinated shutdown by waking tracked events, joining live tracked threads (except the current thread), and clearing internal registries.
+        Perform a coordinated shutdown of the coordinator.
 
-        Sets every tracked Event to wake any waiting threads, collects live tracked Thread objects (excluding the current thread), clears the coordinator's thread and event registries under the coordinator lock, and then joins the collected threads outside the lock using the timeout defined by EVENT_THREAD_JOIN_TIMEOUT. After cleanup is called, create_thread will log a warning and return an _InertThread that raises RuntimeError on start() to prevent orphaned thread creation.
+        Marks the coordinator as cleaned, sets all tracked events to wake any waiters, collects and joins all live tracked threads except the current thread (using EVENT_THREAD_JOIN_TIMEOUT per thread), and clears internal thread and event registries. After this completes, the coordinator will refuse creation of new runnable threads (requests return an inert thread that cannot be started).
         """
         with self._lock:
             # Mark as cleaned up to prevent new thread creation

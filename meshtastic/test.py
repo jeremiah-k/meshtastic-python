@@ -23,20 +23,17 @@ class _FallbackDotMap(dict):
 
     def __getattr__(self, key: str) -> Any:
         """
-        Provide attribute-style access for dictionary keys.
+        Provide attribute-style access to dictionary keys.
 
-        When an attribute is accessed, return the dictionary value for that key. If the key is
-        missing, return an empty _FallbackDotMap. If the value is a dict, return a _FallbackDotMap
-        wrapping that dict; otherwise return the value unchanged.
+        If the key exists and its value is a dict, return a new _FallbackDotMap wrapping that dict.
+        If the key exists and its value is not a dict, return the value unchanged.
+        If the key is missing, return an empty _FallbackDotMap.
 
-        Parameters
-        ----------
+        Parameters:
             key (str): Attribute name to retrieve as a dictionary key.
 
-        Returns
-        -------
-            The value stored under `key`, a `_FallbackDotMap` wrapping a nested dict, or an empty `_FallbackDotMap` if the key is absent.
-
+        Returns:
+            Any: The value stored under `key`, or a `_FallbackDotMap` for nested dicts or missing keys.
         """
         # Guard dunder names to avoid interfering with copy, pickle, etc.
         if key.startswith("__") and key.endswith("__"):
@@ -52,28 +49,23 @@ class _FallbackDotMap(dict):
 
     def __setattr__(self, key: str, value: Any) -> None:
         """
-        Set dictionary keys via attribute-style access.
+        Assign a value to a dictionary key using attribute-style access.
 
-        Parameters
-        ----------
-            key (str): Attribute name to set as a dictionary key.
-            value (Any): Value to store under the key.
-
+        Parameters:
+            key (str): Attribute name to store as a dictionary key.
+            value (Any): Value to assign to the key.
         """
         self[key] = value
 
     def __delattr__(self, key: str) -> None:
         """
-        Delete dictionary keys via attribute-style access.
+        Delete a mapping entry using attribute-style access.
 
-        Parameters
-        ----------
-            key (str): Attribute name to delete as a dictionary key.
+        Parameters:
+            key (str): Name of the key to remove.
 
-        Raises
-        ------
+        Raises:
             AttributeError: If the key does not exist.
-
         """
         try:
             del self[key]
@@ -108,16 +100,11 @@ def onReceive(packet: dict, interface: Any) -> None:
     """
     Handle an incoming packet and record clear-text messages.
 
-    If the packet originated from the current sendingInterface it is ignored. Otherwise the packet
-    is converted to a DotMap and, when its decoded.portnum equals "TEXT_MESSAGE_APP" and the
-    module-level `receivedPackets` list is set, the converted packet is appended to
-    `receivedPackets`.
+    Ignores packets that originated from the current sendingInterface. Converts the packet to a DotMap and, if its decoded.portnum matches PortNum.TEXT_MESSAGE_APP, appends the converted packet to the module-level receivedPackets list when that list is set.
 
-    Parameters
-    ----------
+    Parameters:
         packet (dict): Raw packet data as received.
         interface (Any): Interface object that delivered the packet.
-
     """
     if sendingInterface != interface:
         # print(f"From {interface.stream.port}: {packet}")
@@ -133,12 +120,10 @@ def onReceive(packet: dict, interface: Any) -> None:
 
 def onNode(node: Any) -> None:
     """
-    Handle updates to the node database.
+    Notify that a node database entry changed.
 
-    Parameters
-    ----------
+    Parameters:
         node (Any): The node entry that changed or a payload describing the change (typically a node database record).
-
     """
     print(f"Node changed: {node}")
 
@@ -293,18 +278,13 @@ def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
 
 def openDebugLog(portName: str) -> io.TextIOWrapper:
     """
-    Create and open a per-port debug log file.
+    Create a per-port debug log file and return its open file handle.
 
-    The filename is formed by prefixing "log" to the provided port name with any "/" characters replaced by "_".
+    Parameters:
+        portName (str): Serial port name used to derive the filename; '/' characters will be replaced with '_'.
 
-    Parameters
-    ----------
-        portName (str): The serial port name used to derive the log filename.
-
-    Returns
-    -------
-        io.TextIOWrapper: An open text file for writing (UTF-8, line-buffered) for the debug log.
-
+    Returns:
+        io.TextIOWrapper: An open text file for writing the debug log.
     """
     debugname = "log" + portName.replace("/", "_")
     logger.info(f"Writing serial debugging to {debugname}")
@@ -313,16 +293,13 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
 
 def testAll(numTests: int = 5) -> bool:
     """
-    Discover connected Meshtastic devices, open interfaces, and run a series of integration tests.
+    Discover connected Meshtastic devices, open serial interfaces for each, run integration tests, and close interfaces.
 
-    Parameters
-    ----------
-        numTests (int): Number of test iterations to perform.
+    Parameters:
+        numTests (int): Number of test iterations to run in the test thread.
 
-    Returns
-    -------
-        True if the test run completed successfully, False otherwise.
-
+    Returns:
+        bool: `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
     """
     ports: List[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:
@@ -354,12 +331,9 @@ def testAll(numTests: int = 5) -> bool:
 
 def testSimulator() -> None:
     """
-    Assume that someone has launched meshtastic-native as a simulated node.
-    Talk to that node over TCP, do some operations and if they are successful
-    exit the process with a success code, else exit with a non zero exit code.
+    Connect to a Meshtastic simulator on localhost over TCP and run a short integration check.
 
-    Run with
-    python3 -c 'from meshtastic.test import testSimulator; testSimulator()'
+    Attempts to open a TCP connection to a local meshtastic-native simulator, query node information, request the simulator to exit, and close the connection. Exits the process with status 0 on success and status 1 if a connection or I/O error occurs.
     """
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")

@@ -146,7 +146,13 @@ def test_main_support(capsys):
 @patch("meshtastic.tcp_interface.TCPInterface", side_effect=Exception("no tcp"))
 @patch("meshtastic.util.findPorts", return_value=[])
 def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
-    """Test --ch-index 1."""
+    """
+    Verify CLI handles --ch-index 1 when no devices are available.
+
+    Asserts that the global channel_index is set to 1, main() exits with SystemExit code 1,
+    stdout contains "Error connecting to localhost", stderr is empty, and the port
+    discovery function was invoked.
+    """
     sys.argv = ["", "--ch-index", "1"]
     mt_config.args = sys.argv
 
@@ -241,12 +247,9 @@ def test_main_test_two_ports_fails(patched_test_all, capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info(capsys, caplog):
     """
-    Verify that running the CLI with --info prints a "Connected to radio"
-    message and invokes SerialInterface.showInfo.
+    Tests that invoking the CLI with `--info` connects to a radio and calls SerialInterface.showInfo.
 
-    Patches SerialInterface to a mock whose showInfo prints a recognizable
-    marker, then asserts the marker and the connection message appear on stdout,
-    stderr is empty, and the SerialInterface constructor was called.
+    Patches SerialInterface with a mock that prints a recognizable marker from showInfo, then asserts stdout contains "Connected to radio" and the marker, stderr is empty, and the SerialInterface constructor was invoked.
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -256,6 +259,11 @@ def test_main_info(capsys, caplog):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
+        """
+        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+
+        This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
+        """
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
@@ -275,7 +283,11 @@ def test_main_info(capsys, caplog):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("os.getlogin")
 def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
-    """Test --info."""
+    """
+    Verify that invoking the CLI with --info exits with code 1 and prints a permission-related message when the serial interface cannot be opened due to a PermissionError.
+
+    Asserts that a SystemExit with code 1 is raised, the current user lookup was attempted, stdout contains guidance matching "Need to add yourself", and stderr is empty.
+    """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
 
@@ -311,6 +323,11 @@ def test_main_info_with_tcp_interface(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
+        """
+        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+
+        This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
+        """
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
@@ -335,6 +352,11 @@ def test_main_no_proto(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
+        """
+        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+
+        This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
+        """
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
@@ -359,7 +381,11 @@ def test_main_no_proto(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info_with_seriallog_stdout(capsys):
-    """Test --info."""
+    """
+    Verify that running the CLI with --info and --seriallog stdout prints connection and info output.
+
+    Asserts that stdout contains "Connected to radio" and the output produced by showInfo, and that nothing is written to stderr.
+    """
     sys.argv = ["", "--info", "--seriallog", "stdout"]
     mt_config.args = sys.argv
 
@@ -368,6 +394,11 @@ def test_main_info_with_seriallog_stdout(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
+        """
+        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+
+        This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
+        """
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
@@ -392,6 +423,11 @@ def test_main_info_with_seriallog_output_txt(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
+        """
+        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+
+        This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
+        """
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
@@ -439,15 +475,7 @@ def test_main_qr(capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onConnected_exception(capsys):
     """
-    Verify that running main with the QR option causes the process to exit when QR code generation raises an exception.
-
-    This test patches SerialInterface and forces pyqrcode.create to raise an
-    Exception, then asserts that main() results in a SystemExit with exit code 1.
-
-    Parameters
-    ----------
-        capsys: Pytest capture fixture used to read stdout/stderr.
-
+    Verify that running main with --qr exits with code 1 when QR code generation raises an exception.
     """
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
@@ -473,7 +501,12 @@ def test_main_onConnected_exception(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_nodes(capsys):
-    """Test --nodes."""
+    """
+    Verify the CLI --nodes option connects to a radio and prints the node list.
+
+    Asserts that the output contains a "Connected to radio" message, that the mocked
+    showNodes output is printed, no stderr is produced, and SerialInterface was instantiated.
+    """
     sys.argv = ["", "--nodes"]
     mt_config.args = sys.argv
 
@@ -482,6 +515,13 @@ def test_main_nodes(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showNodes(includeSelf, showFields):
+        """
+        Prints a test marker indicating a mocked node listing and its options.
+
+        Parameters:
+                includeSelf (bool): Whether the local node would be included in the listing.
+                showFields (Any): Representation of which node fields would be shown; forwarded verbatim into the printed marker.
+        """
         print(f"inside mocked showNodes: {includeSelf} {showFields}")
 
     iface.showNodes.side_effect = mock_showNodes
@@ -971,7 +1011,11 @@ def test_main_setlat_remote(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_removeposition(capsys):
-    """Test --remove-position."""
+    """
+    Verify that invoking the CLI with --remove-position connects to the radio, removes the node's fixed position, and prints confirmation.
+
+    Asserts that "Connected to radio" and "Removing fixed position" appear on stdout, that the node's removeFixedPosition was invoked (observable via its printed output), stderr is empty, and a SerialInterface instance was created.
+    """
     sys.argv = ["", "--remove-position"]
     mt_config.args = sys.argv
 
@@ -1997,11 +2041,10 @@ def test_main_onConnection(capsys):
 
         def getName(self):
             """
-            Get the fake name for a topic.
+            Get a fake topic name.
 
             Returns:
-                The fake topic name, "foo".
-
+                The fixed fake topic name `'foo'`.
             """
             return "foo"
 
@@ -2822,7 +2865,11 @@ def test_main_gpio_rd_no_dest(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_set_psk_no_ch_index(capsys):
-    """Test --ch-set psk."""
+    """
+    Verify that invoking the CLI with `--ch-set psk` but without a `--ch-index` prints a warning and exits with code 1.
+
+    Asserts that the tool reports a successful connection, emits a warning that `--ch-index` must be specified, produces no stderr output, and raises SystemExit with code 1.
+    """
     sys.argv = ["", "--ch-set", "psk", "foo", "--host", "meshtastic.local"]
     mt_config.args = sys.argv
 
@@ -2989,7 +3036,14 @@ def test_tunnel_tunnel_arg(
 
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
-        """Sleep helper for tests; prints amount and exits with code 3."""
+        """
+        Helper used in tests to simulate a sleep by printing the provided value and terminating the process.
+
+        Prints `amount` to stdout and then exits the process with exit code 3.
+
+        Parameters:
+            amount: The value (typically a sleep duration) to print before exiting.
+        """
         print(f"{amount}")
         sys.exit(3)
 
@@ -3176,7 +3230,11 @@ def test_main_set_owner_short_empty_string(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_ham_whitespace_only(capsys):
-    """Test --set-ham with whitespace-only name."""
+    """
+    Verify that invoking the CLI with --set-ham and a whitespace-only callsign prints an appropriate error and exits with code 1.
+
+    Asserts the error message "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters" appears on stdout and that the process exits with code 1.
+    """
     sys.argv = ["", "--set-ham", "   "]
     mt_config.args = sys.argv
 

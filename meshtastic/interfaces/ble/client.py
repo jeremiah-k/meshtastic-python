@@ -54,22 +54,18 @@ class BLEClient:
         awaitable: Awaitable[T], timeout: Optional[float], label: str
     ) -> T:
         """
-        Waits for the given awaitable to complete and raises a BLEClient.BLEError if it does not finish within the specified timeout.
+        Await an awaitable and raise BLEClient.BLEError if it does not complete within the given timeout.
 
-        Parameters
-        ----------
-            awaitable (Awaitable): The awaitable to run.
-            timeout (float | None): Maximum seconds to wait; if None, waits indefinitely.
-            label (str): Short description inserted into the timeout error message.
+        Parameters:
+            awaitable (Awaitable[T]): The awaitable to run.
+            timeout (float | None): Maximum seconds to wait; if None, wait indefinitely.
+            label (str): Short description used in the timeout error message.
 
-        Returns
-        -------
-            The value returned by the awaitable.
+        Returns:
+            T: The value produced by the awaitable.
 
-        Raises
-        ------
+        Raises:
             BLEClient.BLEError: If the awaitable does not complete before the timeout elapses.
-
         """
         if timeout is None:
             return await awaitable
@@ -132,11 +128,10 @@ class BLEClient:
         """
         Discover nearby BLE devices.
 
-        Keyword arguments are passed to the scanner to configure discovery options (for example, `timeout` or `adapter`).
+        Keyword arguments are forwarded to the underlying scanner (for example: `timeout`, `adapter`) to configure discovery.
 
         Returns:
-            A list of discovered `BLEDevice` objects.
-
+            list: A list of discovered `BLEDevice` objects.
         """
         return self.async_await(BleakScanner.discover(**kwargs))
 
@@ -186,10 +181,7 @@ class BLEClient:
         Report whether the underlying Bleak client currently has an active connection.
 
         Returns:
-            `True` if the bleak client reports an active connection, `False`
-            otherwise (also `False` when no bleak client exists or the
-            connection state cannot be read).
-
+            `true` if the bleak client reports an active connection, `false` otherwise (also `false` when no bleak client exists or the connection state cannot be read).
         """
         # Keep getattr() defensive: some tests instantiate via object.__new__
         # and bypass __init__, so bleak_client may legitimately be absent.
@@ -224,17 +216,14 @@ class BLEClient:
         self, *, await_timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
         """
-        Disconnect from the remote BLE device and wait until the operation completes.
+        Disconnect from the remote BLE device and wait for the operation to complete.
 
-        Parameters
-        ----------
-            await_timeout (float | None): Maximum seconds to wait for disconnect to complete. If `None`, wait indefinitely.
-            **kwargs: Additional keyword arguments forwarded to the underlying Bleak client's `disconnect` method.
+        Parameters:
+            await_timeout (float | None): Maximum seconds to wait for the disconnect to finish. If None, wait indefinitely.
+            **kwargs: Additional keyword arguments forwarded to the underlying Bleak client's disconnect method.
 
-        Note:
-            In bleak >= 2.1.1, this method returns None. The operation raises
-            an exception on failure; success is indicated by normal return.
-
+        Raises:
+            BLEError: If the BLE client is not initialized or if the underlying disconnect fails.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
@@ -270,7 +259,12 @@ class BLEClient:
     def readGattChar(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> bytes:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Compatibility wrapper retained for backward compatibility that emits a DeprecationWarning and reads a GATT characteristic.
+
+        Returns:
+            bytes: The characteristic value as raw bytes.
+        """
         warnings.warn(
             "readGattChar is deprecated; use read_gatt_char instead",
             DeprecationWarning,
@@ -305,9 +299,9 @@ class BLEClient:
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
         """
-        Deprecated camelCase compatibility wrapper for writing a GATT characteristic.
+        Deprecated camelCase compatibility wrapper that forwards all arguments to the updated GATT write method.
 
-        This function is retained for backwards compatibility and forwards all positional and keyword arguments to the canonical write_gatt_char implementation. Use write_gatt_char instead.
+        This function exists for backward compatibility and is deprecated; prefer the snake_case write_gatt_char API.
         """
         warnings.warn(
             "writeGattChar is deprecated; use write_gatt_char instead",
@@ -382,7 +376,15 @@ class BLEClient:
         return bool(services and services.get_characteristic(specifier))
 
     def hasCharacteristic(self, specifier: Union[str, UUID]) -> bool:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        CamelCase compatibility wrapper for has_characteristic.
+
+        Parameters:
+            specifier (str | UUID): Characteristic identifier to look up (UUID string or UUID object).
+
+        Returns:
+            `true` if the connected device exposes the specified characteristic, `false` otherwise.
+        """
         warnings.warn(
             "hasCharacteristic is deprecated; use has_characteristic instead",
             DeprecationWarning,
@@ -418,7 +420,11 @@ class BLEClient:
     def startNotify(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
-        """Compatibility wrapper for callers using camelCase."""
+        """
+        Deprecated camelCase wrapper for start_notify.
+
+        Issues a DeprecationWarning and delegates the call to start_notify with the same arguments.
+        """
         warnings.warn(
             "startNotify is deprecated; use start_notify instead",
             DeprecationWarning,
@@ -469,14 +475,9 @@ class BLEClient:
 
     def close(self) -> None:
         """
-        Close the BLEClient, best-effort disconnecting transport first, then cancel pending operations.
+        Close the BLEClient and perform a best-effort shutdown.
 
-        If an underlying Bleak client exists and currently reports connected,
-        close() attempts a bounded disconnect first. Any disconnect errors are
-        suppressed so shutdown remains best-effort and idempotent. After that,
-        this marks the wrapper as closed and cancels pending futures to unblock
-        waiting callers. This does not stop or affect any shared event loop
-        used by other clients.
+        If an underlying Bleak client exists and is connected, this attempts a bounded disconnect and suppresses any disconnect errors so shutdown remains best-effort and idempotent. The method is thread-safe (uses an internal close lock), marks the wrapper as closed, and cancels any tracked pending futures to unblock waiting callers. This does not stop or affect the shared BLE event loop used by other clients.
         """
         with self._close_lock:
             if getattr(self, "_closed", False):
@@ -499,11 +500,10 @@ class BLEClient:
 
     def __enter__(self) -> "BLEClient":
         """
-        Provide the BLEClient instance for use as a context manager.
+        Return the BLEClient instance when entering a context.
 
         Returns:
-            self: The BLEClient instance entered into the context.
-
+            The BLEClient instance.
         """
         return self
 
@@ -516,9 +516,7 @@ class BLEClient:
         """
         Close the BLEClient when exiting a context manager.
 
-        This method calls close() to release resources. Any exception
-        information supplied by the context manager (`_type`, `_value`,
-        `_traceback`) is ignored and exceptions are not suppressed.
+        Calls close() to release resources. Any `_type`, `_value`, and `_traceback` arguments provided by the context manager are ignored and exceptions are not suppressed.
         """
         self.close()
 
@@ -641,20 +639,16 @@ class BLEClient:
 
     def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """
-        Schedule the given coroutine to run on the shared BLE event loop.
+        Schedule a coroutine to run on the shared BLE event loop.
 
-        Parameters
-        ----------
-            coro (Coroutine): The coroutine to schedule on the shared BLE event loop.
+        Parameters:
+            coro (Coroutine[Any, Any, Any]): Coroutine to schedule on the shared BLE event loop.
 
-        Returns
-        -------
-            concurrent.futures.Future: Future representing the scheduled coroutine's eventual result.
+        Returns:
+            concurrent.futures.Future[Any]: Future representing the scheduled coroutine's eventual result.
 
-        Raises
-        ------
+        Raises:
             BLEClient.BLEError: If the BLEClient is closed or the coroutine cannot be scheduled.
-
         """
         if self._closed:
             raise self.BLEError("Cannot schedule operation: BLE client is closed")

@@ -52,6 +52,13 @@ class _TempPort:
     vid: Optional[int]
 
     def __init__(self, device: Optional[str] = None, vid: Optional[int] = None) -> None:
+        """
+        Initialize the temporary port stub with an optional device path and vendor ID.
+
+        Parameters:
+            device (Optional[str]): The port device path (for example '/dev/ttyUSB0') or None.
+            vid (Optional[int]): The USB vendor ID as an integer, or None.
+        """
         self.device = device
         self.vid = vid
 
@@ -611,9 +618,9 @@ def test_message_to_json_shows_all():
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert actual.get(key) == value, (
-            f"Key {key}: expected {value}, got {actual.get(key)}"
-        )
+        assert (
+            actual.get(key) == value
+        ), f"Key {key}: expected {value}, got {actual.get(key)}"
 
 
 @pytest.mark.unit

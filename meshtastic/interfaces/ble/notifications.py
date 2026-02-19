@@ -89,9 +89,9 @@ class NotificationManager:
 
     def _cleanup_all(self) -> None:
         """
-        Remove all tracked BLE notification subscriptions and associated callbacks from the manager.
+        Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
-        This clears the internal subscription registry and the per-characteristic callback mapping.
+        This resets the manager's internal state: clears the subscription registry, clears the characteristic->callback mapping, and resets the subscription token counter to zero while holding the internal lock.
         """
         with self._lock:
             self._active_subscriptions.clear()
@@ -102,13 +102,11 @@ class NotificationManager:
         self, client: "BLEClient", *, timeout: Optional[float]
     ) -> None:
         """
-        Stop notifications for all tracked characteristics on the given BLE client, suppressing and logging any errors.
+        Stop notifications for every characteristic currently tracked and ignore any errors.
 
-        Parameters
-        ----------
-            client: BLE client used to stop notifications.
-            timeout: Per-unsubscribe timeout passed to the client's `stop_notify` method; may be None.
-
+        Parameters:
+            client (BLEClient): BLE client used to stop notifications.
+            timeout (Optional[float]): Per-unsubscribe timeout passed to the client's `stop_notify` method; may be None.
         """
         with self._lock:
             characteristics = list(self._characteristic_to_callback.keys())
@@ -161,11 +159,10 @@ class NotificationManager:
 
     def __len__(self) -> int:
         """
-        Number of active BLE notification subscriptions being tracked.
+        Report the number of active BLE notification subscriptions being tracked.
 
         Returns:
-            int: Number of active subscriptions currently tracked.
-
+            int: The number of active subscriptions currently tracked.
         """
         with self._lock:
             return len(self._active_subscriptions)

@@ -19,7 +19,9 @@ from typing import IO, Any, Optional
 
 def reset() -> None:
     """
-    Restore the namespace to pristine condition.
+    Reset the module-level namespace to its initial pristine state.
+
+    Sets the globals `args`, `parser`, `channel_index`, `logfile`, and `tunnelInstance` to `None` and `camel_case` to `False`.
     """
     # pylint: disable=W0603
     global args, parser, channel_index, logfile, tunnelInstance, camel_case
