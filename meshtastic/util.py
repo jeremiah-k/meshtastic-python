@@ -122,7 +122,7 @@ def fromStr(valstr: str) -> Any:
 
     The function interprets the input as follows:
     - An empty string -> empty bytes.
-    - Strings starting with "0x" -> single byte value from hex (2-digit, left-padded).
+    - Strings starting with "0x" -> hex-decoded bytes (odd-length hex is left-padded with a leading zero nibble).
     - Strings starting with "base64:" -> base64-decoded bytes of the remainder.
     - Case-insensitive "t", "true", "yes" -> `True`; "f", "false", "no" -> `False`.
     - Otherwise attempts integer parsing, then float parsing, and falls back to the original string.
@@ -140,8 +140,13 @@ def fromStr(valstr: str) -> Any:
     if len(valstr) == 0:  # Treat an emptystring as an empty bytes
         val = bytes()
     elif valstr.startswith("0x"):
-        # if needed convert to string with asBytes.decode('utf-8')
-        val = bytes.fromhex(valstr[2:].zfill(2))
+        # Parse hex and preserve compatibility with "0x"/single-nibble forms.
+        hex_value = valstr[2:]
+        if len(hex_value) == 0:
+            hex_value = "00"
+        elif len(hex_value) % 2 == 1:
+            hex_value = "0" + hex_value
+        val = bytes.fromhex(hex_value)
     elif valstr.startswith("base64:"):
         val = base64.b64decode(valstr[7:])
     elif valstr.lower() in {"t", "true", "yes"}:
