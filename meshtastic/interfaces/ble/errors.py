@@ -89,6 +89,18 @@ class BLEErrorHandler:
             return default_return
 
     @staticmethod
+    def safe_cleanup(
+        func: Callable[[], Any], cleanup_name: str = "cleanup operation"
+    ) -> bool:
+        """
+        Public wrapper for best-effort cleanup operations.
+
+        Delegates to the internal cleanup helper that suppresses all non-exit
+        exceptions and returns a success boolean.
+        """
+        return BLEErrorHandler._safe_cleanup(func, cleanup_name)
+
+    @staticmethod
     def _safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:

@@ -490,7 +490,7 @@ class MeshInterface:  # pylint: disable=R0902
                 # Treat non-dotted path as a single-level lookup
                 return node_dict.get(key_path)
             keys = key_path.split(".")
-            value: Optional[Union[str, Dict[str, Any]]] = node_dict
+            value: Any = node_dict
             for key in keys:
                 if isinstance(value, dict):
                     value = value.get(key)

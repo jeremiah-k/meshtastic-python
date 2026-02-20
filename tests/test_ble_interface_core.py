@@ -1539,6 +1539,10 @@ def test_reconnect_worker_successful_attempt():
             """
             return self._attempt_count
 
+        def _get_attempt_count(self):
+            """Return the internal attempt count for ReconnectWorker tests."""
+            return self.get_attempt_count()
+
         def next_attempt(self):
             """
             Determine the delay before the next retry and whether another attempt should be made.
@@ -1554,6 +1558,10 @@ def test_reconnect_worker_successful_attempt():
             """
             self._attempt_count += 1
             return 0.1, False
+
+        def _next_attempt(self):
+            """Return the next retry tuple for ReconnectWorker tests."""
+            return self.next_attempt()
 
     class DummyInterface:
         BLEError = RuntimeError
@@ -1684,6 +1692,10 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             return self.attempts
 
+        def _get_attempt_count(self):
+            """Return the internal attempt count for ReconnectWorker tests."""
+            return self.get_attempt_count()
+
         def next_attempt(self):
             """
             Return the delay before the next retry and whether another retry should be attempted.
@@ -1697,6 +1709,10 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             self.attempts += 1
             return 0.25, self.attempts < 2
+
+        def _next_attempt(self):
+            """Return the next retry tuple for ReconnectWorker tests."""
+            return self.next_attempt()
 
     class FailingInterface:
         BLEError = RuntimeError

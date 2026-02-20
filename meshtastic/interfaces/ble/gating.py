@@ -191,6 +191,10 @@ def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
     try:
         return weakref.ref(owner)
     except TypeError:
+        logger.debug(
+            "Owner is not weak-referenceable; using id() fallback for gate ownership: %r",
+            owner,
+        )
         return None
 
 
@@ -299,6 +303,8 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
             # Also check owner ID when weakref is unavailable (non-weakrefable objects)
             if current_owner is None:
                 stored_id = _CONNECTED_OWNER_IDS.get(key)
+                # CPython can reuse ids after GC; this fallback path is only used
+                # when weakref tracking is unavailable and remains best-effort.
                 if stored_id is not None and stored_id != id(owner):
                     logger.debug(
                         "Ignoring disconnect mark for %s from non-owner instance.",

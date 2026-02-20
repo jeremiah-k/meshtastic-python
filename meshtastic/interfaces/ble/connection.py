@@ -234,7 +234,7 @@ class ClientManager:
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            self.error_handler._safe_cleanup(
+            self.error_handler.safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
@@ -242,7 +242,7 @@ class ClientManager:
             logger.debug(
                 "Skipping BLE client disconnect during interpreter finalization."
             )
-        self.error_handler._safe_cleanup(client.close, "client close")
+        self.error_handler.safe_cleanup(client.close, "client close")
         if event:
             event.set()
 
@@ -355,6 +355,29 @@ class ConnectionOrchestrator:
             normalized_device_address or "unknown",
         )
 
+    def _transition_failure_to_disconnected(self, error_context: str) -> None:
+        """
+        Best-effort state correction after a connection failure.
+
+        Transitions to ERROR and then DISCONNECTED, logging if either transition
+        is rejected and forcing DISCONNECTED as a final fallback.
+        """
+        if not self.state_manager.transition_to(ConnectionState.ERROR):
+            logger.warning(
+                "Failed state transition to %s during %s (current=%s)",
+                ConnectionState.ERROR.value,
+                error_context,
+                self.state_manager.state.value,
+            )
+        if not self.state_manager.transition_to(ConnectionState.DISCONNECTED):
+            logger.warning(
+                "Failed state transition to %s during %s (current=%s); forcing reset",
+                ConnectionState.DISCONNECTED.value,
+                error_context,
+                self.state_manager.state.value,
+            )
+            self.state_manager.reset_to_disconnected()
+
     def establish_connection(
         self,
         address: Optional[str],
@@ -419,13 +442,6 @@ class ConnectionOrchestrator:
                         DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
                     )
                     self.client_manager.connect_client(client, timeout=direct_timeout)
-                    self._finalize_connection(
-                        client,
-                        target_address,
-                        register_notifications_func,
-                        on_connected_func,
-                    )
-                    return client
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise
                 except Exception as direct_err:
@@ -438,6 +454,14 @@ class ConnectionOrchestrator:
                     if client:
                         self.client_manager.safe_close_client(client)
                     client = None
+                else:
+                    self._finalize_connection(
+                        client,
+                        target_address,
+                        register_notifications_func,
+                        on_connected_func,
+                    )
+                    return client
 
             device = self.interface.find_device(address or current_address)
             client = self.client_manager.create_client(
@@ -450,8 +474,7 @@ class ConnectionOrchestrator:
         except BleakDBusError:
             if client:
                 self.client_manager.safe_close_client(client)
-            self.state_manager.transition_to(ConnectionState.ERROR)
-            self.state_manager.transition_to(ConnectionState.DISCONNECTED)
+            self._transition_failure_to_disconnected("BleakDBusError during connect")
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             # Clean up client before re-raising to avoid resource leak
@@ -464,9 +487,7 @@ class ConnectionOrchestrator:
             )
             if client:
                 self.client_manager.safe_close_client(client)
-            self.state_manager.transition_to(ConnectionState.ERROR)
-            # Reset to DISCONNECTED so future connection attempts are permitted
-            self.state_manager.transition_to(ConnectionState.DISCONNECTED)
+            self._transition_failure_to_disconnected("unexpected connect failure")
             raise
         else:
             return client

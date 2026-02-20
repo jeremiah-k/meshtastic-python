@@ -63,7 +63,9 @@ class BLEConfig:
     RUNNER_IDLE_WAKE_INTERVAL_SECONDS = 0.1
 
 
-# Backwards-compatible aliases for legacy module-level constants
+# Backwards-compatible aliases for legacy module-level constants.
+# These are import-time snapshots of BLEConfig class attributes and will not
+# reflect dynamic BLEConfig changes made after this module is imported.
 BLE_SCAN_TIMEOUT = BLEConfig.BLE_SCAN_TIMEOUT
 RECEIVE_WAIT_TIMEOUT = BLEConfig.RECEIVE_WAIT_TIMEOUT
 EMPTY_READ_RETRY_DELAY = BLEConfig.EMPTY_READ_RETRY_DELAY

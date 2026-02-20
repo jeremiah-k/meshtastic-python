@@ -792,11 +792,11 @@ def test_waitForConfig():
     """
     Verify that waitForConfig raises MeshInterface.MeshInterfaceError when the interface times out waiting for configuration.
     """
-    iface = MeshInterface(noProto=True)
-    # override how long to wait
-    iface._timeout = Timeout(1)
-    with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
-        iface.waitForConfig()
+    with MeshInterface(noProto=True) as iface:
+        # override how long to wait
+        iface._timeout = Timeout(1)
+        with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
+            iface.waitForConfig()
     assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
     assert "Timed out waiting for interface config" in str(pytest_wrapped_e.value)
 

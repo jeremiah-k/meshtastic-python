@@ -140,6 +140,10 @@ class ReconnectPolicy:
         Internal helper: compute the jittered backoff delay for the current attempt, indicate whether
         another retry is permitted, and then advance the internal attempt counter.
 
+        `should_retry` is computed by calling _should_retry() before incrementing
+        _attempt_count, so `max_retries` represents retries after the initial
+        connection attempt (total attempts = 1 + max_retries).
+
         Returns
         -------
             delay (float): Computed jittered backoff delay for the current attempt.
@@ -181,7 +185,7 @@ class ReconnectPolicy:
         Deprecated compatibility wrapper for _get_delay().
         """
         warnings.warn(
-            "ReconnectPolicy.get_delay is deprecated; use getDelay or internal _get_delay",
+            "ReconnectPolicy.get_delay is deprecated; use getDelay instead",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -192,7 +196,7 @@ class ReconnectPolicy:
         Deprecated compatibility wrapper for _should_retry().
         """
         warnings.warn(
-            "ReconnectPolicy.should_retry is deprecated; use shouldRetry or internal _should_retry",
+            "ReconnectPolicy.should_retry is deprecated; use shouldRetry instead",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -203,7 +207,7 @@ class ReconnectPolicy:
         Deprecated compatibility wrapper for _next_attempt().
         """
         warnings.warn(
-            "ReconnectPolicy.next_attempt is deprecated; use nextAttempt or internal _next_attempt",
+            "ReconnectPolicy.next_attempt is deprecated; use nextAttempt instead",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -214,7 +218,7 @@ class ReconnectPolicy:
         Deprecated compatibility wrapper for _get_attempt_count().
         """
         warnings.warn(
-            "ReconnectPolicy.get_attempt_count is deprecated; use getAttemptCount or internal _get_attempt_count",
+            "ReconnectPolicy.get_attempt_count is deprecated; use getAttemptCount instead",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -225,7 +229,7 @@ class ReconnectPolicy:
         Deprecated compatibility wrapper for _sleep_with_backoff().
         """
         warnings.warn(
-            "ReconnectPolicy.sleep_with_backoff is deprecated; use sleepWithBackoff or internal _sleep_with_backoff",
+            "ReconnectPolicy.sleep_with_backoff is deprecated; use sleepWithBackoff instead",
             DeprecationWarning,
             stacklevel=2,
         )

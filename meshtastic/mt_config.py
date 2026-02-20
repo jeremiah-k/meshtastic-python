@@ -44,7 +44,7 @@ args: Optional[argparse.Namespace]
 parser: Optional[argparse.ArgumentParser]
 channel_index: Optional[int]
 logfile: Optional[IO[str]]
-tunnelInstance: Optional[Any]
+tunnelInstance: Any
 camel_case: bool
 
 reset()

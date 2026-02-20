@@ -32,7 +32,8 @@ def root_dir() -> str:
 
     Returns
     -------
-        path (str): Filesystem path to the "slogs" directory.
+    str
+        Filesystem path to the "slogs" directory.
 
     """
 
@@ -241,7 +242,8 @@ class StructuredLogger:
 
         Parameters
         ----------
-            line (str): The raw log line to process.
+        line : str
+            The raw log line to process.
 
         """
 

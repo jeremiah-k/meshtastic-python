@@ -84,6 +84,8 @@ from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
 MAX_DRAIN_ITERATIONS = 10_000
+RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD = 3
+RECEIVE_RECOVERY_MAX_BACKOFF_SEC = 30
 
 
 class BLEInterface(MeshInterface):
@@ -685,7 +687,7 @@ class BLEInterface(MeshInterface):
             )
             self._malformed_notification_count = 0
 
-    def from_num_handler(self, _: Any, b: bytearray) -> None:  # pylint: disable=C0116
+    def _from_num_handler(self, _: Any, b: bytearray) -> None:  # pylint: disable=C0116
         """
         Process a FROMNUM characteristic notification and wake the receive loop.
 
@@ -791,7 +793,7 @@ class BLEInterface(MeshInterface):
             Invoke the FROMNUM notification handler and capture/report any exceptions it raises.
             """
             _safe_call(
-                self.from_num_handler,
+                self._from_num_handler,
                 sender,
                 data,
                 "Error in FROMNUM notification handler",
@@ -1494,9 +1496,19 @@ class BLEInterface(MeshInterface):
                 #    a threading lock or atomic update should be introduced to avoid races.
                 now = time.monotonic()
                 self._receive_recovery_attempts += 1
-                if self._receive_recovery_attempts > 3:
+                if (
+                    self._receive_recovery_attempts
+                    > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD
+                ):
                     # Exponential backoff after 3 rapid failures
-                    backoff = min(2 ** (self._receive_recovery_attempts - 3), 30)
+                    backoff = min(
+                        2
+                        ** (
+                            self._receive_recovery_attempts
+                            - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD
+                        ),
+                        RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
+                    )
                     if now - self._last_recovery_time < backoff:
                         logger.warning(
                             "Throttling BLE receive recovery: waiting %.1fs "
@@ -1744,7 +1756,7 @@ class BLEInterface(MeshInterface):
             self._wait_for_disconnect_notifications()
 
         if self._discovery_manager is not None:
-            self.error_handler._safe_cleanup(
+            self.error_handler.safe_cleanup(
                 self._discovery_manager.close, "discovery manager close"
             )
             self._discovery_manager = None

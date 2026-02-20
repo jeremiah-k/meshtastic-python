@@ -8,16 +8,16 @@ managers/helpers live in submodules under
 `meshtastic.interfaces.ble.*` and are not part of the compatibility surface.
 """
 
+import importlib.util
+
 # ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
 
-try:
-    import bleak as _bleak  # noqa: F401
-except ImportError as exc:  # pragma: no cover - environment/dependency guard
+if importlib.util.find_spec("bleak") is None:  # pragma: no cover - dependency guard
     raise ImportError(
         "BLE support requires the 'bleak' package, but it is missing. "
         "Your Meshtastic installation appears incomplete; reinstall dependencies "
         "with `poetry install` (or `pip install --upgrade meshtastic`)."
-    ) from exc
+    )
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (

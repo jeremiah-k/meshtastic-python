@@ -3,9 +3,12 @@
 # pylint: disable=too-many-lines
 
 import base64
+import binascii
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Optional, Sequence, Union
+
+from google.protobuf.message import DecodeError
 
 from meshtastic.protobuf import (
     admin_pb2,
@@ -79,7 +82,7 @@ class Node:
 
         self.gotResponse = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Return a developer-oriented string representing the Node including its interface, node number, and active non-default flags.
 
@@ -735,12 +738,12 @@ class Node:
 
         try:
             decodedURL = base64.urlsafe_b64decode(b64)
-        except Exception as ex:
+        except (binascii.Error, ValueError) as ex:
             self._raise_interface_error(f"Warning: Invalid URL '{url}': {ex}")
         channelSet = apponly_pb2.ChannelSet()
         try:
             channelSet.ParseFromString(decodedURL)
-        except Exception as ex:
+        except (DecodeError, ValueError) as ex:
             self._raise_interface_error(
                 f"Warning: Unable to parse channel settings from URL '{url}': {ex}"
             )
