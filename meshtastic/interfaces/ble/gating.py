@@ -424,8 +424,8 @@ def is_currently_connected_elsewhere(
 
             return True
 
-    if owner_to_check is None:
-        return False
+    # owner_to_check is guaranteed non-None here: all current_owner-is-None
+    # paths return from inside the first _REGISTRY_LOCK block above.
     connection_state = _owner_connected_state(owner_to_check)
 
     with _REGISTRY_LOCK:

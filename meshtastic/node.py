@@ -1063,6 +1063,22 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
+    def getRingtone(self) -> Optional[str]:
+        """Return the node's ringtone via camelCase API."""
+        return self.get_ringtone()
+
+    def setRingtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
+        """Set the node's ringtone via camelCase API."""
+        return self.set_ringtone(ringtone)
+
+    def getCannedMessage(self) -> Optional[str]:
+        """Return the node's canned message via camelCase API."""
+        return self.get_canned_message()
+
+    def setCannedMessage(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
+        """Set the node's canned message via camelCase API."""
+        return self.set_canned_message(message)
+
     def exitSimulator(self) -> Optional[mesh_pb2.MeshPacket]:
         """
         Request that the target simulator process exit; this request has no effect on non-simulator nodes.
@@ -1686,7 +1702,7 @@ class Node:
             if self.iface._getOrCreateByNum(nodeid).get("adminSessionPassKey") is None:
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
 
-    def get_channels_with_hash(self) -> List[Dict[str, Any]]:
+    def _get_channels_with_hash(self) -> List[Dict[str, Any]]:
         """
         Provide channel entries with index, role, name, and a computed hash.
 
@@ -1720,8 +1736,12 @@ class Node:
                 )
         return result
 
+    def get_channels_with_hash(self) -> List[Dict[str, Any]]:
+        """Backward-compatible snake_case wrapper for channel-hash entries."""
+        return self._get_channels_with_hash()
+
     def getChannelsWithHash(self) -> List[Dict[str, Any]]:
         """
         Return channel entries with hashes via the camelCase compatibility wrapper.
         """
-        return self.get_channels_with_hash()
+        return self._get_channels_with_hash()

@@ -153,9 +153,9 @@ def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
     """
     Verify CLI handles --ch-index 1 when no devices are available.
 
-    Asserts that the global channel_index is set to 1, main() exits with SystemExit code 1,
-    stdout contains "Error connecting to localhost", stderr is empty, and the port
-    discovery function was invoked.
+    Asserts that the global channel_index is set to 1, main() exits with SystemExit
+    code 1, stderr contains "Error connecting to localhost", and the port discovery
+    function was invoked.
     """
     sys.argv = ["", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -166,8 +166,8 @@ def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
-    assert re.search(r"Error connecting to localhost", out, re.MULTILINE)
-    assert err == ""
+    assert out == ""
+    assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
     patched_find_ports.assert_called()
 
 
@@ -185,10 +185,12 @@ def test_main_test_no_ports(patched_find_ports, capsys):
     assert pytest_wrapped_e.value.code == 1
     patched_find_ports.assert_called()
     out, err = capsys.readouterr()
+    combined = out + err
     assert re.search(
-        r"Warning: Must have at least two devices connected to USB", out, re.MULTILINE
+        r"Warning: Must have at least two devices connected to USB",
+        combined,
+        re.MULTILINE,
     )
-    assert err == ""
 
 
 @pytest.mark.unit
@@ -205,10 +207,12 @@ def test_main_test_one_port(patched_find_ports, capsys):
     assert pytest_wrapped_e.value.code == 1
     patched_find_ports.assert_called()
     out, err = capsys.readouterr()
+    combined = out + err
     assert re.search(
-        r"Warning: Must have at least two devices connected to USB", out, re.MULTILINE
+        r"Warning: Must have at least two devices connected to USB",
+        combined,
+        re.MULTILINE,
     )
-    assert err == ""
 
 
 @pytest.mark.unit
@@ -1441,9 +1445,11 @@ def test_main_ch_add_invalid_name_too_long(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: Channel name must be shorter", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(
+            r"Warning: Channel name must be shorter", combined, re.MULTILINE
+        )
         mo.assert_called()
 
 
@@ -1469,9 +1475,9 @@ def test_main_ch_add_but_name_already_exists(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: This node already has", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(r"Warning: This node already has", combined, re.MULTILINE)
         mo.assert_called()
 
 
@@ -1499,9 +1505,11 @@ def test_main_ch_add_but_no_more_channels(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: No free channels were found", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(
+            r"Warning: No free channels were found", combined, re.MULTILINE
+        )
         mo.assert_called()
 
 
@@ -1548,9 +1556,9 @@ def test_main_ch_del_no_ch_index_specified(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: Need to specify", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(r"Warning: Need to specify", combined, re.MULTILINE)
         mo.assert_called()
 
 
@@ -1575,9 +1583,11 @@ def test_main_ch_del_primary_channel(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: Cannot delete primary channel", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(
+            r"Warning: Cannot delete primary channel", combined, re.MULTILINE
+        )
         mo.assert_called()
 
 
@@ -1649,9 +1659,9 @@ def test_main_ch_enable_without_a_ch_index(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: Need to specify", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(r"Warning: Need to specify", combined, re.MULTILINE)
         assert mt_config.channel_index is None
         mo.assert_called()
 
@@ -1676,9 +1686,11 @@ def test_main_ch_enable_primary_channel(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: Cannot enable/disable PRIMARY", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(
+            r"Warning: Cannot enable/disable PRIMARY", combined, re.MULTILINE
+        )
         assert mt_config.channel_index == 0
         mo.assert_called()
 
@@ -1733,13 +1745,13 @@ def test_main_ch_longfast_on_non_primary_channel(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
         assert re.search(
             r"Warning: Cannot set modem preset for non-primary channel",
-            out,
+            combined,
             re.MULTILINE,
         )
-        assert err == ""
         mo.assert_called()
 
 
@@ -2352,8 +2364,8 @@ def test_main_gpio_rd_no_dest(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
-        assert re.search(r"Warning: Must use a destination node ID", out)
-        assert err == ""
+        combined = out + err
+        assert re.search(r"Warning: Must use a destination node ID", combined)
 
 
 # TODO
@@ -2977,9 +2989,11 @@ def test_main_ch_set_psk_no_ch_index(capsys):
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             main()
         out, err = capsys.readouterr()
+        combined = out + err
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"Warning: Need to specify '--ch-index'", out, re.MULTILINE)
-        assert err == ""
+        assert re.search(
+            r"Warning: Need to specify '--ch-index'", combined, re.MULTILINE
+        )
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         mo.assert_called()
@@ -3084,9 +3098,8 @@ def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system, caplog, capsys)
         mock_platform_system.assert_called()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
-        assert re.search(r"Error connecting to localhost", out, re.MULTILINE)
-        assert err == ""
+        _out, err = capsys.readouterr()
+        assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
 
 
 @pytest.mark.unit
@@ -3107,9 +3120,8 @@ def test_tunnel_subnet_arg_with_no_devices(mock_platform_system, caplog, capsys)
         mock_platform_system.assert_called()
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
-        assert re.search(r"Error connecting to localhost", out, re.MULTILINE)
-        assert err == ""
+        _out, err = capsys.readouterr()
+        assert re.search(r"Error connecting to localhost", err, re.MULTILINE)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="on windows is no fcntl module")

@@ -70,5 +70,7 @@ def test_SerialInterface_multiple_ports(mocked_findPorts, capsys):
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     out, err = capsys.readouterr()
-    assert re.search(r"Warning: Multiple serial ports were detected", out, re.MULTILINE)
-    assert err == ""
+    combined = out + err
+    assert re.search(
+        r"Warning: Multiple serial ports were detected", combined, re.MULTILINE
+    )

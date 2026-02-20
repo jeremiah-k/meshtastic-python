@@ -180,8 +180,8 @@ def test_our_exit_non_zero_return_value(capsys):
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         our_exit("Error: Some message", 1)
     out, err = capsys.readouterr()
-    assert re.search(r"Error: Some message", out, re.MULTILINE)
-    assert err == ""
+    assert out == ""
+    assert re.search(r"Error: Some message", err, re.MULTILINE)
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
 

@@ -569,7 +569,7 @@ class DeferredExecution:
                 logger.exception("Unexpected error in deferred execution")
 
 
-def our_exit(message, return_value=1) -> NoReturn:
+def our_exit(message: str, return_value: int = 1) -> NoReturn:
     """
     Exit the process after printing a message.
 
@@ -579,7 +579,8 @@ def our_exit(message, return_value=1) -> NoReturn:
         return_value (int): Process exit code; 0 indicates success, non-zero indicates failure (defaults to 1).
 
     """
-    print(message)
+    output_stream = sys.stderr if return_value != 0 else sys.stdout
+    print(message, file=output_stream)
     sys.exit(return_value)
 
 

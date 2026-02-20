@@ -11,10 +11,19 @@ from ..remote_hardware import RemoteHardwareClient, onGPIOreceive
 from ..serial_interface import SerialInterface
 
 
+def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
+    """Create a SerialInterface mock with an explicit gpio channel stub."""
+    iface = MagicMock(autospec=SerialInterface)
+    channel = MagicMock()
+    channel.index = channel_index
+    iface.localNode.getChannelByName.return_value = channel
+    return iface
+
+
 @pytest.mark.unit
 def test_RemoteHardwareClient():
     """Test that we can instantiate a RemoteHardwareClient instance."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     assert rhw.iface == iface
     iface.close()
@@ -54,7 +63,7 @@ def test_RemoteHardwareClient_no_gpio_channel():
 @pytest.mark.unit
 def test_readGPIOs(caplog):
     """Test readGPIOs."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
         rhw.readGPIOs("0x10", 123)
@@ -65,7 +74,7 @@ def test_readGPIOs(caplog):
 @pytest.mark.unit
 def test_writeGPIOs(caplog):
     """Test writeGPIOs."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
         rhw.writeGPIOs("0x10", 123, 1)
@@ -76,7 +85,7 @@ def test_writeGPIOs(caplog):
 @pytest.mark.unit
 def test_watchGPIOs(caplog):
     """Test watchGPIOs."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
         rhw.watchGPIOs("0x10", 123)

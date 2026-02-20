@@ -10,21 +10,12 @@ from meshtastic.interfaces.ble import gating
 logger = logging.getLogger(__name__)
 
 
-def _clear_all_registries() -> None:
-    """
-    Clear BLE gating global registries.
-
-    Delegates to the public gating reset helper.
-    """
-    gating.clear_all_registries()
-
-
 @pytest.fixture
 def clear_registry() -> Iterator[None]:
     """Reset BLE gating global registries before and after each test."""
-    _clear_all_registries()
+    gating.clear_all_registries()
     yield
-    _clear_all_registries()
+    gating.clear_all_registries()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -45,7 +36,7 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
     try:
         runner = BLECoroutineRunner()
         runner.stop(timeout=2.0)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - teardown must not raise
         logger.debug(
             "Failed to stop BLECoroutineRunner during test cleanup: %s",
             exc,
