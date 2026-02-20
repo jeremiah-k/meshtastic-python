@@ -1669,20 +1669,17 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
                     f"Error: invalid TCP port in --host '{host_str}'.",
                     1,
                 )
-                return tcp_hostname, default_port
             if not 1 <= tcp_port <= 65535:
                 meshtastic.util.our_exit(
                     f"Error: invalid TCP port in --host '{host_str}'.",
                     1,
                 )
-                return tcp_hostname, default_port
             return tcp_hostname, tcp_port
         if remainder:
             meshtastic.util.our_exit(
                 f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
                 1,
             )
-            return tcp_hostname, default_port
         return tcp_hostname, default_port
 
     if ":" in host_str:
