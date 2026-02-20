@@ -28,7 +28,8 @@ def onGPIOreceive(packet: Dict[str, Any], interface: "MeshInterface") -> None:
             # so, we set it here
             gpioValue = 0
 
-    mask = interface.mask if interface.mask is not None else 0
+    mask = interface.mask if interface.mask is not None else hw.get("gpioMask", 0)
+    mask = int(mask)
     logger.debug("mask:%s", mask)
     value = int(gpioValue) & mask
     logger.info(

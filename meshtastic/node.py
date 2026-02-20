@@ -5,6 +5,7 @@
 import base64
 import binascii
 import logging
+import threading
 import time
 from typing import (
     TYPE_CHECKING,
@@ -89,8 +90,6 @@ class Node:
         self.cannedPluginMessageMessages: Optional[str] = None
         self.ringtone: Optional[str] = None
         self.ringtonePart: Optional[str] = None
-
-        self.gotResponse: Optional[bool] = None
 
     def __repr__(self) -> str:
         """
@@ -515,7 +514,7 @@ class Node:
 
         Returns
         -------
-            admin_pb2.Channel or None: The channel at the specified index, or None if channels are unset or the index is out of range.
+            channel_pb2.Channel or None: The channel at the specified index, or None if channels are unset or the index is out of range.
 
         """
         ch = None
@@ -789,7 +788,14 @@ class Node:
                 self.writeChannel(ch.index)
         else:
             i = 0
+            max_channels = len(self.channels)
             for chs in channelSet.settings:
+                if i >= max_channels:
+                    logger.warning(
+                        "URL contains more than %d channels; extra channels are ignored.",
+                        max_channels,
+                    )
+                    break
                 ch = channel_pb2.Channel()
                 ch.role = (
                     channel_pb2.Channel.Role.PRIMARY
@@ -801,20 +807,20 @@ class Node:
                 self.channels[ch.index] = ch
                 logger.debug(f"Channel i:{i} ch:{ch}")
                 self.writeChannel(ch.index)
-                i = i + 1
+                i += 1
 
         p = admin_pb2.AdminMessage()
         p.set_config.lora.CopyFrom(channelSet.lora_config)
         self.ensureSessionKey()
         self._sendAdmin(p)
 
-    def onResponseRequestRingtone(self, p):
+    def onResponseRequestRingtone(self, p: Dict[str, Any]) -> None:
         """
         Handle an incoming admin response containing a ringtone part and record it on the Node.
 
         Checks the decoded packet for routing errors; if none are present and the packet contains
-        an admin.raw get_ringtone_response, stores that value in self.ringtonePart and sets
-        self.gotResponse to True. If a routing error is present, prints the error reason.
+        an admin.raw get_ringtone_response, stores that value in self.ringtonePart.
+        If a routing error is present, prints the error reason.
 
         Parameters
         ----------
@@ -840,7 +846,6 @@ class Node:
                             "raw"
                         ].get_ringtone_response
                         logger.debug(f"self.ringtonePart:{self.ringtonePart}")
-                        self.gotResponse = True
 
     def get_ringtone(self) -> Optional[str]:
         """
@@ -862,14 +867,20 @@ class Node:
             return None
 
         if not self.ringtone:
+            response_event = threading.Event()
+
+            def _on_ringtone_response(packet: Dict[str, Any]) -> None:
+                try:
+                    self.onResponseRequestRingtone(packet)
+                finally:
+                    response_event.set()
+
             p1 = admin_pb2.AdminMessage()
             p1.get_ringtone_request = True
-            self.gotResponse = False
-            self._sendAdmin(
-                p1, wantResponse=True, onResponse=self.onResponseRequestRingtone
-            )
-            while self.gotResponse is False:
-                time.sleep(0.1)
+            self._sendAdmin(p1, wantResponse=True, onResponse=_on_ringtone_response)
+            if not response_event.wait(timeout=self._timeout.expireTimeout):
+                logger.warning("Timed out waiting for ringtone response")
+                return None
 
             logger.debug(f"self.ringtone:{self.ringtone}")
 
@@ -924,13 +935,15 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def onResponseRequestCannedMessagePluginMessageMessages(self, p):
+    def onResponseRequestCannedMessagePluginMessageMessages(
+        self, p: Dict[str, Any]
+    ) -> None:
         """
         Handle the admin response for a canned-message plugin messages request.
 
         If the response indicates a routing error, prints the error. On a successful response,
         stores the `get_canned_message_module_messages_response` payload from the admin raw data
-        into `self.cannedPluginMessageMessages` and sets `self.gotResponse` to True.
+        into `self.cannedPluginMessageMessages`.
 
         Parameters
         ----------
@@ -956,7 +969,6 @@ class Node:
                         logger.debug(
                             f"self.cannedPluginMessageMessages:{self.cannedPluginMessageMessages}"
                         )
-                        self.gotResponse = True
 
     def get_canned_message(self) -> Optional[str]:
         """
@@ -974,16 +986,24 @@ class Node:
             logger.warning("Canned Message module not present (excluded by firmware)")
             return None
         if not self.cannedPluginMessage:
+            response_event = threading.Event()
+
+            def _on_canned_message_response(packet: Dict[str, Any]) -> None:
+                try:
+                    self.onResponseRequestCannedMessagePluginMessageMessages(packet)
+                finally:
+                    response_event.set()
+
             p1 = admin_pb2.AdminMessage()
             p1.get_canned_message_module_messages_request = True
-            self.gotResponse = False
             self._sendAdmin(
                 p1,
                 wantResponse=True,
-                onResponse=self.onResponseRequestCannedMessagePluginMessageMessages,
+                onResponse=_on_canned_message_response,
             )
-            while self.gotResponse is False:
-                time.sleep(0.1)
+            if not response_event.wait(timeout=self._timeout.expireTimeout):
+                logger.warning("Timed out waiting for canned message response")
+                return None
 
             logger.debug(
                 f"self.cannedPluginMessageMessages:{self.cannedPluginMessageMessages}"

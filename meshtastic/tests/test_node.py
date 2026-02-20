@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-lines
 
+import base64
 import logging
 import re
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,7 @@ import pytest
 
 from ..mesh_interface import MeshInterface
 from ..node import Node
-from ..protobuf import admin_pb2, config_pb2, localonly_pb2
+from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 
@@ -302,6 +303,65 @@ def test_setURL_valid_URL_but_no_settings():
         MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
     ):
         anode.setURL(url)
+
+
+@pytest.mark.unit
+def test_setURL_ignores_channels_over_device_limit(caplog):
+    """Test that setURL ignores channels beyond the fixed device channel limit."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    anode.channels = [Channel(index=i, role=Channel.Role.DISABLED) for i in range(8)]
+
+    channel_set = apponly_pb2.ChannelSet()
+    for i in range(9):
+        settings = channel_set.settings.add()
+        settings.name = f"ch{i}"
+        settings.psk = b"\x01"
+
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    encoded = encoded.replace("=", "")
+    url = f"https://meshtastic.org/e/#{encoded}"
+
+    with caplog.at_level(logging.WARNING):
+        anode.setURL(url)
+
+    assert re.search(r"URL contains more than 8 channels", caplog.text, re.MULTILINE)
+    assert anode.channels[0].settings.name == "ch0"
+    assert anode.channels[7].settings.name == "ch7"
+
+
+@pytest.mark.unit
+def test_get_ringtone_times_out_without_response(caplog):
+    """Test get_ringtone returns None if the response callback is never invoked."""
+    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
+    anode._timeout.expireTimeout = 0.01
+    anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = anode.get_ringtone()
+
+    assert result is None
+    assert re.search(
+        r"Timed out waiting for ringtone response", caplog.text, re.MULTILINE
+    )
+
+
+@pytest.mark.unit
+def test_get_canned_message_times_out_without_response(caplog):
+    """Test get_canned_message returns None if the response callback is never invoked."""
+    anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
+    anode._timeout.expireTimeout = 0.01
+    anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = anode.get_canned_message()
+
+    assert result is None
+    assert re.search(
+        r"Timed out waiting for canned message response", caplog.text, re.MULTILINE
+    )
 
 
 # TODO

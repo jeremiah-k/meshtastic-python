@@ -1087,7 +1087,7 @@ def onConnected(interface: MeshInterface) -> None:
                         ch_del_idx
                     )
 
-        def setSimpleConfig(modem_preset):
+        def _set_simple_config(modem_preset):
             """
             Set the modem preset for the device's primary channel and persist the change.
 
@@ -1116,25 +1116,25 @@ def onConnected(interface: MeshInterface) -> None:
 
         # handle the simple radio set commands
         if args.ch_vlongslow:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.VERY_LONG_SLOW)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.VERY_LONG_SLOW)
 
         if args.ch_longslow:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.LONG_SLOW)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.LONG_SLOW)
 
         if args.ch_longfast:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.LONG_FAST)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.LONG_FAST)
 
         if args.ch_medslow:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_SLOW)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_SLOW)
 
         if args.ch_medfast:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.MEDIUM_FAST)
 
         if args.ch_shortslow:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.SHORT_SLOW)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.SHORT_SLOW)
 
         if args.ch_shortfast:
-            setSimpleConfig(config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST)
+            _set_simple_config(config_pb2.Config.LoRaConfig.ModemPreset.SHORT_FAST)
 
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True
@@ -1585,7 +1585,7 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 exportConfig = export_config
 
 
-def create_power_meter():
+def create_power_meter() -> None:
     """
     Configure and initialize the global power meter according to CLI arguments.
 
