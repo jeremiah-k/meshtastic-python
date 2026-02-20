@@ -76,6 +76,8 @@ protobufs/            # Protocol Buffer source definitions
   implemented on `master`/`meshtastic.ble_interface` (snake_case such as
   `find_device`, `read_gatt_char`, `start_notify`) to preserve existing project
   compatibility.
+- When adding camelCase names to BLE code, keep legacy snake_case methods as
+  compatibility wrappers and route both names to one implementation.
 - Constants: `UPPER_SNAKE_CASE` (e.g., `BROADCAST_ADDR`, `LOCAL_ADDR`)
 
 ### Error Handling

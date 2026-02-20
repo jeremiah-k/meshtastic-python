@@ -7,6 +7,30 @@
 - [Building Meshtastic Python](https://meshtastic.org/docs/development/python/building/)
 - [Using the Meshtastic Python Library](https://meshtastic.org/docs/development/python/library/)
 
+## API naming and compatibility policy
+
+Use this policy for all code changes (especially AI-assisted refactors):
+
+- Public API names should be `camelCase` (for example `sendText`, `sendData`).
+- Internal helpers should be underscore-prefixed `snake_case` (for example `_send_packet`).
+- Do not break existing public API names for compatibility.
+
+### BLE compatibility rule
+
+The BLE surface has historical public `snake_case` names from
+`master`/`meshtastic.ble_interface` (for example `find_device`,
+`read_gatt_char`, `start_notify`). Those names are compatibility APIs and must
+remain callable.
+
+When modernizing BLE naming:
+
+1. Keep historical `snake_case` methods callable.
+2. Add `camelCase` aliases where needed for consistency.
+3. Route both names to a single implementation (prefer internal
+   underscore-prefixed helper methods).
+4. Do not silently remove or hard-rename legacy methods.
+5. Update tests/monkeypatch points if alias names are introduced.
+
 ## How to check your code (pytest/pylint) before a PR
 
 - [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)
