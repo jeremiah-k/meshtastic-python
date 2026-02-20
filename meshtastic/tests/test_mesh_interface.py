@@ -804,10 +804,10 @@ def test_waitForConfig():
 @pytest.mark.unit
 def test_waitConnected_raises_an_exception():
     """Test waitConnected()."""
-    iface = MeshInterface(noProto=True)
-    iface.failure = MeshInterface.MeshInterfaceError("warn about something")
-    with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
-        iface._waitConnected(0.01)
+    with MeshInterface(noProto=True) as iface:
+        iface.failure = MeshInterface.MeshInterfaceError("warn about something")
+        with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
+            iface._waitConnected(0.01)
     assert "warn about something" in str(excinfo.value)
 
 
@@ -815,8 +815,8 @@ def test_waitConnected_raises_an_exception():
 def test_waitConnected_isConnected_timeout():
     """Test waitConnected()."""
     with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
-        iface = MeshInterface()
-        iface._waitConnected(0.01)
+        with MeshInterface() as iface:
+            iface._waitConnected(0.01)
     assert "Timed out waiting for connection completion" in str(excinfo.value)
 
 

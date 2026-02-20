@@ -221,7 +221,7 @@ class Node:
 
         Parameters
         ----------
-            startingIndex (int): Zero-based channel index to start fetching from (typically 0–7).
+            startingIndex (int): Zero-based channel index to start fetching from (typically 0-7).
 
         """
         logger.debug(f"requestChannels for nodeNum:{self.nodeNum}")
@@ -342,7 +342,7 @@ class Node:
         print("Writing modified channels to device")
         self.writeChannel(0)
 
-    def waitForConfig(self, attribute="channels"):
+    def waitForConfig(self, attribute: str = "channels") -> bool:
         """
         Block until the node's specified configuration attribute under localConfig is populated.
 
@@ -496,7 +496,7 @@ class Node:
 
         Parameters
         ----------
-            channelIndex (int): Zero-based channel index (typically 0–7).
+            channelIndex (int): Zero-based channel index (typically 0-7).
 
         Returns
         -------
@@ -534,7 +534,9 @@ class Node:
             channel_pb2.Channel.Role.SECONDARY,
             channel_pb2.Channel.Role.DISABLED,
         ):
-            self._raise_interface_error("Only SECONDARY channels can be deleted")
+            self._raise_interface_error(
+                "Only SECONDARY or DISABLED channels can be deleted"
+            )
 
         # we are careful here because if we move the "admin" channel the channelIndex we need to use
         # for sending admin channels will also change
@@ -948,7 +950,7 @@ class Node:
         """
         logger.debug("in get_canned_message()")
         if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            logging.warning("Canned Message module not present (excluded by firmware)")
+            logger.warning("Canned Message module not present (excluded by firmware)")
             return None
         if not self.cannedPluginMessage:
             p1 = admin_pb2.AdminMessage()
@@ -996,7 +998,7 @@ class Node:
 
         """
         if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
-            logging.warning("Canned Message module not present (excluded by firmware)")
+            logger.warning("Canned Message module not present (excluded by firmware)")
             return None
 
         if len(message) > 200:

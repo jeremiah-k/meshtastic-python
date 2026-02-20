@@ -375,8 +375,10 @@ class BLEInterface(MeshInterface):
             self._receiveThread = thread
         self.thread_coordinator.start_thread(thread)
         if reset_recovery:
-            # Reset recovery throttling on successful thread start (not during recovery)
-            self._receive_recovery_attempts = 0
+            # Reset recovery throttling on successful thread start (not during recovery).
+            # Guarded by _state_lock to match the lock used when incrementing.
+            with self._state_lock:
+                self._receive_recovery_attempts = 0
 
     @staticmethod
     def _sorted_address_keys(*keys: Optional[str]) -> List[str]:
@@ -687,7 +689,7 @@ class BLEInterface(MeshInterface):
             )
             self._malformed_notification_count = 0
 
-    def _from_num_handler(self, _: Any, b: bytearray) -> None:  # pylint: disable=C0116
+    def _from_num_handler(self, _: Any, b: bytearray) -> None:
         """
         Process a FROMNUM characteristic notification and wake the receive loop.
 
@@ -749,7 +751,7 @@ class BLEInterface(MeshInterface):
                 error_msg (str): Message supplied to the error handler if the handler raises an exception.
 
             """
-            self.error_handler._safe_execute(
+            self.error_handler.safe_execute(
                 lambda: handler(sender, data),
                 error_msg=error_msg,
             )
@@ -817,7 +819,7 @@ class BLEInterface(MeshInterface):
                 Callable[[Any, Any], None]: The existing or newly created notification handler.
 
             """
-            handler = self._notification_manager._get_callback(uuid)
+            handler = self._notification_manager.get_callback(uuid)
             if handler is None:
                 handler = factory()
                 self._notification_manager.subscribe(uuid, handler)
@@ -862,7 +864,7 @@ class BLEInterface(MeshInterface):
             timeout=NOTIFICATION_START_TIMEOUT,
         )
 
-    def log_radio_handler(self, _: Any, b: bytearray) -> None:  # pylint: disable=C0116
+    def log_radio_handler(self, _: Any, b: bytearray) -> None:
         """
         Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
@@ -1487,37 +1489,30 @@ class BLEInterface(MeshInterface):
                     self._set_receive_wanted(False)
                     return
                 # Recovery throttling to prevent tight crash→spawn loops.
-                # Thread safety note: _receive_recovery_attempts and _last_recovery_time
-                # are mutated here without a lock, but this is safe because:
-                # 1. This crashing thread is about to exit (or spawn a recovery thread and exit)
-                # 2. The newly spawned BLEReceiveRecovery thread will be the only thread
-                #    that continues to mutate these fields (reset_recovery=False preserves counters)
-                # 3. If this behavior changes in future (e.g., other threads mutate these fields),
-                #    a threading lock or atomic update should be introduced to avoid races.
+                # All mutations of _receive_recovery_attempts and _last_recovery_time
+                # are guarded by _state_lock to prevent races with concurrent
+                # _start_receive_thread() calls that reset these fields.
                 now = time.monotonic()
-                self._receive_recovery_attempts += 1
-                if (
-                    self._receive_recovery_attempts
-                    > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD
-                ):
+                with self._state_lock:
+                    self._receive_recovery_attempts += 1
+                    attempts = self._receive_recovery_attempts
+                    last_recovery = self._last_recovery_time
+                if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
                     # Exponential backoff after 3 rapid failures
                     backoff = min(
-                        2
-                        ** (
-                            self._receive_recovery_attempts
-                            - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD
-                        ),
+                        2 ** (attempts - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD),
                         RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
                     )
-                    if now - self._last_recovery_time < backoff:
+                    if now - last_recovery < backoff:
                         logger.warning(
                             "Throttling BLE receive recovery: waiting %.1fs "
                             "before retry (attempt %d)",
                             backoff,
-                            self._receive_recovery_attempts,
+                            attempts,
                         )
                         self._shutdown_event.wait(timeout=backoff)
-                self._last_recovery_time = now
+                with self._state_lock:
+                    self._last_recovery_time = now
                 # If disconnect handling requests continuation (auto-reconnect path),
                 # replace this crashed receive thread so reads resume after reconnect.
                 if self._should_run_receive_loop():
@@ -1542,12 +1537,7 @@ class BLEInterface(MeshInterface):
                 self._suppressed_empty_read_warnings = 0
                 return payload
             if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
-                delay_fn = getattr(
-                    self._empty_read_policy,
-                    "_get_delay",
-                    self._empty_read_policy.get_delay,
-                )
-                _sleep(delay_fn(attempt))
+                _sleep(self._empty_read_policy.getDelay(attempt))
         self._log_empty_read_warning()
         return None
 
@@ -1563,10 +1553,7 @@ class BLEInterface(MeshInterface):
 
         """
         transient_policy = self._transient_read_policy
-        should_retry_fn = getattr(
-            transient_policy, "_should_retry", transient_policy.should_retry
-        )
-        if should_retry_fn(self._read_retry_count):
+        if transient_policy.shouldRetry(self._read_retry_count):
             attempt_index = self._read_retry_count
             self._read_retry_count += 1
             logger.debug(
@@ -1574,10 +1561,7 @@ class BLEInterface(MeshInterface):
                 self._read_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
-            delay_fn = getattr(
-                transient_policy, "_get_delay", transient_policy.get_delay
-            )
-            _sleep(delay_fn(attempt_index))
+            _sleep(transient_policy.getDelay(attempt_index))
             return
         self._read_retry_count = 0
         logger.debug("Persistent BLE read error after retries", exc_info=True)
@@ -1719,7 +1703,7 @@ class BLEInterface(MeshInterface):
             self._receiveThread = None
 
         # Close parent interface (stops publishing thread, etc.)
-        self.error_handler._safe_execute(
+        self.error_handler.safe_execute(
             lambda: MeshInterface.close(self), error_msg="Error closing mesh interface"
         )
 
@@ -1737,11 +1721,11 @@ class BLEInterface(MeshInterface):
         # Only close the client if we were the one who replaced it
         # If it was replaced by a reconnection, the new connection path will clean it up
         if client is not None:
-            self._notification_manager._unsubscribe_all(
+            self._notification_manager.unsubscribe_all(
                 client, timeout=NOTIFICATION_START_TIMEOUT
             )
             self._disconnect_and_close_client(client)
-        self._notification_manager._cleanup_all()
+        self._notification_manager.cleanup_all()
 
         # Use unified state lock
         # Send disconnected indicator if not already notified
@@ -1788,7 +1772,7 @@ class BLEInterface(MeshInterface):
         if timeout is None:
             timeout = DISCONNECT_TIMEOUT_SECONDS
         flush_event = Event()
-        self.error_handler._safe_execute(
+        self.error_handler.safe_execute(
             lambda: publishingThread.queueWork(flush_event.set),
             error_msg="Runtime error during disconnect notification flush (possible threading issue)",
             reraise=False,
@@ -1839,7 +1823,7 @@ class BLEInterface(MeshInterface):
             except Empty:
                 break
             iterations += 1
-            self.error_handler._safe_execute(
+            self.error_handler.safe_execute(
                 runnable, error_msg="Error in deferred publish callback", reraise=False
             )
 

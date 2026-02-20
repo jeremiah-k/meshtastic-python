@@ -58,7 +58,7 @@ class NotificationManager:
         Notes
         -----
         Multiple subscriptions to the same characteristic are allowed; the most recently
-        registered callback for a characteristic is returned by `_get_callback()`, while
+        registered callback for a characteristic is returned by `get_callback()`, while
         all tracked subscriptions are retained for cleanup or resubscription attempts.
 
         """
@@ -87,7 +87,7 @@ class NotificationManager:
             self._characteristic_to_callback[characteristic] = callback
             return token
 
-    def _cleanup_all(self) -> None:
+    def cleanup_all(self) -> None:
         """
         Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
@@ -98,9 +98,7 @@ class NotificationManager:
             self._characteristic_to_callback.clear()
             self._subscription_counter = 0
 
-    def _unsubscribe_all(
-        self, client: "BLEClient", *, timeout: Optional[float]
-    ) -> None:
+    def unsubscribe_all(self, client: "BLEClient", *, timeout: Optional[float]) -> None:
         """
         Stop notifications for every characteristic currently tracked and ignore any errors.
 
@@ -123,7 +121,7 @@ class NotificationManager:
                     e,
                 )
 
-    def _resubscribe_all(self, client: "BLEClient", *, timeout: float) -> None:
+    def resubscribe_all(self, client: "BLEClient", *, timeout: float) -> None:
         """
         Re-register all tracked BLE notification subscriptions on the provided client.
 
@@ -167,9 +165,7 @@ class NotificationManager:
         with self._lock:
             return len(self._active_subscriptions)
 
-    def _get_callback(
-        self, characteristic: str
-    ) -> Optional[Callable[[Any, Any], None]]:
+    def get_callback(self, characteristic: str) -> Optional[Callable[[Any, Any], None]]:
         """
         Get the most recently registered callback for a BLE characteristic.
 

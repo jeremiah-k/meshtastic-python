@@ -292,11 +292,14 @@ class _ReconnectTestNotificationManager:
         self.resubscribed: List[Tuple[Any, float]] = []
         self._fail_on_resubscribe = fail_on_resubscribe
 
-    def _cleanup_all(self) -> None:
+    def cleanup_all(self) -> None:
         """Record notification cleanup calls."""
         self.cleaned += 1
 
-    def _resubscribe_all(self, client: Any, timeout: float) -> None:
+    # Legacy private alias retained for any tests that call it directly.
+    _cleanup_all = cleanup_all
+
+    def resubscribe_all(self, client: Any, timeout: float) -> None:
         """
         Record a resubscription request for testing, or raise if resubscriptions are configured to fail.
 
@@ -313,6 +316,9 @@ class _ReconnectTestNotificationManager:
         if self._fail_on_resubscribe:
             raise AssertionError("Should not resubscribe without a client")
         self.resubscribed.append((client, timeout))
+
+    # Legacy private alias retained for any tests that call it directly.
+    _resubscribe_all = resubscribe_all
 
 
 class _ReconnectTestScheduler:
@@ -639,9 +645,9 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
     delay_attempts: List[int] = []
 
     class StubTransientPolicy:
-        def should_retry(self, attempt: int) -> bool:
+        def shouldRetry(self, attempt: int) -> bool:
             """
-            Decides whether to perform another retry based on the zero-based attempt index.
+            Decide whether to perform another retry based on the zero-based attempt index.
 
             Parameters
             ----------
@@ -654,7 +660,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
             """
             return attempt < 1
 
-        def get_delay(self, attempt: int) -> float:
+        def getDelay(self, attempt: int) -> float:
             """
             Record the retry attempt index and return a zero-second retry delay.
 

@@ -1126,7 +1126,9 @@ class MeshInterface:  # pylint: disable=R0902
             "device_metrics",
         }
         if telemetryType not in valid_types:
-            raise self.MeshInterfaceError(f"Unsupported telemetryType: {telemetryType}")
+            raise MeshInterface.MeshInterfaceError(
+                f"Unsupported telemetryType: {telemetryType}"
+            )
 
         r = telemetry_pb2.Telemetry()
 

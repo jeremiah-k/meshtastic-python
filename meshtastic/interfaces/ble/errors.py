@@ -39,7 +39,7 @@ class BLEErrorHandler:
     """
 
     @staticmethod
-    def _safe_execute(
+    def safe_execute(
         func: Callable[[], T],
         default_return: Optional[T] = None,
         log_error: bool = True,

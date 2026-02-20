@@ -217,7 +217,7 @@ class BLEClient:
                 connected = connected()  # pylint: disable=E1102
             return bool(connected)
 
-        result = self.error_handler._safe_execute(
+        result = self.error_handler.safe_execute(
             _check_connection,
             default_return=False,
             error_msg="Unable to read bleak connection state",
@@ -398,7 +398,7 @@ class BLEClient:
 
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
-            services = self.error_handler._safe_execute(
+            services = self.error_handler.safe_execute(
                 lambda: self.get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,

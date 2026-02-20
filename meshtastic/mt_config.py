@@ -14,14 +14,14 @@ with rather more easily once the code is simplified by this change.
 """
 
 import argparse
-from typing import IO, Any, Optional
+from typing import IO, Any, Dict, Optional
 
-MODULE_STATE_DEFAULTS: dict[str, Any] = {
+MODULE_STATE_DEFAULTS: Dict[str, Any] = {
     "args": None,
     "parser": None,
     "channel_index": None,
     "logfile": None,
-    "tunnelInstance": None,
+    "tunnel_instance": None,
     # TODO: to migrate to camel_case for v1.3 change this value to True
     "camel_case": False,
 }
@@ -44,7 +44,22 @@ args: Optional[argparse.Namespace]
 parser: Optional[argparse.ArgumentParser]
 channel_index: Optional[int]
 logfile: Optional[IO[str]]
-tunnelInstance: Any
+tunnel_instance: Any
 camel_case: bool
+
+# Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.
+# Use globals() to read the module-level annotation dict; pylint does not
+# recognise __annotations__ as a valid built-in at module scope, but it IS
+# valid Python 3 and globals()["__annotations__"] is the canonical spelling
+# that avoids the false-positive lint warning.
+_state_keys: frozenset = frozenset(MODULE_STATE_DEFAULTS)
+_annotated_state: frozenset = frozenset(
+    k for k in globals().get("__annotations__", {}) if k in _state_keys
+)
+assert _state_keys == _annotated_state, (
+    f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
+    f"missing annotations: {_state_keys - _annotated_state}, "
+    f"missing defaults: {_annotated_state - _state_keys}"
+)
 
 reset()

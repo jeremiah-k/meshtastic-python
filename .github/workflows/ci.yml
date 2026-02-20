@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - "**-review"
   pull_request:
     branches:
       - master
@@ -44,10 +45,15 @@ jobs:
           poetry install --all-extras --with dev,powermon
           poetry run meshtastic --version
       - name: Run tests with pytest
-        run: poetry run pytest --cov=meshtastic --cov-report=xml
+        run: |
+          if [ "${{ matrix.python-version }}" = "3.13" ]; then
+            poetry run pytest --cov=meshtastic --cov-report=xml
+          else
+            poetry run pytest --cov=meshtastic
+          fi
       - name: Upload coverage to Codecov
         if: ${{ matrix.python-version == '3.13' && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v5.5.1
+        uses: codecov/codecov-action@v5.5.2
         with:
           token: ${{ env.CODECOV_TOKEN }}
           env_vars: OS, PYTHON
