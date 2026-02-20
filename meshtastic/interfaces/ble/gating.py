@@ -46,7 +46,7 @@ _CONNECTED_MARKED_AT: Dict[str, float] = {}
 _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
 
-def clear_all_registries() -> None:
+def clearAllRegistries() -> None:
     """Reset all gating registries (test helper)."""
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()
@@ -57,7 +57,12 @@ def clear_all_registries() -> None:
         _LOCK_HOLDERS.clear()
 
 
-def addr_key(addr: Optional[str]) -> Optional[str]:
+def clear_all_registries() -> None:
+    """Backward-compatible snake_case wrapper for clearAllRegistries."""
+    clearAllRegistries()
+
+
+def addrKey(addr: Optional[str]) -> Optional[str]:
     """
     Normalize a BLE address into a registry key.
 
@@ -72,6 +77,11 @@ def addr_key(addr: Optional[str]) -> Optional[str]:
     """
     sanitized = sanitize_address(addr)
     return sanitized if sanitized else None
+
+
+def addr_key(addr: Optional[str]) -> Optional[str]:
+    """Backward-compatible snake_case wrapper for addrKey."""
+    return addrKey(addr)
 
 
 def _get_addr_lock(key: Optional[str]) -> RLock:
@@ -290,7 +300,7 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
     """
     Mark an address as disconnected and remove its connection bookkeeping.
 
-    Normalizes `addr` and, if valid, under the registry lock clears the recorded connected state and triggers per-address lock cleanup. If `owner` is provided, the disconnect only proceeds when the live recorded owner matches `owner`; otherwise the disconnect is ignored. This function does not decrement per-address lock holder counts — callers are responsible for holder bookkeeping.
+    Normalizes `addr` and, if valid, under the registry lock clears the recorded connected state and triggers per-address lock cleanup. If `owner` is provided, the disconnect only proceeds when the live recorded owner matches `owner`; otherwise the disconnect is ignored. This function does not decrement per-address lock holder counts - callers are responsible for holder bookkeeping.
 
     Parameters
     ----------
@@ -353,7 +363,7 @@ def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
         _release_addr_lock_by_key(key)
 
 
-def is_currently_connected_elsewhere(
+def isCurrentlyConnectedElsewhere(
     addr: Optional[str], owner: Optional[Any] = None
 ) -> bool:
     """
@@ -467,3 +477,10 @@ def is_currently_connected_elsewhere(
             return False
 
         return True
+
+
+def is_currently_connected_elsewhere(
+    addr: Optional[str], owner: Optional[Any] = None
+) -> bool:
+    """Backward-compatible snake_case wrapper for isCurrentlyConnectedElsewhere."""
+    return isCurrentlyConnectedElsewhere(addr, owner=owner)

@@ -9,8 +9,8 @@ from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.gating import (
-    addr_key,
-    is_currently_connected_elsewhere,
+    addrKey,
+    isCurrentlyConnectedElsewhere,
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
@@ -194,11 +194,11 @@ class ReconnectWorker:
                 try:
                     if interface.is_connection_connected:
                         return
-                    device_addr = addr_key(getattr(interface, "address", None))
+                    device_addr = addrKey(getattr(interface, "address", None))
                     # Check if already connected elsewhere before attempting.
                     # connect() enforces this gate as well; this early check avoids
                     # scheduling a full connect path when we already know it will fail.
-                    if device_addr and is_currently_connected_elsewhere(
+                    if device_addr and isCurrentlyConnectedElsewhere(
                         device_addr, owner=interface
                     ):
                         logger.info(

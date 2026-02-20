@@ -577,9 +577,9 @@ def test_message_to_json_shows_all():
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert actual.get(key) == value, (
-            f"Key {key}: expected {value}, got {actual.get(key)}"
-        )
+        assert (
+            actual.get(key) == value
+        ), f"Key {key}: expected {value}, got {actual.get(key)}"
 
 
 @pytest.mark.unit

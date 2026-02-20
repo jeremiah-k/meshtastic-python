@@ -45,9 +45,11 @@ def test_onGPIOreceive_mask_fallback(caplog):
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = None
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
+        assert re.search(r"mask:7", caplog.text, re.MULTILINE)
+        assert re.search(r"value=7", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
@@ -96,10 +98,7 @@ def test_watchGPIOs(caplog):
 @pytest.mark.unit
 def test_sendHardware_no_nodeid():
     """Test sending no nodeid to _sendHardware()."""
-    iface = MagicMock(autospec=SerialInterface)
-    channel = MagicMock()
-    channel.index = 0
-    iface.localNode.getChannelByName.return_value = channel
+    iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         rhw._sendHardware(None, None)

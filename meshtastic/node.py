@@ -847,7 +847,7 @@ class Node:
                         ].get_ringtone_response
                         logger.debug("self.ringtonePart:%s", self.ringtonePart)
 
-    def get_ringtone(self) -> Optional[str]:
+    def _get_ringtone(self) -> Optional[str]:
         """
         Retrieve the node's ringtone as a single concatenated string.
 
@@ -892,7 +892,7 @@ class Node:
                 return self.ringtone
             return None
 
-    def set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
+    def _set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
         """
         Set the node's ringtone.
 
@@ -934,7 +934,13 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        send_result = self._sendAdmin(p, onResponse=onResponse)
+        if send_result is not None:
+            with self._ringtone_lock:
+                # Invalidate cache after successful send so future reads refresh.
+                self.ringtone = None
+                self.ringtonePart = None
+        return send_result
 
     def onResponseRequestCannedMessagePluginMessageMessages(
         self, p: Dict[str, Any]
@@ -972,7 +978,7 @@ class Node:
                             self.cannedPluginMessageMessages,
                         )
 
-    def get_canned_message(self) -> Optional[str]:
+    def _get_canned_message(self) -> Optional[str]:
         """
         Retrieve the device's canned message, requesting parts from the node if not already cached.
 
@@ -1021,7 +1027,7 @@ class Node:
                 return self.cannedPluginMessage
             return None
 
-    def set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
+    def _set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
         """
         Set the device's canned message.
 
@@ -1061,23 +1067,45 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        send_result = self._sendAdmin(p, onResponse=onResponse)
+        if send_result is not None:
+            with self._canned_message_lock:
+                # Invalidate cache after successful send so future reads refresh.
+                self.cannedPluginMessage = None
+                self.cannedPluginMessageMessages = None
+        return send_result
+
+    def get_ringtone(self) -> Optional[str]:
+        """Backward-compatible snake_case wrapper for getRingtone."""
+        return self.getRingtone()
+
+    def set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
+        """Backward-compatible snake_case wrapper for setRingtone."""
+        return self.setRingtone(ringtone)
+
+    def get_canned_message(self) -> Optional[str]:
+        """Backward-compatible snake_case wrapper for getCannedMessage."""
+        return self.getCannedMessage()
+
+    def set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
+        """Backward-compatible snake_case wrapper for setCannedMessage."""
+        return self.setCannedMessage(message)
 
     def getRingtone(self) -> Optional[str]:
         """Return the node's ringtone via camelCase API."""
-        return self.get_ringtone()
+        return self._get_ringtone()
 
     def setRingtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
         """Set the node's ringtone via camelCase API."""
-        return self.set_ringtone(ringtone)
+        return self._set_ringtone(ringtone)
 
     def getCannedMessage(self) -> Optional[str]:
         """Return the node's canned message via camelCase API."""
-        return self.get_canned_message()
+        return self._get_canned_message()
 
     def setCannedMessage(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
         """Set the node's canned message via camelCase API."""
-        return self.set_canned_message(message)
+        return self._set_canned_message(message)
 
     def exitSimulator(self) -> Optional[mesh_pb2.MeshPacket]:
         """

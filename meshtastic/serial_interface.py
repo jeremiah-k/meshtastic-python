@@ -66,7 +66,9 @@ class SerialInterface(StreamInterface):
                 )
                 return
             elif len(ports) > 1:
-                message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+                message: str = (
+                    "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+                )
                 message += f"  Ports detected: {ports}"
                 raise ValueError(message)
             else:

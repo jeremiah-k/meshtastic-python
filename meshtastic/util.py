@@ -1123,7 +1123,8 @@ def message_to_json(message: Message, multiline: bool = False) -> str:
     Parameters
     ----------
         message (Message): The protobuf message to serialize.
-        multiline (bool): Preserve the original multi-line JSON formatting when True; collapse newlines and extra whitespace when False.
+        multiline (bool): Preserve multi-line formatting when True; use compact
+            single-line JSON when False.
 
     Returns
     -------
@@ -1131,14 +1132,19 @@ def message_to_json(message: Message, multiline: bool = False) -> str:
 
     """
     try:
-        json_str = MessageToJson(message, always_print_fields_with_no_presence=True)
+        json_str = MessageToJson(
+            message,
+            always_print_fields_with_no_presence=True,
+            indent=2 if multiline else None,
+        )
     except TypeError:
         json_str = MessageToJson(  # type: ignore[call-arg]  # pylint: disable=E1123
             message,
             # pyright: ignore[reportCallIssue]  # Older protobuf uses including_default_value_fields
             including_default_value_fields=True,  # pyright: ignore[reportCallIssue]
+            indent=2 if multiline else None,
         )
-    return stripnl(json_str) if not multiline else json_str
+    return json_str
 
 
 def messageToJson(message: Message, multiline: bool = False) -> str:
@@ -1148,7 +1154,8 @@ def messageToJson(message: Message, multiline: bool = False) -> str:
     Parameters
     ----------
         message (Message): The protobuf Message to serialize.
-        multiline (bool): If True, preserve multiline formatting; if False, collapse newlines and extra whitespace into a single line.
+        multiline (bool): If True, preserve multiline formatting; if False, emit
+            compact single-line JSON.
 
     Returns
     -------

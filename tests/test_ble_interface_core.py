@@ -578,6 +578,12 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         raising=True,
     )
     monkeypatch.setattr(
+        ble_iface_mod,
+        "isCurrentlyConnectedElsewhere",
+        _gate_check_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(
         iface._connection_orchestrator,
         "establish_connection",
         _establish_connection_stub,

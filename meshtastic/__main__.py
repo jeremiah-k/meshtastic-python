@@ -1689,6 +1689,9 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
         Tuple[str, int]: Parsed hostname/address and resolved TCP port.
 
     """
+    tcp_hostname = host_str
+    tcp_port = default_port
+
     if host_str.startswith("["):
         # Bracketed IPv6: [addr] or [addr]:port
         bracket_end = host_str.find("]")
@@ -1697,51 +1700,54 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
                 f"Error: malformed IPv6 address in --host '{host_str}'.",
                 1,
             )
-        tcp_hostname = host_str[1:bracket_end]
-        remainder = host_str[bracket_end + 1 :]
-        if remainder.startswith(":"):
-            tcp_port_str = remainder[1:]
-            try:
-                tcp_port = int(tcp_port_str)
-            except ValueError:
-                _cli_exit(
-                    f"Error: invalid TCP port in --host '{host_str}'.",
-                    1,
-                )
-            if not 1 <= tcp_port <= 65535:
-                _cli_exit(
-                    f"Error: invalid TCP port in --host '{host_str}'.",
-                    1,
-                )
-            return tcp_hostname, tcp_port
-        if remainder:
-            _cli_exit(
-                f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
-                1,
-            )
-        return tcp_hostname, default_port
+        else:
+            tcp_hostname = host_str[1:bracket_end]
+            remainder = host_str[bracket_end + 1 :]
+            if remainder:
+                if not remainder.startswith(":"):
+                    _cli_exit(
+                        f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
+                        1,
+                    )
+                else:
+                    tcp_port_str = remainder[1:]
+                    try:
+                        parsed_port = int(tcp_port_str)
+                    except ValueError:
+                        _cli_exit(
+                            f"Error: invalid TCP port in --host '{host_str}'.",
+                            1,
+                        )
+                    else:
+                        if 1 <= parsed_port <= 65535:
+                            tcp_port = parsed_port
+                        else:
+                            _cli_exit(
+                                f"Error: invalid TCP port in --host '{host_str}'.",
+                                1,
+                            )
 
-    if ":" in host_str:
-        # Multiple colons -> treat as bare IPv6 address, not host:port
-        if host_str.count(":") > 1:
-            return host_str, default_port
+        return tcp_hostname, tcp_port
 
+    if ":" in host_str and host_str.count(":") == 1:
         # Exactly one colon -> host:port
-        tcp_hostname, tcp_port_str = host_str.rsplit(":", 1)
+        candidate_host, tcp_port_str = host_str.rsplit(":", 1)
         try:
-            tcp_port = int(tcp_port_str)
+            parsed_port = int(tcp_port_str)
         except ValueError:
             # Not a valid integer port; treat the entire string as hostname.
-            return host_str, default_port
+            return tcp_hostname, tcp_port
 
-        if not 1 <= tcp_port <= 65535:
+        tcp_hostname = candidate_host
+        if not 1 <= parsed_port <= 65535:
             _cli_exit(
                 f"Error: invalid TCP port in --host '{host_str}'.",
                 1,
             )
-        return tcp_hostname, tcp_port
+        else:
+            tcp_port = parsed_port
 
-    return host_str, default_port
+    return tcp_hostname, tcp_port
 
 
 def common():

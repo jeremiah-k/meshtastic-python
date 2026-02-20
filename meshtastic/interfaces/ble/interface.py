@@ -71,8 +71,8 @@ from meshtastic.interfaces.ble.gating import (
     _addr_lock_context,
     _mark_connected,
     _mark_disconnected,
-    addr_key,
-    is_currently_connected_elsewhere,
+    addrKey,
+    isCurrentlyConnectedElsewhere,
 )
 from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
@@ -86,6 +86,10 @@ T = TypeVar("T")
 MAX_DRAIN_ITERATIONS = 10_000
 RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD = 3
 RECEIVE_RECOVERY_MAX_BACKOFF_SEC = 30
+
+# Backward-compatible module aliases for tests/consumers that monkeypatch these names.
+addr_key = addrKey
+is_currently_connected_elsewhere = isCurrentlyConnectedElsewhere
 
 
 class BLEInterface(MeshInterface):
@@ -571,13 +575,13 @@ class BLEInterface(MeshInterface):
                             previous_client, "address", self.address
                         )
                         device_key = (
-                            addr_key(previous_address) if previous_address else None
+                            addrKey(previous_address) if previous_address else None
                         )
                         disconnect_keys = self._sorted_address_keys(
                             device_key, alias_key
                         )
                     else:
-                        fallback_key = addr_key(self.address)
+                        fallback_key = addrKey(self.address)
                         disconnect_keys = self._sorted_address_keys(
                             fallback_key, alias_key
                         )
@@ -589,7 +593,7 @@ class BLEInterface(MeshInterface):
                         if previous_client
                         else (address if address != "unknown" else self.address)
                     )
-                    addr_disconnect_key = addr_key(address_for_registry)
+                    addr_disconnect_key = addrKey(address_for_registry)
                     disconnect_keys = self._sorted_address_keys(
                         addr_disconnect_key, alias_key
                     )
@@ -1144,7 +1148,7 @@ class BLEInterface(MeshInterface):
         """
         return bool(
             connection_key
-            and is_currently_connected_elsewhere(connection_key, owner=self)
+            and isCurrentlyConnectedElsewhere(connection_key, owner=self)
             and not self._state_manager.is_connected
         )
 
@@ -1228,7 +1232,7 @@ class BLEInterface(MeshInterface):
         if previous_client and previous_client is not client:
             self._client_manager.update_client_reference(client, previous_client)
 
-        connected_device_key = addr_key(device_address) if device_address else None
+        connected_device_key = addrKey(device_address) if device_address else None
         connection_alias_key = (
             address_key
             if connected_device_key
@@ -1332,7 +1336,7 @@ class BLEInterface(MeshInterface):
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         address_registry_key = (
-            addr_key(requested_identifier) if requested_identifier else None
+            addrKey(requested_identifier) if requested_identifier else None
         )
         connected_client: Optional["BLEClient"] = None
         connected_device_key: Optional[str] = None
@@ -1772,7 +1776,7 @@ class BLEInterface(MeshInterface):
             self._state_manager.transition_to(ConnectionState.DISCONNECTED)
             alias_key = self._connection_alias_key
             self._connection_alias_key = None
-        close_key = addr_key(self.address)
+        close_key = addrKey(self.address)
         self._mark_address_keys_disconnected(close_key, alias_key)
 
     def _wait_for_disconnect_notifications(

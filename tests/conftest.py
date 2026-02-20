@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 @pytest.fixture
 def clear_registry() -> Iterator[None]:
     """Reset BLE gating global registries before and after each test."""
-    gating.clear_all_registries()
+    gating.clearAllRegistries()
     yield
-    gating.clear_all_registries()
+    gating.clearAllRegistries()
 
 
 @pytest.fixture(scope="session", autouse=True)

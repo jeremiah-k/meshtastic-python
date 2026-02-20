@@ -48,14 +48,16 @@ def test_SerialInterface_single_port(
 @patch("meshtastic.util.findPorts", return_value=[])
 def test_SerialInterface_no_ports(mocked_findPorts, caplog):
     """Test that we can instantiate a SerialInterface with no ports."""
-    with caplog.at_level(logging.WARNING):
-        serial_interface = SerialInterface(noProto=True)
+    serial_interface = None
     try:
+        with caplog.at_level(logging.WARNING):
+            serial_interface = SerialInterface(noProto=True)
         mocked_findPorts.assert_called()
         assert serial_interface.devPath is None
         assert re.search(r"No.*Meshtastic.*device.*detected", caplog.text, re.MULTILINE)
     finally:
-        serial_interface.close()
+        if serial_interface is not None:
+            serial_interface.close()
 
 
 @pytest.mark.unit
