@@ -1083,7 +1083,7 @@ def onConnected(interface: MeshInterface) -> None:
                     )
                 else:
                     print(f"Deleting channel {ch_del_idx}")
-                    ch = interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
+                    interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
                         ch_del_idx
                     )
 

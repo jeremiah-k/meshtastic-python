@@ -1,4 +1,4 @@
-"""Meshtastic unit tests for remote_hardware.py"""
+"""Meshtastic unit tests for remote_hardware.py."""
 
 import logging
 import re
@@ -12,7 +12,7 @@ from ..serial_interface import SerialInterface
 
 @pytest.mark.unit
 def test_RemoteHardwareClient():
-    """Test that we can instantiate a RemoteHardwareClient instance"""
+    """Test that we can instantiate a RemoteHardwareClient instance."""
     iface = MagicMock(autospec=SerialInterface)
     rhw = RemoteHardwareClient(iface)
     assert rhw.iface == iface
@@ -21,7 +21,7 @@ def test_RemoteHardwareClient():
 
 @pytest.mark.unit
 def test_onGPIOreceive(caplog):
-    """Test onGPIOreceive"""
+    """Test onGPIOreceive."""
     iface = MagicMock(autospec=SerialInterface)
     packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
     with caplog.at_level(logging.INFO):
@@ -31,13 +31,13 @@ def test_onGPIOreceive(caplog):
 
 @pytest.mark.unit
 def test_RemoteHardwareClient_no_gpio_channel(capsys):
-    """Test that we can instantiate a RemoteHardwareClient instance but there is no channel named channel 'gpio'"""
+    """Test that we can instantiate a RemoteHardwareClient instance but there is no channel named channel 'gpio'."""
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.localNode.getChannelByName.return_value = None
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             RemoteHardwareClient(mo)
-        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
         assert re.search(r"Warning: No channel named", out)
@@ -46,7 +46,7 @@ def test_RemoteHardwareClient_no_gpio_channel(capsys):
 
 @pytest.mark.unit
 def test_readGPIOs(caplog):
-    """Test readGPIOs"""
+    """Test readGPIOs."""
     iface = MagicMock(autospec=SerialInterface)
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
@@ -57,7 +57,7 @@ def test_readGPIOs(caplog):
 
 @pytest.mark.unit
 def test_writeGPIOs(caplog):
-    """Test writeGPIOs"""
+    """Test writeGPIOs."""
     iface = MagicMock(autospec=SerialInterface)
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
@@ -68,7 +68,7 @@ def test_writeGPIOs(caplog):
 
 @pytest.mark.unit
 def test_watchGPIOs(caplog):
-    """Test watchGPIOs"""
+    """Test watchGPIOs."""
     iface = MagicMock(autospec=SerialInterface)
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
@@ -79,13 +79,13 @@ def test_watchGPIOs(caplog):
 
 @pytest.mark.unit
 def test_sendHardware_no_nodeid(capsys):
-    """Test sending no nodeid to _sendHardware()"""
+    """Test sending no nodeid to _sendHardware()."""
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         with pytest.raises(SystemExit) as pytest_wrapped_e:
             rhw = RemoteHardwareClient(mo)
             rhw._sendHardware(None, None)
-        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.type is SystemExit
     out, err = capsys.readouterr()
     assert re.search(r"Warning: Must use a destination node ID", out)
     assert err == ""

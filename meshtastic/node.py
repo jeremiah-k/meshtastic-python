@@ -6,7 +6,17 @@ import base64
 import binascii
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Optional, Sequence, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Sequence,
+    Union,
+)
 
 from google.protobuf.message import DecodeError
 
@@ -75,12 +85,12 @@ class Node:
         self._timeout = Timeout(maxSecs=timeout)
         self.partialChannels: List[channel_pb2.Channel] = []
         self.noProto = noProto
-        self.cannedPluginMessage = None
-        self.cannedPluginMessageMessages = None
-        self.ringtone = None
-        self.ringtonePart = None
+        self.cannedPluginMessage: Optional[str] = None
+        self.cannedPluginMessageMessages: Optional[str] = None
+        self.ringtone: Optional[str] = None
+        self.ringtonePart: Optional[str] = None
 
-        self.gotResponse = None
+        self.gotResponse: Optional[bool] = None
 
     def __repr__(self) -> str:
         """
@@ -379,7 +389,7 @@ class Node:
 
         raise MeshInterface.MeshInterfaceError(message)
 
-    def writeConfig(self, config_name):
+    def writeConfig(self, config_name: str) -> None:
         """
         Write a named subset of the node's edited configuration to the device.
 
@@ -469,7 +479,7 @@ class Node:
             onResponse = self.onAckNak
         self._sendAdmin(p, onResponse=onResponse)
 
-    def writeChannel(self, channelIndex, adminIndex=0):
+    def writeChannel(self, channelIndex: int, adminIndex: int = 0) -> None:
         """
         Write the channel at the given index to the device.
 
@@ -493,7 +503,9 @@ class Node:
         self._sendAdmin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
-    def getChannelByChannelIndex(self, channelIndex):
+    def getChannelByChannelIndex(
+        self, channelIndex: int
+    ) -> Optional[channel_pb2.Channel]:
         """
         Retrieve the channel at the given zero-based index from this node's channels.
 
@@ -511,7 +523,7 @@ class Node:
             ch = self.channels[channelIndex]
         return ch
 
-    def deleteChannel(self, channelIndex):
+    def deleteChannel(self, channelIndex: int) -> None:
         """
         Delete the channel at channelIndex and shift subsequent channels down to fill the gap.
 
@@ -560,7 +572,7 @@ class Node:
                 # (and written it), so we can start finding it by name again
                 adminIndex = 0
 
-    def getChannelByName(self, name):
+    def getChannelByName(self, name: str) -> Optional[channel_pb2.Channel]:
         """
         Find a channel whose settings.name exactly matches the provided name.
 
@@ -574,7 +586,7 @@ class Node:
                 return c
         return None
 
-    def getDisabledChannel(self):
+    def getDisabledChannel(self) -> Optional[channel_pb2.Channel]:
         """
         Return the first channel whose role is DISABLED.
 
@@ -590,7 +602,7 @@ class Node:
                 return c
         return None
 
-    def _getAdminChannelIndex(self):
+    def _getAdminChannelIndex(self) -> int:
         """
         Get the index of the channel named "admin", or 0 if no such channel exists.
 
@@ -830,7 +842,7 @@ class Node:
                         logger.debug(f"self.ringtonePart:{self.ringtonePart}")
                         self.gotResponse = True
 
-    def get_ringtone(self):
+    def get_ringtone(self) -> Optional[str]:
         """
         Retrieve the node's ringtone as a single concatenated string.
 
@@ -868,7 +880,7 @@ class Node:
         logger.debug(f"ringtone:{self.ringtone}")
         return self.ringtone
 
-    def set_ringtone(self, ringtone):
+    def set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
         """
         Set the node's ringtone.
 
@@ -946,7 +958,7 @@ class Node:
                         )
                         self.gotResponse = True
 
-    def get_canned_message(self):
+    def get_canned_message(self) -> Optional[str]:
         """
         Retrieve the device's canned message, requesting parts from the node if not already cached.
 
@@ -984,7 +996,7 @@ class Node:
         logger.debug(f"canned_plugin_message:{self.cannedPluginMessage}")
         return self.cannedPluginMessage
 
-    def set_canned_message(self, message):
+    def set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
         """
         Set the device's canned message.
 
@@ -1026,7 +1038,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def exitSimulator(self):
+    def exitSimulator(self) -> Optional[mesh_pb2.MeshPacket]:
         """
         Request that the target simulator process exit; this request has no effect on non-simulator nodes.
 
@@ -1039,7 +1051,7 @@ class Node:
 
         return self._sendAdmin(p)
 
-    def reboot(self, secs: int = 10):
+    def reboot(self, secs: int = 10) -> Optional[mesh_pb2.MeshPacket]:
         """Tell the node to reboot."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1053,7 +1065,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def beginSettingsTransaction(self):
+    def beginSettingsTransaction(self) -> Optional[mesh_pb2.MeshPacket]:
         """
         Open a settings edit transaction on the node.
 
@@ -1072,7 +1084,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def commitSettingsTransaction(self):
+    def commitSettingsTransaction(self) -> Optional[mesh_pb2.MeshPacket]:
         """
         Commit the node's open settings edit transaction.
 
@@ -1090,7 +1102,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def rebootOTA(self, secs: int = 10):
+    def rebootOTA(self, secs: int = 10) -> Optional[mesh_pb2.MeshPacket]:
         """Tell the node to reboot into factory firmware."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1104,7 +1116,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def enterDFUMode(self):
+    def enterDFUMode(self) -> Optional[mesh_pb2.MeshPacket]:
         """
         Request the node to enter DFU (NRF52) mode.
 
@@ -1123,7 +1135,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def shutdown(self, secs: int = 10):
+    def shutdown(self, secs: int = 10) -> Optional[mesh_pb2.MeshPacket]:
         """Tell the node to shutdown."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1137,7 +1149,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def getMetadata(self):
+    def getMetadata(self) -> None:
         """
         Request the node's device metadata and wait for an acknowledgement.
 
@@ -1151,7 +1163,7 @@ class Node:
         self._sendAdmin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
         self.iface.waitForAckNak()
 
-    def factoryReset(self, full: bool = False):
+    def factoryReset(self, full: bool = False) -> Optional[mesh_pb2.MeshPacket]:
         """
         Request a factory reset on the node.
 
@@ -1180,7 +1192,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def removeNode(self, nodeId: Union[int, str]):
+    def removeNode(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
         """
         Request that this node remove the mesh node identified by nodeId.
 
@@ -1205,7 +1217,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setFavorite(self, nodeId: Union[int, str]):
+    def setFavorite(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
         """Tell the node to set the specified node ID to be favorited on the NodeDB on the device."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1219,7 +1231,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def removeFavorite(self, nodeId: Union[int, str]):
+    def removeFavorite(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
         """
         Unmark a node as a favorite in the device's NodeDB.
 
@@ -1240,7 +1252,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setIgnored(self, nodeId: Union[int, str]):
+    def setIgnored(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
         """
         Mark a node (by node number) as ignored in the device's NodeDB.
 
@@ -1261,7 +1273,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def removeIgnored(self, nodeId: Union[int, str]):
+    def removeIgnored(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
         """
         Unmark a node as ignored in the device's NodeDB.
 
@@ -1286,7 +1298,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def resetNodeDb(self):
+    def resetNodeDb(self) -> Optional[mesh_pb2.MeshPacket]:
         """Tell the node to reset its list of nodes."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1342,7 +1354,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(a, onResponse=onResponse)
 
-    def removeFixedPosition(self):
+    def removeFixedPosition(self) -> Optional[mesh_pb2.MeshPacket]:
         """
         Remove the node's fixed position setting.
 
@@ -1359,7 +1371,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setTime(self, timeSec: int = 0):
+    def setTime(self, timeSec: int = 0) -> Optional[mesh_pb2.MeshPacket]:
         """
         Set the node's clock to a specified Unix timestamp.
 
@@ -1587,9 +1599,9 @@ class Node:
         self,
         p: admin_pb2.AdminMessage,
         wantResponse: bool = False,
-        onResponse=None,
+        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
         adminIndex: int = 0,
-    ):
+    ) -> Optional[mesh_pb2.MeshPacket]:
         """
         Send an AdminMessage to this node (local or remote) using the node's admin channel.
 
@@ -1610,6 +1622,7 @@ class Node:
             logger.warning(
                 "Not sending packet because protocol use is disabled by noProto"
             )
+            return None
         else:
             if (
                 adminIndex == 0

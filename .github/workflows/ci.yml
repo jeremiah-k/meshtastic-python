@@ -60,10 +60,10 @@ jobs:
           fail_ci_if_error: false
           verbose: true
       - name: Run pylint
-        if: ${{ matrix.python-version == '3.10' }}
+        if: ${{ matrix.python-version == '3.13' }}
         run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
       - name: Check types with mypy
-        if: ${{ matrix.python-version == '3.10' }}
+        if: ${{ matrix.python-version == '3.13' }}
         run: poetry run mypy meshtastic/
   validate:
     runs-on: ubuntu-latest

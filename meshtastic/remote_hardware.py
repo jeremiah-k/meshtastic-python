@@ -1,16 +1,20 @@
 """Remote hardware."""
 
 import logging
+from typing import TYPE_CHECKING, Any, Dict
 
 from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.protobuf import portnums_pb2, remote_hardware_pb2
 from meshtastic.util import our_exit
 
+if TYPE_CHECKING:
+    from meshtastic.mesh_interface import MeshInterface
+
 logger = logging.getLogger(__name__)
 
 
-def onGPIOreceive(packet, interface) -> None:
+def onGPIOreceive(packet: Dict[str, Any], interface: "MeshInterface") -> None:
     """Handle received GPIO responses."""
     logger.debug(f"packet:{packet} interface:{interface}")
     gpioValue = 0
@@ -24,8 +28,9 @@ def onGPIOreceive(packet, interface) -> None:
             # so, we set it here
             gpioValue = 0
 
-    # print(f'mask:{interface.mask}')
-    value = int(gpioValue) & int(interface.mask)
+    mask = interface.mask if interface.mask is not None else 0
+    logger.debug("mask:%s", mask)
+    value = int(gpioValue) & mask
     logger.info(
         f"Received RemoteHardware type={hw['type']}, gpio_value={gpioValue} value={value}"
     )

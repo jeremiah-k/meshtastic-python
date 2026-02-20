@@ -198,7 +198,7 @@ class MeshInterface:  # pylint: disable=R0902
         ):
             try:
                 debug_out.close()
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Error closing debugOut: %s", e)
             finally:
                 self.debugOut = None
@@ -259,15 +259,15 @@ class MeshInterface:  # pylint: disable=R0902
         if print_color is not None and interface.debugOut == sys.stdout:
             # this isn't quite correct (could cause false positives), but currently our formatting differs between different log representations
             if "DEBUG" in line:
-                print_color.print(line, color="cyan", end=None)  # type: ignore[call-arg]
+                print_color.print(line, color="cyan")
             elif "INFO" in line:
-                print_color.print(line, color="white", end=None)  # type: ignore[call-arg]
+                print_color.print(line, color="white")
             elif "WARN" in line:
-                print_color.print(line, color="yellow", end=None)  # type: ignore[call-arg]
+                print_color.print(line, color="yellow")
             elif "ERR" in line:
-                print_color.print(line, color="red", end=None)  # type: ignore[call-arg]
+                print_color.print(line, color="red")
             else:
-                print_color.print(line, end=None)  # type: ignore[call-arg]
+                print_color.print(line)
         elif callable(interface.debugOut):
             interface.debugOut(line)
         elif hasattr(interface.debugOut, "write"):
