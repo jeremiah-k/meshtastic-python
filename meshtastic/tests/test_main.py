@@ -184,11 +184,11 @@ def test_main_test_no_ports(patched_find_ports, capsys):
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     patched_find_ports.assert_called()
-    out, err = capsys.readouterr()
-    combined = out + err
+    _, err = capsys.readouterr()
+    # testAll() returns False when not enough ports, CLI reports test failure
     assert re.search(
-        r"Warning: Must have at least two devices connected to USB",
-        combined,
+        r"Test was not successful",
+        err,
         re.MULTILINE,
     )
 
@@ -206,11 +206,11 @@ def test_main_test_one_port(patched_find_ports, capsys):
     assert pytest_wrapped_e.type is SystemExit
     assert pytest_wrapped_e.value.code == 1
     patched_find_ports.assert_called()
-    out, err = capsys.readouterr()
-    combined = out + err
+    _, err = capsys.readouterr()
+    # testAll() returns False when not enough ports, CLI reports test failure
     assert re.search(
-        r"Warning: Must have at least two devices connected to USB",
-        combined,
+        r"Test was not successful",
+        err,
         re.MULTILINE,
     )
 
@@ -247,8 +247,9 @@ def test_main_test_two_ports_fails(patched_test_all, capsys):
     assert pytest_wrapped_e.value.code == 1
     patched_test_all.assert_called()
     out, err = capsys.readouterr()
-    assert re.search(r"Test was not successful.", out, re.MULTILINE)
-    assert err == ""
+    # Error messages go to stderr
+    assert re.search(r"Test was not successful.", err, re.MULTILINE)
+    assert out == ""
 
 
 @pytest.mark.unit
@@ -298,7 +299,7 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
     message when the serial interface cannot be opened due to a PermissionError.
 
     Asserts that a SystemExit with code 1 is raised, the current user lookup was attempted,
-    stdout contains guidance matching "Need to add yourself", and stderr is empty.
+    stderr contains guidance matching "Need to add yourself", and stdout is empty.
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -319,8 +320,9 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
         patched_getlogin.assert_called()
-        assert re.search(r"Need to add yourself", out, re.MULTILINE)
-        assert err == ""
+        # Error messages go to stderr
+        assert re.search(r"Need to add yourself", err, re.MULTILINE)
+        assert out == ""
 
 
 @pytest.mark.unit
@@ -903,9 +905,9 @@ def test_main_sendtext_with_invalid_channel(caplog, capsys):
                 main()
             assert pytest_wrapped_e.type is SystemExit
             assert pytest_wrapped_e.value.code == 1
-            out, err = capsys.readouterr()
-            assert re.search(r"is not a valid channel", out, re.MULTILINE)
-            assert err == ""
+            _, err = capsys.readouterr()
+            # Error messages go to stderr
+            assert re.search(r"is not a valid channel", err, re.MULTILINE)
             mo.assert_called()
 
 
@@ -929,9 +931,9 @@ def test_main_sendtext_with_invalid_channel_nine(caplog, capsys):
                 main()
             assert pytest_wrapped_e.type is SystemExit
             assert pytest_wrapped_e.value.code == 1
-            out, err = capsys.readouterr()
-            assert re.search(r"is not a valid channel", out, re.MULTILINE)
-            assert err == ""
+            _, err = capsys.readouterr()
+            # Error messages go to stderr
+            assert re.search(r"is not a valid channel", err, re.MULTILINE)
             mo.assert_called()
 
 
@@ -2339,8 +2341,9 @@ def test_main_gpio_rd_no_gpio_channel(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
-        assert re.search(r"No channel named 'gpio'", out)
-        assert err == ""
+        # Error messages go to stderr, stdout contains "Connected to radio"
+        assert re.search(r"No channel named 'gpio'", err)
+        assert "Connected to radio" in out
 
 
 @pytest.mark.unit
@@ -3268,9 +3271,10 @@ def test_main_set_owner_whitespace_only(capsys):
         with pytest.raises(SystemExit) as excinfo:
             main()
 
-    out, _ = capsys.readouterr()
+    _, err = capsys.readouterr()
+    # Error messages go to stderr
     assert (
-        "ERROR: Long Name cannot be empty or contain only whitespace characters" in out
+        "ERROR: Long Name cannot be empty or contain only whitespace characters" in err
     )
     assert excinfo.value.code == 1
 
@@ -3289,9 +3293,10 @@ def test_main_set_owner_empty_string(capsys):
         with pytest.raises(SystemExit) as excinfo:
             main()
 
-    out, _ = capsys.readouterr()
+    _, err = capsys.readouterr()
+    # Error messages go to stderr
     assert (
-        "ERROR: Long Name cannot be empty or contain only whitespace characters" in out
+        "ERROR: Long Name cannot be empty or contain only whitespace characters" in err
     )
     assert excinfo.value.code == 1
 
@@ -3310,9 +3315,10 @@ def test_main_set_owner_short_whitespace_only(capsys):
         with pytest.raises(SystemExit) as excinfo:
             main()
 
-    out, _ = capsys.readouterr()
+    _, err = capsys.readouterr()
+    # Error messages go to stderr
     assert (
-        "ERROR: Short Name cannot be empty or contain only whitespace characters" in out
+        "ERROR: Short Name cannot be empty or contain only whitespace characters" in err
     )
     assert excinfo.value.code == 1
 
@@ -3331,9 +3337,10 @@ def test_main_set_owner_short_empty_string(capsys):
         with pytest.raises(SystemExit) as excinfo:
             main()
 
-    out, _ = capsys.readouterr()
+    _, err = capsys.readouterr()
+    # Error messages go to stderr
     assert (
-        "ERROR: Short Name cannot be empty or contain only whitespace characters" in out
+        "ERROR: Short Name cannot be empty or contain only whitespace characters" in err
     )
     assert excinfo.value.code == 1
 
@@ -3345,7 +3352,7 @@ def test_main_set_ham_whitespace_only(capsys):
     Verify that invoking the CLI with --set-ham and a whitespace-only callsign prints an appropriate error and exits with code 1.
 
     Asserts the error message "ERROR: Ham radio callsign cannot be empty or contain only
-    whitespace characters" appears on stdout and that the process exits with code 1.
+    whitespace characters" appears on stderr and that the process exits with code 1.
     """
     sys.argv = ["", "--set-ham", "   "]
     mt_config.args = sys.argv
@@ -3357,10 +3364,11 @@ def test_main_set_ham_whitespace_only(capsys):
         with pytest.raises(SystemExit) as excinfo:
             main()
 
-    out, _ = capsys.readouterr()
+    _, err = capsys.readouterr()
+    # Error messages go to stderr
     assert (
         "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
-        in out
+        in err
     )
     assert excinfo.value.code == 1
 
@@ -3379,9 +3387,10 @@ def test_main_set_ham_empty_string(capsys):
         with pytest.raises(SystemExit) as excinfo:
             main()
 
-    out, _ = capsys.readouterr()
+    _, err = capsys.readouterr()
+    # Error messages go to stderr
     assert (
         "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
-        in out
+        in err
     )
     assert excinfo.value.code == 1

@@ -326,9 +326,8 @@ def testAll(numTests: int = 5) -> bool:
     """
     ports: List[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:
-        meshtastic.util.our_exit(
-            "Warning: Must have at least two devices connected to USB."
-        )
+        logger.error("Must have at least two devices connected to USB.")
+        return False
 
     pub.subscribe(onConnection, "meshtastic.connection")
     pub.subscribe(onReceive, "meshtastic.receive")

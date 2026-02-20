@@ -66,11 +66,9 @@ class SerialInterface(StreamInterface):
                 )
                 return
             elif len(ports) > 1:
-                message: str = (
-                    "Warning: Multiple serial ports were detected so one serial port must be specified with the '--port'.\n"
-                )
-                message += f"  Ports detected:{ports}"
-                meshtastic.util.our_exit(message)
+                message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+                message += f"  Ports detected: {ports}"
+                raise ValueError(message)
             else:
                 self.devPath = ports[0]
 

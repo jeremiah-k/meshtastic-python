@@ -6,7 +6,6 @@ import os
 import platform
 import re
 import subprocess
-import sys
 import threading
 import time
 import warnings
@@ -567,50 +566,6 @@ class DeferredExecution:
                 o()
             except Exception:
                 logger.exception("Unexpected error in deferred execution")
-
-
-def our_exit(message: str, return_value: int = 1) -> NoReturn:
-    """
-    Exit the process after printing a message.
-
-    Parameters
-    ----------
-        message (str): Message to print to standard output before exiting.
-        return_value (int): Process exit code; 0 indicates success, non-zero indicates failure (defaults to 1).
-
-    """
-    output_stream = sys.stderr if return_value != 0 else sys.stdout
-    print(message, file=output_stream)
-    sys.exit(return_value)
-
-
-def support_info() -> None:
-    """Print out info that helps troubleshooting of the cli."""
-    print("")
-    print("If having issues with meshtastic cli or python library")
-    print("or wish to make feature requests, visit:")
-    print("https://github.com/meshtastic/python/issues")
-    print("When adding an issue, be sure to include the following info:")
-    print(f" System: {platform.system()}")
-    print(f"   Platform: {platform.platform()}")
-    print(f"   Release: {platform.uname().release}")
-    print(f"   Machine: {platform.uname().machine}")
-    print(f"   Encoding (stdin): {sys.stdin.encoding}")
-    print(f"   Encoding (stdout): {sys.stdout.encoding}")
-    the_version = get_active_version()
-    pypi_version = check_if_newer_version()
-    if pypi_version:
-        print(
-            f" meshtastic: v{the_version} (*** newer version v{pypi_version} available ***)"
-        )
-    else:
-        print(f" meshtastic: v{the_version}")
-    print(f" Executable: {sys.argv[0]}")
-    print(
-        f" Python: {platform.python_version()} {platform.python_implementation()} {platform.python_compiler()}"
-    )
-    print("")
-    print("Please add the output from the command: meshtastic --info")
 
 
 def remove_keys_from_dict(keys: Union[Tuple, List, Set], adict: Dict) -> Dict:

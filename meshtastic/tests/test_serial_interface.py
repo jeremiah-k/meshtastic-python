@@ -62,15 +62,10 @@ def test_SerialInterface_no_ports(mocked_findPorts, caplog):
 @patch(
     "meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake1", "/dev/ttyUSBfake2"]
 )
-def test_SerialInterface_multiple_ports(mocked_findPorts, capsys):
-    """Test that we can instantiate a SerialInterface with two ports."""
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+def test_SerialInterface_multiple_ports(mocked_findPorts):
+    """Test that SerialInterface raises ValueError when multiple ports are detected."""
+    with pytest.raises(ValueError) as exc_info:
         SerialInterface(noProto=True)
     mocked_findPorts.assert_called()
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    combined = out + err
-    assert re.search(
-        r"Warning: Multiple serial ports were detected", combined, re.MULTILINE
-    )
+    assert "Multiple serial ports were detected" in str(exc_info.value)
+    assert "'--port'" in str(exc_info.value)

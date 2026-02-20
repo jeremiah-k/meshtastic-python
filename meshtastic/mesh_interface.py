@@ -43,7 +43,6 @@ from meshtastic.util import (
     Timeout,
     convert_mac_addr,
     message_to_json,
-    our_exit,
     remove_keys_from_dict,
     stripnl,
 )
@@ -144,9 +143,9 @@ class MeshInterface:  # pylint: disable=R0902
         # _handlePacketFromRadio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -922,7 +921,7 @@ class MeshInterface:  # pylint: disable=R0902
         protobuf from the packet payload, and prints latitude/longitude (degrees),
         altitude (meters) when present, and precision information. If the packet is a
         routing response whose `decoded["routing"]["errorReason"]` equals `"NO_RESPONSE"`,
-        calls our_exit with a message about the minimum required firmware.
+        raises MeshInterfaceError with a message about the minimum required firmware.
 
         Parameters
         ----------
@@ -961,7 +960,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                our_exit(
+                raise self.MeshInterfaceError(
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
                 )
 
@@ -1251,7 +1250,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                our_exit(
+                raise self.MeshInterfaceError(
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
                 )
 
@@ -1261,8 +1260,8 @@ class MeshInterface:  # pylint: disable=R0902
 
         When the packet's port is WAYPOINT_APP, parse the Waypoint protobuf from decoded['payload'],
         mark the waypoint acknowledgment as received, and print the waypoint. When the packet's port
-        is ROUTING_APP and decoded['routing']['errorReason'] == "NO_RESPONSE", call our_exit with a
-        message about the minimum firmware requirement on the destination node.
+        is ROUTING_APP and decoded['routing']['errorReason'] == "NO_RESPONSE", raises
+        MeshInterfaceError with a message about the minimum firmware requirement.
 
         Parameters
         ----------
@@ -1281,7 +1280,7 @@ class MeshInterface:  # pylint: disable=R0902
             portnums_pb2.PortNum.ROUTING_APP
         ):
             if p["decoded"]["routing"]["errorReason"] == "NO_RESPONSE":
-                our_exit(
+                raise self.MeshInterfaceError(
                     "No response from node. At least firmware 2.1.22 is required on the destination node."
                 )
 
@@ -1865,9 +1864,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:

@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from hypothesis import given
@@ -35,14 +35,12 @@ from meshtastic.util import (
     ipstr,
     is_windows11,
     message_to_json,
-    our_exit,
     pskToString,
     quoteBooleans,
     readnet_u16,
     remove_keys_from_dict,
     snake_to_camel,
     stripnl,
-    support_info,
 )
 
 
@@ -163,54 +161,11 @@ def test_pskToString_simple():
 
 
 @pytest.mark.unitslow
-def test_our_exit_zero_return_value(capsys):
-    """Test our_exit with a zero return value."""
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        our_exit("Warning: Some message", 0)
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: Some message", out, re.MULTILINE)
-    assert err == ""
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 0
-
-
-@pytest.mark.unitslow
-def test_our_exit_non_zero_return_value(capsys):
-    """Test our_exit with a non-zero return value."""
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        our_exit("Error: Some message", 1)
-    out, err = capsys.readouterr()
-    assert out == ""
-    assert re.search(r"Error: Some message", err, re.MULTILINE)
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
-
-
-@pytest.mark.unitslow
 def test_fixme():
     """Test fixme()."""
     with pytest.raises(FixmeError) as pytest_wrapped_e:
         fixme("some exception")
     assert pytest_wrapped_e.type is FixmeError
-
-
-@pytest.mark.unit
-@patch("meshtastic.util.check_if_newer_version", return_value=None)
-def test_support_info(
-    _mock_check_if_newer_version: MagicMock, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """
-    Verify support_info outputs system and environment information and writes no error output.
-
-    Asserts that captured stdout contains the "System", "Platform", "Machine", and "Executable" headings and that stderr is empty.
-    """
-    support_info()
-    out, err = capsys.readouterr()
-    assert re.search(r"System", out, re.MULTILINE)
-    assert re.search(r"Platform", out, re.MULTILINE)
-    assert re.search(r"Machine", out, re.MULTILINE)
-    assert re.search(r"Executable", out, re.MULTILINE)
-    assert err == ""
 
 
 @pytest.mark.unit
@@ -622,9 +577,9 @@ def test_message_to_json_shows_all():
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
 
 
 @pytest.mark.unit

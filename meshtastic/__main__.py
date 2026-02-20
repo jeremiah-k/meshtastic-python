@@ -14,7 +14,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, NoReturn, Optional, Set, Tuple
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -71,6 +71,55 @@ except (ImportError, AttributeError) as exc:
     logging.getLogger(__name__).debug("powermon/slog not available: %s", exc)
 
 logger = logging.getLogger(__name__)
+
+
+def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
+    """
+    Exit the CLI process after printing a message to the appropriate stream.
+
+    This is a CLI-specific helper that should not be used by library code.
+    Library code should raise exceptions instead, which the CLI will catch
+    and handle appropriately.
+
+    Parameters
+    ----------
+        message (str): Message to print before exiting.
+        return_value (int): Process exit code; 0 indicates success, non-zero
+            indicates failure (defaults to 1).
+
+    """
+    output_stream = sys.stderr if return_value != 0 else sys.stdout
+    print(message, file=output_stream)
+    sys.exit(return_value)
+
+
+def support_info() -> None:
+    """Print troubleshooting information for CLI issues."""
+    print("")
+    print("If having issues with meshtastic cli or python library")
+    print("or wish to make feature requests, visit:")
+    print("https://github.com/meshtastic/python/issues")
+    print("When adding an issue, be sure to include the following info:")
+    print(f" System: {platform.system()}")
+    print(f"   Platform: {platform.platform()}")
+    print(f"   Release: {platform.uname().release}")
+    print(f"   Machine: {platform.uname().machine}")
+    print(f"   Encoding (stdin): {sys.stdin.encoding}")
+    print(f"   Encoding (stdout): {sys.stdout.encoding}")
+    the_version = get_active_version()
+    pypi_version = meshtastic.util.check_if_newer_version()
+    if pypi_version:
+        print(
+            f" meshtastic: v{the_version} (*** newer version v{pypi_version} available ***)"
+        )
+    else:
+        print(f" meshtastic: v{the_version}")
+    print(f" Executable: {sys.argv[0]}")
+    print(
+        f" Python: {platform.python_version()} {platform.python_implementation()} {platform.python_compiler()}"
+    )
+    print("")
+    print("Please add the output from the command: meshtastic --info")
 
 
 def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
@@ -499,12 +548,12 @@ def onConnected(interface: MeshInterface) -> None:
             short_name = args.set_owner_short.strip() if args.set_owner_short else None
 
             if long_name is not None and not long_name:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "ERROR: Long Name cannot be empty or contain only whitespace characters"
                 )
 
             if short_name is not None and not short_name:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "ERROR: Short Name cannot be empty or contain only whitespace characters"
                 )
 
@@ -593,7 +642,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.set_ham:
             if not args.set_ham.strip():
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
             closeNow = True
@@ -714,7 +763,7 @@ def onConnected(interface: MeshInterface) -> None:
                     ),
                 )
             else:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     f"Warning: {channelIndex} is not a valid channel. Channel must not be DISABLED."
                 )
 
@@ -731,7 +780,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.request_telemetry:
             if args.dest == BROADCAST_ADDR:
-                meshtastic.util.our_exit("Warning: Must use a destination node ID.")
+                _cli_exit("Warning: Must use a destination node ID.")
             else:
                 channelIndex = mt_config.channel_index or 0
                 if checkChannel(interface, channelIndex):
@@ -757,7 +806,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.request_position:
             if args.dest == BROADCAST_ADDR:
-                meshtastic.util.our_exit("Warning: Must use a destination node ID.")
+                _cli_exit("Warning: Must use a destination node ID.")
             else:
                 channelIndex = mt_config.channel_index or 0
                 if checkChannel(interface, channelIndex):
@@ -772,7 +821,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
             if args.dest == BROADCAST_ADDR:
-                meshtastic.util.our_exit("Warning: Must use a destination node ID.")
+                _cli_exit("Warning: Must use a destination node ID.")
             else:
                 rhc = remote_hardware.RemoteHardwareClient(interface)
 
@@ -874,7 +923,7 @@ def onConnected(interface: MeshInterface) -> None:
                     # Validate owner name before setting
                     owner_name = str(configuration["owner"]).strip()
                     if not owner_name:
-                        meshtastic.util.our_exit(
+                        _cli_exit(
                             "ERROR: Long Name cannot be empty or contain only whitespace characters"
                         )
                     print(f"Setting device owner to {configuration['owner']}")
@@ -888,7 +937,7 @@ def onConnected(interface: MeshInterface) -> None:
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["owner_short"]).strip()
                     if not owner_short_name:
-                        meshtastic.util.our_exit(
+                        _cli_exit(
                             "ERROR: Short Name cannot be empty or contain only whitespace characters"
                         )
                     print(
@@ -904,7 +953,7 @@ def onConnected(interface: MeshInterface) -> None:
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["ownerShort"]).strip()
                     if not owner_short_name:
-                        meshtastic.util.our_exit(
+                        _cli_exit(
                             "ERROR: Short Name cannot be empty or contain only whitespace characters"
                         )
                     print(
@@ -1016,7 +1065,7 @@ def onConnected(interface: MeshInterface) -> None:
                         f.write(config_txt)
                     print(f"Exported configuration to {args.export_config}")
                 except Exception as e:
-                    meshtastic.util.our_exit(f"ERROR: Failed to write config file: {e}")
+                    _cli_exit(f"ERROR: Failed to write config file: {e}")
 
         if args.ch_set_url:
             closeNow = True
@@ -1036,25 +1085,23 @@ def onConnected(interface: MeshInterface) -> None:
             ch_add_idx = mt_config.channel_index
             if ch_add_idx is not None:
                 # Since we set the channel index after adding a channel, don't allow --ch-index
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "Warning: '--ch-add' and '--ch-index' are incompatible. Channel not added."
                 )
             closeNow = True
             if len(args.ch_add) > 10:
-                meshtastic.util.our_exit(
-                    "Warning: Channel name must be shorter. Channel not added."
-                )
+                _cli_exit("Warning: Channel name must be shorter. Channel not added.")
             n = interface.getNode(args.dest, **getNode_kwargs)
             ch = n.getChannelByName(args.ch_add)
             if ch:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     f"Warning: This node already has a '{args.ch_add}' channel. No changes were made."
                 )
             else:
                 # get the first channel that is disabled (i.e., available)
                 ch = n.getDisabledChannel()
                 if not ch:
-                    meshtastic.util.our_exit("Warning: No free channels were found")
+                    _cli_exit("Warning: No free channels were found")
                 chs = channel_pb2.ChannelSettings()
                 chs.psk = meshtastic.util.genPSK256()
                 chs.name = args.ch_add
@@ -1073,14 +1120,10 @@ def onConnected(interface: MeshInterface) -> None:
 
             ch_del_idx = mt_config.channel_index
             if ch_del_idx is None:
-                meshtastic.util.our_exit(
-                    "Warning: Need to specify '--ch-index' for '--ch-del'.", 1
-                )
+                _cli_exit("Warning: Need to specify '--ch-index' for '--ch-del'.", 1)
             else:
                 if ch_del_idx == 0:
-                    meshtastic.util.our_exit(
-                        "Warning: Cannot delete primary channel.", 1
-                    )
+                    _cli_exit("Warning: Cannot delete primary channel.", 1)
                 else:
                     print(f"Deleting channel {ch_del_idx}")
                     interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
@@ -1102,9 +1145,7 @@ def onConnected(interface: MeshInterface) -> None:
             """
             channelIndex = mt_config.channel_index
             if channelIndex is not None and channelIndex > 0:
-                meshtastic.util.our_exit(
-                    "Warning: Cannot set modem preset for non-primary channel", 1
-                )
+                _cli_exit("Warning: Cannot set modem preset for non-primary channel", 1)
             # Overwrite modem_preset
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if len(node.localConfig.ListFields()) == 0:
@@ -1141,8 +1182,8 @@ def onConnected(interface: MeshInterface) -> None:
 
             _idx: Optional[int] = mt_config.channel_index
             if _idx is None:
-                meshtastic.util.our_exit("Warning: Need to specify '--ch-index'.", 1)
-            # _idx is now narrowed to int due to NoReturn from our_exit
+                _cli_exit("Warning: Need to specify '--ch-index'.", 1)
+            # _idx is now narrowed to int due to NoReturn from _cli_exit
             node = interface.getNode(args.dest, **getNode_kwargs)
             ch = node.channels[_idx]  # type: ignore[index]
 
@@ -1153,9 +1194,7 @@ def onConnected(interface: MeshInterface) -> None:
                     "which can cause errors in some clients. Whenever possible, use --ch-add and --ch-del instead."
                 )
                 if _idx == 0:
-                    meshtastic.util.our_exit(
-                        "Warning: Cannot enable/disable PRIMARY channel."
-                    )
+                    _cli_exit("Warning: Cannot enable/disable PRIMARY channel.")
 
                 enable = True  # default to enable
                 if args.ch_enable:
@@ -1293,7 +1332,7 @@ def onConnected(interface: MeshInterface) -> None:
                     stress.run()
                     closeNow = True  # exit immediately after stress test
             else:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "The powermon module could not be loaded. "
                     "You may need to run `poetry install --with powermon`. "
                     f"Import Error was: {powermon_exception}"
@@ -1338,7 +1377,7 @@ def onConnected(interface: MeshInterface) -> None:
             log_set.close()
 
     except Exception as ex:
-        meshtastic.util.our_exit(f"Aborting due to: {ex}", 1)
+        _cli_exit(f"Aborting due to: {ex}", 1)
 
 
 def printConfig(config: Any) -> None:
@@ -1608,7 +1647,7 @@ def create_power_meter() -> None:
     if args.power_voltage:
         v = float(args.power_voltage)
         if v < 0.8 or v > 5.0:
-            meshtastic.util.our_exit("Voltage must be between 0.8 and 5.0")
+            _cli_exit("Voltage must be between 0.8 and 5.0")
 
     if args.power_riden:
         meter = RidenPowerSupply(args.power_riden)
@@ -1638,7 +1677,7 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
 
     Supports bracketed IPv6 (`[addr]` or `[addr]:port`), bare IPv6 (`addr:...`),
     and single-colon host:port forms. Port-range and malformed IPv6/bracket syntax
-    errors exit via `meshtastic.util.our_exit` with existing CLI messages.
+    errors exit via `_cli_exit` with existing CLI messages.
 
     Parameters
     ----------
@@ -1654,7 +1693,7 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
         # Bracketed IPv6: [addr] or [addr]:port
         bracket_end = host_str.find("]")
         if bracket_end == -1:
-            meshtastic.util.our_exit(
+            _cli_exit(
                 f"Error: malformed IPv6 address in --host '{host_str}'.",
                 1,
             )
@@ -1665,18 +1704,18 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
             try:
                 tcp_port = int(tcp_port_str)
             except ValueError:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     f"Error: invalid TCP port in --host '{host_str}'.",
                     1,
                 )
             if not 1 <= tcp_port <= 65535:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     f"Error: invalid TCP port in --host '{host_str}'.",
                     1,
                 )
             return tcp_hostname, tcp_port
         if remainder:
-            meshtastic.util.our_exit(
+            _cli_exit(
                 f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
                 1,
             )
@@ -1696,7 +1735,7 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
             return host_str, default_port
 
         if not 1 <= tcp_port <= 65535:
-            meshtastic.util.our_exit(
+            _cli_exit(
                 f"Error: invalid TCP port in --host '{host_str}'.",
                 1,
             )
@@ -1713,7 +1752,7 @@ def common():
     optional subsystems (power meter, serial logging), subscribes to message topics, selects and
     opens the requested transport (BLE, TCP, or serial), and calls onConnected with the established
     MeshInterface. If a persistent session mode is requested (listen, tunnel, noproto, or reply),
-    blocks until interrupted. On fatal errors calls meshtastic.util.our_exit with an explanatory
+    blocks until interrupted. On fatal errors calls _cli_exit with an explanatory
     message.
     """
     logfile = None
@@ -1737,31 +1776,31 @@ def common():
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
-        meshtastic.util.our_exit("", 1)
+        _cli_exit("", 1)
     else:
         if args.support:
-            meshtastic.util.support_info()
-            meshtastic.util.our_exit("", 0)
+            support_info()
+            _cli_exit("", 0)
 
         # Early validation for owner names before attempting device connection
         if args.set_owner is not None:
             stripped_long_name = args.set_owner.strip()
             if not stripped_long_name:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "ERROR: Long Name cannot be empty or contain only whitespace characters"
                 )
 
         if args.set_owner_short is not None:
             stripped_short_name = args.set_owner_short.strip()
             if not stripped_short_name:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "ERROR: Short Name cannot be empty or contain only whitespace characters"
                 )
 
         if args.set_ham is not None:
             stripped_ham_name = args.set_ham.strip()
             if not stripped_ham_name:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
 
@@ -1786,18 +1825,18 @@ def common():
                 "This option has been deprecated, see help below for the correct replacement..."
             )
             parser.print_help(sys.stderr)
-            meshtastic.util.our_exit("", 1)
+            _cli_exit("", 1)
         elif args.test:
             if meshtastic_test is None:
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "Test module could not be imported. Ensure you have the 'dotmap' module installed."
                 )
             else:
                 result = meshtastic_test.testAll()
                 if not result:
-                    meshtastic.util.our_exit("Warning: Test was not successful.")
+                    _cli_exit("Warning: Test was not successful.")
                 else:
-                    meshtastic.util.our_exit("Test was a success.", 0)
+                    _cli_exit("Test was a success.", 0)
         else:
             if args.seriallog == "stdout":
                 logfile = sys.stdout
@@ -1817,7 +1856,7 @@ def common():
                 logger.debug("BLE scan starting")
                 for x in BLEInterface.scan():
                     print(f"Found: name='{x.name}' address='{x.address}'")
-                meshtastic.util.our_exit("BLE scan finished", 0)
+                _cli_exit("BLE scan finished", 0)
 
             # Use ExitStack to guarantee interface cleanup on early exits or exceptions
             with contextlib.ExitStack() as stack:
@@ -1835,7 +1874,7 @@ def common():
                             )
                         )
                     except BLEInterface.BLEError as e:
-                        meshtastic.util.our_exit(str(e), 1)
+                        _cli_exit(str(e), 1)
                 elif args.host:
                     try:
                         tcp_hostname, tcp_port = _parse_host_port(
@@ -1853,9 +1892,7 @@ def common():
                             )
                         )
                     except OSError as ex:
-                        meshtastic.util.our_exit(
-                            f"Error connecting to {args.host}:{ex}", 1
-                        )
+                        _cli_exit(f"Error connecting to {args.host}:{ex}", 1)
                 else:
                     try:
                         client = stack.enter_context(
@@ -1879,7 +1916,7 @@ def common():
                         message += "    3. Are the necessary drivers installed?\n"
                         message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
                         message += "       Ensure you are using a **data-capable USB cable**.\n"
-                        meshtastic.util.our_exit(message, 1)
+                        _cli_exit(message, 1)
                     except PermissionError as ex:
                         try:
                             username = os.getlogin()
@@ -1890,13 +1927,13 @@ def common():
                         message += f"     sudo usermod -a -G dialout {username}\n"
                         message += "  After running that command, log out and re-login for it to take effect.\n"
                         message += f"Error was:{ex}"
-                        meshtastic.util.our_exit(message)
+                        _cli_exit(message)
                     except OSError as ex:
                         message = "OS Error:\n"
                         message += "  The serial device couldn't be opened, it might be in use by another process.\n"
                         message += "  Please close any applications or webpages that may be using the device and try again.\n"
                         message += f"\nOriginal error: {ex}"
-                        meshtastic.util.our_exit(message)
+                        _cli_exit(message)
                     if client is None or client.devPath is None:
                         try:
                             client = stack.enter_context(
@@ -1909,12 +1946,10 @@ def common():
                                 )
                             )
                         except OSError as ex:
-                            meshtastic.util.our_exit(
-                                f"Error connecting to localhost:{ex}", 1
-                            )
+                            _cli_exit(f"Error connecting to localhost:{ex}", 1)
 
                 if client is None:
-                    meshtastic.util.our_exit("Error: no interface was established", 1)
+                    _cli_exit("Error: no interface was established", 1)
                 # We assume client is fully connected now
                 onConnected(client)
 
