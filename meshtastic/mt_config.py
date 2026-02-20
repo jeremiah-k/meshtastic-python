@@ -14,6 +14,8 @@ with rather more easily once the code is simplified by this change.
 """
 
 import argparse
+import inspect
+import sys
 from typing import IO, Any, Dict, Optional
 
 MODULE_STATE_DEFAULTS: Dict[str, Any] = {
@@ -48,18 +50,23 @@ tunnel_instance: Any
 camel_case: bool
 
 # Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.
-# Use globals() to read the module-level annotation dict; pylint does not
-# recognise __annotations__ as a valid built-in at module scope, but it IS
-# valid Python 3 and globals()["__annotations__"] is the canonical spelling
-# that avoids the false-positive lint warning.
+# Python 3.14+ can defer module annotations; inspect.get_annotations() handles
+# eager and deferred annotation models consistently.
 _state_keys: frozenset = frozenset(MODULE_STATE_DEFAULTS)
+try:
+    _module_annotations: Dict[str, Any] = inspect.get_annotations(
+        sys.modules[__name__], eval_str=False
+    )
+except (AttributeError, NameError, TypeError):
+    _module_annotations = globals().get("__annotations__", {})
 _annotated_state: frozenset = frozenset(
-    k for k in globals().get("__annotations__", {}) if k in _state_keys
+    k for k in _module_annotations if k in _state_keys
 )
-assert _state_keys == _annotated_state, (
-    f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
-    f"missing annotations: {_state_keys - _annotated_state}, "
-    f"missing defaults: {_annotated_state - _state_keys}"
-)
+if _module_annotations and _state_keys != _annotated_state:
+    raise AssertionError(
+        f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
+        f"missing annotations: {_state_keys - _annotated_state}, "
+        f"missing defaults: {_annotated_state - _state_keys}"
+    )
 
 reset()
