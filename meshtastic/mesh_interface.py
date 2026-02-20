@@ -1469,7 +1469,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         nodeNum: int = 0
         if destinationId is None:
-            our_exit("Warning: destinationId must not be None")
+            raise MeshInterface.MeshInterfaceError("destinationId must not be None")
         elif isinstance(destinationId, int):
             nodeNum = destinationId
         elif destinationId == BROADCAST_ADDR:
@@ -1478,7 +1478,7 @@ class MeshInterface:  # pylint: disable=R0902
             if self.myInfo:
                 nodeNum = self.myInfo.my_node_num
             else:
-                our_exit("Warning: No myInfo found.")
+                raise MeshInterface.MeshInterfaceError("No myInfo found.")
         # A simple hex style nodeid - we can parse this without needing the DB
         elif isinstance(destinationId, str) and len(destinationId) >= 8:
             # assuming some form of node id string such as !1234578 or 0x12345678
@@ -1488,7 +1488,9 @@ class MeshInterface:  # pylint: disable=R0902
             if self.nodes:
                 node = self.nodes.get(destinationId)
                 if node is None:
-                    our_exit(f"Warning: NodeId {destinationId} not found in DB")
+                    raise MeshInterface.MeshInterfaceError(
+                        f"NodeId {destinationId} not found in DB"
+                    )
                 else:
                     nodeNum = node["num"]
             else:

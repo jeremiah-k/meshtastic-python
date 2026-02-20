@@ -1357,10 +1357,10 @@ def printConfig(config: Any) -> None:
     objDesc = config.DESCRIPTOR
     for config_section in objDesc.fields:
         if config_section.name != "version":
-            config = objDesc.fields_by_name.get(config_section.name)
+            section_field = objDesc.fields_by_name.get(config_section.name)
             print(f"{config_section.name}:")
             names = []
-            for field in config.message_type.fields:
+            for field in section_field.message_type.fields:  # type: ignore[union-attr]
                 tmp_name = f"{config_section.name}.{field.name}"
                 if mt_config.camel_case:
                     tmp_name = meshtastic.util.snake_to_camel(tmp_name)

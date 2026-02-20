@@ -830,13 +830,13 @@ class Node:
                 - "decoded"]["admin"]["raw"].get_ringtone_response: ringtone part payload to store
 
         """
-        logger.debug(f"onResponseRequestRingtone() p:{p}")
+        logger.debug("onResponseRequestRingtone() p:%s", p)
         errorFound = False
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 errorFound = True
                 logger.error(
-                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                    "Error on response: %s", p["decoded"]["routing"]["errorReason"]
                 )
         if errorFound is False:
             if "decoded" in p:
@@ -845,7 +845,7 @@ class Node:
                         self.ringtonePart = p["decoded"]["admin"][
                             "raw"
                         ].get_ringtone_response
-                        logger.debug(f"self.ringtonePart:{self.ringtonePart}")
+                        logger.debug("self.ringtonePart:%s", self.ringtonePart)
 
     def get_ringtone(self) -> Optional[str]:
         """
@@ -882,13 +882,17 @@ class Node:
                 logger.warning("Timed out waiting for ringtone response")
                 return None
 
-            logger.debug(f"self.ringtone:{self.ringtone}")
+            logger.debug("self.ringtone:%s", self.ringtone)
 
-            self.ringtone = ""
-            if self.ringtonePart:
-                self.ringtone += self.ringtonePart
+            # Only set if another thread hasn't already populated it and we got a response
+            if not self.ringtone:
+                if self.ringtonePart:
+                    self.ringtone = self.ringtonePart
+                else:
+                    # Response received but no valid data - ringtone is unavailable
+                    return None
 
-        logger.debug(f"ringtone:{self.ringtone}")
+        logger.debug("ringtone:%s", self.ringtone)
         return self.ringtone
 
     def set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
@@ -951,13 +955,13 @@ class Node:
                 keys like `"decoded"`, `"decoded"]["routing"]`, and `"decoded"]["admin"]["raw"]`.
 
         """
-        logger.debug(f"onResponseRequestCannedMessagePluginMessageMessages() p:{p}")
+        logger.debug("onResponseRequestCannedMessagePluginMessageMessages() p:%s", p)
         errorFound = False
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 errorFound = True
                 logger.error(
-                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                    "Error on response: %s", p["decoded"]["routing"]["errorReason"]
                 )
         if errorFound is False:
             if "decoded" in p:
@@ -967,7 +971,8 @@ class Node:
                             "raw"
                         ].get_canned_message_module_messages_response
                         logger.debug(
-                            f"self.cannedPluginMessageMessages:{self.cannedPluginMessageMessages}"
+                            "self.cannedPluginMessageMessages:%s",
+                            self.cannedPluginMessageMessages,
                         )
 
     def get_canned_message(self) -> Optional[str]:
@@ -1006,14 +1011,18 @@ class Node:
                 return None
 
             logger.debug(
-                f"self.cannedPluginMessageMessages:{self.cannedPluginMessageMessages}"
+                "self.cannedPluginMessageMessages:%s", self.cannedPluginMessageMessages
             )
 
-            self.cannedPluginMessage = ""
-            if self.cannedPluginMessageMessages:
-                self.cannedPluginMessage += self.cannedPluginMessageMessages
+            # Only set if another thread hasn't already populated it and we got a response
+            if not self.cannedPluginMessage:
+                if self.cannedPluginMessageMessages:
+                    self.cannedPluginMessage = self.cannedPluginMessageMessages
+                else:
+                    # Response received but no valid data - message is unavailable
+                    return None
 
-        logger.debug(f"canned_plugin_message:{self.cannedPluginMessage}")
+        logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
         return self.cannedPluginMessage
 
     def set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:

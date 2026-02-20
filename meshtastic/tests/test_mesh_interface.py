@@ -483,16 +483,14 @@ def test_sendPosition_with_a_position(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_no_destination(capsys):
-    """Test _sendPacket()."""
+def test_sendPacket_with_no_destination():
+    """Test _sendPacket() raises MeshInterfaceError when destinationId is None."""
     with MeshInterface(noProto=True) as iface:
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="destinationId must not be None",
+        ):
             iface._sendPacket(b"", destinationId=None)  # type: ignore[arg-type]
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: destinationId must not be None", out, re.MULTILINE)
-    assert err == ""
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
 
 
 @pytest.mark.unit
@@ -534,17 +532,15 @@ def test_sendPacket_with_destination_as_BROADCAST_ADDR(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo(capsys):
-    """Test _sendPacket() with LOCAL_ADDR as a destination with no myInfo."""
+def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo():
+    """Test _sendPacket() with LOCAL_ADDR raises MeshInterfaceError when myInfo is missing."""
     with MeshInterface(noProto=True) as iface:
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="No myInfo found",
+        ):
             meshPacket = mesh_pb2.MeshPacket()
             iface._sendPacket(meshPacket, destinationId=LOCAL_ADDR)
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: No myInfo", out, re.MULTILINE)
-    assert err == ""
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
 
 
 @pytest.mark.unit
@@ -563,17 +559,15 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_is_blank_with_nodes(capsys, iface_with_nodes):
-    """Test _sendPacket() with '' as a destination with myInfo."""
+def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes):
+    """Test _sendPacket() with '' as a destination raises MeshInterfaceError when node not found."""
     iface = iface_with_nodes
     meshPacket = mesh_pb2.MeshPacket()
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId  not found in DB",
+    ):
         iface._sendPacket(meshPacket, destinationId="")
-    assert pytest_wrapped_e.type is SystemExit
-    assert pytest_wrapped_e.value.code == 1
-    out, err = capsys.readouterr()
-    assert re.match(r"Warning: NodeId  not found in DB", out, re.MULTILINE)
-    assert err == ""
 
 
 @pytest.mark.unit

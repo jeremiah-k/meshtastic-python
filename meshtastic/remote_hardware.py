@@ -16,24 +16,23 @@ logger = logging.getLogger(__name__)
 
 def onGPIOreceive(packet: Dict[str, Any], interface: "MeshInterface") -> None:
     """Handle received GPIO responses."""
-    logger.debug(f"packet:{packet} interface:{interface}")
+    logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
     hw = packet["decoded"]["remotehw"]
     if "gpioValue" in hw:
         gpioValue = hw["gpioValue"]
-    else:
-        if "gpioMask" not in hw:
-            # we did get a reply, but due to protobufs, 0 for numeric value is not sent
-            # see https://developers.google.com/protocol-buffers/docs/proto3#default
-            # so, we set it here
-            gpioValue = 0
+    # Note: proto3 omits zero-valued fields; gpioValue defaults to 0
+    # See https://developers.google.com/protocol-buffers/docs/proto3#default
 
     mask = interface.mask if interface.mask is not None else hw.get("gpioMask", 0)
     mask = int(mask)
     logger.debug("mask:%s", mask)
     value = int(gpioValue) & mask
     logger.info(
-        f"Received RemoteHardware type={hw['type']}, gpio_value={gpioValue} value={value}"
+        "Received RemoteHardware type=%s, gpio_value=%s value=%s",
+        hw["type"],
+        gpioValue,
+        value,
     )
     interface.gotResponse = True
 
