@@ -14,12 +14,7 @@ from ..node import Node
 from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
-
-# from ..config_pb2 import Config
-# from ..cannedmessages_pb2 import (CannedMessagePluginMessagePart1, CannedMessagePluginMessagePart2,
-#                                  CannedMessagePluginMessagePart3, CannedMessagePluginMessagePart4,
-#                                  CannedMessagePluginMessagePart5)
-# from ..util import Timeout
+from ..util import Timeout
 
 
 @pytest.mark.unit
@@ -173,63 +168,6 @@ def test_node(capsys, mock_serial_interface):
 #    out, err = capsys.readouterr()
 #    assert re.search(r'Warning: The canned message', out, re.MULTILINE)
 #    assert err == ''
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwnerShort(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name=None, short_name='123')
-#    assert re.search(r'p.set_owner.short_name:123:', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_no_short_name(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='Test123')
-#    assert re.search(r'p.set_owner.long_name:Test123:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:Tst:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.is_licensed:False', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_no_short_name_and_long_name_is_short(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='Tnt')
-#    assert re.search(r'p.set_owner.long_name:Tnt:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:Tnt:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.is_licensed:False', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_no_short_name_and_long_name_has_words(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='A B C', is_licensed=True)
-#    assert re.search(r'p.set_owner.long_name:A B C:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:ABC:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.is_licensed:True', caplog.text, re.MULTILINE)
-
-
-# TODO
-# @pytest.mark.unit
-# def test_setOwner_long_name_no_short(caplog):
-#    """Test setOwner"""
-#    anode = Node('foo', 'bar', noProto=True)
-#    with caplog.at_level(logging.DEBUG):
-#        anode.setOwner(long_name ='Aabo', is_licensed=True)
-#    assert re.search(r'p.set_owner.long_name:Aabo:', caplog.text, re.MULTILINE)
-#    assert re.search(r'p.set_owner.short_name:Aab:', caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
@@ -1593,7 +1531,7 @@ def test_setOwner_whitespace_only_long_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError,
+        MeshInterface.MeshInterfaceError,
         match="Long Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(long_name="   ")
@@ -1606,7 +1544,7 @@ def test_setOwner_empty_long_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError,
+        MeshInterface.MeshInterfaceError,
         match="Long Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(long_name="")
@@ -1619,7 +1557,7 @@ def test_setOwner_whitespace_only_short_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError,
+        MeshInterface.MeshInterfaceError,
         match="Short Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(short_name="   ")
@@ -1632,7 +1570,7 @@ def test_setOwner_empty_short_name():
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(
-        ValueError,
+        MeshInterface.MeshInterfaceError,
         match="Short Name cannot be empty or contain only whitespace characters",
     ):
         anode.setOwner(short_name="")
@@ -1653,13 +1591,78 @@ def test_setOwner_valid_names(caplog):
     assert re.search(r"p\.set_owner\.short_name:VN:", caplog.text, re.MULTILINE)
 
 
-# TODO
-# @pytest.mark.unitslow
-# def test_waitForConfig():
-#    """Test waitForConfig()"""
-#    anode = Node('foo', 'bar')
-#    radioConfig = RadioConfig()
-#    anode.radioConfig = radioConfig
-#    anode._timeout = Timeout(0.01)
-#    result = anode.waitForConfig()
-#    assert not result
+@pytest.mark.unit
+def test_setOwner_short_name_only(caplog):
+    """Test setOwner with only short name provided."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    with caplog.at_level(logging.DEBUG):
+        anode.setOwner(short_name="TST")
+
+    assert re.search(r"p\.set_owner\.short_name:TST:", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_setOwner_long_name_truncates_short_name(caplog):
+    """Test setOwner truncates long short names to 4 characters."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    with caplog.at_level(logging.DEBUG):
+        anode.setOwner(long_name="TestUser", short_name="TOOLONG")
+
+    # Short name should be truncated to 4 chars
+    assert re.search(r"p\.set_owner\.short_name:TOOL:", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_setOwner_with_is_licensed(caplog):
+    """Test setOwner sets is_licensed flag when long_name is provided."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    with caplog.at_level(logging.DEBUG):
+        anode.setOwner(long_name="LicensedUser", is_licensed=True)
+
+    assert re.search(r"p\.set_owner\.is_licensed:True", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_setOwner_with_is_unmessagable(caplog):
+    """Test setOwner sets is_unmessagable flag."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    with caplog.at_level(logging.DEBUG):
+        anode.setOwner(long_name="TestUser", is_unmessagable=True)
+
+    assert re.search(r"p\.set_owner\.is_unmessagable:True:", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_waitForConfig_timeout():
+    """Test waitForConfig returns False on timeout."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+    anode._timeout = Timeout(maxSecs=0.01)
+
+    result = anode.waitForConfig()
+    assert result is False
+
+
+@pytest.mark.unit
+def test_waitForConfig_success():
+    """Test waitForConfig returns True when config is available."""
+    iface = MagicMock(autospec=MeshInterface)
+    anode = Node(iface, 123, noProto=True)
+
+    # Set up the config to be "available"
+    anode.localConfig = localonly_pb2.LocalConfig()
+
+    # Mock the timeout to return True
+    anode._timeout = MagicMock()
+    anode._timeout.waitForSet.return_value = True
+
+    result = anode.waitForConfig()
+    assert result is True

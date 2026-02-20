@@ -349,7 +349,18 @@ class BLECoroutineRunner:
             for task in tasks:
                 task.cancel()
             if tasks:
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                # Use wait_for with timeout to prevent hanging indefinitely
+                # on tasks that don't respond to cancellation
+                async def _cancel_with_timeout():
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(*tasks, return_exceptions=True),
+                            timeout=BLEConfig.RUNNER_SHUTDOWN_TIMEOUT_SECONDS,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.debug("Timeout waiting for tasks to cancel")
+
+                loop.run_until_complete(_cancel_with_timeout())
         except Exception as e:
             logger.debug("Exception during task cancellation: %s", e)
 

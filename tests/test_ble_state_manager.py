@@ -191,7 +191,7 @@ class TestBLEStateManager:
         # Start multiple threads
         threads = []
         for i in range(5):
-            thread = threading.Thread(target=worker, args=(i,))
+            thread = threading.Thread(target=worker, args=(i,), daemon=True)
             threads.append(thread)
             thread.start()
 
@@ -443,7 +443,7 @@ class TestPhase3LockConsolidation:
         # Create multiple threads
         threads = []
         for i in range(5):
-            thread = threading.Thread(target=worker, args=(i,))
+            thread = threading.Thread(target=worker, args=(i,), daemon=True)
             threads.append(thread)
             thread.start()
 

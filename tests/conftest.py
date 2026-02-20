@@ -38,3 +38,21 @@ def clear_registry() -> Iterator[None]:
     _clear_all_registries()
     yield
     _clear_all_registries()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _stop_ble_runner_at_session_end() -> Iterator[None]:
+    """
+    Ensure BLECoroutineRunner is stopped at the end of the test session.
+
+    This prevents the runner's background thread from hanging during pytest exit.
+    """
+    yield
+    # Stop the BLECoroutineRunner singleton at session end
+    try:
+        from meshtastic.interfaces.ble.runner import BLECoroutineRunner
+
+        runner = BLECoroutineRunner()
+        runner.stop(timeout=2.0)
+    except Exception:
+        pass  # Ignore errors during cleanup

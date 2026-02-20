@@ -378,9 +378,9 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     logger.debug("in _onAdminReceive() asDict:%s", asDict)
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
-            adminMessage.session_passkey
-        )
+        iface._getOrCreateByNum(asDict["from"])[
+            "adminSessionPassKey"
+        ] = adminMessage.session_passkey
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
         pass

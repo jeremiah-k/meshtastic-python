@@ -696,7 +696,9 @@ def test_rapid_connect_disconnect_stress_test(caplog):
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread
-        disconnect_thread = threading.Thread(target=simulate_rapid_disconnects)
+        disconnect_thread = threading.Thread(
+            target=simulate_rapid_disconnects, daemon=True
+        )
         disconnect_thread.start()
         disconnect_thread.join()
 
@@ -735,7 +737,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         # Start multiple threads for concurrent operations
         threads = []
         for _ in range(3):
-            thread = threading.Thread(target=_stress_test_disconnects)
+            thread = threading.Thread(target=_stress_test_disconnects, daemon=True)
             threads.append(thread)
             thread.start()
 
