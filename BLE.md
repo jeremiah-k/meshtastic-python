@@ -1,118 +1,282 @@
 # BLE Integration Guide
 
-This document summarizes the current BLE implementation, common pitfalls seen in the field, and recommended patterns for client code that embeds `meshtastic-python`.
+This document covers the current BLE implementation, common field pitfalls, and
+recommended patterns for code that embeds `meshtastic-python`.
 
-## Architecture highlights
+---
 
-- **Single connection gate per address (owner-aware + stale-pruning).** A process-wide registry prevents overlapping connects to the same normalized BLE address. Claims are owned by the active interface instance, ignore non-owner disconnect clears, and stale claims are pruned automatically (dead owners or unowned claims older than `BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS`, default 300s). When another live interface instance owns the address you will see `Connection suppressed: recently connected elsewhere`.
-- **Short direct connect, then discovery.** When an address is known we try a short direct connect (see `DIRECT_CONNECT_TIMEOUT_SECONDS` in `meshtastic.interfaces.ble.connection`, default 12.0s). If that fails we run a 10s scan and then perform a full connect using the configured `BLEConfig.CONNECTION_TIMEOUT` (default 60s).
-- **Disconnect handling is serialized.** A per-interface lock drops stale duplicate disconnect callbacks and marks the address as disconnected before optional auto-reconnect.
-- **Singleton BLE runner.** All BLE operations are managed by a singleton `BLECoroutineRunner` with a shared background thread and asyncio event loop. This reduces resource usage from N threads to 1 thread regardless of how many clients exist and simplifies cleanup.
+## Architecture overview
+
+| Component | Responsibility |
+|---|---|
+| `BLEInterface` | User-facing entry point; extends `MeshInterface` with BLE lifecycle management |
+| `BLEClient` | Synchronous wrapper around Bleak; delegates async calls to the singleton runner |
+| `BLECoroutineRunner` | Process-wide singleton with one background thread and one asyncio event loop |
+| `BLEStateManager` | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`) |
+| `BLEErrorHandler` | Unified exception-handling helpers used across the BLE subsystem |
+| `NotificationManager` | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects |
+| `DiscoveryManager` | Scan-based and connected-device-enumeration discovery with address normalization |
+| `ConnectionValidator` | Enforces connection preconditions before any lock is acquired |
+| `ClientManager` | Owns `BLEClient` lifecycle and safe-close operations |
+| `ConnectionOrchestrator` | Coordinates a full connection attempt: validate → discover → connect → register notifications |
+| `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop |
+
+### Key design choices
+
+- **Process-wide address gate.** A registry in
+  [`meshtastic/interfaces/ble/gating.py`](meshtastic/interfaces/ble/gating.py)
+  prevents two live interfaces from connecting to the same normalized BLE
+  address at the same time. Stale (dead-owner) claims are pruned automatically
+  after `BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS` (default 300 s).
+  A suppressed attempt logs `Connection suppressed: recently connected elsewhere`.
+
+- **Short direct connect, then scan fallback.** A direct connect is tried first
+  (see `DIRECT_CONNECT_TIMEOUT_SECONDS` in
+  [`meshtastic/interfaces/ble/connection.py`](meshtastic/interfaces/ble/connection.py),
+  default 12 s). On failure, a 10 s scan runs and then a full connect uses
+  `BLEConfig.CONNECTION_TIMEOUT` (default 60 s).
+
+- **Serialized disconnect handling.** A per-interface `_disconnect_lock`
+  deduplicates concurrent disconnect callbacks and marks the address as free
+  before scheduling any optional auto-reconnect.
+
+- **Singleton BLE event loop.** All Bleak I/O goes through one shared
+  `BLECoroutineRunner`: N clients share 1 background thread, which lowers
+  resource usage and simplifies teardown.
+
+---
 
 ## Locking rules
 
-When code paths need multiple BLE locks, always acquire in this order:
+When code paths must hold multiple BLE locks, always acquire in this order to
+prevent deadlocks:
 
-1. Global registry lock (`meshtastic/interfaces/ble/gating.py:_REGISTRY_LOCK`)
-2. Per-address lock (`meshtastic/interfaces/ble/gating.py:_addr_lock_context`)
-3. Interface connect lock (`meshtastic/interfaces/ble/interface.py:_connect_lock`)
-4. Interface state lock (`meshtastic/interfaces/ble/interface.py:_state_lock`)
-5. Interface disconnect lock (`meshtastic/interfaces/ble/interface.py:_disconnect_lock`)
+1. Global registry lock (`_REGISTRY_LOCK` in
+   [`meshtastic/interfaces/ble/gating.py`](meshtastic/interfaces/ble/gating.py))
+2. Per-address lock (`_addr_lock_context` in the same module)
+3. Interface connect lock (`_connect_lock`)
+4. Interface state lock (`_state_lock`)
+5. Interface disconnect lock (`_disconnect_lock`)
 
-`_handle_disconnect()` intentionally acquires `_disconnect_lock` first in non-blocking mode. If another disconnect handler is active, it exits early instead of waiting, which prevents lock inversion while still deduplicating callbacks.
+**Exception:** `_handle_disconnect()` acquires `_disconnect_lock` *first* in
+non-blocking mode. If another disconnect handler is already active, the method
+returns immediately rather than waiting, which prevents lock inversion while
+still deduplicating callbacks.
+
+---
+
+## Internal helper APIs (for library contributors)
+
+These classes are part of the `meshtastic.interfaces.ble` package and are
+**not** part of the stable public surface exposed through
+`meshtastic.ble_interface`. They are documented here for contributors who
+extend or test the BLE subsystem.
+
+### `BLEErrorHandler`
+
+All exception-handling patterns in the BLE subsystem go through this class.
+
+```python
+from meshtastic.interfaces.ble.errors import BLEErrorHandler
+
+handler = BLEErrorHandler()
+
+# Execute a callable; return a fallback on any handled exception.
+result = handler.safe_execute(
+    lambda: risky_call(),
+    default_return=None,
+    error_msg="risky_call failed",
+    reraise=False,
+)
+
+# Best-effort cleanup: suppresses all non-exit exceptions, returns bool.
+ok = handler.safe_cleanup(lambda: resource.close(), "resource close")
+```
+
+`safe_execute` swallows `BleakError`, `DecodeError`, and
+`concurrent.futures.TimeoutError`; other exceptions are also caught unless
+`reraise=True`. `SystemExit` and `KeyboardInterrupt` are always re-raised.
+
+### `NotificationManager`
+
+Tracks GATT notification subscriptions so they can be resubscribed cleanly
+after a reconnect.
+
+```python
+from meshtastic.interfaces.ble.notifications import NotificationManager
+
+mgr = NotificationManager()
+
+# Register a callback for a characteristic UUID; returns an opaque token.
+token = mgr.subscribe(uuid, callback)
+
+# Retrieve the most-recently-registered callback for a UUID.
+cb = mgr.get_callback(uuid)
+
+# Stop all notifications through a BLEClient (e.g. during shutdown).
+mgr.unsubscribe_all(client, timeout=5.0)
+
+# Re-register all subscriptions on a new client (e.g. after reconnect).
+mgr.resubscribe_all(client, timeout=5.0)
+
+# Clear internal subscription state (called after full disconnect + cleanup).
+mgr.cleanup_all()
+```
+
+### `RetryPolicy` / `ReconnectPolicy`
+
+The BLE read loop and auto-reconnect use policies from
+[`meshtastic/interfaces/ble/policies.py`](meshtastic/interfaces/ble/policies.py).
+
+The **canonical public API** for `ReconnectPolicy` uses camelCase names:
+
+```python
+from meshtastic.interfaces.ble.policies import RetryPolicy
+
+policy = RetryPolicy.empty_read()      # or .transient_error() / .auto_reconnect()
+
+delay = policy.getDelay(attempt)       # float, jittered exponential backoff
+should_go = policy.shouldRetry(count)  # bool, respects max_retries
+delay, ok = policy.nextAttempt()       # combined: compute delay + advance counter
+```
+
+The snake_case wrappers (`get_delay`, `should_retry`, `next_attempt`) are
+**deprecated** and emit `DeprecationWarning`. Production submodule code uses
+`getDelay` / `shouldRetry` / `nextAttempt` exclusively.
+
+---
 
 ## Recommended usage
 
-### Keep one interface per device address
+### One interface per device address
 
 ```python
 from meshtastic.interfaces.ble import BLEInterface
 from pubsub import pub
 import time
 
-# Subscribe BEFORE constructing BLEInterface to ensure early packets aren't missed
-# BLEInterface automatically attempts connection during construction
+# Subscribe BEFORE constructing BLEInterface to avoid missing early packets.
 pub.subscribe(lambda packet, interface: print(packet), "meshtastic.receive")
 
-# Create a single long-lived interface for the process
-# auto_reconnect defaults to False
+# BLEInterface connects automatically during construction.
 iface = BLEInterface(address="DD:DD:13:27:74:29")
-
-# Connection is already established
 ```
 
-Avoid creating new `BLEInterface` instances on every reconnect attempt. Reuse the same instance so the per-address gate and state manager can coordinate cleanly.
+Reuse the same `BLEInterface` instance for the lifetime of the connection to
+the device. Creating new instances repeatedly collides with the address gate
+and slows recovery.
 
 ### Auto-reconnect is opt-in
 
-If you enable `auto_reconnect=True`, do not layer an application-level reconnect loop on top. Duplicate reconnect loops cause `suppressed duplicate connect` logs and can interfere with the built-in recovery.
-
-If your application manages reconnects itself, disable the built-in loop:
-
 ```python
-# Note: With auto_reconnect=False, initial connection still happens in __init__
+# Built-in reconnect loop (recommended for long-running integrations):
+iface = BLEInterface(address="AA:BB:CC:DD:EE:FF", auto_reconnect=True)
+
+# Manual reconnect (your code drives reconnects instead):
 iface = BLEInterface(address="AA:BB:CC:DD:EE:FF", auto_reconnect=False)
-# on disconnect: call iface.connect() again using the same instance
+# On disconnect: call iface.connect() on the same instance.
 ```
 
-For CLI usage, opt in with `--ble-auto-reconnect`:
+Do not layer both simultaneously — duplicate reconnect loops produce
+`suppressed duplicate connect` log entries and can interfere with the built-in
+recovery logic.
+
+CLI opt-in:
 
 ```bash
 meshtastic --ble any --ble-auto-reconnect --listen
 ```
 
-**When to call `connect()` manually:** The BLEInterface constructor automatically calls `connect()`. You only need to call it manually after `close()` or when handling a disconnect with `auto_reconnect=False`.
+**When to call `connect()` manually:** the constructor calls it for you. Only
+call it again after `close()` or when you are managing reconnects yourself with
+`auto_reconnect=False`.
 
 ### Respect the address gate
 
-When you see `Connection suppressed: recently connected elsewhere`, another interface in this process holds the connection. Back off instead of retrying immediately; retries within a few seconds will continue to be suppressed.
+When you see `Connection suppressed: recently connected elsewhere`, another
+interface in this process owns the connection. Back off; retries within a few
+seconds will continue to be suppressed.
 
 ### Keep retries bounded
 
-- Direct connect is already short; the discovery fallback can block up to `BLEConfig.CONNECTION_TIMEOUT` (60s). After a failed scan + connect cycle, wait at least 30–60s before retrying to avoid overwhelming Linux/BlueZ.
-- If you cannot enumerate connected devices on your backend (common on Linux), a scan returning zero devices is expected when the peripheral is already connected elsewhere. Rely on the address gate rather than repeated scans in that case.
+- The scan + connect cycle can block up to `BLEConfig.CONNECTION_TIMEOUT` (60 s).
+  After a failed cycle, wait at least 30–60 s before retrying to avoid
+  exhausting Linux/BlueZ resources.
+- A scan returning zero devices on Linux is expected when the peripheral is
+  already connected elsewhere. Rely on the address gate; repeated scans make
+  things worse.
 
-### Log interpretation
-
-- `Ignoring disconnect … while a connection is in progress.` — benign stale callback during CONNECTING.
-- `Connection suppressed: recently connected elsewhere` — per-address gate blocked a duplicate attempt.
-- `Cannot connect while interface is closing` — an earlier connect failed and the interface is still shutting down its BLE client; wait and retry with the same instance.
+---
 
 ## Minimal pubsub example
 
 ```python
 from meshtastic.interfaces.ble import BLEInterface
 from pubsub import pub
+import time
 
 def on_packet(packet, interface):
     print("Packet:", packet)
 
-# Subscribe BEFORE constructing BLEInterface to ensure early packets aren't missed
+# Subscribe BEFORE constructing BLEInterface to ensure early packets aren't missed.
 pub.subscribe(on_packet, "meshtastic.receive")
 
-# BLEInterface automatically connects during construction
+# Connection is established in the constructor.
 iface = BLEInterface(address="DD:DD:13:27:74:29")
 
 try:
-    # Keep your application alive; work is driven by callbacks
     while True:
         time.sleep(1)
 except KeyboardInterrupt:
     iface.close()
 ```
 
-## Common pitfalls and how to avoid them
+---
 
-- **Multiple interface instances per address:** reuse one instance; otherwise you will collide with the address gate and slow down recovery.
-- **Layered reconnect loops:** pick either the library’s auto-reconnect or your own, not both.
-- **Aggressive retry cadence:** back off after a failed scan + connect cycle; long blocking calls during teardown can exhaust resources on Linux/BlueZ.
-- **Skipping notification re-registration:** use the same interface instance so built-in notification tracking can resubscribe after reconnects.
+## Context-manager pattern
+
+`BLEInterface` supports the context-manager protocol and is the recommended way
+to ensure `close()` is always called:
+
+```python
+with BLEInterface(address="DD:DD:13:27:74:29") as iface:
+    iface.sendText("hello")
+# close() is called automatically on any exit, including exceptions.
+```
+
+---
+
+## Log interpretation quick reference
+
+| Message | Meaning |
+|---|---|
+| `Ignoring disconnect … while a connection is in progress.` | Benign stale callback during CONNECTING; discard. |
+| `Connection suppressed: recently connected elsewhere` | Per-address gate blocked duplicate attempt; back off. |
+| `Cannot connect while interface is closing` | Interface is mid-shutdown; wait and retry with the same instance. |
+| `Throttling BLE receive recovery: waiting Xs before retry` | Receive thread crashed repeatedly; exponential backoff active. |
+| `BLE receive thread did not exit within Xs` | Thread took longer than `RECEIVE_THREAD_JOIN_TIMEOUT` (2 s) to exit; non-fatal, but worth investigating for hung I/O. |
+
+---
+
+## Common pitfalls
+
+| Pitfall | Fix |
+|---|---|
+| Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate. |
+| Layered reconnect loops | Use either the library's `auto_reconnect=True` **or** your own loop, never both. |
+| Aggressive retry cadence | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ. |
+| Forgetting to resubscribe notifications | Use the same instance so `NotificationManager` can call `resubscribe_all()` automatically after reconnects. |
+| Not closing the interface | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk). |
+
+---
 
 ## When to restart the process
 
-Restart if you observe any of:
+Restart if you observe:
 
-- repeated `Cannot connect while interface is closing` for minutes,
-- repeated scan+connect cycles timing out on Linux/BlueZ despite the device being powered and advertising.
+- repeated `Cannot connect while interface is closing` for several minutes, or
+- repeated scan + connect cycles timing out on Linux/BlueZ despite the device
+  being powered and advertising.
 
-A clean restart clears any leaked BLE/DBus handles and resets the address gate.
+A clean restart clears leaked BLE/DBus handles and resets the process-wide
+address gate.
