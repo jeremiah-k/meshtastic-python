@@ -723,15 +723,19 @@ class BLEInterface(MeshInterface):
         finally:
             self.thread_coordinator.set_event("read_trigger")
 
+    def fromNumHandler(self, sender: Any, data: bytearray) -> None:
+        """Public camelCase API for the FROMNUM notification callback."""
+        self._from_num_handler(sender, data)
+
     def from_num_handler(self, sender: Any, data: bytearray) -> None:
         """
-        Compatibility alias for the legacy `from_num_handler` callback name.
+        Backward-compatible snake_case alias for fromNumHandler.
 
         The pre-refactor BLE interface exposed this method name publicly; keep
         it available for existing integrations and delegate to the internal
         implementation.
         """
-        self._from_num_handler(sender, data)
+        self.fromNumHandler(sender, data)
 
     def _register_notifications(self, client: "BLEClient") -> None:
         """
