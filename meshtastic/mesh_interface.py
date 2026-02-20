@@ -622,7 +622,7 @@ class MeshInterface:  # pylint: disable=R0902
         If nodeId is the local or broadcast address, return the already-initialized local node.
         If requestChannels is True, request channel information from the remote node and retry up to
         requestChannelAttempts until channel data is received or the operation times out.
-        May call our_exit and exit the process if channel retrieval repeatedly fails.
+        Raises MeshInterfaceError if channel retrieval repeatedly fails.
 
         Parameters
         ----------
@@ -656,7 +656,9 @@ class MeshInterface:  # pylint: disable=R0902
                         if new_index != last_index:
                             retries_left = requestChannelAttempts - 1
                         if retries_left <= 0:
-                            our_exit("Error: Timed out waiting for channels, giving up")
+                            raise self.MeshInterfaceError(
+                                "Error: Timed out waiting for channels, giving up"
+                            )
                         logger.warning(
                             "Timed out trying to retrieve channel info, retrying"
                         )

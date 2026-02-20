@@ -175,10 +175,12 @@ def test_getNode_not_local_timeout(caplog):
         anode.waitForConfig.return_value = False
         with caplog.at_level(logging.WARNING):
             with patch("meshtastic.node.Node", return_value=anode):
-                with pytest.raises(SystemExit) as pytest_wrapped_e:
+                with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
                     iface.getNode("bar2")
-                assert pytest_wrapped_e.type is SystemExit
-                assert pytest_wrapped_e.value.code == 1
+                assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
+                assert "Timed out waiting for channels, giving up" in str(
+                    pytest_wrapped_e.value
+                )
                 assert re.search(
                     r"Timed out trying to retrieve channel info, retrying",
                     caplog.text,
@@ -195,10 +197,12 @@ def test_getNode_not_local_timeout_attempts(caplog):
         anode.waitForConfig.return_value = False
         with caplog.at_level(logging.WARNING):
             with patch("meshtastic.node.Node", return_value=anode):
-                with pytest.raises(SystemExit) as pytest_wrapped_e:
+                with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
                     iface.getNode("bar2", requestChannelAttempts=2)
-                assert pytest_wrapped_e.type is SystemExit
-                assert pytest_wrapped_e.value.code == 1
+                assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
+                assert "Timed out waiting for channels, giving up" in str(
+                    pytest_wrapped_e.value
+                )
                 assert re.search(
                     r"Timed out trying to retrieve channel info, retrying",
                     caplog.text,
