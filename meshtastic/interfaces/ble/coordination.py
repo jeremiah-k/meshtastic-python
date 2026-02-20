@@ -1,7 +1,6 @@
 """Thread coordination utilities for BLE operations."""
 
 import logging
-import warnings
 from threading import Event, RLock, Thread, current_thread
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
@@ -157,41 +156,6 @@ class ThreadCoordinator:
             self._threads.append(thread)
             return thread
 
-    def createThread(
-        self,
-        target: Callable[..., Any],
-        name: str,
-        *,
-        daemon: bool = True,
-        args: Tuple[Any, ...] = (),
-        kwargs: Optional[Dict[str, Any]] = None,
-    ) -> ThreadLike:
-        """
-        Compatibility wrapper for camelCase callers that issues a DeprecationWarning.
-
-        This method emits a DeprecationWarning and returns a Thread-like object configured
-        with the provided target, name, and options.
-
-        Returns
-        -------
-            ThreadLike: A Thread-like object configured with the provided target and
-            name; may be an inert placeholder if the coordinator has already been
-            cleaned up.
-
-        """
-        warnings.warn(
-            "createThread is deprecated; use create_thread instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.create_thread(
-            target,
-            name,
-            daemon=daemon,
-            args=args,
-            kwargs=kwargs,
-        )
-
     def create_event(self, name: str) -> Event:
         """
         Register a new Event under the given name and return it.
@@ -217,26 +181,6 @@ class ThreadCoordinator:
             self._events[name] = event
             return event
 
-    def createEvent(self, name: str) -> Event:
-        """
-        Deprecated camelCase compatibility wrapper that creates and returns an Event registered under the given name. Issues a DeprecationWarning when called.
-
-        Parameters
-        ----------
-            name (str): The name to register the Event under.
-
-        Returns
-        -------
-            Event: The Event registered under the given name — if an Event with that name already exists, the existing Event is returned.
-
-        """
-        warnings.warn(
-            "createEvent is deprecated; use create_event instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.create_event(name)
-
     def get_event(self, name: str) -> Optional[Event]:
         """
         Retrieve the Event registered under the given name.
@@ -248,26 +192,6 @@ class ThreadCoordinator:
         """
         with self._lock:
             return self._events.get(name)
-
-    def getEvent(self, name: str) -> Optional[Event]:
-        """
-        Compatibility wrapper for retrieving a named event; emits a DeprecationWarning.
-
-        Parameters
-        ----------
-            name (str): Name of the tracked event to retrieve.
-
-        Returns
-        -------
-            Event or None: The registered Event with the given name, or None if no such event exists.
-
-        """
-        warnings.warn(
-            "getEvent is deprecated; use get_event instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.get_event(name)
 
     def start_thread(self, thread: ThreadLike) -> None:
         """
@@ -310,19 +234,6 @@ class ThreadCoordinator:
             ):
                 thread.join(timeout=EVENT_THREAD_JOIN_TIMEOUT)
 
-    def startThread(self, thread: ThreadLike) -> None:
-        """
-        Deprecated camelCase wrapper that starts a tracked thread.
-
-        Emits a DeprecationWarning and attempts to start the provided thread if it is registered and not already started.
-        """
-        warnings.warn(
-            "startThread is deprecated; use start_thread instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.start_thread(thread)
-
     def join_thread(self, thread: ThreadLike, timeout: Optional[float] = None) -> None:
         """
         Join a tracked thread if it is alive and not the current thread.
@@ -345,23 +256,6 @@ class ThreadCoordinator:
         if should_join:
             thread.join(timeout=timeout)
 
-    def joinThread(self, thread: ThreadLike, timeout: Optional[float] = None) -> None:
-        """
-        Deprecated camelCase alias that joins a tracked Thread if it is alive and not the current thread; emits a DeprecationWarning and delegates to the new behavior.
-
-        Parameters
-        ----------
-                thread (Thread): The thread to join; only joined if tracked by the coordinator, alive, and not the current thread.
-                timeout (Optional[float]): Maximum seconds to wait for the thread to finish, or None to wait indefinitely.
-
-        """
-        warnings.warn(
-            "joinThread is deprecated; use join_thread instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.join_thread(thread, timeout=timeout)
-
     def join_all(self, timeout: Optional[float] = None) -> None:
         """
         Join all tracked, alive threads except the calling thread, applying the given timeout to each join.
@@ -380,19 +274,6 @@ class ThreadCoordinator:
             ]
         for thread in threads_to_join:
             thread.join(timeout=timeout)
-
-    def joinAll(self, timeout: Optional[float] = None) -> None:
-        """
-        Deprecated camelCase wrapper that joins all tracked, alive threads except the current thread.
-
-        Waits up to `timeout` seconds per thread while joining; if `timeout` is None it will block indefinitely for each thread. Emits a DeprecationWarning advising use of the snake_case `join_all` method.
-        """
-        warnings.warn(
-            "joinAll is deprecated; use join_all instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.join_all(timeout=timeout)
 
     def _set_event_no_lock(self, name: str) -> None:
         """
@@ -433,19 +314,6 @@ class ThreadCoordinator:
         with self._lock:
             self._set_event_no_lock(name)
 
-    def setEvent(self, name: str) -> None:
-        """
-        Deprecated camelCase wrapper that delegates to set_event.
-
-        Issues a DeprecationWarning and forwards the call to set_event(name).
-        """
-        warnings.warn(
-            "setEvent is deprecated; use set_event instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.set_event(name)
-
     def clear_event(self, name: str) -> None:
         """
         Clear the tracked event with the given name.
@@ -459,15 +327,6 @@ class ThreadCoordinator:
         """
         with self._lock:
             self._clear_event_no_lock(name)
-
-    def clearEvent(self, name: str) -> None:
-        """Compatibility wrapper for callers using camelCase."""
-        warnings.warn(
-            "clearEvent is deprecated; use clear_event instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.clear_event(name)
 
     def wait_for_event(self, name: str, timeout: Optional[float] = None) -> bool:
         """
@@ -488,22 +347,6 @@ class ThreadCoordinator:
             return event.wait(timeout=timeout)
         return False
 
-    def waitForEvent(self, name: str, timeout: Optional[float] = None) -> bool:
-        """
-        Compatibility wrapper for camelCase callers that waits for the named event and emits a deprecation warning.
-
-        Returns
-        -------
-            True if the event was set within the optional timeout, False otherwise.
-
-        """
-        warnings.warn(
-            "waitForEvent is deprecated; use wait_for_event instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.wait_for_event(name, timeout=timeout)
-
     def check_and_clear_event(self, name: str) -> bool:
         """
         Clears the named tracked event if it exists and is currently set.
@@ -520,26 +363,6 @@ class ThreadCoordinator:
                 return True
             return False
 
-    def checkAndClearEvent(self, name: str) -> bool:
-        """
-        Deprecated camelCase alias that checks whether a named event is set and clears it if so.
-
-        Parameters
-        ----------
-            name (str): Name of the tracked event to check and clear.
-
-        Returns
-        -------
-            bool: `True` if the event existed and was set (and was cleared), `False` otherwise.
-
-        """
-        warnings.warn(
-            "checkAndClearEvent is deprecated; use check_and_clear_event instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.check_and_clear_event(name)
-
     def wake_waiting_threads(self, *event_names: str) -> None:
         """
         Wake all coordinator-managed events named in event_names, causing any threads waiting on them to resume.
@@ -552,25 +375,6 @@ class ThreadCoordinator:
         with self._lock:
             for name in event_names:
                 self._set_event_no_lock(name)
-
-    def wakeWaitingThreads(self, *event_names: str) -> None:
-        """
-        Compatibility camelCase method that wakes the named events to wake any waiting threads.
-
-        Parameters
-        ----------
-            event_names (str): One or more event names to signal.
-
-        Deprecated:
-            This method is deprecated; prefer the snake_case equivalent.
-
-        """
-        warnings.warn(
-            "wakeWaitingThreads is deprecated; use wake_waiting_threads instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.wake_waiting_threads(*event_names)
 
     def clear_events(self, *event_names: str) -> None:
         """
@@ -586,24 +390,6 @@ class ThreadCoordinator:
         with self._lock:
             for name in event_names:
                 self._clear_event_no_lock(name)
-
-    def clearEvents(self, *event_names: str) -> None:
-        """
-        Deprecated camelCase wrapper that clears the specified named events.
-
-        Emits a DeprecationWarning and clears each event whose name is provided.
-
-        Parameters
-        ----------
-            event_names (str): One or more event names to clear.
-
-        """
-        warnings.warn(
-            "clearEvents is deprecated; use clear_events instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.clear_events(*event_names)
 
     def cleanup(self) -> None:
         """

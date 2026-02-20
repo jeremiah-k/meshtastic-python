@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import sys
 import types
-import warnings
 import weakref
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -225,17 +224,6 @@ class BLEClient:
         )
         return bool(result)  # type: ignore[arg-type]
 
-    def isConnected(self) -> bool:
-        """
-        Deprecated camelCase compatibility wrapper for is_connected.
-        """
-        warnings.warn(
-            "isConnected is deprecated; use is_connected instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.is_connected()
-
     def disconnect(
         self, *, await_timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
@@ -283,24 +271,6 @@ class BLEClient:
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def readGattChar(
-        self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> bytes:
-        """
-        Compatibility wrapper retained for backward compatibility that emits a DeprecationWarning and reads a GATT characteristic.
-
-        Returns
-        -------
-            bytes: The characteristic value as raw bytes.
-
-        """
-        warnings.warn(
-            "readGattChar is deprecated; use read_gatt_char instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.read_gatt_char(*args, timeout=timeout, **kwargs)
-
     def write_gatt_char(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
@@ -324,21 +294,6 @@ class BLEClient:
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def writeGattChar(
-        self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:
-        """
-        Deprecated camelCase compatibility wrapper that forwards all arguments to the updated GATT write method.
-
-        This function exists for backward compatibility and is deprecated; prefer the snake_case write_gatt_char API.
-        """
-        warnings.warn(
-            "writeGattChar is deprecated; use write_gatt_char instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.write_gatt_char(*args, timeout=timeout, **kwargs)
-
     def get_services(self, **_kwargs: Any) -> Any:
         """
         Retrieve the underlying Bleak client's discovered GATT services and characteristics.
@@ -361,22 +316,6 @@ class BLEClient:
             raise self.BLEError("Cannot get services: BLE client not initialized")
         # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed as a property.
         return self.bleak_client.services
-
-    def getServices(self, **kwargs: Any) -> Any:
-        """
-        Deprecated camelCase compatibility wrapper that returns discovered GATT services and characteristics; use `get_services` instead.
-
-        Returns
-        -------
-            The discovered GATT services and characteristics.
-
-        """
-        warnings.warn(
-            "getServices is deprecated; use get_services instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.get_services(**kwargs)
 
     def has_characteristic(self, specifier: Union[str, UUID]) -> bool:
         """
@@ -407,26 +346,6 @@ class BLEClient:
                 services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
-    def hasCharacteristic(self, specifier: Union[str, UUID]) -> bool:
-        """
-        CamelCase compatibility wrapper for has_characteristic.
-
-        Parameters
-        ----------
-            specifier (str | UUID): Characteristic identifier to look up (UUID string or UUID object).
-
-        Returns
-        -------
-            `true` if the connected device exposes the specified characteristic, `false` otherwise.
-
-        """
-        warnings.warn(
-            "hasCharacteristic is deprecated; use has_characteristic instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.has_characteristic(specifier)
-
     def start_notify(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
     ) -> None:
@@ -451,21 +370,6 @@ class BLEClient:
         self.async_await(
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
-
-    def startNotify(
-        self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:
-        """
-        Deprecated camelCase wrapper for start_notify.
-
-        Issues a DeprecationWarning and delegates the call to start_notify with the same arguments.
-        """
-        warnings.warn(
-            "startNotify is deprecated; use start_notify instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.start_notify(*args, timeout=timeout, **kwargs)
 
     def stop_notify(
         self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
@@ -492,21 +396,6 @@ class BLEClient:
         self.async_await(
             self.bleak_client.stop_notify(*args, **kwargs), timeout=timeout
         )
-
-    def stopNotify(
-        self, *args: Any, timeout: Optional[float] = None, **kwargs: Any
-    ) -> None:
-        """
-        Deprecated camelCase compatibility wrapper that stops notifications.
-
-        Issues a DeprecationWarning when called and performs the same notification-stop operation using the provided arguments.
-        """
-        warnings.warn(
-            "stopNotify is deprecated; use stop_notify instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.stop_notify(*args, timeout=timeout, **kwargs)
 
     def close(self) -> None:
         """
@@ -669,31 +558,6 @@ class BLEClient:
                 else:
                     self._pending_futures.discard(future)
 
-    def asyncAwait(
-        self, coro: Coroutine[Any, Any, Any], timeout: Optional[float] = None
-    ) -> Any:
-        """
-        Deprecated compatibility wrapper that forwards the given coroutine to async_await.
-
-        This method is provided for camelCase compatibility and emits a DeprecationWarning; use async_await instead.
-
-        Parameters
-        ----------
-            coro (Coroutine[Any, Any, Any]): The coroutine to schedule and await.
-            timeout (Optional[float]): Optional timeout in seconds for awaiting the coroutine.
-
-        Returns
-        -------
-            Any: The result returned by the awaited coroutine.
-
-        """
-        warnings.warn(
-            "asyncAwait is deprecated; use async_await instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.async_await(coro, timeout=timeout)
-
     def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """
         Schedule a coroutine to run on the shared BLE event loop.
@@ -721,22 +585,6 @@ class BLEClient:
                 coro.close()
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
 
-    def asyncRun(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
-        """
-        Compatibility wrapper that schedules a coroutine on the shared BLE event loop using the camelCase name.
-
-        Returns
-        -------
-            Future[Any]: A Future representing the scheduled coroutine.
-
-        """
-        warnings.warn(
-            "asyncRun is deprecated; use async_run instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.async_run(coro)
-
 
 # Expose zombie tracking from runner module for backwards compatibility
 def get_zombie_thread_count() -> int:
@@ -751,20 +599,3 @@ def get_zombie_thread_count() -> int:
     from meshtastic.interfaces.ble.runner import get_zombie_runner_count
 
     return get_zombie_runner_count()
-
-
-def getZombieThreadCount() -> int:
-    """
-    Report the number of BLE event threads that failed to stop cleanly.
-
-    Returns
-    -------
-        int: Number of zombie BLE event threads (typically 0 or 1 due to the singleton runner).
-
-    """
-    warnings.warn(
-        "getZombieThreadCount is deprecated; use get_zombie_thread_count instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_zombie_thread_count()

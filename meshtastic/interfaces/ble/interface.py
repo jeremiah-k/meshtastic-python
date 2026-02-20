@@ -719,6 +719,16 @@ class BLEInterface(MeshInterface):
         finally:
             self.thread_coordinator.set_event("read_trigger")
 
+    def from_num_handler(self, sender: Any, data: bytearray) -> None:
+        """
+        Compatibility alias for the legacy `from_num_handler` callback name.
+
+        The pre-refactor BLE interface exposed this method name publicly; keep
+        it available for existing integrations and delegate to the internal
+        implementation.
+        """
+        self._from_num_handler(sender, data)
+
     def _register_notifications(self, client: "BLEClient") -> None:
         """
         Register BLE characteristic notification handlers on the given client.
@@ -1048,6 +1058,15 @@ class BLEInterface(MeshInterface):
             raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
+
+    def _sanitize_address(self, address: Optional[str]) -> Optional[str]:
+        """
+        Compatibility alias for the historical private sanitizer helper.
+
+        Mirrors the legacy method name from `meshtastic.ble_interface` while
+        delegating to the shared BLE `sanitize_address` helper.
+        """
+        return sanitize_address(address)
 
     @property
     def connection_state(self) -> ConnectionState:
@@ -1537,7 +1556,7 @@ class BLEInterface(MeshInterface):
                 self._suppressed_empty_read_warnings = 0
                 return payload
             if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
-                _sleep(self._empty_read_policy.getDelay(attempt))
+                _sleep(self._empty_read_policy._get_delay(attempt))
         self._log_empty_read_warning()
         return None
 
@@ -1553,7 +1572,7 @@ class BLEInterface(MeshInterface):
 
         """
         transient_policy = self._transient_read_policy
-        if transient_policy.shouldRetry(self._read_retry_count):
+        if transient_policy._should_retry(self._read_retry_count):
             attempt_index = self._read_retry_count
             self._read_retry_count += 1
             logger.debug(
@@ -1561,7 +1580,7 @@ class BLEInterface(MeshInterface):
                 self._read_retry_count,
                 BLEConfig.TRANSIENT_READ_MAX_RETRIES,
             )
-            _sleep(transient_policy.getDelay(attempt_index))
+            _sleep(transient_policy._get_delay(attempt_index))
             return
         self._read_retry_count = 0
         logger.debug("Persistent BLE read error after retries", exc_info=True)
@@ -1880,67 +1899,3 @@ class BLEInterface(MeshInterface):
         """
         super()._connected()
         self._publish_connection_status(connected=True)
-
-    # CamelCase aliases for public API naming convention compatibility
-    def findDevice(self, address: Optional[str]) -> "BLEDevice":
-        """
-        Locate a Meshtastic BLEDevice by address or device name.
-
-        Parameters
-        ----------
-            address (Optional[str]): Bluetooth address or device name to resolve; if None, discovery may return a default device.
-
-        Returns
-        -------
-            BLEDevice: The matched BLE device.
-
-        """
-        return self.find_device(address)
-
-    @property
-    def connectionState(self) -> ConnectionState:
-        """
-        Get the current BLE connection state.
-
-        Returns
-        -------
-            connection_state (ConnectionState): The current BLE connection state.
-
-        """
-        return self.connection_state
-
-    @property
-    def isConnectionConnected(self) -> bool:
-        """
-        Indicate whether the interface currently has an active BLE connection.
-
-        Returns
-        -------
-            bool: `True` if the interface has an active BLE connection, `False` otherwise.
-
-        """
-        return self.is_connection_connected
-
-    @property
-    def isConnectionClosing(self) -> bool:
-        """
-        Report whether the interface is shutting down or has already closed.
-
-        Returns
-        -------
-            bool: True if the interface is shutting down or closed, False otherwise.
-
-        """
-        return self.is_connection_closing
-
-    @property
-    def canInitiateConnection(self) -> bool:
-        """
-        Report whether a new BLE connection can be initiated.
-
-        Returns
-        -------
-            `true` if a new connection may be started, `false` otherwise.
-
-        """
-        return self.can_initiate_connection

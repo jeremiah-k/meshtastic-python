@@ -128,21 +128,22 @@ mgr.cleanup_all()
 The BLE read loop and auto-reconnect use policies from
 [`meshtastic/interfaces/ble/policies.py`](meshtastic/interfaces/ble/policies.py).
 
-The **canonical public API** for `ReconnectPolicy` uses camelCase names:
+`ReconnectPolicy` is an internal BLE policy utility and uses
+underscore-prefixed snake_case helpers in the BLE subsystem:
 
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
 
-policy = RetryPolicy.empty_read()      # or .transient_error() / .auto_reconnect()
+policy = RetryPolicy.empty_read()  # or .transient_error() / .auto_reconnect()
 
-delay = policy.getDelay(attempt)       # float, jittered exponential backoff
-should_go = policy.shouldRetry(count)  # bool, respects max_retries
-delay, ok = policy.nextAttempt()       # combined: compute delay + advance counter
+delay = policy._get_delay(attempt)       # float, jittered exponential backoff
+should_go = policy._should_retry(count)  # bool, respects max_retries
+delay, ok = policy._next_attempt()       # combined: compute delay + advance counter
 ```
 
-Internally, BLE submodules use underscore-prefixed snake_case helpers
-(`_get_delay`, `_should_retry`, `_next_attempt`) and do not use unprefixed
-snake_case public names.
+For compatibility with existing Python projects, the stable BLE surface exposed
+through `meshtastic.ble_interface` keeps the legacy snake_case method names from
+`master` (for example `find_device`, `read_gatt_char`, `start_notify`).
 
 ---
 

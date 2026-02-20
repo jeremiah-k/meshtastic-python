@@ -49,25 +49,6 @@ def get_zombie_runner_count() -> int:
         return _zombie_runner_count
 
 
-def getZombieRunnerCount() -> int:
-    """
-    Compatibility wrapper that returns the current number of zombie runner threads.
-
-    Deprecated: use get_zombie_runner_count instead.
-
-    Returns
-    -------
-        int: Current number of zombie runner threads.
-
-    """
-    warnings.warn(
-        "getZombieRunnerCount is deprecated; use get_zombie_runner_count instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_zombie_runner_count()
-
-
 class BLECoroutineRunner:
     """
     Singleton runner for executing coroutines in a dedicated event loop thread.
@@ -445,34 +426,6 @@ class BLECoroutineRunner:
         future.add_done_callback(self._discard_tracked_future)
         return future
 
-    def runCoroutineThreadsafe(
-        self,
-        coro: Coroutine[None, None, T],
-        timeout: Optional[float] = None,
-        *,
-        startup_timeout: Optional[float] = None,
-    ) -> Future[T]:
-        """
-        Compatibility wrapper (deprecated) that schedules a coroutine on the singleton BLE runner using the camelCase name.
-
-        Deprecated: use run_coroutine_threadsafe instead.
-
-        Returns
-        -------
-            Future[T]: Future that will resolve to the coroutine's result.
-
-        """
-        warnings.warn(
-            "runCoroutineThreadsafe is deprecated; use run_coroutine_threadsafe instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.run_coroutine_threadsafe(
-            coro,
-            timeout=timeout,
-            startup_timeout=startup_timeout,
-        )
-
     def _discard_tracked_future(self, future: Future) -> None:
         """
         Remove a completed Future from the runner's tracked pending futures.
@@ -535,19 +488,6 @@ class BLECoroutineRunner:
                         future.cancel()
                     except Exception as e:
                         logger.debug("Exception cancelling future: %s", e)
-
-    def cancelPendingFutures(self) -> None:
-        """
-        CamelCase compatibility wrapper that cancels any pending tracked futures for the runner.
-
-        Emits a DeprecationWarning advising to use `cancel_pending_futures` and delegates to that method.
-        """
-        warnings.warn(
-            "cancelPendingFutures is deprecated; use cancel_pending_futures instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.cancel_pending_futures()
 
     def stop(self, timeout: float = 2.0) -> bool:
         """

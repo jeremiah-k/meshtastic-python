@@ -8,19 +8,20 @@ managers/helpers live in submodules under
 `meshtastic.interfaces.ble.*` and are not part of the compatibility surface.
 """
 
-import importlib.util
-
 # ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
 
-if importlib.util.find_spec("bleak") is None:  # pragma: no cover - dependency guard
+try:
+    import bleak as _bleak
+except ImportError as exc:  # pragma: no cover - dependency guard
     raise ImportError(
         "BLE support requires the 'bleak' package, but it is missing. "
         "Your Meshtastic installation appears incomplete; reinstall dependencies "
         "with `poetry install` (or `pip install --upgrade meshtastic`)."
-    )
+    ) from exc
+_ = _bleak
 
-from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.constants import (
+from meshtastic.interfaces.ble.client import BLEClient  # noqa: E402
+from meshtastic.interfaces.ble.constants import (  # noqa: E402
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     ERROR_CONNECTION_FAILED,
     ERROR_MULTIPLE_DEVICES,
@@ -38,7 +39,7 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
     logger,
 )
-from meshtastic.interfaces.ble.interface import BLEInterface
+from meshtastic.interfaces.ble.interface import BLEInterface  # noqa: E402
 
 __all__ = [
     # Main classes

@@ -645,7 +645,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
     delay_attempts: List[int] = []
 
     class StubTransientPolicy:
-        def shouldRetry(self, attempt: int) -> bool:
+        def _should_retry(self, attempt: int) -> bool:
             """
             Decide whether to perform another retry based on the zero-based attempt index.
 
@@ -660,7 +660,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
             """
             return attempt < 1
 
-        def getDelay(self, attempt: int) -> float:
+        def _get_delay(self, attempt: int) -> float:
             """
             Record the retry attempt index and return a zero-second retry delay.
 
