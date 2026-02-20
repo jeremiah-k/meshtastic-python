@@ -161,9 +161,9 @@ def __getattr__(name: str) -> Any:
         # Cache in module namespace so subsequent accesses bypass __getattr__
         globals()["serial"] = serial_module
         return serial_module
-    raise AttributeError(
+    raise AttributeError(  # noqa: TRY003
         f"module {__name__!r} has no attribute {name!r}"
-    )  # noqa: TRY003
+    )
 
 
 # Note: To follow PEP224, comments should be after the module variable.

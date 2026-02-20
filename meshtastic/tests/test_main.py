@@ -147,7 +147,7 @@ def test_main_support(capsys):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-@patch("meshtastic.tcp_interface.TCPInterface", side_effect=Exception("no tcp"))
+@patch("meshtastic.tcp_interface.TCPInterface", side_effect=OSError("no tcp"))
 @patch("meshtastic.util.findPorts", return_value=[])
 def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
     """

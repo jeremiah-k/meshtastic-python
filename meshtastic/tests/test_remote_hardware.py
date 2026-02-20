@@ -31,6 +31,17 @@ def test_onGPIOreceive(caplog):
 
 
 @pytest.mark.unit
+def test_onGPIOreceive_mask_fallback(caplog):
+    """Test onGPIOreceive uses packet gpioMask when interface.mask is None."""
+    iface = MagicMock(autospec=SerialInterface)
+    iface.mask = None
+    packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
+    with caplog.at_level(logging.INFO):
+        onGPIOreceive(packet, iface)
+        assert re.search(r"Received RemoteHardware", caplog.text)
+
+
+@pytest.mark.unit
 def test_RemoteHardwareClient_no_gpio_channel():
     """Test that RemoteHardwareClient raises MeshInterfaceError when there is no channel named 'gpio'."""
     iface = MagicMock(autospec=SerialInterface)

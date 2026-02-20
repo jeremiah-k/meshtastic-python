@@ -22,7 +22,6 @@ from ..serial_interface import SerialInterface
 def test_init_serial_alias_points_to_internal_module():
     """Verify meshtastic.serial resolves to the internal serial_interface module."""
     assert meshtastic.serial is serial_interface
-    assert meshtastic.serial.SerialInterface is serial_interface.SerialInterface
 
 
 @pytest.mark.unit

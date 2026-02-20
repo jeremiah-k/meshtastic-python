@@ -1,7 +1,7 @@
 """Remote hardware."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Type, Union
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -11,6 +11,25 @@ if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
 
 logger = logging.getLogger(__name__)
+
+NO_GPIO_CHANNEL_ERROR = (
+    "No channel named 'gpio' was found. "
+    "On the sending and receiving nodes create a channel named 'gpio'."
+)
+
+_MESH_INTERFACE_ERROR: Optional[Type[Exception]] = None
+
+
+def _get_mesh_interface_error() -> Type[Exception]:
+    """Resolve MeshInterfaceError lazily to avoid module-import cycles."""
+    global _MESH_INTERFACE_ERROR  # pylint: disable=global-statement
+    if _MESH_INTERFACE_ERROR is None:
+        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+            MeshInterface,
+        )
+
+        _MESH_INTERFACE_ERROR = MeshInterface.MeshInterfaceError
+    return _MESH_INTERFACE_ERROR
 
 
 def onGPIOreceive(packet: Dict[str, Any], interface: "MeshInterface") -> None:
@@ -29,7 +48,7 @@ def onGPIOreceive(packet: Dict[str, Any], interface: "MeshInterface") -> None:
     value = int(gpioValue) & mask
     logger.info(
         "Received RemoteHardware type=%s, gpio_value=%s value=%s",
-        hw["type"],
+        hw.get("type", remote_hardware_pb2.HardwareMessage.Type.UNSET),
         gpioValue,
         value,
     )
@@ -43,7 +62,7 @@ class RemoteHardwareClient:
     code for how you can connect to your own custom meshtastic services.
     """
 
-    def __init__(self, iface) -> None:
+    def __init__(self, iface: "MeshInterface") -> None:
         """
         Initialize the RemoteHardwareClient with the given MeshInterface instance.
 
@@ -51,28 +70,23 @@ class RemoteHardwareClient:
         ----------
             iface: The already open MeshInterface instance.
         """
-        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
-            MeshInterface,
-        )
-
         self.iface = iface
         ch = iface.localNode.getChannelByName("gpio")
         if not ch:
-            raise MeshInterface.MeshInterfaceError(
-                "No channel named 'gpio' was found. "
-                "On the sending and receiving nodes create a channel named 'gpio'."
-            )
+            raise _get_mesh_interface_error()(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
 
         pub.subscribe(onGPIOreceive, "meshtastic.receive.remotehw")
 
-    def _sendHardware(self, nodeid, r, wantResponse=False, onResponse=None):
-        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
-            MeshInterface,
-        )
-
+    def _sendHardware(
+        self,
+        nodeid: Union[int, str],
+        r: remote_hardware_pb2.HardwareMessage,
+        wantResponse: bool = False,
+        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    ) -> Any:
         if not nodeid:
-            raise MeshInterface.MeshInterfaceError(
+            raise _get_mesh_interface_error()(
                 r"Must use a destination node ID for this operation (use --dest \!xxxxxxxxx)"
             )
         return self.iface.sendData(
@@ -85,29 +99,34 @@ class RemoteHardwareClient:
             onResponse=onResponse,
         )
 
-    def writeGPIOs(self, nodeid, mask, vals):
+    def writeGPIOs(self, nodeid: Union[int, str], mask: int, vals: int) -> Any:
         """
         Write the specified vals bits to the device GPIOs.  Only bits in mask that
         are 1 will be changed.
         """
-        logger.debug(f"writeGPIOs nodeid:{nodeid} mask:{mask} vals:{vals}")
+        logger.debug("writeGPIOs nodeid:%s mask:%s vals:%s", nodeid, mask, vals)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
         r.gpio_mask = mask
         r.gpio_value = vals
         return self._sendHardware(nodeid, r)
 
-    def readGPIOs(self, nodeid, mask, onResponse=None):
+    def readGPIOs(
+        self,
+        nodeid: Union[int, str],
+        mask: int,
+        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    ) -> Any:
         """Read the specified bits from GPIO inputs on the device."""
-        logger.debug(f"readGPIOs nodeid:{nodeid} mask:{mask}")
+        logger.debug("readGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
         r.gpio_mask = mask
         return self._sendHardware(nodeid, r, wantResponse=True, onResponse=onResponse)
 
-    def watchGPIOs(self, nodeid, mask):
+    def watchGPIOs(self, nodeid: Union[int, str], mask: int) -> Any:
         """Watch the specified bits from GPIO inputs on the device for changes."""
-        logger.debug(f"watchGPIOs nodeid:{nodeid} mask:{mask}")
+        logger.debug("watchGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
         r.gpio_mask = mask

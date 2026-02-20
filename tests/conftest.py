@@ -5,15 +5,7 @@ from typing import Iterator
 
 import pytest
 
-from meshtastic.interfaces.ble.gating import (
-    _ADDR_LOCKS,
-    _CONNECTED_ADDRS,
-    _CONNECTED_MARKED_AT,
-    _CONNECTED_OWNER_IDS,
-    _CONNECTED_OWNERS,
-    _LOCK_HOLDERS,
-    _REGISTRY_LOCK,
-)
+from meshtastic.interfaces.ble import gating
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +14,9 @@ def _clear_all_registries() -> None:
     """
     Clear BLE gating global registries.
 
-    Acquires the module registry lock and clears the following registries:
-    `_ADDR_LOCKS`, `_CONNECTED_ADDRS`, `_CONNECTED_MARKED_AT`, `_CONNECTED_OWNER_IDS`,
-    `_CONNECTED_OWNERS`, and `_LOCK_HOLDERS`.
+    Delegates to the public gating reset helper.
     """
-    with _REGISTRY_LOCK:
-        _ADDR_LOCKS.clear()
-        _CONNECTED_ADDRS.clear()
-        _CONNECTED_MARKED_AT.clear()
-        _CONNECTED_OWNER_IDS.clear()
-        _CONNECTED_OWNERS.clear()
-        _LOCK_HOLDERS.clear()
+    gating.clear_all_registries()
 
 
 @pytest.fixture
@@ -54,7 +38,11 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
     # Stop the BLECoroutineRunner singleton at session end
     try:
         from meshtastic.interfaces.ble.runner import BLECoroutineRunner
+    except ImportError:
+        # BLE extras may not be installed in this test environment.
+        return
 
+    try:
         runner = BLECoroutineRunner()
         runner.stop(timeout=2.0)
     except Exception as exc:

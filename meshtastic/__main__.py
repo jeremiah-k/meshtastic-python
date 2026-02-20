@@ -1669,17 +1669,20 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
                     f"Error: invalid TCP port in --host '{host_str}'.",
                     1,
                 )
+                return tcp_hostname, default_port
             if not 1 <= tcp_port <= 65535:
                 meshtastic.util.our_exit(
                     f"Error: invalid TCP port in --host '{host_str}'.",
                     1,
                 )
+                return tcp_hostname, default_port
             return tcp_hostname, tcp_port
         if remainder:
             meshtastic.util.our_exit(
                 f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
                 1,
             )
+            return tcp_hostname, default_port
         return tcp_hostname, default_port
 
     if ":" in host_str:
@@ -1852,7 +1855,7 @@ def common():
                                 timeout=args.timeout,
                             )
                         )
-                    except Exception as ex:
+                    except OSError as ex:
                         meshtastic.util.our_exit(
                             f"Error connecting to {args.host}:{ex}", 1
                         )
@@ -1897,7 +1900,7 @@ def common():
                         message += "  Please close any applications or webpages that may be using the device and try again.\n"
                         message += f"\nOriginal error: {ex}"
                         meshtastic.util.our_exit(message)
-                    if client.devPath is None:
+                    if client is None or client.devPath is None:
                         try:
                             client = stack.enter_context(
                                 meshtastic.tcp_interface.TCPInterface(
@@ -1908,7 +1911,7 @@ def common():
                                     timeout=args.timeout,
                                 )
                             )
-                        except Exception as ex:
+                        except OSError as ex:
                             meshtastic.util.our_exit(
                                 f"Error connecting to localhost:{ex}", 1
                             )

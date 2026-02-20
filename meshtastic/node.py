@@ -90,6 +90,8 @@ class Node:
         self.cannedPluginMessageMessages: Optional[str] = None
         self.ringtone: Optional[str] = None
         self.ringtonePart: Optional[str] = None
+        self._ringtone_lock = threading.Lock()
+        self._canned_message_lock = threading.Lock()
 
     def __repr__(self) -> str:
         """
@@ -339,7 +341,7 @@ class Node:
         if onResponse:
             self.iface.waitForAckNak()
 
-    def turnOffEncryptionOnPrimaryChannel(self):
+    def turnOffEncryptionOnPrimaryChannel(self) -> None:
         """
         Disable encryption on the primary channel and write the updated channel to the device.
 
@@ -787,9 +789,8 @@ class Node:
                 logger.info(f"Adding new channel '{chs.name}' to device")
                 self.writeChannel(ch.index)
         else:
-            i = 0
             max_channels = len(self.channels)
-            for chs in channelSet.settings:
+            for i, chs in enumerate(channelSet.settings):
                 if i >= max_channels:
                     logger.warning(
                         "URL contains more than %d channels; extra channels are ignored.",
@@ -807,7 +808,6 @@ class Node:
                 self.channels[ch.index] = ch
                 logger.debug(f"Channel i:{i} ch:{ch}")
                 self.writeChannel(ch.index)
-                i += 1
 
         p = admin_pb2.AdminMessage()
         p.set_config.lora.CopyFrom(channelSet.lora_config)
@@ -866,7 +866,11 @@ class Node:
             )
             return None
 
-        if not self.ringtone:
+        with self._ringtone_lock:
+            if self.ringtone:
+                logger.debug("ringtone:%s", self.ringtone)
+                return self.ringtone
+
             response_event = threading.Event()
 
             def _on_ringtone_response(packet: Dict[str, Any]) -> None:
@@ -882,18 +886,11 @@ class Node:
                 logger.warning("Timed out waiting for ringtone response")
                 return None
 
-            logger.debug("self.ringtone:%s", self.ringtone)
-
-            # Only set if another thread hasn't already populated it and we got a response
-            if not self.ringtone:
-                if self.ringtonePart:
-                    self.ringtone = self.ringtonePart
-                else:
-                    # Response received but no valid data - ringtone is unavailable
-                    return None
-
-        logger.debug("ringtone:%s", self.ringtone)
-        return self.ringtone
+            if self.ringtonePart:
+                self.ringtone = self.ringtonePart
+                logger.debug("ringtone:%s", self.ringtone)
+                return self.ringtone
+            return None
 
     def set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
         """
@@ -990,7 +987,11 @@ class Node:
         if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
             logger.warning("Canned Message module not present (excluded by firmware)")
             return None
-        if not self.cannedPluginMessage:
+        with self._canned_message_lock:
+            if self.cannedPluginMessage:
+                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
+                return self.cannedPluginMessage
+
             response_event = threading.Event()
 
             def _on_canned_message_response(packet: Dict[str, Any]) -> None:
@@ -1014,16 +1015,11 @@ class Node:
                 "self.cannedPluginMessageMessages:%s", self.cannedPluginMessageMessages
             )
 
-            # Only set if another thread hasn't already populated it and we got a response
-            if not self.cannedPluginMessage:
-                if self.cannedPluginMessageMessages:
-                    self.cannedPluginMessage = self.cannedPluginMessageMessages
-                else:
-                    # Response received but no valid data - message is unavailable
-                    return None
-
-        logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-        return self.cannedPluginMessage
+            if self.cannedPluginMessageMessages:
+                self.cannedPluginMessage = self.cannedPluginMessageMessages
+                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
+                return self.cannedPluginMessage
+            return None
 
     def set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
         """
@@ -1424,7 +1420,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def _fixupChannels(self):
+    def _fixupChannels(self) -> None:
         """
         Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
 
@@ -1443,7 +1439,7 @@ class Node:
 
         self._fillChannels()
 
-    def _fillChannels(self):
+    def _fillChannels(self) -> None:
         """Mark unused channels as disabled."""
         channels = self.channels
         if channels is None:
@@ -1476,46 +1472,46 @@ class Node:
         """
         logger.debug(f"onRequestGetMetadata() p:{p}")
 
-        if "routing" in p["decoded"]:
-            if p["decoded"]["routing"]["errorReason"] != "NONE":
-                logger.error(
-                    f"Error on response: {p['decoded']['routing']['errorReason']}"
-                )
-                self.iface._acknowledgment.receivedNak = True
-        else:
-            self.iface._acknowledgment.receivedAck = True
-            if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
-                portnums_pb2.PortNum.ROUTING_APP
-            ):
-                if p["decoded"]["routing"]["errorReason"] != "NONE":
-                    logger.warning(
-                        f"Metadata request failed, error reason: {p['decoded']['routing']['errorReason']}"
-                    )
-                    self._timeout.expireTime = time.time()  # Do not wait any longer
-                    return  # Don't try to parse this routing message
-                logger.debug("Retrying metadata request.")
-                self.getMetadata()
-                return
+        decoded = p["decoded"]
 
-            c = p["decoded"]["admin"]["raw"].get_device_metadata_response
-            self._timeout.reset()  # We made forward progress
-            logger.debug(f"Received metadata {stripnl(c)}")
-            print(f"\nfirmware_version: {c.firmware_version}")
-            print(f"device_state_version: {c.device_state_version}")
-            if c.role in config_pb2.Config.DeviceConfig.Role.values():
-                print(f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}")
-            else:
-                print(f"role: {c.role}")
-            print(f"position_flags: {self.position_flags_list(c.position_flags)}")
-            if c.hw_model in mesh_pb2.HardwareModel.values():
-                print(f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}")
-            else:
-                print(f"hw_model: {c.hw_model}")
-            print(f"hasPKC: {c.hasPKC}")
-            if c.excluded_modules > 0:
-                print(
-                    f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
+        if decoded["portnum"] == portnums_pb2.PortNum.Name(
+            portnums_pb2.PortNum.ROUTING_APP
+        ):
+            self.iface._acknowledgment.receivedAck = True
+            if decoded["routing"]["errorReason"] != "NONE":
+                logger.warning(
+                    "Metadata request failed, error reason: %s",
+                    decoded["routing"]["errorReason"],
                 )
+                self._timeout.expireTime = time.time()  # Do not wait any longer
+                return  # Don't try to parse this routing message
+            logger.debug("Retrying metadata request.")
+            self.getMetadata()
+            return
+
+        if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
+            logger.error("Error on response: %s", decoded["routing"]["errorReason"])
+            self.iface._acknowledgment.receivedNak = True
+            return
+
+        self.iface._acknowledgment.receivedAck = True
+        c = decoded["admin"]["raw"].get_device_metadata_response
+        self._timeout.reset()  # We made forward progress
+        logger.debug("Received metadata %s", stripnl(c))
+        print(f"\nfirmware_version: {c.firmware_version}")
+        print(f"device_state_version: {c.device_state_version}")
+        if c.role in config_pb2.Config.DeviceConfig.Role.values():
+            print(f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}")
+        else:
+            print(f"role: {c.role}")
+        print(f"position_flags: {self.position_flags_list(c.position_flags)}")
+        if c.hw_model in mesh_pb2.HardwareModel.values():
+            print(f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}")
+        else:
+            print(f"hw_model: {c.hw_model}")
+        print(f"hasPKC: {c.hasPKC}")
+        if c.excluded_modules > 0:
+            print(f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}")
 
     def onResponseRequestChannel(self, p: Dict[str, Any]) -> None:
         """
@@ -1599,7 +1595,7 @@ class Node:
                 logger.info("Received an ACK.")
                 self.iface._acknowledgment.receivedAck = True
 
-    def _requestChannel(self, channelNum: int):
+    def _requestChannel(self, channelNum: int) -> Optional[mesh_pb2.MeshPacket]:
         """
         Request the settings for a single channel from this node.
 
@@ -1660,10 +1656,9 @@ class Node:
             logger.debug(f"adminIndex:{adminIndex}")
             nodeid = to_node_num(self.nodeNum)
             node_info = self.iface._getOrCreateByNum(nodeid)
-            if "adminSessionPassKey" in node_info:
-                passkey = node_info.get("adminSessionPassKey")
-                if isinstance(passkey, bytes):
-                    p.session_passkey = passkey
+            passkey = node_info.get("adminSessionPassKey")
+            if isinstance(passkey, bytes):
+                p.session_passkey = passkey
             return self.iface.sendData(
                 p,
                 self.nodeNum,
@@ -1675,7 +1670,7 @@ class Node:
                 pkiEncrypted=True,
             )
 
-    def ensureSessionKey(self):
+    def ensureSessionKey(self) -> None:
         """
         Ensure an admin session key exists for this node, requesting one if missing.
 

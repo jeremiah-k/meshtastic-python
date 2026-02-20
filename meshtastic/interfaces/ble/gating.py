@@ -46,6 +46,17 @@ _CONNECTED_MARKED_AT: Dict[str, float] = {}
 _LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
 
 
+def clear_all_registries() -> None:
+    """Reset all gating registries (test helper)."""
+    with _REGISTRY_LOCK:
+        _ADDR_LOCKS.clear()
+        _CONNECTED_ADDRS.clear()
+        _CONNECTED_MARKED_AT.clear()
+        _CONNECTED_OWNER_IDS.clear()
+        _CONNECTED_OWNERS.clear()
+        _LOCK_HOLDERS.clear()
+
+
 def addr_key(addr: Optional[str]) -> Optional[str]:
     """
     Normalize a BLE address into a registry key.
