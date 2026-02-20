@@ -73,7 +73,13 @@ from google.protobuf.json_format import MessageToJson
 from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.node import Node
-from meshtastic.util import DeferredExecution, Timeout, catchAndIgnore, stripnl
+from meshtastic.util import (
+    DeferredExecution,
+    FixmeError,
+    Timeout,
+    catchAndIgnore,
+    stripnl,
+)
 
 from . import (
     util,
@@ -103,6 +109,7 @@ __all__ = [
     "channel_pb2",
     "config_pb2",
     "DeferredExecution",
+    "FixmeError",
     "KnownProtocol",
     "LOCAL_ADDR",
     "mesh_pb2",
@@ -225,7 +232,7 @@ def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     #
     # Usually btw this problem is caused by apps sending binary data but setting the payload type to
     # text.
-    logger.debug(f"in _onTextReceive() asDict:{asDict}")
+    logger.debug("in _onTextReceive() asDict:%s", asDict)
     try:
         asBytes = asDict["decoded"]["payload"]
         asDict["decoded"]["text"] = asBytes.decode("utf-8")
@@ -247,13 +254,13 @@ def _onPositionReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asDict (dict): Packet dictionary expected to contain "from" and "decoded"->"position".
 
     """
-    logger.debug(f"in _onPositionReceive() asDict:{asDict}")
+    logger.debug("in _onPositionReceive() asDict:%s", asDict)
     if "decoded" in asDict:
         if "position" in asDict["decoded"] and "from" in asDict:
             p = asDict["decoded"]["position"]
-            logger.debug(f"p:{p}")
+            logger.debug("p:%s", p)
             p = iface._fixupPosition(p)
-            logger.debug(f"after fixup p:{p}")
+            logger.debug("after fixup p:%s", p)
             # update node DB as needed
             iface._getOrCreateByNum(asDict["from"])["position"] = p
 
@@ -273,7 +280,7 @@ def _onNodeInfoReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asDict (Dict[str, Any]): Received packet dictionary (expected to contain `"decoded" -> "user"` and `"from"`).
 
     """
-    logger.debug(f"in _onNodeInfoReceive() asDict:{asDict}")
+    logger.debug("in _onNodeInfoReceive() asDict:%s", asDict)
     if "decoded" in asDict:
         if "user" in asDict["decoded"] and "from" in asDict:
             p = asDict["decoded"]["user"]
@@ -301,13 +308,13 @@ def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asDict (dict): Received packet dictionary; expected to include a `from` key and may include `decoded.telemetry`.
 
     """
-    logger.debug(f"in _onTelemetryReceive() asDict:{asDict}")
+    logger.debug("in _onTelemetryReceive() asDict:%s", asDict)
     if "from" not in asDict:
         return
 
     toUpdate = None
 
-    telemetry = asDict.get("decoded", {}).get("telemetry") or {}
+    telemetry = (asDict.get("decoded") or {}).get("telemetry") or {}
     node = iface._getOrCreateByNum(asDict["from"])
     if "deviceMetrics" in telemetry:
         toUpdate = "deviceMetrics"
@@ -325,7 +332,9 @@ def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     updateObj = telemetry.get(toUpdate)
     newMetrics = node.get(toUpdate, {})
     newMetrics.update(updateObj)
-    logger.debug(f"updating {toUpdate} metrics for {asDict['from']} to {newMetrics}")
+    logger.debug(
+        "updating %s metrics for %s to %s", toUpdate, asDict["from"], newMetrics
+    )
     node[toUpdate] = newMetrics
 
 
@@ -366,12 +375,12 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         "adminSessionPassKey" to the extracted `session_passkey`.
 
     """
-    logger.debug(f"in _onAdminReceive() asDict:{asDict}")
+    logger.debug("in _onAdminReceive() asDict:%s", asDict)
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
         pass

@@ -628,10 +628,10 @@ class Node:
         Parameters
         ----------
             long_name (Optional[str]): Owner long name; leading/trailing whitespace is trimmed. If
-                provided and empty after trimming, a ValueError is raised.
+                provided and empty after trimming, a MeshInterfaceError is raised.
             short_name (Optional[str]): Owner short name; leading/trailing whitespace is trimmed.
                 If provided and longer than 4 characters it will be truncated to 4 characters. If
-                empty after trimming, a ValueError is raised.
+                empty after trimming, a MeshInterfaceError is raised.
             is_licensed (bool): Whether the owner is licensed; applied when `long_name` is provided.
             is_unmessagable (Optional[bool]): If provided, sets the owner's unmessagable flag.
 
@@ -641,7 +641,7 @@ class Node:
 
         Raises
         ------
-            ValueError: If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
+            MeshInterfaceError: If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
 
         """
         logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
@@ -653,14 +653,14 @@ class Node:
             long_name = long_name.strip()
             # Validate that long_name is not empty or whitespace-only
             if not long_name:
-                raise ValueError(EMPTY_LONG_NAME_MSG)
+                self._raise_interface_error(EMPTY_LONG_NAME_MSG)
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
         if short_name is not None:
             short_name = short_name.strip()
             # Validate that short_name is not empty or whitespace-only
             if not short_name:
-                raise ValueError(EMPTY_SHORT_NAME_MSG)
+                self._raise_interface_error(EMPTY_SHORT_NAME_MSG)
             if len(short_name) > nChars:
                 short_name = short_name[:nChars]
                 logger.warning(

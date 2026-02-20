@@ -143,9 +143,9 @@ class MeshInterface:  # pylint: disable=R0902
         # _handlePacketFromRadio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
-        self.responseHandlers: Dict[int, ResponseHandler] = (
-            {}
-        )  # A map from request ID to the handler
+        self.responseHandlers: Dict[
+            int, ResponseHandler
+        ] = {}  # A map from request ID to the handler
         self.failure: Optional[BaseException] = (
             None  # If we've encountered a fatal exception it will be kept here
         )
@@ -259,13 +259,13 @@ class MeshInterface:  # pylint: disable=R0902
         if print_color is not None and interface.debugOut == sys.stdout:
             # this isn't quite correct (could cause false positives), but currently our formatting differs between different log representations
             if "DEBUG" in line:
-                print_color.print(line, color="cyan")
+                print_color.print(line, color="cyan")  # type: ignore[arg-type]
             elif "INFO" in line:
-                print_color.print(line, color="white")
+                print_color.print(line, color="white")  # type: ignore[arg-type]
             elif "WARN" in line:
-                print_color.print(line, color="yellow")
+                print_color.print(line, color="yellow")  # type: ignore[arg-type]
             elif "ERR" in line:
-                print_color.print(line, color="red")
+                print_color.print(line, color="red")  # type: ignore[arg-type]
             else:
                 print_color.print(line)
         elif callable(interface.debugOut):
@@ -486,6 +486,9 @@ class MeshInterface:  # pylint: disable=R0902
                 key is missing or an intermediate value is not a dictionary.
 
             """
+            # Guard against None or non-dict input
+            if not isinstance(node_dict, dict):
+                return None
             if "." not in key_path:
                 # Treat non-dotted path as a single-level lookup
                 return node_dict.get(key_path)
@@ -529,7 +532,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         rows: List[Dict[str, Any]] = []
         if self.nodesByNum:
-            logger.debug(f"self.nodes:{self.nodes}")
+            logger.debug("self.nodes:%s", self.nodes)
             for node in self.nodesByNum.values():
                 if not includeSelf and node["num"] == self.localNode.nodeNum:
                     continue
@@ -807,12 +810,13 @@ class MeshInterface:  # pylint: disable=R0902
         """
 
         if getattr(data, "SerializeToString", None):
-            logger.debug(f"Serializing protobuf as data: {stripnl(data)}")
+            logger.debug("Serializing protobuf as data: %s", stripnl(data))
             data = data.SerializeToString()
 
-        logger.debug(f"len(data): {len(data)}")
+        logger.debug("len(data): %s", len(data))
         logger.debug(
-            f"mesh_pb2.Constants.DATA_PAYLOAD_LEN: {mesh_pb2.Constants.DATA_PAYLOAD_LEN}"
+            "mesh_pb2.Constants.DATA_PAYLOAD_LEN: %s",
+            mesh_pb2.Constants.DATA_PAYLOAD_LEN,
         )
         if len(data) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
             raise MeshInterface.MeshInterfaceError("Data payload too big")
@@ -836,7 +840,7 @@ class MeshInterface:  # pylint: disable=R0902
             meshPacket.priority = priority
 
         if onResponse is not None:
-            logger.debug(f"Setting a response handler for requestId {meshPacket.id}")
+            logger.debug("Setting a response handler for requestId %s", meshPacket.id)
             self._addResponseHandler(
                 meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
             )
@@ -881,15 +885,15 @@ class MeshInterface:  # pylint: disable=R0902
         p = mesh_pb2.Position()
         if latitude != 0.0:
             p.latitude_i = int(latitude / 1e-7)
-            logger.debug(f"p.latitude_i:{p.latitude_i}")
+            logger.debug("p.latitude_i:%s", p.latitude_i)
 
         if longitude != 0.0:
             p.longitude_i = int(longitude / 1e-7)
-            logger.debug(f"p.longitude_i:{p.longitude_i}")
+            logger.debug("p.longitude_i:%s", p.longitude_i)
 
         if altitude != 0:
             p.altitude = int(altitude)
-            logger.debug(f"p.altitude:{p.altitude}")
+            logger.debug("p.altitude:%s", p.altitude)
 
         if wantResponse:
             onResponse = self.onResponsePosition
@@ -1130,9 +1134,17 @@ class MeshInterface:  # pylint: disable=R0902
             "device_metrics",
         }
         if telemetryType not in valid_types:
-            raise MeshInterface.MeshInterfaceError(
-                f"Unsupported telemetryType: {telemetryType}"
+            # Backwards compatibility: unknown types fall back to device_metrics with deprecation warning
+            import warnings
+
+            warnings.warn(
+                f"Unsupported telemetryType '{telemetryType}' is deprecated. "
+                f"Supported values: {sorted(valid_types)}. Falling back to 'device_metrics'. "
+                "This will raise an error in a future version.",
+                DeprecationWarning,
+                stacklevel=2,
             )
+            telemetryType = "device_metrics"
 
         r = telemetry_pb2.Telemetry()
 
@@ -1320,15 +1332,15 @@ class MeshInterface:  # pylint: disable=R0902
             # same algorithm as https://github.com/meshtastic/js/blob/715e35d2374276a43ffa93c628e3710875d43907/src/meshDevice.ts#L791
             seed = secrets.randbits(32)
             w.id = math.floor(seed * math.pow(2, -32) * 1e9)
-            logger.debug(f"w.id:{w.id}")
+            logger.debug("w.id:%s", w.id)
         else:
             w.id = waypoint_id
         if latitude != 0.0:
             w.latitude_i = int(latitude * 1e7)
-            logger.debug(f"w.latitude_i:{w.latitude_i}")
+            logger.debug("w.latitude_i:%s", w.latitude_i)
         if longitude != 0.0:
             w.longitude_i = int(longitude * 1e7)
-            logger.debug(f"w.longitude_i:{w.longitude_i}")
+            logger.debug("w.longitude_i:%s", w.longitude_i)
 
         if wantResponse:
             onResponse = self.onResponseWaypoint
@@ -1509,7 +1521,7 @@ class MeshInterface:  # pylint: disable=R0902
                 "Not sending packet because protocol use is disabled by noProto"
             )
         else:
-            logger.debug(f"Sending packet: {stripnl(meshPacket)}")
+            logger.debug("Sending packet: %s", stripnl(meshPacket))
             self._sendToRadio(toRadio)
         return meshPacket
 
@@ -1613,7 +1625,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         if self.myInfo is None or self.nodesByNum is None:
             return None
-        logger.debug(f"self.nodesByNum:{self.nodesByNum}")
+        logger.debug("self.nodesByNum:%s", self.nodesByNum)
         return self.nodesByNum.get(self.myInfo.my_node_num)
 
     def getMyUser(self) -> Optional[Dict[str, Any]]:
@@ -1792,7 +1804,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.sendHeartbeat(). If self._closing is set, no timer is scheduled and no heartbeat is sent.
             """
             interval = 300
-            logger.debug(f"Sending heartbeat, interval {interval} seconds")
+            logger.debug("Sending heartbeat, interval %s seconds", interval)
             with self._heartbeat_lock:
                 # Keep timer update/start in one critical section for simpler
                 # state reasoning while still honoring shutdown.
@@ -1852,9 +1864,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.myInfo = None
         self.nodes = {}  # nodes keyed by ID
         self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        self._localChannels = []  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
@@ -1944,7 +1954,7 @@ class MeshInterface:  # pylint: disable=R0902
                     continue
                 self._queueClaim()
                 if packet != toRadio:
-                    logger.debug(f"Resending packet ID {packetId:08x} {packet}")
+                    logger.debug("Resending packet ID %08x %s", packetId, packet)
                 self._sendToRadioImpl(packet)
 
             # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
@@ -1952,7 +1962,7 @@ class MeshInterface:  # pylint: disable=R0902
                 if (
                     self.queue.pop(packetId, False) is False
                 ):  # Packet got acked under us
-                    logger.debug(f"packet {packetId:08x} got acked under us")
+                    logger.debug("packet %08x got acked under us", packetId)
                     continue
                 if packet:
                     self.queue[packetId] = packet
@@ -2048,18 +2058,18 @@ class MeshInterface:  # pylint: disable=R0902
             logger.exception("Error while parsing FromRadio bytes:%s", fromRadioBytes)
             raise
         asDict = google.protobuf.json_format.MessageToDict(fromRadio)
-        logger.debug(f"Received from radio: {fromRadio}")
+        logger.debug("Received from radio: %s", fromRadio)
         if fromRadio.HasField("my_info"):
             self.myInfo = fromRadio.my_info
             self.localNode.nodeNum = self.myInfo.my_node_num
-            logger.debug(f"Received myinfo: {stripnl(fromRadio.my_info)}")
+            logger.debug("Received myinfo: %s", stripnl(fromRadio.my_info))
 
         elif fromRadio.HasField("metadata"):
             self.metadata = fromRadio.metadata
-            logger.debug(f"Received device metadata: {stripnl(fromRadio.metadata)}")
+            logger.debug("Received device metadata: %s", stripnl(fromRadio.metadata))
 
         elif fromRadio.HasField("node_info"):
-            logger.debug(f"Received nodeinfo: {asDict['nodeInfo']}")
+            logger.debug("Received nodeinfo: %s", asDict["nodeInfo"])
 
             node = self._getOrCreateByNum(asDict["nodeInfo"]["num"])
             node.update(asDict["nodeInfo"])
@@ -2083,7 +2093,7 @@ class MeshInterface:  # pylint: disable=R0902
         elif fromRadio.config_complete_id == self.configId:
             # we ignore the config_complete_id, it is unneeded for our
             # stream API fromRadio.config_complete_id
-            logger.debug(f"Config complete ID {self.configId}")
+            logger.debug("Config complete ID %s", self.configId)
             self._handleConfigComplete()
         elif fromRadio.HasField("channel"):
             self._handleChannel(fromRadio.channel)
@@ -2248,7 +2258,7 @@ class MeshInterface:  # pylint: disable=R0902
         try:
             return self.nodesByNum[num]["user"]["id"]  # type: ignore[index]
         except (KeyError, TypeError):
-            logger.debug(f"Node {num} not found for fromId")
+            logger.debug("Node %s not found for fromId", num)
             return None
 
     def _getOrCreateByNum(self, nodeNum: int) -> Dict[str, Any]:
@@ -2407,7 +2417,7 @@ class MeshInterface:  # pylint: disable=R0902
             # Is this message in response to a request, if so, look for a handler
             requestId = decoded.get("requestId")
             if requestId is not None:
-                logger.debug(f"Got a response for requestId {requestId}")
+                logger.debug("Got a response for requestId %s", requestId)
                 # We ignore ACK packets unless the callback is named `onAckNak`
                 # or the handler is set as ackPermitted, but send NAKs and
                 # other, data-containing responses to the handlers
@@ -2430,16 +2440,17 @@ class MeshInterface:  # pylint: disable=R0902
                             )
                         if response_handler is not None:
                             logger.debug(
-                                f"Calling response handler for requestId {requestId}"
+                                "Calling response handler for requestId %s", requestId
                             )
                             try:
                                 response_handler.callback(asDict)
                             except Exception:
                                 logger.exception(
-                                    f"Error in response handler for requestId {requestId}"
+                                    "Error in response handler for requestId %s",
+                                    requestId,
                                 )
 
-        logger.debug(f"Publishing {topic}: packet={stripnl(asDict)} ")
+        logger.debug("Publishing %s: packet=%s", topic, stripnl(asDict))
         publishingThread.queueWork(
             lambda: pub.sendMessage(topic, packet=asDict, interface=self)
         )
