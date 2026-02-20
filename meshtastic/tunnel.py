@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def onTunnelReceive(packet, interface):  # pylint: disable=W0613
-    """Callback for received tunneled messages from mesh."""
+    """Handle received tunneled messages from mesh."""
     logger.debug("in onTunnelReceive()")
     tunnel_instance = mt_config.tunnel_instance
     tunnel_instance.onReceive(packet)
@@ -50,7 +50,7 @@ class Tunnel:
         self, iface, subnet: str = "10.115", netmask: str = "255.255.0.0"
     ) -> None:
         """
-        Constructor.
+        Initialize the tunnel.
 
         iface is the already open MeshInterface instance
         subnet is used to construct our network number (normally 10.115.x.x)

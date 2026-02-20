@@ -7,19 +7,19 @@ recommended patterns for code that embeds `meshtastic-python`.
 
 ## Architecture overview
 
-| Component | Responsibility |
-|---|---|
-| `BLEInterface` | User-facing entry point; extends `MeshInterface` with BLE lifecycle management |
-| `BLEClient` | Synchronous wrapper around Bleak; delegates async calls to the singleton runner |
-| `BLECoroutineRunner` | Process-wide singleton with one background thread and one asyncio event loop |
-| `BLEStateManager` | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`) |
-| `BLEErrorHandler` | Unified exception-handling helpers used across the BLE subsystem |
-| `NotificationManager` | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects |
-| `DiscoveryManager` | Scan-based and connected-device-enumeration discovery with address normalization |
-| `ConnectionValidator` | Enforces connection preconditions before any lock is acquired |
-| `ClientManager` | Owns `BLEClient` lifecycle and safe-close operations |
-| `ConnectionOrchestrator` | Coordinates a full connection attempt: validate → discover → connect → register notifications |
-| `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop |
+| Component                                | Responsibility                                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `BLEInterface`                           | User-facing entry point; extends `MeshInterface` with BLE lifecycle management                |
+| `BLEClient`                              | Synchronous wrapper around Bleak; delegates async calls to the singleton runner               |
+| `BLECoroutineRunner`                     | Process-wide singleton with one background thread and one asyncio event loop                  |
+| `BLEStateManager`                        | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)           |
+| `BLEErrorHandler`                        | Unified exception-handling helpers used across the BLE subsystem                              |
+| `NotificationManager`                    | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects    |
+| `DiscoveryManager`                       | Scan-based and connected-device-enumeration discovery with address normalization              |
+| `ConnectionValidator`                    | Enforces connection preconditions before any lock is acquired                                 |
+| `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
+| `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
+| `ReconnectScheduler` / `ReconnectWorker` | Policy-driven background reconnect loop                                                       |
 
 ### Key design choices
 
@@ -58,7 +58,7 @@ prevent deadlocks:
 4. Interface state lock (`_state_lock`)
 5. Interface disconnect lock (`_disconnect_lock`)
 
-**Exception:** `_handle_disconnect()` acquires `_disconnect_lock` *first* in
+**Exception:** `_handle_disconnect()` acquires `_disconnect_lock` _first_ in
 non-blocking mode. If another disconnect handler is already active, the method
 returns immediately rather than waiting, which prevents lock inversion while
 still deduplicating callbacks.
@@ -140,9 +140,9 @@ should_go = policy.shouldRetry(count)  # bool, respects max_retries
 delay, ok = policy.nextAttempt()       # combined: compute delay + advance counter
 ```
 
-The snake_case wrappers (`get_delay`, `should_retry`, `next_attempt`) are
-**deprecated** and emit `DeprecationWarning`. Production submodule code uses
-`getDelay` / `shouldRetry` / `nextAttempt` exclusively.
+Internally, BLE submodules use underscore-prefixed snake_case helpers
+(`_get_delay`, `_should_retry`, `_next_attempt`) and do not use unprefixed
+snake_case public names.
 
 ---
 
@@ -248,25 +248,25 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 
 ## Log interpretation quick reference
 
-| Message | Meaning |
-|---|---|
-| `Ignoring disconnect … while a connection is in progress.` | Benign stale callback during CONNECTING; discard. |
-| `Connection suppressed: recently connected elsewhere` | Per-address gate blocked duplicate attempt; back off. |
-| `Cannot connect while interface is closing` | Interface is mid-shutdown; wait and retry with the same instance. |
-| `Throttling BLE receive recovery: waiting Xs before retry` | Receive thread crashed repeatedly; exponential backoff active. |
-| `BLE receive thread did not exit within Xs` | Thread took longer than `RECEIVE_THREAD_JOIN_TIMEOUT` (2 s) to exit; non-fatal, but worth investigating for hung I/O. |
+| Message                                                    | Meaning                                                                                                               |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Ignoring disconnect … while a connection is in progress.` | Benign stale callback during CONNECTING; discard.                                                                     |
+| `Connection suppressed: recently connected elsewhere`      | Per-address gate blocked duplicate attempt; back off.                                                                 |
+| `Cannot connect while interface is closing`                | Interface is mid-shutdown; wait and retry with the same instance.                                                     |
+| `Throttling BLE receive recovery: waiting Xs before retry` | Receive thread crashed repeatedly; exponential backoff active.                                                        |
+| `BLE receive thread did not exit within Xs`                | Thread took longer than `RECEIVE_THREAD_JOIN_TIMEOUT` (2 s) to exit; non-fatal, but worth investigating for hung I/O. |
 
 ---
 
 ## Common pitfalls
 
-| Pitfall | Fix |
-|---|---|
-| Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate. |
-| Layered reconnect loops | Use either the library's `auto_reconnect=True` **or** your own loop, never both. |
-| Aggressive retry cadence | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ. |
-| Forgetting to resubscribe notifications | Use the same instance so `NotificationManager` can call `resubscribe_all()` automatically after reconnects. |
-| Not closing the interface | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk). |
+| Pitfall                                       | Fix                                                                                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                               |
+| Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                  |
+| Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                      |
+| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `resubscribe_all()` automatically after reconnects.                       |
+| Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk). |
 
 ---
 

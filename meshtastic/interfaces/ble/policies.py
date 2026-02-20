@@ -1,7 +1,6 @@
 """Retry and reconnection policies for BLE operations."""
 
 import random
-import warnings
 from typing import Any, Callable, Optional, Protocol, Tuple
 
 from meshtastic.interfaces.ble.constants import BLEConfig
@@ -178,62 +177,6 @@ class ReconnectPolicy:
         from meshtastic.interfaces.ble.utils import _sleep
 
         _sleep(self._get_delay(attempt))
-
-    # Backward-compatible snake_case wrappers
-    def get_delay(self, attempt: Optional[int] = None) -> float:
-        """
-        Deprecated compatibility wrapper for _get_delay().
-        """
-        warnings.warn(
-            "ReconnectPolicy.get_delay is deprecated; use getDelay instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._get_delay(attempt)
-
-    def should_retry(self, attempt: Optional[int] = None) -> bool:
-        """
-        Deprecated compatibility wrapper for _should_retry().
-        """
-        warnings.warn(
-            "ReconnectPolicy.should_retry is deprecated; use shouldRetry instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._should_retry(attempt)
-
-    def next_attempt(self) -> Tuple[float, bool]:
-        """
-        Deprecated compatibility wrapper for _next_attempt().
-        """
-        warnings.warn(
-            "ReconnectPolicy.next_attempt is deprecated; use nextAttempt instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._next_attempt()
-
-    def get_attempt_count(self) -> int:
-        """
-        Deprecated compatibility wrapper for _get_attempt_count().
-        """
-        warnings.warn(
-            "ReconnectPolicy.get_attempt_count is deprecated; use getAttemptCount instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._get_attempt_count()
-
-    def sleep_with_backoff(self, attempt: int) -> None:
-        """
-        Deprecated compatibility wrapper for _sleep_with_backoff().
-        """
-        warnings.warn(
-            "ReconnectPolicy.sleep_with_backoff is deprecated; use sleepWithBackoff instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._sleep_with_backoff(attempt)
 
     # CamelCase aliases for public API compatibility
     def getDelay(self, attempt: Optional[int] = None) -> float:
