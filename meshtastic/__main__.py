@@ -119,7 +119,7 @@ def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
                 interface.sendText(reply)
 
     except Exception as ex:
-        print(f"Warning: Error processing received packet: {ex}.")
+        logger.warning("Error processing received packet: %s", ex)
 
 
 def onConnection(interface: MeshInterface, topic: Any = pub.AUTO_TOPIC) -> None:
@@ -1005,7 +1005,7 @@ def onConnected(interface: MeshInterface) -> None:
                 return
 
             closeNow = True
-            config_txt = export_config(interface)
+            config_txt = exportConfig(interface)
 
             if args.export_config == "-":
                 # Output to stdout (preserves legacy use of `> file.yaml`)
@@ -1454,7 +1454,7 @@ def _prefix_base64_key(
         ]
 
 
-def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
+def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     """
     Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
 
@@ -1581,8 +1581,8 @@ def export_config(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     return config_txt
 
 
-# CamelCase alias for public API consistency
-exportConfig = export_config
+# Snake_case alias for backward compatibility
+export_config = exportConfig
 
 
 def create_power_meter() -> None:

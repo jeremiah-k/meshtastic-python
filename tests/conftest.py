@@ -1,5 +1,6 @@
 """Shared pytest fixtures for BLE tests."""
 
+import logging
 from typing import Iterator
 
 import pytest
@@ -13,6 +14,8 @@ from meshtastic.interfaces.ble.gating import (
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _clear_all_registries() -> None:
@@ -54,5 +57,8 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
 
         runner = BLECoroutineRunner()
         runner.stop(timeout=2.0)
-    except Exception:
-        pass  # Ignore errors during cleanup
+    except Exception as exc:
+        logger.debug(
+            "Failed to stop BLECoroutineRunner during test cleanup: %s",
+            exc,
+        )

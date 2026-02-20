@@ -161,7 +161,9 @@ def __getattr__(name: str) -> Any:
         # Cache in module namespace so subsequent accesses bypass __getattr__
         globals()["serial"] = serial_module
         return serial_module
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    raise AttributeError(
+        f"module {__name__!r} has no attribute {name!r}"
+    )  # noqa: TRY003
 
 
 # Note: To follow PEP224, comments should be after the module variable.
@@ -212,7 +214,7 @@ class KnownProtocol(NamedTuple):
     onReceive: Optional[Callable] = None
 
 
-def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_text_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Decode text payloads from a received packet and update per-node metadata.
 
@@ -232,16 +234,16 @@ def _onTextReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     #
     # Usually btw this problem is caused by apps sending binary data but setting the payload type to
     # text.
-    logger.debug("in _onTextReceive() asDict:%s", asDict)
+    logger.debug("in _on_text_receive() asDict:%s", asDict)
     try:
         asBytes = asDict["decoded"]["payload"]
         asDict["decoded"]["text"] = asBytes.decode("utf-8")
     except (UnicodeDecodeError, KeyError, AttributeError):
         logger.exception("Malformatted utf8 in text message")
-    _receiveInfoUpdate(iface, asDict)
+    _receive_info_update(iface, asDict)
 
 
-def _onPositionReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_position_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Update the sender node's stored position when a received packet contains position data.
 
@@ -254,7 +256,7 @@ def _onPositionReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asDict (dict): Packet dictionary expected to contain "from" and "decoded"->"position".
 
     """
-    logger.debug("in _onPositionReceive() asDict:%s", asDict)
+    logger.debug("in _on_position_receive() asDict:%s", asDict)
     if "decoded" in asDict:
         if "position" in asDict["decoded"] and "from" in asDict:
             p = asDict["decoded"]["position"]
@@ -265,14 +267,14 @@ def _onPositionReceive(iface: Any, asDict: Dict[str, Any]) -> None:
             iface._getOrCreateByNum(asDict["from"])["position"] = p
 
 
-def _onNodeInfoReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_node_info_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Update interface node records from a received NodeInfo ("user") payload.
 
     If the packet contains a decoded `user` entry and a `from` sender, the function
     ensures a node exists for the sender, stores the decoded user protobuf on that node
     under `node["user"]`, updates `iface.nodes` to map the user's `id` to the node,
-    and refreshes per-node metadata via _receiveInfoUpdate(iface, asDict).
+    and refreshes per-node metadata via _receive_info_update(iface, asDict).
 
     Parameters
     ----------
@@ -280,7 +282,7 @@ def _onNodeInfoReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asDict (Dict[str, Any]): Received packet dictionary (expected to contain `"decoded" -> "user"` and `"from"`).
 
     """
-    logger.debug("in _onNodeInfoReceive() asDict:%s", asDict)
+    logger.debug("in _on_node_info_receive() asDict:%s", asDict)
     if "decoded" in asDict:
         if "user" in asDict["decoded"] and "from" in asDict:
             p = asDict["decoded"]["user"]
@@ -290,10 +292,10 @@ def _onNodeInfoReceive(iface: Any, asDict: Dict[str, Any]) -> None:
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
             iface.nodes[p["id"]] = n
-            _receiveInfoUpdate(iface, asDict)
+            _receive_info_update(iface, asDict)
 
 
-def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_telemetry_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Update the appropriate telemetry section on the sender node when a telemetry packet is received.
 
@@ -308,7 +310,7 @@ def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         asDict (dict): Received packet dictionary; expected to include a `from` key and may include `decoded.telemetry`.
 
     """
-    logger.debug("in _onTelemetryReceive() asDict:%s", asDict)
+    logger.debug("in _on_telemetry_receive() asDict:%s", asDict)
     if "from" not in asDict:
         return
 
@@ -330,6 +332,8 @@ def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         return
 
     updateObj = telemetry.get(toUpdate)
+    if updateObj is None:
+        return
     newMetrics = node.get(toUpdate, {})
     newMetrics.update(updateObj)
     logger.debug(
@@ -338,7 +342,7 @@ def _onTelemetryReceive(iface: Any, asDict: Dict[str, Any]) -> None:
     node[toUpdate] = newMetrics
 
 
-def _receiveInfoUpdate(iface: Any, asDict: Dict[str, Any]) -> None:
+def _receive_info_update(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Update per-node metadata fields based on information present in a received packet dictionary.
 
@@ -360,7 +364,7 @@ def _receiveInfoUpdate(iface: Any, asDict: Dict[str, Any]) -> None:
         node["hopLimit"] = asDict.get("hopLimit")
 
 
-def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_admin_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     """
     Store the admin session passkey from an admin packet on the sending node.
 
@@ -375,7 +379,7 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
         "adminSessionPassKey" to the extracted `session_passkey`.
 
     """
-    logger.debug("in _onAdminReceive() asDict:%s", asDict)
+    logger.debug("in _on_admin_receive() asDict:%s", asDict)
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
         iface._getOrCreateByNum(asDict["from"])[
@@ -389,26 +393,26 @@ def _onAdminReceive(iface: Any, asDict: Dict[str, Any]) -> None:
 """Well known message payloads can register decoders for automatic protobuf parsing"""
 protocols = {
     portnums_pb2.PortNum.TEXT_MESSAGE_APP: KnownProtocol(
-        "text", onReceive=_onTextReceive
+        "text", onReceive=_on_text_receive
     ),
     portnums_pb2.PortNum.RANGE_TEST_APP: KnownProtocol(
-        "rangetest", onReceive=_onTextReceive
+        "rangetest", onReceive=_on_text_receive
     ),
     portnums_pb2.PortNum.DETECTION_SENSOR_APP: KnownProtocol(
-        "detectionsensor", onReceive=_onTextReceive
+        "detectionsensor", onReceive=_on_text_receive
     ),
     portnums_pb2.PortNum.POSITION_APP: KnownProtocol(
-        "position", mesh_pb2.Position, _onPositionReceive
+        "position", mesh_pb2.Position, _on_position_receive
     ),
     portnums_pb2.PortNum.NODEINFO_APP: KnownProtocol(
-        "user", mesh_pb2.User, _onNodeInfoReceive
+        "user", mesh_pb2.User, _on_node_info_receive
     ),
     portnums_pb2.PortNum.ADMIN_APP: KnownProtocol(
-        "admin", admin_pb2.AdminMessage, _onAdminReceive
+        "admin", admin_pb2.AdminMessage, _on_admin_receive
     ),
     portnums_pb2.PortNum.ROUTING_APP: KnownProtocol("routing", mesh_pb2.Routing),
     portnums_pb2.PortNum.TELEMETRY_APP: KnownProtocol(
-        "telemetry", telemetry_pb2.Telemetry, _onTelemetryReceive
+        "telemetry", telemetry_pb2.Telemetry, _on_telemetry_receive
     ),
     portnums_pb2.PortNum.REMOTE_HARDWARE_APP: KnownProtocol(
         "remotehw", remote_hardware_pb2.HardwareMessage

@@ -241,7 +241,7 @@ class Node:
             self.partialChannels = []
         self._requestChannel(startingIndex)
 
-    def onResponseRequestSettings(self, p):
+    def onResponseRequestSettings(self, p: Dict[str, Any]) -> None:
         """
         Process an admin response for a settings request and update the node's config objects.
 
@@ -1458,7 +1458,7 @@ class Node:
             channels.append(ch)
             index += 1
 
-    def onRequestGetMetadata(self, p):
+    def onRequestGetMetadata(self, p: Dict[str, Any]) -> None:
         """
         Handle a device metadata response packet and surface its contents.
 
@@ -1517,7 +1517,7 @@ class Node:
                     f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
                 )
 
-    def onResponseRequestChannel(self, p):
+    def onResponseRequestChannel(self, p: Dict[str, Any]) -> None:
         """
         Process a response packet for a previously requested channel and update the Node's channel state.
 
@@ -1566,7 +1566,7 @@ class Node:
         else:
             self._requestChannel(index + 1)
 
-    def onAckNak(self, p):
+    def onAckNak(self, p: Dict[str, Any]) -> None:
         """
         Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
 

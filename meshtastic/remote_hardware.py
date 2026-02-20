@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Dict
 from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.protobuf import portnums_pb2, remote_hardware_pb2
-from meshtastic.util import our_exit
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
@@ -52,23 +51,29 @@ class RemoteHardwareClient:
         ----------
             iface: The already open MeshInterface instance.
         """
+        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+            MeshInterface,
+        )
+
         self.iface = iface
         ch = iface.localNode.getChannelByName("gpio")
         if not ch:
-            our_exit(
-                "Warning: No channel named 'gpio' was found.\n"
-                "On the sending and receive nodes create a channel named 'gpio'.\n"
-                "For example, run '--ch-add gpio' on one device, then '--seturl' on\n"
-                "the other devices using the url from the device where the channel was added."
+            raise MeshInterface.MeshInterfaceError(
+                "No channel named 'gpio' was found. "
+                "On the sending and receiving nodes create a channel named 'gpio'."
             )
         self.channelIndex = ch.index
 
         pub.subscribe(onGPIOreceive, "meshtastic.receive.remotehw")
 
     def _sendHardware(self, nodeid, r, wantResponse=False, onResponse=None):
+        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+            MeshInterface,
+        )
+
         if not nodeid:
-            our_exit(
-                r"Warning: Must use a destination node ID for this operation (use --dest \!xxxxxxxxx)"
+            raise MeshInterface.MeshInterfaceError(
+                r"Must use a destination node ID for this operation (use --dest \!xxxxxxxxx)"
             )
         return self.iface.sendData(
             r,

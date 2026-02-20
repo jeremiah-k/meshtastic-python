@@ -2327,7 +2327,7 @@ def test_main_gpio_rd_no_gpio_channel(capsys):
         assert pytest_wrapped_e.type is SystemExit
         assert pytest_wrapped_e.value.code == 1
         out, err = capsys.readouterr()
-        assert re.search(r"Warning: No channel named", out)
+        assert re.search(r"No channel named 'gpio'", out)
         assert err == ""
 
 

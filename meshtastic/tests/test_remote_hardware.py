@@ -2,10 +2,11 @@
 
 import logging
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
+from ..mesh_interface import MeshInterface
 from ..remote_hardware import RemoteHardwareClient, onGPIOreceive
 from ..serial_interface import SerialInterface
 
@@ -30,18 +31,13 @@ def test_onGPIOreceive(caplog):
 
 
 @pytest.mark.unit
-def test_RemoteHardwareClient_no_gpio_channel(capsys):
-    """Test that we can instantiate a RemoteHardwareClient instance but there is no channel named channel 'gpio'."""
+def test_RemoteHardwareClient_no_gpio_channel():
+    """Test that RemoteHardwareClient raises MeshInterfaceError when there is no channel named 'gpio'."""
     iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            RemoteHardwareClient(mo)
-        assert pytest_wrapped_e.type is SystemExit
-        assert pytest_wrapped_e.value.code == 1
-        out, err = capsys.readouterr()
-        assert re.search(r"Warning: No channel named", out)
-        assert err == ""
+    iface.localNode.getChannelByName.return_value = None
+    with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
+        RemoteHardwareClient(iface)
+    assert "No channel named 'gpio'" in str(exc_info.value)
 
 
 @pytest.mark.unit
@@ -78,14 +74,13 @@ def test_watchGPIOs(caplog):
 
 
 @pytest.mark.unit
-def test_sendHardware_no_nodeid(capsys):
+def test_sendHardware_no_nodeid():
     """Test sending no nodeid to _sendHardware()."""
     iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            rhw = RemoteHardwareClient(mo)
-            rhw._sendHardware(None, None)
-        assert pytest_wrapped_e.type is SystemExit
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: Must use a destination node ID", out)
-    assert err == ""
+    channel = MagicMock()
+    channel.index = 0
+    iface.localNode.getChannelByName.return_value = channel
+    rhw = RemoteHardwareClient(iface)
+    with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
+        rhw._sendHardware(None, None)
+    assert "Must use a destination node ID" in str(exc_info.value)
