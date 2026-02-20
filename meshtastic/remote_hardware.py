@@ -1,23 +1,24 @@
-"""Remote hardware
-"""
+"""Remote hardware."""
+
 import logging
 
-from pubsub import pub # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.protobuf import portnums_pb2, remote_hardware_pb2
 from meshtastic.util import our_exit
 
 logger = logging.getLogger(__name__)
 
+
 def onGPIOreceive(packet, interface) -> None:
-    """Callback for received GPIO responses"""
+    """Handle received GPIO responses."""
     logger.debug(f"packet:{packet} interface:{interface}")
     gpioValue = 0
     hw = packet["decoded"]["remotehw"]
     if "gpioValue" in hw:
         gpioValue = hw["gpioValue"]
     else:
-        if not "gpioMask" in hw:
+        if "gpioMask" not in hw:
             # we did get a reply, but due to protobufs, 0 for numeric value is not sent
             # see https://developers.google.com/protocol-buffers/docs/proto3#default
             # so, we set it here
@@ -25,24 +26,26 @@ def onGPIOreceive(packet, interface) -> None:
 
     # print(f'mask:{interface.mask}')
     value = int(gpioValue) & int(interface.mask)
-    print(
-        f'Received RemoteHardware type={hw["type"]}, gpio_value={gpioValue} value={value}'
+    logger.info(
+        f"Received RemoteHardware type={hw['type']}, gpio_value={gpioValue} value={value}"
     )
     interface.gotResponse = True
 
 
 class RemoteHardwareClient:
     """
-    This is the client code to control/monitor simple hardware built into the
-    meshtastic devices.  It is intended to be both a useful API/service and example
-    code for how you can connect to your own custom meshtastic services
+    Client code to control/monitor simple hardware built into the
+    meshtastic devices. It is intended to be both a useful API/service and example
+    code for how you can connect to your own custom meshtastic services.
     """
 
     def __init__(self, iface) -> None:
         """
-        Constructor
+        Initialize the RemoteHardwareClient with the given MeshInterface instance.
 
-        iface is the already open MeshInterface instance
+        Parameters
+        ----------
+            iface: The already open MeshInterface instance.
         """
         self.iface = iface
         ch = iface.localNode.getChannelByName("gpio")
@@ -75,7 +78,7 @@ class RemoteHardwareClient:
     def writeGPIOs(self, nodeid, mask, vals):
         """
         Write the specified vals bits to the device GPIOs.  Only bits in mask that
-        are 1 will be changed
+        are 1 will be changed.
         """
         logger.debug(f"writeGPIOs nodeid:{nodeid} mask:{mask} vals:{vals}")
         r = remote_hardware_pb2.HardwareMessage()
@@ -85,7 +88,7 @@ class RemoteHardwareClient:
         return self._sendHardware(nodeid, r)
 
     def readGPIOs(self, nodeid, mask, onResponse=None):
-        """Read the specified bits from GPIO inputs on the device"""
+        """Read the specified bits from GPIO inputs on the device."""
         logger.debug(f"readGPIOs nodeid:{nodeid} mask:{mask}")
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
@@ -93,7 +96,7 @@ class RemoteHardwareClient:
         return self._sendHardware(nodeid, r, wantResponse=True, onResponse=onResponse)
 
     def watchGPIOs(self, nodeid, mask):
-        """Watch the specified bits from GPIO inputs on the device for changes"""
+        """Watch the specified bits from GPIO inputs on the device for changes."""
         logger.debug(f"watchGPIOs nodeid:{nodeid} mask:{mask}")
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS

@@ -886,7 +886,7 @@ def detect_windows_needs_driver(sd, print_reason=False) -> bool:
                 need_to_install_driver = True
                 # if the want to see the reason
                 if print_reason:
-                    print(sp_output)
+                    logger.debug(sp_output)
     return need_to_install_driver
 
 

@@ -253,11 +253,12 @@ class Node:
         config_values = None
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
-                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
+                logger.error(
+                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                )
                 self.iface._acknowledgment.receivedNak = True
         else:
             self.iface._acknowledgment.receivedAck = True
-            print("")
             adminMessage = p["decoded"]["admin"]
             if "getConfigResponse" in adminMessage:
                 oneof = "get_config_response"
@@ -311,7 +312,9 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onResponseRequestSettings
-            print("Requesting current config from remote node (this can take a while).")
+            logger.info(
+                "Requesting current config from remote node (this can take a while)."
+            )
         p = admin_pb2.AdminMessage()
         if isinstance(configType, int):
             p.get_config_request = configType  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
@@ -339,7 +342,7 @@ class Node:
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
         self.channels[0].settings.psk = fromPSK("none")
-        print("Writing modified channels to device")
+        logger.info("Writing modified channels to device")
         self.writeChannel(0)
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
@@ -649,7 +652,9 @@ class Node:
                 raise ValueError(EMPTY_SHORT_NAME_MSG)
             if len(short_name) > nChars:
                 short_name = short_name[:nChars]
-                print(f"Maximum is 4 characters, truncated to {short_name}")
+                logger.warning(
+                    f"Short name is longer than {nChars} characters, truncating to '{short_name}'"
+                )
             p.set_owner.short_name = short_name
         if is_unmessagable is not None:
             p.set_owner.is_unmessagable = is_unmessagable
@@ -759,7 +764,7 @@ class Node:
             for chs in channelSet.settings:
                 channelExists = self.getChannelByName(chs.name)
                 if channelExists or chs.name == "":
-                    print(
+                    logger.info(
                         f'Ignoring existing or empty channel "{chs.name}" from add URL'
                     )
                     continue
@@ -768,7 +773,7 @@ class Node:
                     self._raise_interface_error("Warning: No free channels were found")
                 ch.settings.CopyFrom(chs)
                 ch.role = channel_pb2.Channel.Role.SECONDARY
-                print(f"Adding new channel '{chs.name}' to device")
+                logger.info(f"Adding new channel '{chs.name}' to device")
                 self.writeChannel(ch.index)
         else:
             i = 0
@@ -812,7 +817,9 @@ class Node:
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 errorFound = True
-                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
+                logger.error(
+                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                )
         if errorFound is False:
             if "decoded" in p:
                 if "admin" in p["decoded"]:
@@ -924,7 +931,9 @@ class Node:
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
                 errorFound = True
-                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
+                logger.error(
+                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                )
         if errorFound is False:
             if "decoded" in p:
                 if "admin" in p["decoded"]:
@@ -1428,7 +1437,9 @@ class Node:
 
         if "routing" in p["decoded"]:
             if p["decoded"]["routing"]["errorReason"] != "NONE":
-                print(f"Error on response: {p['decoded']['routing']['errorReason']}")
+                logger.error(
+                    f"Error on response: {p['decoded']['routing']['errorReason']}"
+                )
                 self.iface._acknowledgment.receivedNak = True
         else:
             self.iface._acknowledgment.receivedAck = True
@@ -1533,18 +1544,18 @@ class Node:
 
         """
         if p["decoded"]["routing"]["errorReason"] != "NONE":
-            print(
+            logger.warning(
                 f"Received a NAK, error reason: {p['decoded']['routing']['errorReason']}"
             )
             self.iface._acknowledgment.receivedNak = True
         else:
             if int(p["from"]) == self.iface.localNode.nodeNum:
-                print(
+                logger.info(
                     "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
                 )
                 self.iface._acknowledgment.receivedImplAck = True
             else:
-                print("Received an ACK.")
+                logger.info("Received an ACK.")
                 self.iface._acknowledgment.receivedAck = True
 
     def _requestChannel(self, channelNum: int):
@@ -1561,10 +1572,7 @@ class Node:
 
         # Show progress message for super slow operations
         if self != self.iface.localNode:
-            print(
-                f"Requesting channel {channelNum} info from remote node (this could take a while)"
-            )
-            logger.debug(
+            logger.info(
                 f"Requesting channel {channelNum} info from remote node (this could take a while)"
             )
         else:

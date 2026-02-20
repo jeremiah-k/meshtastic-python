@@ -20,14 +20,13 @@ def test_RemoteHardwareClient():
 
 
 @pytest.mark.unit
-def test_onGPIOreceive(capsys):
+def test_onGPIOreceive(caplog):
     """Test onGPIOreceive"""
     iface = MagicMock(autospec=SerialInterface)
     packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
-    onGPIOreceive(packet, iface)
-    out, err = capsys.readouterr()
-    assert re.search(r"Received RemoteHardware", out)
-    assert err == ""
+    with caplog.at_level(logging.INFO):
+        onGPIOreceive(packet, iface)
+        assert re.search(r"Received RemoteHardware", caplog.text)
 
 
 @pytest.mark.unit

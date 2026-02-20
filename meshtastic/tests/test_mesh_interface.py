@@ -169,39 +169,42 @@ def test_getNode_not_local(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getNode_not_local_timeout(capsys):
+def test_getNode_not_local_timeout(caplog):
     """Test getNode not local, simulate timeout."""
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)
         anode.waitForConfig.return_value = False
-        with patch("meshtastic.node.Node", return_value=anode):
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                iface.getNode("bar2")
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
-            out, err = capsys.readouterr()
-            assert re.match(r"Timed out trying to retrieve channel info, retrying", out)
-            assert err == ""
+        with caplog.at_level(logging.WARNING):
+            with patch("meshtastic.node.Node", return_value=anode):
+                with pytest.raises(SystemExit) as pytest_wrapped_e:
+                    iface.getNode("bar2")
+                assert pytest_wrapped_e.type is SystemExit
+                assert pytest_wrapped_e.value.code == 1
+                assert re.search(
+                    r"Timed out trying to retrieve channel info, retrying",
+                    caplog.text,
+                    re.MULTILINE,
+                )
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getNode_not_local_timeout_attempts(capsys):
+def test_getNode_not_local_timeout_attempts(caplog):
     """Test getNode not local, simulate timeout."""
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)
         anode.waitForConfig.return_value = False
-        with patch("meshtastic.node.Node", return_value=anode):
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                iface.getNode("bar2", requestChannelAttempts=2)
-            assert pytest_wrapped_e.type is SystemExit
-            assert pytest_wrapped_e.value.code == 1
-            out, err = capsys.readouterr()
-            assert (
-                out
-                == "Timed out trying to retrieve channel info, retrying\nError: Timed out waiting for channels, giving up\n"
-            )
-            assert err == ""
+        with caplog.at_level(logging.WARNING):
+            with patch("meshtastic.node.Node", return_value=anode):
+                with pytest.raises(SystemExit) as pytest_wrapped_e:
+                    iface.getNode("bar2", requestChannelAttempts=2)
+                assert pytest_wrapped_e.type is SystemExit
+                assert pytest_wrapped_e.value.code == 1
+                assert re.search(
+                    r"Timed out trying to retrieve channel info, retrying",
+                    caplog.text,
+                    re.MULTILINE,
+                )
 
 
 @pytest.mark.unit

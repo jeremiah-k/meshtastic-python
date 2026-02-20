@@ -657,7 +657,9 @@ class MeshInterface:  # pylint: disable=R0902
                             retries_left = requestChannelAttempts - 1
                         if retries_left <= 0:
                             our_exit("Error: Timed out waiting for channels, giving up")
-                        print("Timed out trying to retrieve channel info, retrying")
+                        logger.warning(
+                            "Timed out trying to retrieve channel info, retrying"
+                        )
                         n.requestChannels(startingIndex=new_index)
                         last_index = new_index
                     else:

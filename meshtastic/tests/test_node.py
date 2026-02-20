@@ -813,29 +813,23 @@ def test_writeChannel_with_no_channels_raises_mesh_error():
 
 
 @pytest.mark.unit
-def test_requestChannel_not_localNode(caplog, capsys):
+def test_requestChannel_not_localNode(caplog):
     """
-    Verify that requesting channel 0 on a non-local node logs and prints a remote channel info request.
+    Verify that requesting channel 0 on a non-local node logs a remote channel info request.
 
     Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
-    calls _requestChannel(0), and asserts that:
-    - a DEBUG log contains "Requesting channel 0 info from remote node",
-    - stdout contains "Requesting channel 0 info",
-    - stderr is empty.
+    calls _requestChannel(0), and asserts that an INFO log contains "Requesting channel 0 info".
     """
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.localNode.getChannelByName.return_value = None
         mo.myInfo.max_channels = 8
         anode = Node(mo, "!12345678", noProto=True)
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.INFO):
             anode._requestChannel(0)
             assert re.search(
                 r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
             )
-        out, err = capsys.readouterr()
-        assert re.search(r"Requesting channel 0 info", out, re.MULTILINE)
-        assert err == ""
 
 
 @pytest.mark.unit
