@@ -58,7 +58,7 @@ def _timeago(delta_secs: int) -> str:
     ----------
         delta_secs (int): Number of seconds elapsed in the past; zero or negative values are treated as "now".
 
-    Returns
+    Returns:
     -------
         str: A compact relative time string such as "now", "30 sec ago", "1 hour ago", or "2 days ago".
 
@@ -205,7 +205,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Enter a context for use with the with statement and return this MeshInterface instance.
 
-        Returns
+        Returns:
         -------
             MeshInterface: This MeshInterface instance.
 
@@ -311,7 +311,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             file (IO[str], optional): File-like object to which the summary is written; defaults to sys.stdout.
 
-        Returns
+        Returns:
         -------
             summary (str): The formatted summary text that was written to `file`.
 
@@ -362,7 +362,7 @@ class MeshInterface:  # pylint: disable=R0902
                 a sensible default set of fields is used; the row-number column
                 "N" is always included.
 
-        Returns
+        Returns:
         -------
             table (str): The rendered table string (also printed to stdout)
                 containing one row per node and columns mapped to human-readable
@@ -378,7 +378,7 @@ class MeshInterface:  # pylint: disable=R0902
             ----------
                 name (str): Dotted field path or key to convert (e.g., "user.longName", "position.latitude").
 
-            Returns
+            Returns:
             -------
                 str: A human-readable label for the given field when known (e.g., "User", "Latitude"); otherwise returns the original `name`.
 
@@ -420,7 +420,7 @@ class MeshInterface:  # pylint: disable=R0902
                 precision (int): Number of digits after the decimal point.
                 unit (str): Suffix appended directly after the number (for example, "V" or " dB").
 
-            Returns
+            Returns:
             -------
                 Optional[str]: `None` if `value` is `None`, otherwise the formatted string using the given precision and unit (e.g., "3.14V").
 
@@ -435,7 +435,7 @@ class MeshInterface:  # pylint: disable=R0902
             ----------
                 ts (Optional[int | float]): Seconds since the Unix epoch. If `ts` is `None` or `0`, no timestamp is available.
 
-            Returns
+            Returns:
             -------
                 Optional[str]: Formatted timestamp string in `YYYY-MM-DD HH:MM:SS` form, or `None` if `ts` is `None` or `0`.
 
@@ -454,7 +454,7 @@ class MeshInterface:  # pylint: disable=R0902
             ----------
                 ts (int | float | None): Unix timestamp in seconds since the epoch. If `None` or `0`, no computation is performed.
 
-            Returns
+            Returns:
             -------
                 Optional[str]: A concise relative time string such as "now", "5 sec ago", or "2 min ago",
                 or `None` if `ts` is `None`, `0`, or represents a time in the future.
@@ -478,7 +478,7 @@ class MeshInterface:  # pylint: disable=R0902
                 key_path (str): Dotted path (e.g., "a.b.c"). Non-dotted paths are treated
                     as a single-level lookup on node_dict.
 
-            Returns
+            Returns:
             -------
                 Any: The value found at the given path, or `None` if any intermediate
                 key is missing or an intermediate value is not a dictionary.
@@ -632,7 +632,7 @@ class MeshInterface:  # pylint: disable=R0902
             requestChannelAttempts (int): Number of attempts to retrieve channel info before giving up.
             timeout (float): Timeout in seconds passed to the Node constructor and used while waiting for responses.
 
-        Returns
+        Returns:
         -------
             meshtastic.node.Node: The Node object corresponding to nodeId.
 
@@ -689,7 +689,7 @@ class MeshInterface:  # pylint: disable=R0902
             destinationId (int | str): Target node specified as a numeric node number or node ID string; use BROADCAST_ADDR to send to all nodes.
             replyId (Optional[int]): If provided, marks this packet as a response to the given message ID.
 
-        Returns
+        Returns:
         -------
             mesh_pb2.MeshPacket: The packet that was sent; its `id` field will be populated and can be used to track acknowledgments or naks.
 
@@ -723,7 +723,7 @@ class MeshInterface:  # pylint: disable=R0902
             onResponse (Optional[Callable[[Dict[str, Any]], Any]]): Optional callback invoked if a response is received for this message.
             channelIndex (int): Channel index to use when sending.
 
-        Returns
+        Returns:
         -------
             mesh_pb2.MeshPacket: The sent mesh packet with its `id` populated.
 
@@ -796,11 +796,11 @@ class MeshInterface:  # pylint: disable=R0902
             priority (int): Packet priority enum value to assign to the packet.
             replyId (Optional[int]): If provided, marks this packet as a reply to the given message id.
 
-        Returns
+        Returns:
         -------
             mesh_pb2.MeshPacket: The transmitted MeshPacket with its `id` field populated.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If the payload exceeds the maximum allowed size or a valid
             packet id cannot be generated, or if an invalid port number is supplied.
@@ -875,7 +875,7 @@ class MeshInterface:  # pylint: disable=R0902
                 wantResponse (bool): If True, blocks until a position response is received.
                 channelIndex (int): Channel index to send the packet on.
 
-        Returns
+        Returns:
         -------
                 mesh_pb2.MeshPacket: The sent packet with its `id` populated.
 
@@ -978,7 +978,7 @@ class MeshInterface:  # pylint: disable=R0902
             hopLimit (int): Maximum number of hops to probe for the traceroute.
             channelIndex (int): Channel index to use for transmission.
 
-        Raises
+        Raises:
         ------
             MeshInterfaceError: If waiting for traceroute responses times out or the operation fails.
 
@@ -1032,7 +1032,7 @@ class MeshInterface:  # pylint: disable=R0902
             ----------
                 node_num (int): Numeric node identifier.
 
-            Returns
+            Returns:
             -------
                 str: The node's ID string if known; otherwise the node number formatted as an 8-digit lowercase hexadecimal string.
 
@@ -1048,7 +1048,7 @@ class MeshInterface:  # pylint: disable=R0902
                 snr_value (Optional[int]): SNR expressed as an integer number of quarter dB units,
                     or `None`/`UNK_SNR` to indicate an unknown value.
 
-            Returns
+            Returns:
             -------
                 Formatted SNR in dB as a string (for example, "7.5"), or "?" when the SNR is unknown.
 
@@ -1069,7 +1069,7 @@ class MeshInterface:  # pylint: disable=R0902
                 node_num (int): Numeric node identifier to convert to a human-readable label.
                 snr_text (str): Signal-to-noise ratio value as text (without units).
 
-            Returns
+            Returns:
             -------
                 str: The route string with " --> <node_label> (<snr_text>dB)" appended.
 
@@ -1313,7 +1313,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse: If True, wait for and process a waypoint response before returning.
             channelIndex: Channel index to send the waypoint on.
 
-        Returns
+        Returns:
         -------
             mesh_pb2.MeshPacket: The MeshPacket that was sent; its `id` is populated for tracking.
 
@@ -1375,7 +1375,7 @@ class MeshInterface:  # pylint: disable=R0902
             wantResponse (bool): If True, wait for and process a waypoint response before returning.
             channelIndex (int): Channel index to send the packet on.
 
-        Returns
+        Returns:
         -------
             mesh_pb2.MeshPacket: The MeshPacket that was sent; its `id` field is populated and can be used to track acknowledgements.
 
@@ -1449,7 +1449,7 @@ class MeshInterface:  # pylint: disable=R0902
             pkiEncrypted (bool | None): If true, mark the packet as PKI-encrypted.
             publicKey (bytes | None): Optional public key to include on the packet.
 
-        Returns
+        Returns:
         -------
             mesh_pb2.MeshPacket: The same MeshPacket instance that was sent,
                 with transport-related fields populated (for example: `to`,
@@ -1527,7 +1527,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Block until the radio configuration and the local node's configuration are available.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If the configuration is not received before the interface timeout.
 
@@ -1545,7 +1545,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Wait until an acknowledgement (ACK) or negative acknowledgement (NAK) is received or the wait times out.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If waiting times out before an ACK/NAK is received.
 
@@ -1566,7 +1566,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             waitFactor (float): Multiplier applied to the base trace-route timeout to extend the wait period.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If the wait times out before a traceroute response is received.
 
@@ -1579,7 +1579,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Wait for a telemetry response or until the configured timeout elapses.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If a telemetry response is not received before the configured timeout.
 
@@ -1592,7 +1592,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Block until a position acknowledgment is received.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If waiting for the position times out.
 
@@ -1615,7 +1615,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the stored node-info dictionary for the local node.
 
-        Returns
+        Returns:
         -------
             dict: The local node's node-info entry from `nodesByNum`, or `None` if `myInfo`
             or `nodesByNum` is unset or the local node entry is missing.
@@ -1630,7 +1630,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the user information for the local node.
 
-        Returns
+        Returns:
         -------
             user (dict): The local node's `user` dictionary, or `None` if no local node info or no `user` field is present.
 
@@ -1644,7 +1644,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the local user's configured long name.
 
-        Returns
+        Returns:
         -------
             The long name string if configured, `None` otherwise.
 
@@ -1658,7 +1658,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the local node user's short name.
 
-        Returns
+        Returns:
         -------
             Optional[str]: The user's `shortName` if present, `None` otherwise.
 
@@ -1672,7 +1672,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Return the local node's public key if available.
 
-        Returns
+        Returns:
         -------
             bytes: The local node's public key bytes if present, `None` otherwise.
 
@@ -1686,7 +1686,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Retrieve the canned (predefined) message configured for the local node.
 
-        Returns
+        Returns:
         -------
             str: The canned message text, or `None` if there is no local node or no canned message configured.
 
@@ -1700,7 +1700,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Get the local node's ringtone name or identifier.
 
-        Returns
+        Returns:
         -------
             The ringtone name or identifier as a string, or None if the local node or ringtone is unavailable.
 
@@ -1718,7 +1718,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             timeout (float): Maximum seconds to wait for the connection.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If waiting timed out.
             Exception: Re-raises a stored fatal exception if one occurred during connection.
@@ -1738,11 +1738,11 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Generate a new 32-bit packet identifier combining a 10-bit monotonic counter with randomized upper bits.
 
-        Returns
+        Returns:
         -------
             packet_id (int): New packet id where the low 10 bits are a monotonic counter and the remaining bits are randomized.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If `currentPacketId` is None and a packet id cannot be generated.
 
@@ -1887,7 +1887,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Indicate whether the cached transmit queue has free slots.
 
-        Returns
+        Returns:
         -------
             bool: `True` if at least one free slot is available or the queue status is unknown, `False` otherwise.
 
@@ -2042,7 +2042,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             fromRadioBytes (bytes): Raw protobuf bytes representing a mesh_pb2.FromRadio message.
 
-        Raises
+        Raises:
         ------
             Exception: If parsing the protobuf fails (parse errors are logged and re-raised).
 
@@ -2219,7 +2219,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
             position (Dict): Position dictionary that may contain integer keys 'latitudeI' and 'longitudeI'.
 
-        Returns
+        Returns:
         -------
             Dict: The same position dictionary with 'latitude' and/or 'longitude' set to float degrees when corresponding integer fields were present.
 
@@ -2243,7 +2243,7 @@ class MeshInterface:  # pylint: disable=R0902
             isDest (bool): When True treat the broadcast number as a destination (return
                 BROADCAST_ADDR); when False treat it as an unknown source (return "Unknown").
 
-        Returns
+        Returns:
         -------
             The node ID string, BROADCAST_ADDR for broadcast destinations, "Unknown" for
             broadcast sources, or `None` if the node number is not present in the local node map.
@@ -2265,11 +2265,11 @@ class MeshInterface:  # pylint: disable=R0902
         """
         Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists.
 
-        Returns
+        Returns:
         -------
             dict: The node info dictionary stored in self.nodesByNum for the given nodeNum.
 
-        Raises
+        Raises:
         ------
             MeshInterface.MeshInterfaceError: If nodeNum is the broadcast node number or if the node database has not been initialized.
 
@@ -2335,7 +2335,7 @@ class MeshInterface:  # pylint: disable=R0902
             meshPacket: protobuf MeshPacket instance received from the radio.
             hack (bool): When True, skip the usual check that requires a "from" field so unit tests can construct packets lacking that field.
 
-        Returns
+        Returns:
         -------
             None
 

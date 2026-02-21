@@ -29,9 +29,12 @@ class SerialInterface(StreamInterface):
     ) -> None:
         """
         Initialize the SerialInterface and open a serial connection to a Meshtastic device when available.
-        
+
         Parameters:
-            devPath (str | None): Filesystem path to a serial device (e.g., "/dev/ttyUSB0"). If None, a single available Meshtastic port will be auto-detected; if none are found a fallback StreamInterface without a serial connection is created.
+            devPath (str | None): Filesystem path to a serial device (e.g.,
+                "/dev/ttyUSB0"). If None, a single available Meshtastic port will be
+                auto-detected; if none are found, a fallback StreamInterface without a
+                serial connection is created.
             debugOut (TextIOWrapper | None): Optional stream to emit raw debug serial output.
             noProto (bool): Disable higher-level protocol handling when True.
             connectNow (bool): If True, perform connection and setup actions immediately after opening the serial stream.
@@ -61,9 +64,7 @@ class SerialInterface(StreamInterface):
                 )
                 return
             elif len(ports) > 1:
-                message: str = (
-                    "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
-                )
+                message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
                 message += f"  Ports detected: {ports}"
                 raise self.MeshInterfaceError(message)
             else:
@@ -103,9 +104,9 @@ class SerialInterface(StreamInterface):
     def _set_hupcl_with_termios(self, f: TextIOWrapper) -> None:
         """
         Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.
-        
+
         On Windows this is a no-op.
-        
+
         Parameters:
             f (TextIOWrapper): Open file-like handle for the serial device whose terminal attributes will be adjusted.
         """
@@ -121,7 +122,7 @@ class SerialInterface(StreamInterface):
     def __repr__(self) -> str:
         """
         Provide a concise, machine-readable representation of the SerialInterface instance.
-        
+
         Returns:
             str: A string like "SerialInterface(devPath=..., debugOut=..., noProto=True, noNodes=True)"
                  that includes only the applicable fields (devPath always; debugOut, noProto, noNodes when present).
@@ -139,8 +140,10 @@ class SerialInterface(StreamInterface):
     def close(self) -> None:
         """
         Close the serial connection and ensure any pending outgoing data is transmitted.
-        
-        If a serial stream exists, flushes pending outgoing data before closing and then delegates remaining cleanup to StreamInterface.close(). This operation may block briefly while flushing.
+
+        If a serial stream exists, flushes pending outgoing data before closing and then
+        delegates remaining cleanup to StreamInterface.close(). This operation may block
+        briefly while flushing.
         """
         if self.stream:  # Stream can be null if we were already closed
             # Flush and sleep to ensure all pending data is transmitted before closing.
@@ -157,7 +160,7 @@ class SerialInterface(StreamInterface):
     def __enter__(self) -> "SerialInterface":
         """
         Provide the SerialInterface instance for use in a with-statement.
-        
+
         Returns:
             self (SerialInterface): The same SerialInterface instance.
         """
@@ -171,9 +174,9 @@ class SerialInterface(StreamInterface):
     ) -> None:
         """
         Handle exiting a context manager and delegate cleanup and exception propagation to the base class.
-        
+
         When used as a context manager exit hook, forwards any exception information to the superclass so it can perform cleanup and logging.
-        
+
         Parameters:
             exc_type (type[BaseException] | None): The exception class if an exception was raised, otherwise None.
             exc_val (BaseException | None): The exception instance if raised, otherwise None.

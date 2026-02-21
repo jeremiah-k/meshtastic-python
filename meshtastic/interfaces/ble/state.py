@@ -93,7 +93,7 @@ class BLEStateManager:
     def _lock(self) -> RLock:
         """
         Access the internal RLock that serializes BLE state transitions.
-        
+
         Returns:
             RLock: The reentrant lock used to protect state changes.
         """
@@ -103,9 +103,9 @@ class BLEStateManager:
     def _state_name(self) -> ConnectionState:
         """
         Get the current BLE connection state.
-        
+
         This property reads the manager's state while holding the internal reentrant lock to provide a consistent, thread-safe view.
-        
+
         Returns:
             ConnectionState: The current connection state.
         """
@@ -116,7 +116,7 @@ class BLEStateManager:
     def _is_connected(self) -> bool:
         """
         Whether the BLE interface is currently in the CONNECTED state.
-        
+
         Returns:
             True if the current connection state is ConnectionState.CONNECTED, False otherwise.
         """
@@ -127,7 +127,7 @@ class BLEStateManager:
         """
         Internal property: Indicates whether the BLE interface is in the DISCONNECTING state.
 
-        Returns
+        Returns:
         -------
             True if the current connection state is DISCONNECTING, False otherwise.
 
@@ -138,7 +138,7 @@ class BLEStateManager:
     def _can_connect(self) -> bool:
         """
         Whether a new BLE connection may be initiated.
-        
+
         Returns:
             True if the current state is DISCONNECTED or ERROR, False otherwise.
         """
@@ -148,7 +148,7 @@ class BLEStateManager:
     def _is_connecting(self) -> bool:
         """
         Whether the BLE interface is in a connecting state.
-        
+
         Returns:
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
         """
@@ -161,8 +161,8 @@ class BLEStateManager:
     def _is_active(self) -> bool:
         """
         Report whether the BLE interface currently has an active or pending connection.
-        
-        Returns
+
+        Returns:
         -------
         bool
             `True` if the current state is CONNECTING, RECONNECTING, or CONNECTED, `False` otherwise.
@@ -183,7 +183,7 @@ class BLEStateManager:
         ----------
             new_state (ConnectionState): Target connection state to transition to.
 
-        Returns
+        Returns:
         -------
             bool: `True` if the state was changed or already equals the target state, `False` if the transition is invalid.
 
@@ -212,11 +212,11 @@ class BLEStateManager:
     ) -> bool:
         """
         Determine whether transitioning from one ConnectionState to another is permitted by the state machine.
-        
+
         Parameters:
             from_state (ConnectionState): Current connection state.
             to_state (ConnectionState): Proposed next connection state.
-        
+
         Returns:
             bool: True if the transition from `from_state` to `to_state` is allowed, False otherwise.
         """
@@ -227,13 +227,13 @@ class BLEStateManager:
     ) -> bool:
         """
         Atomically transition to `new_state` only if the current state is one of `expected_states`.
-        
+
         Performs the check and potential transition while holding the internal state lock to avoid time-of-check-to-time-of-use races.
-        
+
         Parameters:
             expected_states (set[ConnectionState]): Allowed current states for the transition.
             new_state (ConnectionState): Target state to transition to.
-        
+
         Returns:
             bool: `True` if the current state was in `expected_states` and the transition to `new_state` succeeded, `False` otherwise.
         """
@@ -250,9 +250,9 @@ class BLEStateManager:
     def _reset_to_disconnected(self) -> bool:
         """
         Force the connection state to DISCONNECTED for recovery or cleanup.
-        
+
         Acquires the internal state lock and attempts a transition to DISCONNECTED; this will be a no-op if the state is already DISCONNECTED.
-        
+
         Returns:
             `true` if the transition succeeded or was a no-op (state is DISCONNECTED after the call), `false` otherwise.
         """

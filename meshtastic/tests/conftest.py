@@ -15,10 +15,10 @@ from ..serial_interface import SerialInterface
 def _create_context_manager_mock(spec_class: Type) -> MagicMock:
     """
     Create a MagicMock that behaves as a context manager for the given spec class.
-    
+
     Parameters:
         spec_class (Type): Class to use as the mock's specification (e.g., SerialInterface).
-    
+
     Returns:
         MagicMock: A mock whose `__enter__` returns the mock itself and whose `__exit__` returns `None`.
     """
@@ -42,7 +42,7 @@ class FakeTimer:
     ) -> None:
         """
         Initialize a FakeTimer and append it to the class-level `created` list for test inspection.
-        
+
         Parameters:
             interval (float): Time interval in seconds represented by the timer.
             function (Callable[..., Any]): Callback that would be invoked when a real timer fires.
@@ -61,8 +61,10 @@ class FakeTimer:
     def start(self) -> None:
         """
         Mark the FakeTimer instance as started.
-        
-        The timer's callback is not invoked automatically; to execute it in a test, call the stored function directly (for example: type(timer).created[i].function()).
+
+        The timer's callback is not invoked automatically; to execute it in a test,
+            call the stored function directly (for example:
+            type(timer).created[i].function()).
         """
         self.started = True
 
@@ -77,10 +79,10 @@ class FakeTimer:
 def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"]:
     """
     Install a per-fixture FakeTimer subclass in place of meshtastic.mesh_interface.threading.Timer for use in tests.
-    
+
     Parameters:
         monkeypatch (pytest.MonkeyPatch): Pytest fixture used to replace the real Timer with the fake subclass for the duration of the test.
-    
+
     Returns:
         Type[FakeTimer]: The FakeTimer subclass that was installed.
     """
@@ -111,11 +113,11 @@ def reset_mt_config():
 def iface_with_nodes():
     """
     Provide a MeshInterface populated with a sample node and a mocked myInfo for tests.
-    
+
     Yields a MeshInterface whose `nodes` and `nodesByNum` each contain a single node (numeric id 2475227164)
     and whose `myInfo.my_node_num` is set to 2475227164. Ensures the interface is closed when the fixture
     teardown runs.
-    
+
     Returns:
         MeshInterface: Instance pre-populated with node dictionaries and a mocked `myInfo`.
     """
@@ -164,10 +166,10 @@ def iface_with_nodes():
 def mock_serial_interface() -> MagicMock:
     """
     Create a MagicMock that mimics a SerialInterface for node-related tests.
-    
+
     The mock supports the context manager protocol, its localNode.getChannelByName returns None,
     and its myInfo.max_channels is set to 8.
-    
+
     Returns:
         MagicMock: A mock configured to act like a SerialInterface with the above behavior.
     """

@@ -294,7 +294,7 @@ class TestIsCurrentlyConnectedElsewhere:
                 """
                 Report whether the associated connection is currently established.
 
-                Returns
+                Returns:
                 -------
                     `True` if the connection is established, `False` otherwise.
 
@@ -316,11 +316,11 @@ class TestIsCurrentlyConnectedElsewhere:
                 """
                 Probe whether the owner's connection is active.
 
-                Returns
+                Returns:
                 -------
                     `True` if the owner's connection is active, `False` otherwise.
 
-                Raises
+                Raises:
                 ------
                     RuntimeError: If the probe cannot determine connection state (e.g., probe failure).
 

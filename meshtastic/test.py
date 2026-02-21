@@ -32,7 +32,7 @@ class _FallbackDotMap(dict):
         ----------
             key (str): Attribute name to retrieve as a dictionary key.
 
-        Returns
+        Returns:
         -------
             Any: The value stored under `key`, or a `_FallbackDotMap` for nested dicts or missing keys.
 
@@ -52,9 +52,11 @@ class _FallbackDotMap(dict):
     def __setattr__(self, key: str, value: Any) -> None:
         """
         Set an item in the mapping using attribute-style access.
-        
-        Dunder (double-underscore) attribute names are delegated to object attribute assignment to avoid interfering with Python internals; other names create or update mapping entries.
-        
+
+        Dunder (double-underscore) attribute names are delegated to object attribute
+        assignment to avoid interfering with Python internals; other names create or update
+        mapping entries.
+
         Parameters:
             key (str): Attribute name to store as a mapping key.
             value (Any): Value to assign.
@@ -75,7 +77,7 @@ class _FallbackDotMap(dict):
         ----------
             key (str): Name of the key to remove.
 
-        Raises
+        Raises:
         ------
             AttributeError: If the key does not exist.
 
@@ -112,11 +114,11 @@ logger = logging.getLogger(__name__)
 def onReceive(packet: dict, interface: Any) -> None:
     """
     Handle an incoming packet and record clear-text messages.
-    
+
     If the packet did not originate from the current sendingInterface, convert it to a DotMap.
     If the packet's decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level
     receivedPackets list is set, append the converted packet to receivedPackets.
-    
+
     Parameters:
         packet (dict): Raw packet data as received.
         interface (Any): Interface object that delivered the packet.
@@ -134,7 +136,7 @@ def onReceive(packet: dict, interface: Any) -> None:
 def onNode(node: Any) -> None:
     """
     Log that a node database entry changed.
-    
+
     Parameters:
         node (Any): The node database entry or a payload describing the change.
     """
@@ -169,7 +171,7 @@ def testSend(
         asBinary (bool): If True, send the payload as binary data.
         wantAck (bool): If True, request an acknowledgment from the recipient.
 
-    Returns
+    Returns:
     -------
         bool: `True` if a response packet was received within 60 seconds, `False` otherwise.
 
@@ -211,7 +213,7 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
         wantAck (bool): If True, request acknowledgments for sent test packets.
         maxFailures (int): Maximum allowed failed tests before overall result is considered a failure.
 
-    Returns
+    Returns:
     -------
         bool: `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
 
@@ -258,7 +260,7 @@ def testThread(numTests: int = 50) -> bool:
     ----------
         numTests (int): Number of tests to run in each stage.
 
-    Returns
+    Returns:
     -------
         bool: True if the overall test sequence succeeded (both stages passed as
             required), False otherwise.
@@ -276,7 +278,7 @@ def testThread(numTests: int = 50) -> bool:
 def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
     """
     Log that a connection's state changed using the topic name.
-    
+
     Parameters:
         interface (Any): The interface whose connection state changed.
         topic (Any): The connection topic object; if it provides a `getName()` method that name is used, otherwise `str(topic)` is used.
@@ -294,7 +296,7 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
     ----------
         portName (str): Serial port name used to derive the filename; '/' characters will be replaced with '_'.
 
-    Returns
+    Returns:
     -------
         io.TextIOWrapper: An open text file for writing the debug log.
 
@@ -312,7 +314,7 @@ def testAll(numTests: int = 5) -> bool:
     ----------
         numTests (int): Number of test iterations to run in the test thread.
 
-    Returns
+    Returns:
     -------
         bool: `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
 
@@ -347,8 +349,10 @@ def testAll(numTests: int = 5) -> bool:
 def testSimulator() -> None:
     """
     Run a short integration check against a Meshtastic simulator on localhost.
-    
-    Connects to the simulator over TCP, requests node information and a simulator shutdown, and then exits the process; exits with status code 0 on success and 1 on error.
+
+    Connects to the simulator over TCP, requests node information and a simulator
+    shutdown, and then exits the process; exits with status code 0 on success
+    and 1 on error.
     """
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")

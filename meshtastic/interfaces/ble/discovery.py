@@ -32,7 +32,7 @@ from meshtastic.interfaces.ble.utils import (
 def _ble_device_constructor_kwargs_support() -> tuple[bool, bool]:
     """
     Detect whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
-    
+
     Returns:
         tuple[bool, bool]: (supports_details, supports_rssi) — `True` if the constructor accepts a `details` keyword, `True` if it accepts an `rssi` keyword; `False` otherwise.
     """
@@ -50,7 +50,7 @@ def _normalize_device_name_for_matching(name: str | None) -> str | None:
     ----------
         name (str | None): Raw device name.
 
-    Returns
+    Returns:
     -------
         str | None: The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
 
@@ -77,7 +77,7 @@ def _filter_devices_for_target_identifier(
         devices (list[BLEDevice]): Candidate devices to search.
         target_identifier (str): User-supplied address or device name to match.
 
-    Returns
+    Returns:
     -------
         list[BLEDevice]: Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
 
@@ -138,7 +138,7 @@ def _parse_scan_response(
         response (Any): The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
         whitelist_address (str | None): Raw address or device name target.
 
-    Returns
+    Returns:
     -------
         list[BLEDevice]: Devices matching the target (targeted mode) or devices
             advertising SERVICE_UUID (broad scan mode).
@@ -197,13 +197,13 @@ class DiscoveryStrategy(ABC):
             address (str | None): Optional target device address or name.
             timeout (float): Maximum time in seconds to wait for backend device enumeration.
 
-        Returns
+        Returns:
         -------
             list[BLEDevice]: Devices that advertise SERVICE_UUID and, if
             `address` is provided, match via address-first and name-aware
             precedence rules. Returns an empty list on error.
 
-        Raises
+        Raises:
         ------
             BleakDBusError: Re-raised when the underlying backend reports a DBus-specific error.
 
@@ -235,7 +235,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                 filter results. If None, no address/name filtering is applied.
             timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
 
-        Returns
+        Returns:
         -------
             list[BLEDevice]: Connected devices that advertise SERVICE_UUID and,
             if `address` is provided, match via address-first and name-aware
@@ -361,9 +361,9 @@ class DiscoveryManager:
     def __init__(self, client_factory: Callable[..., BLEClient] | None = None) -> None:
         """
         Initialize a DiscoveryManager that orchestrates BLE scanning with a connected-device fallback.
-        
+
         Parameters:
-        	client_factory (Callable[..., BLEClient] | None): Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
+                client_factory (Callable[..., BLEClient] | None): Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
@@ -378,11 +378,11 @@ class DiscoveryManager:
         ----------
             address (str | None): Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
 
-        Returns
+        Returns:
         -------
             list[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
 
-        Raises
+        Raises:
         ------
             BleakDBusError: If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
 

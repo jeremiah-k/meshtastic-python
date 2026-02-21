@@ -16,7 +16,7 @@ def _get_ble_module() -> types.ModuleType:
     """
     Import and return the meshtastic.interfaces.ble.interface module.
 
-    Returns
+    Returns:
     -------
         The meshtastic.interfaces.ble.interface module.
 
@@ -36,7 +36,7 @@ def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     - SerialException and SerialTimeoutException mapped to Exception
     - entries for "serial", "serial.tools", and "serial.tools.list_ports" in sys.modules
 
-    Returns
+    Returns:
     -------
         The mocked `serial` module object that was inserted into sys.modules.
 
@@ -70,7 +70,7 @@ def mock_pubsub(monkeypatch):
     The injected module exposes a `pub` attribute (a SimpleNamespace) with
     `subscribe` and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
 
-    Returns
+    Returns:
     -------
         module: The injected `pubsub` module.
 
@@ -93,7 +93,7 @@ def mock_publishing_thread(monkeypatch):
 
     The stub exposes a queueWork(callback) callable that invokes the provided callback immediately if it is truthy. The mocked module is registered under both "publishingThread" and "meshtastic.publishingThread".
 
-    Returns
+    Returns:
     -------
         The mocked publishingThread module inserted into sys.modules.
 
@@ -130,7 +130,7 @@ def mock_tabulate(monkeypatch):
 
     The fake module exposes a `tabulate(*args, **kwargs)` function that always returns an empty string.
 
-    Returns
+    Returns:
     -------
         The fake `tabulate` module inserted into `sys.modules`.
 
@@ -153,7 +153,7 @@ def mock_bleak(monkeypatch):
     `BLEDevice` (simple type with `address` and `name`),
     and `bleak.backends.device.BLEDevice` for compatibility.
 
-    Returns
+    Returns:
     -------
         types.ModuleType: The fake `bleak` module object inserted into `sys.modules`.
 
@@ -171,7 +171,7 @@ def mock_bleak(monkeypatch):
                 address (str | None): BLE device address associated with this client, or None.
                 **_kwargs: Additional keyword arguments are accepted and ignored.
 
-            Attributes
+            Attributes:
             ----------
                 services (types.SimpleNamespace): Exposes get_characteristic(specifier) which always returns None.
 
@@ -189,7 +189,7 @@ def mock_bleak(monkeypatch):
             ----------
                 _kwargs (dict): Arbitrary keyword arguments that are ignored.
 
-            Returns
+            Returns:
             -------
                 None: Always returns None.
 
@@ -214,7 +214,7 @@ def mock_bleak(monkeypatch):
             """
             Provide an empty value for any GATT characteristic read.
 
-            Returns
+            Returns:
             -------
                 bytes: `b""` (empty bytes).
 
@@ -233,7 +233,7 @@ def mock_bleak(monkeypatch):
 
             This dummy implementation always reports the client as disconnected.
 
-            Returns
+            Returns:
             -------
                 bool: `True` if the client is connected, `False` otherwise.
 
@@ -248,7 +248,7 @@ def mock_bleak(monkeypatch):
         ----------
             **_kwargs (dict): Ignored keyword arguments kept for API compatibility.
 
-        Returns
+        Returns:
         -------
             list: Empty list of discovered devices.
 
@@ -283,7 +283,7 @@ def mock_bleak(monkeypatch):
             """
             Simulate BLE device discovery.
 
-            Returns
+            Returns:
             -------
                 list: Empty list of discovered BLE devices.
 
@@ -319,7 +319,7 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
 
     The created module is attached to the provided `mock_bleak` as its `exc` attribute and inserted into `sys.modules` under the name `"bleak.exc"`.
 
-    Returns
+    Returns:
     -------
         The created `bleak.exc` module.
 
@@ -353,7 +353,7 @@ class DummyClient:
         ----------
             disconnect_exception (Exception | None): Exception to raise when disconnect() is called; pass None to disable raising.
 
-        Attributes
+        Attributes:
         ----------
             disconnect_calls (int): Number of times disconnect() has been invoked.
             close_calls (int): Number of times close() has been invoked.
@@ -380,7 +380,7 @@ class DummyClient:
         ----------
             _specifier: Identifier of the characteristic to check (for example, a UUID string or characteristic object).
 
-        Returns
+        Returns:
         -------
             True if the client exposes a characteristic matching `_specifier`, False otherwise. This mock always returns False.
 
@@ -413,7 +413,7 @@ class DummyClient:
         """
         Provide a fixed empty-bytes response for any GATT characteristic read.
 
-        Returns
+        Returns:
         -------
             bytes: Empty bytes object (`b''`).
 
@@ -424,7 +424,7 @@ class DummyClient:
         """
         Indicate whether the mock BLE client is currently connected.
 
-        Returns
+        Returns:
         -------
             True if the client is connected, False otherwise.
 
@@ -441,7 +441,7 @@ class DummyClient:
 
         Increments the instance's `disconnect_calls` counter. If `disconnect_exception` is set, that exception is raised instead of returning normally.
 
-        Raises
+        Raises:
         ------
             Exception: The exception instance stored in `self.disconnect_exception`, if present.
 
@@ -505,7 +505,7 @@ def stub_atexit(
         ----------
             func (callable): The callable to register; may also be used as a decorator.
 
-        Returns
+        Returns:
         -------
             callable: The same callable that was registered.
 
@@ -557,7 +557,7 @@ def _build_interface(
             the background receive thread so tests can invoke receive paths
             synchronously.
 
-    Returns
+    Returns:
     -------
         A BLEInterface instance configured for tests. The instance has `connect` replaced to attach and return `client`, `_startConfig` replaced with a no-op, and a `_connect_stub_calls` list recording addresses passed to the stubbed `connect`.
 
@@ -581,7 +581,7 @@ def _build_interface(
             *args: Additional positional arguments (ignored).
             **kwargs: Additional keyword arguments (ignored).
 
-        Returns
+        Returns:
         -------
             DummyClient: The preconfigured test client instance attached to the interface.
 

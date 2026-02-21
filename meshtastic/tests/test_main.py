@@ -2069,7 +2069,7 @@ def test_main_onConnection(capsys):
             """
             Get a fake topic name.
 
-            Returns
+            Returns:
             -------
                 The fixed fake topic name `'foo'`.
 

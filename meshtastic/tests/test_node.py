@@ -174,7 +174,7 @@ def test_node(capsys, mock_serial_interface):
 def test_exitSimulator(caplog):
     """
     Verify that calling exitSimulator logs an indicative debug message.
-    
+
     Asserts that a DEBUG-level log record contains the text "in exitSimulator".
     """
     interface = MeshInterface()
@@ -276,7 +276,7 @@ def test_setURL_ignores_channels_over_device_limit(caplog):
 def test_get_ringtone_times_out_without_response(caplog):
     """
     Verify that get_ringtone times out when no response callback is invoked.
-    
+
     Returns:
         None: `None` if no ringtone response is received before the timeout.
     """
@@ -843,7 +843,7 @@ def test_requestChannel_not_localNode(caplog):
 def test_requestChannel_localNode(caplog):
     """
     Verify that a local node logs a local channel request when _requestChannel is called.
-    
+
     Checks that the log contains "Requesting channel 0" and does not include "from remote node".
     """
     iface = MagicMock(autospec=SerialInterface)

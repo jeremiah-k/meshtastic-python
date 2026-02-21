@@ -45,7 +45,7 @@ class Tunnel:
         def __init__(self, message):
             """
             Initialize the TunnelError with a human-readable message.
-            
+
             Parameters:
                 message (str): Description of the tunnel-related error.
             """
@@ -57,21 +57,21 @@ class Tunnel:
     ) -> None:
         """
         Initialize a Tunnel bound to a mesh interface and subnet.
-        
+
         Creates and configures tunnel state, registers this instance as the global
         mt_config.tunnel_instance, and conditionally creates and brings up a TUN
         (TapDevice) and a background reader thread unless the mesh interface has
         noProto enabled.
-        
+
         Parameters:
-        	iface: An already-open MeshInterface instance providing .myInfo, .nodes,
-        		.node numbers, .noProto, and .sendData behavior.
-        	subnet (str): Subnet prefix used to form tunnel IPs (default "10.115").
-        	netmask (str): Netmask to assign to the TUN device (default "255.255.0.0").
-        
+                iface: An already-open MeshInterface instance providing .myInfo, .nodes,
+                        .node numbers, .noProto, and .sendData behavior.
+                subnet (str): Subnet prefix used to form tunnel IPs (default "10.115").
+                netmask (str): Netmask to assign to the TUN device (default "255.255.0.0").
+
         Raises:
-        	Tunnel.TunnelError: If iface, subnet, or netmask is missing, or if the
-        		process is not running on a Linux system.
+                Tunnel.TunnelError: If iface, subnet, or netmask is missing, or if the
+                        process is not running on a Linux system.
         """
 
         if not iface:
@@ -156,10 +156,10 @@ class Tunnel:
     def onReceive(self, packet):
         """
         Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.
-        
+
         Ignores packets originating from the local node. If protocol handling is enabled (iface.noProto is False)
         and the packet is not filtered by _shouldFilterPacket, writes packet["decoded"]["payload"] to the TUN device.
-        
+
         Parameters:
             packet (dict): Mesh packet; expected to contain a "from" node number and a "decoded" dict with a "payload" bytes object.
         """
@@ -177,10 +177,10 @@ class Tunnel:
     def _shouldFilterPacket(self, p):
         """
         Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
-        
+
         Parameters:
             p (bytes): Raw IPv4 packet bytes beginning at the IP header.
-        
+
         Returns:
             bool: `True` if the packet should be ignored (filtered), `False` otherwise.
         """
@@ -257,10 +257,10 @@ class Tunnel:
     def _nodeNumToIp(self, nodeNum):
         """
         Constructs an IPv4 address in the tunnel subnet for a given node number.
-        
+
         Parameters:
             nodeNum (int): Node number; the low 16 bits are used to form the final two octets of the returned address.
-        
+
         Returns:
             str: IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
         """
@@ -269,7 +269,7 @@ class Tunnel:
     def sendPacket(self, destAddr, p):
         """
         Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
-        
+
         Parameters:
             destAddr (bytes): 4-byte IPv4 address in network byte order identifying the packet's destination.
             p (bytes): Raw IP packet bytes to be forwarded.
@@ -288,7 +288,7 @@ class Tunnel:
     def close(self):
         """
         Close the Tunnel's TUN device.
-        
+
         Closes the underlying TUN/TAP device and releases associated resources held by it.
         """
         self.tun.close()

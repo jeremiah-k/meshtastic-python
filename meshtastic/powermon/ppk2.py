@@ -17,11 +17,18 @@ class PPK2PowerSupply(PowerSupply):
     def __init__(self, portName: str | None = None):
         """
         Initialize a PPK2PowerSupply and prepare it for measurements.
-        
-        If portName is None the constructor auto-discovers connected PPK2 devices and selects the single available device; it raises PowerError if no devices are found or if multiple devices are present. Opens a PPK2_API connection to the device, initializes measurement state and synchronization primitives, creates (but does not start) the background measurement thread, logs the connection, and then calls the superclass initializer.
-        
+
+        If portName is None the constructor auto-discovers connected PPK2 devices
+        and selects the single available device; it raises PowerError if no devices
+        are found or if multiple devices are present. Opens a PPK2_API connection to
+        the device, initializes measurement state and synchronization primitives, creates
+        (but does not start) the background measurement thread, logs the connection,
+        and then calls the superclass initializer.
+
         Parameters:
-            portName (str | None): Serial port or device identifier for the PPK2 device. If None, the constructor attempts to auto-discover a single connected PPK2 device; provide a value to select a specific device.
+            portName (str | None): Serial port or device identifier for the PPK2
+                device. If None, the constructor attempts to auto-discover a single
+                connected PPK2 device; provide a value to select a specific device.
         """
         if not portName:
             devs = ppk2_api.PPK2_API.list_devices()
@@ -158,9 +165,7 @@ class PPK2PowerSupply(PowerSupply):
         # must be after setting source voltage and before setting mode
         self.r.start_measuring()  # send command to ppk2
 
-        if (
-            not is_supply
-        ):  # min power outpuf of PPK2.  If less than this assume we want just meter mode.
+        if not is_supply:  # min power outpuf of PPK2.  If less than this assume we want just meter mode.
             self.r.use_ampere_meter()
         else:
             self.r.use_source_meter()  # set source meter mode

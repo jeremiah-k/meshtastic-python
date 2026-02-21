@@ -137,15 +137,18 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     """
     Provide lazy access to legacy module attributes.
-    
-    When the attribute "serial" is requested, import the internal serial_interface module, cache it on the module globals as "serial", and return it. For any other attribute, raise AttributeError.
-    
+
+    When the attribute "serial" is requested, import the internal serial_interface
+    module, cache it on the module globals as "serial", and return it. For any
+    other attribute, raise AttributeError.
+
     Parameters:
         name (str): Attribute name being accessed.
-    
+
     Returns:
-        module: The resolved module object for the requested legacy attribute (e.g., the internal serial_interface for "serial").
-    
+        module: The resolved module object for the requested legacy attribute
+            (e.g., the internal serial_interface for "serial").
+
     Raises:
         AttributeError: If the requested attribute is not provided by this lazy loader.
     """
@@ -265,12 +268,16 @@ def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
 def _on_node_info_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Update the local node record from a received NodeInfo ("user") payload.
-    
-    When `asDict` contains a decoded `"user"` entry and a `"from"` sender, stores the decoded user protobuf on the sender's node under `node["user"]`, ensures `iface.nodes` maps the user's `id` to that node, and refreshes per-node metadata via _receive_info_update(iface, asDict).
-    
+
+    When `asDict` contains a decoded `"user"` entry and a `"from"` sender, stores
+    the decoded user protobuf on the sender's node under `node["user"]`, ensures
+    `iface.nodes` maps the user's `id` to that node, and refreshes per-node metadata
+    via _receive_info_update(iface, asDict).
+
     Parameters:
         iface (Any): Interface instance managing the node database.
-        asDict (dict[str, Any]): Received packet dictionary; expected to contain `"decoded" -> "user"` and `"from"`.
+        asDict (dict[str, Any]): Received packet dictionary; expected to contain
+            `"decoded" -> "user"` and `"from"`.
     """
     logger.debug("in _on_node_info_receive() asDict:%s", asDict)
     if "decoded" in asDict:
@@ -372,9 +379,9 @@ def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
     logger.debug("in _on_admin_receive() asDict:%s", asDict)
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
+        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
+            adminMessage.session_passkey
+        )
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
         logger.debug(

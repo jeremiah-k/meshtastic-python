@@ -17,7 +17,7 @@ def sanitize_address(address: str | None) -> str | None:
     ----------
         address (str | None): Address or identifier to normalize.
 
-    Returns
+    Returns:
     -------
         str | None: Normalized address string with hyphens, underscores, colons, and spaces removed and lowercased, or None if `address` is None or empty after stripping.
 
@@ -40,7 +40,7 @@ def sanitize_address(address: str | None) -> str | None:
 def _sleep(delay: float) -> None:
     """
     Pause execution for the specified number of seconds.
-    
+
     Parameters:
         delay (float): Number of seconds to pause; may be fractional (e.g., 0.5).
     """
@@ -55,17 +55,17 @@ async def with_timeout(
 ) -> T:
     """
     Run an awaitable with an optional timeout.
-    
+
     Parameters:
         awaitable (Awaitable[T]): The awaitable to execute.
         timeout (float | None): Maximum seconds to wait; None means wait indefinitely.
         label (str): Short operation label passed to the timeout_error_factory when a timeout occurs.
         timeout_error_factory (Callable[[str, float], Exception] | None): Optional factory that receives (label, timeout)
             and returns the exception to raise when the operation times out.
-    
+
     Returns:
         T: The result produced by the awaitable.
-    
+
     Raises:
         asyncio.TimeoutError: If the timeout elapses and no timeout_error_factory is provided.
         Exception: The exception returned by timeout_error_factory(label, timeout) when a timeout occurs.
@@ -83,9 +83,9 @@ async def with_timeout(
 def resolve_ble_module() -> ModuleType | None:
     """
     Locate and return the first available BLE-related module for the package.
-    
+
     Checks for available modules in priority order and returns the first successfully imported module.
-    
+
     Returns:
         ModuleType | None: The imported BLE module if found, otherwise `None`.
     """

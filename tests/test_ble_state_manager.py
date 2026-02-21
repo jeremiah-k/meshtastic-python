@@ -245,7 +245,7 @@ class TestBLEStateManager:
             """
             Read and return the manager's current connection state while holding its reentrant state lock.
 
-            Returns
+            Returns:
             -------
                 ConnectionState: The current connection state.
 

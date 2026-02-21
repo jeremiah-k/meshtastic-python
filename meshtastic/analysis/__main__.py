@@ -24,10 +24,10 @@ pd.options.mode.copy_on_write = True
 def to_pmon_names(arr) -> List[str]:
     """
     Map a sequence of power-monitor state integers to their enum name strings.
-    
+
     Parameters:
         arr (Iterable[int]): Sequence of power-monitor state values.
-    
+
     Returns:
         List[str | None]: List of corresponding enum names; elements are `None` when a value cannot be mapped or represents the "None" state.
     """
@@ -35,10 +35,10 @@ def to_pmon_names(arr) -> List[str]:
     def to_pmon_name(n):
         """
         Map a power-monitor state numeric value to its corresponding enum name.
-        
+
         Parameters:
             n (int | any): Numeric value (or value convertible to int) representing a PowerMon.State.
-        
+
         Returns:
             str or None: The enum name string for the given state, or `None` if the value does not map to a known state.
         """
@@ -54,12 +54,14 @@ def to_pmon_names(arr) -> List[str]:
 def read_pandas(filepath: str) -> pd.DataFrame:
     """
     Load a Feather file and map Arrow column types to pandas nullable dtypes to preserve nullability.
-    
-    Converts Arrow column types to appropriate pandas extension dtypes (e.g., nullable integer, boolean, and string dtypes) so that integer/boolean columns retain nullability instead of being cast to float.
-    
+
+    Converts Arrow column types to appropriate pandas extension dtypes (e.g., nullable
+    integer, boolean, and string dtypes) so that integer/boolean columns retain
+    nullability instead of being cast to float.
+
     Parameters:
         filepath (str): Path to the Feather file to read.
-    
+
     Returns:
         pd.DataFrame: DataFrame whose columns use pandas nullable dtypes where applicable.
     """
@@ -83,12 +85,14 @@ def read_pandas(filepath: str) -> pd.DataFrame:
     def _types_mapper(data_type: pa.DataType) -> pd.api.extensions.ExtensionDtype:
         """
         Map a PyArrow DataType to a pandas nullable ExtensionDtype.
-        
+
         Parameters:
             data_type (pa.DataType): The Arrow data type to map.
-        
+
         Returns:
-            pd.api.extensions.ExtensionDtype: The corresponding pandas nullable extension dtype if a predefined mapping exists; otherwise a pandas ArrowDtype wrapping the provided Arrow type.
+            pd.api.extensions.ExtensionDtype: The corresponding pandas nullable extension
+                dtype if a predefined mapping exists; otherwise a pandas ArrowDtype wrapping
+                the provided Arrow type.
         """
         mapped = dtype_mapping.get(data_type)
         if mapped is not None:
@@ -104,13 +108,13 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     """
     Extract rows where one or more power monitors transitioned to the raised state.
-    
+
     Parameters
     ----------
     dslog : pd.DataFrame
         Slog DataFrame that must contain `pm_mask` and `time` columns.
-    
-    Returns
+
+    Returns:
     -------
     pd.DataFrame
         Subset of rows where power-monitor raises occurred. Columns are
@@ -151,12 +155,14 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
 def get_board_info(dslog: pd.DataFrame) -> tuple:
     """
     Retrieve board model name and software version from a slog DataFrame.
-    
+
     Parameters:
         dslog (pd.DataFrame): Slog DataFrame containing at least the 'sw_version' and 'board_id' columns.
-    
+
     Returns:
-        tuple: (board_model_name, sw_version) where `board_model_name` is the HardwareModel enum name string derived from `board_id`, and `sw_version` is the software version string.
+        tuple: (board_model_name, sw_version) where `board_model_name` is the
+            HardwareModel enum name string derived from `board_id`, and `sw_version`
+            is the software version string.
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     sw_version = board_info.iloc[0]["sw_version"]
@@ -168,7 +174,7 @@ def create_argparser() -> argparse.ArgumentParser:
     """
     Create the command-line argument parser for analysis tools.
 
-    Returns
+    Returns:
     -------
     argparse.ArgumentParser
         Configured argument parser instance.
@@ -192,10 +198,10 @@ def create_argparser() -> argparse.ArgumentParser:
 def create_dash(slog_path: str) -> Dash:
     """
     Create a Dash application that visualizes Meshtastic power data from a slog directory.
-    
+
     Parameters:
         slog_path (str): Path to the slog directory containing `power.feather` and `slog.feather`.
-    
+
     Returns:
         Dash: Configured Dash application with line and scatter traces for average, max, and min power and markers for power-monitor raise events.
     """

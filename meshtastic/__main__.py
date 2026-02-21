@@ -96,8 +96,12 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
 def support_info() -> None:
     """
     Print troubleshooting guidance and environment details useful for reporting CLI or library issues.
-    
-    Specifically prints the issue tracker URL and the running environment: system, platform string, kernel release, machine architecture, stdin/stdout encodings, installed meshtastic version (and available newer PyPI version if any), executable path, and Python implementation/version. Advises adding the output of `meshtastic --info` when filing an issue.
+
+    Specifically prints the issue tracker URL and the running environment: system,
+    platform string, kernel release, machine architecture, stdin/stdout encodings,
+    installed meshtastic version (and available newer PyPI version if any), executable
+    path, and Python implementation/version. Advises adding the output of
+    `meshtastic --info` when filing an issue.
     """
     print("")
     print("If having issues with meshtastic cli or python library")
@@ -129,11 +133,16 @@ def support_info() -> None:
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
     """
     Handle an incoming mesh packet, optionally send a text reply, and close the interface when appropriate.
-    
-    If the CLI initiated a text send and the incoming packet is a text message addressed to this node, the interface will be closed. If reply mode is enabled and the decoded payload contains text, a reply containing the received text plus the packet's `rxSnr` and `hopLimit` will be sent and printed.
-    
+
+    If the CLI initiated a text send and the incoming packet is a text message addressed
+    to this node, the interface will be closed. If reply mode is enabled and the
+    decoded payload contains text, a reply containing the received text plus the packet's
+    `rxSnr` and `hopLimit` will be sent and printed.
+
     Parameters:
-        packet (dict): Incoming packet. Expected keys include `"decoded"` (dict or None, with keys like `"text"` and `"portnum"`), `"to"` (destination node number), `"rxSnr"`, and `"hopLimit"`.
+        packet (dict): Incoming packet. Expected keys include `"decoded"` (dict or None,
+            with keys like `"text"` and `"portnum"`), `"to"` (destination node number),
+            `"rxSnr"`, and `"hopLimit"`.
         interface (MeshInterface): Interface used to send replies and to close the connection.
     """
     args = mt_config.args
@@ -192,7 +201,7 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     """
     Determine whether the local node has the channel at the given index enabled.
 
-    Returns
+    Returns:
     -------
         `True` if the channel exists and its role is not DISABLED, `False` otherwise.
 
@@ -205,23 +214,32 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
 def getPref(node: Any, comp_name: str) -> bool:
     """
     Retrieve and display a configuration preference or channel field for a node.
-    
-    Given a dot-separated preference name (section.field) or a single name (used for both section and field resolution), print any populated local values for that preference; if the field exists but is not populated locally, request the remote node's configuration so the value can be fetched. When a message/section name is provided (e.g., "channel" or "channel.label"), populated subfields are printed.
-    
+
+    Given a dot-separated preference name (section.field) or a single name (used for
+    both section and field resolution), print any populated local values for that
+    preference; if the field exists but is not populated locally, request the
+    remote node's configuration so the value can be fetched. When a message/section
+    name is provided (e.g., "channel" or "channel.label"), populated
+    subfields are printed.
+
     Parameters:
         node (Any): Node object exposing `localConfig` and `moduleConfig`.
-        comp_name (str): Dot-separated preference path (e.g., "channel.label" or "label"). A single name is used for both section and field resolution.
-    
+        comp_name (str): Dot-separated preference path (e.g., "channel.label" or "label").
+            A single name is used for both section and field resolution.
+
     Returns:
-        bool: `True` if the preference exists and local values were printed or a remote config request was issued, `False` if the preference was not found.
+        bool: `True` if the preference exists and local values were printed or a remote
+            config request was issued, `False` if the preference was not found.
     """
 
     def _printSetting(config_type, uni_name, pref_value, repeated):
         """
         Print a configuration preference and its value to stdout and the debug log.
-        
-        When `repeated` is True, `pref_value` is treated as an iterable and each element is converted to a string; otherwise the single value is converted to a string. Output is formatted as "<section>.<name>: <value>".
-        
+
+        When `repeated` is True, `pref_value` is treated as an iterable and
+            each element is converted to a string; otherwise the single value is
+            converted to a string. Output is formatted as "<section>.<name>: <value>".
+
         Parameters:
             config_type: Object with a `name` attribute identifying the configuration section.
             uni_name (str): The preference name within the configuration section.
@@ -296,9 +314,10 @@ def getPref(node: Any, comp_name: str) -> bool:
 def splitCompoundName(comp_name: str) -> list[str]:
     """
     Split a dotted preference name into segments, guaranteeing at least two elements.
-    
-    If `comp_name` contains one or more dots, returns the list produced by splitting on '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
-    
+
+    If `comp_name` contains one or more dots, returns the list produced by splitting on
+    '.'. If it contains no dot, returns a two-element list with `comp_name` repeated.
+
     Returns:
         list[str]: Segments from splitting `comp_name` on '.', or `[comp_name, comp_name]` when no dot is present.
     """
@@ -321,7 +340,7 @@ def traverseConfig(
         config (dict[str, Any]): Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
         interface_config: Target configuration object that will receive the applied leaf values.
 
-    Returns
+    Returns:
     -------
         bool: `True` when traversal completes and all leaf values have been processed.
 
@@ -340,14 +359,17 @@ def traverseConfig(
 def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     """
     Set a protobuf configuration or channel field identified by a dot-separated path.
-    
-    This updates the target field on the given protobuf-like message, converting the provided value to the field's expected type when possible, resolving enum names, validating certain fields (for example, `wifi_psk` requires length >= 8), and handling repeated fields (replace, append, or clear) according to the supplied value.
-    
+
+    This updates the target field on the given protobuf-like message, converting the provided
+    value to the field's expected type when possible, resolving enum names, validating
+    certain fields (for example, `wifi_psk` requires length >= 8), and handling
+    repeated fields (replace, append, or clear) according to the supplied value.
+
     Parameters:
         config: The protobuf configuration or channel message to modify.
         comp_name (str): Dot-separated field path (e.g., "channel.security.wifi_psk" or "node.name").
         raw_val: Value to assign; may be a string, number, list (for repeated fields), or already-typed value.
-    
+
     Returns:
         bool: `True` if the named field was found and successfully set or updated, `False` otherwise.
     """
@@ -448,9 +470,15 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
 def onConnected(interface: MeshInterface) -> None:
     """
     Execute CLI actions specified by parsed command-line arguments using the provided MeshInterface.
-    
-    Performs whichever device or network operations were requested via mt_config.args (for example: updating time or owner, configuring position or channels, sending text/telemetry/position messages, node administration, exporting/importing configuration, reboot/shutdown, starting tunnels or power-monitoring, and related read/write operations). Actions may modify remote devices, start long-running services, wait for acknowledgments, close the interface, or exit the process on fatal errors.
-    
+
+    Performs whichever device or network operations were requested via mt_config.args (for
+    example: updating time or owner, configuring position or channels, sending
+    text/telemetry/position messages, node administration, exporting/importing
+    configuration, reboot/shutdown, starting tunnels or power-monitoring, and related
+    read/write operations). Actions may modify remote devices, start long-running
+    services, wait for acknowledgments, close the interface, or exit the process on
+    fatal errors.
+
     Parameters:
         interface (MeshInterface): An established mesh interface used to perform the requested device and network operations.
     """
@@ -1104,9 +1132,12 @@ def onConnected(interface: MeshInterface) -> None:
         def _set_simple_config(modem_preset):
             """
             Set and persist the LORA modem preset on the device's primary channel.
-            
-            If the configured channel is not the primary channel, the function exits with a warning and does not change device state. When applied, the modem preset is written into the node's local LORA configuration and persisted to the device.
-            
+
+            If the configured channel is not the primary channel, the function exits
+            with a warning and does not change device state. When applied, the modem
+            preset is written into the node's local LORA configuration and
+            persisted to the device.
+
             Parameters:
                 modem_preset: int | EnumValue
                     Modem preset identifier to apply (numeric index or enum value understood by firmware).
@@ -1351,11 +1382,11 @@ def onConnected(interface: MeshInterface) -> None:
 def printConfig(config: Any) -> None:
     """
     Print the top-level configuration sections and their fields.
-    
+
     Skips the "version" section. For each other top-level section, prints the section name
     followed by its fields in the form "section.field"; field names are converted to
     camelCase when mt_config.camel_case is true.
-    
+
     Parameters:
         config (Any): A protobuf-like configuration message exposing a DESCRIPTOR with top-level fields.
     """
@@ -1377,7 +1408,7 @@ def printConfig(config: Any) -> None:
 def onNode(node: Any) -> None:
     """
     Notify about a node database change by printing the changed node.
-    
+
     Parameters:
         node (Any): The node object or identifier that changed; printed to standard output.
     """
@@ -1405,8 +1436,9 @@ def _set_missing_flags_false(
     config_dict: dict[str, Any], true_defaults: set[tuple[str, ...]]
 ) -> None:
     """
-    Ensure specific boolean flags exist in a nested configuration dictionary by creating any missing path components and setting missing final keys to False.
-    
+    Ensure specific boolean flags exist in a nested configuration dictionary by creating any
+    missing path components and setting missing final keys to False.
+
     Parameters:
         config_dict (dict[str, Any]): Nested configuration dictionary to modify in place.
         true_defaults (set[tuple[str, ...]]): Set of key paths (tuples of keys) whose final key should exist;
@@ -1483,7 +1515,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     ----------
         interface (MeshInterface): The connected interface whose local node and module configuration will be exported.
 
-    Returns
+    Returns:
     -------
         str: A YAML string (prefixed with a header comment) representing exported configuration.
 
@@ -1588,12 +1620,16 @@ export_config = exportConfig
 def create_power_meter() -> None:
     """
     Initialize and configure the global power meter from parsed CLI arguments.
-    
-    Validates an optional voltage (must be between 0.8 and 5.0), instantiates the selected power meter implementation based on power-related CLI flags, assigns it to the module-global `meter`, and, if a voltage is provided, sets the meter voltage and powers it on. When powering on, optionally waits for user confirmation or sleeps briefly depending on the CLI power-wait flag.
-    
+
+    Validates an optional voltage (must be between 0.8 and 5.0), instantiates the
+    selected power meter implementation based on power-related CLI flags, assigns it to the
+    module-global `meter`, and, if a voltage is provided, sets the meter voltage and
+    powers it on. When powering on, optionally waits for user confirmation or sleeps
+    briefly depending on the CLI power-wait flag.
+
     Raises:
         RuntimeError: if mt_config.args is not initialized.
-    
+
     Notes:
         The function may terminate the process via _cli_exit for invalid or missing voltage/configuration.
     """
@@ -1648,7 +1684,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
         host_str (str): Raw host string from CLI (`--host`).
         default_port (int): Port to use when no explicit valid port is provided.
 
-    Returns
+    Returns:
     -------
         tuple[str, int]: Parsed hostname/address and resolved TCP port.
 
@@ -1716,9 +1752,14 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
 
 def common():
     """
-    Configure logging, validate CLI arguments, establish the selected transport interface, invoke onConnected, and optionally enter the main event loop.
-    
-    Performs argument validation, initializes optional subsystems (power meter, serial logging), subscribes to message topics, opens the requested transport (BLE, TCP, or serial), calls onConnected with the established MeshInterface, and blocks until interrupted when a persistent session mode (listen, tunnel, noproto, or reply) is requested. On fatal errors the CLI exits via _cli_exit with an explanatory message.
+    Configure logging, validate CLI arguments, establish the selected transport
+    interface, invoke onConnected, and optionally enter the main event loop.
+
+    Performs argument validation, initializes optional subsystems (power meter, serial logging),
+    subscribes to message topics, opens the requested transport (BLE, TCP, or serial),
+    calls onConnected with the established MeshInterface, and blocks until interrupted when
+    a persistent session mode (listen, tunnel, noproto, or reply) is requested. On
+    fatal errors the CLI exits via _cli_exit with an explanatory message.
     """
     logfile = None
     args = mt_config.args
@@ -1939,9 +1980,11 @@ def common():
 def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """
     Register connection-related command-line arguments (serial, TCP, and BLE) on the given parser.
-    
-    Adds a mutually exclusive group for serial (--port / --serial / -s), TCP (--host / --tcp / -t), and BLE (--ble / -b), and also adds the --ble-scan and --ble-auto-reconnect flags.
-    
+
+    Adds a mutually exclusive group for serial (--port / --serial / -s), TCP (--host / --tcp
+    / -t), and BLE (--ble / -b), and also adds the --ble-scan and
+    --ble-auto-reconnect flags.
+
     Returns:
         argparse.ArgumentParser: The same parser with the connection arguments added.
     """
@@ -1998,12 +2041,14 @@ def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
 def addSelectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """
     Add destination and channel selection arguments to the provided ArgumentParser.
-    
-    Adds the `--dest` option for specifying a destination node (node ID with '!' or '0x' prefix, or node number) and the `--ch-index` option for selecting a channel index (channels start at 0; 0 is the PRIMARY channel).
-    
+
+    Adds the `--dest` option for specifying a destination node (node ID with '!' or '0x'
+    prefix, or node number) and the `--ch-index` option for selecting a channel index
+    (channels start at 0; 0 is the PRIMARY channel).
+
     Parameters:
         parser (argparse.ArgumentParser): The argument parser to extend.
-    
+
     Returns:
         argparse.ArgumentParser: The same parser instance with the selection arguments added.
     """
@@ -2037,7 +2082,7 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
     ----------
         parser (argparse.ArgumentParser): The argument parser to extend.
 
-    Returns
+    Returns:
     -------
         argparse.ArgumentParser: The same parser instance with the import/export arguments added.
 
@@ -2065,11 +2110,11 @@ def addImportExportArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
 def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """
     Add configuration-related CLI arguments to the given ArgumentParser.
-    
+
     Adds options for reading and writing preference fields, beginning/committing configuration transactions,
     managing canned messages and ringtones, selecting modem preset shortcuts, setting owner/ham/messageability,
     and helpers for channel URLs.
-    
+
     Returns:
         argparse.ArgumentParser: The same parser instance with configuration arguments added.
     """
@@ -2225,7 +2270,7 @@ def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     ----------
         parser (argparse.ArgumentParser): The argument parser to extend.
 
-    Returns
+    Returns:
     -------
         argparse.ArgumentParser: The same parser instance with channel configuration options added.
 
@@ -2308,12 +2353,14 @@ def addChannelConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
 def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """
     Add command-line arguments for configuring fixed position and which position fields to send.
-    
-    Adds flags to set latitude, longitude, and altitude (enabling a fixed position), to remove the fixed position, and to specify which position fields are included when sending position updates.
-    
+
+    Adds flags to set latitude, longitude, and altitude (enabling a fixed position), to
+    remove the fixed position, and to specify which position fields are included when
+    sending position updates.
+
     Parameters:
         parser (argparse.ArgumentParser): The argument parser to extend.
-    
+
     Returns:
         argparse.ArgumentParser: The same parser instance with position-related arguments added.
     """
@@ -2360,9 +2407,10 @@ def addPositionConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentP
 def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """
     Register CLI arguments for local-only actions that query or display information from the local node.
-    
-    Adds --info (display radio configuration), --nodes (print a formatted node list), and --show-fields (comma-separated fields to display with --nodes).
-    
+
+    Adds --info (display radio configuration), --nodes (print a formatted node list), and
+    --show-fields (comma-separated fields to display with --nodes).
+
     Returns:
         argparse.ArgumentParser: The same parser instance with local-action arguments added.
     """
@@ -2402,7 +2450,7 @@ def addRemoteActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPar
         parser (argparse.ArgumentParser): The parser to extend with remote action arguments (e.g.,
             sendtext, traceroute, request-telemetry, request-position, reply).
 
-    Returns
+    Returns:
     -------
         argparse.ArgumentParser: The same parser instance with remote-action arguments added.
 
@@ -2472,7 +2520,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     ----------
         parser (argparse.ArgumentParser): The argument parser to extend.
 
-    Returns
+    Returns:
     -------
         argparse.ArgumentParser: The same parser instance with the remote-admin arguments added.
 
@@ -2576,8 +2624,10 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
 
 def initParser():
     """
-    Configure the global CLI ArgumentParser by registering all Meshtastic command groups, enable shell autocompletion if available, parse command-line arguments, and store the parser and parsed arguments on mt_config.
-    
+    Configure the global CLI ArgumentParser by registering all Meshtastic command
+    groups, enable shell autocompletion if available, parse command-line
+    arguments, and store the parser and parsed arguments on mt_config.
+
     Raises:
         RuntimeError: if mt_config.parser is not initialized before calling.
     """
@@ -2817,7 +2867,7 @@ def main():
 def tunnelMain():
     """
     Start the Meshtastic CLI in IP-tunnel mode.
-    
+
     Set tunnel mode on the parsed CLI arguments and run the shared CLI initialization and execution flow.
     """
     parser = argparse.ArgumentParser(add_help=False)

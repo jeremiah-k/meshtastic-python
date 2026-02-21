@@ -32,7 +32,7 @@ MODULE_STATE_DEFAULTS: dict[str, Any] = {
 def reset() -> None:
     """
     Reset module-level state variables to their defined default values.
-    
+
     Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to its initial pristine state.
     """
     module_globals = globals()

@@ -50,12 +50,12 @@ class NotificationManager:
         callback : Callable[[Any, Any], None]
             Function invoked when a notification arrives; typically called as (sender, data).
 
-        Returns
+        Returns:
         -------
         token : int
             Unique opaque token that identifies the tracked subscription.
 
-        Notes
+        Notes:
         -----
         Multiple subscriptions to the same characteristic are allowed; the most recently
         registered callback for a characteristic is returned by `getCallback()`, while
@@ -94,7 +94,7 @@ class NotificationManager:
     def cleanupAll(self) -> None:
         """
         Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
-        
+
         Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the subscription token counter to zero. This operation is performed while holding the manager's internal lock.
         """
         with self._lock:
@@ -136,10 +136,10 @@ class NotificationManager:
     def resubscribeAll(self, client: "BLEClient", *, timeout: float) -> None:
         """
         Resubscribe all tracked BLE notification callbacks on the given client.
-        
+
         Uses the per-characteristic latest callback to avoid duplicate resubscription attempts when
         multiple subscriptions were registered for the same characteristic.
-        
+
         Parameters:
             client (BLEClient): BLE client on which to call `start_notify` for each characteristic.
             timeout (float): Per-subscription timeout to pass to the client's `start_notify` method.
@@ -166,7 +166,7 @@ class NotificationManager:
     def __len__(self) -> int:
         """
         Report the number of active BLE notification subscriptions being tracked.
-        
+
         Returns:
             int: Number of active subscriptions currently tracked.
         """
@@ -182,12 +182,12 @@ class NotificationManager:
     def getCallback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
         """
         Retrieve the most recently registered callback for a BLE characteristic.
-        
+
         Parameters:
-        	characteristic (str): BLE characteristic identifier (e.g., UUID or handle) to look up.
-        
+                characteristic (str): BLE characteristic identifier (e.g., UUID or handle) to look up.
+
         Returns:
-        	Callable[[Any, Any], None] | None: The most recently registered callback for the characteristic, or `None` if no callback is registered.
+                Callable[[Any, Any], None] | None: The most recently registered callback for the characteristic, or `None` if no callback is registered.
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
@@ -195,10 +195,10 @@ class NotificationManager:
     def _get_callback(self, *args, **kwargs):
         """
         Retrieve the most recently registered callback for a BLE characteristic using a snake_case name for backward compatibility.
-        
+
         Parameters:
             characteristic (str): The characteristic identifier to look up.
-        
+
         Returns:
             Callable[[Any, Any], None] | None: The most recently registered callback for the characteristic, or None if no callback is registered.
         """

@@ -52,7 +52,7 @@ class _TempPort:
     def __init__(self, device: str | None = None, vid: int | None = None) -> None:
         """
         Create a temporary port stub with an optional device path and USB vendor ID.
-        
+
         Parameters:
             device (str | None): Port device path (e.g., '/dev/ttyUSB0') or None to leave unset.
             vid (int | None): USB vendor ID as an integer, or None to leave unset.
@@ -173,7 +173,7 @@ def test_catchAndIgnore(caplog):
         """
         Raise an Exception with the message "foo".
 
-        Raises
+        Raises:
         ------
             Exception: Always raised with message "foo".
 

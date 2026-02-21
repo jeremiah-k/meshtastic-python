@@ -14,7 +14,7 @@ from ..stream_interface import StreamInterface
 def test_StreamInterface():
     """
     Verify that creating a StreamInterface without protocol configuration raises an error.
-    
+
     Raises:
         StreamInterface.StreamInterfaceError: when a StreamInterface is instantiated without a protocol.
     """

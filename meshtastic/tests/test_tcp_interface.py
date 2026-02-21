@@ -36,7 +36,7 @@ def test_TCPInterface_exception():
     def throw_an_exception():
         """
         Raise a ValueError with the message "Fake exception.".
-        
+
         Raises:
             ValueError: Always raised with the message "Fake exception.".
         """

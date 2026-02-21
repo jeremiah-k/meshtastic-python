@@ -815,7 +815,7 @@ def test_waitConnected_raises_an_exception():
 def test_waitConnected_isConnected_timeout():
     """
     Verifies that _waitConnected raises a MeshInterfaceError when the connection does not complete within the specified timeout.
-    
+
     Asserts the raised error message contains "Timed out waiting for connection completion".
     """
     with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
