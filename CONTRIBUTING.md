@@ -7,6 +7,17 @@
 - [Building Meshtastic Python](https://meshtastic.org/docs/development/python/building/)
 - [Using the Meshtastic Python Library](https://meshtastic.org/docs/development/python/library/)
 
+## Python and typing baseline
+
+- Runtime baseline is Python 3.10+ (see `pyproject.toml`: `python = "^3.10,<3.15"`).
+- Use PEP 604 unions (`X | None`, `A | B`) and built-in generics
+  (`dict[K, V]`, `list[T]`, `tuple[T, ...]`) for new and edited annotations.
+- Do not churn code with typing-only mass rewrites; normalize typing style only
+  in areas already being edited.
+- If your LSP/type checker suggests replacing `|` with `Optional`/`Union`,
+  fix the tool's interpreter/version configuration first (project `venv` /
+  Poetry env), rather than rewriting annotations for Python 3.9 compatibility.
+
 ## API naming and compatibility policy
 
 Use this policy for all code changes (especially AI-assisted refactors):

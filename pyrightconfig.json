@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/pyright/schema/pyrightconfig.schema.json",
+  "pythonVersion": "3.10",
+  "venvPath": ".",
+  "venv": "venv",
+  "include": ["meshtastic", "examples", "tests"],
+  "exclude": [
+    "**/__pycache__",
+    "meshtastic/protobuf/*_pb2.py",
+    "meshtastic/protobuf/*_pb2.pyi"
+  ]
+}

@@ -63,8 +63,11 @@ protobufs/            # Protocol Buffer source definitions
 ### Type Annotations
 
 - Add type hints to all new code
-- Prefer `X | None` for nullable types in new code; use `Optional[T]` only when editing older code that already follows that style
-- Use built-in generics (`dict[K, V]`, `list[T]`, `tuple[T, ...]`) instead of `typing.Dict`/`List`/`Tuple` — these are soft-deprecated aliases since Python 3.9; consider enforcing this with a follow-up lint/mypy rule or a targeted migration
+- Project typing baseline is Python 3.10+.
+- Use PEP 604 unions (`X | None`, `A | B`) and built-in generics (`dict[K, V]`, `list[T]`, `tuple[T, ...]`) in new and edited annotations.
+- Do not convert `|` unions to `Optional`/`Union` for compatibility with Python 3.9 (that is out of scope for this project).
+- Avoid mass formatting-only annotation churn; normalize types in the area you are already changing.
+- If LSP/type-checking appears to reject PEP 604 syntax, fix the interpreter/version configuration (project `venv` / Poetry environment) before editing code.
 - Protobuf types are in `meshtastic.protobuf.*_pb2` modules
 
 ### Naming Conventions
