@@ -57,6 +57,7 @@ protobufs/            # Protocol Buffer source definitions
 - Follow PEP 8 style conventions
 - Use type hints for function parameters and return values
 - Document public functions and classes with docstrings
+- Use Google-style docstrings for new and edited docstrings (Ruff pydocstyle convention)
 - Prefer explicit imports over wildcard imports
 - Use `logging` module instead of print statements for debug output
 

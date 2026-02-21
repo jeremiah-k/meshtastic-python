@@ -18,6 +18,12 @@
   fix the tool's interpreter/version configuration first (project `venv` /
   Poetry env), rather than rewriting annotations for Python 3.9 compatibility.
 
+## Docstring style
+
+- The linted docstring convention is Google style (Ruff pydocstyle).
+- Prefer Google-style docstrings for new and edited docstrings.
+- Avoid mass docstring rewrites unrelated to the code you are changing.
+
 ## API naming and compatibility policy
 
 Use this policy for all code changes (especially AI-assisted refactors):
