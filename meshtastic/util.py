@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import subprocess
+import sys
 import threading
 import time
 import warnings
@@ -13,13 +14,7 @@ from queue import Queue
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     NoReturn,
-    Optional,
-    Set,
-    Tuple,
-    Union,
 )
 
 import packaging.version as pkg_version
@@ -39,12 +34,12 @@ from meshtastic.version import get_active_version
      0925 Lakeview Research Saleae Logic (logic analyzer)
 04b4:602a Cypress Semiconductor Corp. Hantek DSO-6022BL (oscilloscope)
 """
-blacklistVids: Set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
+blacklistVids: set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 
 """Some devices are highly likely to be meshtastic.
 0x239a RAK4631
 0x303a Heltec tracker"""
-whitelistVids: Set[int] = {0x239A, 0x303A}
+whitelistVids: set[int] = {0x239A, 0x303A}
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +240,22 @@ def fixme(message: str) -> NoReturn:
     raise FixmeError("FIXME: " + message)
 
 
+def our_exit(message: str, return_value: int = 1) -> NoReturn:
+    """
+    Exit the process after printing a message to stderr.
+
+    This is a compatibility shim for the historical CLI exit helper.
+    Canonical CLI code should use _cli_exit in meshtastic.__main__.
+    """
+    warnings.warn(
+        "our_exit is deprecated; use _cli_exit in meshtastic.__main__ instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    print(message, file=sys.stderr)
+    sys.exit(return_value)
+
+
 def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
     """
     Execute a callable and suppress any exception it raises, logging the failure.
@@ -261,7 +272,7 @@ def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
         logger.exception(f"Exception thrown in {reason}")
 
 
-def findPorts(eliminate_duplicates: bool = False) -> List[str]:
+def findPorts(eliminate_duplicates: bool = False) -> list[str]:
     """
     Return a sorted list of serial port device paths that may correspond to Meshtastic devices.
 
@@ -275,13 +286,13 @@ def findPorts(eliminate_duplicates: bool = False) -> List[str]:
 
     Returns
     -------
-        List[str]: Sorted list of device path strings.
+        list[str]: Sorted list of device path strings.
 
     """
     all_ports = serial.tools.list_ports.comports()
 
     # look for 'likely' meshtastic devices
-    ports: List = list(
+    ports: list = list(
         map(
             lambda port: port.device,
             filter(
@@ -568,13 +579,13 @@ class DeferredExecution:
                 logger.exception("Unexpected error in deferred execution")
 
 
-def remove_keys_from_dict(keys: Union[Tuple, List, Set], adict: Dict) -> Dict:
+def remove_keys_from_dict(keys: tuple | list | set, adict: dict) -> dict:
     """
     Remove specified keys from a dictionary and its nested dictionaries.
 
     Parameters
     ----------
-        keys (Union[Tuple, List, Set]): Iterable of keys to remove from the dictionary and any nested dict values.
+        keys (Tuple | List, Set): Iterable of keys to remove from the dictionary and any nested dict values.
         adict (Dict): Dictionary to process; entries matching any key in `keys` will be deleted. This dictionary is modified in place.
 
     Returns
@@ -608,7 +619,7 @@ def channel_hash(data: bytes) -> int:
     return result
 
 
-def generate_channel_hash(name: Union[str, bytes], key: Union[str, bytes]) -> int:
+def generate_channel_hash(name: str | bytes, key: str | bytes) -> int:
     """
     Compute a channel number by hashing a channel name and a preshared key.
 
@@ -664,7 +675,7 @@ def ipstr(barray: bytes) -> str:
     return ".".join(f"{x}" for x in barray)
 
 
-def readnet_u16(p: Union[bytes, bytearray, memoryview], offset: int) -> int:
+def readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
     """
     Read an unsigned 16-bit big-endian integer from a buffer at a byte offset.
 
@@ -731,7 +742,7 @@ def camel_to_snake(a_string: str) -> str:
     )
 
 
-def detect_supported_devices() -> Set:
+def detect_supported_devices() -> set:
     """
     Detect supported devices present on the host by vendor ID.
 
@@ -803,7 +814,7 @@ def detect_supported_devices() -> Set:
     return possible_devices
 
 
-def detect_windows_needs_driver(sd, print_reason=False) -> bool:
+def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
     """
     Determine whether a Windows driver must be installed for the given supported device.
 
@@ -846,7 +857,7 @@ def detect_windows_needs_driver(sd, print_reason=False) -> bool:
     return need_to_install_driver
 
 
-def eliminate_duplicate_port(ports: List) -> List:
+def eliminate_duplicate_port(ports: list) -> list:
     """
     Reduce paired serial port paths to a single representative when they likely refer to the same physical device.
 
@@ -857,11 +868,11 @@ def eliminate_duplicate_port(ports: List) -> List:
 
     Parameters
     ----------
-        ports (List[str]): A list of serial port device path strings.
+        ports (list[str]): A list of serial port device path strings.
 
     Returns
     -------
-        List[str]: Either the original list of ports or a list containing one representative port when a duplicate pair is recognized.
+        list[str]: Either the original list of ports or a list containing one representative port when a duplicate pair is recognized.
 
     """
     new_ports = []
@@ -909,13 +920,13 @@ def is_windows11() -> bool:
     return is_win11
 
 
-def get_unique_vendor_ids() -> Set[str]:
+def get_unique_vendor_ids() -> set[str]:
     """
     Collect unique USB vendor ID strings from the module's supported_devices.
 
     Returns
     -------
-        Set[str]: A set of vendor ID strings in hex form (for example, "0x239A").
+        set[str]: A set of vendor ID strings in hex form (for example, "0x239A").
 
     """
     vids = set()
@@ -925,7 +936,7 @@ def get_unique_vendor_ids() -> Set[str]:
     return vids
 
 
-def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
+def get_devices_with_vendor_id(vid: str) -> set:  # set[SupportedDevice]
     """
     Return the set of supported devices that match the given USB vendor ID.
 
@@ -935,7 +946,7 @@ def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
 
     Returns
     -------
-        Set[SupportedDevice]: A set of SupportedDevice entries whose usb_vendor_id_in_hex equals `vid`.
+        set[SupportedDevice]: A set of SupportedDevice entries whose usb_vendor_id_in_hex equals `vid`.
 
     """
     sd = set()
@@ -945,7 +956,9 @@ def get_devices_with_vendor_id(vid: str) -> Set:  # Set[SupportedDevice]
     return sd
 
 
-def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[str]:
+def active_ports_on_supported_devices(
+    sds: Any, eliminate_duplicates: bool = False
+) -> set[str]:
     """
     Return the set of active serial port paths for the provided supported devices, resolving ports according to the current operating system.
 
@@ -959,11 +972,11 @@ def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[st
 
     Returns
     -------
-        Set[str]: A set of active port path strings (e.g., "/dev/ttyUSB0" or "COM3").
+        set[str]: A set of active port path strings (e.g., "/dev/ttyUSB0" or "COM3").
 
     """
-    ports: Set = set()
-    baseports: Set = set()
+    ports: set = set()
+    baseports: set = set()
     system: str = platform.system()
 
     # figure out what possible base ports there are
@@ -1022,15 +1035,15 @@ def active_ports_on_supported_devices(sds, eliminate_duplicates=False) -> Set[st
                 for com_port in com_ports:
                     ports.add(com_port)
     if eliminate_duplicates:
-        portlist: List = eliminate_duplicate_port(list(ports))
+        portlist: list = eliminate_duplicate_port(list(ports))
         portlist.sort()
         ports = set(portlist)
     return ports
 
 
 def detect_windows_port(
-    sd: Optional[SupportedDevice],
-) -> Set[str]:
+    sd: SupportedDevice | None,
+) -> set[str]:
     """
     Detect Windows COM ports associated with a supported USB device.
 
@@ -1039,14 +1052,14 @@ def detect_windows_port(
 
     Parameters
     ----------
-        sd (Optional[SupportedDevice]): SupportedDevice whose `usb_vendor_id_in_hex`
+        sd (SupportedDevice | None): SupportedDevice whose `usb_vendor_id_in_hex`
             will be used to find matching PnP devices. If `None` or if the system
             is not Windows or the vendor id is missing, the function returns an
             empty set.
 
     Returns
     -------
-        Set[str]: A set of COM port names (e.g., "COM3", "COM4") discovered for the
+        set[str]: A set of COM port names (e.g., "COM3", "COM4") discovered for the
         device; empty if none found.
 
     """
@@ -1076,7 +1089,7 @@ def detect_windows_port(
     return ports
 
 
-def check_if_newer_version() -> Optional[str]:
+def check_if_newer_version() -> str | None:
     """
     Check PyPI for a newer Meshtastic release than the active installation.
 
@@ -1086,10 +1099,10 @@ def check_if_newer_version() -> Optional[str]:
 
     Returns
     -------
-        pypi_version (Optional[str]): The newer PyPI version string if available, `None` otherwise.
+        pypi_version (str | None): The newer PyPI version string if available, `None` otherwise.
 
     """
-    pypi_version: Optional[str] = None
+    pypi_version: str | None = None
     try:
         url: str = "https://pypi.org/pypi/meshtastic/json"
         data = requests.get(url, timeout=5).json()
@@ -1165,7 +1178,7 @@ def messageToJson(message: Message, multiline: bool = False) -> str:
     return message_to_json(message, multiline=multiline)
 
 
-def to_node_num(node_id: Union[int, str]) -> int:
+def to_node_num(node_id: int | str) -> int:
     """
     Convert a node identifier in various textual forms to its integer node number.
 
@@ -1197,7 +1210,7 @@ def to_node_num(node_id: Union[int, str]) -> int:
         return int(s, 16)
 
 
-def flags_to_list(flag_type: Any, flags: int) -> List[str]:
+def flags_to_list(flag_type: Any, flags: int) -> list[str]:
     """
     Convert a protobuf enum bitfield into a list of active flag names.
 
@@ -1208,7 +1221,7 @@ def flags_to_list(flag_type: Any, flags: int) -> List[str]:
 
     Returns
     -------
-        List[str]: Ordered list of enum member names present in `flags`. If any bits remain that do not match known members,
+        list[str]: Ordered list of enum member names present in `flags`. If any bits remain that do not match known members,
         a single string of the form `UNKNOWN_ADDITIONAL_FLAGS(<remaining>)` is appended.
 
     """

@@ -372,7 +372,7 @@ class DummyClient:
         # The bleak_client should be a separate object to correctly test identity checks
         self.bleak_client = SimpleNamespace(address=self.address)
 
-    def has_characteristic(self, _specifier) -> bool:
+    def hasCharacteristic(self, _specifier) -> bool:
         """
         Report whether this mock client exposes a BLE characteristic matching the given specifier.
 
@@ -387,7 +387,11 @@ class DummyClient:
         """
         return False
 
-    def start_notify(self, *_args, **_kwargs):
+    def has_characteristic(self, specifier) -> bool:
+        """Backward-compatible snake_case alias for hasCharacteristic."""
+        return self.hasCharacteristic(specifier)
+
+    def startNotify(self, *_args, **_kwargs):
         """
         Simulate subscribing to a BLE characteristic notification for tests.
 
@@ -395,7 +399,11 @@ class DummyClient:
         """
         return None
 
-    def stop_notify(self, *args, **_kwargs):
+    def start_notify(self, *args, **kwargs):
+        """Backward-compatible snake_case alias for startNotify."""
+        return self.startNotify(*args, **kwargs)
+
+    def stopNotify(self, *args, **_kwargs):
         """
         Simulate unsubscribing from BLE notifications during tests.
 
@@ -405,7 +413,11 @@ class DummyClient:
             self.stop_notify_calls.append(args[0])
         return None
 
-    def read_gatt_char(self, *_args, **_kwargs) -> bytes:
+    def stop_notify(self, *args, **kwargs):
+        """Backward-compatible snake_case alias for stopNotify."""
+        return self.stopNotify(*args, **kwargs)
+
+    def readGattChar(self, *_args, **_kwargs) -> bytes:
         """
         Provide a fixed empty-bytes response for any GATT characteristic read.
 
@@ -416,7 +428,11 @@ class DummyClient:
         """
         return b""
 
-    def is_connected(self) -> bool:
+    def read_gatt_char(self, *args, **kwargs) -> bytes:
+        """Backward-compatible snake_case alias for readGattChar."""
+        return self.readGattChar(*args, **kwargs)
+
+    def isConnected(self) -> bool:
         """
         Indicate whether the mock BLE client is currently connected.
 
@@ -426,6 +442,10 @@ class DummyClient:
 
         """
         return True
+
+    def is_connected(self) -> bool:
+        """Backward-compatible snake_case alias for isConnected."""
+        return self.isConnected()
 
     def disconnect(self, *_args, **_kwargs):
         """
@@ -449,6 +469,14 @@ class DummyClient:
         Increments the internal `close_calls` counter so tests can assert how many times `close()` was invoked.
         """
         self.close_calls += 1
+
+    def getServices(self):
+        """Stub for getServices."""
+        return self.services
+
+    def get_services(self):
+        """Backward-compatible snake_case alias for getServices."""
+        return self.getServices()
 
 
 @pytest.fixture

@@ -4,22 +4,22 @@ import asyncio
 import importlib
 import time
 from types import ModuleType
-from typing import Awaitable, Callable, Optional, TypeVar
+from typing import Awaitable, Callable, TypeVar
 
 T = TypeVar("T")
 
 
-def sanitize_address(address: Optional[str]) -> Optional[str]:
+def sanitize_address(address: str | None) -> str | None:
     """
     Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 
     Parameters
     ----------
-        address (Optional[str]): Address or identifier to normalize.
+        address (str | None): Address or identifier to normalize.
 
     Returns
     -------
-        Optional[str]: Normalized address string with hyphens, underscores, colons, and spaces removed and lowercased, or None if `address` is None or empty after stripping.
+        str | None: Normalized address string with hyphens, underscores, colons, and spaces removed and lowercased, or None if `address` is None or empty after stripping.
 
     """
     if address is None:
@@ -51,9 +51,9 @@ def _sleep(delay: float) -> None:
 
 async def with_timeout(
     awaitable: Awaitable[T],
-    timeout: Optional[float],
+    timeout: float | None,
     label: str,
-    timeout_error_factory: Optional[Callable[[str, float], Exception]] = None,
+    timeout_error_factory: Callable[[str, float], Exception] | None = None,
 ) -> T:
     """
     Await an awaitable with an optional timeout.
@@ -61,9 +61,9 @@ async def with_timeout(
     Parameters
     ----------
         awaitable (Awaitable[T]): Awaitable to run.
-        timeout (Optional[float]): Maximum seconds to wait; if None, wait indefinitely.
+        timeout (float | None): Maximum seconds to wait; if None, wait indefinitely.
         label (str): Short operation label used by timeout_error_factory.
-        timeout_error_factory (Optional[Callable[[str, float], Exception]]): Optional factory
+        timeout_error_factory (Callable[[str, float], Exception] | None): Optional factory
             used to map timeout to a specific exception type.
 
     Returns
@@ -85,7 +85,7 @@ async def with_timeout(
         raise timeout_error_factory(label, timeout) from exc
 
 
-def resolve_ble_module() -> Optional[ModuleType]:
+def resolve_ble_module() -> ModuleType | None:
     """
     Locate the first available BLE module for the package.
 

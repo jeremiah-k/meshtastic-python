@@ -3,7 +3,7 @@
 import logging
 import sys
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable
 
 from bleak.exc import BleakDBusError
 
@@ -51,9 +51,9 @@ class ConnectionValidator:
         self.state_lock = state_lock
         self.BLEError = error_class
 
-    def validate_connection_request(self) -> None:
+    def _validate_connection_request(self) -> None:
         """
-        Validate that a new BLE connection may be started.
+        Internal helper: Validate that a new BLE connection may be started.
 
         Raises
         ------
@@ -62,17 +62,17 @@ class ConnectionValidator:
                 the error message will be "Already connected or connection in progress".
 
         """
-        if not self.state_manager.can_connect:
-            if self.state_manager.is_closing:
+        if not self.state_manager._can_connect:
+            if self.state_manager._is_closing:
                 raise self.BLEError("Cannot connect while interface is closing")
             raise self.BLEError("Already connected or connection in progress")
 
-    def check_existing_client(
+    def _check_existing_client(
         self,
-        client: Optional["BLEClient"],
-        normalized_request: Optional[str],
-        last_connection_request: Optional[str],
-        address: Optional[str],
+        client: BLEClient | None,
+        normalized_request: str | None,
+        last_connection_request: str | None,
+        address: str | None,
     ) -> bool:
         """
         Determine whether a connected BLE client matches the requested or known device address.
@@ -81,17 +81,17 @@ class ConnectionValidator:
 
         Parameters
         ----------
-            client (Optional[BLEClient]): The BLE client to verify.
-            normalized_request (Optional[str]): Sanitized identifier for the desired target; if `None`, any connected client is treated as acceptable for matching.
-            last_connection_request (Optional[str]): The last sanitized connection request to include among known targets.
-            address (Optional[str]): The originally requested address; its sanitized form is compared against the client's address.
+            client (BLEClient | None): The BLE client to verify.
+            normalized_request (str | None): Sanitized identifier for the desired target; if `None`, any connected client is treated as acceptable for matching.
+            last_connection_request (str | None): The last sanitized connection request to include among known targets.
+            address (str | None): The originally requested address; its sanitized form is compared against the client's address.
 
         Returns
         -------
             True if the client is connected and its address equals `normalized_request` or one of the known targets, False otherwise.
 
         """
-        if not client or not client.is_connected():
+        if not client or not client.isConnected():
             return False
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
@@ -131,11 +131,11 @@ class ClientManager:
         self.thread_coordinator = thread_coordinator
         self.error_handler = error_handler
 
-    def create_client(
+    def _create_client(
         self, device_address: str, disconnect_callback: "Callable"
     ) -> "BLEClient":
         """
-        Create a BLEClient bound to the given device address and register a disconnect callback.
+        Internal helper: Create a BLEClient bound to the given device address and register a disconnect callback.
 
         Parameters
         ----------
@@ -149,9 +149,7 @@ class ClientManager:
         """
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
-    def connect_client(
-        self, client: "BLEClient", timeout: Optional[float] = None
-    ) -> None:
+    def _connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
         """
         Connect the provided BLEClient and ensure its GATT services are populated.
 
@@ -177,22 +175,22 @@ class ClientManager:
             logger.debug(
                 "BLE services not available immediately after connect; getting services"
             )
-            client.get_services()
+            client.getServices()
 
-    def update_client_reference(
+    def _update_client_reference(
         self,
-        new_client: "BLEClient",
-        old_client: Optional["BLEClient"],
+        new_client: BLEClient,
+        old_client: BLEClient | None,
     ) -> None:
         """
-        Schedule asynchronous close of a previous BLE client when replacing it.
+        Internal helper: Schedule asynchronous close of a previous BLE client when replacing it.
 
-        If `old_client` is provided and is a different object than `new_client`, schedules `safe_close_client(old_client)` to run in a background daemon thread so the caller is not blocked.
+        If `old_client` is provided and is a different object than `new_client`, schedules `_safe_close_client(old_client)` to run in a background daemon thread so the caller is not blocked.
 
         Parameters
         ----------
             new_client (BLEClient): The client that will become active.
-            old_client (Optional[BLEClient]): The previous client to close if different from `new_client`.
+            old_client (BLEClient | None): The previous client to close if different from `new_client`.
 
         """
         # Compute the decision under lock, but start the thread after releasing
@@ -203,24 +201,22 @@ class ClientManager:
                 should_close = True
 
         if should_close:
-            close_thread = self.thread_coordinator.create_thread(
-                target=self.safe_close_client,
+            close_thread = self.thread_coordinator._create_thread(
+                target=self._safe_close_client,
                 args=(old_client,),
                 name="BLEClientClose",
                 daemon=True,
             )
-            self.thread_coordinator.start_thread(close_thread)
+            self.thread_coordinator._start_thread(close_thread)
 
-    def safe_close_client(
-        self, client: "BLEClient", event: Optional[Event] = None
-    ) -> None:
+    def _safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
         """
         Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signaling when cleanup is complete.
 
         Parameters
         ----------
             client (BLEClient): The BLE client to disconnect and close.
-            event (Optional[Event]): If provided, it will be set after cleanup completes to signal completion.
+            event (Event | None): If provided, it will be set after cleanup completes to signal completion.
 
         Notes
         -----
@@ -234,7 +230,7 @@ class ClientManager:
             and not getattr(client, "_closed", False)
             and getattr(client, "bleak_client", None)
         ):
-            self.error_handler.safe_cleanup(
+            self.error_handler._safe_cleanup(
                 lambda: client.disconnect(await_timeout=DISCONNECT_TIMEOUT_SECONDS),
                 "client disconnect",
             )
@@ -242,7 +238,7 @@ class ClientManager:
             logger.debug(
                 "Skipping BLE client disconnect during interpreter finalization."
             )
-        self.error_handler.safe_cleanup(client.close, "client close")
+        self.error_handler._safe_cleanup(client.close, "client close")
         if event:
             event.set()
 
@@ -284,10 +280,10 @@ class ConnectionOrchestrator:
 
     def _finalize_connection(
         self,
-        client: "BLEClient",
+        client: BLEClient,
         device_address: str,
-        register_notifications_func: "Callable",
-        on_connected_func: "Callable",
+        register_notifications_func: Callable,
+        on_connected_func: Callable,
     ) -> None:
         """
         Finalize a successful BLE connection by registering notifications, verifying the client remains connected, transitioning state to CONNECTED, and invoking post-connection callbacks.
@@ -308,7 +304,7 @@ class ConnectionOrchestrator:
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:
-            current_state = self.state_manager.state
+            current_state = self.state_manager._state_name
             if current_state != ConnectionState.CONNECTING:
                 logger.debug(
                     "Connection finalization aborted: state changed from CONNECTING to %s during connect",
@@ -325,7 +321,7 @@ class ConnectionOrchestrator:
 
         # Re-check state after registration under lock for atomic state transition
         with self.state_lock:
-            if self.state_manager.state != ConnectionState.CONNECTING:
+            if self.state_manager._state_name != ConnectionState.CONNECTING:
                 logger.debug(
                     "Connection finalization aborted: state changed during notification registration"
                 )
@@ -336,7 +332,7 @@ class ConnectionOrchestrator:
             # Post-registration check: verify client is still connected.
             # This catches disconnects that occurred during notification registration
             # which may have been ignored by _handle_disconnect due to CONNECTING state.
-            if not client.is_connected():
+            if not client.isConnected():
                 logger.debug(
                     "Connection finalization aborted: client disconnected during notification registration"
                 )
@@ -344,11 +340,11 @@ class ConnectionOrchestrator:
                     "Connection invalidated: client disconnected during finalization"
                 )
 
-            self.state_manager.transition_to(ConnectionState.CONNECTED)
+            self.state_manager._transition_to(ConnectionState.CONNECTED)
 
         on_connected_func()
         if getattr(self.interface, "_ever_connected", False):
-            self.thread_coordinator.set_event("reconnected_event")
+            self.thread_coordinator._set_event("reconnected_event")
         normalized_device_address = sanitize_address(device_address)
         logger.info(
             "Connection successful to %s",
@@ -362,37 +358,37 @@ class ConnectionOrchestrator:
         Transitions to ERROR and then DISCONNECTED, logging if either transition
         is rejected and forcing DISCONNECTED as a final fallback.
         """
-        if not self.state_manager.transition_to(ConnectionState.ERROR):
+        if not self.state_manager._transition_to(ConnectionState.ERROR):
             logger.warning(
                 "Failed state transition to %s during %s (current=%s)",
                 ConnectionState.ERROR.value,
                 error_context,
-                self.state_manager.state.value,
+                self.state_manager._state_name.value,
             )
-        if not self.state_manager.transition_to(ConnectionState.DISCONNECTED):
+        if not self.state_manager._transition_to(ConnectionState.DISCONNECTED):
             logger.warning(
                 "Failed state transition to %s during %s (current=%s); forcing reset",
                 ConnectionState.DISCONNECTED.value,
                 error_context,
-                self.state_manager.state.value,
+                self.state_manager._state_name.value,
             )
-            self.state_manager.reset_to_disconnected()
+            self.state_manager._reset_to_disconnected()
 
-    def establish_connection(
+    def _establish_connection(
         self,
-        address: Optional[str],
-        current_address: Optional[str],
-        register_notifications_func: "Callable",
-        on_connected_func: "Callable",
-        on_disconnect_func: "Callable",
-    ) -> "BLEClient":
+        address: str | None,
+        current_address: str | None,
+        register_notifications_func: Callable,
+        on_connected_func: Callable,
+        on_disconnect_func: Callable,
+    ) -> BLEClient:
         """
         Establishes a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalizes notification registration and lifecycle callbacks.
 
         Parameters
         ----------
-            address (Optional[str]): Explicit device address to connect to; when None discovery mode is used.
-            current_address (Optional[str]): Fallback address used when `address` is None.
+            address (str | None): Explicit device address to connect to; when None discovery mode is used.
+            current_address (str | None): Fallback address used when `address` is None.
             register_notifications_func (Callable): Function called with the connected `BLEClient` to register notification handlers.
             on_connected_func (Callable): Callback invoked after the connection has been finalized and state updated to CONNECTED.
             on_disconnect_func (Callable): Callback passed to the `BLEClient` to be invoked when the client disconnects.
@@ -407,7 +403,7 @@ class ConnectionOrchestrator:
             BleakDBusError: If a DBus-level BLE error occurs during connection.
 
         """
-        self.validator.validate_connection_request()
+        self.validator._validate_connection_request()
 
         target_address = address if address is not None else current_address
         # Allow None target_address for discovery mode - find_device() handles this
@@ -425,23 +421,23 @@ class ConnectionOrchestrator:
             logger.info("Attempting discovery-mode connection (no address specified)")
 
         with self.state_lock:
-            if not self.state_manager.transition_to(ConnectionState.CONNECTING):
+            if not self.state_manager._transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(
                     "Already connected or connection in progress"
                 )
-        client: Optional["BLEClient"] = None
+        client: BLEClient | None = None
         try:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
             if target_address:
-                client = self.client_manager.create_client(
+                client = self.client_manager._create_client(
                     target_address, on_disconnect_func
                 )
                 try:
                     direct_timeout = min(
                         DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
                     )
-                    self.client_manager.connect_client(client, timeout=direct_timeout)
+                    self.client_manager._connect_client(client, timeout=direct_timeout)
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise
                 except Exception as direct_err:
@@ -452,7 +448,7 @@ class ConnectionOrchestrator:
                         exc_info=True,
                     )
                     if client:
-                        self.client_manager.safe_close_client(client)
+                        self.client_manager._safe_close_client(client)
                     client = None
                 else:
                     self._finalize_connection(
@@ -463,30 +459,30 @@ class ConnectionOrchestrator:
                     )
                     return client
 
-            device = self.interface.find_device(address or current_address)
-            client = self.client_manager.create_client(
+            device = self.interface.findDevice(address or current_address)
+            client = self.client_manager._create_client(
                 device.address, on_disconnect_func
             )
-            self.client_manager.connect_client(client)
+            self.client_manager._connect_client(client)
             self._finalize_connection(
                 client, device.address, register_notifications_func, on_connected_func
             )
         except BleakDBusError:
             if client:
-                self.client_manager.safe_close_client(client)
+                self.client_manager._safe_close_client(client)
             self._transition_failure_to_disconnected("BleakDBusError during connect")
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             # Clean up client before re-raising to avoid resource leak
             if client:
-                self.client_manager.safe_close_client(client)
+                self.client_manager._safe_close_client(client)
             raise
         except Exception:
             logger.warning(
                 "Failed to connect, closing BLEClient thread.", exc_info=True
             )
             if client:
-                self.client_manager.safe_close_client(client)
+                self.client_manager._safe_close_client(client)
             self._transition_failure_to_disconnected("unexpected connect failure")
             raise
         else:

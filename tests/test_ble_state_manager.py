@@ -38,10 +38,10 @@ class TestBLEStateManager:
     def test_initial_state(self):
         """Test that state manager starts in DISCONNECTED state."""
         manager = BLEStateManager()
-        assert manager.state == ConnectionState.DISCONNECTED
-        assert not manager.is_connected
-        assert not manager.is_closing
-        assert manager.can_connect
+        assert manager._state_name == ConnectionState.DISCONNECTED
+        assert not manager._is_connected
+        assert not manager._is_closing
+        assert manager._can_connect
 
     def test_state_properties(self):
         """Test state-based property methods."""
@@ -49,56 +49,56 @@ class TestBLEStateManager:
 
         # Test DISCONNECTED state
         manager._state = ConnectionState.DISCONNECTED
-        assert not manager.is_connected
-        assert not manager.is_closing
-        assert manager.can_connect
+        assert not manager._is_connected
+        assert not manager._is_closing
+        assert manager._can_connect
 
         # Test CONNECTED state
         manager._state = ConnectionState.CONNECTED
-        assert manager.is_connected
-        assert not manager.is_closing
-        assert not manager.can_connect
+        assert manager._is_connected
+        assert not manager._is_closing
+        assert not manager._can_connect
 
         # Test DISCONNECTING state
         manager._state = ConnectionState.DISCONNECTING
-        assert not manager.is_connected
-        assert manager.is_closing
-        assert not manager.can_connect
+        assert not manager._is_connected
+        assert manager._is_closing
+        assert not manager._can_connect
 
         # Test ERROR state
         manager._state = ConnectionState.ERROR
-        assert not manager.is_connected
-        assert not manager.is_closing
+        assert not manager._is_connected
+        assert not manager._is_closing
         # ERROR state allows reconnection attempts
-        assert manager.can_connect
+        assert manager._can_connect
 
     def test_valid_transitions(self):
         """Test all valid state transitions."""
         manager = BLEStateManager()
 
         # DISCONNECTED → CONNECTING
-        assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.state == ConnectionState.CONNECTING
+        assert manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._state_name == ConnectionState.CONNECTING
 
         # CONNECTING → CONNECTED
-        assert manager.transition_to(ConnectionState.CONNECTED)
-        assert manager.state == ConnectionState.CONNECTED
+        assert manager._transition_to(ConnectionState.CONNECTED)
+        assert manager._state_name == ConnectionState.CONNECTED
 
         # CONNECTED → DISCONNECTING
-        assert manager.transition_to(ConnectionState.DISCONNECTING)
-        assert manager.state == ConnectionState.DISCONNECTING
+        assert manager._transition_to(ConnectionState.DISCONNECTING)
+        assert manager._state_name == ConnectionState.DISCONNECTING
 
         # DISCONNECTING → DISCONNECTED
-        assert manager.transition_to(ConnectionState.DISCONNECTED)
-        assert manager.state == ConnectionState.DISCONNECTED
+        assert manager._transition_to(ConnectionState.DISCONNECTED)
+        assert manager._state_name == ConnectionState.DISCONNECTED
 
         # DISCONNECTED → ERROR
-        assert manager.transition_to(ConnectionState.ERROR)
-        assert manager.state == ConnectionState.ERROR
+        assert manager._transition_to(ConnectionState.ERROR)
+        assert manager._state_name == ConnectionState.ERROR
 
         # ERROR → CONNECTING
-        assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.state == ConnectionState.CONNECTING
+        assert manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._state_name == ConnectionState.CONNECTING
 
     def test_invalid_transitions(self):
         """
@@ -112,20 +112,20 @@ class TestBLEStateManager:
         manager = BLEStateManager()
 
         # No-op transition (same state) is now valid - returns True
-        assert manager.transition_to(ConnectionState.DISCONNECTED)
-        assert manager.state == ConnectionState.DISCONNECTED
+        assert manager._transition_to(ConnectionState.DISCONNECTED)
+        assert manager._state_name == ConnectionState.DISCONNECTED
 
         # Try invalid transition from DISCONNECTED (not in valid transitions)
-        assert not manager.transition_to(ConnectionState.CONNECTED)
-        assert manager.state == ConnectionState.DISCONNECTED
+        assert not manager._transition_to(ConnectionState.CONNECTED)
+        assert manager._state_name == ConnectionState.DISCONNECTED
 
         # Move to CONNECTED and try invalid transition
-        assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.transition_to(ConnectionState.CONNECTED)
-        assert not manager.transition_to(
+        assert manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._transition_to(ConnectionState.CONNECTED)
+        assert not manager._transition_to(
             ConnectionState.CONNECTING
         )  # Can't go back to CONNECTING from CONNECTED
-        assert manager.state == ConnectionState.CONNECTED
+        assert manager._state_name == ConnectionState.CONNECTED
 
     @given(
         st.lists(
@@ -151,9 +151,9 @@ class TestBLEStateManager:
         """
         manager = BLEStateManager()
         for target_state in sequence:
-            previous_state = manager.state
-            expected_success = manager.transition_to(target_state)
-            current_state = manager.state
+            previous_state = manager._state_name
+            expected_success = manager._transition_to(target_state)
+            current_state = manager._state_name
             assert expected_success == (current_state == target_state)
             if not expected_success:
                 assert current_state == previous_state
@@ -180,10 +180,10 @@ class TestBLEStateManager:
                 for i in range(100):
                     # Try to transition states concurrently
                     if i % 2 == 0:
-                        success = manager.transition_to(ConnectionState.CONNECTING)
+                        success = manager._transition_to(ConnectionState.CONNECTING)
                     else:
-                        success = manager.transition_to(ConnectionState.DISCONNECTED)
-                    results.append((worker_id, i, success, manager.state.value))
+                        success = manager._transition_to(ConnectionState.DISCONNECTED)
+                    results.append((worker_id, i, success, manager._state_name.value))
                     time.sleep(0.001)  # Small delay to increase contention
             except Exception as e:  # noqa: BLE001 - errors collected for assertion
                 errors.append((worker_id, str(e)))
@@ -203,7 +203,7 @@ class TestBLEStateManager:
         assert len(errors) == 0, f"Errors occurred: {errors}"
 
         # Verify final state is valid
-        assert manager.state in ConnectionState
+        assert manager._state_name in ConnectionState
 
         # Verify all transitions were either successful or failed gracefully
         assert len(results) == 500  # 5 workers * 100 iterations each
@@ -213,8 +213,8 @@ class TestBLEStateManager:
         manager = BLEStateManager()
 
         with caplog.at_level("DEBUG"):
-            manager.transition_to(ConnectionState.CONNECTING)
-            manager.transition_to(ConnectionState.CONNECTED)
+            manager._transition_to(ConnectionState.CONNECTING)
+            manager._transition_to(ConnectionState.CONNECTED)
 
         # Check that transitions were logged
         assert "State transition: disconnected → connecting" in caplog.text
@@ -229,7 +229,7 @@ class TestBLEStateManager:
         manager = BLEStateManager()
 
         with caplog.at_level("WARNING"):
-            manager.transition_to(
+            manager._transition_to(
                 ConnectionState.CONNECTED
             )  # Invalid from DISCONNECTED
 
@@ -252,7 +252,7 @@ class TestBLEStateManager:
             """
             with manager._state_lock:
                 with manager._state_lock:
-                    return manager.state
+                    return manager._state_name
 
         # Should not deadlock
         assert nested_operation() == ConnectionState.DISCONNECTED
@@ -276,23 +276,23 @@ class TestBLEStateManager:
         """
         Verify BLEStateManager maintains consistent state flags after an ERROR transition and can recover to DISCONNECTED.
 
-        After simulating an error during connection, asserts that the manager's state is ERROR, `is_connected` is False, `is_closing` is False, and `can_connect` is True. Then transitions to DISCONNECTED and asserts the manager returns to DISCONNECTED with `can_connect` True.
+        After simulating an error during connection, asserts that the manager's state is ERROR, `isConnected` is False, `is_closing` is False, and `can_connect` is True. Then transitions to DISCONNECTED and asserts the manager returns to DISCONNECTED with `can_connect` True.
         """
         manager = BLEStateManager()
 
         # Simulate error during connection
-        manager.transition_to(ConnectionState.CONNECTING)
-        manager.transition_to(ConnectionState.ERROR)
+        manager._transition_to(ConnectionState.CONNECTING)
+        manager._transition_to(ConnectionState.ERROR)
 
-        assert manager.state == ConnectionState.ERROR
-        assert not manager.is_connected
-        assert not manager.is_closing
-        assert manager.can_connect  # ERROR state allows reconnection
+        assert manager._state_name == ConnectionState.ERROR
+        assert not manager._is_connected
+        assert not manager._is_closing
+        assert manager._can_connect  # ERROR state allows reconnection
 
         # Should be able to recover from error
-        manager.transition_to(ConnectionState.DISCONNECTED)
-        assert manager.state == ConnectionState.DISCONNECTED
-        assert manager.can_connect
+        manager._transition_to(ConnectionState.DISCONNECTED)
+        assert manager._state_name == ConnectionState.DISCONNECTED
+        assert manager._can_connect
 
 
 class TestBLEInterfaceStateIntegration:
@@ -302,7 +302,7 @@ class TestBLEInterfaceStateIntegration:
         """
         Verify BLEStateManager can be instantiated standalone and exhibits expected initial properties and basic transition behavior.
 
-        Checks that a newly created manager starts in DISCONNECTED with can_connect True, is_connected False, is_closing False,
+        Checks that a newly created manager starts in DISCONNECTED with can_connect True, isConnected False, is_closing False,
         and no client, and that transitioning to CONNECTING succeeds and updates the state and can_connect flag.
         """
 
@@ -310,15 +310,15 @@ class TestBLEInterfaceStateIntegration:
         manager = BLEStateManager()
 
         # Check initial state
-        assert manager.state == ConnectionState.DISCONNECTED
-        assert manager.can_connect
-        assert not manager.is_connected
-        assert not manager.is_closing
+        assert manager._state_name == ConnectionState.DISCONNECTED
+        assert manager._can_connect
+        assert not manager._is_connected
+        assert not manager._is_closing
 
         # Test state transitions work
-        assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.state == ConnectionState.CONNECTING
-        assert not manager.can_connect
+        assert manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._state_name == ConnectionState.CONNECTING
+        assert not manager._can_connect
 
     def test_state_based_property_usage(self):
         """Test that state-based properties work as expected for Phase 2 migration."""
@@ -326,36 +326,36 @@ class TestBLEInterfaceStateIntegration:
         manager = BLEStateManager()
 
         # Test initial state properties
-        assert manager.state == ConnectionState.DISCONNECTED
-        assert not manager.is_connected
-        assert not manager.is_closing
-        assert manager.can_connect
+        assert manager._state_name == ConnectionState.DISCONNECTED
+        assert not manager._is_connected
+        assert not manager._is_closing
+        assert manager._can_connect
 
         # Test transitioning through states
-        manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.state == ConnectionState.CONNECTING
-        assert not manager.is_connected
-        assert not manager.is_closing
-        assert not manager.can_connect
+        manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._state_name == ConnectionState.CONNECTING
+        assert not manager._is_connected
+        assert not manager._is_closing
+        assert not manager._can_connect
 
-        manager.transition_to(ConnectionState.CONNECTED)
-        assert manager.state == ConnectionState.CONNECTED
-        assert manager.is_connected
-        assert not manager.is_closing
-        assert not manager.can_connect
+        manager._transition_to(ConnectionState.CONNECTED)
+        assert manager._state_name == ConnectionState.CONNECTED
+        assert manager._is_connected
+        assert not manager._is_closing
+        assert not manager._can_connect
 
-        manager.transition_to(ConnectionState.DISCONNECTING)
-        assert manager.state == ConnectionState.DISCONNECTING
-        assert not manager.is_connected
-        assert manager.is_closing
-        assert not manager.can_connect
+        manager._transition_to(ConnectionState.DISCONNECTING)
+        assert manager._state_name == ConnectionState.DISCONNECTING
+        assert not manager._is_connected
+        assert manager._is_closing
+        assert not manager._can_connect
 
         # Test ERROR state allows reconnection attempts
-        manager.transition_to(ConnectionState.ERROR)
-        assert manager.state == ConnectionState.ERROR
-        assert not manager.is_connected
-        assert not manager.is_closing
-        assert manager.can_connect  # ERROR state allows reconnection
+        manager._transition_to(ConnectionState.ERROR)
+        assert manager._state_name == ConnectionState.ERROR
+        assert not manager._is_connected
+        assert not manager._is_closing
+        assert manager._can_connect  # ERROR state allows reconnection
 
     def test_client_management_with_states(self):
         """
@@ -366,16 +366,16 @@ class TestBLEInterfaceStateIntegration:
         manager = BLEStateManager()
 
         # Should be able to set client when transitioning to CONNECTED (via CONNECTING)
-        assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.transition_to(ConnectionState.CONNECTED)
-        assert manager.is_connected
+        assert manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._transition_to(ConnectionState.CONNECTED)
+        assert manager._is_connected
 
         # Client should be cleared when transitioning to DISCONNECTED
-        assert manager.transition_to(ConnectionState.DISCONNECTED)
-        assert manager.state == ConnectionState.DISCONNECTED
+        assert manager._transition_to(ConnectionState.DISCONNECTED)
+        assert manager._state_name == ConnectionState.DISCONNECTED
 
         # No-op transition (same state) is now valid - returns True
-        assert manager.transition_to(ConnectionState.DISCONNECTED)
+        assert manager._transition_to(ConnectionState.DISCONNECTED)
 
     def test_state_transition_validation(self):
         """
@@ -388,19 +388,19 @@ class TestBLEInterfaceStateIntegration:
         manager = BLEStateManager()
 
         # Valid transitions from DISCONNECTED
-        assert manager.transition_to(ConnectionState.CONNECTING)
-        assert manager.transition_to(ConnectionState.DISCONNECTED)  # Reset
-        assert manager.transition_to(ConnectionState.ERROR)
-        assert manager.transition_to(ConnectionState.DISCONNECTED)  # Reset
+        assert manager._transition_to(ConnectionState.CONNECTING)
+        assert manager._transition_to(ConnectionState.DISCONNECTED)  # Reset
+        assert manager._transition_to(ConnectionState.ERROR)
+        assert manager._transition_to(ConnectionState.DISCONNECTED)  # Reset
 
         # Invalid transitions from DISCONNECTED
-        assert not manager.transition_to(
+        assert not manager._transition_to(
             ConnectionState.CONNECTED
         )  # Must go through CONNECTING first
-        assert not manager.transition_to(
+        assert not manager._transition_to(
             ConnectionState.RECONNECTING
         )  # Must have been connected first
-        assert not manager.transition_to(
+        assert not manager._transition_to(
             ConnectionState.DISCONNECTING
         )  # Cannot "begin disconnecting" from already-disconnected state
 
@@ -418,7 +418,7 @@ class TestPhase3LockConsolidation:
             """
             Perform a short sequence of state transitions on a shared BLEStateManager and record outcomes.
 
-            Runs 10 iterations requesting CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order. Appends a tuple (worker_id, iteration, manager.state, success) to the shared `results` list for each iteration; on exception appends (worker_id, error_message) to the shared `errors` list. Intended for invocation from concurrent threads to exercise transition behavior.
+            Runs 10 iterations requesting CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order. Appends a tuple (worker_id, iteration, manager._state_name, success) to the shared `results` list for each iteration; on exception appends (worker_id, error_message) to the shared `errors` list. Intended for invocation from concurrent threads to exercise transition behavior.
 
             Parameters
             ----------
@@ -429,13 +429,13 @@ class TestPhase3LockConsolidation:
                 for i in range(10):
                     # Simulate state transitions
                     if i % 3 == 0:
-                        success = manager.transition_to(ConnectionState.CONNECTING)
+                        success = manager._transition_to(ConnectionState.CONNECTING)
                     elif i % 3 == 1:
-                        success = manager.transition_to(ConnectionState.CONNECTED)
+                        success = manager._transition_to(ConnectionState.CONNECTED)
                     else:
-                        success = manager.transition_to(ConnectionState.DISCONNECTED)
+                        success = manager._transition_to(ConnectionState.DISCONNECTED)
 
-                    results.append((worker_id, i, manager.state, success))
+                    results.append((worker_id, i, manager._state_name, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
             except Exception as e:  # noqa: BLE001
                 errors.append((worker_id, str(e)))
@@ -458,7 +458,7 @@ class TestPhase3LockConsolidation:
         assert len(results) == 50, f"Expected 50 operations, got {len(results)}"
 
         # Verify final state is valid
-        assert manager.state in ConnectionState
+        assert manager._state_name in ConnectionState
 
     def test_reentrant_lock_behavior(self):
         """
@@ -476,22 +476,22 @@ class TestPhase3LockConsolidation:
 
             Performs a CONNECTING → CONNECTED sequence while the manager's reentrant lock is held (using a mock client) and verifies the manager reports connected and retains the client.
             """
-            assert manager.transition_to(ConnectionState.CONNECTING)
-            assert manager.transition_to(ConnectionState.CONNECTED)
-            assert manager.is_connected
+            assert manager._transition_to(ConnectionState.CONNECTING)
+            assert manager._transition_to(ConnectionState.CONNECTED)
+            assert manager._is_connected
 
         # Acquire lock manually then call nested operation
         with manager._state_lock:
             nested_operation()
 
         # Verify state is consistent
-        assert manager.state == ConnectionState.CONNECTED
+        assert manager._state_name == ConnectionState.CONNECTED
 
     def test_lock_contention_resolution(self):
         """
         Ensure BLEStateManager's state lock handles concurrent contention without raising exceptions and leaves the manager in DISCONNECTED.
 
-        Spawns multiple threads that each acquire the manager's state lock and perform state transitions; the test asserts no contention-related exceptions occurred and that the final manager.state equals ConnectionState.DISCONNECTED.
+        Spawns multiple threads that each acquire the manager's state lock and perform state transitions; the test asserts no contention-related exceptions occurred and that the final manager._state_name equals ConnectionState.DISCONNECTED.
         """
 
         manager = BLEStateManager()
@@ -508,8 +508,8 @@ class TestPhase3LockConsolidation:
                 with manager._state_lock:
                     # Simulate some work
                     time.sleep(0.01)
-                    manager.transition_to(ConnectionState.CONNECTING)
-                    manager.transition_to(ConnectionState.DISCONNECTED)
+                    manager._transition_to(ConnectionState.CONNECTING)
+                    manager._transition_to(ConnectionState.DISCONNECTED)
             except Exception:  # noqa: BLE001 - contention counts any unexpected failure
                 contention_count[0] += 1
 
@@ -528,7 +528,7 @@ class TestPhase3LockConsolidation:
         assert contention_count[0] == 0
 
         # Verify final state is consistent
-        assert manager.state == ConnectionState.DISCONNECTED
+        assert manager._state_name == ConnectionState.DISCONNECTED
 
 
 @pytest.mark.unit
@@ -551,9 +551,9 @@ def test_state_transition_performance():
         start_time = time.perf_counter()
         for _i in range(iterations):
             # Cycle through states
-            manager.transition_to(ConnectionState.CONNECTING)
-            manager.transition_to(ConnectionState.CONNECTED)
-            manager.transition_to(ConnectionState.DISCONNECTED)
+            manager._transition_to(ConnectionState.CONNECTING)
+            manager._transition_to(ConnectionState.CONNECTED)
+            manager._transition_to(ConnectionState.DISCONNECTED)
         end_time = time.perf_counter()
     elapsed = end_time - start_time
 
@@ -602,11 +602,11 @@ def test_lock_contention_performance():
 
         for _i in range(200):
             # Simulate realistic state operations
-            if manager.transition_to(ConnectionState.CONNECTING):
+            if manager._transition_to(ConnectionState.CONNECTING):
                 operations += 1
-            if manager.transition_to(ConnectionState.CONNECTED):
+            if manager._transition_to(ConnectionState.CONNECTED):
                 operations += 1
-            if manager.transition_to(ConnectionState.DISCONNECTED):
+            if manager._transition_to(ConnectionState.DISCONNECTED):
                 operations += 1
 
             # Small delay to simulate real work
@@ -666,9 +666,9 @@ def test_memory_efficiency():
     with _suppress_ble_debug_logs():
         for _i in range(300):
             manager = BLEStateManager()
-            manager.transition_to(ConnectionState.CONNECTING)
-            manager.transition_to(ConnectionState.CONNECTED)
-            manager.transition_to(ConnectionState.DISCONNECTED)
+            manager._transition_to(ConnectionState.CONNECTING)
+            manager._transition_to(ConnectionState.CONNECTED)
+            manager._transition_to(ConnectionState.DISCONNECTED)
             manager_refs.append(weakref.ref(manager))
 
     # Remove loop variable's final strong reference and force collection.
@@ -691,7 +691,7 @@ def test_property_access_performance():
     """
     Lightweight property-access performance regression guard.
 
-    Performs repeated reads of `state`, `is_connected`, `is_closing`, and `can_connect` on a fresh BLEStateManager instance,
+    Performs repeated reads of `state`, `isConnected`, `is_closing`, and `can_connect` on a fresh BLEStateManager instance,
     computes the average access time per property, asserts that the average remains within a reasonable bound, and prints a short timing summary.
     """
 
@@ -703,10 +703,10 @@ def test_property_access_performance():
         start_time = time.perf_counter()
         for _i in range(iterations):
             # Access all properties
-            _ = manager.state
-            _ = manager.is_connected
-            _ = manager.is_closing
-            _ = manager.can_connect
+            _ = manager._state_name
+            _ = manager._is_connected
+            _ = manager._is_closing
+            _ = manager._can_connect
         end_time = time.perf_counter()
     elapsed = end_time - start_time
 

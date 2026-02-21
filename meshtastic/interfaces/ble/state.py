@@ -17,7 +17,7 @@ Lock Ordering Note:
 
 from enum import Enum
 from threading import RLock
-from typing import ClassVar, Dict, Set
+from typing import ClassVar
 
 from meshtastic.interfaces.ble.constants import logger
 
@@ -41,7 +41,7 @@ class BLEStateManager:
     for clearer connection management and reduced complexity.
     """
 
-    _VALID_TRANSITIONS: ClassVar[Dict[ConnectionState, Set[ConnectionState]]] = {
+    _VALID_TRANSITIONS: ClassVar[dict[ConnectionState, set[ConnectionState]]] = {
         ConnectionState.DISCONNECTED: {
             ConnectionState.CONNECTING,
             ConnectionState.ERROR,
@@ -90,9 +90,9 @@ class BLEStateManager:
         self._state = ConnectionState.DISCONNECTED
 
     @property
-    def lock(self) -> RLock:
+    def _lock(self) -> RLock:
         """
-        Access the reentrant lock used to serialize BLE state transitions.
+        Internal property: Access the reentrant lock used to serialize BLE state transitions.
 
         Returns
         -------
@@ -102,9 +102,9 @@ class BLEStateManager:
         return self._state_lock
 
     @property
-    def state(self) -> ConnectionState:
+    def _state_name(self) -> ConnectionState:
         """
-        Return the current BLE connection state.
+        Internal property: Return the current BLE connection state.
 
         This value is read while holding the manager's internal reentrant lock to ensure thread safety.
 
@@ -117,9 +117,9 @@ class BLEStateManager:
             return self._state
 
     @property
-    def is_connected(self) -> bool:
+    def _is_connected(self) -> bool:
         """
-        Report whether the BLE interface is in the CONNECTED state.
+        Internal property: Report whether the BLE interface is in the CONNECTED state.
 
         Returns
         -------
@@ -127,63 +127,66 @@ class BLEStateManager:
             False otherwise.
 
         """
-        return self.state == ConnectionState.CONNECTED
+        return self._state_name == ConnectionState.CONNECTED
 
     @property
-    def is_closing(self) -> bool:
+    def _is_closing(self) -> bool:
         """
-        Indicates whether the BLE interface is in the DISCONNECTING state.
+        Internal property: Indicates whether the BLE interface is in the DISCONNECTING state.
 
         Returns
         -------
             True if the current connection state is DISCONNECTING, False otherwise.
 
         """
-        return self.state == ConnectionState.DISCONNECTING
+        return self._state_name == ConnectionState.DISCONNECTING
 
     @property
-    def can_connect(self) -> bool:
+    def _can_connect(self) -> bool:
         """
-        Whether a new BLE connection may be initiated.
+        Internal property: Whether a new BLE connection may be initiated.
 
         Returns
         -------
             True if the current state is DISCONNECTED or ERROR, False otherwise.
 
         """
-        return self.state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
+        return self._state_name in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
     @property
-    def is_connecting(self) -> bool:
+    def _is_connecting(self) -> bool:
         """
-        Report whether the BLE interface is in a connecting state.
+        Internal property: Report whether the BLE interface is in a connecting state.
 
         Returns
         -------
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
 
         """
-        return self.state in (ConnectionState.CONNECTING, ConnectionState.RECONNECTING)
+        return self._state_name in (
+            ConnectionState.CONNECTING,
+            ConnectionState.RECONNECTING,
+        )
 
     @property
-    def is_active(self) -> bool:
+    def _is_active(self) -> bool:
         """
-        Report whether the BLE interface has an active or pending connection.
+        Internal property: Report whether the BLE interface has an active or pending connection.
 
         Returns
         -------
             bool: `True` if the current state is CONNECTING, RECONNECTING, or CONNECTED, `False` otherwise.
 
         """
-        return self.state in (
+        return self._state_name in (
             ConnectionState.CONNECTING,
             ConnectionState.RECONNECTING,
             ConnectionState.CONNECTED,
         )
 
-    def transition_to(self, new_state: ConnectionState) -> bool:
+    def _transition_to(self, new_state: ConnectionState) -> bool:
         """
-        Attempt to change the manager's BLE connection state to the given target state.
+        Internal method: Attempt to change the manager's BLE connection state to the given target state.
 
         Validates the requested transition against the state machine and treats a transition to the current state as a valid no-op.
 
@@ -233,22 +236,22 @@ class BLEStateManager:
         """
         return to_state in self._VALID_TRANSITIONS.get(from_state, set())
 
-    def transition_if_in(
-        self, expected_states: Set[ConnectionState], new_state: ConnectionState
+    def _transition_if_in(
+        self, expected_states: set[ConnectionState], new_state: ConnectionState
     ) -> bool:
         """
-        Atomically check the current state and transition to new_state if it is in expected_states.
+        Internal method: Atomically check the current state and transition to new_state if it is in expected_states.
 
         Performs an atomic check-and-transition under the internal lock to avoid time-of-check-to-time-of-use races.
 
         Parameters
         ----------
-            expected_states (Set[ConnectionState]): States from which the transition is permitted.
+            expected_states (set[ConnectionState]): States from which the transition is permitted.
             new_state (ConnectionState): Target state to transition to.
 
         Returns
         -------
-            bool: `True` if the current state was in expected_states and transition_to(new_state) returned `True`, `False` otherwise.
+            bool: `True` if the current state was in expected_states and _transition_to(new_state) returned `True`, `False` otherwise.
 
         """
         with self._state_lock:
@@ -259,14 +262,14 @@ class BLEStateManager:
                     self._state.value,
                 )
                 return False
-            return self.transition_to(new_state)
+            return self._transition_to(new_state)
 
-    def reset_to_disconnected(self) -> bool:
+    def _reset_to_disconnected(self) -> bool:
         """
-        Force the connection state to DISCONNECTED for recovery or cleanup.
+        Internal method: Force the connection state to DISCONNECTED for recovery or cleanup.
 
         This always returns True with the current transition model because
-        transition_to() permits a no-op when already disconnected and
+        _transition_to() permits a no-op when already disconnected and
         _VALID_TRANSITIONS allows all state -> DISCONNECTED transitions.
 
         Returns
@@ -277,4 +280,4 @@ class BLEStateManager:
         with self._state_lock:
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
-            return self.transition_to(ConnectionState.DISCONNECTED)
+            return self._transition_to(ConnectionState.DISCONNECTED)

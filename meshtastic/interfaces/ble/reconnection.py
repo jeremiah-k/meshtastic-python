@@ -2,15 +2,15 @@
 
 import logging
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.constants import DBUS_ERROR_RECONNECT_DELAY, BLEConfig
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.gating import (
-    addrKey,
-    isCurrentlyConnectedElsewhere,
+    _addr_key,
+    _is_currently_connected_elsewhere,
 )
 from meshtastic.interfaces.ble.policies import ReconnectPolicy
 from meshtastic.interfaces.ble.state import BLEStateManager
@@ -54,11 +54,11 @@ class ReconnectScheduler:
             max_retries=None,
         )
         self._reconnect_worker = ReconnectWorker(interface, self._reconnect_policy)
-        self._reconnect_thread: Optional[ThreadLike] = None
+        self._reconnect_thread: ThreadLike | None = None
 
-    def schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
+    def _schedule_reconnect(self, auto_reconnect: bool, shutdown_event: Event) -> bool:
         """
-        Schedule a background BLE reconnect worker if auto-reconnect is enabled and no worker is currently running.
+        Internal method: Schedule a background BLE reconnect worker if auto-reconnect is enabled and no worker is currently running.
 
         Parameters
         ----------
@@ -75,7 +75,7 @@ class ReconnectScheduler:
 
         with self.state_lock:
             # Use state manager instead of boolean flag
-            if self.state_manager.is_closing or not self.state_manager.can_connect:
+            if self.state_manager._is_closing or not self.state_manager._can_connect:
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
                 )
@@ -86,10 +86,10 @@ class ReconnectScheduler:
                 )
                 return False
 
-            thread = self.thread_coordinator.create_thread(
-                target=self._reconnect_worker.attempt_reconnect_loop,
+            thread = self.thread_coordinator._create_thread(
+                target=self._reconnect_worker._attempt_reconnect_loop,
                 args=(auto_reconnect, shutdown_event),
-                kwargs={"on_exit": self.clear_thread_reference},
+                kwargs={"on_exit": self._clear_thread_reference},
                 name="BLEAutoReconnect",
                 daemon=True,
             )
@@ -98,15 +98,15 @@ class ReconnectScheduler:
         # Start outside the lock: the reference is already set, so concurrent
         # schedulers will see a non-None _reconnect_thread and exit early.
         try:
-            self.thread_coordinator.start_thread(thread)
+            self.thread_coordinator._start_thread(thread)
         except Exception:
-            self.clear_thread_reference()
+            self._clear_thread_reference()
             raise
         return True
 
-    def clear_thread_reference(self) -> None:
+    def _clear_thread_reference(self) -> None:
         """
-        Clear the internal reference to the running reconnect thread.
+        Internal method: Clear the internal reference to the running reconnect thread.
 
         This operation acquires the scheduler's state_lock and sets the internal reconnect thread reference to None to record that no background reconnect worker is active.
         """
@@ -147,7 +147,7 @@ class ReconnectWorker:
             bool: True if reconnection should be aborted, False otherwise.
 
         """
-        if self.interface.is_connection_closing:
+        if self.interface._is_connection_closing:
             logger.debug(
                 "Auto-reconnect aborted%s: interface is closing.",
                 f" ({context})" if context else "",
@@ -161,15 +161,15 @@ class ReconnectWorker:
             return True
         return False
 
-    def attempt_reconnect_loop(  # pylint: disable=R0911
+    def _attempt_reconnect_loop(  # pylint: disable=R0911
         self,
         auto_reconnect: bool,
         shutdown_event: Event,
         *,
-        on_exit: Optional[Callable[[], None]] = None,
+        on_exit: Callable[[], None] | None = None,
     ) -> None:
         """
-        Perform the blocking auto-reconnect loop for the bound BLE interface using the configured backoff policy.
+        Internal method: Perform the blocking auto-reconnect loop for the bound BLE interface using the configured backoff policy.
 
         Attempts reconnects until a connection succeeds, the reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect is False. Between failed attempts the loop waits according to the policy (adjusted for certain BLE/DBus errors) and exits promptly if shutdown_event is signaled.
 
@@ -177,13 +177,13 @@ class ReconnectWorker:
         ----------
             auto_reconnect (bool): If False, the loop will exit immediately without attempting reconnects.
             shutdown_event (threading.Event): Event that causes the loop to stop as soon as it is set.
-            on_exit (Optional[Callable[[], None]]): Callback invoked unconditionally when the loop ends,
+            on_exit (Callable[[ | None, None]]): Callback invoked unconditionally when the loop ends,
                 whether due to successful connection, explicit abort, or exception. Called from the finally block.
 
         """
-        self.reconnect_policy.reset()
+        self.reconnect_policy._reset()
         interface = self.interface
-        override_delay: Optional[float] = None
+        override_delay: float | None = None
 
         try:
             while not shutdown_event.is_set():
@@ -192,13 +192,13 @@ class ReconnectWorker:
                     return
                 attempt_num = self.reconnect_policy._get_attempt_count() + 1
                 try:
-                    if interface.is_connection_connected:
+                    if interface._is_connection_connected:
                         return
-                    device_addr = addrKey(getattr(interface, "address", None))
+                    device_addr = _addr_key(getattr(interface, "address", None))
                     # Check if already connected elsewhere before attempting.
                     # connect() enforces this gate as well; this early check avoids
                     # scheduling a full connect path when we already know it will fail.
-                    if device_addr and isCurrentlyConnectedElsewhere(
+                    if device_addr and _is_currently_connected_elsewhere(
                         device_addr, owner=interface
                     ):
                         logger.info(

@@ -59,7 +59,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
             Attributes
             ----------
-                start_notify_calls (list): Recorded (uuid, handler) tuples passed to start_notify.
+                start_notify_calls (list): Recorded (uuid, handler) tuples passed to startNotify.
                 has_characteristic_map (dict): Mapping of characteristic UUID to bool; contains only `FROMNUM_UUID: True`.
 
             """
@@ -69,7 +69,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
                 FROMNUM_UUID: True,  # Only have the critical one
             }
 
-        def has_characteristic(self, uuid):
+        def hasCharacteristic(self, uuid):
             """
             Return whether the client reports a characteristic with the given UUID.
 
@@ -84,7 +84,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, *_args, **_kwargs):
+        def startNotify(self, *_args, **_kwargs):
             """
             Record a notification registration by appending a (uuid, handler) tuple to self.start_notify_calls.
 
@@ -127,7 +127,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     class MockClient(DummyClient):
         """Mock client that returns invalid protobuf data to trigger DecodeError."""
 
-        def read_gatt_char(self, *_args, **_kwargs) -> bytes:
+        def readGattChar(self, *_args, **_kwargs) -> bytes:
             """
             Return raw GATT characteristic bytes for this test client.
 
@@ -340,7 +340,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     """
     Verify that _sendToRadioImpl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
 
-    This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
+    This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from writeGattChar. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
     """
     # logging already imported at top
     # BleakError already imported at top as ble_mod.BleakError, BLEInterface
@@ -363,7 +363,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             super().__init__()
             self.exception_type = exception_type
 
-        def write_gatt_char(self, *_args, **_kwargs):
+        def writeGattChar(self, *_args, **_kwargs):
             """
             Simulate a failing GATT characteristic write.
 
@@ -500,14 +500,14 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """
             self.disconnect_count += 1
 
-        def start_notify(self, *_args, **_kwargs):
+        def startNotify(self, *_args, **_kwargs):
             """
             Accept any positional and keyword arguments and perform no action.
 
             This stub is a no-op placeholder that intentionally ignores all inputs.
             """
 
-        def stop_notify(self, *_args, **_kwargs):
+        def stopNotify(self, *_args, **_kwargs):
             """
             Compatibility shim that accepts any arguments and performs no action.
 
@@ -529,7 +529,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
                 bleak_client (MockBleakRootClient): Mock underlying Bleak client used to emulate BLE operations.
                 connect_count (int): Number of simulated successful connect attempts.
                 disconnect_count (int): Number of simulated disconnect attempts.
-                is_connected_result (bool): Value returned by is_connected checks to represent the current connection state.
+                is_connected_result (bool): Value returned by isConnected checks to represent the current connection state.
                 _should_fail_connect (bool): If True, simulated connect attempts will fail.
                 _eventLoop: Placeholder for an event loop to suppress test warnings.
                 _eventThread: Placeholder for an event thread to suppress test warnings.
@@ -583,14 +583,14 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """
             self.disconnect_count += 1
 
-        def start_notify(self, *_args, **_kwargs):
+        def startNotify(self, *_args, **_kwargs):
             """
             Accept any positional and keyword arguments and perform no action.
 
             This stub is a no-op placeholder that intentionally ignores all inputs.
             """
 
-        def stop_notify(self, *_args, **_kwargs):
+        def stopNotify(self, *_args, **_kwargs):
             """
             Compatibility shim that accepts any arguments and performs no action.
 
@@ -779,7 +779,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
 
 def test_ble_client_is_connected_exception_handling(caplog):
-    """Test that BLEClient.is_connected handles exceptions gracefully."""
+    """Test that BLEClient.isConnected handles exceptions gracefully."""
     # logging already imported at top
     # BLEClient already imported at top as ble_mod.BLEClient
 
@@ -818,7 +818,7 @@ def test_ble_client_is_connected_exception_handling(caplog):
     ble_client.error_handler = BLEErrorHandler()
 
     # Should return False and log debug message when AttributeError occurs
-    result = ble_client.is_connected()
+    result = ble_client.isConnected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
 
@@ -827,7 +827,7 @@ def test_ble_client_is_connected_exception_handling(caplog):
 
     # Test TypeError
     ble_client.bleak_client = ExceptionBleakClient(TypeError)
-    result = ble_client.is_connected()
+    result = ble_client.isConnected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
 
@@ -836,13 +836,13 @@ def test_ble_client_is_connected_exception_handling(caplog):
 
     # Test RuntimeError
     ble_client.bleak_client = ExceptionBleakClient(RuntimeError)
-    result = ble_client.is_connected()
+    result = ble_client.isConnected()
     assert result is False
     assert "Unable to read bleak connection state" in caplog.text
 
 
 def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
-    """BLEClient.async_await should wrap FutureTimeoutError in BLEInterface.BLEError."""
+    """BLEClient._async_await should wrap FutureTimeoutError in BLEInterface.BLEError."""
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
@@ -918,7 +918,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
         fake_future.coro = coro
         return fake_future
 
-    monkeypatch.setattr(client, "async_run", _fake_async_run)
+    monkeypatch.setattr(client, "_async_run", _fake_async_run)
 
     async def _test_coro():
         """
@@ -926,9 +926,9 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
         """
         return None
 
-    # BLEClient.async_await raises BLEClient.BLEError for timeouts
+    # BLEClient._async_await raises BLEClient.BLEError for timeouts
     with pytest.raises(BLEClient.BLEError) as excinfo:
-        client.async_await(_test_coro(), timeout=0.01)
+        client._async_await(_test_coro(), timeout=0.01)
 
     assert "Async operation timed out" in str(excinfo.value)
     assert fake_future.cancelled is True
@@ -940,7 +940,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
 
 def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
-    """BLEClient.async_await should surface RuntimeError as a non-timeout BLE error."""
+    """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
     client = ble_mod.BLEClient()
 
     class _FakeFuture:
@@ -996,7 +996,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
 
     monkeypatch.setattr(
         client,
-        "async_run",
+        "_async_run",
         _fake_async_run,
     )
 
@@ -1006,9 +1006,9 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
         """
         return None
 
-    # BLEClient.async_await raises BLEClient.BLEError for runtime errors
+    # BLEClient._async_await raises BLEClient.BLEError for runtime errors
     with pytest.raises(BLEClient.BLEError) as excinfo:
-        client.async_await(_test_coro(), timeout=0.01)
+        client._async_await(_test_coro(), timeout=0.01)
 
     assert "Async operation failed: loop is closed" in str(excinfo.value)
     assert fake_future.cancelled is True
