@@ -1311,7 +1311,7 @@ def test_main_set_with_invalid(
             main()
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
-            assert re.search(r"do not have attribute foo", out, re.MULTILINE)
+            assert re.search(r"do not have an attribute foo", out, re.MULTILINE)
             assert err == ""
             mo.assert_called()
 
@@ -1942,7 +1942,7 @@ def test_main_get_with_invalid(capsys):
         main()
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        assert re.search(r"do not have attribute foo", out, re.MULTILINE)
+        assert re.search(r"do not have an attribute foo", out, re.MULTILINE)
         assert re.search(r"Choices are...", out, re.MULTILINE)
         assert err == ""
         mo.assert_called()

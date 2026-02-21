@@ -319,7 +319,7 @@ class StreamInterface(MeshInterface):
             ):  # We might intentionally get an exception during shutdown
                 disconnect_source = "stream.serial_exception"
                 logger.warning(
-                    f"Meshtastic serial port disconnected, disconnecting... {ex}"
+                    "Meshtastic serial port disconnected, disconnecting... %s", ex
                 )
             else:
                 disconnect_source = "stream.close_requested"

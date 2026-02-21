@@ -16,4 +16,7 @@ def get_active_version() -> str:
         # Fall back to pkg_resources for older Python versions
         import pkg_resources  # pylint: disable=import-outside-toplevel
 
-        return pkg_resources.get_distribution("meshtastic").version
+        try:
+            return pkg_resources.get_distribution("meshtastic").version
+        except pkg_resources.DistributionNotFound:
+            return "unknown"

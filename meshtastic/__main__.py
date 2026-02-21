@@ -276,7 +276,7 @@ def getPref(node: Any, comp_name: str) -> bool:
 
     if not found:
         print(
-            f"{localConfig.__class__.__name__} and {moduleConfig.__class__.__name__} do not have attribute {uni_name}."
+            f"{localConfig.__class__.__name__} and {moduleConfig.__class__.__name__} do not have an attribute {uni_name}."
         )
         print("Choices are...")
         printConfig(localConfig)
@@ -904,7 +904,7 @@ def onConnected(interface: MeshInterface) -> None:
                     )
                 else:
                     print(
-                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have attribute {last_pref[0]}."
+                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
                     )
                 print("Choices are...")
                 printConfig(node.localConfig)
@@ -1847,28 +1847,29 @@ def common():
                 else:
                     _cli_exit("Test was a success.", 0)
         else:
-            if args.seriallog == "stdout":
-                logfile = sys.stdout
-            elif args.seriallog == "none":
-                args.seriallog = None
-                logger.debug("Not logging serial output")
-                logfile = None
-            else:
-                logger.info(f"Logging serial output to {args.seriallog}")
-                # Note: using "line buffering"
-                # pylint: disable=R1732
-                logfile = open(args.seriallog, "w+", buffering=1, encoding="utf8")
-                mt_config.logfile = logfile
-
-            subscribe()
-            if args.ble_scan:
-                logger.debug("BLE scan starting")
-                for x in BLEInterface.scan():
-                    print(f"Found: name='{x.name}' address='{x.address}'")
-                _cli_exit("BLE scan finished", 0)
-
-            # Use ExitStack to guarantee interface cleanup on early exits or exceptions
+            # Use ExitStack to guarantee cleanup on early exits or exceptions
             with contextlib.ExitStack() as stack:
+                if args.seriallog == "stdout":
+                    logfile = sys.stdout
+                elif args.seriallog == "none":
+                    args.seriallog = None
+                    logger.debug("Not logging serial output")
+                    logfile = None
+                else:
+                    logger.info(f"Logging serial output to {args.seriallog}")
+                    # Note: using line buffering.
+                    logfile = stack.enter_context(
+                        open(args.seriallog, "w+", buffering=1, encoding="utf8")
+                    )
+                    mt_config.logfile = logfile
+
+                subscribe()
+                if args.ble_scan:
+                    logger.debug("BLE scan starting")
+                    for x in BLEInterface.scan():
+                        print(f"Found: name='{x.name}' address='{x.address}'")
+                    _cli_exit("BLE scan finished", 0)
+
                 client: MeshInterface | None = None
                 if args.ble:
                     try:

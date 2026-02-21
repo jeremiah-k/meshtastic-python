@@ -87,7 +87,7 @@ class RemoteHardwareClient:
     ) -> Any:
         if not nodeid:
             raise _get_mesh_interface_error()(
-                r"Must use a destination node ID for this operation (use --dest \!xxxxxxxxx)"
+                "Must use a destination node ID for this operation."
             )
         return self.iface.sendData(
             r,

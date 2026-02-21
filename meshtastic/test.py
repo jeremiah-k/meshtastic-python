@@ -142,7 +142,7 @@ def onNode(node: Any) -> None:
         node (Any): The node entry that changed or a payload describing the change (typically a node database record).
 
     """
-    print(f"Node changed: {node}")
+    logger.info("Node changed: %s", node)
 
 
 def subscribe() -> None:
@@ -290,7 +290,7 @@ def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
     """
     _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
-    print(f"Connection changed: {topic_name}")
+    logger.info("Connection changed: %s", topic_name)
 
 
 def openDebugLog(portName: str) -> io.TextIOWrapper:

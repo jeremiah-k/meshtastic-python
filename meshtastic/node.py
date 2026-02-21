@@ -836,10 +836,12 @@ class Node:
             if "decoded" in p:
                 if "admin" in p["decoded"]:
                     if "raw" in p["decoded"]["admin"]:
-                        self.ringtonePart = p["decoded"]["admin"][
+                        ringtone_part = p["decoded"]["admin"][
                             "raw"
                         ].get_ringtone_response
-                        logger.debug("self.ringtonePart:%s", self.ringtonePart)
+                        with self._ringtone_lock:
+                            self.ringtonePart = ringtone_part
+                        logger.debug("self.ringtonePart:%s", ringtone_part)
 
     def _get_ringtone(self) -> str | None:
         """
@@ -922,9 +924,7 @@ class Node:
             return None
 
         if len(ringtone) > 230:
-            self._raise_interface_error(
-                "The ringtone must be less than 230 characters."
-            )
+            self._raise_interface_error("The ringtone must be 230 characters or fewer.")
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_ringtone_message = ringtone
@@ -970,12 +970,14 @@ class Node:
             if "decoded" in p:
                 if "admin" in p["decoded"]:
                     if "raw" in p["decoded"]["admin"]:
-                        self.cannedPluginMessageMessages = p["decoded"]["admin"][
+                        canned_messages = p["decoded"]["admin"][
                             "raw"
                         ].get_canned_message_module_messages_response
+                        with self._canned_message_lock:
+                            self.cannedPluginMessageMessages = canned_messages
                         logger.debug(
                             "self.cannedPluginMessageMessages:%s",
-                            self.cannedPluginMessageMessages,
+                            canned_messages,
                         )
 
     def _get_canned_message(self) -> str | None:
@@ -1062,7 +1064,7 @@ class Node:
 
         if len(message) > 200:
             self._raise_interface_error(
-                "The canned message must be less than 200 characters."
+                "The canned message must be 200 characters or fewer."
             )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1150,7 +1152,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.begin_edit_settings = True
-        logger.info("Telling open a transaction to edit settings")
+        logger.info("Telling node to open a transaction to edit settings")
 
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:
@@ -1698,27 +1700,26 @@ class Node:
                 "Not sending packet because protocol use is disabled by noProto"
             )
             return None
-        else:
-            if (
-                adminIndex == 0
-            ):  # unless a special channel index was used, we want to use the admin index
-                adminIndex = self.iface.localNode._getAdminChannelIndex()
-            logger.debug(f"adminIndex:{adminIndex}")
-            nodeid = to_node_num(self.nodeNum)
-            node_info = self.iface._getOrCreateByNum(nodeid)
-            passkey = node_info.get("adminSessionPassKey")
-            if isinstance(passkey, bytes):
-                p.session_passkey = passkey
-            return self.iface.sendData(
-                p,
-                self.nodeNum,
-                portNum=portnums_pb2.PortNum.ADMIN_APP,
-                wantAck=True,
-                wantResponse=wantResponse,
-                onResponse=onResponse,
-                channelIndex=adminIndex,
-                pkiEncrypted=True,
-            )
+        if (
+            adminIndex == 0
+        ):  # unless a special channel index was used, we want to use the admin index
+            adminIndex = self.iface.localNode._getAdminChannelIndex()
+        logger.debug(f"adminIndex:{adminIndex}")
+        nodeid = to_node_num(self.nodeNum)
+        node_info = self.iface._getOrCreateByNum(nodeid)
+        passkey = node_info.get("adminSessionPassKey")
+        if isinstance(passkey, bytes):
+            p.session_passkey = passkey
+        return self.iface.sendData(
+            p,
+            self.nodeNum,
+            portNum=portnums_pb2.PortNum.ADMIN_APP,
+            wantAck=True,
+            wantResponse=wantResponse,
+            onResponse=onResponse,
+            channelIndex=adminIndex,
+            pkiEncrypted=True,
+        )
 
     def ensureSessionKey(self) -> None:
         """

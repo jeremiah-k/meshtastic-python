@@ -55,8 +55,10 @@ class LogDef:
     def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
         """Initialize the LogDef object.
 
-        code (str): The code.
-        format (str): The format.
+        Parameters
+        ----------
+            code (str): The code.
+            fields (list[tuple[str, pa.DataType]]): Field name/type pairs used to build the parser format.
 
         """
         self.code = code
@@ -353,9 +355,15 @@ class LogSet:
             else PowerLogger(power_meter, os.path.join(self.dir_name, "power"))
         )
 
-        self.slog_logger: StructuredLogger | None = StructuredLogger(
-            client, self.dir_name, power_logger=self.power_logger
-        )
+        try:
+            self.slog_logger: StructuredLogger | None = StructuredLogger(
+                client, self.dir_name, power_logger=self.power_logger
+            )
+        except Exception:
+            if self.power_logger:
+                self.power_logger.close()
+                self.power_logger = None
+            raise
 
         # Store a lambda so we can find it again to unregister
         self.atexit_handler = lambda: self.close()  # pylint: disable=unnecessary-lambda

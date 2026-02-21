@@ -50,8 +50,8 @@ class FakeTimer:
         ----------
             interval (float): Time interval in seconds that the timer represents.
             function (Callable[..., Any]): Callback that would be invoked when a real timer fires.
-            args (tuple[Any, ... | None]): Optional positional arguments passed to callback.
-            kwargs (dict[str, Any | None]): Optional keyword arguments passed to callback.
+            args (tuple[Any, ...] | None): Optional positional arguments passed to callback.
+            kwargs (dict[str, Any] | None): Optional keyword arguments passed to callback.
 
         """
         self.interval = interval
@@ -183,7 +183,7 @@ def mock_serial_interface() -> MagicMock:
         MagicMock: A mock acting like a SerialInterface with the above attributes.
 
     """
-    mock_iface = MagicMock(spec=SerialInterface)
+    mock_iface = _create_context_manager_mock(SerialInterface)
     mock_iface.localNode = MagicMock(spec=["getChannelByName"])
     mock_iface.localNode.getChannelByName.return_value = None
     mock_iface.myInfo = MagicMock(spec=["max_channels"])

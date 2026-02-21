@@ -86,6 +86,7 @@ class SerialInterface(StreamInterface):
         self.stream.flush()  # type: ignore[attr-defined]
         time.sleep(0.1)
 
+        initialized = False
         try:
             StreamInterface.__init__(
                 self,
@@ -95,15 +96,15 @@ class SerialInterface(StreamInterface):
                 noNodes=noNodes,
                 timeout=timeout,
             )
-        except (
-            Exception
-        ):  # noqa: BLE001 - ensure stream lock is released on init failure
+            initialized = True
+        finally:
             if self.stream is not None:
-                self.stream.close()
-                self.stream = None
-            raise
+                if not initialized:
+                    # Ensure stream lock is released when base initialization fails.
+                    self.stream.close()
+                    self.stream = None
 
-    def _set_hupcl_with_termios(self, f: TextIOWrapper):
+    def _set_hupcl_with_termios(self, f: TextIOWrapper) -> None:
         """
         Clear the terminal's HUPCL flag for the given device file to prevent the device from rebooting when RTS/DTR change.
 

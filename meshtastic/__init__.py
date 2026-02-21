@@ -100,6 +100,7 @@ from .protobuf import (
 )
 
 # Keep exports sorted for lint stability and easier scanning.
+# ruff: noqa: RUF022 -- sorted case-insensitively for readability.
 __all__ = [
     "admin_pb2",
     "apponly_pb2",
@@ -387,7 +388,11 @@ def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
         ] = adminMessage.session_passkey
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
-        pass
+        logger.debug(
+            "Admin session passkey not extracted from packet (expected for non-admin packets): %s",
+            asDict,
+            exc_info=True,
+        )
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

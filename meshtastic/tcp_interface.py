@@ -118,8 +118,18 @@ class TCPInterface(StreamInterface):
     def _writeBytes(self, b: bytes) -> None:
         """Write an array of bytes to our stream and flush."""
         if self.socket is not None:
-            # sendall() guarantees full payload transmission or raises.
-            self.socket.sendall(b)
+            try:
+                # sendall() guarantees full payload transmission or raises.
+                self.socket.sendall(b)
+            except OSError as ex:
+                logger.warning(
+                    "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
+                )
+                with contextlib.suppress(Exception):
+                    self._socket_shutdown()
+                with contextlib.suppress(Exception):
+                    self.socket.close()
+                self.socket = None
 
     def _readBytes(self, length: int) -> bytes | None:
         """Read an array of bytes from our stream."""
@@ -141,6 +151,14 @@ class TCPInterface(StreamInterface):
                 if self._wantExit:
                     return None
                 self.myConnect()
+                if self._wantExit:
+                    # close() may race while we reconnect; tear down the new socket
+                    with contextlib.suppress(Exception):
+                        self._socket_shutdown()
+                    with contextlib.suppress(Exception):
+                        self.socket.close()
+                    self.socket = None
+                    return None
                 self._startConfig()
                 return None
             return data

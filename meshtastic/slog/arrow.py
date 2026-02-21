@@ -22,7 +22,8 @@ class ArrowWriter:
         self.new_rows: list[dict] = []
         self.schema: pa.Schema | None = None  # haven't yet learned the schema
         self.writer: pa.RecordBatchStreamWriter | None = None
-        self._lock = threading.Condition()  # Ensure only one thread writes at a time
+        # Re-entrant: _write() can call set_schema() while the same lock is held.
+        self._lock = threading.RLock()
 
     def close(self):
         """Close the stream and writes the file as needed."""
