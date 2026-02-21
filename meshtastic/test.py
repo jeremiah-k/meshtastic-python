@@ -335,14 +335,14 @@ def testAll(numTests: int = 5) -> bool:
     global interfaces
     interfaces = []
 
-    # Build interfaces incrementally to ensure cleanup on failure
-    for port in ports:
-        interfaces.append(
-            SerialInterface(port, debugOut=openDebugLog(port), connectNow=True)
-        )
-
-    logger.info("Ports opened, starting test")
     try:
+        # Build interfaces incrementally to ensure cleanup on failure
+        for port in ports:
+            interfaces.append(
+                SerialInterface(port, debugOut=openDebugLog(port), connectNow=True)
+            )
+
+        logger.info("Ports opened, starting test")
         result: bool = testThread(numTests)
     finally:
         for i in interfaces:
@@ -368,7 +368,7 @@ def testSimulator() -> None:
         iface.localNode.exitSimulator()
         iface.close()
         logger.info("Integration test successful!")
-    except Exception:
+    except Exception:  # noqa: BLE001 - intentional catch-all for test exit-signaling
         print("Error while testing simulator:", sys.exc_info()[0])
         traceback.print_exc()
         sys.exit(1)

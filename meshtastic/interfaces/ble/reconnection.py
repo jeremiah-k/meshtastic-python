@@ -181,7 +181,12 @@ class ReconnectWorker:
                 whether due to successful connection, explicit abort, or exception. Called from the finally block.
 
         """
-        self.reconnect_policy._reset()
+        reset_policy = getattr(self.reconnect_policy, "reset", None)
+        if callable(reset_policy):
+            reset_policy()
+        else:
+            # Backward compatibility for test doubles that only expose underscored methods.
+            self.reconnect_policy._reset()
         interface = self.interface
         override_delay: float | None = None
 
@@ -190,7 +195,14 @@ class ReconnectWorker:
                 override_delay = None
                 if self._should_abort_reconnect(auto_reconnect, "loop start"):
                     return
-                attempt_num = self.reconnect_policy._get_attempt_count() + 1
+                get_attempt_count = getattr(
+                    self.reconnect_policy, "get_attempt_count", None
+                )
+                if callable(get_attempt_count):
+                    attempt_num = get_attempt_count() + 1
+                else:
+                    # Backward compatibility for test doubles.
+                    attempt_num = self.reconnect_policy._get_attempt_count() + 1
                 try:
                     if interface._is_connection_connected:
                         return
@@ -269,7 +281,12 @@ class ReconnectWorker:
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
-                sleep_delay, should_retry = self.reconnect_policy._next_attempt()
+                next_attempt = getattr(self.reconnect_policy, "next_attempt", None)
+                if callable(next_attempt):
+                    sleep_delay, should_retry = next_attempt()
+                else:
+                    # Backward compatibility for test doubles.
+                    sleep_delay, should_retry = self.reconnect_policy._next_attempt()
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:

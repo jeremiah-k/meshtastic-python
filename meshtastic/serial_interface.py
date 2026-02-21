@@ -22,7 +22,7 @@ class SerialInterface(StreamInterface):
     def __init__(
         self,
         devPath: Optional[str] = None,
-        debugOut=None,
+        debugOut: Optional[TextIOWrapper] = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
@@ -70,7 +70,7 @@ class SerialInterface(StreamInterface):
                     "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
                 )
                 message += f"  Ports detected: {ports}"
-                raise ValueError(message)
+                raise self.MeshInterfaceError(message)
             else:
                 self.devPath = ports[0]
 
@@ -87,14 +87,22 @@ class SerialInterface(StreamInterface):
         self.stream.flush()  # type: ignore[attr-defined]
         time.sleep(0.1)
 
-        StreamInterface.__init__(
-            self,
-            debugOut=debugOut,
-            noProto=noProto,
-            connectNow=connectNow,
-            noNodes=noNodes,
-            timeout=timeout,
-        )
+        try:
+            StreamInterface.__init__(
+                self,
+                debugOut=debugOut,
+                noProto=noProto,
+                connectNow=connectNow,
+                noNodes=noNodes,
+                timeout=timeout,
+            )
+        except (
+            Exception
+        ):  # noqa: BLE001 - ensure stream lock is released on init failure
+            if self.stream is not None:
+                self.stream.close()
+                self.stream = None
+            raise
 
     def _set_hupcl_with_termios(self, f: TextIOWrapper):
         """

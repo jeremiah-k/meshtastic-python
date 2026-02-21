@@ -737,7 +737,7 @@ class Node:
 
         """
         if self.channels is None:
-            self._raise_interface_error("Warning: config or channels not loaded")
+            self._raise_interface_error("Config or channels not loaded")
 
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
         # Split on '/#' to find the base64 encoded channel settings
@@ -746,7 +746,7 @@ class Node:
         else:
             splitURL = url.split("/#")
         if len(splitURL) == 1:
-            self._raise_interface_error(f"Warning: Invalid URL '{url}'")
+            self._raise_interface_error(f"Invalid URL '{url}'")
         b64 = splitURL[-1]
 
         # We normally strip padding to make for a shorter URL, but the python parser doesn't like
@@ -759,17 +759,17 @@ class Node:
         try:
             decodedURL = base64.urlsafe_b64decode(b64)
         except (binascii.Error, ValueError) as ex:
-            self._raise_interface_error(f"Warning: Invalid URL '{url}': {ex}")
+            self._raise_interface_error(f"Invalid URL '{url}': {ex}")
         channelSet = apponly_pb2.ChannelSet()
         try:
             channelSet.ParseFromString(decodedURL)
         except (DecodeError, ValueError) as ex:
             self._raise_interface_error(
-                f"Warning: Unable to parse channel settings from URL '{url}': {ex}"
+                f"Unable to parse channel settings from URL '{url}': {ex}"
             )
 
         if len(channelSet.settings) == 0:
-            self._raise_interface_error("Warning: There were no settings.")
+            self._raise_interface_error("There were no settings.")
 
         if addOnly:
             # Add new channels with names not already present
@@ -783,7 +783,7 @@ class Node:
                     continue
                 ch = self.getDisabledChannel()
                 if not ch:
-                    self._raise_interface_error("Warning: No free channels were found")
+                    self._raise_interface_error("No free channels were found")
                 ch.settings.CopyFrom(chs)
                 ch.role = channel_pb2.Channel.Role.SECONDARY
                 logger.info(f"Adding new channel '{chs.name}' to device")
@@ -870,22 +870,29 @@ class Node:
             if self.ringtone:
                 logger.debug("ringtone:%s", self.ringtone)
                 return self.ringtone
+            # Clear stale partial state before issuing a new request.
+            self.ringtonePart = None
 
-            response_event = threading.Event()
+        response_event = threading.Event()
 
-            def _on_ringtone_response(packet: Dict[str, Any]) -> None:
-                try:
-                    self.onResponseRequestRingtone(packet)
-                finally:
-                    response_event.set()
+        def _on_ringtone_response(packet: Dict[str, Any]) -> None:
+            try:
+                self.onResponseRequestRingtone(packet)
+            finally:
+                response_event.set()
 
-            p1 = admin_pb2.AdminMessage()
-            p1.get_ringtone_request = True
-            self._sendAdmin(p1, wantResponse=True, onResponse=_on_ringtone_response)
-            if not response_event.wait(timeout=self._timeout.expireTimeout):
-                logger.warning("Timed out waiting for ringtone response")
-                return None
+        p1 = admin_pb2.AdminMessage()
+        p1.get_ringtone_request = True
+        self._sendAdmin(p1, wantResponse=True, onResponse=_on_ringtone_response)
+        if not response_event.wait(timeout=self._timeout.expireTimeout):
+            logger.warning("Timed out waiting for ringtone response")
+            return None
 
+        with self._ringtone_lock:
+            # Another caller may have already populated the cache while we waited.
+            if self.ringtone:
+                logger.debug("ringtone:%s", self.ringtone)
+                return self.ringtone
             if self.ringtonePart:
                 self.ringtone = self.ringtonePart
                 logger.debug("ringtone:%s", self.ringtone)
@@ -922,7 +929,7 @@ class Node:
 
         if len(ringtone) > 230:
             self._raise_interface_error(
-                "Warning: The ringtone must be less than 230 characters."
+                "The ringtone must be less than 230 characters."
             )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -935,11 +942,10 @@ class Node:
         else:
             onResponse = self.onAckNak
         send_result = self._sendAdmin(p, onResponse=onResponse)
-        if send_result is not None:
-            with self._ringtone_lock:
-                # Invalidate cache after successful send so future reads refresh.
-                self.ringtone = None
-                self.ringtonePart = None
+        with self._ringtone_lock:
+            # Invalidate cache after send so future reads refresh.
+            self.ringtone = None
+            self.ringtonePart = None
         return send_result
 
     def onResponseRequestCannedMessagePluginMessageMessages(
@@ -997,26 +1003,33 @@ class Node:
             if self.cannedPluginMessage:
                 logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
                 return self.cannedPluginMessage
+            # Clear stale partial state before issuing a new request.
+            self.cannedPluginMessageMessages = None
 
-            response_event = threading.Event()
+        response_event = threading.Event()
 
-            def _on_canned_message_response(packet: Dict[str, Any]) -> None:
-                try:
-                    self.onResponseRequestCannedMessagePluginMessageMessages(packet)
-                finally:
-                    response_event.set()
+        def _on_canned_message_response(packet: Dict[str, Any]) -> None:
+            try:
+                self.onResponseRequestCannedMessagePluginMessageMessages(packet)
+            finally:
+                response_event.set()
 
-            p1 = admin_pb2.AdminMessage()
-            p1.get_canned_message_module_messages_request = True
-            self._sendAdmin(
-                p1,
-                wantResponse=True,
-                onResponse=_on_canned_message_response,
-            )
-            if not response_event.wait(timeout=self._timeout.expireTimeout):
-                logger.warning("Timed out waiting for canned message response")
-                return None
+        p1 = admin_pb2.AdminMessage()
+        p1.get_canned_message_module_messages_request = True
+        self._sendAdmin(
+            p1,
+            wantResponse=True,
+            onResponse=_on_canned_message_response,
+        )
+        if not response_event.wait(timeout=self._timeout.expireTimeout):
+            logger.warning("Timed out waiting for canned message response")
+            return None
 
+        with self._canned_message_lock:
+            # Another caller may have already populated the cache while we waited.
+            if self.cannedPluginMessage:
+                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
+                return self.cannedPluginMessage
             logger.debug(
                 "self.cannedPluginMessageMessages:%s", self.cannedPluginMessageMessages
             )
@@ -1068,11 +1081,10 @@ class Node:
         else:
             onResponse = self.onAckNak
         send_result = self._sendAdmin(p, onResponse=onResponse)
-        if send_result is not None:
-            with self._canned_message_lock:
-                # Invalidate cache after successful send so future reads refresh.
-                self.cannedPluginMessage = None
-                self.cannedPluginMessageMessages = None
+        with self._canned_message_lock:
+            # Invalidate cache after send so future reads refresh.
+            self.cannedPluginMessage = None
+            self.cannedPluginMessageMessages = None
         return send_result
 
     def get_ringtone(self) -> Optional[str]:

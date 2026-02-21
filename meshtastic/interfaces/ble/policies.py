@@ -88,6 +88,14 @@ class ReconnectPolicy:
         """Internal method: Reset internal state to begin a fresh retry cycle."""
         self._attempt_count = 0
 
+    def reset(self) -> None:
+        """
+        Reset internal state to begin a fresh retry cycle.
+
+        This public wrapper avoids cross-class coupling to underscored helpers.
+        """
+        self._reset()
+
     def _get_delay(self, attempt: int | None = None) -> float:
         """
         Internal helper: compute jittered exponential-backoff delay.
@@ -154,6 +162,14 @@ class ReconnectPolicy:
         self._attempt_count += 1
         return delay, should_retry
 
+    def next_attempt(self) -> tuple[float, bool]:
+        """
+        Return the next backoff delay and whether another retry is allowed.
+
+        This public wrapper avoids cross-class coupling to underscored helpers.
+        """
+        return self._next_attempt()
+
     def _get_attempt_count(self) -> int:
         """
         Internal helper: return the number of attempts performed by this policy.
@@ -164,6 +180,14 @@ class ReconnectPolicy:
 
         """
         return self._attempt_count
+
+    def get_attempt_count(self) -> int:
+        """
+        Return the number of attempts performed so far.
+
+        This public wrapper avoids cross-class coupling to underscored helpers.
+        """
+        return self._get_attempt_count()
 
     def _sleep_with_backoff(self, attempt: int) -> None:
         """

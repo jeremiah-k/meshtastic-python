@@ -1440,7 +1440,7 @@ def subscribe() -> None:
 
 
 def _set_missing_flags_false(
-    config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, str]]
+    config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, ...]]
 ) -> None:
     """
     Ensure specified boolean flags exist in a nested config dictionary and set any missing ones to False.
@@ -1448,7 +1448,7 @@ def _set_missing_flags_false(
     Parameters
     ----------
         config_dict (Dict[str, Any]): The nested configuration dictionary to modify in place.
-        true_defaults (Set[Tuple[str, str]]): A set of key paths (tuples of keys) where the final
+        true_defaults (Set[Tuple[str, ...]]): A set of key paths (tuples of keys) where the final
             key is expected to be a boolean defaulted to True; any path not present in config_dict
             will have its final key created and set to False.
 
@@ -1493,6 +1493,22 @@ def _prefix_base64_key(
         ]
 
 
+# Boolean flags that default to True in firmware but may be absent from
+# MessageToDict output; set missing values to False to preserve round-trip intent.
+CONFIG_TRUE_DEFAULTS: Set[Tuple[str, ...]] = {
+    ("bluetooth", "enabled"),
+    ("lora", "sx126xRxBoostedGain"),
+    ("lora", "txEnabled"),
+    ("lora", "usePreset"),
+    ("position", "positionBroadcastSmartEnabled"),
+    ("security", "serialEnabled"),
+}
+
+MODULE_TRUE_DEFAULTS: Set[Tuple[str, ...]] = {
+    ("mqtt", "encryptionEnabled"),
+}
+
+
 def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     """
     Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
@@ -1514,20 +1530,6 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 
     """
     configObj: Dict[str, Any] = {}
-
-    # A list of configuration keys that should be set to False if they are missing
-    config_true_defaults = {
-        ("bluetooth", "enabled"),
-        ("lora", "sx126xRxBoostedGain"),
-        ("lora", "txEnabled"),
-        ("lora", "usePreset"),
-        ("position", "positionBroadcastSmartEnabled"),
-        ("security", "serialEnabled"),
-    }
-
-    module_true_defaults = {
-        ("mqtt", "encryptionEnabled"),
-    }
 
     owner = interface.getLongName()
     owner_short = interface.getShortName()
@@ -1569,7 +1571,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     config = MessageToDict(interface.localNode.localConfig)
     if config:
         # Ensure explicit false values are present before key conversion.
-        _set_missing_flags_false(config, config_true_defaults)
+        _set_missing_flags_false(config, CONFIG_TRUE_DEFAULTS)
 
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
@@ -1601,7 +1603,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     module_config = MessageToDict(interface.localNode.moduleConfig)
     if module_config:
         # Ensure explicit false values are present before key conversion.
-        _set_missing_flags_false(module_config, module_true_defaults)
+        _set_missing_flags_false(module_config, MODULE_TRUE_DEFAULTS)
 
         # Convert inner keys to correct snake/camelCase.
         prefs = {}
@@ -1653,7 +1655,8 @@ def create_power_meter() -> None:
         meter = RidenPowerSupply(args.power_riden)
     elif args.power_ppk2_supply or args.power_ppk2_meter:
         meter = PPK2PowerSupply()
-        assert v > 0, "Voltage must be specified for PPK2"
+        if v <= 0:
+            _cli_exit("Voltage must be specified for PPK2")
         meter.v = v  # PPK2 requires setting voltage before selecting supply mode
         meter.setIsSupply(args.power_ppk2_supply)
     elif args.power_sim:

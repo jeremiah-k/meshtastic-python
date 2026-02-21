@@ -376,6 +376,9 @@ def test_eliminate_duplicate_port():
         ["/dev/cu.wchusbserial1430", "/dev/cu.usbserial-1430"]
     ) == ["/dev/cu.wchusbserial1430"]
     assert eliminate_duplicate_port(
+        ["/dev/cu.usbserial-1234", "/dev/cu.wchusbserial5678"]
+    ) == ["/dev/cu.usbserial-1234", "/dev/cu.wchusbserial5678"]
+    assert eliminate_duplicate_port(
         ["/dev/cu.SLAB_USBtoUART", "/dev/cu.usbserial-0001"]
     ) == ["/dev/cu.usbserial-0001"]
     assert eliminate_duplicate_port(

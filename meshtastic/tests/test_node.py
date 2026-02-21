@@ -208,7 +208,7 @@ def test_setURL_empty_url():
     """Test setURL with an empty URL."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
         anode.setURL("")
 
@@ -238,7 +238,7 @@ def test_setURL_valid_URL_but_no_settings():
     url = "https://www.meshtastic.org/d/#"
     anode = Node(iface, "!12345678", noProto=True)
     with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Warning: config or channels not loaded"
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
     ):
         anode.setURL(url)
 

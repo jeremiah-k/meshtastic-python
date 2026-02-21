@@ -451,7 +451,20 @@ class Timeout:
         return False
 
     def waitForTelemetry(self, acknowledgment) -> bool:
-        """Block until telemetry response is received. Returns True if telemetry response has been received."""
+        """
+        Wait until a telemetry acknowledgement is observed or timeout expires.
+
+        Parameters
+        ----------
+            acknowledgment: Object that exposes a boolean `receivedTelemetry` attribute
+            and a `reset()` method; the attribute is polled and reset on success.
+
+        Returns
+        -------
+            bool: True if telemetry acknowledgement was received before timeout,
+            False otherwise.
+
+        """
         self.reset()
         while time.time() < self.expireTime:
             if getattr(acknowledgment, "receivedTelemetry", None):
@@ -461,7 +474,20 @@ class Timeout:
         return False
 
     def waitForPosition(self, acknowledgment) -> bool:
-        """Block until position response is received. Returns True if position response has been received."""
+        """
+        Wait until a position acknowledgement is observed or timeout expires.
+
+        Parameters
+        ----------
+            acknowledgment: Object that exposes a boolean `receivedPosition` attribute
+            and a `reset()` method; the attribute is polled and reset on success.
+
+        Returns
+        -------
+            bool: True if position acknowledgement was received before timeout,
+            False otherwise.
+
+        """
         self.reset()
         while time.time() < self.expireTime:
             if getattr(acknowledgment, "receivedPosition", None):
@@ -874,19 +900,23 @@ def eliminate_duplicate_port(ports: list) -> list:
     if len(ports) != 2:
         new_ports = ports
     else:
-        ports.sort()
-        if "usbserial" in ports[0] and "wchusbserial" in ports[1]:
-            first = ports[0].replace("usbserial-", "")
-            second = ports[1].replace("wchusbserial", "")
+        sorted_ports = sorted(ports)
+        if "usbserial" in sorted_ports[0] and "wchusbserial" in sorted_ports[1]:
+            first = sorted_ports[0].replace("usbserial-", "")
+            second = sorted_ports[1].replace("wchusbserial", "")
             if first == second:
-                new_ports.append(ports[1])
-        elif "usbmodem" in ports[0] and "wchusbserial" in ports[1]:
-            first = ports[0].replace("usbmodem", "")
-            second = ports[1].replace("wchusbserial", "")
+                new_ports.append(sorted_ports[1])
+            else:
+                new_ports = ports
+        elif "usbmodem" in sorted_ports[0] and "wchusbserial" in sorted_ports[1]:
+            first = sorted_ports[0].replace("usbmodem", "")
+            second = sorted_ports[1].replace("wchusbserial", "")
             if first == second:
-                new_ports.append(ports[1])
-        elif "SLAB_USBtoUART" in ports[0] and "usbserial" in ports[1]:
-            new_ports.append(ports[1])
+                new_ports.append(sorted_ports[1])
+            else:
+                new_ports = ports
+        elif "SLAB_USBtoUART" in sorted_ports[0] and "usbserial" in sorted_ports[1]:
+            new_ports.append(sorted_ports[1])
         else:
             new_ports = ports
     return new_ports
@@ -951,6 +981,30 @@ def get_devices_with_vendor_id(vid: str) -> set:  # set[SupportedDevice]
     return sd
 
 
+def _discover_unix_ports(bp: str) -> set[str]:
+    """
+    Discover Unix serial-device paths matching the provided base-port prefix.
+
+    Parameters
+    ----------
+        bp (str): Base port prefix to glob under `/dev` (for example, `ttyUSB`).
+
+    Returns
+    -------
+        set[str]: Matching absolute device paths discovered by `ls`, or an empty set.
+
+    """
+    discovered_ports: set[str] = set()
+    command = f"ls -al /dev/{bp}* 2> /dev/null"
+    _, ls_output = subprocess.getstatusoutput(command)
+    if ls_output:
+        for line in ls_output.split("\n"):
+            parts = line.split()
+            if parts:
+                discovered_ports.add(parts[-1])
+    return discovered_ports
+
+
 def active_ports_on_supported_devices(
     sds: Any, eliminate_duplicates: bool = False
 ) -> set[str]:
@@ -984,42 +1038,8 @@ def active_ports_on_supported_devices(
             baseports.add(d.baseport_on_windows)
 
     for bp in baseports:
-        if system == "Linux":
-            # see if we have any devices (ignoring any stderr output)
-            command = f"ls -al /dev/{bp}* 2> /dev/null"
-            # print(f'command:{command}')
-            _, ls_output = subprocess.getstatusoutput(command)
-            # print(f'ls_output:{ls_output}')
-            # if we got output, there are ports
-            if len(ls_output) > 0:
-                # print('got output')
-                # for each line of output
-                lines = ls_output.split("\n")
-                # print(f'lines:{lines}')
-                for line in lines:
-                    parts = line.split(" ")
-                    # print(f'parts:{parts}')
-                    port = parts[-1]
-                    # print(f'port:{port}')
-                    ports.add(port)
-        elif system == "Darwin":
-            # see if we have any devices (ignoring any stderr output)
-            command = f"ls -al /dev/{bp}* 2> /dev/null"
-            # print(f'command:{command}')
-            _, ls_output = subprocess.getstatusoutput(command)
-            # print(f'ls_output:{ls_output}')
-            # if we got output, there are ports
-            if len(ls_output) > 0:
-                # print('got output')
-                # for each line of output
-                lines = ls_output.split("\n")
-                # print(f'lines:{lines}')
-                for line in lines:
-                    parts = line.split(" ")
-                    # print(f'parts:{parts}')
-                    port = parts[-1]
-                    # print(f'port:{port}')
-                    ports.add(port)
+        if system in ("Linux", "Darwin"):
+            ports |= _discover_unix_ports(bp)
         elif system == "Windows":
             # for each device in supported devices found
             for d in sds:
@@ -1061,10 +1081,8 @@ def detect_windows_port(
     ports = set()
 
     if sd:
-        # Type narrowing: sd is not None inside this block
-        device = sd
         system = platform.system()
-        vendor_id = device.usb_vendor_id_in_hex
+        vendor_id = sd.usb_vendor_id_in_hex
 
         if system == "Windows" and vendor_id is not None:
             command = (
@@ -1111,10 +1129,6 @@ def check_if_newer_version() -> str | None:
     try:
         parsed_act_version = pkg_version.parse(act_version)
         parsed_pypi_version = pkg_version.parse(pypi_version)
-        # Note: if handed "None" when we can't download the pypi_version,
-        # this gets a TypeError:
-        # "TypeError: expected string or bytes-like object, got 'NoneType'"
-        # Handle that below?
     except pkg_version.InvalidVersion:
         return pypi_version
 

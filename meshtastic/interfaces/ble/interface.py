@@ -990,7 +990,9 @@ class BLEInterface(MeshInterface):
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
-            except Exception as e:  # pragma: no cover - defensive last resort
+            except (
+                Exception
+            ) as e:  # noqa: BLE001  # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
@@ -1331,6 +1333,15 @@ class BLEInterface(MeshInterface):
         connected_device_key: str | None = None
         connection_alias_key: str | None = None
 
+        # Duplicate-connect check MUST run before acquiring a per-address lock to
+        # preserve lock ordering (_REGISTRY_LOCK before per-address locks).
+        if self._should_suppress_duplicate_connect(address_registry_key):
+            logger.info(
+                "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                address_registry_key or "unknown",
+            )
+            raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+
         # Apply address gating only for explicit-address connects.
         # Discovery-mode connects intentionally skip gating to avoid holding the
         # global registry lock during long-running scan/discovery operations.
@@ -1340,14 +1351,6 @@ class BLEInterface(MeshInterface):
                     _addr_lock_context(address_registry_key)
                 )
                 stack.enter_context(addr_lock)
-
-            # Fast suppression if a recent connect happened elsewhere.
-            if self._should_suppress_duplicate_connect(address_registry_key):
-                logger.info(
-                    "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                    address_registry_key or "unknown",
-                )
-                raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
 
             with self._connect_lock:
                 # Re-check closing state inside connect_lock for extra safety
@@ -1483,14 +1486,16 @@ class BLEInterface(MeshInterface):
                         if not self._state_manager._is_closing:
                             self.close()
                         return
-                    except Exception as e:  # pragma: no cover - defensive catch-all
+                    except (
+                        Exception
+                    ) as e:  # noqa: BLE001  # pragma: no cover - defensive catch-all
                         logger.exception("Unexpected error in BLE read loop")
                         if self._handle_read_loop_disconnect(repr(e), client):
                             break
                         return
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001  # defensive crash-recovery for receive thread
             # Defensive catch-all for the receive thread; keep BLE runtime alive.
             logger.exception("Unexpected fatal error in BLE receive thread")
             if not self._state_manager._is_closing:
