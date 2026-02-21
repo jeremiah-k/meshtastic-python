@@ -165,7 +165,9 @@ class PPK2PowerSupply(PowerSupply):
         # must be after setting source voltage and before setting mode
         self.r.start_measuring()  # send command to ppk2
 
-        if not is_supply:  # min power outpuf of PPK2.  If less than this assume we want just meter mode.
+        if (
+            not is_supply
+        ):  # min power outpuf of PPK2.  If less than this assume we want just meter mode.
             self.r.use_ampere_meter()
         else:
             self.r.use_source_meter()  # set source meter mode

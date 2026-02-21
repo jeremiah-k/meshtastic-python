@@ -3,7 +3,7 @@
 import argparse
 import logging
 import os
-from typing import List, cast
+from typing import cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
@@ -21,7 +21,7 @@ from ..slog import root_dir
 pd.options.mode.copy_on_write = True
 
 
-def to_pmon_names(arr) -> List[str]:
+def to_pmon_names(arr) -> list[str | None]:
     """
     Map a sequence of power-monitor state integers to their enum name strings.
 
@@ -29,7 +29,8 @@ def to_pmon_names(arr) -> List[str]:
         arr (Iterable[int]): Sequence of power-monitor state values.
 
     Returns:
-        List[str | None]: List of corresponding enum names; elements are `None` when a value cannot be mapped or represents the "None" state.
+        list[str | None]: List of corresponding enum names; elements are `None`
+            when a value cannot be mapped or represents the "None" state.
     """
 
     def to_pmon_name(n):
@@ -109,16 +110,13 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     """
     Extract rows where one or more power monitors transitioned to the raised state.
 
-    Parameters
-    ----------
-    dslog : pd.DataFrame
-        Slog DataFrame that must contain `pm_mask` and `time` columns.
+    Args:
+        dslog (pd.DataFrame): Slog DataFrame that must contain `pm_mask` and `time` columns.
 
     Returns:
-    -------
-    pd.DataFrame
-        Subset of rows where power-monitor raises occurred. Columns are
-        `time` and `pm_raises` (a list of raised power-monitor name strings).
+        pd.DataFrame: Subset of rows where power-monitor raises occurred.
+            Columns are `time` and `pm_raises` (a list of raised power-monitor
+            name strings).
     """
     pmon_events = dslog[dslog["pm_mask"].notnull()]
 
@@ -175,10 +173,7 @@ def create_argparser() -> argparse.ArgumentParser:
     Create the command-line argument parser for analysis tools.
 
     Returns:
-    -------
-    argparse.ArgumentParser
-        Configured argument parser instance.
-
+        argparse.ArgumentParser: Configured argument parser instance.
     """
     parser = argparse.ArgumentParser(description="Meshtastic power analysis tools")
     group = parser

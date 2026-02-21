@@ -13,14 +13,12 @@ def sanitize_address(address: str | None) -> str | None:
     """
     Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 
-    Parameters
-    ----------
+    Args:
         address (str | None): Address or identifier to normalize.
 
     Returns:
-    -------
-        str | None: Normalized address string with hyphens, underscores, colons, and spaces removed and lowercased, or None if `address` is None or empty after stripping.
-
+        str | None: Normalized address string with separators removed and lowercased,
+            or `None` if `address` is `None` or empty after stripping.
     """
     if address is None:
         return None

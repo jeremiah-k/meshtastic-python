@@ -220,11 +220,10 @@ def _on_text_receive(iface: Any, asDict: dict[str, Any]) -> None:
     asDict["decoded"]["text"]. If decoding fails, leave that field unset and log an error.
     Always invokes the interface's info-update path to refresh node metadata based on the packet.
 
-    Parameters
-    ----------
+    Args:
         iface: The interface instance that received the packet.
-        asDict (dict): Packet dictionary expected to contain decoded.payload (bytes) where the text is stored.
-
+        asDict (dict[str, Any]): Packet dictionary expected to contain
+            decoded.payload (bytes) where the text is stored.
     """
     # We don't throw if the utf8 is invalid in the text message.  Instead we just don't populate
     # the decoded.data.text and we log an error message.  This at least allows some delivery to
@@ -248,11 +247,10 @@ def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
     If asDict contains a "from" field and a decoded "position", the position is normalized
     using the interface's fixup routine and written to that node's "position" entry.
 
-    Parameters
-    ----------
+    Args:
         iface: Interface instance that provides position normalization and node lookup helpers.
-        asDict (dict): Packet dictionary expected to contain "from" and "decoded"->"position".
-
+        asDict (dict[str, Any]): Packet dictionary expected to contain
+            "from" and "decoded"->"position".
     """
     logger.debug("in _on_position_receive() asDict:%s", asDict)
     if "decoded" in asDict:
@@ -301,11 +299,10 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     or `localStats`. If the packet lacks a `from` field or none of these sections are
     present, no change is made.
 
-    Parameters
-    ----------
+    Args:
         iface: Interface instance used to look up or create the target node.
-        asDict (dict): Received packet dictionary; expected to include a `from` key and may include `decoded.telemetry`.
-
+        asDict (dict[str, Any]): Received packet dictionary; expected to include
+            a `from` key and may include `decoded.telemetry`.
     """
     logger.debug("in _on_telemetry_receive() asDict:%s", asDict)
     if "from" not in asDict:
@@ -343,15 +340,14 @@ def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Update per-node metadata fields based on information present in a received packet dictionary.
 
-    Parameters
-    ----------
+    Args:
         iface: The interface instance whose node store will be updated.
-        asDict (dict): A parsed packet dictionary; if it contains a "from" key, the node identified by that value will have these fields set:
-                - lastReceived: the full packet dictionary
-                - lastHeard: value of `rxTime` from the packet (or None)
-                - snr: value of `rxSnr` from the packet (or None)
-                - hopLimit: value of `hopLimit` from the packet (or None)
-
+        asDict (dict[str, Any]): Parsed packet dictionary; if it contains a "from"
+            key, the node identified by that value will have these fields set:
+            - lastReceived: the full packet dictionary
+            - lastHeard: value of `rxTime` from the packet (or None)
+            - snr: value of `rxSnr` from the packet (or None)
+            - hopLimit: value of `hopLimit` from the packet (or None)
     """
     if "from" in asDict:
         node = iface._getOrCreateByNum(asDict["from"])
@@ -379,9 +375,9 @@ def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
     logger.debug("in _on_admin_receive() asDict:%s", asDict)
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])["adminSessionPassKey"] = (
-            adminMessage.session_passkey
-        )
+        iface._getOrCreateByNum(asDict["from"])[
+            "adminSessionPassKey"
+        ] = adminMessage.session_passkey
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
         logger.debug(

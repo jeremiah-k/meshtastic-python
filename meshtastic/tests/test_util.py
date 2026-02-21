@@ -174,9 +174,7 @@ def test_catchAndIgnore(caplog):
         Raise an Exception with the message "foo".
 
         Raises:
-        ------
             Exception: Always raised with message "foo".
-
         """
         raise Exception("foo")  # pylint: disable=W0719  # noqa: TRY002
 
@@ -634,11 +632,11 @@ def test_fuzz_camel_to_snake(a_string):
 
 @given(st.text())
 def test_fuzz_snake_to_camel(a_string):
-    """Test that snake_to_camel removes underscores."""
+    """Test that snake_to_camel applies the expected canonical transformation."""
     result = snake_to_camel(a_string)
-    # Verify the result contains no underscores unless the input equals the result
-    # (i.e., no transformation was possible)
-    assert "_" not in result or a_string == result
+    parts = a_string.split("_")
+    expected = parts[0] + "".join(part.title() for part in parts[1:])
+    assert result == expected
 
 
 @given(st.text())

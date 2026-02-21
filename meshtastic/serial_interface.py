@@ -58,13 +58,15 @@ class SerialInterface(StreamInterface):
                     self,
                     debugOut=debugOut,
                     noProto=noProto,
-                    connectNow=connectNow,
+                    connectNow=False,
                     noNodes=noNodes,
                     timeout=timeout,
                 )
                 return
             elif len(ports) > 1:
-                message: str = "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+                message: str = (
+                    "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+                )
                 message += f"  Ports detected: {ports}"
                 raise self.MeshInterfaceError(message)
             else:

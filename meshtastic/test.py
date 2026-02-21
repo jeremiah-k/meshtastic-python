@@ -186,7 +186,9 @@ def testSend(
     else:
         toNode = toInterface.myInfo.my_node_num
 
-    logger.debug(f"Sending test wantAck={wantAck} packet from {fromNode} to {toNode}")
+    logger.debug(
+        "Sending test wantAck=%s packet from %s to %s", wantAck, fromNode, toNode
+    )
     # pylint: disable=W0603
     global sendingInterface
     sendingInterface = fromInterface
@@ -218,7 +220,7 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
         bool: `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
 
     """
-    logger.info(f"Running {numTests} tests with wantAck={wantAck}")
+    logger.info("Running %s tests with wantAck=%s", numTests, wantAck)
     numFail: int = 0
     numSuccess: int = 0
     for _ in range(numTests):
@@ -302,7 +304,7 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
 
     """
     debugname = "log" + portName.replace("/", "_")
-    logger.info(f"Writing serial debugging to {debugname}")
+    logger.info("Writing serial debugging to %s", debugname)
     return open(debugname, "w+", buffering=1, encoding="utf8")
 
 

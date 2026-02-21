@@ -1638,12 +1638,12 @@ class Node:
         if decoded["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.ROUTING_APP
         ):
-            self.iface._acknowledgment.receivedAck = True
             if decoded["routing"]["errorReason"] != "NONE":
                 logger.warning(
                     "Metadata request failed, error reason: %s",
                     decoded["routing"]["errorReason"],
                 )
+                self.iface._acknowledgment.receivedNak = True
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 return  # Don't try to parse this routing message
             logger.debug("Retrying metadata request.")
@@ -1886,7 +1886,7 @@ class Node:
         Each entry is a dict containing:
         - `index` (int): zero-based channel index.
         - `role` (str): channel role name.
-        - `name` (str | None): channel settings name, or `None` if unset.
+        - `name` (str): channel settings name, or an empty string if unset.
         - `hash` (str | None): computed channel hash when both `name` and PSK are present, otherwise `None`.
 
         Returns:

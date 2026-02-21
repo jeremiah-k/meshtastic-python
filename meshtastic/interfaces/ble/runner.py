@@ -272,6 +272,7 @@ class BLECoroutineRunner:
             ready_event (threading.Event): Event that will be set when the loop is ready and cleared after shutdown to signal the thread's lifecycle.
         """
         loop: asyncio.AbstractEventLoop | None = None
+        keepalive_handle: asyncio.TimerHandle | None = None
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -296,13 +297,14 @@ class BLECoroutineRunner:
 
                 This prevents the loop from sleeping indefinitely between I/O events so callbacks submitted from other threads are observed promptly on platforms where the loop's low-level wakeup signaling may not occur.
                 """
+                nonlocal keepalive_handle
                 if self._stop_requested:
                     return
                 if self._thread is not threading.current_thread():
                     return
                 if loop.is_closed():
                     return
-                loop.call_later(
+                keepalive_handle = loop.call_later(
                     BLEConfig.RUNNER_IDLE_WAKE_INTERVAL_SECONDS,
                     _runner_keepalive_tick,
                 )
@@ -310,7 +312,10 @@ class BLECoroutineRunner:
             # Signal that the loop is ready
             loop.call_soon(ready_event.set)
             # Periodic keepalive to avoid starvation of cross-thread callbacks.
-            loop.call_soon(_runner_keepalive_tick)
+            keepalive_handle = loop.call_later(
+                BLEConfig.RUNNER_IDLE_WAKE_INTERVAL_SECONDS,
+                _runner_keepalive_tick,
+            )
 
             # Run forever until stopped
             loop.run_forever()
@@ -320,6 +325,9 @@ class BLECoroutineRunner:
         finally:
             # Clean shutdown: cancel all pending tasks
             if loop:
+                if keepalive_handle is not None and not keepalive_handle.cancelled():
+                    with contextlib.suppress(Exception):
+                        keepalive_handle.cancel()
                 self._cancel_all_tasks(loop)
                 loop.close()
 
@@ -430,6 +438,12 @@ class BLECoroutineRunner:
             raise
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:
+            if self._stop_requested:
+                logger.debug(
+                    "Runner stop requested while submitting coroutine; cancelling submitted future."
+                )
+                future.cancel()
+                return future
             self._pending_futures.add(future)
         # Remove completed futures promptly instead of waiting for GC.
         future.add_done_callback(self._discard_tracked_future)

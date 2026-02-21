@@ -45,7 +45,7 @@ args: argparse.Namespace | None
 parser: argparse.ArgumentParser | None
 channel_index: int | None
 logfile: IO[str] | None
-tunnel_instance: Any
+tunnel_instance: Any | None
 camel_case: bool
 
 # Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.

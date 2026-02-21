@@ -4,6 +4,7 @@ import random
 from typing import Any, Callable, Protocol
 
 from meshtastic.interfaces.ble.constants import BLEConfig
+from meshtastic.interfaces.ble.utils import _sleep
 
 
 class _RandomLike(Protocol):
@@ -179,8 +180,6 @@ class ReconnectPolicy:
         Parameters:
             attempt (int): Zero-based attempt index used to compute the delay.
         """
-        from meshtastic.interfaces.ble.utils import _sleep
-
         _sleep(self._get_delay(attempt))
 
 
@@ -207,6 +206,8 @@ class _PolicyDescriptor:
         Returns:
             ReconnectPolicy: A new policy instance created by the owner's factory method.
         """
+        # Policies are stateful (attempt counters), so descriptor access must
+        # always return a fresh instance rather than a shared singleton.
         factory: Callable[[], ReconnectPolicy] = getattr(cls, self.factory_name)
         return factory()
 
@@ -216,7 +217,7 @@ class RetryPolicy:
     Static retry policy presets for BLE operations.
     """
 
-    # Backwards-compatible attribute accessors that return fresh instances
+    # Backwards-compatible attribute accessors that return fresh instances.
     EMPTY_READ = _PolicyDescriptor("emptyRead")
     TRANSIENT_ERROR = _PolicyDescriptor("transientError")
     AUTO_RECONNECT = _PolicyDescriptor("autoReconnect")

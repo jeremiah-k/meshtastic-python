@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ..mesh_interface import MeshInterface
+from ..protobuf import portnums_pb2, remote_hardware_pb2
 from ..remote_hardware import RemoteHardwareClient, onGPIOreceive
 from ..serial_interface import SerialInterface
 
@@ -41,10 +42,12 @@ def test_RemoteHardwareClient():
 def test_onGPIOreceive(caplog):
     """Test onGPIOreceive."""
     iface = MagicMock(autospec=SerialInterface)
+    iface.mask = 0xFFFFFFFF
     packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
     with caplog.at_level(logging.INFO):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
+        assert re.search(r"value=4096", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
@@ -78,6 +81,17 @@ def test_readGPIOs(caplog):
     with caplog.at_level(logging.DEBUG):
         rhw.readGPIOs("0x10", 123)
     assert re.search(r"readGPIOs", caplog.text, re.MULTILINE)
+    iface.sendData.assert_called_once()
+    args, kwargs = iface.sendData.call_args
+    assert args[1] == "0x10"
+    assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
+    payload = args[0]
+    assert payload.type == remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
+    assert payload.gpio_mask == 123
+    assert kwargs["wantAck"] is True
+    assert kwargs["channelIndex"] == rhw.channelIndex
+    assert kwargs["wantResponse"] is True
+    assert kwargs["onResponse"] is None
     iface.close()
 
 
@@ -89,6 +103,18 @@ def test_writeGPIOs(caplog):
     with caplog.at_level(logging.DEBUG):
         rhw.writeGPIOs("0x10", 123, 1)
     assert re.search(r"writeGPIOs", caplog.text, re.MULTILINE)
+    iface.sendData.assert_called_once()
+    args, kwargs = iface.sendData.call_args
+    assert args[1] == "0x10"
+    assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
+    payload = args[0]
+    assert payload.type == remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
+    assert payload.gpio_mask == 123
+    assert payload.gpio_value == 1
+    assert kwargs["wantAck"] is True
+    assert kwargs["channelIndex"] == rhw.channelIndex
+    assert kwargs["wantResponse"] is False
+    assert kwargs["onResponse"] is None
     iface.close()
 
 
@@ -104,14 +130,26 @@ def test_watchGPIOs(caplog):
     with caplog.at_level(logging.DEBUG):
         rhw.watchGPIOs("0x10", 123)
     assert re.search(r"watchGPIOs", caplog.text, re.MULTILINE)
+    iface.sendData.assert_called_once()
+    args, kwargs = iface.sendData.call_args
+    assert args[1] == "0x10"
+    assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
+    payload = args[0]
+    assert payload.type == remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
+    assert payload.gpio_mask == 123
+    assert kwargs["wantAck"] is True
+    assert kwargs["channelIndex"] == rhw.channelIndex
+    assert kwargs["wantResponse"] is False
+    assert kwargs["onResponse"] is None
+    assert iface.mask == 123
     iface.close()
 
 
 @pytest.mark.unit
-def test_sendHardware_no_nodeid():
-    """Test sending no nodeid to _sendHardware()."""
+def test_send_hardware_no_nodeid():
+    """Test sending no nodeid to _send_hardware()."""
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
-        rhw._sendHardware(None, None)
+        rhw._send_hardware(None, None)
     assert "Must use a destination node ID" in str(exc_info.value)

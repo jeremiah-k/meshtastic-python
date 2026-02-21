@@ -99,9 +99,18 @@ class RemoteHardwareClient:
             raise _get_mesh_interface_error()(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
 
-        pub.subscribe(onGPIOreceive, "meshtastic.receive.remotehw")
+        already_subscribed = False
+        try:
+            already_subscribed = pub.isSubscribed(
+                onGPIOreceive, "meshtastic.receive.remotehw"
+            )
+        except Exception:  # noqa: BLE001 - topic may not exist yet
+            # Topic may not exist yet; subscribe below to create/register it.
+            already_subscribed = False
+        if not already_subscribed:
+            pub.subscribe(onGPIOreceive, "meshtastic.receive.remotehw")
 
-    def _sendHardware(
+    def _send_hardware(
         self,
         nodeid: int | str,
         r: remote_hardware_pb2.HardwareMessage,
@@ -154,7 +163,7 @@ class RemoteHardwareClient:
         r.type = remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
         r.gpio_mask = mask
         r.gpio_value = vals
-        return self._sendHardware(nodeid, r)
+        return self._send_hardware(nodeid, r)
 
     def readGPIOs(
         self,
@@ -177,7 +186,7 @@ class RemoteHardwareClient:
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
         r.gpio_mask = mask
-        return self._sendHardware(nodeid, r, wantResponse=True, onResponse=onResponse)
+        return self._send_hardware(nodeid, r, wantResponse=True, onResponse=onResponse)
 
     def watchGPIOs(self, nodeid: int | str, mask: int) -> Any:
         """
@@ -195,4 +204,4 @@ class RemoteHardwareClient:
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
         r.gpio_mask = mask
         self.iface.mask = mask
-        return self._sendHardware(nodeid, r)
+        return self._send_hardware(nodeid, r)

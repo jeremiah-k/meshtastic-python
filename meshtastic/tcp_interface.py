@@ -183,7 +183,11 @@ class TCPInterface(StreamInterface):
                 requested.
         """
         if self.socket is not None:
-            data = self.socket.recv(length)
+            try:
+                data = self.socket.recv(length)
+            except OSError as ex:
+                logger.debug("Socket read error, treating as dead socket: %s", ex)
+                data = b""
             # empty byte indicates a disconnected socket,
             # we need to handle it to avoid an infinite loop reading from null socket
             if data == b"":

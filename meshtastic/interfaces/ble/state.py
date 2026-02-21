@@ -254,7 +254,7 @@ class BLEStateManager:
         Acquires the internal state lock and attempts a transition to DISCONNECTED; this will be a no-op if the state is already DISCONNECTED.
 
         Returns:
-            `true` if the transition succeeded or was a no-op (state is DISCONNECTED after the call), `false` otherwise.
+            `True` if the transition succeeded or was a no-op (state is DISCONNECTED after the call), `False` otherwise.
         """
         with self._state_lock:
             # Prefer validated transition semantics; this is a no-op when already

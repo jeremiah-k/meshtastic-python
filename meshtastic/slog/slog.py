@@ -167,17 +167,11 @@ class StructuredLogger:
         """
         Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
 
-        Parameters
-        ----------
-        client : MeshInterface
-            Source of device log lines to monitor.
-        dir_path : str
-            Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
-        power_logger : PowerLogger | None, optional
-            If provided, used to record a power sample with each structured log entry.
-        include_raw : bool, optional
-            If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
-
+        Args:
+            client (MeshInterface): Source of device log lines to monitor.
+            dir_path (str): Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
+            power_logger (PowerLogger | None): If provided, used to record a power sample with each structured log entry.
+            include_raw (bool): If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
         """
         self.client = client
         self.power_logger = power_logger
@@ -195,19 +189,8 @@ class StructuredLogger:
         # Use timestamp as the first column
         all_fields.insert(0, ("time", pa.timestamp("us")))
 
-        # pass in our name->type tuples a pa.fields
-        self.writer.set_schema(
-            pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
-        )
-
         self._raw_file_lock = threading.Lock()
-        self.raw_file: io.TextIOWrapper | None = (
-            open(  # pylint: disable=consider-using-with
-                os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
-            )
-            if self.include_raw
-            else None
-        )
+        self.raw_file: io.TextIOWrapper | None = None
 
         # We need a closure here because the subscription API is very strict about exact arg matching
         def listen_glue(line, interface):  # pylint: disable=unused-argument
@@ -217,14 +200,21 @@ class StructuredLogger:
             listen_glue  # we must save this so it doesn't get garbage collected
         )
         try:
+            # pass in our name->type tuples a pa.fields
+            self.writer.set_schema(
+                pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
+            )
+            if self.include_raw:
+                self.raw_file = open(  # pylint: disable=consider-using-with
+                    os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
+                )
             pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         except Exception:
-            # If subscription fails, close file handles before re-raising
+            # If setup fails at any step, close file handles before re-raising.
             if self.raw_file:
                 self.raw_file.close()
                 self.raw_file = None
-            if self.writer:
-                self.writer.close()
+            self.writer.close()
             raise
 
     def close(self) -> None:
@@ -257,11 +247,8 @@ class StructuredLogger:
         logger is present, records a power measurement using the exact same timestamp as the
         written slog record. Unknown or unparsable structured slog lines are logged as warnings.
 
-        Parameters
-        ----------
-        line : str
-            The raw log line to process.
-
+        Args:
+            line (str): The raw log line to process.
         """
 
         di = {}  # the dictionary of the fields we found to log
@@ -333,16 +320,14 @@ class LogSet:
         "power" subdirectory. An atexit handler pointing to this instance's close() is registered
         for later teardown.
 
-        Parameters
-        ----------
-        client : MeshInterface
-            MeshInterface client whose log lines will be monitored and recorded.
-        dir_name : str | None, optional
-            Path for storing logs; when omitted a new timestamped directory is
-            created under the slog root and "latest" is updated to point to it.
-        power_meter : PowerMeter | None, optional
-            When provided, a PowerLogger is started to record power samples alongside slog entries.
-
+        Args:
+            client (MeshInterface): MeshInterface client whose log lines will be
+                monitored and recorded.
+            dir_name (str | None): Path for storing logs; when omitted, a new
+                timestamped directory is created under the slog root and "latest"
+                is updated to point to it.
+            power_meter (PowerMeter | None): When provided, a PowerLogger is
+                started to record power samples alongside slog entries.
         """
 
         if not dir_name:
@@ -399,7 +384,10 @@ class LogSet:
             atexit.unregister(
                 self.atexit_handler
             )  # docs say it will silently ignore if not found
-            self.slog_logger.close()
-            if self.power_logger:
-                self.power_logger.close()
-            self.slog_logger = None
+            try:
+                self.slog_logger.close()
+            finally:
+                self.slog_logger = None
+                if self.power_logger:
+                    self.power_logger.close()
+                    self.power_logger = None

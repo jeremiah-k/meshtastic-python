@@ -897,14 +897,9 @@ def onConnected(interface: MeshInterface) -> None:
                 if len(fields) > 1:
                     node.commitSettingsTransaction()
             elif last_pref is not None:
-                if mt_config.camel_case:
-                    print(
-                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
-                    )
-                else:
-                    print(
-                        f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
-                    )
+                print(
+                    f"{node.localConfig.__class__.__name__} and {node.moduleConfig.__class__.__name__} do not have an attribute {last_pref[0]}."
+                )
                 print("Choices are...")
                 printConfig(node.localConfig)
                 printConfig(node.moduleConfig)
@@ -1376,6 +1371,7 @@ def onConnected(interface: MeshInterface) -> None:
             log_set.close()
 
     except Exception as ex:
+        logger.exception("Unhandled exception in onConnected: %s", ex)
         _cli_exit(f"Aborting due to: {ex}", 1)
 
 
@@ -2859,9 +2855,6 @@ def main():
     mt_config.parser = parser
     initParser()
     common()
-    logfile = mt_config.logfile
-    if logfile:
-        logfile.close()
 
 
 def tunnelMain():

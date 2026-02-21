@@ -22,7 +22,7 @@ class ArrowWriter:
         concurrent access. The schema is not inferred or set until data is written
         or set_schema is called.
 
-        Parameters:
+        Args:
             file_name (str): Path to the output file to write Arrow stream data to.
         """
         self.sink = pa.OSFile(file_name, "wb")  # type: ignore

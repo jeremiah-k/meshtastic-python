@@ -406,13 +406,10 @@ def _is_currently_connected_elsewhere(
             owner_to_check = current_owner
         else:
             # Fallback for unowned claims: prune after a safety window.
-            # NOTE: If _CONNECTED_MARKED_AT lacks the key (out-of-sync records),
-            # marked_at defaults to 0.0 which is falsy, causing the timed-prune check
-            # to be skipped. This intentionally keeps the claim alive to avoid
-            # premature removal when records are inconsistent, trading off immediate
-            # cleanup for safety.
-            marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
-            if marked_at and (
+            # If the timestamp is missing (out-of-sync records), prune immediately to
+            # avoid preserving stale claims indefinitely.
+            marked_at = _CONNECTED_MARKED_AT.get(key)
+            if marked_at is None or (
                 time.monotonic() - marked_at
                 > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
             ):
@@ -455,8 +452,8 @@ def _is_currently_connected_elsewhere(
         if current_owner is not None:
             return True
 
-        marked_at = _CONNECTED_MARKED_AT.get(key, 0.0)
-        if marked_at and (
+        marked_at = _CONNECTED_MARKED_AT.get(key)
+        if marked_at is None or (
             time.monotonic() - marked_at
             > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
         ):

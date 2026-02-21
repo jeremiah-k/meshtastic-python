@@ -81,6 +81,7 @@ T = TypeVar("T")
 MAX_DRAIN_ITERATIONS = 10_000
 RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD = 3
 RECEIVE_RECOVERY_MAX_BACKOFF_SEC = 30
+RECEIVE_RECOVERY_STABILITY_RESET_SEC = 60
 
 
 class BLEInterface(MeshInterface):
@@ -1446,6 +1447,18 @@ class BLEInterface(MeshInterface):
                             )
                             self._read_retry_count = 0
                             continue
+                        now = time.monotonic()
+                        with self._state_lock:
+                            if (
+                                self._receive_recovery_attempts > 0
+                                and now - self._last_recovery_time
+                                >= RECEIVE_RECOVERY_STABILITY_RESET_SEC
+                            ):
+                                logger.debug(
+                                    "Resetting receive recovery attempts after %.1fs of stability.",
+                                    now - self._last_recovery_time,
+                                )
+                                self._receive_recovery_attempts = 0
                         self._read_retry_count = 0
                     except (BleakDBusError, BLEClient.BLEError) as e:
                         # Handle expected BLE disconnect/read failures.
