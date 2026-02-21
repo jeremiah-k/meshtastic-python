@@ -20,8 +20,8 @@
 
 ## Docstring style
 
-- The linted docstring convention is Google style (Ruff pydocstyle).
-- Prefer Google-style docstrings for new and edited docstrings.
+- The linted docstring convention is NumPy style (Ruff pydocstyle).
+- Prefer NumPy-style docstrings for new and edited docstrings.
 - Avoid mass docstring rewrites unrelated to the code you are changing.
 
 ## API naming and compatibility policy

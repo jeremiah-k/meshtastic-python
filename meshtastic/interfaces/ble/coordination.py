@@ -179,7 +179,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            _description_
+            Name of the event to retrieve.
 
         Returns
         -------
@@ -197,7 +197,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         thread : ThreadLike
-            _description_
+            Thread previously registered with this coordinator via _create_thread.
         """
         should_start = False
         must_join_after_start = False
@@ -279,7 +279,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            _description_
+            Name of the event to retrieve.
         """
         event = self._events.get(name)
         if event is not None:
@@ -353,7 +353,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            _description_
+            Name of the event to retrieve.
 
         Returns
         -------
@@ -374,8 +374,6 @@ class ThreadCoordinator:
         ----------
         event_names : str
             One or more event names to set; names not registered with the coordinator are ignored.
-        *event_names : str
-            _description_
         """
         with self._lock:
             for name in event_names:
@@ -390,8 +388,6 @@ class ThreadCoordinator:
         ----------
         event_names : str
             One or more event names to clear.
-        *event_names : str
-            _description_
         """
         with self._lock:
             for name in event_names:

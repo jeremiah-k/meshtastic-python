@@ -36,10 +36,10 @@ def onTunnelReceive(packet, interface):
 
     Parameters
     ----------
-    packet : _type_
-        _description_
-    interface : _type_
-        _description_
+    packet : dict
+        Mesh packet containing the tunneled data payload.
+    interface : Any
+        Interface object that received the packet (unused).
     """
     _ = interface
     logger.debug("in onTunnelReceive()")
@@ -79,7 +79,7 @@ class Tunnel:
 
         Parameters
         ----------
-        iface : _type_
+        iface : Any
             An already-open MeshInterface instance providing .myInfo, .nodes,
             .node numbers, .noProto, and .sendData behavior.
         subnet : str
@@ -92,14 +92,6 @@ class Tunnel:
         Tunnel.TunnelError
             If iface, subnet, or netmask is missing, or if the
             process is not running on a Linux system.
-        TunnelError
-            _description_
-        TunnelError
-            _description_
-        TunnelError
-            _description_
-        TunnelError
-            _description_
         """
 
         if not iface:
@@ -264,7 +256,11 @@ class Tunnel:
         return ignore
 
     def __tunReader(self):
-        """_summary_."""
+        """Background thread that reads IP packets from the TUN device and forwards them to the mesh.
+
+        Continuously reads packets from the TUN device, checks if they should be filtered,
+        and sends non-filtered packets to the appropriate mesh node based on destination IP.
+        """
         tap = self.tun
         if tap is None:
             logger.debug("TUN reader exiting: no active TUN device")
@@ -279,18 +275,21 @@ class Tunnel:
                 self.sendPacket(destAddr, p)
 
     def _ipToNodeId(self, ipAddr):
-        # We only consider the last 16 bits of the nodenum for IP address matching
-        """_summary_.
+        """Convert a 4-byte IP address to the corresponding mesh node ID.
+
+        Uses the last 16 bits of the IP address to match against the low 16 bits
+        of known node numbers in the mesh.
 
         Parameters
         ----------
-        ipAddr : _type_
-            _description_
+        ipAddr : bytes
+            4-byte IPv4 address in network byte order.
 
         Returns
         -------
-        _type_
-            _description_
+        str | None
+            The mesh node ID string if a matching node is found, "^all" for
+            broadcast address 255.255, or None if no matching node exists.
         """
         ipBits = ipAddr[2] * 256 + ipAddr[3]
 

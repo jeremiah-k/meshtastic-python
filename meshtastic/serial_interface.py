@@ -1,4 +1,8 @@
-"""Serial interface class."""
+"""Serial interface class for communicating with Meshtastic devices over serial connections.
+
+This module provides the SerialInterface class which handles communication with
+Meshtastic devices via USB/serial connections.
+"""
 
 import logging
 import sys
@@ -50,7 +54,7 @@ class SerialInterface(StreamInterface):
         Raises
         ------
         MeshInterfaceError
-            _description_
+            When multiple serial ports are detected and none was explicitly specified.
         """
         self.noProto = noProto
         self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
@@ -203,6 +207,6 @@ class SerialInterface(StreamInterface):
         Returns
         -------
         None
-            _description_
+            Always returns None, as per context manager protocol.
         """
         return super().__exit__(exc_type, exc_val, exc_tb)

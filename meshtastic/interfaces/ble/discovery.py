@@ -204,11 +204,9 @@ class DiscoveryStrategy(ABC):
         Returns
         -------
         list[BLEDevice]
-            Devices that advertise SERVICE_UUID and, if
-        _type_
-            `address` is provided, match via address-first and name-aware
-        _type_
-            precedence rules. Returns an empty list on error.
+            Devices that advertise SERVICE_UUID and, if `address` is provided,
+            match via address-first and name-aware precedence rules.
+            Returns an empty list on error.
 
         Raises
         ------
@@ -246,20 +244,17 @@ class ConnectedStrategy(DiscoveryStrategy):
         Returns
         -------
         list[BLEDevice]
-            Connected devices that advertise SERVICE_UUID and,
-        _type_
-            if `address` is provided, match via address-first and name-aware
-        _type_
-            precedence rules. Returns an empty list if the backend does not
-        _type_
-            support connected-device enumeration or if an error occurs.
+            Connected devices that advertise SERVICE_UUID and, if `address` is provided,
+            match via address-first and name-aware precedence rules. Returns an empty
+            list if the backend does not support connected-device enumeration or if
+            an error occurs.
 
         Raises
         ------
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
+        BleakError
+            If a BLE-specific error occurs during device enumeration.
+        RuntimeError
+            If the timeout elapses before backend device enumeration completes.
         """
         if not _bleak_supports_connected_fallback():
             logger.debug(
@@ -407,11 +402,11 @@ class DiscoveryManager:
         BleakDBusError
             If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
         RuntimeError
-            _description_
+            If the discovery client factory returns None.
         RuntimeError
-            _description_
-        __UnknownError__
-            _description_
+            If the discovery client factory returns an invalid type.
+        Exception
+            For other unexpected errors during device discovery.
         """
         # Only discard the client if it was previously connected and has since
         # disconnected. A discovery-only client (never connected) should be reused.

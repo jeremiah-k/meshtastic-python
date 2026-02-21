@@ -84,6 +84,10 @@ class BLEStateManager:
         """Initialize the BLEStateManager by creating its reentrant lock and setting the initial connection state.
 
         Creates an RLock for serializing state transitions and sets the internal state to ConnectionState.DISCONNECTED.
+
+        Returns
+        -------
+        None
         """
         self._state_lock = RLock()  # Single reentrant lock for all state changes
         self._state = ConnectionState.DISCONNECTED

@@ -6,7 +6,7 @@ select = ["B", "D3", "D4", "E", "F"]
 ignore = ["E501"]
 
 [lint.pydocstyle]
-convention = "google"
+convention = "numpy"
 
 # Generated protobuf modules rely on import side effects during descriptor loading.
 # BLE interface package has relaxed docstring requirements.

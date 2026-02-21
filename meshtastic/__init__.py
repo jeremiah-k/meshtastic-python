@@ -373,15 +373,16 @@ def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
 def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """Store the admin session passkey from an admin packet on the sending node.
 
+    If the expected fields are present in `asDict`, sets the sender node's
+    "adminSessionPassKey" to the extracted `session_passkey`.
+
     Parameters
     ----------
-    Description: : _type_
-        If the expected fields are present in `asDict`, sets the sender node's
-        "adminSessionPassKey" to the extracted `session_passkey`.
     iface : Any
-        _description_
+        The interface instance managing the node database.
     asDict : dict[str, Any]
-        _description_
+        Received packet dictionary; expected to contain
+        `decoded.admin.raw.session_passkey` and a `from` sender field.
     """
     logger.debug("in _on_admin_receive() asDict:%s", asDict)
     try:

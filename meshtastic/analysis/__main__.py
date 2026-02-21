@@ -46,8 +46,8 @@ def to_pmon_names(arr) -> list[str | None]:
 
         Returns
         -------
-        _type_
-            str or None: The enum name string for the given state, or `None` if the value does not map to a known state.
+        str | None
+            The enum name string for the given state, or `None` if the value does not map to a known state.
         """
         try:
             s = powermon_pb2.PowerMon.State.Name(int(n))
@@ -152,17 +152,17 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
 
     # pylint: disable=unused-variable
     def get_endtime(row):
-        """Find the corresponding fall event.
+        """Find the corresponding fall event for a given raise event.
 
         Parameters
         ----------
-        row : _type_
-            _description_
+        row : pd.Series
+            A row from the pmon_raises DataFrame.
 
         Returns
         -------
-        _type_
-            _description_
+        pd.Series | None
+            The matching fall event row, or None if not found.
         """
         following = pmon_falls[
             (pmon_falls["pm_falls"] == row["pm_raises"])
@@ -241,19 +241,19 @@ def create_dash(slog_path: str) -> Dash:
     pmon_raises = get_pmon_raises(dslog)
 
     def set_legend(f, name):
-        """_summary_.
+        """Set the legend name and enable legend display for the first trace in a figure.
 
         Parameters
         ----------
-        f : _type_
-            _description_
-        name : _type_
-            _description_
+        f : plotly.graph_objects.Figure
+            The Plotly figure to modify.
+        name : str
+            The legend name to set for the first trace.
 
         Returns
         -------
-        _type_
-            _description_
+        plotly.graph_objects.Figure
+            The modified figure with updated legend settings.
         """
         f["data"][0]["showlegend"] = True
         f["data"][0]["name"] = name
@@ -291,8 +291,11 @@ def create_dash(slog_path: str) -> Dash:
 
 
 def main():
-    """Entry point of the script."""
+    """Entry point of the script.
 
+    Parses command-line arguments, reads the slog data, and optionally starts
+    a Dash web server for visualization.
+    """
     parser = create_argparser()
     args = parser.parse_args()
     if not args.slog:

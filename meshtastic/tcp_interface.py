@@ -1,4 +1,8 @@
-"""TCPInterface class for interfacing with a TCP endpoint."""
+"""TCPInterface class for communicating with Meshtastic devices over TCP connections.
+
+This module provides the TCPInterface class which handles communication with
+Meshtastic devices via TCP/IP network connections.
+"""
 
 # pylint: disable=R0917
 import contextlib
@@ -33,7 +37,7 @@ class TCPInterface(StreamInterface):
         ----------
         hostname : str
             Hostname or IP address of the device to connect to.
-        debugOut : _type_
+        debugOut : TextIOWrapper | None
             Optional debug output/stream; passed to the base class. (Default value = None)
         noProto : bool
             If True, disable protocol handling. (Default value = False)

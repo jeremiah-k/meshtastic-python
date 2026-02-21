@@ -61,8 +61,6 @@ class ConnectionValidator:
             If connections are not permitted. If the interface is closing the error message will be
             "Cannot connect while interface is closing". If a connection is already established or in progress
             the error message will be "Already connected or connection in progress".
-        BLEError
-            _description_
         """
         if not self.state_manager._can_connect:
             if self.state_manager._is_closing:
@@ -311,11 +309,7 @@ class ConnectionOrchestrator:
         BLEInterface.BLEError
             If the orchestrator is not in CONNECTING state or if the client disconnects during finalization.
         BLEError
-            _description_
-        BLEError
-            _description_
-        BLEError
-            _description_
+            If state transitions fail or the client connection is lost.
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:
@@ -426,14 +420,8 @@ class ConnectionOrchestrator:
             If the request is invalid (e.g., empty address) or a concurrent connection state prevents establishing a connection.
         BleakDBusError
             If a DBus-level BLE error occurs during connection.
-        BLEError
-            _description_
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
+        Exception
+            If any other error occurs during the connection process.
         """
         self.validator._validate_connection_request()
 

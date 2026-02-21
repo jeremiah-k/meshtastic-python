@@ -73,10 +73,7 @@ class ReconnectScheduler:
         bool
             True if a new reconnect worker thread was created and started, False otherwise.
 
-        Raises
-        ------
-        __UnknownError__
-            _description_
+
         """
         if not auto_reconnect:
             return False
@@ -116,6 +113,10 @@ class ReconnectScheduler:
         """Internal method: Clear the internal reference to the running reconnect thread.
 
         This operation acquires the scheduler's state_lock and sets the internal reconnect thread reference to None to record that no background reconnect worker is active.
+
+        Returns
+        -------
+        None
         """
         with self.state_lock:
             # Always clear the reference once the worker loop exits to match legacy behavior.

@@ -188,8 +188,8 @@ class StructuredLogger:
 
         Raises
         ------
-        __UnknownError__
-            _description_
+        Exception
+            If any setup step fails (e.g., file creation, schema setting, subscription).
         """
         self.client = client
         self.power_logger = power_logger
@@ -212,14 +212,14 @@ class StructuredLogger:
 
         # We need a closure here because the subscription API is very strict about exact arg matching
         def listen_glue(line, interface):  # pylint: disable=unused-argument
-            """_summary_.
+            """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters
             ----------
-            line : _type_
-                _description_
-            interface : _type_
-                _description_
+            line : str
+                The log line received from the device.
+            interface : MeshInterface
+                The interface that generated the log line (unused).
             """
             self._onLogMessage(line)
 
@@ -361,8 +361,8 @@ class LogSet:
 
         Raises
         ------
-        __UnknownError__
-            _description_
+        Exception
+            If structured logger initialization fails.
         """
 
         if not dir_name:

@@ -204,9 +204,9 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     Parameters
     ----------
     interface : MeshInterface
-        _description_
+        The mesh interface to query for channel information.
     channelIndex : int
-        _description_
+        The index of the channel to check.
 
     Returns
     -------
@@ -335,7 +335,7 @@ def splitCompoundName(comp_name: str) -> list[str]:
     Parameters
     ----------
     comp_name : str
-        _description_
+        The dotted preference name to split.
 
     Returns
     -------
@@ -514,7 +514,7 @@ def onConnected(interface: MeshInterface) -> None:
     Raises
     ------
     RuntimeError
-        _description_
+        If `mt_config.args` is not set up before calling this function.
     """
     closeNow = False  # Should we drop the connection after we finish?
     waitForAckNak = (
@@ -1799,9 +1799,9 @@ def common():
     Raises
     ------
     RuntimeError
-        _description_
+        If `mt_config.args` is not initialized before calling this function.
     RuntimeError
-        _description_
+        If `mt_config.parser` is not initialized before calling this function.
     """
     logfile = None
     args = mt_config.args
@@ -2029,7 +2029,7 @@ def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
     Parameters
     ----------
     parser : argparse.ArgumentParser
-        _description_
+        The argument parser to add connection arguments to.
 
     Returns
     -------
@@ -2168,7 +2168,7 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     Parameters
     ----------
     parser : argparse.ArgumentParser
-        _description_
+        The argument parser to add connection arguments to.
 
     Returns
     -------
@@ -2473,7 +2473,7 @@ def addLocalActionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     Parameters
     ----------
     parser : argparse.ArgumentParser
-        _description_
+        The argument parser to add connection arguments to.
 
     Returns
     -------

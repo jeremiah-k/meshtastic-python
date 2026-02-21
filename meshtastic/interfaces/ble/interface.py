@@ -139,20 +139,18 @@ class BLEInterface(MeshInterface):
         auto_reconnect : bool
             If True, schedule automatic reconnection after unexpected disconnects. (Default value = False)
         noProto : bool
-            _description_ (Default value = False)
+            If True, skip protobuf protocol initialization. (Default value = False)
         debugOut : IO[str] | None
-            _description_ (Default value = None)
+            Optional stream for debug output; if None, uses sys.stderr. (Default value = None)
         noNodes : bool
-            _description_ (Default value = False)
+            If True, skip node database initialization. (Default value = False)
         timeout : float
-            _description_ (Default value = 300.0)
+            Connection timeout in seconds. (Default value = 300.0)
 
         Raises
         ------
         BLEInterface.BLEError
             If the initial connection or configuration fails.
-        BLEError
-            _description_
         """
 
         # Thread safety and state management
@@ -301,7 +299,7 @@ class BLEInterface(MeshInterface):
         Returns
         -------
         str
-            BB:CC:DD:EE:FF', debugOut='...', noProto=True)".
+            String representation like "BLEInterface(address='AA:BB:CC:DD:EE:FF', debugOut='...', noProto=True)".
         """
         parts = [f"address={self.address!r}"]
         if self.debugOut is not None:
@@ -389,10 +387,8 @@ class BLEInterface(MeshInterface):
 
         Parameters
         ----------
-        keys : str | None
-            One or more address key strings; `None` or empty values are ignored.
         *keys : str | None
-            _description_
+            One or more address key strings; `None` or empty values are ignored.
 
         Returns
         -------
@@ -420,8 +416,8 @@ class BLEInterface(MeshInterface):
 
         Raises
         ------
-        __UnknownError__
-            _description_
+        RuntimeError
+            If acquiring any of the address locks fails.
         """
         stack = contextlib.ExitStack()
         try:
@@ -941,9 +937,9 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         sender : Any
-            _description_
+            Origin of the notification (characteristic or client-specific identifier).
         data : bytearray
-            _description_
+            Serialized mesh_pb2.LogRecord payload from the BLE notification.
         """
         self._log_radio_handler(sender, data)
 
@@ -983,8 +979,6 @@ class BLEInterface(MeshInterface):
         ------
         BLEInterface.BLEError
             If the awaitable does not finish before the timeout elapses.
-        BLEError
-            _description_
         """
         if timeout is None:
             return await awaitable
@@ -1053,14 +1047,6 @@ class BLEInterface(MeshInterface):
         ------
         BLEInterface.BLEError
             If no Meshtastic devices are found, if multiple matching devices are found when an `address` was provided, if the discovery manager is unavailable, or if a synthetic device cannot be created from the provided address.
-        BLEError
-            _description_
-        BLEError
-            _description_
-        BLEError
-            _description_
-        BLEError
-            _description_
         """
 
         target = address or getattr(self, "address", None)
@@ -1136,7 +1122,7 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         address : str | None
-            _description_
+            BLE address to sanitize; if None, returns None.
 
         Returns
         -------
@@ -1275,8 +1261,12 @@ class BLEInterface(MeshInterface):
 
         Returns
         -------
-        Note : tuple[BLEClient, str | None, str | None]
-            Must be called while holding _connect_lock.
+        client_and_keys : tuple[BLEClient, str | None, str | None]
+            A tuple containing the connected BLE client, the connected device key, and the connection alias key.
+        
+        Notes
+        -----
+        Must be called while holding _connect_lock.
         """
         client = self._connection_orchestrator._establish_connection(
             address,
@@ -1393,10 +1383,6 @@ class BLEInterface(MeshInterface):
         ------
         BLEInterface.BLEError
             If the interface is closing, if connection is suppressed due to a recent connect elsewhere, or if the connection attempt fails.
-        BLEError
-            _description_
-        BLEError
-            _description_
         """
         # Fail fast if interface is closing before acquiring any locks
         self._validate_connection_preconditions()
@@ -1493,10 +1479,8 @@ class BLEInterface(MeshInterface):
 
         Raises
         ------
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
+        Exception
+            For unexpected errors in the receive thread that trigger recovery.
         """
         coordinator = self.thread_coordinator
         wait_timeout = BLEConfig.RECEIVE_WAIT_TIMEOUT
@@ -1645,7 +1629,7 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         client : BLEClient
-            _description_
+            The connected BLE client to read from.
 
         Returns
         -------
@@ -1670,14 +1654,12 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         error : BleakError
-            _description_
+            The transient BLE read error that triggered the retry policy.
 
         Raises
         ------
         BLEInterface.BLEError
             When the retry policy is exhausted and the read should be treated as persistent.
-        BLEError
-            _description_
         """
         transient_policy = self._transient_read_policy
         if transient_policy._should_retry(self._read_retry_count):

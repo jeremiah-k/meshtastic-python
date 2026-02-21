@@ -49,12 +49,10 @@ class ArrowWriter:
 
         Only needed for datasets where we can't learn it from the first record written.
 
-        schema (pa.Schema): The schema to use.
-
         Parameters
         ----------
         schema : pa.Schema
-            _description_
+            The schema to use for the Arrow file.
         """
         with self._lock:
             assert self.schema is None
@@ -81,7 +79,7 @@ class ArrowWriter:
         Parameters
         ----------
         row_dict : dict
-            _description_
+            Dictionary representing a single row with field names matching the schema.
         """
         with self._lock:
             self.new_rows.append(row_dict)
@@ -97,18 +95,25 @@ class FeatherWriter(ArrowWriter):
     """
 
     def __init__(self, file_name: str):
-        """_summary_.
+        """Initialize a FeatherWriter that will write compressed Feather files.
+
+        Creates an ArrowWriter for a temporary .arrow file that will later be
+        converted to a compressed Feather file upon close.
 
         Parameters
         ----------
         file_name : str
-            _description_
+            Base path for the output file (without extension).
         """
         super().__init__(file_name + ".arrow")
         self.base_file_name = file_name
 
     def close(self):
-        """_summary_."""
+        """Close the writer and convert the temporary Arrow file to Feather format.
+
+        Converts the temporary .arrow file to a compressed .feather file and
+        removes the temporary file. Empty Arrow files are discarded.
+        """
         super().close()
         src_name = self.base_file_name + ".arrow"
         dest_name = self.base_file_name + ".feather"

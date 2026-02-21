@@ -100,12 +100,12 @@ class BLECoroutineRunner:
 
         Parameters
         ----------
-        cls : _type_
-            _description_
+        cls : type
+            The BLECoroutineRunner class being instantiated.
 
         Returns
         -------
-        'BLECoroutineRunner'
+        BLECoroutineRunner
             The singleton runner instance.
         """
         with cls._singleton_lock:
@@ -120,6 +120,10 @@ class BLECoroutineRunner:
         Sets up the per-instance reentrant lock, lifecycle flags and placeholders for the background
         thread and asyncio loop, initializes a WeakSet to track pending futures, and registers
         an atexit handler to ensure the runner is shut down when the process exits.
+
+        Returns
+        -------
+        None
         """
         # The singleton lock is uncontended after first initialization, so always
         # acquiring it has negligible performance impact while ensuring correctness.
@@ -162,6 +166,10 @@ class BLECoroutineRunner:
         """Register the runner's process-exit shutdown handler when not already registered.
 
         Must be called while holding `_instance_lock` or `_singleton_lock`.
+
+        Returns
+        -------
+        None
         """
         if self._atexit_registered:
             return
@@ -172,6 +180,10 @@ class BLECoroutineRunner:
         """Attempt to unregister the runner's process-exit shutdown handler if it is currently registered.
 
         This is a best-effort operation that suppresses errors during unregistration. Must be called while holding `_instance_lock` or `_singleton_lock`.
+
+        Returns
+        -------
+        None
         """
         if not self._atexit_registered:
             return
@@ -275,6 +287,10 @@ class BLECoroutineRunner:
         ----------
         ready_event : threading.Event
             Event that will be set when the loop is ready and cleared after shutdown to signal the thread's lifecycle.
+
+        Returns
+        -------
+        None
         """
         loop: asyncio.AbstractEventLoop | None = None
         keepalive_handle: asyncio.TimerHandle | None = None
@@ -300,6 +316,10 @@ class BLECoroutineRunner:
                 """Keep the event loop responsive by scheduling a periodic no-op callback.
 
                 This prevents the loop from sleeping indefinitely between I/O events so callbacks submitted from other threads are observed promptly on platforms where the loop's low-level wakeup signaling may not occur.
+
+                Returns
+                -------
+                None
                 """
                 nonlocal keepalive_handle
                 if self._stop_requested:
@@ -351,6 +371,10 @@ class BLECoroutineRunner:
         ----------
         loop : asyncio.AbstractEventLoop
             Event loop whose pending tasks should be cancelled.
+
+        Returns
+        -------
+        None
         """
         try:
             tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
@@ -405,10 +429,6 @@ class BLECoroutineRunner:
             If both `timeout` and `startup_timeout` are provided.
         RuntimeError
             If the runner loop cannot be started or is not available.
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
         """
         if timeout is not None and startup_timeout is not None:
             raise ValueError("Specify only one of timeout or startup_timeout")
@@ -470,6 +490,10 @@ class BLECoroutineRunner:
         ----------
         future : Future
             The completed future to remove from the runner's internal `_pending_futures` set.
+
+        Returns
+        -------
+        None
         """
         with self._instance_lock:
             self._pending_futures.discard(future)
@@ -490,6 +514,10 @@ class BLECoroutineRunner:
             The event loop where the exception occurred.
         context : dict[str, Any]
             The context mapping provided by asyncio containing exception and message information.
+
+        Returns
+        -------
+        None
         """
         exception = context.get("exception")
         if exception and isinstance(exception, BleakDBusError):
@@ -512,6 +540,10 @@ class BLECoroutineRunner:
         """Cancel all tracked futures that have not completed.
 
         Silently attempts to cancel each future the runner is tracking; futures that are already done are left unchanged and exceptions raised while cancelling individual futures are caught and suppressed.
+
+        Returns
+        -------
+        None
         """
         with self._instance_lock:
             for future in list(self._pending_futures):
@@ -611,6 +643,10 @@ class BLECoroutineRunner:
         """Stop the runner during process exit, suppressing and logging any exceptions.
 
         If shutdown raises an exception, it is logged at debug level and not propagated.
+
+        Returns
+        -------
+        None
         """
         try:
             self._stop(timeout=1.0)

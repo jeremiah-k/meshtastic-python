@@ -1,4 +1,8 @@
-"""Node class."""
+"""Node class for representing and managing mesh nodes.
+
+This module provides the Node class which represents a (local or remote) node
+in the mesh, including methods for localConfig, moduleConfig, and channels management.
+"""
 
 # pylint: disable=too-many-lines
 
@@ -373,8 +377,6 @@ class Node:
         ------
         MeshInterface.MeshInterfaceError
             Always raised with the provided message.
-        MeshInterfaceError
-            _description_
         """
         from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
             MeshInterface,
@@ -569,7 +571,7 @@ class Node:
         Parameters
         ----------
         name : str
-            _description_
+            The channel name to search for.
 
         Returns
         -------

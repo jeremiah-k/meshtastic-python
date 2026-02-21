@@ -41,7 +41,7 @@ class _FallbackDotMap(dict):
         Raises
         ------
         AttributeError
-            _description_
+            If the key is a double-underscore (dunder) attribute name.
         """
         # Guard dunder names to avoid interfering with copy, pickle, etc.
         if key.startswith("__") and key.endswith("__"):
@@ -373,6 +373,11 @@ def testSimulator() -> None:
     Connects to the simulator over TCP, requests node information and a simulator
     shutdown, and then exits the process; exits with status code 0 on success
     and 1 on error.
+
+    Returns
+    -------
+    None
+        This function does not return normally; it calls sys.exit() on success or failure.
     """
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")

@@ -76,7 +76,7 @@ def _addr_key(addr: str | None) -> str | None:
     Parameters
     ----------
     addr : str | None
-        _description_
+        Raw BLE address to normalize.
 
     Returns
     -------
@@ -206,7 +206,7 @@ def _owner_ref(owner: Any | None) -> weakref.ReferenceType[Any] | None:
     Parameters
     ----------
     owner : Any | None
-        _description_
+        Owner object for which to create a weak reference.
 
     Returns
     -------

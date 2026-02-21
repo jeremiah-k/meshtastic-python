@@ -163,7 +163,7 @@ class StreamInterface(MeshInterface):
         Parameters
         ----------
         b : bytes
-            _description_
+            Bytes to write to the stream.
         """
         if self.stream:  # ignore writes when stream is closed
             self.stream.write(b)
@@ -181,7 +181,7 @@ class StreamInterface(MeshInterface):
         Parameters
         ----------
         length : int
-            _description_
+            Maximum number of bytes to read.
 
         Returns
         -------

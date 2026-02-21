@@ -131,7 +131,7 @@ class BLEClient:
         Parameters
         ----------
         **kwargs : Any
-            _description_
+            Keyword arguments forwarded to BleakScanner.discover.
 
         Returns
         -------
@@ -146,7 +146,7 @@ class BLEClient:
         Parameters
         ----------
         **kwargs : Any
-            _description_
+            Keyword arguments forwarded to BleakScanner.discover.
 
         Returns
         -------
@@ -195,7 +195,7 @@ class BLEClient:
         Raises
         ------
         BLEError
-            _description_
+            If the BLE client is not initialized or the connection operation fails.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot connect: BLE client not initialized")
@@ -293,7 +293,7 @@ class BLEClient:
         BLEClient.BLEError
             If the BLE client is not initialized or the read operation times out.
         BLEError
-            _description_
+            If the read operation fails for any other reason.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot read: BLE client not initialized")
@@ -320,7 +320,7 @@ class BLEClient:
         BLEClient.BLEError
             If no Bleak client is initialized, the write fails, or the wait times out.
         BLEError
-            _description_
+            If the write operation fails for any other reason.
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot write: BLE client not initialized")
@@ -336,7 +336,7 @@ class BLEClient:
         Parameters
         ----------
         **_kwargs : Any
-            _description_
+            Keyword arguments accepted for compatibility but ignored.
 
         Returns
         -------
@@ -417,14 +417,11 @@ class BLEClient:
         Parameters
         ----------
         *args : Any
-            Positional arguments passed to the underlying notification stop
-            call, typically the characteristic UUID (or handle).
+            Positional arguments passed to the underlying notification stop call, typically the characteristic UUID (or handle).
         timeout : float | None
-            Maximum seconds to wait for the operation
-            to complete; if None, wait indefinitely. (Default value = None)
+            Maximum seconds to wait for the operation to complete; if None, wait indefinitely. (Default value = None)
         **kwargs : Any
-            Additional keyword arguments passed to the underlying
-            notification stop call.
+            Additional keyword arguments passed to the underlying notification stop call.
 
         Raises
         ------
@@ -445,16 +442,16 @@ class BLEClient:
         Parameters
         ----------
         *args : Any
-            _description_
+            Positional arguments passed to stopNotify.
         timeout : float | None
-            _description_ (Default value = None)
+            Maximum seconds to wait for the operation to complete; if None, wait indefinitely. (Default value = None)
         **kwargs : Any
-            _description_
+            Keyword arguments passed to stopNotify.
 
         Returns
         -------
         None
-            _description_
+            The return value from stopNotify (typically None).
         """
         return self.stopNotify(*args, timeout=timeout, **kwargs)
 
@@ -531,16 +528,10 @@ class BLEClient:
         ------
         BLEError
             If the client is closed, the wait times out, or the async operation fails.
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
-        BLEError
-            _description_
-        BLEError
-            _description_
-        BLEError
-            _description_
+        RuntimeError
+            If the event loop is closed or cannot be accessed.
+        asyncio.CancelledError
+            If the coroutine is cancelled during execution.
         """
         # Check if client is closed before scheduling work
         if self._closed:
@@ -639,9 +630,7 @@ class BLEClient:
         BLEClient.BLEError
             If the BLEClient is closed or the coroutine cannot be scheduled.
         BLEError
-            _description_
-        BLEError
-            _description_
+            If the event loop is not running or scheduling fails.
         """
         if self._closed:
             raise self.BLEError("Cannot schedule operation: BLE client is closed")
@@ -661,9 +650,9 @@ class BLEClient:
         Parameters
         ----------
         coro : Coroutine[Any, Any, Any]
-            _description_
+            Coroutine to execute on the shared event loop.
         timeout : float | None
-            _description_ (Default value = None)
+            Maximum seconds to wait for completion; None to wait indefinitely. (Default value = None)
 
         Returns
         -------

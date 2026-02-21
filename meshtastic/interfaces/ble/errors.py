@@ -68,17 +68,19 @@ class BLEErrorHandler:
 
         Raises
         ------
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
-        __UnknownError__
-            _description_
+        BleakError
+            If a BLE-specific error occurs and `reraise` is True.
+        DecodeError
+            If a protobuf decode error occurs and `reraise` is True.
+        FutureTimeoutError
+            If a timeout error occurs and `reraise` is True.
+        Exception
+            For other unexpected exceptions if `reraise` is True.
 
         Notes
         -----
-        SystemExit and KeyboardInterrupt are re-raised and not swallowed.
-            Specifically handles BleakError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated per `log_error`/`reraise`.
+        SystemExit and KeyboardInterrupt are always re-raised and not swallowed.
+        Specifically handles BleakError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated per `log_error`/`reraise`.
         """
         try:
             return func()
@@ -107,14 +109,14 @@ class BLEErrorHandler:
 
         Parameters
         ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+        *args : Any
+            Positional arguments forwarded to `safeExecute`.
+        **kwargs : Any
+            Keyword arguments forwarded to `safeExecute`.
 
         Returns
         -------
-        _type_
+        Any
             The callable's result, or the provided `default_return` if a handled BLE-related error occurred; may re-raise the original exception when configured.
         """
         return BLEErrorHandler.safeExecute(*args, **kwargs)
@@ -125,14 +127,14 @@ class BLEErrorHandler:
 
         Parameters
         ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+        *args : Any
+            Positional arguments forwarded to `safeExecute`.
+        **kwargs : Any
+            Keyword arguments forwarded to `safeExecute`.
 
         Returns
         -------
-        _type_
+        Any
             The callable's return value, or the provided `default_return` when a handled BLE-related error occurs.
         """
         return BLEErrorHandler.safeExecute(*args, **kwargs)
@@ -159,8 +161,10 @@ class BLEErrorHandler:
 
         Raises
         ------
-        __UnknownError__
-            _description_
+        SystemExit
+            Always re-raised if caught during cleanup.
+        KeyboardInterrupt
+            Always re-raised if caught during cleanup.
         """
         try:
             func()
@@ -178,9 +182,9 @@ class BLEErrorHandler:
 
         Parameters
         ----------
-        *args : _type_
+        *args : Any
             Positional arguments forwarded to the cleanup call; expected usage is a single zero-argument callable.
-        **kwargs : _type_
+        **kwargs : Any
             Keyword arguments forwarded to the cleanup call; supports `cleanup_name` (str) to label the operation in logs.
 
         Returns
@@ -196,14 +200,14 @@ class BLEErrorHandler:
 
         Parameters
         ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+        *args : Any
+            Positional arguments forwarded to .
+        **kwargs : Any
+            Keyword arguments forwarded to .
 
         Returns
         -------
-        _type_
-            _description_
+        bool
+            True if the cleanup completed without raising, False otherwise.
         """
         return BLEErrorHandler.safeCleanup(*args, **kwargs)

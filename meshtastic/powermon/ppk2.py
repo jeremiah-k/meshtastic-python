@@ -35,9 +35,9 @@ class PPK2PowerSupply(PowerSupply):
         Raises
         ------
         PowerError
-            _description_
+            If no PPK2 devices are found when portName is None.
         PowerError
-            _description_
+            If multiple PPK2 devices are found when portName is None.
         """
         if not portName:
             devs = ppk2_api.PPK2_API.list_devices()
@@ -82,7 +82,11 @@ class PPK2PowerSupply(PowerSupply):
         super().__init__()  # we call this late so that the port is already open and _getRawWattHour callback works
 
     def measurement_loop(self):
-        """Endless measurement loop will run in a thread."""
+        """Endless measurement loop that runs in a background thread.
+
+        Continuously polls the PPK2 device for current samples, updating
+        min/max/sum statistics. Thread-safe using condition variables.
+        """
         while self.measuring:
             with self._want_measurement:
                 self._want_measurement.wait(
@@ -120,32 +124,32 @@ class PPK2PowerSupply(PowerSupply):
                 self.max_data_len = max(self.max_data_len, len(read_data))
 
     def get_min_current_mA(self):
-        """Return the min current in mA.
+        """Return the minimum current reading in milliamperes.
 
         Returns
         -------
-        _type_
-            _description_
+        float
+            Minimum current in mA.
         """
         return self.current_min / 1000
 
     def get_max_current_mA(self):
-        """Return the max current in mA.
+        """Return the maximum current reading in milliamperes.
 
         Returns
         -------
-        _type_
-            _description_
+        float
+            Maximum current in mA.
         """
         return self.current_max / 1000
 
     def get_average_current_mA(self):
-        """Return the average current in mA.
+        """Return the average current reading in milliamperes.
 
         Returns
         -------
-        _type_
-            _description_
+        float
+            Average current in mA.
         """
         with self._result_lock:
             if self.current_num_samples != 0:
@@ -157,7 +161,7 @@ class PPK2PowerSupply(PowerSupply):
             return self.current_average / 1000
 
     def reset_measurements(self):
-        """Reset current measurements."""
+        """Reset the current measurement statistics."""
         # Use the last reading as the new only reading (to ensure we always have a valid current reading)
         self.current_sum = 0
         self.current_num_samples = 0
@@ -173,19 +177,26 @@ class PPK2PowerSupply(PowerSupply):
             self._want_measurement.notify()  # notify the measurement loop to read immediately
 
     def close(self) -> None:
-        """Close the power meter."""
+        """Close the power meter and release resources."""
         self.measuring = False
         self.r.stop_measuring()  # send command to ppk2
         self.measurement_thread.join()  # wait for our thread to finish
         super().close()
 
     def setIsSupply(self, is_supply: bool):
-        """If in supply mode we will provide power ourself, otherwise we are just an amp meter.
+        """Set the PPK2 mode to either power supply or amp meter.
+
+        If in supply mode we will provide power ourself, otherwise we are just an amp meter.
 
         Parameters
         ----------
         is_supply : bool
-            _description_
+            True to enable power supply mode, False for amp meter mode only.
+
+        Raises
+        ------
+        AssertionError
+            If the supply voltage has not been set to at least 0.8V before calling this method.
         """
 
         assert self.v > 0.8  # We must set a valid voltage before calling this method
@@ -217,9 +228,9 @@ class PPK2PowerSupply(PowerSupply):
             self.reset_measurements()
 
     def powerOn(self):
-        """Power on the supply."""
+        """Power on the DUT (Device Under Test)."""
         self.r.toggle_DUT_power("ON")
 
     def powerOff(self):
-        """Power off the supply."""
+        """Power off the DUT (Device Under Test)."""
         self.r.toggle_DUT_power("OFF")

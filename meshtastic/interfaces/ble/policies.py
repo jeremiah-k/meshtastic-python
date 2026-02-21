@@ -58,16 +58,6 @@ class ReconnectPolicy:
         ------
         ReconnectPolicy.ConfigurationError
             If any parameter is outside its valid range.
-        ConfigurationError
-            _description_
-        ConfigurationError
-            _description_
-        ConfigurationError
-            _description_
-        ConfigurationError
-            _description_
-        ConfigurationError
-            _description_
         """
         if initial_delay <= 0:
             raise ReconnectPolicy.ConfigurationError(
@@ -199,6 +189,10 @@ class ReconnectPolicy:
         ----------
         attempt : int
             Zero-based attempt index used to compute the delay.
+        
+        Returns
+        -------
+        None
         """
         _sleep(self._get_delay(attempt))
 
@@ -213,6 +207,10 @@ class _PolicyDescriptor:
         ----------
         factory_name : str
             Name of the factory method attribute on the owner class.
+        
+        Returns
+        -------
+        None
         """
         self.factory_name = factory_name
 
@@ -223,8 +221,10 @@ class _PolicyDescriptor:
 
         Parameters
         ----------
+        _obj : Any
+            The instance through which the descriptor was accessed (None for class access).
         cls : type
-            _description_
+            The owning class type.
 
         Returns
         -------

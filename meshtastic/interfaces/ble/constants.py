@@ -126,7 +126,7 @@ def _parse_version_triplet(version_str: str) -> tuple[int, int, int]:
     Parameters
     ----------
     version_str : str
-        _description_
+        Version string to parse (e.g., "1.2.3" or "2.0.0rc1").
 
     Returns
     -------
@@ -173,5 +173,5 @@ def _bleak_supports_connected_fallback() -> bool:
     """
     return (
         _parse_version_triplet(BLEAK_VERSION)
-        >= BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
+        >= BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
     )

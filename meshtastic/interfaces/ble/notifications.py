@@ -26,6 +26,10 @@ class NotificationManager:
         - _characteristic_to_callback: maps a characteristic UUID to the most recently registered callback.
         - _subscription_counter: monotonic counter used to allocate unique subscription tokens.
         - _lock: re-entrant lock protecting access to subscription state.
+        
+        Returns
+        -------
+        None
         """
         self._active_subscriptions: dict[
             int, tuple[str, Callable[[Any, Any], None]]
@@ -50,11 +54,6 @@ class NotificationManager:
         -------
         token : int
             Unique opaque token that identifies the tracked subscription.
-
-        Raises
-        ------
-        RuntimeError
-            _description_
 
         Notes
         -----
@@ -92,15 +91,15 @@ class NotificationManager:
 
         Parameters
         ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+        characteristic : str
+            Identifier of the BLE characteristic (for example, a UUID string or handle).
+        callback : Callable[[Any, Any], None]
+            Function invoked when a notification arrives; typically called as (sender, data).
 
         Returns
         -------
-        _type_
-            _description_
+        int
+            Unique opaque token that identifies the tracked subscription.
         """
         return self.subscribe(*args, **kwargs)
 
@@ -108,6 +107,10 @@ class NotificationManager:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
         Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the subscription token counter to zero. This operation is performed while holding the manager's internal lock.
+        
+        Returns
+        -------
+        None
         """
         with self._lock:
             self._active_subscriptions.clear()
@@ -119,8 +122,7 @@ class NotificationManager:
 
         Returns
         -------
-        _type_
-            _description_
+        None
         """
         return self.cleanupAll()
 
@@ -133,6 +135,10 @@ class NotificationManager:
             BLE client used to stop notifications.
         timeout : float | None
             Per-unsubscribe timeout passed to the client's `stopNotify` method; may be None.
+        
+        Returns
+        -------
+        None
         """
         with self._lock:
             characteristics = list(self._characteristic_to_callback.keys())
@@ -152,15 +158,15 @@ class NotificationManager:
 
         Parameters
         ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+        characteristic : str
+            Identifier of the BLE characteristic (for example, a UUID string or handle).
+        callback : Callable[[Any, Any], None]
+            Function invoked when a notification arrives; typically called as (sender, data).
 
         Returns
         -------
-        _type_
-            _description_
+        int
+            Unique opaque token that identifies the tracked subscription.
         """
         return self.unsubscribeAll(*args, **kwargs)
 
@@ -176,6 +182,10 @@ class NotificationManager:
             BLE client on which to call `start_notify` for each characteristic.
         timeout : float
             Per-subscription timeout to pass to the client's `start_notify` method.
+        
+        Returns
+        -------
+        None
         """
         with self._lock:
             # Use _characteristic_to_callback to deduplicate - it holds only the latest
@@ -212,15 +222,15 @@ class NotificationManager:
 
         Parameters
         ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+        characteristic : str
+            Identifier of the BLE characteristic (for example, a UUID string or handle).
+        callback : Callable[[Any, Any], None]
+            Function invoked when a notification arrives; typically called as (sender, data).
 
         Returns
         -------
-        _type_
-            _description_
+        int
+            Unique opaque token that identifies the tracked subscription.
         """
         return self.resubscribeAll(*args, **kwargs)
 
@@ -246,11 +256,7 @@ class NotificationManager:
         Parameters
         ----------
         characteristic : str
-            The characteristic identifier to look up.
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
+            BLE characteristic identifier (e.g., UUID or handle) to look up.
 
         Returns
         -------
