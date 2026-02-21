@@ -11,7 +11,13 @@ from ..tcp_interface import TCPInterface
 
 @pytest.mark.unit
 def test_TCPInterface(capsys):
-    """Test that we can instantiate a TCPInterface."""
+    """Test that we can instantiate a TCPInterface.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     with patch("socket.socket") as mock_socket:
         iface = TCPInterface(hostname="localhost", noProto=True)
         iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
@@ -31,14 +37,21 @@ def test_TCPInterface(capsys):
 
 @pytest.mark.unit
 def test_TCPInterface_exception():
-    """Test that we can instantiate a TCPInterface."""
+    """Test that we can instantiate a TCPInterface.
+
+    Raises
+    ------
+    ValueError
+        _description_
+    """
 
     def throw_an_exception():
-        """
-        Raise a ValueError with the message "Fake exception.".
+        """Raise a ValueError with the message "Fake exception.".
 
-        Raises:
-            ValueError: Always raised with the message "Fake exception.".
+        Raises
+        ------
+        ValueError
+            Always raised with the message "Fake exception.".
         """
         raise ValueError("Fake exception.")
 

@@ -13,14 +13,17 @@ from ..serial_interface import SerialInterface
 
 
 def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
-    """
-    Create a SerialInterface mock that provides a stubbed GPIO channel.
+    """Create a SerialInterface mock that provides a stubbed GPIO channel.
 
-    Parameters:
-        channel_index (int): Index to assign to the mocked GPIO channel (default 0).
+    Parameters
+    ----------
+    channel_index : int
+        Index to assign to the mocked GPIO channel (default 0).
 
-    Returns:
-        MagicMock: An autospecced SerialInterface mock whose localNode.getChannelByName returns the mocked channel.
+    Returns
+    -------
+    MagicMock
+        An autospecced SerialInterface mock whose localNode.getChannelByName returns the mocked channel.
     """
     iface = MagicMock(autospec=SerialInterface)
     channel = MagicMock()
@@ -40,7 +43,13 @@ def test_RemoteHardwareClient():
 
 @pytest.mark.unit
 def test_onGPIOreceive(caplog):
-    """Test onGPIOreceive."""
+    """Test onGPIOreceive.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    """
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = 0xFFFFFFFF
     packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
@@ -52,7 +61,13 @@ def test_onGPIOreceive(caplog):
 
 @pytest.mark.unit
 def test_onGPIOreceive_mask_fallback(caplog):
-    """Test onGPIOreceive uses packet gpioMask when interface.mask is None."""
+    """Test onGPIOreceive uses packet gpioMask when interface.mask is None.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    """
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = None
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
@@ -75,7 +90,13 @@ def test_RemoteHardwareClient_no_gpio_channel():
 
 @pytest.mark.unit
 def test_readGPIOs(caplog):
-    """Test readGPIOs."""
+    """Test readGPIOs.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
@@ -97,7 +118,13 @@ def test_readGPIOs(caplog):
 
 @pytest.mark.unit
 def test_writeGPIOs(caplog):
-    """Test writeGPIOs."""
+    """Test writeGPIOs.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):
@@ -120,10 +147,14 @@ def test_writeGPIOs(caplog):
 
 @pytest.mark.unit
 def test_watchGPIOs(caplog):
-    """
-    Verify RemoteHardwareClient.watchGPIOs logs a "watchGPIOs" marker when invoked with a GPIO node and mask.
+    """Verify RemoteHardwareClient.watchGPIOs logs a "watchGPIOs" marker when invoked with a GPIO node and mask.
 
     Runs watchGPIOs("0x10", 123) with DEBUG-level logging enabled and asserts that the captured logs contain "watchGPIOs".
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
     """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)

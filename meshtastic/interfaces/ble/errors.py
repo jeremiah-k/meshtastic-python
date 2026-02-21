@@ -46,26 +46,39 @@ class BLEErrorHandler:
         error_msg: str = "Error in operation",
         reraise: bool = False,
     ) -> T | None:
-        """
-        Execute a zero-argument callable, returning its result or a fallback on handled errors.
+        """Execute a zero-argument callable, returning its result or a fallback on handled errors.
 
         Parameters
         ----------
-            func: Zero-argument callable to execute.
-            default_return: Value to return if execution fails due to a handled exception.
-            log_error: If True, log caught exceptions using the configured logger.
-            error_msg: Message prefix used when logging errors.
-            reraise: If True, re-raise caught exceptions instead of returning `default_return`.
+        func : Callable[[], T]
+            Zero-argument callable to execute.
+        default_return : T | None
+            Value to return if execution fails due to a handled exception. (Default value = None)
+        log_error : bool
+            If True, log caught exceptions using the configured logger. (Default value = True)
+        error_msg : str
+            Message prefix used when logging errors. (Default value = 'Error in operation')
+        reraise : bool
+            If True, re-raise caught exceptions instead of returning `default_return`.
 
-        Notes:
-        -----
-            SystemExit and KeyboardInterrupt are re-raised and not swallowed.
-            Specifically handles BleakError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated per `log_error`/`reraise`.
-
-        Returns:
+        Returns
         -------
+        T | None
             The value returned by `func()` on success, or `default_return` if execution fails.
 
+        Raises
+        ------
+        __UnknownError__
+            _description_
+        __UnknownError__
+            _description_
+        __UnknownError__
+            _description_
+
+        Notes
+        -----
+        SystemExit and KeyboardInterrupt are re-raised and not swallowed.
+            Specifically handles BleakError, DecodeError, and FutureTimeoutError; other exceptions are also caught and treated per `log_error`/`reraise`.
         """
         try:
             return func()
@@ -90,20 +103,36 @@ class BLEErrorHandler:
 
     @staticmethod
     def _safe_execute(*args, **kwargs):
-        """
-        Provides a backward-compatible snake_case entry point that executes a callable using the module's BLE error handling.
+        """Provides a backward-compatible snake_case entry point that executes a callable using the module's BLE error handling.
 
-        Returns:
+        Parameters
+        ----------
+        *args : _type_
+            _description_
+        **kwargs : _type_
+            _description_
+
+        Returns
+        -------
+        _type_
             The callable's result, or the provided `default_return` if a handled BLE-related error occurred; may re-raise the original exception when configured.
         """
         return BLEErrorHandler.safeExecute(*args, **kwargs)
 
     @staticmethod
     def safe_execute(*args, **kwargs):
-        """
-        Execute a zero-argument callable with centralized BLE error handling and return its result or a provided default on handled errors.
+        """Execute a zero-argument callable with centralized BLE error handling and return its result or a provided default on handled errors.
 
-        Returns:
+        Parameters
+        ----------
+        *args : _type_
+            _description_
+        **kwargs : _type_
+            _description_
+
+        Returns
+        -------
+        _type_
             The callable's return value, or the provided `default_return` when a handled BLE-related error occurs.
         """
         return BLEErrorHandler.safeExecute(*args, **kwargs)
@@ -112,17 +141,26 @@ class BLEErrorHandler:
     def safeCleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
-        """
-        Run a zero-argument cleanup callable and suppress any exceptions.
+        """Run a zero-argument cleanup callable and suppress any exceptions.
 
         Logs a debug message that includes `cleanup_name` if the callable raises an exception.
 
-        Parameters:
-            func (Callable[[], Any]): Cleanup operation to execute with no arguments.
-            cleanup_name (str): Human-readable name included in debug messages (default: "cleanup operation").
+        Parameters
+        ----------
+        func : Callable[[], Any]
+            Cleanup operation to execute with no arguments.
+        cleanup_name : str
+            Human-readable name included in debug messages (default: "cleanup operation").
 
-        Returns:
-            bool: `True` if the cleanup completed without raising an exception, `False` otherwise.
+        Returns
+        -------
+        bool
+            `True` if the cleanup completed without raising an exception, `False` otherwise.
+
+        Raises
+        ------
+        __UnknownError__
+            _description_
         """
         try:
             func()
@@ -136,19 +174,36 @@ class BLEErrorHandler:
 
     @staticmethod
     def _safe_cleanup(*args, **kwargs):
-        """
-        Execute a cleanup callable and return whether it completed without raising an exception.
+        """Execute a cleanup callable and return whether it completed without raising an exception.
 
-        Parameters:
-            *args: Positional arguments forwarded to the cleanup call; expected usage is a single zero-argument callable.
-            **kwargs: Keyword arguments forwarded to the cleanup call; supports `cleanup_name` (str) to label the operation in logs.
+        Parameters
+        ----------
+        *args : _type_
+            Positional arguments forwarded to the cleanup call; expected usage is a single zero-argument callable.
+        **kwargs : _type_
+            Keyword arguments forwarded to the cleanup call; supports `cleanup_name` (str) to label the operation in logs.
 
-        Returns:
-            bool: `True` if the cleanup callable completed without raising (excluding `SystemExit` and `KeyboardInterrupt`), `False` if an exception was caught.
+        Returns
+        -------
+        bool
+            `True` if the cleanup callable completed without raising (excluding `SystemExit` and `KeyboardInterrupt`), `False` if an exception was caught.
         """
         return BLEErrorHandler.safeCleanup(*args, **kwargs)
 
     @staticmethod
     def safe_cleanup(*args, **kwargs):
-        """Backward-compatible snake_case alias for safeCleanup."""
+        """Backward-compatible snake_case alias for safeCleanup.
+
+        Parameters
+        ----------
+        *args : _type_
+            _description_
+        **kwargs : _type_
+            _description_
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
         return BLEErrorHandler.safeCleanup(*args, **kwargs)

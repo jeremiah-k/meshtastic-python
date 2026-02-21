@@ -28,13 +28,14 @@ class StreamInterface(MeshInterface):
         DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
 
         def __init__(self, message: str = DEFAULT_MSG) -> None:
-            """
-            Initialize the StreamInterfaceError with a provided or default message.
+            """Initialize the StreamInterfaceError with a provided or default message.
 
-            Parameters:
-                message (str): The error message to use. Defaults to DEFAULT_MSG which
-                    explains that StreamInterface is abstract and a concrete
-                    stream-backed subclass (e.g., SerialInterface) should be instantiated.
+            Parameters
+            ----------
+            message : str
+                The error message to use. Defaults to DEFAULT_MSG which
+                explains that StreamInterface is abstract and a concrete
+                stream-backed subclass (e.g., SerialInterface) should be instantiated.
             """
             super().__init__(message)
 
@@ -46,24 +47,29 @@ class StreamInterface(MeshInterface):
         noNodes: bool = False,
         timeout: float = 300.0,
     ) -> None:
-        """
-        Initialize the StreamInterface, prepare its reader thread, and optionally
+        """Initialize the StreamInterface, prepare its reader thread, and optionally.
+
         open and configure the underlying stream connection.
 
         Parameters
         ----------
-            debugOut (io.TextIOWrapper | None): If provided, device debug serial output will be written to this stream.
-            noProto (bool): If True, skip protocol-specific startup and allow using this class without a concrete stream implementation.
-            connectNow (bool): If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration.
-            noNodes (bool): Passed to the MeshInterface initializer to control node discovery behavior.
-            timeout (float): Seconds to wait for replies and configuration operations.
+        debugOut : io.TextIOWrapper | None
+            If provided, device debug serial output will be written to this stream. (Default value = None)
+        noProto : bool
+            If True, skip protocol-specific startup and allow using this class without a concrete stream implementation. (Default value = False)
+        connectNow : bool
+            If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration. (Default value = True)
+        noNodes : bool
+            Passed to the MeshInterface initializer to control node discovery behavior. (Default value = False)
+        timeout : float
+            Seconds to wait for replies and configuration operations. (Default value = 300.0)
 
-        Raises:
+        Raises
         ------
-            StreamInterfaceError: If this class has not been specialized with a concrete
-                `self.stream` and `noProto` is False (indicates
-                StreamInterface is abstract).
-
+        StreamInterfaceError
+            If this class has not been specialized with a concrete
+            `self.stream` and `noProto` is False (indicates
+            StreamInterface is abstract).
         """
 
         # Initialize disconnect provenance early so pylint (and callers) see a
@@ -108,8 +114,8 @@ class StreamInterface(MeshInterface):
                     self.waitForConfig()
 
     def connect(self) -> None:
-        """
-        Establish the connection to the radio and start the background
+        """Establish the connection to the radio and start the background.
+
         reader and configuration process.
 
         Sends wake/resynchronization bytes to the device, starts the reader
@@ -133,8 +139,7 @@ class StreamInterface(MeshInterface):
             self._waitConnected()
 
     def _disconnected(self) -> None:
-        """
-        Perform superclass disconnection cleanup, close the underlying stream if present, and clear the stream reference.
+        """Perform superclass disconnection cleanup, close the underlying stream if present, and clear the stream reference.
 
         This method calls MeshInterface._disconnected(self), then, if self.stream is not None, closes it and sets self.stream to None.
         """
@@ -149,12 +154,16 @@ class StreamInterface(MeshInterface):
             self.stream = None
 
     def _writeBytes(self, b: bytes) -> None:
-        """
-        Write bytes to the underlying stream and pause briefly to allow the device to process them.
+        """Write bytes to the underlying stream and pause briefly to allow the device to process them.
 
         If no stream is configured this call is ignored. When a stream exists the bytes are written
         and flushed; after flushing the method sleeps to allow the device time to handle the data:
         1.0 second on Windows 11, 0.1 second otherwise.
+
+        Parameters
+        ----------
+        b : bytes
+            _description_
         """
         if self.stream:  # ignore writes when stream is closed
             self.stream.write(b)
@@ -167,11 +176,17 @@ class StreamInterface(MeshInterface):
                 time.sleep(0.1)
 
     def _readBytes(self, length: int) -> bytes | None:
-        """
-        Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
+        """Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
 
-        Returns:
-            bytes | None: Up to `length` bytes read from the stream, or `None` when no stream is present.
+        Parameters
+        ----------
+        length : int
+            _description_
+
+        Returns
+        -------
+        bytes | None
+            Up to `length` bytes read from the stream, or `None` when no stream is present.
         """
         if self.stream:
             return self.stream.read(length)
@@ -179,13 +194,14 @@ class StreamInterface(MeshInterface):
             return None
 
     def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
-        """
-        Frame and send a ToRadio protobuf to the underlying stream.
+        """Frame and send a ToRadio protobuf to the underlying stream.
 
         The message is serialized and prefixed with START1, START2 and a two-byte big-endian payload length before being written to the stream.
 
-        Parameters:
-            toRadio (mesh_pb2.ToRadio): The protobuf message to transmit.
+        Parameters
+        ----------
+        toRadio : mesh_pb2.ToRadio
+            The protobuf message to transmit.
         """
         logger.debug("Sending: %s", stripnl(toRadio))
         b: bytes = toRadio.SerializeToString()
@@ -196,8 +212,7 @@ class StreamInterface(MeshInterface):
         self._writeBytes(header + b)
 
     def close(self) -> None:
-        """
-        Shut down the stream connection and request the background reader thread to exit.
+        """Shut down the stream connection and request the background reader thread to exit.
 
         Sets the internal shutdown flag to request reader termination, attempts to join the reader thread
         for up to 2 seconds (skipping join if the thread was never started), and logs a warning if the
@@ -224,16 +239,17 @@ class StreamInterface(MeshInterface):
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _handle_log_byte(self, b: bytes) -> None:
-        r"""
-        Accumulate device log bytes into the current log line and dispatch completed lines.
+        r"""Accumulate device log bytes into the current log line and dispatch completed lines.
 
         Decodes the single-byte input as UTF-8, using '?' for undecodable bytes. Ignores
         carriage return ('\r'); on newline ('\n') calls self._handleLogLine with the
         accumulated line and clears the accumulator; otherwise appends the decoded
         character to the accumulator.
 
-        Parameters:
-            b (bytes): A single-byte bytes object from the device log stream.
+        Parameters
+        ----------
+        b : bytes
+            A single-byte bytes object from the device log stream.
         """
 
         utf = "?"  # assume we might fail
@@ -251,8 +267,8 @@ class StreamInterface(MeshInterface):
             self.cur_log_line += utf
 
     def __reader(self) -> None:
-        """
-        Background reader loop that reads from the configured stream and dispatches
+        """Background reader loop that reads from the configured stream and dispatches.
+
         device log bytes and framed radio messages.
 
         Continuously reads incoming bytes, forwarding non-protocol bytes to

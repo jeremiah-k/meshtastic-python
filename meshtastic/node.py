@@ -63,16 +63,18 @@ class Node:
         noProto: bool = False,
         timeout: float = 300.0,
     ) -> None:
-        """
-        Create and initialize a Node instance that holds configuration, channel state, and runtime flags for a mesh node.
+        """Create and initialize a Node instance that holds configuration, channel state, and runtime flags for a mesh node.
 
         Parameters
         ----------
-            iface (MeshInterface): Interface used for network I/O and device interactions.
-            nodeNum (int | str): Node identifier (numeric or string convertible to a node number).
-            noProto (bool): If True, protocol-based operations are disabled for this node.
-            timeout (float): Maximum seconds used for operations that wait for responses.
-
+        iface : 'MeshInterface'
+            Interface used for network I/O and device interactions.
+        nodeNum : int | str
+            Node identifier (numeric or string convertible to a node number).
+        noProto : bool
+            If True, protocol-based operations are disabled for this node. (Default value = False)
+        timeout : float
+            Maximum seconds used for operations that wait for responses. (Default value = 300.0)
         """
         self.iface = iface
         self.nodeNum = to_node_num(nodeNum) if isinstance(nodeNum, str) else nodeNum
@@ -90,10 +92,11 @@ class Node:
         self._canned_message_lock = threading.Lock()
 
     def __repr__(self) -> str:
-        """
-        Return a developer-oriented string identifying the Node.
+        """Return a developer-oriented string identifying the Node.
 
-        Returns:
+        Returns
+        -------
+        str
             A debug-friendly representation containing the interface repr, the node number
             formatted as eight-hex digits (prefixed with '0x'), and any active
             non-default flags such as `noProto` or a non-default `timeout`.
@@ -108,17 +111,17 @@ class Node:
 
     @staticmethod
     def position_flags_list(position_flags: int) -> list[str]:
-        """
-        Convert a PositionConfig position flags bitfield into a list of flag names.
+        """Convert a PositionConfig position flags bitfield into a list of flag names.
 
         Parameters
         ----------
-            position_flags (int): Bitfield of flags from Config.PositionConfig.PositionFlags.
+        position_flags : int
+            Bitfield of flags from Config.PositionConfig.PositionFlags.
 
-        Returns:
+        Returns
         -------
-            list[str]: Names of the flags set in `position_flags`.
-
+        list[str]
+            Names of the flags set in `position_flags`.
         """
         return flags_to_list(
             config_pb2.Config.PositionConfig.PositionFlags, position_flags
@@ -126,30 +129,33 @@ class Node:
 
     @staticmethod
     def excluded_modules_list(excluded_modules: int) -> list[str]:
-        """
-        Converts an ExcludedModules bitfield to a list of excluded module names.
+        """Converts an ExcludedModules bitfield to a list of excluded module names.
 
-        Parameters:
-            excluded_modules (int): Bitfield using values from mesh_pb2.ExcludedModules.
+        Parameters
+        ----------
+        excluded_modules : int
+            Bitfield using values from mesh_pb2.ExcludedModules.
 
-        Returns:
-            list[str]: Names of modules whose bits are set in the bitfield.
+        Returns
+        -------
+        list[str]
+            Names of modules whose bits are set in the bitfield.
         """
         return flags_to_list(mesh_pb2.ExcludedModules, excluded_modules)
 
     def module_available(self, excluded_bit: int) -> bool:
-        """
-        Determine whether a specific module bit is allowed by the interface metadata.
+        """Determine whether a specific module bit is allowed by the interface metadata.
 
         Parameters
         ----------
-            excluded_bit (int): Bit mask for a module as defined in DeviceMetadata.excluded_modules.
+        excluded_bit : int
+            Bit mask for a module as defined in DeviceMetadata.excluded_modules.
 
-        Returns:
+        Returns
         -------
-            bool: `True` if the bit is not set in the interface metadata (module available), or if
-                metadata is missing or an error occurs; `False` if the bit is set (module excluded).
-
+        bool
+            `True` if the bit is not set in the interface metadata (module available), or if
+            metadata is missing or an error occurs; `False` if the bit is set (module excluded).
         """
         meta = getattr(self.iface, "metadata", None)
         if meta is None:
@@ -160,8 +166,7 @@ class Node:
             return True
 
     def showChannels(self) -> None:
-        """
-        Print a human-readable list of configured channels and their shareable URLs.
+        """Print a human-readable list of configured channels and their shareable URLs.
 
         Each non-disabled channel is printed with its index, role, masked PSK, and settings as JSON.
         After listing channels, the primary channel URL is printed; if the full URL that includes
@@ -184,8 +189,7 @@ class Node:
             print(f"Complete URL (includes all channels): {adminURL}")
 
     def showInfo(self) -> None:
-        """
-        Print the node's local and module configurations (as JSON when available) followed by its configured channels.
+        """Print the node's local and module configurations (as JSON when available) followed by its configured channels.
 
         If a configuration is not present, an empty placeholder is printed for that
         section. Channels are displayed using the node's channel listing format.
@@ -201,22 +205,20 @@ class Node:
         self.showChannels()
 
     def setChannels(self, channels: Sequence[channel_pb2.Channel]) -> None:
-        """
-        Set the node's channel list and normalize channel entries.
+        """Set the node's channel list and normalize channel entries.
 
         Parameters
         ----------
-            channels (list): Sequence of channel protobufs to assign to this node. The assigned
-                list will be normalized (indices fixed) and padded as needed to meet expected
-                channel count.
-
+        channels : Sequence[channel_pb2.Channel]
+            Sequence of channel protobufs to assign to this node. The assigned
+            list will be normalized (indices fixed) and padded as needed to meet expected
+            channel count.
         """
         self.channels = list(channels)
         self._fixupChannels()
 
     def requestChannels(self, startingIndex: int = 0) -> None:
-        """
-        Request channel definitions from the node, starting at the given channel index.
+        """Request channel definitions from the node, starting at the given channel index.
 
         When called with startingIndex 0, clears any cached channels and begins a fresh fetch into
         an internal partialChannels list. The method initiates the network request for the
@@ -224,8 +226,8 @@ class Node:
 
         Parameters
         ----------
-            startingIndex (int): Zero-based channel index to start fetching from (typically 0-7).
-
+        startingIndex : int
+            Zero-based channel index to start fetching from (typically 0-7). (Default value = 0)
         """
         logger.debug(f"requestChannels for nodeNum:{self.nodeNum}")
         # only initialize if we're starting out fresh
@@ -236,8 +238,7 @@ class Node:
         self._requestChannel(startingIndex)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
-        """
-        Process an admin response for a settings request and update the node's config objects.
+        """Process an admin response for a settings request and update the node's config objects.
 
         Parses the decoded response packet `p` to determine whether the request was acknowledged or
         rejected, marks the interface acknowledgment flags accordingly, and if the response contains
@@ -246,11 +247,11 @@ class Node:
 
         Parameters
         ----------
-            p (dict): Decoded response packet containing at least a `"decoded"` mapping with
-                optional `"routing"` and `"admin"` entries. The `"admin"` entry is expected to
-                contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
-                `raw` bytes for the returned field.
-
+        p : dict[str, Any]
+            Decoded response packet containing at least a `"decoded"` mapping with
+            optional `"routing"` and `"admin"` entries. The `"admin"` entry is expected to
+            contain either `getConfigResponse` or `getModuleConfigResponse` and accompanying
+            `raw` bytes for the returned field.
         """
         logger.debug(f"onResponseRequestSetting() p:{p}")
         config_values = None
@@ -294,8 +295,7 @@ class Node:
                 print(f"{camel_to_snake(field)!s}:\n{config_values!s}")
 
     def requestConfig(self, configType: Any) -> None:
-        """
-        Request a configuration subset or the full configuration from this node.
+        """Request a configuration subset or the full configuration from this node.
 
         If `configType` is an int it is treated as a config index. If it is a protobuf
         field descriptor, its `index` is used and the request targets `LocalConfig`
@@ -304,9 +304,11 @@ class Node:
         handler; for a remote node this method registers a response handler and waits
         for an ACK/NAK before returning.
 
-        Parameters:
-            configType (int | protobuf field descriptor): Numeric config index or a
-                protobuf field descriptor indicating which config field to fetch.
+        Parameters
+        ----------
+        configType : Any
+            Numeric config index or a
+            protobuf field descriptor indicating which config field to fetch.
         """
         if self == self.iface.localNode:
             onResponse = None
@@ -331,13 +333,12 @@ class Node:
             self.iface.waitForAckNak()
 
     def turnOffEncryptionOnPrimaryChannel(self) -> None:
-        """
-        Disable encryption on the primary channel and write the updated channel to the device.
+        """Disable encryption on the primary channel and write the updated channel to the device.
 
-        Raises:
+        Raises
         ------
-            MeshInterfaceError: if channel data has not been loaded.
-
+        MeshInterfaceError
+            if channel data has not been loaded.
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
@@ -346,29 +347,34 @@ class Node:
         self.writeChannel(0)
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
-        """
-        Waits until a given attribute on the node's localConfig is populated or the timeout elapses.
+        """Waits until a given attribute on the node's localConfig is populated or the timeout elapses.
 
-        Parameters:
-            attribute (str): Name of the attribute on `localConfig` to wait for (default: "channels").
+        Parameters
+        ----------
+        attribute : str
+            Name of the attribute on `localConfig` to wait for (default: "channels").
 
-        Returns:
-            bool: True if the attribute was set before the timeout expired, False otherwise.
+        Returns
+        -------
+        bool
+            True if the attribute was set before the timeout expired, False otherwise.
         """
         return self._timeout.waitForSet(self, attrs=("localConfig", attribute))
 
     def _raise_interface_error(self, message: str) -> NoReturn:
-        """
-        Raise a MeshInterface-style error with the provided message.
+        """Raise a MeshInterface-style error with the provided message.
 
         Parameters
         ----------
-            message (str): The error message to use for the raised MeshInterfaceError.
+        message : str
+            The error message to use for the raised MeshInterfaceError.
 
-        Raises:
+        Raises
         ------
-            MeshInterface.MeshInterfaceError: Always raised with the provided message.
-
+        MeshInterface.MeshInterfaceError
+            Always raised with the provided message.
+        MeshInterfaceError
+            _description_
         """
         from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
             MeshInterface,
@@ -377,22 +383,25 @@ class Node:
         raise MeshInterface.MeshInterfaceError(message)
 
     def writeConfig(self, config_name: str) -> None:
-        """
-        Write a single named subsection of the node's edited configuration to the device.
+        """Write a single named subsection of the node's edited configuration to the device.
 
         Sends only the specified device or module configuration section from this Node's cached
         localConfig/moduleConfig to the target node. For remote nodes the send expects an
         acknowledgment (ACK/NAK); for the local node the message is sent without waiting for an ACK/NAK.
 
-        Parameters:
-            config_name (str): Configuration section to write. Valid values:
-                "device", "position", "power", "network", "display", "lora", "bluetooth",
-                "security", "mqtt", "serial", "external_notification", "store_forward",
-                "range_test", "telemetry", "canned_message", "audio", "remote_hardware",
-                "neighbor_info", "detection_sensor", "ambient_lighting", "paxcounter".
+        Parameters
+        ----------
+        config_name : str
+            Configuration section to write. Valid values:
+            "device", "position", "power", "network", "display", "lora", "bluetooth",
+            "security", "mqtt", "serial", "external_notification", "store_forward",
+            "range_test", "telemetry", "canned_message", "audio", "remote_hardware",
+            "neighbor_info", "detection_sensor", "ambient_lighting", "paxcounter".
 
-        Raises:
-            MeshInterfaceError: If `config_name` is not one of the supported names.
+        Raises
+        ------
+        MeshInterfaceError
+            If `config_name` is not one of the supported names.
         """
         p = admin_pb2.AdminMessage()
 
@@ -461,20 +470,21 @@ class Node:
         self._sendAdmin(p, onResponse=onResponse)
 
     def writeChannel(self, channelIndex: int, adminIndex: int = 0) -> None:
-        """
-        Write the channel at the given index to the device.
+        """Write the channel at the given index to the device.
 
         Sends the specified channel configuration to the node and ensures an admin session key is present before sending.
 
         Parameters
         ----------
-            channelIndex (int): Index of the channel to write.
-            adminIndex (int): Admin channel index to use for sending.
+        channelIndex : int
+            Index of the channel to write.
+        adminIndex : int
+            Admin channel index to use for sending. (Default value = 0)
 
-        Raises:
+        Raises
         ------
-            MeshInterfaceError: If channels have not been loaded (no channels to write).
-
+        MeshInterfaceError
+            If channels have not been loaded (no channels to write).
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
@@ -485,17 +495,17 @@ class Node:
         logger.debug(f"Wrote channel {channelIndex}")
 
     def getChannelByChannelIndex(self, channelIndex: int) -> channel_pb2.Channel | None:
-        """
-        Retrieve the channel at the given zero-based index from this node's channels.
+        """Retrieve the channel at the given zero-based index from this node's channels.
 
         Parameters
         ----------
-            channelIndex (int): Zero-based channel index (typically 0-7).
+        channelIndex : int
+            Zero-based channel index (typically 0-7).
 
-        Returns:
+        Returns
         -------
-            channel_pb2.Channel or None: The channel at the specified index, or None if channels are unset or the index is out of range.
-
+        channel_pb2.Channel | None
+            The channel at the specified index, or None if channels are unset or the index is out of range.
         """
         ch = None
         if self.channels and 0 <= channelIndex < len(self.channels):
@@ -503,8 +513,7 @@ class Node:
         return ch
 
     def deleteChannel(self, channelIndex: int) -> None:
-        """
-        Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
+        """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
 
         Only channels with role SECONDARY or DISABLED may be removed; after
         removal, the channel list is normalized to the device channel count and
@@ -512,12 +521,17 @@ class Node:
         node, admin-channel indexing is adjusted so ongoing writes use the correct
         admin index.
 
-        Parameters:
-            channelIndex (int): Zero-based index of the channel to delete.
+        Parameters
+        ----------
+        channelIndex : int
+            Zero-based index of the channel to delete.
 
-        Raises:
-            MeshInterfaceError: If channels have not been loaded.
-            MeshInterfaceError: If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
+        Raises
+        ------
+        MeshInterfaceError
+            If channels have not been loaded.
+        MeshInterfaceError
+            If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
@@ -550,13 +564,17 @@ class Node:
                 adminIndex = 0
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
-        """
-        Find a channel whose settings.name exactly matches the provided name.
+        """Find a channel whose settings.name exactly matches the provided name.
 
-        Returns:
+        Parameters
+        ----------
+        name : str
+            _description_
+
+        Returns
         -------
+        channel_pb2.Channel | None
             The matching channel object if found, `None` otherwise.
-
         """
         for c in self.channels or []:
             if c.settings and c.settings.name == name:
@@ -564,11 +582,12 @@ class Node:
         return None
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
-        """
-        Finds the first channel whose role is DISABLED.
+        """Finds the first channel whose role is DISABLED.
 
-        Returns:
-            channel_pb2.Channel | None: The first disabled channel if present, `None` otherwise.
+        Returns
+        -------
+        channel_pb2.Channel | None
+            The first disabled channel if present, `None` otherwise.
         """
         if self.channels is None:
             return None
@@ -578,13 +597,12 @@ class Node:
         return None
 
     def _getAdminChannelIndex(self) -> int:
-        """
-        Get the index of the channel named "admin", or 0 if no such channel exists.
+        """Get the index of the channel named "admin", or 0 if no such channel exists.
 
-        Returns:
+        Returns
         -------
-            int: Index of the admin channel, or 0 if no channel with name "admin" is present.
-
+        int
+            Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
         for c in self.channels or []:
             if c.settings and c.settings.name.lower() == "admin":
@@ -598,22 +616,30 @@ class Node:
         is_licensed: bool = False,
         is_unmessagable: bool | None = None,
     ) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the device owner fields (long and short names) and optional license/unmessagable flags for this node.
+        """Set the device owner fields (long and short names) and optional license/unmessagable flags for this node.
 
-        Parameters:
-            long_name (str | None): Owner long name; leading/trailing whitespace is trimmed. If provided and empty after trimming, an error is raised.
-            short_name (str | None): Owner short name; leading/trailing whitespace
-                is trimmed and truncated to 4 characters if longer. If provided and empty
-                after trimming, an error is raised.
-            is_licensed (bool): If `long_name` is provided, set the owner's licensed flag.
-            is_unmessagable (bool | None): If provided, set the owner's unmessagable flag.
+        Parameters
+        ----------
+        long_name : str | None
+            Owner long name; leading/trailing whitespace is trimmed. If provided and empty after trimming, an error is raised. (Default value = None)
+        short_name : str | None
+            Owner short name; leading/trailing whitespace
+            is trimmed and truncated to 4 characters if longer. If provided and empty
+            after trimming, an error is raised. (Default value = None)
+        is_licensed : bool
+            If `long_name` is provided, set the owner's licensed flag. (Default value = False)
+        is_unmessagable : bool | None
+            If provided, set the owner's unmessagable flag. (Default value = None)
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The sent Admin message packet if available, otherwise `None`.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent Admin message packet if available, otherwise `None`.
 
-        Raises:
-            MeshInterfaceError: If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
+        Raises
+        ------
+        MeshInterfaceError
+            If `long_name` or `short_name` is provided but empty or whitespace-only after trimming.
         """
         logger.debug(f"in setOwner nodeNum:{self.nodeNum}")
         self.ensureSessionKey()
@@ -654,19 +680,19 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def getURL(self, includeAll: bool = True) -> str:
-        """
-        Build a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
+        """Build a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
 
         Includes the secondary channels in the URL when requested.
 
         Parameters
         ----------
-                includeAll (bool): If True, include secondary channels in addition to the primary channel.
+        includeAll : bool
+            If True, include secondary channels in addition to the primary channel. (Default value = True)
 
-        Returns:
+        Returns
         -------
-                share_url (str): A meshtastic.org URL containing the encoded channel set and LoRa configuration.
-
+        share_url : str
+            A meshtastic.org URL containing the encoded channel set and LoRa configuration.
         """
         # Only keep the primary/secondary channels, assume primary is first
         channelSet = apponly_pb2.ChannelSet()
@@ -686,8 +712,7 @@ class Node:
         return f"https://meshtastic.org/e/#{s}"
 
     def setURL(self, url: str, addOnly: bool = False) -> None:
-        """
-        Parse a Mesh URL and apply its channel and LoRa configuration to this node.
+        """Parse a Mesh URL and apply its channel and LoRa configuration to this node.
 
         If addOnly is False, replace the node's channel list with the channels encoded in the URL
         (first becomes PRIMARY, subsequent become SECONDARY) and write each channel to the device.
@@ -696,14 +721,16 @@ class Node:
 
         Parameters
         ----------
-            url (str): A Mesh share URL containing a base64-encoded ChannelSet (e.g., .../#<base64> or .../?add=true#<base64>).
-            addOnly (bool): If True, add channels without modifying existing ones; if False, replace channels with those from the URL.
+        url : str
+            A Mesh share URL containing a base64-encoded ChannelSet (e.g., .../#<base64> or .../?add=true#<base64>).
+        addOnly : bool
+            If True, add channels without modifying existing ones; if False, replace channels with those from the URL. (Default value = False)
 
-        Raises:
+        Raises
         ------
-            MeshInterfaceError: If channels or configuration are not loaded, the URL is invalid or
-                contains no settings, or no free channel slot is available when adding.
-
+        MeshInterfaceError
+            If channels or configuration are not loaded, the URL is invalid or
+            contains no settings, or no free channel slot is available when adding.
         """
         if self.channels is None:
             self._raise_interface_error("Config or channels not loaded")
@@ -784,17 +811,18 @@ class Node:
         self._sendAdmin(p)
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
-        """
-        Process an admin response containing a ringtone fragment and cache it on the Node.
+        """Process an admin response containing a ringtone fragment and cache it on the Node.
 
         If the decoded response has no routing error and contains an admin.raw
         get_ringtone_response, stores that value in self.ringtonePart; if a routing
         error is present, the cached ringtone is not modified.
 
-        Parameters:
-            p (dict): Decoded response packet from the interface. Expected to include
-                a "decoded" dict with optional "routing" (containing "errorReason") and
-                "admin" -> "raw" -> get_ringtone_response payload.
+        Parameters
+        ----------
+        p : dict[str, Any]
+            Decoded response packet from the interface. Expected to include
+            a "decoded" dict with optional "routing" (containing "errorReason") and
+            "admin" -> "raw" -> get_ringtone_response payload.
         """
         logger.debug("onResponseRequestRingtone() p:%s", p)
         errorFound = False
@@ -816,18 +844,19 @@ class Node:
                         logger.debug("self.ringtonePart:%s", ringtone_part)
 
     def _get_ringtone(self) -> str | None:
-        """
-        Retrieve the node's ringtone as a single concatenated string.
+        """Retrieve the node's ringtone as a single concatenated string.
 
         This call will wait for a device response and may block until the node replies
         or the node's timeout elapses. If the External Notification module is excluded
         by firmware, or if no ringtone is available or the request times out, the
         method returns None.
 
-        Returns:
-            str | None: The complete ringtone string if available, `None` if the
-                module is not present, the ringtone is unavailable, or the request
-                timed out.
+        Returns
+        -------
+        str | None
+            The complete ringtone string if available, `None` if the
+            module is not present, the ringtone is unavailable, or the request
+            timed out.
         """
         logger.debug("in get_ringtone()")
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
@@ -846,15 +875,16 @@ class Node:
         response_event = threading.Event()
 
         def _on_ringtone_response(packet: dict[str, Any]) -> None:
-            """
-            Forward a ringtone response packet to the instance handler and signal completion.
+            """Forward a ringtone response packet to the instance handler and signal completion.
 
             Calls self.onResponseRequestRingtone(packet) to process the response and
             ensures the threading Event response_event is set whether the handler
             succeeds or raises an exception, allowing any waiters to continue.
 
-            Parameters:
-                packet (dict[str, Any]): Admin response packet containing ringtone data and routing information.
+            Parameters
+            ----------
+            packet : dict[str, Any]
+                Admin response packet containing ringtone data and routing information.
             """
             try:
                 self.onResponseRequestRingtone(packet)
@@ -880,8 +910,7 @@ class Node:
             return None
 
     def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the node's ringtone.
+        """Set the node's ringtone.
 
         Validates that the External Notification module is available and that the ringtone length
         is 230 characters or fewer; ensures an admin session key, then sends one admin message.
@@ -890,16 +919,18 @@ class Node:
 
         Parameters
         ----------
-            ringtone (str): The ringtone text to set.
+        ringtone : str
+            The ringtone text to set.
 
-        Returns:
+        Returns
         -------
-            send_result: The result of sending the AdminMessage for the first chunk, or `None` if the External Notification module is unavailable.
+        mesh_pb2.MeshPacket | None
+            The result of sending the AdminMessage for the first chunk, or `None` if the External Notification module is unavailable.
 
-        Raises:
+        Raises
         ------
-            MeshInterfaceError: If `ringtone` length exceeds 230 characters.
-
+        MeshInterfaceError
+            If `ringtone` length exceeds 230 characters.
         """
         if not self.module_available(mesh_pb2.EXTNOTIF_CONFIG):
             logger.warning(
@@ -929,8 +960,7 @@ class Node:
     def onResponseRequestCannedMessagePluginMessageMessages(
         self, p: dict[str, Any]
     ) -> None:
-        """
-        Handle the admin response for a canned-message plugin messages request.
+        """Handle the admin response for a canned-message plugin messages request.
 
         If the response indicates a routing error, prints the error. On a successful response,
         stores the `get_canned_message_module_messages_response` payload from the admin raw data
@@ -938,9 +968,9 @@ class Node:
 
         Parameters
         ----------
-            p (dict): Decoded packet dictionary containing response fields, expected to include
-                keys like `"decoded"`, `"decoded"]["routing"]`, and `"decoded"]["admin"]["raw"]`.
-
+        p : dict[str, Any]
+            Decoded packet dictionary containing response fields, expected to include
+            keys like `"decoded"`, `"decoded"]["routing"]`, and `"decoded"]["admin"]["raw"]`.
         """
         logger.debug("onResponseRequestCannedMessagePluginMessageMessages() p:%s", p)
         errorFound = False
@@ -965,14 +995,15 @@ class Node:
                         )
 
     def _get_canned_message(self) -> str | None:
-        """
-        Retrieve the device's canned message, requesting parts from the node if not already cached.
+        """Retrieve the device's canned message, requesting parts from the node if not already cached.
 
         If the canned-message module is excluded by firmware, returns None. When a
         request is made this call blocks until a response is received or the operation
         times out.
 
-        Returns:
+        Returns
+        -------
+        str | None
             str or None: The assembled canned message if available, or None if the module is unavailable or no response was received.
         """
         logger.debug("in get_canned_message()")
@@ -989,16 +1020,17 @@ class Node:
         response_event = threading.Event()
 
         def _on_canned_message_response(packet: dict[str, Any]) -> None:
-            """
-            Handle an incoming canned-message admin response and notify the waiting event.
+            """Handle an incoming canned-message admin response and notify the waiting event.
 
             Forwards the received admin response packet to
             self.onResponseRequestCannedMessagePluginMessageMessages, then sets the
             response_event to signal completion. The event is set regardless of handler
             success to ensure waiters are released.
 
-            Parameters:
-                packet (dict[str, Any]): The received admin response payload for the canned-message plugin.
+            Parameters
+            ----------
+            packet : dict[str, Any]
+                The received admin response payload for the canned-message plugin.
             """
             try:
                 self.onResponseRequestCannedMessagePluginMessageMessages(packet)
@@ -1032,8 +1064,7 @@ class Node:
             return None
 
     def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the device's canned message.
+        """Set the device's canned message.
 
         If the canned-message module is not available on the device, the method logs a warning and
         returns None. If the provided message is longer than 200 characters, a MeshInterfaceError
@@ -1042,16 +1073,18 @@ class Node:
 
         Parameters
         ----------
-            message (str): The canned message to set; must be 200 characters or fewer.
+        message : str
+            The canned message to set; must be 200 characters or fewer.
 
-        Returns:
+        Returns
         -------
+        mesh_pb2.MeshPacket | None
             The result returned by _sendAdmin for the first chunk, or `None` if the canned-message module is unavailable.
 
-        Raises:
+        Raises
         ------
-            MeshInterfaceError: If `message` length is greater than 200 characters.
-
+        MeshInterfaceError
+            If `message` length is greater than 200 characters.
         """
         if not self.module_available(mesh_pb2.CANNEDMSG_CONFIG):
             logger.warning("Canned Message module not present (excluded by firmware)")
@@ -1079,101 +1112,118 @@ class Node:
         return send_result
 
     def get_ringtone(self) -> str | None:
-        """
-        Compatibility wrapper that returns the node's ringtone.
+        """Compatibility wrapper that returns the node's ringtone.
 
-        Returns:
-            ringtone (str | None): The ringtone string if available, or None if unavailable or unsupported.
+        Returns
+        -------
+        ringtone : str | None
+            The ringtone string if available, or None if unavailable or unsupported.
         """
         return self.getRingtone()
 
     def set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the device's ringtone.
+        """Set the device's ringtone.
 
-        Parameters:
-            ringtone (str): Ringtone payload to apply to the device.
+        Parameters
+        ----------
+        ringtone : str
+            Ringtone payload to apply to the device.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The Admin MeshPacket sent for the request, or `None` if no packet was produced.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The Admin MeshPacket sent for the request, or `None` if no packet was produced.
         """
         return self.setRingtone(ringtone)
 
     def get_canned_message(self) -> str | None:
-        """
-        Return the device's canned message.
+        """Return the device's canned message.
 
-        Returns:
-            str | None: The canned message string if available, `None` otherwise.
+        Returns
+        -------
+        str | None
+            The canned message string if available, `None` otherwise.
         """
         return self.getCannedMessage()
 
     def set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the device's canned message using a backward-compatible snake_case wrapper.
+        """Set the device's canned message using a backward-compatible snake_case wrapper.
 
-        Parameters:
-            message (str): The canned message text to set (maximum 200 characters).
+        Parameters
+        ----------
+        message : str
+            The canned message text to set (maximum 200 characters).
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The Admin MeshPacket that was sent, or `None` if no packet is produced.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The Admin MeshPacket that was sent, or `None` if no packet is produced.
         """
         return self.setCannedMessage(message)
 
     def getRingtone(self) -> str | None:
-        """
-        Get the node's ringtone.
+        """Get the node's ringtone.
 
-        Returns:
-            str: The ringtone data as a single concatenated string, or `None` if the ringtone is unavailable.
+        Returns
+        -------
+        str | None
+            The ringtone data as a single concatenated string, or `None` if the ringtone is unavailable.
         """
         return self._get_ringtone()
 
     def setRingtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the node's ringtone.
+        """Set the node's ringtone.
 
-        Parameters:
-            ringtone (str): Ringtone string to set (maximum 230 characters).
+        Parameters
+        ----------
+        ringtone : str
+            Ringtone string to set (maximum 230 characters).
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The Admin MeshPacket sent to set the ringtone,
-                or `None` if the operation could not be completed (for example, the
-                ringtone feature is unavailable or the request timed out).
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The Admin MeshPacket sent to set the ringtone,
+            or `None` if the operation could not be completed (for example, the
+            ringtone feature is unavailable or the request timed out).
         """
         return self._set_ringtone(ringtone)
 
     def getCannedMessage(self) -> str | None:
-        """
-        Retrieve the node's canned message.
+        """Retrieve the node's canned message.
 
-        Returns:
-            str | None: The canned message string if available, `None` otherwise.
+        Returns
+        -------
+        str | None
+            The canned message string if available, `None` otherwise.
         """
         return self._get_canned_message()
 
     def setCannedMessage(self, message: str) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the node's canned message.
+        """Set the node's canned message.
 
         Validates module availability and that `message` is at most 200 characters,
         ensures an admin session key, sends the AdminMessage to write the canned
         message, and invalidates any cached canned-message state.
 
-        Parameters:
-            message (str): The canned message text to set (maximum 200 characters).
+        Parameters
+        ----------
+        message : str
+            The canned message text to set (maximum 200 characters).
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The sent MeshPacket if a packet was transmitted, `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent MeshPacket if a packet was transmitted, `None` if no packet was sent.
         """
         return self._set_canned_message(message)
 
     def exitSimulator(self) -> mesh_pb2.MeshPacket | None:
-        """
-        Request the target simulator process to exit; has no effect on non-simulator nodes.
+        """Request the target simulator process to exit; has no effect on non-simulator nodes.
 
-        Returns:
-                A MeshPacket for the sent admin request, or `None` if the admin message was not sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            A MeshPacket for the sent admin request, or `None` if the admin message was not sent.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1183,14 +1233,17 @@ class Node:
         return self._sendAdmin(p)
 
     def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
-        """
-        Request the node to reboot after a delay.
+        """Request the node to reboot after a delay.
 
-        Parameters:
-            secs (int): Number of seconds to wait before rebooting.
+        Parameters
+        ----------
+        secs : int
+            Number of seconds to wait before rebooting. (Default value = 10)
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The AdminMessage packet sent to the node, or `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent to the node, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1205,15 +1258,16 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
-        """
-        Request the node to open a settings edit transaction.
+        """Request the node to open a settings edit transaction.
 
         Ensures an admin session key exists before sending the request and uses
         ACK/NAK handling for remote nodes while not waiting for a response from
         the local node.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The sent admin packet if available, or `None` otherwise.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent admin packet if available, or `None` otherwise.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1228,12 +1282,13 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
-        """
-        Commit the node's open settings edit transaction.
+        """Commit the node's open settings edit transaction.
 
         For remote nodes, waits for an ACK/NAK response; for the local node the commit is sent without waiting for a response.
 
-        Returns:
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
             The sent Admin `MeshPacket` when available, or `None`.
         """
         self.ensureSessionKey()
@@ -1249,14 +1304,17 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
-        """
-        Request the node to perform an OTA reboot after a given delay.
+        """Request the node to perform an OTA reboot after a given delay.
 
-        Parameters:
-            secs (int): Seconds to wait before rebooting.
+        Parameters
+        ----------
+        secs : int
+            Seconds to wait before rebooting. (Default value = 10)
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The sent Admin message packet, or `None` if no packet was produced.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent Admin message packet, or `None` if no packet was produced.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1271,14 +1329,15 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
-        """
-        Request the node to enter DFU (NRF52) mode.
+        """Request the node to enter DFU (NRF52) mode.
 
         Ensures an admin session key exists and sends an AdminMessage requesting DFU mode.
         When targeting a remote node, waits for an ACK/NAK response; local node sends without waiting.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The sent Admin message packet, or `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent Admin message packet, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1293,14 +1352,17 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
-        """
-        Request the node to shut down after a given number of seconds.
+        """Request the node to shut down after a given number of seconds.
 
-        Parameters:
-            secs (int): Number of seconds until the node shuts down.
+        Parameters
+        ----------
+        secs : int
+            Number of seconds until the node shuts down. (Default value = 10)
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The AdminMessage packet that was sent, or `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet that was sent, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1315,8 +1377,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def getMetadata(self) -> None:
-        """
-        Request the node's device metadata and wait for an acknowledgement.
+        """Request the node's device metadata and wait for an acknowledgement.
 
         Sends a metadata request to the node and blocks until an ACK or NAK is received; the
         received metadata is processed asynchronously when the response arrives.
@@ -1329,14 +1390,17 @@ class Node:
         self.iface.waitForAckNak()
 
     def factoryReset(self, full: bool = False) -> mesh_pb2.MeshPacket | None:
-        """
-        Request a factory reset on the node.
+        """Request a factory reset on the node.
 
-        Parameters:
-            full (bool): If True, perform a full device factory reset; if False, reset configuration only.
+        Parameters
+        ----------
+        full : bool
+            If True, perform a full device factory reset; if False, reset configuration only. (Default value = False)
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The sent admin packet if sending succeeded, or None otherwise.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The sent admin packet if sending succeeded, or None otherwise.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1355,18 +1419,21 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def removeNode(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
-        """
-        Request removal of the mesh node identified by nodeId.
+        """Request removal of the mesh node identified by nodeId.
 
         Converts nodeId to a numeric node number and sends a remove-by-node-number
         admin request to the device. For remote targets, the request uses ACK/NAK
         handling; for the local node, no response callback is used.
 
-        Parameters:
-            nodeId (int | str): Node number or a string convertible to a node number.
+        Parameters
+        ----------
+        nodeId : int | str
+            Node number or a string convertible to a node number.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The admin packet returned by the send operation if available, `None` otherwise.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The admin packet returned by the send operation if available, `None` otherwise.
         """
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1381,14 +1448,17 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
-        """
-        Mark a node as a favorite in the target device's NodeDB.
+        """Mark a node as a favorite in the target device's NodeDB.
 
-        Parameters:
-            nodeId (int | str): Node identifier (numeric or numeric string); will be converted to a node number.
+        Parameters
+        ----------
+        nodeId : int | str
+            Node identifier (numeric or numeric string); will be converted to a node number.
 
-        Returns:
-            mesh_pb2.MeshPacket: The response packet if one was received, `None` otherwise.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The response packet if one was received, `None` otherwise.
         """
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1403,14 +1473,17 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
-        """
-        Unmark a node as a favorite in the device's NodeDB.
+        """Unmark a node as a favorite in the device's NodeDB.
 
-        Parameters:
-            nodeId (int | str): Numeric node identifier or a string that can be converted to one.
+        Parameters
+        ----------
+        nodeId : int | str
+            Numeric node identifier or a string that can be converted to one.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The Admin packet sent to the device, or `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The Admin packet sent to the device, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1425,14 +1498,17 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
-        """
-        Mark a node in the device NodeDB as ignored.
+        """Mark a node in the device NodeDB as ignored.
 
-        Parameters:
-            nodeId (int | str): Node number or string convertible to a node number.
+        Parameters
+        ----------
+        nodeId : int | str
+            Node number or string convertible to a node number.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1447,14 +1523,17 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
-        """
-        Unmark a node as ignored in the device's NodeDB.
+        """Unmark a node as ignored in the device's NodeDB.
 
-        Parameters:
-            nodeId (int | str): Node identifier (integer or numeric string). It will be converted to a numeric node number.
+        Parameters
+        ----------
+        nodeId : int | str
+            Node identifier (integer or numeric string). It will be converted to a numeric node number.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
         """
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1469,14 +1548,15 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
-        """
-        Request that the node clear its stored NodeDB (node database).
+        """Request that the node clear its stored NodeDB (node database).
 
         Ensures an admin session key exists before sending. For remote targets, this
         waits for an ACK/NAK response; for the local node, it does not wait.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The AdminMessage packet sent, or `None` if no packet was sent.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1493,19 +1573,21 @@ class Node:
     def setFixedPosition(
         self, lat: int | float, lon: int | float, alt: int
     ) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the node's fixed position and enable the fixed-position setting on the device.
+        """Set the node's fixed position and enable the fixed-position setting on the device.
 
         Parameters
         ----------
-            lat (int | float): Latitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
-            lon (int | float): Longitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
-            alt (int): Altitude in meters (0 leaves altitude unset).
+        lat : int | float
+            Latitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
+        lon : int | float
+            Longitude specified either as an integer in 1e-7 degrees units or as a float in decimal degrees.
+        alt : int
+            Altitude in meters (0 leaves altitude unset).
 
-        Returns:
+        Returns
         -------
-            mesh_packet (mesh_pb2.MeshPacket | None): The result from sending the AdminMessage, or `None` if no packet was sent.
-
+        mesh_packet : mesh_pb2.MeshPacket | None
+            The result from sending the AdminMessage, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
 
@@ -1533,12 +1615,13 @@ class Node:
         return self._sendAdmin(a, onResponse=onResponse)
 
     def removeFixedPosition(self) -> mesh_pb2.MeshPacket | None:
-        """
-        Clear the node's fixed position setting.
+        """Clear the node's fixed position setting.
 
         Sends an AdminMessage requesting removal of the node's fixed position; remote nodes will use ACK/NAK handling.
 
-        Returns:
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
             The sent AdminMessage (`mesh_pb2.MeshPacket`) if a packet was transmitted, or `None` if sending was skipped.
         """
         self.ensureSessionKey()
@@ -1553,17 +1636,20 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def setTime(self, timeSec: int = 0) -> mesh_pb2.MeshPacket | None:
-        """
-        Set the node's clock to the specified Unix timestamp.
+        """Set the node's clock to the specified Unix timestamp.
 
         If `timeSec` is 0, the system's current time is used. The call sends an
         AdminMessage to set the node time; for remote nodes, the function waits for
         an ACK/NAK response.
 
-        Parameters:
-            timeSec (int): Unix timestamp in seconds to set on the node; pass 0 to use the current system time.
+        Parameters
+        ----------
+        timeSec : int
+            Unix timestamp in seconds to set on the node; pass 0 to use the current system time. (Default value = 0)
 
-        Returns:
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
             mesh_pb2.MeshPacket or None: The sent AdminMessage packet when available, or `None` if no packet is produced.
         """
         self.ensureSessionKey()
@@ -1580,8 +1666,7 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def _fixupChannels(self) -> None:
-        """
-        Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
+        """Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
 
         If `channels` is None this is a no-op. Otherwise this method sets each channel's `index`
         field to its position in the list (starting at 0) and then appends disabled channels as
@@ -1599,8 +1684,7 @@ class Node:
         self._fillChannels()
 
     def _fillChannels(self) -> None:
-        """
-        Ensure the node has exactly eight channels by appending DISABLED channels as needed.
+        """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
 
         If `self.channels` is None this is a no-op. Appends new Channel objects with
         role `DISABLED` and sequential `index` values until the list length reaches 8.
@@ -1619,17 +1703,18 @@ class Node:
             index += 1
 
     def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
-        """
-        Handle an incoming device metadata response packet and display the parsed metadata.
+        """Handle an incoming device metadata response packet and display the parsed metadata.
 
         Parses the decoded packet, updates the interface acknowledgment state (ACK/NAK), may retry
         the metadata request when notified by the routing layer, and prints the device metadata
         fields (firmware_version, device_state_version, role, position_flags, hw_model, hasPKC,
         and excluded_modules) when available.
 
-        Parameters:
-            p (dict): Decoded packet containing at minimum a 'decoded' key with routing and
-                admin/raw get_device_metadata_response fields.
+        Parameters
+        ----------
+        p : dict[str, Any]
+            Decoded packet containing at minimum a 'decoded' key with routing and
+            admin/raw get_device_metadata_response fields.
         """
         logger.debug(f"onRequestGetMetadata() p:{p}")
 
@@ -1675,8 +1760,7 @@ class Node:
             print(f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}")
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
-        """
-        Process a response packet for a previously requested channel and update the Node's channel state.
+        """Process a response packet for a previously requested channel and update the Node's channel state.
 
         If the packet is a routing message with an error, expire the request timeout and retry the
         last requested channel. If the packet contains an admin get_channel_response, append that
@@ -1686,10 +1770,10 @@ class Node:
 
         Parameters
         ----------
-            p (dict): Decoded packet dictionary from the interface. Expected to contain either
-                - a routing message with 'routing.errorReason', or
-                - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
-
+        p : dict[str, Any]
+            Decoded packet dictionary from the interface. Expected to contain either
+            - a routing message with 'routing.errorReason', or
+            - an admin message with 'admin.raw.get_channel_response' (a Channel protobuf-like object with an `index` field).
         """
         logger.debug(f"onResponseRequestChannel() p:{p}")
 
@@ -1724,8 +1808,7 @@ class Node:
             self._requestChannel(index + 1)
 
     def onAckNak(self, p: dict[str, Any]) -> None:
-        """
-        Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
+        """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
 
         Inspect the routing error reason in the parsed packet `p` and:
         - If the errorReason is not "NONE", print a NAK message and set
@@ -1736,10 +1819,10 @@ class Node:
 
         Parameters
         ----------
-            p (dict): Parsed packet dictionary expected to contain:
-                - p["decoded"]["routing"]["errorReason"]: routing error reason string.
-                - p["from"]: numeric origin node identifier (string or int convertible).
-
+        p : dict[str, Any]
+            Parsed packet dictionary expected to contain:
+            - p["decoded"]["routing"]["errorReason"]: routing error reason string.
+            - p["from"]: numeric origin node identifier (string or int convertible).
         """
         if p["decoded"]["routing"]["errorReason"] != "NONE":
             logger.warning(
@@ -1757,16 +1840,19 @@ class Node:
                 self.iface._acknowledgment.receivedAck = True
 
     def _requestChannel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
-        """
-        Request settings for a single channel from this node.
+        """Request settings for a single channel from this node.
 
         Sends an admin request for the channel at the given zero-based index and registers the response handler.
 
-        Parameters:
-            channelNum (int): Zero-based index of the channel to request.
+        Parameters
+        ----------
+        channelNum : int
+            Zero-based index of the channel to request.
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The AdminMessage packet sent to the interface, or `None` if sending was skipped (e.g., protocol disabled).
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The AdminMessage packet sent to the interface, or `None` if sending was skipped (e.g., protocol disabled).
         """
         p = admin_pb2.AdminMessage()
         p.get_channel_request = channelNum + 1
@@ -1791,18 +1877,24 @@ class Node:
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int = 0,
     ) -> mesh_pb2.MeshPacket | None:
-        """
-        Send an AdminMessage to this Node's admin channel.
+        """Send an AdminMessage to this Node's admin channel.
 
-        Parameters:
-            p (admin_pb2.AdminMessage): AdminMessage to send; a session passkey may be attached.
-            wantResponse (bool): Request a response from the recipient when True.
-            onResponse (callable | None): Optional callback invoked with the received response packet.
-            adminIndex (int): Channel index to use for the admin message; when 0 the node's configured admin channel is used.
+        Parameters
+        ----------
+        p : admin_pb2.AdminMessage
+            AdminMessage to send; a session passkey may be attached.
+        wantResponse : bool
+            Request a response from the recipient when True. (Default value = False)
+        onResponse : Callable[[dict[str, Any]], Any] | None
+            Optional callback invoked with the received response packet. (Default value = None)
+        adminIndex : int
+            Channel index to use for the admin message; when 0 the node's configured admin channel is used. (Default value = 0)
 
-        Returns:
-            mesh_pb2.MeshPacket | None: The MeshPacket returned by the send operation,
-                or `None` if sending was skipped because protocol use is disabled.
+        Returns
+        -------
+        mesh_pb2.MeshPacket | None
+            The MeshPacket returned by the send operation,
+            or `None` if sending was skipped because protocol use is disabled.
         """
 
         if self.noProto:
@@ -1832,8 +1924,7 @@ class Node:
         )
 
     def ensureSessionKey(self) -> None:
-        """
-        Ensure an admin session key exists for this node, requesting one if missing.
+        """Ensure an admin session key exists for this node, requesting one if missing.
 
         If protocol use is disabled (`noProto`), no action is taken. Otherwise, if the node has no
         `adminSessionPassKey` recorded, a session-key request is sent.
@@ -1848,15 +1939,16 @@ class Node:
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:
-        """
-        Return a list of channel descriptors containing index, role, name, and an optional hash.
+        """Return a list of channel descriptors containing index, role, name, and an optional hash.
 
-        Returns:
-            list[dict]: A list of dictionaries, each with keys:
-                - "index" (int): The channel's zero-based index.
-                - "role" (str): The channel role name.
-                - "name" (str): The channel settings name, or an empty string if missing.
-                - "hash" (int or None): Computed channel hash when both name and PSK are present, otherwise None.
+        Returns
+        -------
+        list[dict[str, Any]]
+            A list of dictionaries, each with keys:
+            - "index" (int): The channel's zero-based index.
+            - "role" (str): The channel role name.
+            - "name" (str): The channel settings name, or an empty string if missing.
+            - "hash" (int or None): Computed channel hash when both name and PSK are present, otherwise None.
         """
         result: list[dict[str, Any]] = []
         if self.channels:
@@ -1880,8 +1972,7 @@ class Node:
         return result
 
     def get_channels_with_hash(self) -> list[dict[str, Any]]:
-        """
-        Get channel entries with computed per-channel hashes.
+        """Get channel entries with computed per-channel hashes.
 
         Each entry is a dict containing:
         - `index` (int): zero-based channel index.
@@ -1889,18 +1980,21 @@ class Node:
         - `name` (str): channel settings name, or an empty string if unset.
         - `hash` (str | None): computed channel hash when both `name` and PSK are present, otherwise `None`.
 
-        Returns:
-            list[dict[str, Any]]: The list of channel entries described above.
+        Returns
+        -------
+        list[dict[str, Any]]
+            The list of channel entries described above.
         """
         return self._get_channels_with_hash()
 
     def getChannelsWithHash(self) -> list[dict[str, Any]]:
-        """
-        Compatibility wrapper that returns channel entries including computed per-channel hashes.
+        """Compatibility wrapper that returns channel entries including computed per-channel hashes.
 
-        Returns:
+        Returns
+        -------
+        list[dict[str, Any]]
             A list of dictionaries, each with keys 'index', 'role', 'name', and 'hash'
-                where 'hash' is the computed channel hash when both name and PSK are
-                present, or `None` otherwise.
+            where 'hash' is the computed channel hash when both name and PSK are
+            present, or `None` otherwise.
         """
         return self._get_channels_with_hash()

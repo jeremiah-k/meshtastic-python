@@ -10,15 +10,18 @@ T = TypeVar("T")
 
 
 def sanitize_address(address: str | None) -> str | None:
-    """
-    Normalize a BLE address or identifier by removing common separators and converting to lowercase.
+    """Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 
-    Args:
-        address (str | None): Address or identifier to normalize.
+    Parameters
+    ----------
+    address : str | None
+        Address or identifier to normalize.
 
-    Returns:
-        str | None: Normalized address string with separators removed and lowercased,
-            or `None` if `address` is `None` or empty after stripping.
+    Returns
+    -------
+    str | None
+        Normalized address string with separators removed and lowercased,
+        or `None` if `address` is `None` or empty after stripping.
     """
     if address is None:
         return None
@@ -36,11 +39,12 @@ def sanitize_address(address: str | None) -> str | None:
 
 
 def _sleep(delay: float) -> None:
-    """
-    Pause execution for the specified number of seconds.
+    """Pause execution for the specified number of seconds.
 
-    Parameters:
-        delay (float): Number of seconds to pause; may be fractional (e.g., 0.5).
+    Parameters
+    ----------
+    delay : float
+        Number of seconds to pause; may be fractional (e.g., 0.5).
     """
     time.sleep(delay)
 
@@ -51,22 +55,31 @@ async def with_timeout(
     label: str,
     timeout_error_factory: Callable[[str, float], Exception] | None = None,
 ) -> T:
-    """
-    Run an awaitable with an optional timeout.
+    """Run an awaitable with an optional timeout.
 
-    Parameters:
-        awaitable (Awaitable[T]): The awaitable to execute.
-        timeout (float | None): Maximum seconds to wait; None means wait indefinitely.
-        label (str): Short operation label passed to the timeout_error_factory when a timeout occurs.
-        timeout_error_factory (Callable[[str, float], Exception] | None): Optional factory that receives (label, timeout)
-            and returns the exception to raise when the operation times out.
+    Parameters
+    ----------
+    awaitable : Awaitable[T]
+        The awaitable to execute.
+    timeout : float | None
+        Maximum seconds to wait; None means wait indefinitely.
+    label : str
+        Short operation label passed to the timeout_error_factory when a timeout occurs.
+    timeout_error_factory : Callable[[str, float], Exception] | None
+        Optional factory that receives (label, timeout)
+        and returns the exception to raise when the operation times out. (Default value = None)
 
-    Returns:
-        T: The result produced by the awaitable.
+    Returns
+    -------
+    T
+        The result produced by the awaitable.
 
-    Raises:
-        asyncio.TimeoutError: If the timeout elapses and no timeout_error_factory is provided.
-        Exception: The exception returned by timeout_error_factory(label, timeout) when a timeout occurs.
+    Raises
+    ------
+    asyncio.TimeoutError
+        If the timeout elapses and no timeout_error_factory is provided.
+    Exception
+        The exception returned by timeout_error_factory(label, timeout) when a timeout occurs.
     """
     if timeout is None:
         return await awaitable
@@ -79,13 +92,14 @@ async def with_timeout(
 
 
 def resolve_ble_module() -> ModuleType | None:
-    """
-    Locate and return the first available BLE-related module for the package.
+    """Locate and return the first available BLE-related module for the package.
 
     Checks for available modules in priority order and returns the first successfully imported module.
 
-    Returns:
-        ModuleType | None: The imported BLE module if found, otherwise `None`.
+    Returns
+    -------
+    ModuleType | None
+        The imported BLE module if found, otherwise `None`.
     """
     for module_name in (
         "meshtastic.interfaces.ble",

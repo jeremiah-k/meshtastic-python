@@ -30,30 +30,31 @@ from meshtastic.interfaces.ble.utils import (
 
 @lru_cache(maxsize=1)
 def _ble_device_constructor_kwargs_support() -> tuple[bool, bool]:
-    """
-    Detect whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
+    """Detect whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
 
-    Returns:
-        tuple[bool, bool]: (supports_details, supports_rssi) — `True` if the constructor accepts a `details` keyword, `True` if it accepts an `rssi` keyword; `False` otherwise.
+    Returns
+    -------
+    tuple[bool, bool]
+        (supports_details, supports_rssi) — `True` if the constructor accepts a `details` keyword, `True` if it accepts an `rssi` keyword; `False` otherwise.
     """
     sig = inspect.signature(BLEDevice.__init__)
     return ("details" in sig.parameters, "rssi" in sig.parameters)
 
 
 def _normalize_device_name_for_matching(name: str | None) -> str | None:
-    """
-    Normalize a Bluetooth device name for tolerant comparisons.
+    """Normalize a Bluetooth device name for tolerant comparisons.
 
     Strips leading/trailing whitespace and applies casefolding; preserves punctuation. If the input is None or reduces to an empty string after normalization, returns `None`.
 
     Parameters
     ----------
-        name (str | None): Raw device name.
+    name : str | None
+        Raw device name.
 
-    Returns:
+    Returns
     -------
-        str | None: The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
-
+    str | None
+        The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
     """
     if name is None:
         return None
@@ -64,8 +65,7 @@ def _normalize_device_name_for_matching(name: str | None) -> str | None:
 def _filter_devices_for_target_identifier(
     devices: list[BLEDevice], target_identifier: str
 ) -> list[BLEDevice]:
-    """
-    Selects BLEDevice objects matching a user-supplied address or name using deterministic precedence.
+    """Selects BLEDevice objects matching a user-supplied address or name using deterministic precedence.
 
     Matching precedence:
     1) Exact normalized address match.
@@ -74,13 +74,15 @@ def _filter_devices_for_target_identifier(
 
     Parameters
     ----------
-        devices (list[BLEDevice]): Candidate devices to search.
-        target_identifier (str): User-supplied address or device name to match.
+    devices : list[BLEDevice]
+        Candidate devices to search.
+    target_identifier : str
+        User-supplied address or device name to match.
 
-    Returns:
+    Returns
     -------
-        list[BLEDevice]: Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
-
+    list[BLEDevice]
+        Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
     """
     target_key = sanitize_address(target_identifier)
     if target_key:
@@ -124,8 +126,7 @@ def _filter_devices_for_target_identifier(
 def _parse_scan_response(
     response: Any, whitelist_address: str | None = None
 ) -> list[BLEDevice]:
-    """
-    Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects.
+    """Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects.
 
     When `whitelist_address` is provided, matches are selected using
     address-first and name-aware precedence:
@@ -135,14 +136,16 @@ def _parse_scan_response(
 
     Parameters
     ----------
-        response (Any): The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
-        whitelist_address (str | None): Raw address or device name target.
+    response : Any
+        The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
+    whitelist_address : str | None
+        Raw address or device name target. (Default value = None)
 
-    Returns:
+    Returns
     -------
-        list[BLEDevice]: Devices matching the target (targeted mode) or devices
-            advertising SERVICE_UUID (broad scan mode).
-
+    list[BLEDevice]
+        Devices matching the target (targeted mode) or devices
+        advertising SERVICE_UUID (broad scan mode).
     """
     devices: list[BLEDevice] = []
     if response is None:
@@ -189,24 +192,28 @@ class DiscoveryStrategy(ABC):
 
     @abstractmethod
     async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
-        """
-        Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by address or name.
+        """Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by address or name.
 
         Parameters
         ----------
-            address (str | None): Optional target device address or name.
-            timeout (float): Maximum time in seconds to wait for backend device enumeration.
+        address : str | None
+            Optional target device address or name.
+        timeout : float
+            Maximum time in seconds to wait for backend device enumeration.
 
-        Returns:
+        Returns
         -------
-            list[BLEDevice]: Devices that advertise SERVICE_UUID and, if
+        list[BLEDevice]
+            Devices that advertise SERVICE_UUID and, if
+        _type_
             `address` is provided, match via address-first and name-aware
+        _type_
             precedence rules. Returns an empty list on error.
 
-        Raises:
+        Raises
         ------
-            BleakDBusError: Re-raised when the underlying backend reports a DBus-specific error.
-
+        BleakDBusError
+            Re-raised when the underlying backend reports a DBus-specific error.
         """
 
 
@@ -226,22 +233,33 @@ class ConnectedStrategy(DiscoveryStrategy):
     """
 
     async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
-        """
-        Enumerate already-connected BLE devices via the Bleak backend and return those advertising the configured service UUID, optionally filtered by address or name.
+        """Enumerate already-connected BLE devices via the Bleak backend and return those advertising the configured service UUID, optionally filtered by address or name.
 
         Parameters
         ----------
-            address (str | None): Target BLE address or device name to
-                filter results. If None, no address/name filtering is applied.
-            timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
+        address : str | None
+            Target BLE address or device name to
+            filter results. If None, no address/name filtering is applied.
+        timeout : float
+            Maximum seconds to wait for the backend's device enumeration to complete.
 
-        Returns:
+        Returns
         -------
-            list[BLEDevice]: Connected devices that advertise SERVICE_UUID and,
+        list[BLEDevice]
+            Connected devices that advertise SERVICE_UUID and,
+        _type_
             if `address` is provided, match via address-first and name-aware
+        _type_
             precedence rules. Returns an empty list if the backend does not
+        _type_
             support connected-device enumeration or if an error occurs.
 
+        Raises
+        ------
+        __UnknownError__
+            _description_
+        __UnknownError__
+            _description_
         """
         if not _bleak_supports_connected_fallback():
             logger.debug(
@@ -359,11 +377,12 @@ class DiscoveryManager:
     """Orchestrates scanning + connected-device fallback logic."""
 
     def __init__(self, client_factory: Callable[..., BLEClient] | None = None) -> None:
-        """
-        Initialize a DiscoveryManager that orchestrates BLE scanning with a connected-device fallback.
+        """Initialize a DiscoveryManager that orchestrates BLE scanning with a connected-device fallback.
 
-        Parameters:
-                client_factory (Callable[..., BLEClient] | None): Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
+        Parameters
+        ----------
+        client_factory : Callable[..., BLEClient] | None
+            Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
@@ -371,21 +390,28 @@ class DiscoveryManager:
         self._client: BLEClient | None = None
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
-        """
-        Discover BLE devices advertising the configured service UUID and, if a target address or name is provided and the scan yields no matches, attempt a fallback enumeration of already-connected devices.
+        """Discover BLE devices advertising the configured service UUID and, if a target address or name is provided and the scan yields no matches, attempt a fallback enumeration of already-connected devices.
 
         Parameters
         ----------
-            address (str | None): Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
+        address : str | None
+            Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
 
-        Returns:
+        Returns
         -------
-            list[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
+        list[BLEDevice]
+            Devices found by the scan and any fallback enumeration, possibly an empty list.
 
-        Raises:
+        Raises
         ------
-            BleakDBusError: If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
-
+        BleakDBusError
+            If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
+        RuntimeError
+            _description_
+        RuntimeError
+            _description_
+        __UnknownError__
+            _description_
         """
         # Only discard the client if it was previously connected and has since
         # disconnected. A discovery-only client (never connected) should be reused.
@@ -500,8 +526,7 @@ class DiscoveryManager:
         return devices
 
     def close(self) -> None:
-        """
-        Close the manager's persistent discovery client and clear the internal reference.
+        """Close the manager's persistent discovery client and clear the internal reference.
 
         If a persistent client exists, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
         """
@@ -512,8 +537,7 @@ class DiscoveryManager:
                 self._client = None
 
     def __del__(self) -> None:
-        """
-        Drop the internal client reference during garbage collection.
+        """Drop the internal client reference during garbage collection.
 
         Destructor cleanup is intentionally minimal: avoid performing BLE I/O
         (for example, `client.close()`) during interpreter finalization.

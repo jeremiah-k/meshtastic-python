@@ -13,14 +13,17 @@ from ..serial_interface import SerialInterface
 
 
 def _create_context_manager_mock(spec_class: Type) -> MagicMock:
-    """
-    Create a MagicMock that behaves as a context manager for the given spec class.
+    """Create a MagicMock that behaves as a context manager for the given spec class.
 
-    Parameters:
-        spec_class (Type): Class to use as the mock's specification (e.g., SerialInterface).
+    Parameters
+    ----------
+    spec_class : Type
+        Class to use as the mock's specification (e.g., SerialInterface).
 
-    Returns:
-        MagicMock: A mock whose `__enter__` returns the mock itself and whose `__exit__` returns `None`.
+    Returns
+    -------
+    MagicMock
+        A mock whose `__enter__` returns the mock itself and whose `__exit__` returns `None`.
     """
     mock = MagicMock(spec=spec_class)
     mock.__enter__ = MagicMock(return_value=mock)
@@ -40,14 +43,18 @@ class FakeTimer:
         args: tuple[Any, ...] | None = None,
         kwargs: dict[str, Any] | None = None,
     ) -> None:
-        """
-        Initialize a FakeTimer and append it to the class-level `created` list for test inspection.
+        """Initialize a FakeTimer and append it to the class-level `created` list for test inspection.
 
-        Parameters:
-            interval (float): Time interval in seconds represented by the timer.
-            function (Callable[..., Any]): Callback that would be invoked when a real timer fires.
-            args (tuple[Any, ...] | None): Optional positional arguments for the callback; defaults to empty tuple.
-            kwargs (dict[str, Any] | None): Optional keyword arguments for the callback; defaults to empty dict.
+        Parameters
+        ----------
+        interval : float
+            Time interval in seconds represented by the timer.
+        function : Callable[..., Any]
+            Callback that would be invoked when a real timer fires.
+        args : tuple[Any, ...] | None
+            Optional positional arguments for the callback; defaults to empty tuple.
+        kwargs : dict[str, Any] | None
+            Optional keyword arguments for the callback; defaults to empty dict.
         """
         self.interval = interval
         self.function = function
@@ -59,8 +66,7 @@ class FakeTimer:
         type(self).created.append(self)
 
     def start(self) -> None:
-        """
-        Mark the FakeTimer instance as started.
+        """Mark the FakeTimer instance as started.
 
         The timer's callback is not invoked automatically; to execute it in a test,
             call the stored function directly (for example:
@@ -69,22 +75,23 @@ class FakeTimer:
         self.started = True
 
     def cancel(self) -> None:
-        """
-        Mark the timer as cancelled by setting its `cancelled` attribute to True.
-        """
+        """Mark the timer as cancelled by setting its `cancelled` attribute to True."""
         self.cancelled = True
 
 
 @pytest.fixture(name="fake_timer_cls")
 def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"]:
-    """
-    Install a per-fixture FakeTimer subclass in place of meshtastic.mesh_interface.threading.Timer for use in tests.
+    """Install a per-fixture FakeTimer subclass in place of meshtastic.mesh_interface.threading.Timer for use in tests.
 
-    Parameters:
-        monkeypatch (pytest.MonkeyPatch): Pytest fixture used to replace the real Timer with the fake subclass for the duration of the test.
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to replace the real Timer with the fake subclass for the duration of the test.
 
-    Returns:
-        Type[FakeTimer]: The FakeTimer subclass that was installed.
+    Returns
+    -------
+    Type['FakeTimer']
+        The FakeTimer subclass that was installed.
     """
 
     class FakeTimerForTest(FakeTimer):
@@ -98,8 +105,7 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
 
 @pytest.fixture
 def reset_mt_config():
-    """
-    Reset the global mt_config state and install a fresh ArgumentParser for tests.
+    """Reset the global mt_config state and install a fresh ArgumentParser for tests.
 
     Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns
     the new parser to mt_config.parser so tests start with a clean configuration.
@@ -111,15 +117,21 @@ def reset_mt_config():
 
 @pytest.fixture
 def iface_with_nodes():
-    """
-    Provide a MeshInterface populated with a sample node and a mocked myInfo for tests.
+    """Provide a MeshInterface populated with a sample node and a mocked myInfo for tests.
 
     Yields a MeshInterface whose `nodes` and `nodesByNum` each contain a single node (numeric id 2475227164)
     and whose `myInfo.my_node_num` is set to 2475227164. Ensures the interface is closed when the fixture
     teardown runs.
 
-    Returns:
-        MeshInterface: Instance pre-populated with node dictionaries and a mocked `myInfo`.
+    Returns
+    -------
+    MeshInterface
+        Instance pre-populated with node dictionaries and a mocked `myInfo`.
+
+    Yields
+    ------
+    _type_
+        _description_
     """
     nodesById = {
         "!9388f81c": {
@@ -164,14 +176,15 @@ def iface_with_nodes():
 
 @pytest.fixture
 def mock_serial_interface() -> MagicMock:
-    """
-    Create a MagicMock that mimics a SerialInterface for node-related tests.
+    """Create a MagicMock that mimics a SerialInterface for node-related tests.
 
     The mock supports the context manager protocol, its localNode.getChannelByName returns None,
     and its myInfo.max_channels is set to 8.
 
-    Returns:
-        MagicMock: A mock configured to act like a SerialInterface with the above behavior.
+    Returns
+    -------
+    MagicMock
+        A mock configured to act like a SerialInterface with the above behavior.
     """
     mock_iface = _create_context_manager_mock(SerialInterface)
     mock_iface.localNode = MagicMock(spec=["getChannelByName"])

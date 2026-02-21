@@ -1,5 +1,4 @@
-"""
-# A library for the Meshtastic Client API.
+"""# A library for the Meshtastic Client API.
 
 Primary interfaces: SerialInterface, TCPInterface, BLEInterface
 
@@ -62,7 +61,6 @@ pub.subscribe(onConnection, "meshtastic.connection.established")
 interface = meshtastic.serial_interface.SerialInterface()
 
 ```
-
 """
 
 import logging
@@ -135,22 +133,27 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """
-    Provide lazy access to legacy module attributes.
+    """Provide lazy access to legacy module attributes.
 
     When the attribute "serial" is requested, import the internal serial_interface
     module, cache it on the module globals as "serial", and return it. For any
     other attribute, raise AttributeError.
 
-    Parameters:
-        name (str): Attribute name being accessed.
+    Parameters
+    ----------
+    name : str
+        Attribute name being accessed.
 
-    Returns:
-        module: The resolved module object for the requested legacy attribute
-            (e.g., the internal serial_interface for "serial").
+    Returns
+    -------
+    Any
+        The resolved module object for the requested legacy attribute
+        (e.g., the internal serial_interface for "serial").
 
-    Raises:
-        AttributeError: If the requested attribute is not provided by this lazy loader.
+    Raises
+    ------
+    AttributeError
+        If the requested attribute is not provided by this lazy loader.
     """
     if name == "serial":
         # Keep historical `meshtastic.serial` access, but map it to our
@@ -213,17 +216,19 @@ class KnownProtocol(NamedTuple):
 
 
 def _on_text_receive(iface: Any, asDict: dict[str, Any]) -> None:
-    """
-    Decode text payloads from a received packet and update per-node metadata.
+    """Decode text payloads from a received packet and update per-node metadata.
 
     If the packet's decoded.payload contains valid UTF-8, store the decoded string in
     asDict["decoded"]["text"]. If decoding fails, leave that field unset and log an error.
     Always invokes the interface's info-update path to refresh node metadata based on the packet.
 
-    Args:
-        iface: The interface instance that received the packet.
-        asDict (dict[str, Any]): Packet dictionary expected to contain
-            decoded.payload (bytes) where the text is stored.
+    Parameters
+    ----------
+    iface : Any
+        The interface instance that received the packet.
+    asDict : dict[str, Any]
+        Packet dictionary expected to contain
+        decoded.payload (bytes) where the text is stored.
     """
     # We don't throw if the utf8 is invalid in the text message.  Instead we just don't populate
     # the decoded.data.text and we log an error message.  This at least allows some delivery to
@@ -241,16 +246,18 @@ def _on_text_receive(iface: Any, asDict: dict[str, Any]) -> None:
 
 
 def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
-    """
-    Update the sender node's stored position when a received packet contains position data.
+    """Update the sender node's stored position when a received packet contains position data.
 
     If asDict contains a "from" field and a decoded "position", the position is normalized
     using the interface's fixup routine and written to that node's "position" entry.
 
-    Args:
-        iface: Interface instance that provides position normalization and node lookup helpers.
-        asDict (dict[str, Any]): Packet dictionary expected to contain
-            "from" and "decoded"->"position".
+    Parameters
+    ----------
+    iface : Any
+        Interface instance that provides position normalization and node lookup helpers.
+    asDict : dict[str, Any]
+        Packet dictionary expected to contain
+        "from" and "decoded"->"position".
     """
     logger.debug("in _on_position_receive() asDict:%s", asDict)
     if "decoded" in asDict:
@@ -264,18 +271,20 @@ def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
 
 
 def _on_node_info_receive(iface: Any, asDict: dict[str, Any]) -> None:
-    """
-    Update the local node record from a received NodeInfo ("user") payload.
+    """Update the local node record from a received NodeInfo ("user") payload.
 
     When `asDict` contains a decoded `"user"` entry and a `"from"` sender, stores
     the decoded user protobuf on the sender's node under `node["user"]`, ensures
     `iface.nodes` maps the user's `id` to that node, and refreshes per-node metadata
     via _receive_info_update(iface, asDict).
 
-    Parameters:
-        iface (Any): Interface instance managing the node database.
-        asDict (dict[str, Any]): Received packet dictionary; expected to contain
-            `"decoded" -> "user"` and `"from"`.
+    Parameters
+    ----------
+    iface : Any
+        Interface instance managing the node database.
+    asDict : dict[str, Any]
+        Received packet dictionary; expected to contain
+        `"decoded" -> "user"` and `"from"`.
     """
     logger.debug("in _on_node_info_receive() asDict:%s", asDict)
     if "decoded" in asDict:
@@ -291,18 +300,20 @@ def _on_node_info_receive(iface: Any, asDict: dict[str, Any]) -> None:
 
 
 def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
-    """
-    Update the appropriate telemetry section on the sender node when a telemetry packet is received.
+    """Update the appropriate telemetry section on the sender node when a telemetry packet is received.
 
     Merges metrics from the packet's `decoded.telemetry` into one of the node's telemetry
     sections: `deviceMetrics`, `environmentMetrics`, `airQualityMetrics`, `powerMetrics`,
     or `localStats`. If the packet lacks a `from` field or none of these sections are
     present, no change is made.
 
-    Args:
-        iface: Interface instance used to look up or create the target node.
-        asDict (dict[str, Any]): Received packet dictionary; expected to include
-            a `from` key and may include `decoded.telemetry`.
+    Parameters
+    ----------
+    iface : Any
+        Interface instance used to look up or create the target node.
+    asDict : dict[str, Any]
+        Received packet dictionary; expected to include
+        a `from` key and may include `decoded.telemetry`.
     """
     logger.debug("in _on_telemetry_receive() asDict:%s", asDict)
     if "from" not in asDict:
@@ -337,17 +348,19 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
 
 
 def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
-    """
-    Update per-node metadata fields based on information present in a received packet dictionary.
+    """Update per-node metadata fields based on information present in a received packet dictionary.
 
-    Args:
-        iface: The interface instance whose node store will be updated.
-        asDict (dict[str, Any]): Parsed packet dictionary; if it contains a "from"
-            key, the node identified by that value will have these fields set:
-            - lastReceived: the full packet dictionary
-            - lastHeard: value of `rxTime` from the packet (or None)
-            - snr: value of `rxSnr` from the packet (or None)
-            - hopLimit: value of `hopLimit` from the packet (or None)
+    Parameters
+    ----------
+    iface : Any
+        The interface instance whose node store will be updated.
+    asDict : dict[str, Any]
+        Parsed packet dictionary; if it contains a "from"
+        key, the node identified by that value will have these fields set:
+        - lastReceived: the full packet dictionary
+        - lastHeard: value of `rxTime` from the packet (or None)
+        - snr: value of `rxSnr` from the packet (or None)
+        - hopLimit: value of `hopLimit` from the packet (or None)
     """
     if "from" in asDict:
         node = iface._getOrCreateByNum(asDict["from"])
@@ -358,19 +371,17 @@ def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
 
 
 def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
-    """
-    Store the admin session passkey from an admin packet on the sending node.
+    """Store the admin session passkey from an admin packet on the sending node.
 
     Parameters
     ----------
-        iface (Any): Interface instance used to look up or create the sender node.
-        asDict (dict): Parsed packet dictionary expected to contain a "from" sender ID and
-            a nested "decoded" -> "admin" -> "raw" structure with a `session_passkey` attribute.
-
-    Description:
+    Description: : _type_
         If the expected fields are present in `asDict`, sets the sender node's
         "adminSessionPassKey" to the extracted `session_passkey`.
-
+    iface : Any
+        _description_
+    asDict : dict[str, Any]
+        _description_
     """
     logger.debug("in _on_admin_receive() asDict:%s", asDict)
     try:

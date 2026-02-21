@@ -1,5 +1,4 @@
-"""
-Globals singleton class.
+"""Globals singleton class.
 
 The Global object is gone, as are all its setters and getters. Instead the
 module itself is the singleton namespace, which can be imported into
@@ -10,7 +9,6 @@ This is intended to make the Python read more naturally, and to make the
 intention of the code clearer and more compact. It is merely a sticking
 plaster over the use of shared mt_config, but the coupling issues wil be dealt
 with rather more easily once the code is simplified by this change.
-
 """
 
 import argparse
@@ -30,8 +28,7 @@ MODULE_STATE_DEFAULTS: dict[str, Any] = {
 
 
 def reset() -> None:
-    """
-    Reset module-level state variables to their defined default values.
+    """Reset module-level state variables to their defined default values.
 
     Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to its initial pristine state.
     """

@@ -12,11 +12,12 @@ from ..stream_interface import START1, START2, StreamInterface
 
 @pytest.mark.unit
 def test_StreamInterface():
-    """
-    Verify that creating a StreamInterface without protocol configuration raises an error.
+    """Verify that creating a StreamInterface without protocol configuration raises an error.
 
-    Raises:
-        StreamInterface.StreamInterfaceError: when a StreamInterface is instantiated without a protocol.
+    Raises
+    ------
+    StreamInterface.StreamInterfaceError
+        when a StreamInterface is instantiated without a protocol.
     """
     with pytest.raises(StreamInterface.StreamInterfaceError):
         StreamInterface()
@@ -26,8 +27,12 @@ def test_StreamInterface():
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
 def test_StreamInterface_with_noProto(caplog):
-    """
-    Verify that a StreamInterface can be instantiated with noProto and, when assigned a stream, can write and read bytes to and from that stream.
+    """Verify that a StreamInterface can be instantiated with noProto and, when assigned a stream, can write and read bytes to and from that stream.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
     """
     stream = MagicMock()
     test_data = b"hello"

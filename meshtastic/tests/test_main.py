@@ -51,7 +51,25 @@ def _mock_sendText_helper(
     channelIndex: int = 0,
     portNum: int = 0,
 ) -> None:
-    """Shared helper for mocking sendText; prints parameters to stdout for test assertions."""
+    """Shared helper for mocking sendText; prints parameters to stdout for test assertions.
+
+    Parameters
+    ----------
+    text : str
+        _description_
+    dest : Any
+        _description_
+    wantAck : bool
+        _description_ (Default value = False)
+    wantResponse : bool
+        _description_ (Default value = False)
+    onResponse : Callable[..., Any] | None
+        _description_ (Default value = None)
+    channelIndex : int
+        _description_ (Default value = 0)
+    portNum : int
+        _description_ (Default value = 0)
+    """
     _ = onResponse  # Mark as intentionally unused
     print("inside mocked sendText")
     print(f"{text} {dest} {wantAck} {wantResponse} {channelIndex} {portNum}")
@@ -59,14 +77,26 @@ def _mock_sendText_helper(
 
 @pytest.fixture(autouse=True)
 def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Prevent external network calls during unit tests in this module."""
+    """Prevent external network calls during unit tests in this module.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        _description_
+    """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_init_parser_no_args(capsys):
-    """Test no arguments."""
+    """Test no arguments.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = [""]
     mt_config.args = sys.argv
     initParser()
@@ -78,7 +108,13 @@ def test_main_init_parser_no_args(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_init_parser_version(capsys):
-    """Test --version."""
+    """Test --version.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--version"]
     mt_config.args = sys.argv
 
@@ -94,7 +130,13 @@ def test_main_init_parser_version(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_main_version(capsys):
-    """Test --version."""
+    """Test --version.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--version"]
     mt_config.args = sys.argv
 
@@ -110,7 +152,13 @@ def test_main_main_version(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_main_no_args(capsys):
-    """Test with no args."""
+    """Test with no args.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = [""]
     mt_config.args = sys.argv
 
@@ -125,10 +173,14 @@ def test_main_main_no_args(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_support(capsys):
-    """
-    Verify that the CLI --support option prints system information and exits with code 0.
+    """Verify that the CLI --support option prints system information and exits with code 0.
 
     Asserts that stdout contains "System", "Platform", "Machine", and "Executable", and that no stderr was produced.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--support"]
     mt_config.args = sys.argv
@@ -150,12 +202,18 @@ def test_main_support(capsys):
 @patch("meshtastic.tcp_interface.TCPInterface", side_effect=OSError("no tcp"))
 @patch("meshtastic.util.findPorts", return_value=[])
 def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
-    """
-    Verify CLI handles --ch-index 1 when no devices are available.
+    """Verify CLI handles --ch-index 1 when no devices are available.
 
     Asserts that the global channel_index is set to 1, main() exits with SystemExit
     code 1, stderr contains "Error connecting to localhost", and the port discovery
     function was invoked.
+
+    Parameters
+    ----------
+    patched_find_ports : _type_
+        _description_
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -175,7 +233,15 @@ def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.util.findPorts", return_value=[])
 def test_main_test_no_ports(patched_find_ports, capsys):
-    """Test --test with no hardware."""
+    """Test --test with no hardware.
+
+    Parameters
+    ----------
+    patched_find_ports : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
 
@@ -197,7 +263,15 @@ def test_main_test_no_ports(patched_find_ports, capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyFake1"])
 def test_main_test_one_port(patched_find_ports, capsys):
-    """Test --test with one fake port."""
+    """Test --test with one fake port.
+
+    Parameters
+    ----------
+    patched_find_ports : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
 
@@ -219,7 +293,15 @@ def test_main_test_one_port(patched_find_ports, capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.test.testAll", return_value=True)
 def test_main_test_two_ports_success(patched_test_all, capsys):
-    """Test --test two fake ports and testAll() is a simulated success."""
+    """Test --test two fake ports and testAll() is a simulated success.
+
+    Parameters
+    ----------
+    patched_test_all : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
 
@@ -237,7 +319,15 @@ def test_main_test_two_ports_success(patched_test_all, capsys):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.test.testAll", return_value=False)
 def test_main_test_two_ports_fails(patched_test_all, capsys):
-    """Test --test two fake ports and testAll() is a simulated failure."""
+    """Test --test two fake ports and testAll() is a simulated failure.
+
+    Parameters
+    ----------
+    patched_test_all : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
 
@@ -255,12 +345,18 @@ def test_main_test_two_ports_fails(patched_test_all, capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info(capsys, caplog):
-    """
-    Tests that invoking the CLI with `--info` connects to a radio and calls SerialInterface.showInfo.
+    """Tests that invoking the CLI with `--info` connects to a radio and calls SerialInterface.showInfo.
 
     Patches SerialInterface with a mock that prints a recognizable marker from showInfo, then
     asserts stdout contains "Connected to radio" and the marker, stderr is empty, and the
     SerialInterface constructor was invoked.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    caplog : _type_
+        _description_
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -270,8 +366,7 @@ def test_main_info(capsys, caplog):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
-        """
-        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+        """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
@@ -294,12 +389,21 @@ def test_main_info(capsys, caplog):
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("os.getlogin")
 def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
-    """
-    Verify that invoking the CLI with --info exits with code 1 and prints a permission-related
+    """Verify that invoking the CLI with --info exits with code 1 and prints a permission-related.
+
     message when the serial interface cannot be opened due to a PermissionError.
 
     Asserts that a SystemExit with code 1 is raised, the current user lookup was attempted,
     stderr contains guidance matching "Need to add yourself", and stdout is empty.
+
+    Parameters
+    ----------
+    patched_getlogin : _type_
+        _description_
+    capsys : _type_
+        _description_
+    caplog : _type_
+        _description_
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -328,7 +432,13 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info_with_tcp_interface(capsys):
-    """Test --info."""
+    """Test --info.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--info", "--host", "meshtastic.local"]
     mt_config.args = sys.argv
 
@@ -337,8 +447,7 @@ def test_main_info_with_tcp_interface(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
-        """
-        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+        """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
@@ -357,7 +466,13 @@ def test_main_info_with_tcp_interface(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_no_proto(capsys):
-    """Test --noproto (using --info for output)."""
+    """Test --noproto (using --info for output).
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--info", "--noproto"]
     mt_config.args = sys.argv
 
@@ -366,8 +481,7 @@ def test_main_no_proto(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
-        """
-        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+        """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
@@ -377,6 +491,13 @@ def test_main_no_proto(capsys):
 
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
+        """_summary_.
+
+        Parameters
+        ----------
+        amount : _type_
+            _description_
+        """
         print(f"amount:{amount}")
         sys.exit(0)
 
@@ -395,10 +516,14 @@ def test_main_no_proto(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info_with_seriallog_stdout(capsys):
-    """
-    Verify that running the CLI with --info and --seriallog stdout prints connection and info output.
+    """Verify that running the CLI with --info and --seriallog stdout prints connection and info output.
 
     Asserts that stdout contains "Connected to radio" and the output produced by showInfo, and that nothing is written to stderr.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--info", "--seriallog", "stdout"]
     mt_config.args = sys.argv
@@ -408,8 +533,7 @@ def test_main_info_with_seriallog_stdout(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
-        """
-        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+        """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
@@ -428,7 +552,13 @@ def test_main_info_with_seriallog_stdout(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info_with_seriallog_output_txt(capsys):
-    """Test --info."""
+    """Test --info.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--info", "--seriallog", "output.txt"]
     mt_config.args = sys.argv
 
@@ -437,8 +567,7 @@ def test_main_info_with_seriallog_output_txt(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showInfo():
-        """
-        Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
+        """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
@@ -459,7 +588,13 @@ def test_main_info_with_seriallog_output_txt(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_qr(capsys):
-    """Test --qr."""
+    """Test --qr.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
 
@@ -488,14 +623,29 @@ def test_main_qr(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onConnected_exception(capsys):
-    """
-    Verify that running main with --qr exits with code 1 when QR code generation raises an exception.
+    """Verify that running main with --qr exits with code 1 when QR code generation raises an exception.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+
+    Raises
+    ------
+    Exception
+        _description_
     """
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
 
     def throw_an_exception(_junk):
-        """Raise a deterministic exception used by tests."""
+        """Raise a deterministic exception used by tests.
+
+        Raises
+        ------
+        Exception
+            _description_
+        """
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
     pytest.importorskip("pyqrcode")
@@ -515,11 +665,15 @@ def test_main_onConnected_exception(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_nodes(capsys):
-    """
-    Verify the CLI --nodes option connects to a radio and prints the node list.
+    """Verify the CLI --nodes option connects to a radio and prints the node list.
 
     Asserts that the output contains a "Connected to radio" message, that the mocked
     showNodes output is printed, no stderr is produced, and SerialInterface was instantiated.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--nodes"]
     mt_config.args = sys.argv
@@ -529,14 +683,14 @@ def test_main_nodes(capsys):
     iface.__exit__ = MagicMock(return_value=None)
 
     def mock_showNodes(includeSelf, showFields):
-        """
-        Print a test marker indicating a mocked node listing and its options.
+        """Print a test marker indicating a mocked node listing and its options.
 
         Parameters
         ----------
-                includeSelf (bool): Whether the local node would be included in the listing.
-                showFields (Any): Representation of which node fields would be shown; forwarded verbatim into the printed marker.
-
+        includeSelf : bool
+            Whether the local node would be included in the listing.
+        showFields : Any
+            Representation of which node fields would be shown; forwarded verbatim into the printed marker.
         """
         print(f"inside mocked showNodes: {includeSelf} {showFields}")
 
@@ -553,7 +707,13 @@ def test_main_nodes(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_owner_to_bob(capsys):
-    """Test --set-owner bob."""
+    """Test --set-owner bob.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-owner", "bob"]
     mt_config.args = sys.argv
 
@@ -572,7 +732,13 @@ def test_main_set_owner_to_bob(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_owner_short_to_bob(capsys):
-    """Test --set-owner-short bob."""
+    """Test --set-owner-short bob.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-owner-short", "bob"]
     mt_config.args = sys.argv
 
@@ -591,7 +757,13 @@ def test_main_set_owner_short_to_bob(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_is_unmessageable_to_true(capsys):
-    """Test --set-is-unmessageable true."""
+    """Test --set-is-unmessageable true.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-is-unmessageable", "true"]
     mt_config.args = sys.argv
 
@@ -612,7 +784,13 @@ def test_main_set_is_unmessageable_to_true(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_is_unmessagable_to_true(capsys):
-    """Test --set-is-unmessagable true."""
+    """Test --set-is-unmessagable true.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-is-unmessagable", "true"]
     mt_config.args = sys.argv
 
@@ -633,7 +811,13 @@ def test_main_set_is_unmessagable_to_true(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_canned_messages(capsys):
-    """Test --set-canned-message."""
+    """Test --set-canned-message.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-canned-message", "foo"]
     mt_config.args = sys.argv
 
@@ -652,7 +836,17 @@ def test_main_set_canned_messages(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_get_canned_messages(capsys, caplog, iface_with_nodes):
-    """Test --get-canned-message."""
+    """Test --get-canned-message.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     sys.argv = ["", "--get-canned-message"]
     mt_config.args = sys.argv
 
@@ -675,13 +869,17 @@ def test_main_get_canned_messages(capsys, caplog, iface_with_nodes):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_ringtone(capsys):
-    """
-    Verify the CLI --set-ringtone option instructs the device to set the ringtone and prints confirmation.
+    """Verify the CLI --set-ringtone option instructs the device to set the ringtone and prints confirmation.
 
     Sets argv to request setting the ringtone, patches the SerialInterface,
     runs main(), and asserts stdout contains "Connected to radio" and
     "Setting ringtone to foo,bar", stderr is empty, and the SerialInterface
     was instantiated.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--set-ringtone", "foo,bar"]
     mt_config.args = sys.argv
@@ -701,7 +899,17 @@ def test_main_set_ringtone(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_get_ringtone(capsys, caplog, iface_with_nodes):
-    """Test --get-ringtone."""
+    """Test --get-ringtone.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     sys.argv = ["", "--get-ringtone"]
     mt_config.args = sys.argv
 
@@ -727,16 +935,32 @@ def test_main_get_ringtone(capsys, caplog, iface_with_nodes):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_ham_to_KI123(capsys):
-    """Test --set-ham KI123."""
+    """Test --set-ham KI123.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-ham", "KI123"]
     mt_config.args = sys.argv
 
     mocked_node = MagicMock(autospec=Node)
 
     def mock_turnOffEncryptionOnPrimaryChannel():
+        """_summary_."""
         print("inside mocked turnOffEncryptionOnPrimaryChannel")
 
     def mock_setOwner(name, is_licensed):
+        """_summary_.
+
+        Parameters
+        ----------
+        name : _type_
+            _description_
+        is_licensed : _type_
+            _description_
+        """
         print(f"inside mocked setOwner name:{name} is_licensed:{is_licensed}")
 
     mocked_node.turnOffEncryptionOnPrimaryChannel.side_effect = (
@@ -765,13 +989,20 @@ def test_main_set_ham_to_KI123(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_reboot(capsys):
-    """Test --reboot."""
+    """Test --reboot.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--reboot"]
     mt_config.args = sys.argv
 
     mocked_node = MagicMock(autospec=Node)
 
     def mock_reboot():
+        """_summary_."""
         print("inside mocked reboot")
 
     mocked_node.reboot.side_effect = mock_reboot
@@ -793,13 +1024,20 @@ def test_main_reboot(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_shutdown(capsys):
-    """Test --shutdown."""
+    """Test --shutdown.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--shutdown"]
     mt_config.args = sys.argv
 
     mocked_node = MagicMock(autospec=Node)
 
     def mock_shutdown():
+        """_summary_."""
         print("inside mocked shutdown")
 
     mocked_node.shutdown.side_effect = mock_shutdown
@@ -821,13 +1059,17 @@ def test_main_shutdown(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_sendtext(capsys):
-    """
-    Verify that the CLI `--sendtext` command sends a message through the radio interface and reports progress.
+    """Verify that the CLI `--sendtext` command sends a message through the radio interface and reports progress.
 
     Runs meshtastic.main() with `--sendtext hello`, patches the SerialInterface to capture sendText calls, and asserts that:
     - the output contains connection and "Sending text message" lines,
     - the mocked sendText was invoked and its debug output appeared on stdout,
     - no stderr output was produced.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--sendtext", "hello"]
     mt_config.args = sys.argv
@@ -850,8 +1092,8 @@ def test_main_sendtext(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_sendtext_with_channel(capsys):
-    """
-    Verify that invoking the CLI with
+    """Verify that invoking the CLI with.
+
     `--sendtext <message> --ch-index <n>` results in a sendText call for the
     specified channel and emits the expected connection and send messages.
 
@@ -863,8 +1105,8 @@ def test_main_sendtext_with_channel(capsys):
 
     Parameters
     ----------
-        capsys: Pytest capture fixture for reading stdout and stderr.
-
+    capsys : _type_
+        Pytest capture fixture for reading stdout and stderr.
     """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -888,7 +1130,15 @@ def test_main_sendtext_with_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_sendtext_with_invalid_channel(caplog, capsys):
-    """Test --sendtext."""
+    """Test --sendtext.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "-1"]
     mt_config.args = sys.argv
 
@@ -914,7 +1164,15 @@ def test_main_sendtext_with_invalid_channel(caplog, capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_sendtext_with_invalid_channel_nine(caplog, capsys):
-    """Test --sendtext."""
+    """Test --sendtext.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "9"]
     mt_config.args = sys.argv
 
@@ -951,7 +1209,15 @@ def test_main_sendtext_with_dest(
     capsys,
     caplog,
 ):
-    """Test --sendtext with --dest."""
+    """Test --sendtext with --dest.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    caplog : _type_
+        _description_
+    """
     sys.argv = ["", "--sendtext", "hello", "--dest", "!12345678"]
     mt_config.args = sys.argv
 
@@ -977,7 +1243,13 @@ def test_main_sendtext_with_dest(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_removeposition_remote(capsys):
-    """Test --remove-position with a remote dest."""
+    """Test --remove-position with a remote dest.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--remove-position", "--dest", "!12345678"]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
@@ -1002,7 +1274,13 @@ def test_main_removeposition_remote(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_setlat_remote(capsys):
-    """Test --setlat with a remote dest."""
+    """Test --setlat with a remote dest.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--setlat", "37.5", "--dest", "!12345678"]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
@@ -1027,12 +1305,16 @@ def test_main_setlat_remote(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_removeposition(capsys):
-    """
-    Verify that invoking the CLI with --remove-position connects to the radio, removes the node's fixed position, and prints confirmation.
+    """Verify that invoking the CLI with --remove-position connects to the radio, removes the node's fixed position, and prints confirmation.
 
     Asserts that "Connected to radio" and "Removing fixed position" appear on stdout, that the
     node's removeFixedPosition was invoked (observable via its printed output), stderr is empty,
     and a SerialInterface instance was created.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--remove-position"]
     mt_config.args = sys.argv
@@ -1040,6 +1322,7 @@ def test_main_removeposition(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_removeFixedPosition():
+        """_summary_."""
         print("inside mocked removeFixedPosition")
 
     mocked_node.removeFixedPosition.side_effect = mock_removeFixedPosition
@@ -1062,13 +1345,30 @@ def test_main_removeposition(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_setlat(capsys):
-    """Test --setlat."""
+    """Test --setlat.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--setlat", "37.5"]
     mt_config.args = sys.argv
 
     mocked_node = MagicMock(autospec=Node)
 
     def mock_setFixedPosition(lat, lon, alt):
+        """_summary_.
+
+        Parameters
+        ----------
+        lat : _type_
+            _description_
+        lon : _type_
+            _description_
+        alt : _type_
+            _description_
+        """
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
 
@@ -1093,13 +1393,30 @@ def test_main_setlat(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_setlon(capsys):
-    """Test --setlon."""
+    """Test --setlon.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--setlon", "-122.1"]
     mt_config.args = sys.argv
 
     mocked_node = MagicMock(autospec=Node)
 
     def mock_setFixedPosition(lat, lon, alt):
+        """_summary_.
+
+        Parameters
+        ----------
+        lat : _type_
+            _description_
+        lon : _type_
+            _description_
+        alt : _type_
+            _description_
+        """
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
 
@@ -1124,13 +1441,30 @@ def test_main_setlon(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_setalt(capsys):
-    """Test --setalt."""
+    """Test --setalt.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--setalt", "51"]
     mt_config.args = sys.argv
 
     mocked_node = MagicMock(autospec=Node)
 
     def mock_setFixedPosition(lat, lon, alt):
+        """_summary_.
+
+        Parameters
+        ----------
+        lat : _type_
+            _description_
+        lon : _type_
+            _description_
+        alt : _type_
+            _description_
+        """
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
 
@@ -1155,7 +1489,13 @@ def test_main_setalt(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_seturl(capsys):
-    """Test --seturl (url used below is what is generated after a factory_reset)."""
+    """Test --seturl (url used below is what is generated after a factory_reset).
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--seturl", "https://www.meshtastic.org/d/#CgUYAyIBAQ"]
     mt_config.args = sys.argv
 
@@ -1179,7 +1519,13 @@ def test_main_seturl(capsys):
 def test_main_set_valid(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --set with valid field."""
+    """Test --set with valid field.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
     mt_config.args = sys.argv
 
@@ -1207,7 +1553,13 @@ def test_main_set_valid(
 def test_main_set_valid_wifi_psk(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --set with valid field."""
+    """Test --set with valid field.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
     mt_config.args = sys.argv
 
@@ -1235,7 +1587,13 @@ def test_main_set_valid_wifi_psk(
 def test_main_set_invalid_wifi_psk(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --set with an invalid value (psk must be 8 or more characters)."""
+    """Test --set with an invalid value (psk must be 8 or more characters).
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set", "network.wifi_psk", "1234567"]
     mt_config.args = sys.argv
 
@@ -1268,7 +1626,13 @@ def test_main_set_invalid_wifi_psk(
 def test_main_set_valid_camel_case(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --set with valid field."""
+    """Test --set with valid field.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
     mt_config.args = sys.argv
     mt_config.camel_case = True
@@ -1297,7 +1661,13 @@ def test_main_set_valid_camel_case(
 def test_main_set_with_invalid(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --set with invalid field."""
+    """Test --set with invalid field.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set", "foo", "foo"]
     mt_config.args = sys.argv
 
@@ -1326,7 +1696,13 @@ def test_main_set_with_invalid(
 def test_main_configure_with_snake_case(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --configure with valid file."""
+    """Test --configure with valid file.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv
 
@@ -1362,7 +1738,13 @@ def test_main_configure_with_snake_case(
 def test_main_configure_with_camel_case_keys(
     _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
 ):
-    """Test --configure with valid file."""
+    """Test --configure with valid file.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv
 
@@ -1393,7 +1775,13 @@ def test_main_configure_with_camel_case_keys(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_add_valid(capsys):
-    """Test --ch-add with valid channel name, and that channel name does not already exist."""
+    """Test --ch-add with valid channel name, and that channel name does not already exist.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv
 
@@ -1423,7 +1811,13 @@ def test_main_ch_add_valid(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_add_invalid_name_too_long(capsys):
-    """Test --ch-add with invalid channel name, name too long."""
+    """Test --ch-add with invalid channel name, name too long.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-add", "testingtestingtesting"]
     mt_config.args = sys.argv
 
@@ -1458,7 +1852,13 @@ def test_main_ch_add_invalid_name_too_long(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_add_but_name_already_exists(capsys):
-    """Test --ch-add with a channel name that already exists."""
+    """Test --ch-add with a channel name that already exists.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv
 
@@ -1486,7 +1886,13 @@ def test_main_ch_add_but_name_already_exists(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_add_but_no_more_channels(capsys):
-    """Test --ch-add with but there are no more channels."""
+    """Test --ch-add with but there are no more channels.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv
 
@@ -1518,7 +1924,13 @@ def test_main_ch_add_but_no_more_channels(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_del(capsys):
-    """Test --ch-del with valid secondary channel to be deleted."""
+    """Test --ch-del with valid secondary channel to be deleted.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-del", "--ch-index", "1"]
     mt_config.args = sys.argv
 
@@ -1541,7 +1953,13 @@ def test_main_ch_del(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_del_no_ch_index_specified(capsys):
-    """Test --ch-del without a valid ch-index."""
+    """Test --ch-del without a valid ch-index.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-del"]
     mt_config.args = sys.argv
 
@@ -1567,7 +1985,13 @@ def test_main_ch_del_no_ch_index_specified(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_del_primary_channel(capsys):
-    """Test --ch-del on ch-index=0."""
+    """Test --ch-del on ch-index=0.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-del", "--ch-index", "0"]
     mt_config.args = sys.argv
     mt_config.channel_index = 1
@@ -1596,7 +2020,13 @@ def test_main_ch_del_primary_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_enable_valid_secondary_channel(capsys):
-    """Test --ch-enable with --ch-index."""
+    """Test --ch-enable with --ch-index.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-enable", "--ch-index", "1"]
     mt_config.args = sys.argv
 
@@ -1620,7 +2050,13 @@ def test_main_ch_enable_valid_secondary_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_disable_valid_secondary_channel(capsys):
-    """Test --ch-disable with --ch-index."""
+    """Test --ch-disable with --ch-index.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-disable", "--ch-index", "1"]
     mt_config.args = sys.argv
 
@@ -1644,7 +2080,13 @@ def test_main_ch_disable_valid_secondary_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_enable_without_a_ch_index(capsys):
-    """Test --ch-enable without --ch-index."""
+    """Test --ch-enable without --ch-index.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-enable"]
     mt_config.args = sys.argv
 
@@ -1671,7 +2113,13 @@ def test_main_ch_enable_without_a_ch_index(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_enable_primary_channel(capsys):
-    """Test --ch-enable with --ch-index = 0."""
+    """Test --ch-enable with --ch-index = 0.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--ch-enable", "--ch-index", "0"]
     mt_config.args = sys.argv
 
@@ -1725,11 +2173,16 @@ def test_main_ch_enable_primary_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_longfast_on_non_primary_channel(capsys):
-    """
-    Verify that invoking the CLI with --ch-longfast and a non-primary
+    """Verify that invoking the CLI with --ch-longfast and a non-primary.
+
     --ch-index exits with code 1 and prints a warning that the modem preset
     cannot be set for a non-primary channel while still showing
     "Connected to radio".
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--ch-longfast", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -1922,7 +2375,13 @@ def test_main_ch_longfast_on_non_primary_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_get_with_invalid(capsys):
-    """Test --get with invalid field."""
+    """Test --get with invalid field.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--get", "foo"]
     mt_config.args = sys.argv
 
@@ -1951,7 +2410,15 @@ def test_main_get_with_invalid(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onReceive_empty(caplog, capsys):
-    """Test onReceive with empty packet - should handle gracefully without error."""
+    """Test onReceive with empty packet - should handle gracefully without error.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
@@ -1983,9 +2450,17 @@ def test_main_onReceive_empty(caplog, capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onReceive_with_sendtext(caplog, capsys):
-    """Test onReceive with sendtext
+    """Test onReceive with sendtext.
+
     The entire point of this test is to make sure the interface.close() call
     is made in onReceive().
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--sendtext", "hello"]
     mt_config.args = sys.argv
@@ -2018,7 +2493,15 @@ def test_main_onReceive_with_sendtext(caplog, capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onReceive_with_text(caplog, capsys):
-    """Test onReceive with text."""
+    """Test onReceive with text.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     args = MagicMock()
     args.sendtext.return_value = "foo"
     mt_config.args = args
@@ -2055,7 +2538,13 @@ def test_main_onReceive_with_text(caplog, capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onConnection(capsys):
-    """Test onConnection."""
+    """Test onConnection.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = [""]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
@@ -2066,13 +2555,12 @@ def test_main_onConnection(capsys):
         """temp class for topic."""
 
         def getName(self):
-            """
-            Get a fake topic name.
+            """Get a fake topic name.
 
-            Returns:
+            Returns
             -------
+            _type_
                 The fixed fake topic name `'foo'`.
-
             """
             return "foo"
 
@@ -2086,7 +2574,13 @@ def test_main_onConnection(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_onConnection_with_non_topic(capsys):
-    """Test onConnection with non-topic objects."""
+    """Test onConnection with non-topic objects.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = [""]
     mt_config.args = sys.argv
     iface = MagicMock(autospec=SerialInterface)
@@ -2101,7 +2595,13 @@ def test_main_onConnection_with_non_topic(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_export_config(capsys):
-    """Test export_config() function directly."""
+    """Test export_config() function directly.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
@@ -2152,7 +2652,20 @@ def _build_export_interface(
     local_config: localonly_pb2.LocalConfig,
     module_config: localonly_pb2.LocalModuleConfig,
 ) -> MagicMock:
-    """Build a minimal interface mock compatible with export_config()."""
+    """Build a minimal interface mock compatible with export_config().
+
+    Parameters
+    ----------
+    local_config : localonly_pb2.LocalConfig
+        _description_
+    module_config : localonly_pb2.LocalModuleConfig
+        _description_
+
+    Returns
+    -------
+    MagicMock
+        _description_
+    """
     iface = MagicMock(autospec=SerialInterface)
     iface.localNode = MagicMock()
     iface.localNode.localConfig = local_config
@@ -2169,7 +2682,13 @@ def _build_export_interface(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_export_config_configure_round_trip_security_keys(capsys):
-    """Ensure export->configure->export preserves security keys and structure."""
+    """Ensure export->configure->export preserves security keys and structure.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     source_local = localonly_pb2.LocalConfig()
     source_module = localonly_pb2.LocalModuleConfig()
     source_local.bluetooth.enabled = True
@@ -2327,7 +2846,13 @@ def test_set_missing_flags_false():
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_gpio_rd_no_gpio_channel(capsys):
-    """Test --gpio_rd with no named gpio channel."""
+    """Test --gpio_rd with no named gpio channel.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--gpio-rd", "0x10", "--dest", "!foo"]
     mt_config.args = sys.argv
 
@@ -2349,7 +2874,13 @@ def test_main_gpio_rd_no_gpio_channel(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_gpio_rd_no_dest(capsys):
-    """Test --gpio_rd with a named gpio channel but no dest was specified."""
+    """Test --gpio_rd with a named gpio channel but no dest was specified.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--gpio-rd", "0x2000"]
     mt_config.args = sys.argv
 
@@ -2976,11 +3507,15 @@ def test_main_gpio_rd_no_dest(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_set_psk_no_ch_index(capsys):
-    """
-    Verify that invoking the CLI with `--ch-set psk` but without a `--ch-index` prints a warning and exits with code 1.
+    """Verify that invoking the CLI with `--ch-set psk` but without a `--ch-index` prints a warning and exits with code 1.
 
     Asserts that the tool reports a successful connection, emits a warning that `--ch-index` must
     be specified, produces no stderr output, and raises SystemExit with code 1.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--ch-set", "psk", "foo", "--host", "meshtastic.local"]
     mt_config.args = sys.argv
@@ -3005,7 +3540,13 @@ def test_main_ch_set_psk_no_ch_index(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_set_psk_with_ch_index(capsys):
-    """Test --ch-set psk."""
+    """Test --ch-set psk.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = [
         "",
         "--ch-set",
@@ -3062,7 +3603,13 @@ def test_main_ch_set_psk_with_ch_index(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_onNode(capsys):
-    """Test onNode."""
+    """Test onNode.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     onNode("foo")
     out, err = capsys.readouterr()
     assert re.search(r"Node changed", out, re.MULTILINE)
@@ -3072,7 +3619,13 @@ def test_onNode(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_tunnel_no_args(capsys):
-    """Test tunnel no arguments."""
+    """Test tunnel no arguments.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = [""]
     mt_config.args = sys.argv
     with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -3088,7 +3641,17 @@ def test_tunnel_no_args(capsys):
 @patch("meshtastic.util.findPorts", return_value=[])
 @patch("platform.system")
 def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system, caplog, capsys):
-    """Test tunnel with tunnel arg (act like we are on a linux system)."""
+    """Test tunnel with tunnel arg (act like we are on a linux system).
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
     mock_platform_system.side_effect = a_mock
@@ -3110,7 +3673,17 @@ def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system, caplog, capsys)
 @patch("meshtastic.util.findPorts", return_value=[])
 @patch("platform.system")
 def test_tunnel_subnet_arg_with_no_devices(mock_platform_system, caplog, capsys):
-    """Test tunnel with subnet arg (act like we are on a linux system)."""
+    """Test tunnel with subnet arg (act like we are on a linux system).
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
     mock_platform_system.side_effect = a_mock
@@ -3144,19 +3717,28 @@ def test_tunnel_tunnel_arg(
     caplog,
     capsys,
 ):
-    """Test tunnel with tunnel arg (act like we are on a linux system)."""
+    """Test tunnel with tunnel arg (act like we are on a linux system).
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    capsys : _type_
+        _description_
+    """
 
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
-        """
-        Simulate a sleep in tests by printing the provided value and terminating the process.
+        """Simulate a sleep in tests by printing the provided value and terminating the process.
 
         Prints `amount` to stdout and then exits the process with exit code 3.
 
         Parameters
         ----------
-            amount: The value (typically a sleep duration) to print before exiting.
-
+        amount : _type_
+            The value (typically a sleep duration) to print before exiting.
         """
         print(f"{amount}")
         sys.exit(3)
@@ -3260,7 +3842,13 @@ def test_remove_ignored_node():
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_owner_whitespace_only(capsys):
-    """Test --set-owner with whitespace-only name."""
+    """Test --set-owner with whitespace-only name.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-owner", "   "]
     mt_config.args = sys.argv
 
@@ -3282,7 +3870,13 @@ def test_main_set_owner_whitespace_only(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_owner_empty_string(capsys):
-    """Test --set-owner with empty string."""
+    """Test --set-owner with empty string.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-owner", ""]
     mt_config.args = sys.argv
 
@@ -3304,7 +3898,13 @@ def test_main_set_owner_empty_string(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_owner_short_whitespace_only(capsys):
-    """Test --set-owner-short with whitespace-only name."""
+    """Test --set-owner-short with whitespace-only name.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-owner-short", "   "]
     mt_config.args = sys.argv
 
@@ -3326,7 +3926,13 @@ def test_main_set_owner_short_whitespace_only(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_owner_short_empty_string(capsys):
-    """Test --set-owner-short with empty string."""
+    """Test --set-owner-short with empty string.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-owner-short", ""]
     mt_config.args = sys.argv
 
@@ -3348,11 +3954,15 @@ def test_main_set_owner_short_empty_string(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_ham_whitespace_only(capsys):
-    """
-    Verify that invoking the CLI with --set-ham and a whitespace-only callsign prints an appropriate error and exits with code 1.
+    """Verify that invoking the CLI with --set-ham and a whitespace-only callsign prints an appropriate error and exits with code 1.
 
     Asserts the error message "ERROR: Ham radio callsign cannot be empty or contain only
     whitespace characters" appears on stderr and that the process exits with code 1.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
     """
     sys.argv = ["", "--set-ham", "   "]
     mt_config.args = sys.argv
@@ -3376,7 +3986,13 @@ def test_main_set_ham_whitespace_only(capsys):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_set_ham_empty_string(capsys):
-    """Test --set-ham with empty string."""
+    """Test --set-ham with empty string.
+
+    Parameters
+    ----------
+    capsys : _type_
+        _description_
+    """
     sys.argv = ["", "--set-ham", ""]
     mt_config.args = sys.argv
 

@@ -107,7 +107,13 @@ class TestAddrLock:
         assert _addr_key("temp-address") not in _LOCK_HOLDERS
 
     def test_addr_lock_context_cleans_lock_on_exception(self):
-        """Address-lock holder tracking should unwind correctly when the context exits via exception."""
+        """Address-lock holder tracking should unwind correctly when the context exits via exception.
+
+        Raises
+        ------
+        RuntimeError
+            _description_
+        """
         key = _addr_key("temp-exception-address")
         assert key is not None
 
@@ -148,16 +154,15 @@ class TestMarkDisconnected:
 
     @pytest.fixture(autouse=True)
     def _mark_default_connected(self, clear_registry):
-        """
-        Mark a fixed test address as connected before each test.
+        """Mark a fixed test address as connected before each test.
 
         This autouse fixture ensures the registry is cleared (via the `clear_registry` fixture)
         and then records the address "aabbccddeeff" as connected for the duration of the test.
 
         Parameters
         ----------
-            clear_registry: pytest fixture that clears gating registries before use.
-
+        clear_registry : _type_
+            pytest fixture that clears gating registries before use.
         """
         _ = clear_registry
         _mark_connected("aabbccddeeff")
@@ -181,8 +186,8 @@ class TestMarkDisconnected:
         assert len(_CONNECTED_ADDRS) == initial_count
 
     def test_mark_disconnected_cleanup_lock(self):
-        """
-        Verify that marking an address disconnected removes its per-address
+        """Verify that marking an address disconnected removes its per-address.
+
         lock from the registry.
 
         The test enters `_addr_lock_context` for `"testaddress"`, marks it
@@ -202,6 +207,7 @@ class TestMarkDisconnected:
         """Disconnect from a different owner should not clear an active claim."""
 
         class Owner:
+            """_summary_."""
             pass
 
         owner_a = Owner()
@@ -239,6 +245,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """A claim owned by this interface is not considered connected elsewhere."""
 
         class Owner:
+            """_summary_."""
             _is_connection_connected = True
 
         owner = Owner()
@@ -250,6 +257,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """A live claim from another owner should be treated as connected elsewhere."""
 
         class Owner:
+            """_summary_."""
             _is_connection_connected = True
 
         owner_a = Owner()
@@ -262,6 +270,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """Dead weakref owners should be pruned automatically."""
 
         class Owner:
+            """_summary_."""
             _is_connection_connected = True
 
         owner = Owner()
@@ -277,6 +286,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """Claims from owners no longer connected should be pruned."""
 
         class Owner:
+            """_summary_."""
             _is_connection_connected = False
 
         owner = Owner()
@@ -290,14 +300,14 @@ class TestIsCurrentlyConnectedElsewhere:
         """Owner methods returning False should also be treated as stale claims."""
 
         class Owner:
+            """_summary_."""
             def _is_connection_connected(self):
-                """
-                Report whether the associated connection is currently established.
+                """Report whether the associated connection is currently established.
 
-                Returns:
+                Returns
                 -------
+                _type_
                     `True` if the connection is established, `False` otherwise.
-
                 """
                 return False
 
@@ -309,21 +319,28 @@ class TestIsCurrentlyConnectedElsewhere:
         assert key not in _CONNECTED_ADDRS
 
     def test_preserves_owner_claim_when_state_probe_raises(self):
-        """State-probe exceptions should not aggressively prune active claims."""
+        """State-probe exceptions should not aggressively prune active claims.
+
+        Raises
+        ------
+        RuntimeError
+            _description_
+        """
 
         class Owner:
+            """_summary_."""
             def _is_connection_connected(self):
-                """
-                Probe whether the owner's connection is active.
+                """Probe whether the owner's connection is active.
 
-                Returns:
+                Returns
                 -------
+                _type_
                     `True` if the owner's connection is active, `False` otherwise.
 
-                Raises:
+                Raises
                 ------
-                    RuntimeError: If the probe cannot determine connection state (e.g., probe failure).
-
+                RuntimeError
+                    If the probe cannot determine connection state (e.g., probe failure).
                 """
                 raise RuntimeError("probe failed")
 
@@ -335,7 +352,13 @@ class TestIsCurrentlyConnectedElsewhere:
         assert key in _CONNECTED_ADDRS
 
     def test_prunes_stale_unowned_claim(self, monkeypatch):
-        """Unowned claims should expire after a bounded stale window."""
+        """Unowned claims should expire after a bounded stale window.
+
+        Parameters
+        ----------
+        monkeypatch : _type_
+            _description_
+        """
         key = _addr_key("aabbccddeeff")
         assert key is not None
         _mark_connected("aabbccddeeff")

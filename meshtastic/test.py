@@ -1,4 +1,5 @@
-"""With two radios connected serially, send and receive test
+"""With two radios connected serially, send and receive test.
+
 messages and report back if successful.
 """
 
@@ -21,8 +22,7 @@ class _FallbackDotMap(dict):
     """Lightweight fallback used when dotmap is unavailable."""
 
     def __getattr__(self, key: str) -> Any:
-        """
-        Provide attribute-style access to dictionary keys.
+        """Provide attribute-style access to dictionary keys.
 
         If the key exists and its value is a dict, return a new _FallbackDotMap wrapping that dict.
         If the key exists and its value is not a dict, return the value unchanged.
@@ -30,12 +30,18 @@ class _FallbackDotMap(dict):
 
         Parameters
         ----------
-            key (str): Attribute name to retrieve as a dictionary key.
+        key : str
+            Attribute name to retrieve as a dictionary key.
 
-        Returns:
+        Returns
         -------
-            Any: The value stored under `key`, or a `_FallbackDotMap` for nested dicts or missing keys.
+        Any
+            The value stored under `key`, or a `_FallbackDotMap` for nested dicts or missing keys.
 
+        Raises
+        ------
+        AttributeError
+            _description_
         """
         # Guard dunder names to avoid interfering with copy, pickle, etc.
         if key.startswith("__") and key.endswith("__"):
@@ -50,16 +56,18 @@ class _FallbackDotMap(dict):
         return value
 
     def __setattr__(self, key: str, value: Any) -> None:
-        """
-        Set an item in the mapping using attribute-style access.
+        """Set an item in the mapping using attribute-style access.
 
         Dunder (double-underscore) attribute names are delegated to object attribute
         assignment to avoid interfering with Python internals; other names create or update
         mapping entries.
 
-        Parameters:
-            key (str): Attribute name to store as a mapping key.
-            value (Any): Value to assign.
+        Parameters
+        ----------
+        key : str
+            Attribute name to store as a mapping key.
+        value : Any
+            Value to assign.
         """
         # Guard dunder names to avoid interfering with Python internals.
         # Note: This asymmetry with __getattr__ (which raises) is intentional
@@ -70,17 +78,17 @@ class _FallbackDotMap(dict):
         self[key] = value
 
     def __delattr__(self, key: str) -> None:
-        """
-        Delete a mapping entry using attribute-style access.
+        """Delete a mapping entry using attribute-style access.
 
         Parameters
         ----------
-            key (str): Name of the key to remove.
+        key : str
+            Name of the key to remove.
 
-        Raises:
+        Raises
         ------
-            AttributeError: If the key does not exist.
-
+        AttributeError
+            If the key does not exist.
         """
         try:
             del self[key]
@@ -112,16 +120,18 @@ logger = logging.getLogger(__name__)
 
 
 def onReceive(packet: dict, interface: Any) -> None:
-    """
-    Handle an incoming packet and record clear-text messages.
+    """Handle an incoming packet and record clear-text messages.
 
     If the packet did not originate from the current sendingInterface, convert it to a DotMap.
     If the packet's decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level
     receivedPackets list is set, append the converted packet to receivedPackets.
 
-    Parameters:
-        packet (dict): Raw packet data as received.
-        interface (Any): Interface object that delivered the packet.
+    Parameters
+    ----------
+    packet : dict
+        Raw packet data as received.
+    interface : Any
+        Interface object that delivered the packet.
     """
     if sendingInterface != interface:
         # print(f"From {interface.stream.port}: {packet}")
@@ -134,18 +144,18 @@ def onReceive(packet: dict, interface: Any) -> None:
 
 
 def onNode(node: Any) -> None:
-    """
-    Log that a node database entry changed.
+    """Log that a node database entry changed.
 
-    Parameters:
-        node (Any): The node database entry or a payload describing the change.
+    Parameters
+    ----------
+    node : Any
+        The node database entry or a payload describing the change.
     """
     logger.info("Node changed: %s", node)
 
 
 def subscribe() -> None:
-    """
-    Subscribe to meshtastic pub/sub topics to receive node update notifications.
+    """Subscribe to meshtastic pub/sub topics to receive node update notifications.
 
     Registers the onNode callback for the "meshtastic.node" topic so node-change events are delivered to onNode.
     """
@@ -160,21 +170,25 @@ def testSend(
     asBinary: bool = False,
     wantAck: bool = False,
 ) -> bool:
-    """
-    Send a single test packet from one interface to another.
+    """Send a single test packet from one interface to another.
 
     Parameters
     ----------
-        fromInterface (Any): Interface used to send the packet.
-        toInterface (Any): Interface targeted to receive the packet (ignored for broadcasts).
-        isBroadcast (bool): If True, send to the broadcast address.
-        asBinary (bool): If True, send the payload as binary data.
-        wantAck (bool): If True, request an acknowledgment from the recipient.
+    fromInterface : Any
+        Interface used to send the packet.
+    toInterface : Any
+        Interface targeted to receive the packet (ignored for broadcasts).
+    isBroadcast : bool
+        If True, send to the broadcast address. (Default value = False)
+    asBinary : bool
+        If True, send the payload as binary data. (Default value = False)
+    wantAck : bool
+        If True, request an acknowledgment from the recipient. (Default value = False)
 
-    Returns:
+    Returns
     -------
-        bool: `True` if a response packet was received within 60 seconds, `False` otherwise.
-
+    bool
+        `True` if a response packet was received within 60 seconds, `False` otherwise.
     """
     # pylint: disable=W0603
     global receivedPackets
@@ -206,19 +220,21 @@ def testSend(
 
 
 def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
-    """
-    Execute a series of send/receive test iterations and evaluate overall success.
+    """Execute a series of send/receive test iterations and evaluate overall success.
 
     Parameters
     ----------
-        numTests (int): Number of test iterations to run.
-        wantAck (bool): If True, request acknowledgments for sent test packets.
-        maxFailures (int): Maximum allowed failed tests before overall result is considered a failure.
+    numTests : int
+        Number of test iterations to run. (Default value = 50)
+    wantAck : bool
+        If True, request acknowledgments for sent test packets. (Default value = False)
+    maxFailures : int
+        Maximum allowed failed tests before overall result is considered a failure. (Default value = 0)
 
-    Returns:
+    Returns
     -------
-        bool: `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
-
+    bool
+        `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
     """
     logger.info("Running %s tests with wantAck=%s", numTests, wantAck)
     numFail: int = 0
@@ -252,21 +268,21 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
 
 
 def testThread(numTests: int = 50) -> bool:
-    """
-    Run a two-stage test sequence across discovered devices.
+    """Run a two-stage test sequence across discovered devices.
 
     First stage runs `numTests` with acknowledgments required; if that stage succeeds, a second
     stage runs `numTests` without acknowledgments and allows up to one failure.
 
     Parameters
     ----------
-        numTests (int): Number of tests to run in each stage.
+    numTests : int
+        Number of tests to run in each stage. (Default value = 50)
 
-    Returns:
+    Returns
     -------
-        bool: True if the overall test sequence succeeded (both stages passed as
-            required), False otherwise.
-
+    bool
+        True if the overall test sequence succeeded (both stages passed as
+        required), False otherwise.
     """
     logger.info("Found devices, starting tests...")
     result: bool = runTests(numTests, wantAck=True)
@@ -278,12 +294,15 @@ def testThread(numTests: int = 50) -> bool:
 
 
 def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
-    """
-    Log that a connection's state changed using the topic name.
+    """Log that a connection's state changed using the topic name.
 
-    Parameters:
-        interface (Any): The interface whose connection state changed.
-        topic (Any): The connection topic object; if it provides a `getName()` method that name is used, otherwise `str(topic)` is used.
+    Parameters
+    ----------
+    interface : Any
+        The interface whose connection state changed. (Default value = None)
+    topic : Any
+        The connection topic object; if it provides a `getName()` method that name is
+        used, otherwise `str(topic)` is used. (Default value = pub.AUTO_TOPIC)
     """
     _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
@@ -291,17 +310,17 @@ def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
 
 
 def openDebugLog(portName: str) -> io.TextIOWrapper:
-    """
-    Create a per-port debug log file and return its open file handle.
+    """Create a per-port debug log file and return its open file handle.
 
     Parameters
     ----------
-        portName (str): Serial port name used to derive the filename; '/' characters will be replaced with '_'.
+    portName : str
+        Serial port name used to derive the filename; '/' characters will be replaced with '_'.
 
-    Returns:
+    Returns
     -------
-        io.TextIOWrapper: An open text file for writing the debug log.
-
+    io.TextIOWrapper
+        An open text file for writing the debug log.
     """
     debugname = "log" + portName.replace("/", "_")
     logger.info("Writing serial debugging to %s", debugname)
@@ -309,17 +328,17 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
 
 
 def testAll(numTests: int = 5) -> bool:
-    """
-    Discover connected Meshtastic devices, open serial interfaces for each, run integration tests, and close interfaces.
+    """Discover connected Meshtastic devices, open serial interfaces for each, run integration tests, and close interfaces.
 
     Parameters
     ----------
-        numTests (int): Number of test iterations to run in the test thread.
+    numTests : int
+        Number of test iterations to run in the test thread. (Default value = 5)
 
-    Returns:
+    Returns
     -------
-        bool: `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
-
+    bool
+        `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
     """
     ports: list[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:
@@ -349,8 +368,7 @@ def testAll(numTests: int = 5) -> bool:
 
 
 def testSimulator() -> None:
-    """
-    Run a short integration check against a Meshtastic simulator on localhost.
+    """Run a short integration check against a Meshtastic simulator on localhost.
 
     Connects to the simulator over TCP, requests node information and a simulator
     shutdown, and then exits the process; exits with status code 0 on success

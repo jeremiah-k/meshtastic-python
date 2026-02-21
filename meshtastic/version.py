@@ -2,11 +2,12 @@
 
 
 def get_active_version() -> str:
-    """
-    Retrieve the active installed version of the "meshtastic" package.
+    """Retrieve the active installed version of the "meshtastic" package.
 
-    Returns:
-        str: The package version string, or "unknown" if the distribution metadata cannot be found.
+    Returns
+    -------
+    str
+        The package version string, or "unknown" if the distribution metadata cannot be found.
     """
     try:
         from importlib.metadata import (  # pylint: disable=import-outside-toplevel

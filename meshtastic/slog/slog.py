@@ -26,13 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 def root_dir() -> str:
-    """
-    Return the application's slog root directory path, creating the directory if it does not exist.
+    """Return the application's slog root directory path, creating the directory if it does not exist.
 
     The directory is named "slogs" and is created under the per-user application data directory for the Meshtastic app.
 
-    Returns:
-        str: Filesystem path to the "slogs" directory.
+    Returns
+    -------
+    str
+        Filesystem path to the "slogs" directory.
     """
 
     app_name = "meshtastic"
@@ -52,14 +53,16 @@ class LogDef:
     format: parse.Parser  # A format string that can be used to parse the arguments
 
     def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
-        """
-        Create a LogDef for the given code and fields and compile a parser for those fields.
+        """Create a LogDef for the given code and fields and compile a parser for those fields.
 
-        Parameters:
-            code (str): Short log code (e.g., "B", "PM", "PS").
-            fields (list[tuple[str, pa.DataType]]): Ordered (name, type) pairs
-                describing each field. Fields whose type equals `pa.string()` are parsed as
-                strings; other types are parsed as integers.
+        Parameters
+        ----------
+        code : str
+            Short log code (e.g., "B", "PM", "PS").
+        fields : list[tuple[str, pa.DataType]]
+            Ordered (name, type) pairs
+            describing each field. Fields whose type equals `pa.string()` are parsed as
+            strings; other types are parsed as integers.
         """
         self.code = code
         self.fields = fields
@@ -95,13 +98,16 @@ class PowerLogger:
     """Logs current watts reading periodically using PowerMeter and ArrowWriter."""
 
     def __init__(self, pMeter: PowerMeter, file_path: str, interval=0.002) -> None:
-        """
-        Create a PowerLogger that records periodic power readings from a PowerMeter into a Feather file and starts its background logging thread.
+        """Create a PowerLogger that records periodic power readings from a PowerMeter into a Feather file and starts its background logging thread.
 
-        Parameters:
-            pMeter (PowerMeter): Source of power measurements; its snapshot and reset methods will be used.
-            file_path (str): Path to the output Feather file where readings will be written.
-            interval (float): Time in seconds between automatic samples (default 0.002).
+        Parameters
+        ----------
+        pMeter : PowerMeter
+            Source of power measurements; its snapshot and reset methods will be used.
+        file_path : str
+            Path to the output Feather file where readings will be written.
+        interval : float
+            Time in seconds between automatic samples (default 0.002).
         """
         self.pMeter = pMeter
         self.writer = FeatherWriter(file_path)
@@ -113,15 +119,16 @@ class PowerLogger:
         self.thread.start()
 
     def store_current_reading(self, now: datetime | None = None) -> None:
-        """
-        Capture a snapshot of current power measurements and append it to the writer.
+        """Capture a snapshot of current power measurements and append it to the writer.
 
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
         The recorded row contains `time`, `average_mW`, `max_mW`, and `min_mW`. After sampling, the
         PowerMeter's measurements are reset and the row is written via the writer.
 
-        Parameters:
-            now (datetime | None): Optional timestamp to use for the recorded row.
+        Parameters
+        ----------
+        now : datetime | None
+            Optional timestamp to use for the recorded row. (Default value = None)
         """
         if now is None:
             now = datetime.now()
@@ -155,7 +162,9 @@ TOPIC_MESHTASTIC_LOG_LINE = "meshtastic.log.line"
 
 class StructuredLogger:
     """Sniffs device logs for structured log messages, extracts those into apache arrow format.
-    Also writes the raw log messages to raw.txt."""
+
+    Also writes the raw log messages to raw.txt.
+    """
 
     def __init__(
         self,
@@ -164,14 +173,23 @@ class StructuredLogger:
         power_logger: PowerLogger | None = None,
         include_raw: bool = True,
     ) -> None:
-        """
-        Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
+        """Create a StructuredLogger that monitors device logs and writes structured entries to an Arrow writer.
 
-        Args:
-            client (MeshInterface): Source of device log lines to monitor.
-            dir_path (str): Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
-            power_logger (PowerLogger | None): If provided, used to record a power sample with each structured log entry.
-            include_raw (bool): If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
+        Parameters
+        ----------
+        client : MeshInterface
+            Source of device log lines to monitor.
+        dir_path : str
+            Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
+        power_logger : PowerLogger | None
+            If provided, used to record a power sample with each structured log entry. (Default value = None)
+        include_raw : bool
+            If True, include a "raw" string field in the schema and write raw log lines to raw.txt. (Default value = True)
+
+        Raises
+        ------
+        __UnknownError__
+            _description_
         """
         self.client = client
         self.power_logger = power_logger
@@ -194,6 +212,15 @@ class StructuredLogger:
 
         # We need a closure here because the subscription API is very strict about exact arg matching
         def listen_glue(line, interface):  # pylint: disable=unused-argument
+            """_summary_.
+
+            Parameters
+            ----------
+            line : _type_
+                _description_
+            interface : _type_
+                _description_
+            """
             self._onLogMessage(line)
 
         self._listen_glue = (
@@ -218,8 +245,7 @@ class StructuredLogger:
             raise
 
     def close(self) -> None:
-        """
-        Shut down the StructuredLogger and release its resources.
+        """Shut down the StructuredLogger and release its resources.
 
         Unsubscribes the log listener, closes the Arrow writer, and safely closes and clears the
         raw log file reference while holding the internal lock so concurrent writers cannot race
@@ -238,8 +264,7 @@ class StructuredLogger:
                     f.close()  # Close the raw.txt file
 
     def _onLogMessage(self, line: str) -> None:
-        """
-        Process a single raw log line, extract any structured slog fields, and persist the resulting record.
+        """Process a single raw log line, extract any structured slog fields, and persist the resulting record.
 
         Parses the input line for a structured slog. If parsing yields fields, adds a "time"
         timestamp and writes the record to the configured Arrow writer. If raw logging is enabled,
@@ -247,8 +272,10 @@ class StructuredLogger:
         logger is present, records a power measurement using the exact same timestamp as the
         written slog record. Unknown or unparsable structured slog lines are logged as warnings.
 
-        Args:
-            line (str): The raw log line to process.
+        Parameters
+        ----------
+        line : str
+            The raw log line to process.
         """
 
         di = {}  # the dictionary of the fields we found to log
@@ -311,8 +338,7 @@ class LogSet:
         dir_name: str | None = None,
         power_meter: PowerMeter | None = None,
     ) -> None:
-        """
-        Create a LogSet: prepare a directory for slog files, start structured slogging, and optionally start power logging.
+        """Create a LogSet: prepare a directory for slog files, start structured slogging, and optionally start power logging.
 
         If dir_name is not provided, a timestamped directory is created under the slog root and a
         "latest" symlink is updated to point to it. A StructuredLogger is created and bound to the
@@ -320,14 +346,23 @@ class LogSet:
         "power" subdirectory. An atexit handler pointing to this instance's close() is registered
         for later teardown.
 
-        Args:
-            client (MeshInterface): MeshInterface client whose log lines will be
-                monitored and recorded.
-            dir_name (str | None): Path for storing logs; when omitted, a new
-                timestamped directory is created under the slog root and "latest"
-                is updated to point to it.
-            power_meter (PowerMeter | None): When provided, a PowerLogger is
-                started to record power samples alongside slog entries.
+        Parameters
+        ----------
+        client : MeshInterface
+            MeshInterface client whose log lines will be
+            monitored and recorded.
+        dir_name : str | None
+            Path for storing logs; when omitted, a new
+            timestamped directory is created under the slog root and "latest"
+            is updated to point to it. (Default value = None)
+        power_meter : PowerMeter | None
+            When provided, a PowerLogger is
+            started to record power samples alongside slog entries. (Default value = None)
+
+        Raises
+        ------
+        __UnknownError__
+            _description_
         """
 
         if not dir_name:
@@ -371,8 +406,7 @@ class LogSet:
         atexit.register(self.atexit_handler)
 
     def close(self) -> None:
-        """
-        Shuts down the log set and releases associated resources.
+        """Shuts down the log set and releases associated resources.
 
         If a structured logger is present, unregisters the atexit handler, closes the
         structured logger and the optional power logger, and clears the internal slog

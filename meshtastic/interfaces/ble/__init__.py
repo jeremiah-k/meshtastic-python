@@ -1,5 +1,4 @@
-"""
-Stable BLE public API for Meshtastic.
+"""Stable BLE public API for Meshtastic.
 
 This package intentionally exports only the same user-facing BLE symbols exposed
 by `meshtastic.ble_interface` (main classes, UUID constants, BLE error

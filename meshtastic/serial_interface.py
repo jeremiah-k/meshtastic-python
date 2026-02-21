@@ -27,19 +27,30 @@ class SerialInterface(StreamInterface):
         noNodes: bool = False,
         timeout: float = 300.0,
     ) -> None:
-        """
-        Initialize the SerialInterface and open a serial connection to a Meshtastic device when available.
+        """Initialize the SerialInterface and open a serial connection to a Meshtastic device when available.
 
-        Parameters:
-            devPath (str | None): Filesystem path to a serial device (e.g.,
-                "/dev/ttyUSB0"). If None, a single available Meshtastic port will be
-                auto-detected; if none are found, a fallback StreamInterface without a
-                serial connection is created.
-            debugOut (TextIOWrapper | None): Optional stream to emit raw debug serial output.
-            noProto (bool): Disable higher-level protocol handling when True.
-            connectNow (bool): If True, perform connection and setup actions immediately after opening the serial stream.
-            noNodes (bool): Disable node discovery and management when True.
-            timeout (float): Time in seconds to wait for replies or other operations.
+        Parameters
+        ----------
+        devPath : str | None
+            Filesystem path to a serial device (e.g.,
+            "/dev/ttyUSB0"). If None, a single available Meshtastic port will be
+            auto-detected; if none are found, a fallback StreamInterface without a
+            serial connection is created. (Default value = None)
+        debugOut : TextIOWrapper | None
+            Optional stream to emit raw debug serial output. (Default value = None)
+        noProto : bool
+            Disable higher-level protocol handling when True. (Default value = False)
+        connectNow : bool
+            If True, perform connection and setup actions immediately after opening the serial stream. (Default value = True)
+        noNodes : bool
+            Disable node discovery and management when True. (Default value = False)
+        timeout : float
+            Time in seconds to wait for replies or other operations. (Default value = 300.0)
+
+        Raises
+        ------
+        MeshInterfaceError
+            _description_
         """
         self.noProto = noProto
         self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
@@ -104,13 +115,14 @@ class SerialInterface(StreamInterface):
                     self.stream = None
 
     def _set_hupcl_with_termios(self, f: TextIOWrapper) -> None:
-        """
-        Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.
+        """Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.
 
         On Windows this is a no-op.
 
-        Parameters:
-            f (TextIOWrapper): Open file-like handle for the serial device whose terminal attributes will be adjusted.
+        Parameters
+        ----------
+        f : TextIOWrapper
+            Open file-like handle for the serial device whose terminal attributes will be adjusted.
         """
         if sys.platform == "win32":
             return
@@ -122,12 +134,13 @@ class SerialInterface(StreamInterface):
         termios.tcsetattr(f, termios.TCSAFLUSH, attrs)
 
     def __repr__(self) -> str:
-        """
-        Provide a concise, machine-readable representation of the SerialInterface instance.
+        """Provide a concise, machine-readable representation of the SerialInterface instance.
 
-        Returns:
-            str: A string like "SerialInterface(devPath=..., debugOut=..., noProto=True, noNodes=True)"
-                 that includes only the applicable fields (devPath always; debugOut, noProto, noNodes when present).
+        Returns
+        -------
+        str
+            A string like "SerialInterface(devPath=..., debugOut=..., noProto=True, noNodes=True)"
+            that includes only the applicable fields (devPath always; debugOut, noProto, noNodes when present).
         """
         rep = f"SerialInterface(devPath={self.devPath!r}"
         if hasattr(self, "debugOut") and self.debugOut is not None:
@@ -140,8 +153,7 @@ class SerialInterface(StreamInterface):
         return rep
 
     def close(self) -> None:
-        """
-        Close the serial connection and ensure any pending outgoing data is transmitted.
+        """Close the serial connection and ensure any pending outgoing data is transmitted.
 
         If a serial stream exists, flushes pending outgoing data before closing and then
         delegates remaining cleanup to StreamInterface.close(). This operation may block
@@ -160,11 +172,12 @@ class SerialInterface(StreamInterface):
         StreamInterface.close(self)
 
     def __enter__(self) -> "SerialInterface":
-        """
-        Provide the SerialInterface instance for use in a with-statement.
+        """Provide the SerialInterface instance for use in a with-statement.
 
-        Returns:
-            self (SerialInterface): The same SerialInterface instance.
+        Returns
+        -------
+        self : 'SerialInterface'
+            The same SerialInterface instance.
         """
         return self
 
@@ -174,14 +187,22 @@ class SerialInterface(StreamInterface):
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
-        """
-        Handle exiting a context manager and delegate cleanup and exception propagation to the base class.
+        """Handle exiting a context manager and delegate cleanup and exception propagation to the base class.
 
         When used as a context manager exit hook, forwards any exception information to the superclass so it can perform cleanup and logging.
 
-        Parameters:
-            exc_type (type[BaseException] | None): The exception class if an exception was raised, otherwise None.
-            exc_val (BaseException | None): The exception instance if raised, otherwise None.
-            exc_tb (types.TracebackType | None): The traceback object for the exception, or None.
+        Parameters
+        ----------
+        exc_type : type[BaseException] | None
+            The exception class if an exception was raised, otherwise None.
+        exc_val : BaseException | None
+            The exception instance if raised, otherwise None.
+        exc_tb : types.TracebackType | None
+            The traceback object for the exception, or None.
+
+        Returns
+        -------
+        None
+            _description_
         """
         return super().__exit__(exc_type, exc_val, exc_tb)

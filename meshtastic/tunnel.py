@@ -32,7 +32,15 @@ TUNNEL_TOPIC = "meshtastic.receive.data.IP_TUNNEL_APP"
 
 
 def onTunnelReceive(packet, interface):
-    """Handle received tunneled messages from mesh."""
+    """Handle received tunneled messages from mesh.
+
+    Parameters
+    ----------
+    packet : _type_
+        _description_
+    interface : _type_
+        _description_
+    """
     _ = interface
     logger.debug("in onTunnelReceive()")
     tunnel_instance = mt_config.tunnel_instance
@@ -49,11 +57,12 @@ class Tunnel:
         """An exception class for general tunnel errors."""
 
         def __init__(self, message):
-            """
-            Initialize the TunnelError with a human-readable message.
+            """Initialize the TunnelError with a human-readable message.
 
-            Args:
-                message (str): Description of the tunnel-related error.
+            Parameters
+            ----------
+            message : str
+                Description of the tunnel-related error.
             """
             self.message = message
             super().__init__(self.message)
@@ -61,23 +70,36 @@ class Tunnel:
     def __init__(
         self, iface, subnet: str = "10.115", netmask: str = "255.255.0.0"
     ) -> None:
-        """
-        Initialize a Tunnel bound to a mesh interface and subnet.
+        """Initialize a Tunnel bound to a mesh interface and subnet.
 
         Creates and configures tunnel state, registers this instance as the global
         mt_config.tunnel_instance, and conditionally creates and brings up a TUN
         (TapDevice) and a background reader thread unless the mesh interface has
         noProto enabled.
 
-        Args:
-            iface: An already-open MeshInterface instance providing .myInfo, .nodes,
-                .node numbers, .noProto, and .sendData behavior.
-            subnet (str): Subnet prefix used to form tunnel IPs (default "10.115").
-            netmask (str): Netmask to assign to the TUN device (default "255.255.0.0").
+        Parameters
+        ----------
+        iface : _type_
+            An already-open MeshInterface instance providing .myInfo, .nodes,
+            .node numbers, .noProto, and .sendData behavior.
+        subnet : str
+            Subnet prefix used to form tunnel IPs (default "10.115").
+        netmask : str
+            Netmask to assign to the TUN device (default "255.255.0.0").
 
-        Raises:
-            Tunnel.TunnelError: If iface, subnet, or netmask is missing, or if the
-                process is not running on a Linux system.
+        Raises
+        ------
+        Tunnel.TunnelError
+            If iface, subnet, or netmask is missing, or if the
+            process is not running on a Linux system.
+        TunnelError
+            _description_
+        TunnelError
+            _description_
+        TunnelError
+            _description_
+        TunnelError
+            _description_
         """
 
         if not iface:
@@ -162,14 +184,15 @@ class Tunnel:
             self._rxThread.start()
 
     def onReceive(self, packet):
-        """
-        Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.
+        """Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.
 
         Ignores packets originating from the local node. If protocol handling is enabled (iface.noProto is False)
         and the packet is not filtered by _shouldFilterPacket, writes packet["decoded"]["payload"] to the TUN device.
 
-        Args:
-            packet (dict): Mesh packet; expected to contain a "from" node number and a "decoded" dict with a "payload" bytes object.
+        Parameters
+        ----------
+        packet : dict
+            Mesh packet; expected to contain a "from" node number and a "decoded" dict with a "payload" bytes object.
         """
         p = packet["decoded"]["payload"]
         if packet["from"] == self.iface.myInfo.my_node_num:
@@ -183,14 +206,17 @@ class Tunnel:
                     self.tun.write(p)
 
     def _shouldFilterPacket(self, p):
-        """
-        Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
+        """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
 
-        Args:
-            p (bytes): Raw IPv4 packet bytes beginning at the IP header.
+        Parameters
+        ----------
+        p : bytes
+            Raw IPv4 packet bytes beginning at the IP header.
 
-        Returns:
-            bool: `True` if the packet should be ignored (filtered), `False` otherwise.
+        Returns
+        -------
+        bool
+            `True` if the packet should be ignored (filtered), `False` otherwise.
         """
         protocol = p[8 + 1]
         srcaddr = p[12:16]
@@ -238,6 +264,7 @@ class Tunnel:
         return ignore
 
     def __tunReader(self):
+        """_summary_."""
         tap = self.tun
         if tap is None:
             logger.debug("TUN reader exiting: no active TUN device")
@@ -253,6 +280,18 @@ class Tunnel:
 
     def _ipToNodeId(self, ipAddr):
         # We only consider the last 16 bits of the nodenum for IP address matching
+        """_summary_.
+
+        Parameters
+        ----------
+        ipAddr : _type_
+            _description_
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
         ipBits = ipAddr[2] * 256 + ipAddr[3]
 
         if ipBits == 0xFFFF:
@@ -266,24 +305,29 @@ class Tunnel:
         return None
 
     def _nodeNumToIp(self, nodeNum):
-        """
-        Constructs an IPv4 address in the tunnel subnet for a given node number.
+        """Constructs an IPv4 address in the tunnel subnet for a given node number.
 
-        Args:
-            nodeNum (int): Node number; the low 16 bits are used to form the final two octets of the returned address.
+        Parameters
+        ----------
+        nodeNum : int
+            Node number; the low 16 bits are used to form the final two octets of the returned address.
 
-        Returns:
-            str: IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
+        Returns
+        -------
+        str
+            IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
         """
         return f"{self.subnetPrefix}.{(nodeNum >> 8) & 0xff}.{nodeNum & 0xff}"
 
     def sendPacket(self, destAddr, p):
-        """
-        Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
+        """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
 
-        Args:
-            destAddr (bytes): 4-byte IPv4 address in network byte order identifying the packet's destination.
-            p (bytes): Raw IP packet bytes to be forwarded.
+        Parameters
+        ----------
+        destAddr : bytes
+            4-byte IPv4 address in network byte order identifying the packet's destination.
+        p : bytes
+            Raw IP packet bytes to be forwarded.
         """
         nodeId = self._ipToNodeId(destAddr)
         if nodeId is not None:
@@ -297,8 +341,7 @@ class Tunnel:
             )
 
     def close(self):
-        """
-        Close the Tunnel's TUN device.
+        """Close the Tunnel's TUN device.
 
         Closes the underlying TUN/TAP device and releases associated resources held by it.
         """
