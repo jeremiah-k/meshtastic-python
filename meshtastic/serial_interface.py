@@ -5,7 +5,6 @@ import sys
 import time
 import types
 from io import TextIOWrapper
-from typing import List, Optional, Type
 
 import serial  # type: ignore[import-untyped]
 
@@ -21,8 +20,8 @@ class SerialInterface(StreamInterface):
     # pylint: disable=R0917
     def __init__(
         self,
-        devPath: Optional[str] = None,
-        debugOut: Optional[TextIOWrapper] = None,
+        devPath: str | None = None,
+        debugOut: TextIOWrapper | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
@@ -33,7 +32,7 @@ class SerialInterface(StreamInterface):
 
         Parameters
         ----------
-            devPath (Optional[str]): Filesystem path to a serial device (e.g., "/dev/ttyUSB0").
+            devPath (str | None): Filesystem path to a serial device (e.g., "/dev/ttyUSB0").
                 If None, a single available Meshtastic port will be auto-detected; if none are
                 found a fallback StreamInterface without a serial connection is created.
             debugOut: Optional stream to which raw debug serial output will be emitted.
@@ -44,12 +43,12 @@ class SerialInterface(StreamInterface):
 
         """
         self.noProto = noProto
-        self.stream: Optional[serial.Serial] = None  # Initialize early for safe cleanup
+        self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
 
-        self.devPath: Optional[str] = devPath
+        self.devPath: str | None = devPath
 
         if self.devPath is None:
-            ports: List[str] = meshtastic.util.findPorts(True)
+            ports: list[str] = meshtastic.util.findPorts(True)
             logger.debug("ports: %s", ports)
             if len(ports) == 0:
                 logger.warning(
@@ -181,9 +180,9 @@ class SerialInterface(StreamInterface):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[types.TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
     ) -> None:
         """
         Handle exit from a context manager and preserve exception handling and logging behavior.

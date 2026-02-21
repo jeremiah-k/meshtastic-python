@@ -67,7 +67,7 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 import logging
 from importlib import import_module
-from typing import Any, Callable, Dict, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple
 
 from google.protobuf.json_format import MessageToJson
 from pubsub import pub  # type: ignore[import-untyped]
@@ -209,12 +209,12 @@ class KnownProtocol(NamedTuple):
     #: A descriptive name (e.g. "text", "user", "admin")
     name: str
     #: If set, will be called to parse as a protocol buffer
-    protobufFactory: Optional[Callable] = None
+    protobufFactory: Callable | None = None
     #: If set, invoked as onReceive(interface, packet)
-    onReceive: Optional[Callable] = None
+    onReceive: Callable | None = None
 
 
-def _on_text_receive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_text_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Decode text payloads from a received packet and update per-node metadata.
 
@@ -243,7 +243,7 @@ def _on_text_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     _receive_info_update(iface, asDict)
 
 
-def _on_position_receive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Update the sender node's stored position when a received packet contains position data.
 
@@ -267,7 +267,7 @@ def _on_position_receive(iface: Any, asDict: Dict[str, Any]) -> None:
             iface._getOrCreateByNum(asDict["from"])["position"] = p
 
 
-def _on_node_info_receive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_node_info_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Update interface node records from a received NodeInfo ("user") payload.
 
@@ -279,7 +279,7 @@ def _on_node_info_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     Parameters
     ----------
         iface (Any): Interface instance whose node database will be updated.
-        asDict (Dict[str, Any]): Received packet dictionary (expected to contain `"decoded" -> "user"` and `"from"`).
+        asDict (dict[str, Any]): Received packet dictionary (expected to contain `"decoded" -> "user"` and `"from"`).
 
     """
     logger.debug("in _on_node_info_receive() asDict:%s", asDict)
@@ -295,7 +295,7 @@ def _on_node_info_receive(iface: Any, asDict: Dict[str, Any]) -> None:
             _receive_info_update(iface, asDict)
 
 
-def _on_telemetry_receive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Update the appropriate telemetry section on the sender node when a telemetry packet is received.
 
@@ -342,7 +342,7 @@ def _on_telemetry_receive(iface: Any, asDict: Dict[str, Any]) -> None:
     node[toUpdate] = newMetrics
 
 
-def _receive_info_update(iface: Any, asDict: Dict[str, Any]) -> None:
+def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Update per-node metadata fields based on information present in a received packet dictionary.
 
@@ -364,7 +364,7 @@ def _receive_info_update(iface: Any, asDict: Dict[str, Any]) -> None:
         node["hopLimit"] = asDict.get("hopLimit")
 
 
-def _on_admin_receive(iface: Any, asDict: Dict[str, Any]) -> None:
+def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
     Store the admin session passkey from an admin packet on the sending node.
 

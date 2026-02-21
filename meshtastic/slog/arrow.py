@@ -1,9 +1,8 @@
 """Utilities for Apache Arrow serialization."""
 
 import logging
-import threading
 import os
-from typing import Optional, List
+import threading
 
 import pyarrow as pa
 from pyarrow import feather
@@ -12,7 +11,7 @@ chunk_size = 1000  # disk writes are batched based on this number of rows
 
 
 class ArrowWriter:
-    """Writes an arrow file in a streaming fashion"""
+    """Writes an arrow file in a streaming fashion."""
 
     def __init__(self, file_name: str):
         """Create a new ArrowWriter object.
@@ -20,9 +19,9 @@ class ArrowWriter:
         file_name (str): The name of the file to write to.
         """
         self.sink = pa.OSFile(file_name, "wb")  # type: ignore
-        self.new_rows: List[dict] = []
-        self.schema: Optional[pa.Schema] = None  # haven't yet learned the schema
-        self.writer: Optional[pa.RecordBatchStreamWriter] = None
+        self.new_rows: list[dict] = []
+        self.schema: pa.Schema | None = None  # haven't yet learned the schema
+        self.writer: pa.RecordBatchStreamWriter | None = None
         self._lock = threading.Condition()  # Ensure only one thread writes at a time
 
     def close(self):

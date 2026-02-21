@@ -7,7 +7,7 @@ import types
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Iterator, List, Optional, Tuple, cast
+from typing import Iterator, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,7 +30,7 @@ from meshtastic.protobuf import mesh_pb2
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 
-def _get_connect_stub_calls(iface: BLEInterface) -> List[Optional[str]]:
+def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
     """
     Retrieve the test-only list of addresses recorded for BLEInterface.connect calls.
 
@@ -40,10 +40,10 @@ def _get_connect_stub_calls(iface: BLEInterface) -> List[Optional[str]]:
 
     Returns
     -------
-        List[Optional[str]]: Recorded addresses for each connect call; `None` represents a connect attempt without an address. Returns an empty list if the attribute is not present.
+        list[str | None]: Recorded addresses for each connect call; `None` represents a connect attempt without an address. Returns an empty list if the attribute is not present.
 
     """
-    return cast(List[Optional[str]], getattr(iface, "_connect_stub_calls", []))
+    return cast(list[str | None], getattr(iface, "_connect_stub_calls", []))
 
 
 def test_log_notification_registration_missing_characteristics(monkeypatch):
@@ -607,7 +607,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
     @contextmanager
     def create_interface_with_auto_reconnect() -> (
-        Iterator[Tuple[BLEInterface, "StressTestClient"]]
+        Iterator[tuple[BLEInterface, "StressTestClient"]]
     ):
         """
         Create and yield a BLEInterface configured for stress testing with auto-reconnect enabled.
@@ -632,7 +632,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
         def _patched_connect(
             self: BLEInterface,
-            address: Optional[str] = None,
+            address: str | None = None,
         ) -> "StressTestClient":
             """
             Attach a StressTestClient to this BLEInterface for testing and record the connection address.
@@ -858,8 +858,8 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
             Attributes
             ----------
                 cancelled (bool): True if the operation has been cancelled.
-                coro (Optional[Coroutine]): The associated coroutine, or None.
-                callbacks (List[Callable]): Callables invoked when the operation or future completes.
+                coro (Coroutine | None): The associated coroutine, or None.
+                callbacks (list[Callable]): Callables invoked when the operation or future completes.
 
             """
             self.cancelled = False

@@ -14,7 +14,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, Dict, List, NoReturn, Optional, Set, Tuple
+from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -29,7 +29,7 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 from meshtastic.version import get_active_version
 
-argcomplete: Optional[ModuleType] = None
+argcomplete: ModuleType | None = None
 try:
     import argcomplete as _argcomplete  # type: ignore
 
@@ -37,7 +37,7 @@ try:
 except ImportError:
     pass
 
-pyqrcode: Optional[ModuleType] = None
+pyqrcode: ModuleType | None = None
 try:
     import pyqrcode as _pyqrcode  # type: ignore[import-untyped]
 
@@ -45,7 +45,7 @@ try:
 except ImportError:
     pass
 
-meshtastic_test: Optional[ModuleType] = None
+meshtastic_test: ModuleType | None = None
 try:
     meshtastic_test = importlib.import_module("meshtastic.test")
 except ImportError:
@@ -122,7 +122,7 @@ def support_info() -> None:
     print("Please add the output from the command: meshtastic --info")
 
 
-def onReceive(packet: Dict[str, Any], interface: MeshInterface) -> None:
+def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
     """
     Handle an incoming mesh packet and optionally send a text reply or close the interface.
 
@@ -305,7 +305,7 @@ def getPref(node: Any, comp_name: str) -> bool:
     return True
 
 
-def splitCompoundName(comp_name: str) -> List[str]:
+def splitCompoundName(comp_name: str) -> list[str]:
     """
     Split a dot-separated preference name into segments.
 
@@ -314,10 +314,10 @@ def splitCompoundName(comp_name: str) -> List[str]:
 
     Returns
     -------
-        List[str]: The name segments, or `[comp_name, comp_name]` when no dot is present.
+        list[str]: The name segments, or `[comp_name, comp_name]` when no dot is present.
 
     """
-    name: List[str] = comp_name.split(".")
+    name: list[str] = comp_name.split(".")
     if len(name) < 2:
         name[0] = comp_name
         name.append(comp_name)
@@ -325,7 +325,7 @@ def splitCompoundName(comp_name: str) -> List[str]:
 
 
 def traverseConfig(
-    config_root: str, config: Dict[str, Any], interface_config: Any
+    config_root: str, config: dict[str, Any], interface_config: Any
 ) -> bool:
     """
     Recursively apply values from a nested mapping onto a target configuration by walking dot-separated paths.
@@ -333,7 +333,7 @@ def traverseConfig(
     Parameters
     ----------
         config_root (str): Dot-separated prefix for the current configuration path (e.g., "channel.0").
-        config (Dict[str, Any]): Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
+        config (dict[str, Any]): Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
         interface_config: Target configuration object that will receive the applied leaf values.
 
     Returns
@@ -865,8 +865,8 @@ def onConnected(interface: MeshInterface) -> None:
             node = interface.getNode(args.dest, False, **getNode_kwargs)
 
             # Handle the int/float/bool arguments
-            last_pref: Optional[List[str]] = None
-            fields: Set[str] = set()
+            last_pref: list[str] | None = None
+            fields: set[str] = set()
             any_found = False
             for pref_item in args.set:
                 if pref_item is None or len(pref_item) < 2:
@@ -1180,7 +1180,7 @@ def onConnected(interface: MeshInterface) -> None:
         if args.ch_set or args.ch_enable or args.ch_disable:
             closeNow = True
 
-            _idx: Optional[int] = mt_config.channel_index
+            _idx: int | None = mt_config.channel_index
             if _idx is None:
                 _cli_exit("Warning: Need to specify '--ch-index'.", 1)
             # _idx is now narrowed to int due to NoReturn from _cli_exit
@@ -1440,15 +1440,15 @@ def subscribe() -> None:
 
 
 def _set_missing_flags_false(
-    config_dict: Dict[str, Any], true_defaults: Set[Tuple[str, ...]]
+    config_dict: dict[str, Any], true_defaults: set[tuple[str, ...]]
 ) -> None:
     """
     Ensure specified boolean flags exist in a nested config dictionary and set any missing ones to False.
 
     Parameters
     ----------
-        config_dict (Dict[str, Any]): The nested configuration dictionary to modify in place.
-        true_defaults (Set[Tuple[str, ...]]): A set of key paths (tuples of keys) where the final
+        config_dict (dict[str, Any]): The nested configuration dictionary to modify in place.
+        true_defaults (set[tuple[str, ...]]): A set of key paths (tuples of keys) where the final
             key is expected to be a boolean defaulted to True; any path not present in config_dict
             will have its final key created and set to False.
 
@@ -1464,7 +1464,7 @@ def _set_missing_flags_false(
 
 
 def _prefix_base64_key(
-    security: Dict[str, Any], normalized_key_map: Dict[str, str], camel_name: str
+    security: dict[str, Any], normalized_key_map: dict[str, str], camel_name: str
 ) -> None:
     """
     Prefix a security key value with 'base64:' if it is a string or list of strings.
@@ -1495,7 +1495,7 @@ def _prefix_base64_key(
 
 # Boolean flags that default to True in firmware but may be absent from
 # MessageToDict output; set missing values to False to preserve round-trip intent.
-CONFIG_TRUE_DEFAULTS: Set[Tuple[str, ...]] = {
+CONFIG_TRUE_DEFAULTS: set[tuple[str, ...]] = {
     ("bluetooth", "enabled"),
     ("lora", "sx126xRxBoostedGain"),
     ("lora", "txEnabled"),
@@ -1504,7 +1504,7 @@ CONFIG_TRUE_DEFAULTS: Set[Tuple[str, ...]] = {
     ("security", "serialEnabled"),
 }
 
-MODULE_TRUE_DEFAULTS: Set[Tuple[str, ...]] = {
+MODULE_TRUE_DEFAULTS: set[tuple[str, ...]] = {
     ("mqtt", "encryptionEnabled"),
 }
 
@@ -1529,7 +1529,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
         str: A YAML string (prefixed with a header comment) representing exported configuration.
 
     """
-    configObj: Dict[str, Any] = {}
+    configObj: dict[str, Any] = {}
 
     owner = interface.getLongName()
     owner_short = interface.getShortName()
@@ -1674,7 +1674,7 @@ def create_power_meter() -> None:
             time.sleep(5)
 
 
-def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
+def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     """
     Parse a host string into a TCP hostname and port.
 
@@ -1689,7 +1689,7 @@ def _parse_host_port(host_str: str, default_port: int) -> Tuple[str, int]:
 
     Returns
     -------
-        Tuple[str, int]: Parsed hostname/address and resolved TCP port.
+        tuple[str, int]: Parsed hostname/address and resolved TCP port.
 
     """
     tcp_hostname = host_str
@@ -1869,7 +1869,7 @@ def common():
 
             # Use ExitStack to guarantee interface cleanup on early exits or exceptions
             with contextlib.ExitStack() as stack:
-                client: Optional[MeshInterface] = None
+                client: MeshInterface | None = None
                 if args.ble:
                     try:
                         client = stack.enter_context(

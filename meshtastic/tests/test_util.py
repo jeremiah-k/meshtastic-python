@@ -5,7 +5,6 @@ import binascii
 import json
 import logging
 import re
-from typing import Optional
 from unittest.mock import patch
 
 import pytest
@@ -47,17 +46,17 @@ from meshtastic.util import (
 class _TempPort:
     """Stub port object for serial-port discovery tests."""
 
-    device: Optional[str]
-    vid: Optional[int]
+    device: str | None
+    vid: int | None
 
-    def __init__(self, device: Optional[str] = None, vid: Optional[int] = None) -> None:
+    def __init__(self, device: str | None = None, vid: int | None = None) -> None:
         """
         Initialize the temporary port stub with an optional device path and vendor ID.
 
         Parameters
         ----------
-            device (Optional[str]): The port device path (for example '/dev/ttyUSB0') or None.
-            vid (Optional[int]): The USB vendor ID as an integer, or None.
+            device (str | None): The port device path (for example '/dev/ttyUSB0') or None.
+            vid (int | None): The USB vendor ID as an integer, or None.
 
         """
         self.device = device

@@ -1,18 +1,19 @@
 """Version lookup utilities, isolated for cleanliness."""
 
-import sys
 
-try:
-    from importlib.metadata import version
-except:
-    import pkg_resources
-
-
-def get_active_version():
+def get_active_version() -> str:
     """Get the currently active version using importlib, or pkg_resources if we must."""
-    if "importlib.metadata" in sys.modules:
+    try:
+        from importlib.metadata import (  # pylint: disable=import-outside-toplevel
+            PackageNotFoundError,
+            version,
+        )
+
         return version("meshtastic")
-    else:
-        return pkg_resources.get_distribution(  # pylint: disable=used-before-assignment
-            "meshtastic"
-        ).version
+    except PackageNotFoundError:
+        return "unknown"
+    except ImportError:
+        # Fall back to pkg_resources for older Python versions
+        import pkg_resources  # pylint: disable=import-outside-toplevel
+
+        return pkg_resources.get_distribution("meshtastic").version

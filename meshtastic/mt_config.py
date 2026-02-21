@@ -16,9 +16,9 @@ with rather more easily once the code is simplified by this change.
 import argparse
 import inspect
 import sys
-from typing import IO, Any, Dict, Optional
+from typing import IO, Any
 
-MODULE_STATE_DEFAULTS: Dict[str, Any] = {
+MODULE_STATE_DEFAULTS: dict[str, Any] = {
     "args": None,
     "parser": None,
     "channel_index": None,
@@ -42,10 +42,10 @@ def reset() -> None:
 
 
 # Declared module state managed via reset().
-args: Optional[argparse.Namespace]
-parser: Optional[argparse.ArgumentParser]
-channel_index: Optional[int]
-logfile: Optional[IO[str]]
+args: argparse.Namespace | None
+parser: argparse.ArgumentParser | None
+channel_index: int | None
+logfile: IO[str] | None
 tunnel_instance: Any
 camel_case: bool
 
@@ -54,7 +54,7 @@ camel_case: bool
 # eager and deferred annotation models consistently.
 _state_keys: frozenset = frozenset(MODULE_STATE_DEFAULTS)
 try:
-    _module_annotations: Dict[str, Any] = inspect.get_annotations(
+    _module_annotations: dict[str, Any] = inspect.get_annotations(
         sys.modules[__name__], eval_str=False
     )
 except (AttributeError, NameError, TypeError):

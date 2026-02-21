@@ -11,12 +11,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
     NoReturn,
-    Optional,
     Sequence,
-    Union,
 )
 
 from google.protobuf.message import DecodeError
@@ -63,7 +59,7 @@ class Node:
     def __init__(
         self,
         iface: "MeshInterface",
-        nodeNum: Union[int, str],
+        nodeNum: int | str,
         noProto: bool = False,
         timeout: float = 300.0,
     ) -> None:
@@ -82,14 +78,14 @@ class Node:
         self.nodeNum = to_node_num(nodeNum) if isinstance(nodeNum, str) else nodeNum
         self.localConfig = localonly_pb2.LocalConfig()
         self.moduleConfig = localonly_pb2.LocalModuleConfig()
-        self.channels: Optional[List[channel_pb2.Channel]] = None
+        self.channels: list[channel_pb2.Channel] | None = None
         self._timeout = Timeout(maxSecs=timeout)
-        self.partialChannels: List[channel_pb2.Channel] = []
+        self.partialChannels: list[channel_pb2.Channel] = []
         self.noProto = noProto
-        self.cannedPluginMessage: Optional[str] = None
-        self.cannedPluginMessageMessages: Optional[str] = None
-        self.ringtone: Optional[str] = None
-        self.ringtonePart: Optional[str] = None
+        self.cannedPluginMessage: str | None = None
+        self.cannedPluginMessageMessages: str | None = None
+        self.ringtone: str | None = None
+        self.ringtonePart: str | None = None
         self._ringtone_lock = threading.Lock()
         self._canned_message_lock = threading.Lock()
 
@@ -113,7 +109,7 @@ class Node:
         return r
 
     @staticmethod
-    def position_flags_list(position_flags: int) -> List[str]:
+    def position_flags_list(position_flags: int) -> list[str]:
         """
         Convert a PositionConfig position flags bitfield into a list of flag names.
 
@@ -131,7 +127,7 @@ class Node:
         )
 
     @staticmethod
-    def excluded_modules_list(excluded_modules: int) -> List[str]:
+    def excluded_modules_list(excluded_modules: int) -> list[str]:
         """
         Convert an ExcludedModules bitfield into a list of excluded module names.
 
@@ -141,7 +137,7 @@ class Node:
 
         Returns
         -------
-            List[str]: Names of modules whose bits are set in the bitfield.
+            list[str]: Names of modules whose bits are set in the bitfield.
 
         """
         return flags_to_list(mesh_pb2.ExcludedModules, excluded_modules)
@@ -243,7 +239,7 @@ class Node:
             self.partialChannels = []
         self._requestChannel(startingIndex)
 
-    def onResponseRequestSettings(self, p: Dict[str, Any]) -> None:
+    def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """
         Process an admin response for a settings request and update the node's config objects.
 
@@ -504,9 +500,7 @@ class Node:
         self._sendAdmin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
-    def getChannelByChannelIndex(
-        self, channelIndex: int
-    ) -> Optional[channel_pb2.Channel]:
+    def getChannelByChannelIndex(self, channelIndex: int) -> channel_pb2.Channel | None:
         """
         Retrieve the channel at the given zero-based index from this node's channels.
 
@@ -573,7 +567,7 @@ class Node:
                 # (and written it), so we can start finding it by name again
                 adminIndex = 0
 
-    def getChannelByName(self, name: str) -> Optional[channel_pb2.Channel]:
+    def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """
         Find a channel whose settings.name exactly matches the provided name.
 
@@ -587,7 +581,7 @@ class Node:
                 return c
         return None
 
-    def getDisabledChannel(self) -> Optional[channel_pb2.Channel]:
+    def getDisabledChannel(self) -> channel_pb2.Channel | None:
         """
         Return the first channel whose role is DISABLED.
 
@@ -619,23 +613,23 @@ class Node:
 
     def setOwner(
         self,
-        long_name: Optional[str] = None,
-        short_name: Optional[str] = None,
+        long_name: str | None = None,
+        short_name: str | None = None,
         is_licensed: bool = False,
-        is_unmessagable: Optional[bool] = None,
-    ) -> Optional[mesh_pb2.MeshPacket]:
+        is_unmessagable: bool | None = None,
+    ) -> mesh_pb2.MeshPacket | None:
         """
         Set the device owner fields (long and short names) and license/unmessagable flags on this node.
 
         Parameters
         ----------
-            long_name (Optional[str]): Owner long name; leading/trailing whitespace is trimmed. If
+            long_name (str | None): Owner long name; leading/trailing whitespace is trimmed. If
                 provided and empty after trimming, a MeshInterfaceError is raised.
-            short_name (Optional[str]): Owner short name; leading/trailing whitespace is trimmed.
+            short_name (str | None): Owner short name; leading/trailing whitespace is trimmed.
                 If provided and longer than 4 characters it will be truncated to 4 characters. If
                 empty after trimming, a MeshInterfaceError is raised.
             is_licensed (bool): Whether the owner is licensed; applied when `long_name` is provided.
-            is_unmessagable (Optional[bool]): If provided, sets the owner's unmessagable flag.
+            is_unmessagable (bool | None): If provided, sets the owner's unmessagable flag.
 
         Returns
         -------
@@ -814,7 +808,7 @@ class Node:
         self.ensureSessionKey()
         self._sendAdmin(p)
 
-    def onResponseRequestRingtone(self, p: Dict[str, Any]) -> None:
+    def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """
         Handle an incoming admin response containing a ringtone part and record it on the Node.
 
@@ -847,7 +841,7 @@ class Node:
                         ].get_ringtone_response
                         logger.debug("self.ringtonePart:%s", self.ringtonePart)
 
-    def _get_ringtone(self) -> Optional[str]:
+    def _get_ringtone(self) -> str | None:
         """
         Retrieve the node's ringtone as a single concatenated string.
 
@@ -875,7 +869,7 @@ class Node:
 
         response_event = threading.Event()
 
-        def _on_ringtone_response(packet: Dict[str, Any]) -> None:
+        def _on_ringtone_response(packet: dict[str, Any]) -> None:
             try:
                 self.onResponseRequestRingtone(packet)
             finally:
@@ -899,7 +893,7 @@ class Node:
                 return self.ringtone
             return None
 
-    def _set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
+    def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """
         Set the node's ringtone.
 
@@ -949,7 +943,7 @@ class Node:
         return send_result
 
     def onResponseRequestCannedMessagePluginMessageMessages(
-        self, p: Dict[str, Any]
+        self, p: dict[str, Any]
     ) -> None:
         """
         Handle the admin response for a canned-message plugin messages request.
@@ -984,7 +978,7 @@ class Node:
                             self.cannedPluginMessageMessages,
                         )
 
-    def _get_canned_message(self) -> Optional[str]:
+    def _get_canned_message(self) -> str | None:
         """
         Retrieve the device's canned message, requesting parts from the node if not already cached.
 
@@ -1008,7 +1002,7 @@ class Node:
 
         response_event = threading.Event()
 
-        def _on_canned_message_response(packet: Dict[str, Any]) -> None:
+        def _on_canned_message_response(packet: dict[str, Any]) -> None:
             try:
                 self.onResponseRequestCannedMessagePluginMessageMessages(packet)
             finally:
@@ -1040,7 +1034,7 @@ class Node:
                 return self.cannedPluginMessage
             return None
 
-    def _set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
+    def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """
         Set the device's canned message.
 
@@ -1087,39 +1081,39 @@ class Node:
             self.cannedPluginMessageMessages = None
         return send_result
 
-    def get_ringtone(self) -> Optional[str]:
+    def get_ringtone(self) -> str | None:
         """Backward-compatible snake_case wrapper for getRingtone."""
         return self.getRingtone()
 
-    def set_ringtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
+    def set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Backward-compatible snake_case wrapper for setRingtone."""
         return self.setRingtone(ringtone)
 
-    def get_canned_message(self) -> Optional[str]:
+    def get_canned_message(self) -> str | None:
         """Backward-compatible snake_case wrapper for getCannedMessage."""
         return self.getCannedMessage()
 
-    def set_canned_message(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
+    def set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Backward-compatible snake_case wrapper for setCannedMessage."""
         return self.setCannedMessage(message)
 
-    def getRingtone(self) -> Optional[str]:
+    def getRingtone(self) -> str | None:
         """Return the node's ringtone via camelCase API."""
         return self._get_ringtone()
 
-    def setRingtone(self, ringtone: str) -> Optional[mesh_pb2.MeshPacket]:
+    def setRingtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's ringtone via camelCase API."""
         return self._set_ringtone(ringtone)
 
-    def getCannedMessage(self) -> Optional[str]:
+    def getCannedMessage(self) -> str | None:
         """Return the node's canned message via camelCase API."""
         return self._get_canned_message()
 
-    def setCannedMessage(self, message: str) -> Optional[mesh_pb2.MeshPacket]:
+    def setCannedMessage(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's canned message via camelCase API."""
         return self._set_canned_message(message)
 
-    def exitSimulator(self) -> Optional[mesh_pb2.MeshPacket]:
+    def exitSimulator(self) -> mesh_pb2.MeshPacket | None:
         """
         Request that the target simulator process exit; this request has no effect on non-simulator nodes.
 
@@ -1132,7 +1126,7 @@ class Node:
 
         return self._sendAdmin(p)
 
-    def reboot(self, secs: int = 10) -> Optional[mesh_pb2.MeshPacket]:
+    def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Tell the node to reboot."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1146,7 +1140,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def beginSettingsTransaction(self) -> Optional[mesh_pb2.MeshPacket]:
+    def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """
         Open a settings edit transaction on the node.
 
@@ -1165,7 +1159,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def commitSettingsTransaction(self) -> Optional[mesh_pb2.MeshPacket]:
+    def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """
         Commit the node's open settings edit transaction.
 
@@ -1183,7 +1177,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def rebootOTA(self, secs: int = 10) -> Optional[mesh_pb2.MeshPacket]:
+    def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Tell the node to reboot into factory firmware."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1197,7 +1191,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def enterDFUMode(self) -> Optional[mesh_pb2.MeshPacket]:
+    def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
         """
         Request the node to enter DFU (NRF52) mode.
 
@@ -1216,7 +1210,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def shutdown(self, secs: int = 10) -> Optional[mesh_pb2.MeshPacket]:
+    def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Tell the node to shutdown."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1244,7 +1238,7 @@ class Node:
         self._sendAdmin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
         self.iface.waitForAckNak()
 
-    def factoryReset(self, full: bool = False) -> Optional[mesh_pb2.MeshPacket]:
+    def factoryReset(self, full: bool = False) -> mesh_pb2.MeshPacket | None:
         """
         Request a factory reset on the node.
 
@@ -1273,7 +1267,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def removeNode(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
+    def removeNode(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """
         Request that this node remove the mesh node identified by nodeId.
 
@@ -1298,7 +1292,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setFavorite(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
+    def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Tell the node to set the specified node ID to be favorited on the NodeDB on the device."""
         self.ensureSessionKey()
         nodeId = to_node_num(nodeId)
@@ -1312,7 +1306,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def removeFavorite(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
+    def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """
         Unmark a node as a favorite in the device's NodeDB.
 
@@ -1333,7 +1327,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setIgnored(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
+    def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """
         Mark a node (by node number) as ignored in the device's NodeDB.
 
@@ -1354,7 +1348,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def removeIgnored(self, nodeId: Union[int, str]) -> Optional[mesh_pb2.MeshPacket]:
+    def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """
         Unmark a node as ignored in the device's NodeDB.
 
@@ -1379,7 +1373,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def resetNodeDb(self) -> Optional[mesh_pb2.MeshPacket]:
+    def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Tell the node to reset its list of nodes."""
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1394,8 +1388,8 @@ class Node:
         return self._sendAdmin(p, onResponse=onResponse)
 
     def setFixedPosition(
-        self, lat: Union[int, float], lon: Union[int, float], alt: int
-    ) -> Optional[mesh_pb2.MeshPacket]:
+        self, lat: int | float, lon: int | float, alt: int
+    ) -> mesh_pb2.MeshPacket | None:
         """
         Set the node's fixed position and enable the fixed-position setting on the device.
 
@@ -1407,7 +1401,7 @@ class Node:
 
         Returns
         -------
-            mesh_packet (Optional[mesh_pb2.MeshPacket]): The result from sending the AdminMessage, or `None` if no packet was sent.
+            mesh_packet (mesh_pb2.MeshPacket | None): The result from sending the AdminMessage, or `None` if no packet was sent.
 
         """
         self.ensureSessionKey()
@@ -1435,7 +1429,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(a, onResponse=onResponse)
 
-    def removeFixedPosition(self) -> Optional[mesh_pb2.MeshPacket]:
+    def removeFixedPosition(self) -> mesh_pb2.MeshPacket | None:
         """
         Remove the node's fixed position setting.
 
@@ -1452,7 +1446,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def setTime(self, timeSec: int = 0) -> Optional[mesh_pb2.MeshPacket]:
+    def setTime(self, timeSec: int = 0) -> mesh_pb2.MeshPacket | None:
         """
         Set the node's clock to a specified Unix timestamp.
 
@@ -1510,7 +1504,7 @@ class Node:
             channels.append(ch)
             index += 1
 
-    def onRequestGetMetadata(self, p: Dict[str, Any]) -> None:
+    def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
         """
         Handle a device metadata response packet and surface its contents.
 
@@ -1569,7 +1563,7 @@ class Node:
         if c.excluded_modules > 0:
             print(f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}")
 
-    def onResponseRequestChannel(self, p: Dict[str, Any]) -> None:
+    def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """
         Process a response packet for a previously requested channel and update the Node's channel state.
 
@@ -1618,7 +1612,7 @@ class Node:
         else:
             self._requestChannel(index + 1)
 
-    def onAckNak(self, p: Dict[str, Any]) -> None:
+    def onAckNak(self, p: dict[str, Any]) -> None:
         """
         Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
 
@@ -1651,7 +1645,7 @@ class Node:
                 logger.info("Received an ACK.")
                 self.iface._acknowledgment.receivedAck = True
 
-    def _requestChannel(self, channelNum: int) -> Optional[mesh_pb2.MeshPacket]:
+    def _requestChannel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
         """
         Request the settings for a single channel from this node.
 
@@ -1680,9 +1674,9 @@ class Node:
         self,
         p: admin_pb2.AdminMessage,
         wantResponse: bool = False,
-        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int = 0,
-    ) -> Optional[mesh_pb2.MeshPacket]:
+    ) -> mesh_pb2.MeshPacket | None:
         """
         Send an AdminMessage to this node (local or remote) using the node's admin channel.
 
@@ -1742,7 +1736,7 @@ class Node:
             if self.iface._getOrCreateByNum(nodeid).get("adminSessionPassKey") is None:
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
 
-    def _get_channels_with_hash(self) -> List[Dict[str, Any]]:
+    def _get_channels_with_hash(self) -> list[dict[str, Any]]:
         """
         Provide channel entries with index, role, name, and a computed hash.
 
@@ -1755,7 +1749,7 @@ class Node:
                 - "hash" (int or None): Computed channel hash when name and PSK are present, otherwise None.
 
         """
-        result: List[Dict[str, Any]] = []
+        result: list[dict[str, Any]] = []
         if self.channels:
             for c in self.channels:
                 settings = getattr(c, "settings", None)
@@ -1776,11 +1770,11 @@ class Node:
                 )
         return result
 
-    def get_channels_with_hash(self) -> List[Dict[str, Any]]:
+    def get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Backward-compatible snake_case wrapper for channel-hash entries."""
         return self._get_channels_with_hash()
 
-    def getChannelsWithHash(self) -> List[Dict[str, Any]]:
+    def getChannelsWithHash(self) -> list[dict[str, Any]]:
         """
         Return channel entries with hashes via the camelCase compatibility wrapper.
         """

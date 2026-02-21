@@ -11,11 +11,7 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
-    List,
-    Optional,
     Protocol,
-    Tuple,
     cast,
 )
 
@@ -80,7 +76,7 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
         BLEDevice: A BLEDevice instance constructed with the arguments supported by the installed bleak version.
 
     """
-    params: Dict[str, Any] = {"address": address, "name": name}
+    params: dict[str, Any] = {"address": address, "name": name}
     supports_details, supports_rssi = _ble_device_constructor_kwargs_support()
     if supports_details:
         params["details"] = {}
@@ -94,17 +90,17 @@ class _FakeDiscoveryClient:
 
     def __init__(
         self,
-        discover_result: Dict[str, Any],
+        discover_result: dict[str, Any],
         *,
-        async_await_impl: Optional[Callable[[Any, Optional[float]], Any]] = None,
+        async_await_impl: Callable[..., Any] | None = None,
     ) -> None:
         """
         Initialize the fake discovery client with a preset discovery result.
 
         Parameters
         ----------
-            discover_result (Dict[str, Any]): The value to return from discovery() calls; represents the simulated scan results.
-            async_await_impl (Optional[Callable[[Any, Optional[float]], Any]]): Optional function used to run/await coroutines passed to async_await(coro, timeout). If omitted, the default awaiting behavior is used.
+            discover_result (dict[str, Any]): The value to return from discovery() calls; represents the simulated scan results.
+            async_await_impl (Callable[[Any, float | None, Any]]): Optional function used to run/await coroutines passed to async_await(coro, timeout). If omitted, the default awaiting behavior is used.
 
         """
         self._discover_result = discover_result
@@ -139,7 +135,7 @@ class _FakeDiscoveryClient:
         _ = (exc_type, exc, tb)
         return False
 
-    def _discover(self, **_kwargs: Any) -> Dict[str, Any]:
+    def _discover(self, **_kwargs: Any) -> dict[str, Any]:
         """
         Provide the preconfigured discovery result for use in tests.
 
@@ -150,11 +146,11 @@ class _FakeDiscoveryClient:
         """
         return self._discover_result
 
-    def discover(self, **kwargs: Any) -> Dict[str, Any]:
+    def discover(self, **kwargs: Any) -> dict[str, Any]:
         """Alias for _discover."""
         return self._discover(**kwargs)
 
-    def _async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
+    def _async_await(self, coro: Any, timeout: float | None = None) -> Any:
         """
         Run the given coroutine to completion using the configured await implementation or the default runner.
 
@@ -172,7 +168,7 @@ class _FakeDiscoveryClient:
             return self._async_await_impl(coro, timeout)
         return asyncio.run(coro)
 
-    def async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
+    def async_await(self, coro: Any, timeout: float | None = None) -> Any:
         """Alias for _async_await."""
         return self._async_await(coro, timeout)
 
@@ -220,7 +216,7 @@ def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Ev
     return close_called
 
 
-def _assert_no_fallback(message: str) -> Callable[[Any, Optional[float]], Any]:
+def _assert_no_fallback(message: str) -> Callable[[Any, float | None], Any]:
     """
     Create a callable that raises an AssertionError with the given message when invoked.
 
@@ -230,7 +226,7 @@ def _assert_no_fallback(message: str) -> Callable[[Any, Optional[float]], Any]:
 
     """
 
-    def _raise(_coro: Any, _timeout: Optional[float] = None) -> Any:
+    def _raise(_coro: Any, _timeout: float | None = None) -> Any:
         """
         Raise an AssertionError to indicate this async-await path must not be used.
 
@@ -249,34 +245,32 @@ class _StrategyOverride(ConnectedStrategy):
 
     def __init__(
         self,
-        delegate: Callable[[Optional[str], float], Awaitable[List[BLEDevice]]],
+        delegate: Callable[[str | None, float], Awaitable[list[BLEDevice]]],
     ) -> None:
         """
         Wrap an asynchronous discovery coroutine for use as a ConnectedStrategy.
 
         Parameters
         ----------
-            delegate (Callable[[Optional[str], float], Awaitable[List[BLEDevice]]]):
+            delegate (Callable[[str | None, float], Awaitable[list[BLEDevice]]]):
                 Async callable invoked as delegate(address, timeout) that returns a list of
                 discovered BLEDevice objects for the optional address and timeout in seconds.
 
         """
         self._delegate = delegate
 
-    async def _discover(
-        self, address: Optional[str], timeout: float
-    ) -> List[BLEDevice]:
+    async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
         """
         Delegate BLE device discovery for the given address and timeout.
 
         Parameters
         ----------
-            address (Optional[str]): Bluetooth address to filter results, or `None` to discover any device.
+            address (str | None): Bluetooth address to filter results, or `None` to discover any device.
             timeout (float): Maximum time in seconds to wait for discovery.
 
         Returns
         -------
-            List[BLEDevice]: Discovered BLEDevice instances that match the request.
+            list[BLEDevice]: Discovered BLEDevice instances that match the request.
 
         """
         return await self._delegate(address, timeout)
@@ -299,7 +293,7 @@ class _ReconnectTestNotificationManager:
 
         """
         self.cleaned = 0
-        self.resubscribed: List[Tuple[Any, float]] = []
+        self.resubscribed: list[tuple[Any, float]] = []
         self._fail_on_resubscribe = fail_on_resubscribe
 
     def _cleanup_all(self) -> None:
@@ -429,8 +423,8 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     active_client = DummyClient()
     active_client.address = "active"
     active_client.bleak_client = SimpleNamespace(address="active")
-    reconnect_calls: List[bool] = []
-    disconnected_calls: List[bool] = []
+    reconnect_calls: list[bool] = []
+    disconnected_calls: list[bool] = []
 
     monkeypatch.setattr(
         iface,
@@ -487,7 +481,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     real_connect = BLEInterface.connect
 
     def _init_connect_stub(
-        iface: BLEInterface, _address: Optional[str] = None
+        iface: BLEInterface, _address: str | None = None
     ) -> DummyClient:
         """
         Prepare the given BLEInterface for tests by installing and returning a pre-existing DummyClient and marking the interface as connected.
@@ -495,7 +489,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         Parameters
         ----------
                 iface (BLEInterface): The interface whose client and connection state will be configured.
-                _address (Optional[str]): Ignored; present for compatibility with call sites that pass an address.
+                _address (str | None): Ignored; present for compatibility with call sites that pass an address.
 
         Returns
         -------
@@ -533,14 +527,14 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     establish_called = threading.Event()
     thread_errors: "Queue[tuple[str, Exception]]" = Queue()
 
-    def _gate_check_stub(_addr_key: Optional[str], owner: Optional[Any] = None) -> bool:
+    def _gate_check_stub(_addr_key: str | None, owner: Any | None = None) -> bool:
         """
         Block test caller until the test releases a connection gate and record that the gate was reached.
 
         Parameters
         ----------
-            _addr_key (Optional[str]): Address key that must be provided (asserted non-None); used to identify the gated connection.
-            owner (Optional[Any]): Ignored; present to match the gate-check signature.
+            _addr_key (str | None): Address key that must be provided (asserted non-None); used to identify the gated connection.
+            owner (Any | None): Ignored; present to match the gate-check signature.
 
         Returns
         -------
@@ -646,7 +640,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
     """Transient read retries should pass a zero-based attempt index to policy delay."""
     iface = _build_interface(monkeypatch, DummyClient())
-    delay_attempts: List[int] = []
+    delay_attempts: list[int] = []
 
     class StubTransientPolicy:
         def _should_retry(self, attempt: int) -> bool:
@@ -700,9 +694,9 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
     """Outer receive-loop exceptions should use normal disconnect handling."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
-    disconnect_calls: List[Tuple[str, Optional[Any], Optional[Any]]] = []
+    disconnect_calls: list[tuple[str, Any | None, Any | None]] = []
 
-    def raising_wait_for_event(_name: str, timeout: Optional[float] = None) -> bool:
+    def raising_wait_for_event(_name: str, timeout: float | None = None) -> bool:
         """
         Simulate a fatal receive-loop failure by always raising a RuntimeError.
 
@@ -716,8 +710,8 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
 
     def fake_handle_disconnect(
         source: str,
-        client: Optional[Any] = None,
-        bleak_client: Optional[Any] = None,
+        client: Any | None = None,
+        bleak_client: Any | None = None,
     ) -> bool:
         """
         Record the disconnect invocation and stop the receive loop.
@@ -893,18 +887,18 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     manager = DiscoveryManager()
 
-    async def fake_connected(address: Optional[str], timeout: float) -> List[BLEDevice]:
+    async def fake_connected(address: str | None, timeout: float) -> list[BLEDevice]:
         """
         Return the predefined fallback BLE device when invoked with the expected address and timeout.
 
         Parameters
         ----------
-            address (Optional[str]): Expected device address; should be "AA:BB".
+            address (str | None): Expected device address; should be "AA:BB".
             timeout (float): Expected scan timeout; should equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
 
         Returns
         -------
-            List[BLEDevice]: A list containing the single fallback device.
+            list[BLEDevice]: A list containing the single fallback device.
 
         """
         assert address == "AA:BB"
@@ -932,8 +926,8 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
     fallback_called = False
 
     async def fake_connected(
-        address: Optional[str], timeout: float
-    ) -> List[BLEDevice]:  # pragma: no cover - should not run
+        address: str | None, timeout: float
+    ) -> list[BLEDevice]:  # pragma: no cover - should not run
         """
         Mark the connected-fallback as invoked for tests and return an empty list.
 
@@ -941,7 +935,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
 
         Parameters
         ----------
-            address (Optional[str]): Address passed to the fallback; accepted but ignored.
+            address (str | None): Address passed to the fallback; accepted but ignored.
             timeout (float): Timeout value passed to the fallback; accepted but ignored.
 
         Returns

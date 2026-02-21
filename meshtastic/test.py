@@ -7,7 +7,7 @@ import logging
 import sys
 import time
 import traceback
-from typing import Any, List, Optional
+from typing import Any
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -95,10 +95,10 @@ else:
     DotMap = _ImportedDotMap
 
 """The interfaces we are using for our tests"""
-interfaces: List = []
+interfaces: list = []
 
 """A list of all packets we received while the current test was running"""
-receivedPackets: Optional[List] = None
+receivedPackets: list | None = None
 
 testsRunning: bool = False
 
@@ -324,7 +324,7 @@ def testAll(numTests: int = 5) -> bool:
         bool: `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
 
     """
-    ports: List[str] = meshtastic.util.findPorts(True)
+    ports: list[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:
         logger.error("Must have at least two devices connected to USB.")
         return False

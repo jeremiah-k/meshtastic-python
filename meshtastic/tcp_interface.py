@@ -6,7 +6,6 @@ import logging
 import socket
 import threading
 import time
-from typing import Optional
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.stream_interface import StreamInterface
@@ -42,7 +41,7 @@ class TCPInterface(StreamInterface):
         self.hostname: str = hostname
         self.portNumber: int = portNumber
 
-        self.socket: Optional[socket.socket] = None
+        self.socket: socket.socket | None = None
 
         if connectNow:
             self.myConnect()
@@ -122,7 +121,7 @@ class TCPInterface(StreamInterface):
             # sendall() guarantees full payload transmission or raises.
             self.socket.sendall(b)
 
-    def _readBytes(self, length: int) -> Optional[bytes]:
+    def _readBytes(self, length: int) -> bytes | None:
         """Read an array of bytes from our stream."""
         if self.socket is not None:
             data = self.socket.recv(length)

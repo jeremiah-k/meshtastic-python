@@ -8,7 +8,7 @@ import os
 import platform
 import re
 import sys
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -47,7 +47,7 @@ def _mock_sendText_helper(
     dest: Any,
     wantAck: bool = False,
     wantResponse: bool = False,
-    onResponse: Optional[Callable[..., Any]] = None,
+    onResponse: Callable[..., Any] | None = None,
     channelIndex: int = 0,
     portNum: int = 0,
 ) -> None:

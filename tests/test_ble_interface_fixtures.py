@@ -4,7 +4,7 @@ import logging
 import sys
 import types
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -345,20 +345,20 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
 class DummyClient:
     """Dummy client for testing BLE interface functionality."""
 
-    def __init__(self, disconnect_exception: Optional[Exception] = None) -> None:
+    def __init__(self, disconnect_exception: Exception | None = None) -> None:
         """
         Create a test-double BLE client used by unit tests.
 
         Parameters
         ----------
-            disconnect_exception (Optional[Exception]): Exception to raise when disconnect() is called; pass None to disable raising.
+            disconnect_exception (Exception | None): Exception to raise when disconnect() is called; pass None to disable raising.
 
         Attributes
         ----------
             disconnect_calls (int): Number of times disconnect() has been invoked.
             close_calls (int): Number of times close() has been invoked.
             address (str): Client address identifier, set to "dummy".
-            disconnect_exception (Optional[Exception]): Stored exception raised by disconnect(), if any.
+            disconnect_exception (Exception | None): Stored exception raised by disconnect(), if any.
             services (types.SimpleNamespace): Provides get_characteristic(specifier) -> None for characteristic lookups.
             bleak_client (types.SimpleNamespace): Minimal mock of a bleak client with an address attribute used for identity checks.
 
@@ -567,7 +567,7 @@ def _build_interface(
     connect_calls: list = []
 
     def _stub_connect(
-        _self: Any, _address: Optional[str] = None, *args, **kwargs
+        _self: Any, _address: str | None = None, *args, **kwargs
     ) -> "DummyClient":
         """
         Attach the prepared test client to a BLEInterface-like instance and record the connection attempt.
@@ -577,7 +577,7 @@ def _build_interface(
         Parameters
         ----------
             _self (Any): BLEInterface-like instance being patched.
-            _address (Optional[str]): Address passed to connect; recorded in the module-level `connect_calls`.
+            _address (str | None): Address passed to connect; recorded in the module-level `connect_calls`.
             *args: Additional positional arguments (ignored).
             **kwargs: Additional keyword arguments (ignored).
 

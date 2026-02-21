@@ -4,7 +4,7 @@ import io
 import logging
 import threading
 import time
-from typing import Optional, cast
+from typing import cast
 
 import serial  # type: ignore[import-untyped]
 
@@ -32,7 +32,7 @@ class StreamInterface(MeshInterface):
 
     def __init__(  # pylint: disable=R0917
         self,
-        debugOut: Optional[io.TextIOWrapper] = None,
+        debugOut: io.TextIOWrapper | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
@@ -44,7 +44,7 @@ class StreamInterface(MeshInterface):
 
         Parameters
         ----------
-            debugOut (Optional[io.TextIOWrapper]): If provided, device debug serial output will be written to this stream.
+            debugOut (io.TextIOWrapper | None): If provided, device debug serial output will be written to this stream.
             noProto (bool): If True, skip protocol-specific startup and allow using this class without a concrete stream implementation.
             connectNow (bool): If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration.
             noNodes (bool): Passed to the MeshInterface initializer to control node discovery behavior.
@@ -64,8 +64,8 @@ class StreamInterface(MeshInterface):
 
         if not hasattr(self, "stream") and not noProto:
             raise StreamInterface.StreamInterfaceError()
-        self.stream: Optional[serial.Serial] = cast(
-            Optional[serial.Serial],
+        self.stream: serial.Serial | None = cast(
+            serial.Serial | None,
             getattr(self, "stream", None),
         )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
@@ -164,7 +164,7 @@ class StreamInterface(MeshInterface):
                 # we sleep here to give the TBeam a chance to work
                 time.sleep(0.1)
 
-    def _readBytes(self, length: int) -> Optional[bytes]:
+    def _readBytes(self, length: int) -> bytes | None:
         """
         Read up to the specified number of bytes from the configured underlying stream.
 
@@ -268,7 +268,7 @@ class StreamInterface(MeshInterface):
         try:
             while not self._wantExit:
                 # logger.debug("reading character")
-                b: Optional[bytes] = self._readBytes(1)
+                b: bytes | None = self._readBytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
                 if b is not None and len(b) > 0:

@@ -1,7 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, ClassVar, Type
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,14 +34,14 @@ def _create_context_manager_mock(spec_class: Type) -> MagicMock:
 class FakeTimer:
     """Simple timer stub for heartbeat timer tests."""
 
-    created: ClassVar[List["FakeTimer"]] = []
+    created: ClassVar[list["FakeTimer"]] = []
 
     def __init__(
         self,
         interval: float,
         function: Callable[..., Any],
-        args: Optional[Tuple[Any, ...]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
+        args: tuple[Any, ...] | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         """
         Create a FakeTimer and record it in this class's `created` list for test inspection.
@@ -50,8 +50,8 @@ class FakeTimer:
         ----------
             interval (float): Time interval in seconds that the timer represents.
             function (Callable[..., Any]): Callback that would be invoked when a real timer fires.
-            args (Optional[Tuple[Any, ...]]): Optional positional arguments passed to callback.
-            kwargs (Optional[Dict[str, Any]]): Optional keyword arguments passed to callback.
+            args (tuple[Any, ... | None]): Optional positional arguments passed to callback.
+            kwargs (dict[str, Any | None]): Optional keyword arguments passed to callback.
 
         """
         self.interval = interval
@@ -95,7 +95,7 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
     class FakeTimerForTest(FakeTimer):
         """Per-fixture timer class with isolated created-state."""
 
-        created: ClassVar[List["FakeTimer"]] = []
+        created: ClassVar[list["FakeTimer"]] = []
 
     monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimerForTest)
     return FakeTimerForTest

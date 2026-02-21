@@ -3,7 +3,6 @@
 import logging
 import threading
 import time
-from typing import Optional
 
 from ppk2_api import ppk2_api  # type: ignore[import-untyped]
 
@@ -15,7 +14,7 @@ class PPK2PowerSupply(PowerSupply):
     Power Profiler Kit II is what you should google to find it for purchase.
     """
 
-    def __init__(self, portName: Optional[str] = None):
+    def __init__(self, portName: str | None = None):
         """Initialize the PowerSupply object.
 
         portName (str, optional): The port name of the power supply. Defaults to "/dev/ttyACM0".

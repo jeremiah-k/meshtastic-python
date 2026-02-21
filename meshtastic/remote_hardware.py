@@ -1,7 +1,7 @@
 """Remote hardware."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Callable, Type
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -17,7 +17,7 @@ NO_GPIO_CHANNEL_ERROR = (
     "On the sending and receiving nodes create a channel named 'gpio'."
 )
 
-_MESH_INTERFACE_ERROR: Optional[Type[Exception]] = None
+_MESH_INTERFACE_ERROR: Type[Exception] | None = None
 
 
 def _get_mesh_interface_error() -> Type[Exception]:
@@ -32,7 +32,7 @@ def _get_mesh_interface_error() -> Type[Exception]:
     return _MESH_INTERFACE_ERROR
 
 
-def onGPIOreceive(packet: Dict[str, Any], interface: "MeshInterface") -> None:
+def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     """Handle received GPIO responses."""
     logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
@@ -80,10 +80,10 @@ class RemoteHardwareClient:
 
     def _sendHardware(
         self,
-        nodeid: Union[int, str],
+        nodeid: int | str,
         r: remote_hardware_pb2.HardwareMessage,
         wantResponse: bool = False,
-        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
     ) -> Any:
         if not nodeid:
             raise _get_mesh_interface_error()(
@@ -99,7 +99,7 @@ class RemoteHardwareClient:
             onResponse=onResponse,
         )
 
-    def writeGPIOs(self, nodeid: Union[int, str], mask: int, vals: int) -> Any:
+    def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
         """
         Write the specified vals bits to the device GPIOs.  Only bits in mask that
         are 1 will be changed.
@@ -113,9 +113,9 @@ class RemoteHardwareClient:
 
     def readGPIOs(
         self,
-        nodeid: Union[int, str],
+        nodeid: int | str,
         mask: int,
-        onResponse: Optional[Callable[[Dict[str, Any]], Any]] = None,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
     ) -> Any:
         """Read the specified bits from GPIO inputs on the device."""
         logger.debug("readGPIOs nodeid:%s mask:%s", nodeid, mask)
@@ -124,7 +124,7 @@ class RemoteHardwareClient:
         r.gpio_mask = mask
         return self._sendHardware(nodeid, r, wantResponse=True, onResponse=onResponse)
 
-    def watchGPIOs(self, nodeid: Union[int, str], mask: int) -> Any:
+    def watchGPIOs(self, nodeid: int | str, mask: int) -> Any:
         """Watch the specified bits from GPIO inputs on the device for changes."""
         logger.debug("watchGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()

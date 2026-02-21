@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
@@ -50,10 +49,10 @@ class LogDef:
     """Log definition."""
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
-    fields: List[Tuple[str, pa.DataType]]  # A list of field names and their arrow types
+    fields: list[tuple[str, pa.DataType]]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: List[Tuple[str, pa.DataType]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
         """Initialize the LogDef object.
 
         code (str): The code.
@@ -104,7 +103,7 @@ class PowerLogger:
         )
         self.thread.start()
 
-    def store_current_reading(self, now: Optional[datetime] = None) -> None:
+    def store_current_reading(self, now: datetime | None = None) -> None:
         """Store current power measurement."""
         if now is None:
             now = datetime.now()
@@ -144,7 +143,7 @@ class StructuredLogger:
         self,
         client: MeshInterface,
         dir_path: str,
-        power_logger: Optional[PowerLogger] = None,
+        power_logger: PowerLogger | None = None,
         include_raw: bool = True,
     ) -> None:
         """
@@ -156,7 +155,7 @@ class StructuredLogger:
             Source of device log lines to monitor.
         dir_path : str
             Filesystem directory where the slog Arrow dataset and optional raw.txt are created.
-        power_logger : Optional[PowerLogger], optional
+        power_logger : PowerLogger | None, optional
             If provided, used to record a power sample with each structured log entry.
         include_raw : bool, optional
             If True, include a "raw" string field in the schema and write raw log lines to raw.txt.
@@ -184,7 +183,7 @@ class StructuredLogger:
         )
 
         self._raw_file_lock = threading.Lock()
-        self.raw_file: Optional[io.TextIOWrapper] = (
+        self.raw_file: io.TextIOWrapper | None = (
             open(  # pylint: disable=consider-using-with
                 os.path.join(dir_path, "raw.txt"), "w", encoding="utf8"
             )
@@ -304,8 +303,8 @@ class LogSet:
     def __init__(
         self,
         client: MeshInterface,
-        dir_name: Optional[str] = None,
-        power_meter: Optional[PowerMeter] = None,
+        dir_name: str | None = None,
+        power_meter: PowerMeter | None = None,
     ) -> None:
         """
         Create a LogSet: prepare a directory for slog files, start structured slogging, and optionally start power logging.
@@ -320,10 +319,10 @@ class LogSet:
         ----------
         client : MeshInterface
             MeshInterface client whose log lines will be monitored and recorded.
-        dir_name : Optional[str], optional
+        dir_name : str | None, optional
             Path for storing logs; when omitted a new timestamped directory is
             created under the slog root and "latest" is updated to point to it.
-        power_meter : Optional[PowerMeter], optional
+        power_meter : PowerMeter | None, optional
             When provided, a PowerLogger is started to record power samples alongside slog entries.
 
         """
@@ -348,13 +347,13 @@ class LogSet:
 
         logger.info(f"Writing slogs to {dir_name}")
 
-        self.power_logger: Optional[PowerLogger] = (
+        self.power_logger: PowerLogger | None = (
             None
             if not power_meter
             else PowerLogger(power_meter, os.path.join(self.dir_name, "power"))
         )
 
-        self.slog_logger: Optional[StructuredLogger] = StructuredLogger(
+        self.slog_logger: StructuredLogger | None = StructuredLogger(
             client, self.dir_name, power_logger=self.power_logger
         )
 
