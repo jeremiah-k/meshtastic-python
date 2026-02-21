@@ -714,19 +714,15 @@ class BLEInterface(MeshInterface):
         finally:
             self.thread_coordinator._set_event("read_trigger")
 
-    def fromNumHandler(self, sender: Any, data: bytearray) -> None:
-        """Public camelCase API for the FROMNUM notification callback."""
-        self._from_num_handler(sender, data)
-
     def from_num_handler(self, sender: Any, data: bytearray) -> None:
         """
-        Backward-compatible snake_case alias for fromNumHandler.
+        Backward-compatible snake_case handler name retained from the pre-refactor API.
 
-        The pre-refactor BLE interface exposed this method name publicly; keep
-        it available for existing integrations and delegate to the internal
+        The pre-refactor BLE interface exposed this method name publicly; keep it
+        available for existing integrations and delegate to the internal
         implementation.
         """
-        self.fromNumHandler(sender, data)
+        self._from_num_handler(sender, data)
 
     def _register_notifications(self, client: BLEClient) -> None:
         """
@@ -836,20 +832,20 @@ class BLEInterface(MeshInterface):
 
         # Optional log notifications - failures are non-fatal
         try:
-            if client.hasCharacteristic(LEGACY_LOGRADIO_UUID):
+            if client.has_characteristic(LEGACY_LOGRADIO_UUID):
                 legacy_handler = _get_or_create_handler(
                     LEGACY_LOGRADIO_UUID, lambda: _safe_legacy_handler
                 )
-                client.startNotify(
+                client.start_notify(
                     LEGACY_LOGRADIO_UUID,
                     legacy_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
-            if client.hasCharacteristic(LOGRADIO_UUID):
+            if client.has_characteristic(LOGRADIO_UUID):
                 log_handler = _get_or_create_handler(
                     LOGRADIO_UUID, lambda: _safe_log_handler
                 )
-                client.startNotify(
+                client.start_notify(
                     LOGRADIO_UUID,
                     log_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
@@ -867,7 +863,7 @@ class BLEInterface(MeshInterface):
         from_num_handler = _get_or_create_handler(
             FROMNUM_UUID, lambda: _safe_from_num_handler
         )
-        client.startNotify(
+        client.start_notify(
             FROMNUM_UUID,
             from_num_handler,
             timeout=NOTIFICATION_START_TIMEOUT,
@@ -917,6 +913,18 @@ class BLEInterface(MeshInterface):
             logger.warning(
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
             )
+
+    async def log_radio_handler(self, sender: Any, data: bytearray) -> None:
+        """
+        Backward-compatible legacy callback name retained from the pre-refactor API.
+        """
+        self._log_radio_handler(sender, data)
+
+    async def legacy_log_radio_handler(self, sender: Any, data: bytearray) -> None:
+        """
+        Backward-compatible legacy callback name retained from the pre-refactor API.
+        """
+        self._legacy_log_radio_handler(sender, data)
 
     @staticmethod
     async def _with_timeout(
@@ -1538,7 +1546,7 @@ class BLEInterface(MeshInterface):
 
         """
         for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
-            payload = client.readGattChar(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
+            payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
             if payload:
                 self._suppressed_empty_read_warnings = 0
                 return payload
@@ -1638,7 +1646,7 @@ class BLEInterface(MeshInterface):
         logger.debug("TORADIO write: %s", b.hex())
         try:
             # Use write-with-response to ensure delivery is acknowledged by the peripheral
-            client.writeGattChar(
+            client.write_gatt_char(
                 TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT
             )
             write_successful = True
@@ -1884,12 +1892,3 @@ class BLEInterface(MeshInterface):
         """
         super()._connected()
         self._publish_connection_status(connected=True)
-
-
-# Internal module-level aliases for backward compatibility (used in tests)
-_addr_key = _addr_key
-_is_currently_connected_elsewhere = _is_currently_connected_elsewhere
-
-# Documented/exported aliases for consumers that monkeypatch these names
-addr_key = _addr_key
-is_currently_connected_elsewhere = _is_currently_connected_elsewhere

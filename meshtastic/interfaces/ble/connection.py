@@ -175,7 +175,7 @@ class ClientManager:
             logger.debug(
                 "BLE services not available immediately after connect; getting services"
             )
-            client.getServices()
+            client._get_services()
 
     def _update_client_reference(
         self,

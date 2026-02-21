@@ -144,6 +144,15 @@ class BLEClient:
         """
         return self._async_await(BleakScanner.discover(**kwargs))
 
+    def discover(self, **kwargs: Any) -> Any:
+        """
+        Discover nearby BLE devices.
+
+        This preserves the historical `meshtastic.ble_interface.BLEClient`
+        public API surface.
+        """
+        return self._discover(**kwargs)
+
     def pair(self, **kwargs: Any) -> Any:
         """
         Pair the BLE client with the remote device.
@@ -248,7 +257,7 @@ class BLEClient:
             raise self.BLEError("Cannot disconnect: BLE client not initialized")
         self._async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
-    def readGattChar(
+    def read_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
     ) -> bytes:
         """
@@ -275,15 +284,7 @@ class BLEClient:
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def read_gatt_char(
-        self, *args: Any, timeout: float | None = None, **kwargs: Any
-    ) -> bytes:
-        """
-        Backward-compatible snake_case alias for readGattChar.
-        """
-        return self.readGattChar(*args, timeout=timeout, **kwargs)
-
-    def writeGattChar(
+    def write_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
     ) -> None:
         """
@@ -306,21 +307,13 @@ class BLEClient:
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
-    def write_gatt_char(
-        self, *args: Any, timeout: float | None = None, **kwargs: Any
-    ) -> None:
+    def _get_services(self, **_kwargs: Any) -> Any:
         """
-        Backward-compatible snake_case alias for writeGattChar.
-        """
-        return self.writeGattChar(*args, timeout=timeout, **kwargs)
-
-    def getServices(self, **_kwargs: Any) -> Any:
-        """
-        Retrieve the underlying Bleak client's discovered GATT services and characteristics.
+        Internal helper: Retrieve the underlying Bleak client's discovered GATT services and characteristics.
 
         In Bleak 2.1.1+, services are automatically enumerated during connect() and accessed
-        via the client.services property. Keyword arguments are ignored but accepted for
-        backward compatibility.
+        via the client.services property. Keyword arguments are ignored and accepted
+        only for internal caller convenience.
 
         Returns
         -------
@@ -337,13 +330,7 @@ class BLEClient:
         # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed as a property.
         return self.bleak_client.services
 
-    def get_services(self, **_kwargs: Any) -> Any:
-        """
-        Backward-compatible snake_case alias for getServices.
-        """
-        return self.getServices(**_kwargs)
-
-    def hasCharacteristic(self, specifier: str | UUID) -> bool:
+    def has_characteristic(self, specifier: str | UUID) -> bool:
         """
         Determine whether the connected device exposes the GATT characteristic identified by `specifier`.
 
@@ -364,7 +351,7 @@ class BLEClient:
         services = getattr(self.bleak_client, "services", None)
         if not services or not getattr(services, "get_characteristic", None):
             services = self.error_handler._safe_execute(
-                lambda: self.getServices(),
+                lambda: self._get_services(),
                 error_msg="Unable to populate services before has_characteristic",
                 reraise=False,
             )
@@ -372,13 +359,7 @@ class BLEClient:
                 services = getattr(self.bleak_client, "services", None)
         return bool(services and services.get_characteristic(specifier))
 
-    def has_characteristic(self, specifier: str | UUID) -> bool:
-        """
-        Backward-compatible snake_case alias for hasCharacteristic.
-        """
-        return self.hasCharacteristic(specifier)
-
-    def startNotify(
+    def start_notify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
     ) -> None:
         """
@@ -402,14 +383,6 @@ class BLEClient:
         self._async_await(
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
-
-    def start_notify(
-        self, *args: Any, timeout: float | None = None, **kwargs: Any
-    ) -> None:
-        """
-        Backward-compatible snake_case alias for startNotify.
-        """
-        return self.startNotify(*args, timeout=timeout, **kwargs)
 
     def stopNotify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
@@ -632,6 +605,20 @@ class BLEClient:
             with contextlib.suppress(Exception):
                 coro.close()
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
+
+    def async_await(
+        self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
+    ) -> Any:
+        """
+        Backward-compatible public wrapper for `_async_await`.
+        """
+        return self._async_await(coro, timeout=timeout)
+
+    def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
+        """
+        Backward-compatible public wrapper for `_async_run`.
+        """
+        return self._async_run(coro)
 
 
 def getZombieThreadCount() -> int:

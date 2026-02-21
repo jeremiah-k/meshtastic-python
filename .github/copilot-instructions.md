@@ -72,11 +72,14 @@ protobufs/            # Protocol Buffer source definitions
 - Classes: `PascalCase` (e.g., `MeshInterface`, `SerialInterface`)
 - Functions/methods: `camelCase` for public API (e.g., `sendText`, `sendData`)
 - Internal functions: `snake_case` with leading underscore (e.g., `_send_packet`)
-- BLE compatibility exception: keep the historical BLE public method names as
-  implemented on `master`/`meshtastic.ble_interface` (snake_case such as
+- BLE compatibility exception: keep the historical BLE public method names from
+  the pre-refactor `meshtastic.ble_interface` surface (snake_case such as
   `find_device`, `read_gatt_char`, `start_notify`) to preserve existing project
   compatibility.
-- When adding camelCase names to BLE code, keep legacy snake_case methods as
+- BLE camelCase promotions are intentionally narrow: keep only `findDevice`,
+  `isConnected`, and `stopNotify` as promoted BLE camelCase names unless
+  maintainers explicitly request additional promotions.
+- When adding approved camelCase BLE names, keep legacy snake_case methods as
   compatibility wrappers and route both names to one implementation.
 - Avoid mass-generating aliases for internal orchestration methods; aliases are
   strictly for historically public APIs.

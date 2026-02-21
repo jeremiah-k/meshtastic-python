@@ -19,19 +19,21 @@ Use this policy for all code changes (especially AI-assisted refactors):
 
 ### BLE compatibility rule
 
-The BLE surface has historical public `snake_case` names from
-`master`/`meshtastic.ble_interface` (for example `find_device`,
+The BLE surface has historical public `snake_case` names from the
+pre-refactor `meshtastic.ble_interface` API (for example `find_device`,
 `read_gatt_char`, `start_notify`). Those names are compatibility APIs and must
 remain callable.
 
 When modernizing BLE naming:
 
 1. Keep historical `snake_case` methods callable.
-2. Add `camelCase` aliases where needed for consistency.
-3. Route both names to a single implementation (prefer internal
+2. Keep only the currently approved BLE camelCase promotions callable:
+   `findDevice`, `isConnected`, and `stopNotify`.
+3. Route compatibility names to a single implementation (prefer internal
    underscore-prefixed helper methods).
-4. Do not silently remove or hard-rename legacy methods.
-5. Update tests/monkeypatch points if alias names are introduced.
+4. Do not add new BLE aliases unless explicitly requested by maintainers.
+5. Do not silently remove or hard-rename legacy methods.
+6. Update tests/monkeypatch points if alias names are introduced.
 
 ## How to check your code (pytest/pylint) before a PR
 

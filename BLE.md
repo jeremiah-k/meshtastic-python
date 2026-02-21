@@ -142,16 +142,19 @@ delay, ok = policy._next_attempt()       # combined: compute delay + advance cou
 ```
 
 For compatibility with existing Python projects, the stable BLE surface exposed
-through `meshtastic.ble_interface` keeps the legacy snake_case method names from
-`master` (for example `find_device`, `read_gatt_char`, `start_notify`).
+through `meshtastic.ble_interface` keeps the legacy snake_case method names
+from the pre-refactor API (for example `find_device`, `read_gatt_char`,
+`start_notify`).
 
 Contributor rule for naming updates:
 
 1. Keep legacy snake_case BLE public methods callable.
-2. Add camelCase aliases when consistency improvements are needed.
-3. Route both names to one implementation (prefer internal
+2. Keep only the approved BLE camelCase promotions callable:
+   `findDevice`, `isConnected`, and `stopNotify`.
+3. Route compatibility names to one implementation (prefer internal
    underscore-prefixed helpers).
-4. Do not remove compatibility wrappers unless there is an explicit breaking
+4. Do not add new BLE aliases unless there is an explicit compatibility need.
+5. Do not remove compatibility wrappers unless there is an explicit breaking
    change decision.
 
 ---

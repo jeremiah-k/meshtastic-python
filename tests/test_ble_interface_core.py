@@ -1206,7 +1206,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     """
     Verify that the BLE receive thread treats specific exceptions as fatal: it logs a fatal error message and invokes the interface's close().
 
-    The test injects a client whose readGattChar raises the given exception type,
+    The test injects a client whose read_gatt_char raises the given exception type,
     triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
     """
     # logging and threading already imported at top
@@ -1229,7 +1229,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
             super().__init__()
             self.exception_type = exception_type
 
-        def readGattChar(self, *_args, **_kwargs):
+        def read_gatt_char(self, *_args, **_kwargs):
             """
             Raise the client's configured exception to simulate a failing GATT characteristic read.
 
@@ -1287,7 +1287,7 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
             super().__init__()
             self.read_count = 0
 
-        def readGattChar(self, *_args, **_kwargs):
+        def read_gatt_char(self, *_args, **_kwargs):
             """
             Simulate a GATT characteristic read that increments self.read_count and always fails.
 
@@ -1338,7 +1338,7 @@ def test_log_notification_registration(monkeypatch):
 
             Attributes
             ----------
-                start_notify_calls (list): Recorded calls to startNotify as tuples of the arguments passed.
+                start_notify_calls (list): Recorded calls to start_notify as tuples of the arguments passed.
                 has_characteristic_map (dict): Maps characteristic UUID strings to booleans indicating presence. Initially sets
                     LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
 
@@ -1351,7 +1351,7 @@ def test_log_notification_registration(monkeypatch):
                 FROMNUM_UUID: True,
             }
 
-        def hasCharacteristic(self, uuid):
+        def has_characteristic(self, uuid):
             """
             Determine whether the client exposes a GATT characteristic identified by the given UUID.
 
@@ -1366,7 +1366,7 @@ def test_log_notification_registration(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def startNotify(self, *_args, **_kwargs):
+        def start_notify(self, *_args, **_kwargs):
             """
             Record a notification registration by saving the characteristic UUID and its handler.
 

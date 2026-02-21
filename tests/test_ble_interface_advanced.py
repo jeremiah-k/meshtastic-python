@@ -59,7 +59,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
             Attributes
             ----------
-                start_notify_calls (list): Recorded (uuid, handler) tuples passed to startNotify.
+                start_notify_calls (list): Recorded (uuid, handler) tuples passed to start_notify.
                 has_characteristic_map (dict): Mapping of characteristic UUID to bool; contains only `FROMNUM_UUID: True`.
 
             """
@@ -69,7 +69,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
                 FROMNUM_UUID: True,  # Only have the critical one
             }
 
-        def hasCharacteristic(self, uuid):
+        def has_characteristic(self, uuid):
             """
             Return whether the client reports a characteristic with the given UUID.
 
@@ -84,7 +84,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def startNotify(self, *_args, **_kwargs):
+        def start_notify(self, *_args, **_kwargs):
             """
             Record a notification registration by appending a (uuid, handler) tuple to self.start_notify_calls.
 
@@ -127,7 +127,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     class MockClient(DummyClient):
         """Mock client that returns invalid protobuf data to trigger DecodeError."""
 
-        def readGattChar(self, *_args, **_kwargs) -> bytes:
+        def read_gatt_char(self, *_args, **_kwargs) -> bytes:
             """
             Return raw GATT characteristic bytes for this test client.
 
@@ -340,7 +340,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     """
     Verify that _sendToRadioImpl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
 
-    This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from writeGattChar. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
+    This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
     """
     # logging already imported at top
     # BleakError already imported at top as ble_mod.BleakError, BLEInterface
@@ -363,7 +363,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
             super().__init__()
             self.exception_type = exception_type
 
-        def writeGattChar(self, *_args, **_kwargs):
+        def write_gatt_char(self, *_args, **_kwargs):
             """
             Simulate a failing GATT characteristic write.
 
@@ -500,7 +500,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """
             self.disconnect_count += 1
 
-        def startNotify(self, *_args, **_kwargs):
+        def start_notify(self, *_args, **_kwargs):
             """
             Accept any positional and keyword arguments and perform no action.
 
@@ -583,7 +583,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """
             self.disconnect_count += 1
 
-        def startNotify(self, *_args, **_kwargs):
+        def start_notify(self, *_args, **_kwargs):
             """
             Accept any positional and keyword arguments and perform no action.
 

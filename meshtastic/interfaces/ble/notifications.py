@@ -143,7 +143,7 @@ class NotificationManager:
         Parameters
         ----------
             client (BLEClient): BLE client used to start notifications.
-            timeout (float): Per-subscription timeout passed to the client's `startNotify` method.
+            timeout (float): Per-subscription timeout passed to the client's `start_notify` method.
 
         """
         with self._lock:
@@ -153,7 +153,7 @@ class NotificationManager:
 
         for characteristic, callback in subscriptions:
             try:
-                client.startNotify(
+                client.start_notify(
                     characteristic,
                     callback,
                     timeout=timeout,

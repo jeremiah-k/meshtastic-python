@@ -372,7 +372,7 @@ class DummyClient:
         # The bleak_client should be a separate object to correctly test identity checks
         self.bleak_client = SimpleNamespace(address=self.address)
 
-    def hasCharacteristic(self, _specifier) -> bool:
+    def has_characteristic(self, _specifier) -> bool:
         """
         Report whether this mock client exposes a BLE characteristic matching the given specifier.
 
@@ -387,21 +387,13 @@ class DummyClient:
         """
         return False
 
-    def has_characteristic(self, specifier) -> bool:
-        """Backward-compatible snake_case alias for hasCharacteristic."""
-        return self.hasCharacteristic(specifier)
-
-    def startNotify(self, *_args, **_kwargs):
+    def start_notify(self, *_args, **_kwargs):
         """
         Simulate subscribing to a BLE characteristic notification for tests.
 
         Accepts any arguments and performs no action.
         """
         return None
-
-    def start_notify(self, *args, **kwargs):
-        """Backward-compatible snake_case alias for startNotify."""
-        return self.startNotify(*args, **kwargs)
 
     def stopNotify(self, *args, **_kwargs):
         """
@@ -417,7 +409,7 @@ class DummyClient:
         """Backward-compatible snake_case alias for stopNotify."""
         return self.stopNotify(*args, **kwargs)
 
-    def readGattChar(self, *_args, **_kwargs) -> bytes:
+    def read_gatt_char(self, *_args, **_kwargs) -> bytes:
         """
         Provide a fixed empty-bytes response for any GATT characteristic read.
 
@@ -427,10 +419,6 @@ class DummyClient:
 
         """
         return b""
-
-    def read_gatt_char(self, *args, **kwargs) -> bytes:
-        """Backward-compatible snake_case alias for readGattChar."""
-        return self.readGattChar(*args, **kwargs)
 
     def isConnected(self) -> bool:
         """
@@ -470,13 +458,9 @@ class DummyClient:
         """
         self.close_calls += 1
 
-    def getServices(self):
-        """Stub for getServices."""
+    def _get_services(self):
+        """Stub for _get_services."""
         return self.services
-
-    def get_services(self):
-        """Backward-compatible snake_case alias for getServices."""
-        return self.getServices()
 
 
 @pytest.fixture
