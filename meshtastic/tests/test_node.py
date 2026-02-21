@@ -172,7 +172,11 @@ def test_node(capsys, mock_serial_interface):
 
 @pytest.mark.unit
 def test_exitSimulator(caplog):
-    """Test exitSimulator."""
+    """
+    Verify that calling exitSimulator logs an indicative debug message.
+    
+    Asserts that a DEBUG-level log record contains the text "in exitSimulator".
+    """
     interface = MeshInterface()
     interface.nodesByNum = {}
     anode = Node(interface, "!ba400000", noProto=True)
@@ -270,7 +274,12 @@ def test_setURL_ignores_channels_over_device_limit(caplog):
 
 @pytest.mark.unit
 def test_get_ringtone_times_out_without_response(caplog):
-    """Test get_ringtone returns None if the response callback is never invoked."""
+    """
+    Verify that get_ringtone times out when no response callback is invoked.
+    
+    Returns:
+        None: `None` if no ringtone response is received before the timeout.
+    """
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout.expireTimeout = 0.01
@@ -832,7 +841,11 @@ def test_requestChannel_not_localNode(caplog):
 
 @pytest.mark.unit
 def test_requestChannel_localNode(caplog):
-    """Test _requestChannel()."""
+    """
+    Verify that a local node logs a local channel request when _requestChannel is called.
+    
+    Checks that the log contains "Requesting channel 0" and does not include "from remote node".
+    """
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.localNode.getChannelByName.return_value = None

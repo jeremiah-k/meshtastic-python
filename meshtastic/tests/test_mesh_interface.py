@@ -135,7 +135,9 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_handlePacketFromRadio_no_portnum(caplog):
-    """Test _handlePacketFromRadio without a portnum."""
+    """
+    Verify that _handlePacketFromRadio logs a warning about not populating fromId when a MeshPacket has no portnum.
+    """
     with MeshInterface(noProto=True) as iface:
         meshPacket = mesh_pb2.MeshPacket()
         meshPacket.decoded.payload = b""
@@ -811,7 +813,11 @@ def test_waitConnected_raises_an_exception():
 
 @pytest.mark.unit
 def test_waitConnected_isConnected_timeout():
-    """Test waitConnected()."""
+    """
+    Verifies that _waitConnected raises a MeshInterfaceError when the connection does not complete within the specified timeout.
+    
+    Asserts the raised error message contains "Timed out waiting for connection completion".
+    """
     with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
         with MeshInterface() as iface:
             iface._waitConnected(0.01)

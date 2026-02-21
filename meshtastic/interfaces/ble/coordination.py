@@ -23,18 +23,10 @@ class _InertThread:
 
     def __init__(self, name: str) -> None:
         """
-        Create an inert thread placeholder returned after cleanup to preserve the thread-like API while preventing new threads from starting.
-
-        Parameters
-        ----------
-            name (str): Human-readable name for the inert thread; stored on the object as the `name` attribute.
-
-        Attributes
-        ----------
-            name (str): The provided thread name.
-            daemon (bool): Always True to match typical thread daemon status.
-            ident (None): Always None to indicate the inert thread has no identity and cannot be started.
-
+        Initialize an inert thread placeholder that mimics a Thread but cannot be started.
+        
+        Parameters:
+            name (str): Human-readable thread name stored on the instance as the `name` attribute.
         """
         self.name = name
         self.daemon = True
@@ -42,23 +34,19 @@ class _InertThread:
 
     def start(self) -> None:
         """
-        Prevent starting an inert thread returned after coordinator cleanup.
-
-        Raises
-        ------
-            RuntimeError: always raised to indicate this inert thread cannot be started.
-
+        Prevent starting this inert thread returned after coordinator cleanup.
+        
+        Raises:
+            RuntimeError: Indicates the inert thread cannot be started.
         """
         raise RuntimeError(_INERT_THREAD_START_ERROR.format(name=self.name))
 
     def is_alive(self) -> bool:
         """
-        Indicates that this inert thread is not alive.
-
-        Returns
-        -------
-            bool: False always; inert threads cannot be alive.
-
+        Report whether the inert thread is alive.
+        
+        Returns:
+            bool: `False` — inert threads are never alive.
         """
         return False
 
@@ -121,22 +109,19 @@ class ThreadCoordinator:
         kwargs: dict[str, Any] | None = None,
     ) -> ThreadLike:
         """
-        Internal method: Create and register a Thread configured with the given target and arguments without starting it.
-
-        If the coordinator has already been cleaned up, returns an inert thread that cannot be started. The returned thread is registered for lifecycle management but is not started by this call.
-
-        Parameters
-        ----------
-            target (Callable): Callable to be executed by the thread.
-            name (str): Name assigned to the thread.
-            daemon (bool): Whether the thread should run as a daemon.
-            args (tuple): Positional arguments to pass to the target.
-            kwargs (dict | None): Keyword arguments to pass to the target.
-
-        Returns
-        -------
-            Thread: The created Thread instance (registered with the coordinator, not started). After cleanup, an inert thread is returned whose start() raises RuntimeError.
-
+        Create and register a thread configured with the given target and arguments without starting it.
+        
+        If the coordinator has already been cleaned up, returns an inert thread that cannot be started and logs a warning. The returned thread is tracked for lifecycle management but is not started by this call.
+        
+        Parameters:
+            target (Callable[..., Any]): Callable to be executed by the thread.
+            name (str): Human-readable name for the thread.
+            daemon (bool): Whether the thread should be a daemon thread.
+            args (tuple[Any, ...]): Positional arguments to pass to the target.
+            kwargs (dict[str, Any] | None): Keyword arguments to pass to the target.
+        
+        Returns:
+            ThreadLike: The created and registered thread (not started). After cleanup, an `_InertThread` is returned whose `start()` raises `RuntimeError`.
         """
         with self._lock:
             # Prevent thread creation after cleanup to avoid orphaned threads
@@ -159,18 +144,15 @@ class ThreadCoordinator:
 
     def _create_event(self, name: str) -> Event:
         """
-        Internal method: Register a new Event under the given name and return it.
-
-        If an Event with the same name already exists, the existing Event is returned and no replacement occurs. This operation is thread-safe via the coordinator's lock.
-
-        Parameters
-        ----------
+        Register or retrieve a named Event for coordinator synchronization.
+        
+        If an Event with the same name already exists, returns the existing instance without replacing it. This operation is thread-safe and acquires the coordinator's lock.
+        
+        Parameters:
             name (str): Name to register the Event under.
-
-        Returns
-        -------
+        
+        Returns:
             Event: The Event instance registered under `name`, or the existing instance if one was already registered.
-
         """
         with self._lock:
             if name in self._events:
@@ -184,21 +166,19 @@ class ThreadCoordinator:
 
     def _get_event(self, name: str) -> Event | None:
         """
-        Internal method: Retrieve the Event registered under the given name.
-
-        Returns
-        -------
-            Event or None: `Event` if the name is tracked, `None` otherwise.
-
+        Retrieve the Event registered under the given name.
+        
+        Returns:
+            Event if an event with the given name is registered, `None` otherwise.
         """
         with self._lock:
             return self._events.get(name)
 
     def _start_thread(self, thread: ThreadLike) -> None:
         """
-        Start a tracked thread if it is registered with the coordinator and has not yet been started.
-
-        If the thread is not registered or has already been started, this method does nothing. Logs a warning when an untracked thread is provided.
+        Start a tracked thread that has not yet been started.
+        
+        If the thread is not registered with the coordinator, logs a warning and does nothing. The thread is started outside the coordinator lock; if cleanup occurred while the thread was starting, the coordinator will join the newly started thread to ensure it does not remain detached from shutdown.
         """
         should_start = False
         must_join_after_start = False
@@ -237,16 +217,11 @@ class ThreadCoordinator:
 
     def _join_thread(self, thread: ThreadLike, timeout: float | None = None) -> None:
         """
-        Internal method: Join a tracked thread if it is alive and not the current thread.
-
-        Parameters
-        ----------
-            thread (Thread): Thread object previously registered with this
-                coordinator; no-op if the thread is not tracked, not alive, or
-                is the current thread.
-            timeout (float | None): Maximum seconds to wait for the thread
-                to finish; use `None` to wait indefinitely.
-
+        Join a tracked thread if it is alive and not the current thread.
+        
+        Parameters:
+            thread (ThreadLike): Thread previously registered with this coordinator; no action is taken if the thread is not tracked, is not alive, or is the calling thread.
+            timeout (float | None): Maximum seconds to wait for the thread to finish; use None to wait indefinitely.
         """
         with self._lock:
             should_join = (
@@ -259,12 +234,10 @@ class ThreadCoordinator:
 
     def _join_all(self, timeout: float | None = None) -> None:
         """
-        Internal method: Join all tracked, alive threads except the calling thread, applying the given timeout to each join.
-
-        Parameters
-        ----------
+        Join all tracked alive threads except the calling thread, applying the given timeout to each join.
+        
+        Parameters:
             timeout (float | None): Per-thread join timeout in seconds. If `None`, wait indefinitely for each thread.
-
         """
         with self._lock:
             current = current_thread()
@@ -331,17 +304,16 @@ class ThreadCoordinator:
 
     def _wait_for_event(self, name: str, timeout: float | None = None) -> bool:
         """
-        Internal method: Waits for the tracked event named `name` to be set or until `timeout` seconds elapse.
-
-        Parameters
-        ----------
-            name (str): Name of the tracked event.
+        Waits for the named tracked event to be set or until the timeout elapses.
+        
+        If no event is registered under `name`, returns `false` immediately.
+        
+        Parameters:
+            name (str): Name of the tracked event to wait for.
             timeout (float | None): Maximum time in seconds to wait; `None` means wait indefinitely.
-
-        Returns
-        -------
-            `true` if the event was set before the timeout, `false` otherwise (also `false` if no event with that name is tracked).
-
+        
+        Returns:
+            `true` if the event was set before the timeout, `false` otherwise.
         """
         event = self._get_event(name)
         if event:
@@ -350,12 +322,10 @@ class ThreadCoordinator:
 
     def _check_and_clear_event(self, name: str) -> bool:
         """
-        Internal method: Clears the named tracked event if it exists and is currently set.
-
-        Returns
-        -------
-            True if the named event existed and was set (and was cleared), False otherwise.
-
+        Clear the named tracked event if it exists and is currently set.
+        
+        Returns:
+            `true` if the named event existed and was set (and was cleared), `false` otherwise.
         """
         with self._lock:
             event = self._events.get(name)
@@ -366,12 +336,10 @@ class ThreadCoordinator:
 
     def _wake_waiting_threads(self, *event_names: str) -> None:
         """
-        Internal method: Wake all coordinator-managed events named in event_names, causing any threads waiting on them to resume.
-
-        Parameters
-        ----------
-                event_names (str): One or more event names to set; names that are not tracked are ignored.
-
+        Set the named coordinator events to wake any threads waiting on them.
+        
+        Parameters:
+            event_names (str): One or more event names to set; names not registered with the coordinator are ignored.
         """
         with self._lock:
             for name in event_names:
@@ -379,14 +347,12 @@ class ThreadCoordinator:
 
     def _clear_events(self, *event_names: str) -> None:
         """
-        Internal method: Clear the named tracked events.
-
+        Clear the specified named tracked events.
+        
         Ignores names that are not registered.
-
-        Parameters
-        ----------
+        
+        Parameters:
             event_names (str): One or more event names to clear.
-
         """
         with self._lock:
             for name in event_names:
@@ -394,9 +360,9 @@ class ThreadCoordinator:
 
     def _cleanup(self) -> None:
         """
-        Perform a coordinated shutdown of the coordinator.
-
-        Marks the coordinator as cleaned, sets all tracked events to wake any waiters, collects and joins all live tracked threads except the current thread (using EVENT_THREAD_JOIN_TIMEOUT per thread), and clears internal thread and event registries. After this completes, the coordinator will refuse creation of new runnable threads (requests return an inert thread that cannot be started).
+        Perform coordinated shutdown of the coordinator.
+        
+        Marks the coordinator as cleaned to prevent new runnable threads, sets all tracked events to wake any waiters, joins all currently live tracked threads except the calling thread (joining each with EVENT_THREAD_JOIN_TIMEOUT), and clears internal thread, event, and pending-start registries.
         """
         with self._lock:
             # Mark as cleaned up to prevent new thread creation

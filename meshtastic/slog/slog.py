@@ -27,13 +27,12 @@ logger = logging.getLogger(__name__)
 
 def root_dir() -> str:
     """
-    Determine and ensure the root slog directory exists under the user data directory.
-
-    Returns
-    -------
-    str
-        Filesystem path to the "slogs" directory.
-
+    Return the application's slog root directory path, creating the directory if it does not exist.
+    
+    The directory is named "slogs" and is created under the per-user application data directory for the Meshtastic app.
+    
+    Returns:
+        str: Filesystem path to the "slogs" directory.
     """
 
     app_name = "meshtastic"
@@ -53,13 +52,12 @@ class LogDef:
     format: parse.Parser  # A format string that can be used to parse the arguments
 
     def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
-        """Initialize the LogDef object.
-
-        Parameters
-        ----------
-            code (str): The code.
-            fields (list[tuple[str, pa.DataType]]): Field name/type pairs used to build the parser format.
-
+        """
+        Create a LogDef for the given code and fields and compile a parser for those fields.
+        
+        Parameters:
+            code (str): Short log code (e.g., "B", "PM", "PS").
+            fields (list[tuple[str, pa.DataType]]): Ordered (name, type) pairs describing each field. Fields whose type equals `pa.string()` are parsed as strings; other types are parsed as integers.
         """
         self.code = code
         self.fields = fields
@@ -95,7 +93,14 @@ class PowerLogger:
     """Logs current watts reading periodically using PowerMeter and ArrowWriter."""
 
     def __init__(self, pMeter: PowerMeter, file_path: str, interval=0.002) -> None:
-        """Initialize the PowerLogger object."""
+        """
+        Create a PowerLogger that records periodic power readings from a PowerMeter into a Feather file and starts its background logging thread.
+        
+        Parameters:
+            pMeter (PowerMeter): Source of power measurements; its snapshot and reset methods will be used.
+            file_path (str): Path to the output Feather file where readings will be written.
+            interval (float): Time in seconds between automatic samples (default 0.002).
+        """
         self.pMeter = pMeter
         self.writer = FeatherWriter(file_path)
         self.interval = interval
@@ -106,7 +111,16 @@ class PowerLogger:
         self.thread.start()
 
     def store_current_reading(self, now: datetime | None = None) -> None:
-        """Store current power measurement."""
+        """
+        Capture a snapshot of current power measurements and append it to the writer.
+        
+        If `now` is provided it is used as the timestamp; otherwise the current system time is used.
+        The recorded row contains `time`, `average_mW`, `max_mW`, and `min_mW`. After sampling, the
+        PowerMeter's measurements are reset and the row is written via the writer.
+        
+        Parameters:
+            now (datetime | None): Optional timestamp to use for the recorded row.
+        """
         if now is None:
             now = datetime.now()
         d = {
@@ -370,7 +384,11 @@ class LogSet:
         atexit.register(self.atexit_handler)
 
     def close(self) -> None:
-        """Close the log set."""
+        """
+        Shuts down the log set and releases associated resources.
+        
+        If a structured logger is present, unregisters the atexit handler, closes the structured logger and the optional power logger, and clears the internal slog logger reference.
+        """
 
         if self.slog_logger:
             logger.info(f"Closing slogs in {self.dir_name}")

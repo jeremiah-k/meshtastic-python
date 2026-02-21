@@ -2,7 +2,12 @@
 
 
 def get_active_version() -> str:
-    """Get the currently active version using importlib, or pkg_resources if we must."""
+    """
+    Retrieve the active installed version of the "meshtastic" package.
+    
+    Returns:
+        str: The package version string, or "unknown" if the distribution metadata cannot be found.
+    """
     try:
         from importlib.metadata import (  # pylint: disable=import-outside-toplevel
             PackageNotFoundError,

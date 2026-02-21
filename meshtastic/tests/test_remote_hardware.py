@@ -12,7 +12,15 @@ from ..serial_interface import SerialInterface
 
 
 def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
-    """Create a SerialInterface mock with an explicit gpio channel stub."""
+    """
+    Create a SerialInterface mock that provides a stubbed GPIO channel.
+    
+    Parameters:
+        channel_index (int): Index to assign to the mocked GPIO channel (default 0).
+    
+    Returns:
+        MagicMock: An autospecced SerialInterface mock whose localNode.getChannelByName returns the mocked channel.
+    """
     iface = MagicMock(autospec=SerialInterface)
     channel = MagicMock()
     channel.index = channel_index
@@ -86,7 +94,11 @@ def test_writeGPIOs(caplog):
 
 @pytest.mark.unit
 def test_watchGPIOs(caplog):
-    """Test watchGPIOs."""
+    """
+    Verify RemoteHardwareClient.watchGPIOs logs a "watchGPIOs" marker when invoked with a GPIO node and mask.
+    
+    Runs watchGPIOs("0x10", 123) with DEBUG-level logging enabled and asserts that the captured logs contain "watchGPIOs".
+    """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
     with caplog.at_level(logging.DEBUG):

@@ -21,7 +21,12 @@ _MESH_INTERFACE_ERROR: Type[Exception] | None = None
 
 
 def _get_mesh_interface_error() -> Type[Exception]:
-    """Resolve MeshInterfaceError lazily to avoid module-import cycles."""
+    """
+    Resolve MeshInterfaceError lazily to avoid module-import cycles.
+    
+    Returns:
+        MeshInterfaceError (Type[Exception]): The cached MeshInterface.MeshInterfaceError exception class.
+    """
     global _MESH_INTERFACE_ERROR  # pylint: disable=global-statement
     if _MESH_INTERFACE_ERROR is None:
         from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
@@ -33,7 +38,18 @@ def _get_mesh_interface_error() -> Type[Exception]:
 
 
 def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
-    """Handle received GPIO responses."""
+    """
+    Handle an incoming remote hardware (GPIO) response packet, log its summary, and mark the interface as having received a response.
+    
+    Extracts `gpioValue` from packet["decoded"]["remotehw"] (defaults to 0 if absent), determines an active mask from `interface.mask` or the packet's `gpioMask`, computes the masked GPIO value, logs the hardware type and computed value, and sets `interface.gotResponse` to True.
+    
+    Parameters:
+        packet (dict[str, Any]): Decoded message dictionary containing a "remotehw" mapping with optional keys:
+            - "gpioValue" (int): GPIO value reported by the remote device (may be omitted; treated as 0).
+            - "gpioMask" (int): Mask provided by the remote device.
+            - "type" (int|enum): Hardware message type.
+        interface (MeshInterface): MeshInterface instance whose `mask` may override the packet mask and whose `gotResponse` attribute will be set to True.
+    """
     logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
     hw = packet["decoded"]["remotehw"]
@@ -64,11 +80,13 @@ class RemoteHardwareClient:
 
     def __init__(self, iface: "MeshInterface") -> None:
         """
-        Initialize the RemoteHardwareClient with the given MeshInterface instance.
-
-        Parameters
-        ----------
-            iface: The already open MeshInterface instance.
+        Create a RemoteHardwareClient bound to a MeshInterface and subscribe to remote GPIO responses.
+        
+        Parameters:
+            iface (MeshInterface): An already-open MeshInterface instance to use for sending/receiving remote hardware messages.
+        
+        Raises:
+            MeshInterface.MeshInterfaceError: If the local node has no channel named "gpio".
         """
         self.iface = iface
         ch = iface.localNode.getChannelByName("gpio")
@@ -85,6 +103,21 @@ class RemoteHardwareClient:
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
     ) -> Any:
+        """
+        Send a HardwareMessage to a remote node over the configured GPIO channel.
+        
+        Parameters:
+            nodeid (int | str): Destination node ID.
+            r (remote_hardware_pb2.HardwareMessage): The hardware message payload to send.
+            wantResponse (bool): If True, request and wait for a device response.
+            onResponse (Callable[[dict[str, Any]], Any] | None): Optional callback invoked when a response is received.
+        
+        Returns:
+            Any: The result returned by the underlying sendData call.
+        
+        Raises:
+            MeshInterface.MeshInterfaceError: If no destination node ID is provided.
+        """
         if not nodeid:
             raise _get_mesh_interface_error()(
                 "Must use a destination node ID for this operation."
@@ -101,8 +134,15 @@ class RemoteHardwareClient:
 
     def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
         """
-        Write the specified vals bits to the device GPIOs.  Only bits in mask that
-        are 1 will be changed.
+        Set specified GPIO pins on a remote device according to the provided mask and values.
+        
+        Parameters:
+            nodeid (int | str): Destination node identifier.
+            mask (int): Bitmask where bits set to 1 indicate GPIO pins to modify.
+            vals (int): Bit pattern to write to the masked GPIO pins; bits corresponding to 1s in `mask` will be applied.
+        
+        Returns:
+            Any: Result of the underlying send operation.
         """
         logger.debug("writeGPIOs nodeid:%s mask:%s vals:%s", nodeid, mask, vals)
         r = remote_hardware_pb2.HardwareMessage()
@@ -117,7 +157,17 @@ class RemoteHardwareClient:
         mask: int,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
     ) -> Any:
-        """Read the specified bits from GPIO inputs on the device."""
+        """
+        Request the device to read the specified GPIO bits.
+        
+        Parameters:
+            nodeid (int | str): Destination node identifier or address to send the request to.
+            mask (int): Bitmask indicating which GPIO pins to read.
+            onResponse (Callable[[dict[str, Any]], Any] | None): Optional callback invoked with the response packet when a response arrives.
+        
+        Returns:
+            Any: The result of the underlying send operation (may be the callback's return value or the send call result).
+        """
         logger.debug("readGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
@@ -125,7 +175,16 @@ class RemoteHardwareClient:
         return self._sendHardware(nodeid, r, wantResponse=True, onResponse=onResponse)
 
     def watchGPIOs(self, nodeid: int | str, mask: int) -> Any:
-        """Watch the specified bits from GPIO inputs on the device for changes."""
+        """
+        Start monitoring the specified GPIO bits on a remote device for changes.
+        
+        Parameters:
+            nodeid (int | str): Destination node identifier for the target device.
+            mask (int): Bitmask selecting which GPIO pins to monitor (bit i corresponds to GPIO i).
+        
+        Returns:
+            Any: Result of sending the watch request; may contain a send/response token or interface-specific response.
+        """
         logger.debug("watchGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS

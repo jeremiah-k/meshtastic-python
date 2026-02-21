@@ -94,8 +94,8 @@ class NotificationManager:
     def cleanupAll(self) -> None:
         """
         Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
-
-        This resets the manager's internal state: clears the subscription registry, clears the characteristic->callback mapping, and resets the subscription token counter to zero while holding the internal lock.
+        
+        Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the subscription token counter to zero. This operation is performed while holding the manager's internal lock.
         """
         with self._lock:
             self._active_subscriptions.clear()
@@ -135,16 +135,14 @@ class NotificationManager:
 
     def resubscribeAll(self, client: "BLEClient", *, timeout: float) -> None:
         """
-        Re-register all tracked BLE notification subscriptions on the provided client.
-
-        Uses the per-characteristic callback mapping to avoid redundant resubscriptions
-        when multiple subscriptions exist for the same characteristic.
-
-        Parameters
-        ----------
-            client (BLEClient): BLE client used to start notifications.
-            timeout (float): Per-subscription timeout passed to the client's `start_notify` method.
-
+        Resubscribe all tracked BLE notification callbacks on the given client.
+        
+        Uses the per-characteristic latest callback to avoid duplicate resubscription attempts when
+        multiple subscriptions were registered for the same characteristic.
+        
+        Parameters:
+            client (BLEClient): BLE client on which to call `start_notify` for each characteristic.
+            timeout (float): Per-subscription timeout to pass to the client's `start_notify` method.
         """
         with self._lock:
             # Use _characteristic_to_callback to deduplicate - it holds only the latest
@@ -168,31 +166,40 @@ class NotificationManager:
     def __len__(self) -> int:
         """
         Report the number of active BLE notification subscriptions being tracked.
-
-        Returns
-        -------
-            int: The number of active subscriptions currently tracked.
-
+        
+        Returns:
+            int: Number of active subscriptions currently tracked.
         """
         with self._lock:
             return len(self._active_subscriptions)
 
     def _resubscribe_all(self, *args, **kwargs):
-        """Backward-compatible snake_case alias for resubscribeAll."""
+        """
+        Re-registers all tracked subscriptions on the provided BLE client.
+        """
         return self.resubscribeAll(*args, **kwargs)
 
     def getCallback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
         """
-        Get the most recently registered callback for a BLE characteristic.
-
-        Returns
-        -------
-            The callback for the given characteristic, or `None` if no callback is registered.
-
+        Retrieve the most recently registered callback for a BLE characteristic.
+        
+        Parameters:
+        	characteristic (str): BLE characteristic identifier (e.g., UUID or handle) to look up.
+        
+        Returns:
+        	Callable[[Any, Any], None] | None: The most recently registered callback for the characteristic, or `None` if no callback is registered.
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
 
     def _get_callback(self, *args, **kwargs):
-        """Backward-compatible snake_case alias for getCallback."""
+        """
+        Retrieve the most recently registered callback for a BLE characteristic using a snake_case name for backward compatibility.
+        
+        Parameters:
+            characteristic (str): The characteristic identifier to look up.
+        
+        Returns:
+            Callable[[Any, Any], None] | None: The most recently registered callback for the characteristic, or None if no callback is registered.
+        """
         return self.getCallback(*args, **kwargs)

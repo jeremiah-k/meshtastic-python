@@ -75,21 +75,18 @@ class ConnectionValidator:
         address: str | None,
     ) -> bool:
         """
-        Determine whether a connected BLE client matches the requested or known device address.
-
-        Considers the provided normalized_request, the last_connection_request, and the sanitized forms of the original address and the client's bleak address when deciding a match.
-
-        Parameters
-        ----------
+        Check whether the given BLE client corresponds to the requested or a known device address.
+        
+        Considers the provided normalized_request, last_connection_request, the sanitized original address, and the client's bleak address. If `normalized_request` is `None`, any connected client is treated as acceptable.
+        
+        Parameters:
             client (BLEClient | None): The BLE client to verify.
-            normalized_request (str | None): Sanitized identifier for the desired target; if `None`, any connected client is treated as acceptable for matching.
+            normalized_request (str | None): Sanitized identifier for the desired target; when `None` any connected client matches.
             last_connection_request (str | None): The last sanitized connection request to include among known targets.
-            address (str | None): The originally requested address; its sanitized form is compared against the client's address.
-
-        Returns
-        -------
-            True if the client is connected and its address equals `normalized_request` or one of the known targets, False otherwise.
-
+            address (str | None): The originally requested address; its sanitized form is included among known targets.
+        
+        Returns:
+            bool: `true` if the client is connected and its address equals `normalized_request` or one of the known targets, `false` otherwise.
         """
         if not client or not client.isConnected():
             return False
@@ -135,17 +132,14 @@ class ClientManager:
         self, device_address: str, disconnect_callback: "Callable"
     ) -> "BLEClient":
         """
-        Internal helper: Create a BLEClient bound to the given device address and register a disconnect callback.
-
-        Parameters
-        ----------
+        Create a BLEClient bound to the given device address and register a disconnect callback.
+        
+        Parameters:
             device_address (str): Target BLE device address to bind the client to.
-            disconnect_callback (Callable): Function invoked when the client disconnects.
-
-        Returns
-        -------
-            BLEClient: A BLEClient instance bound to device_address with the disconnect callback set.
-
+            disconnect_callback (Callable): Callable invoked when the client disconnects.
+        
+        Returns:
+            BLEClient: A BLEClient instance bound to device_address with the disconnect callback configured.
         """
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
@@ -211,18 +205,15 @@ class ClientManager:
 
     def _safe_close_client(self, client: BLEClient, event: Event | None = None) -> None:
         """
-        Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signaling when cleanup is complete.
-
-        Parameters
-        ----------
-            client (BLEClient): The BLE client to disconnect and close.
-            event (Event | None): If provided, it will be set after cleanup completes to signal completion.
-
-        Notes
-        -----
-            - Performs a best-effort disconnect unless the Python interpreter is finalizing.
-            - Any exceptions raised during disconnect or close are suppressed.
-
+        Attempt to disconnect and close the given BLE client, suppressing any errors and optionally signal completion.
+        
+        Parameters:
+            client (BLEClient): BLE client to disconnect and close.
+            event (Event | None): Optional Event that will be set after cleanup completes.
+        
+        Notes:
+            - Skips the disconnect step if the Python interpreter is finalizing.
+            - Exceptions raised during disconnect or close are suppressed.
         """
         skip_disconnect = bool(getattr(sys, "is_finalizing", lambda: False)())
         if (
@@ -286,21 +277,16 @@ class ConnectionOrchestrator:
         on_connected_func: Callable,
     ) -> None:
         """
-        Finalize a successful BLE connection by registering notifications, verifying the client remains connected, transitioning state to CONNECTED, and invoking post-connection callbacks.
-
-        Register notification handlers on the provided client, re-check that the orchestrator is still in CONNECTING state and that the client is connected, transition the connection state to CONNECTED, then call the provided on-connected callback and signal a reconnection event if applicable. Logs the successful connection using the sanitized device address.
-
-        Parameters
-        ----------
+        Finalize a successful BLE connection by registering notification handlers, validating the client and orchestrator state, transitioning to CONNECTED, and invoking post-connection callbacks.
+        
+        Parameters:
             client (BLEClient): The connected BLE client instance.
             device_address (str): Device address used for logging.
-            register_notifications_func (Callable): Function that registers notification handlers on `client`.
-            on_connected_func (Callable): Callback invoked after the state transitions to CONNECTED.
-
-        Raises
-        ------
-            BLEInterface.BLEError: If the orchestrator is no longer in CONNECTING state or if the client disconnects during finalization.
-
+            register_notifications_func (Callable): Callable that registers notification handlers on `client`.
+            on_connected_func (Callable): Callback invoked after the connection state transitions to CONNECTED.
+        
+        Raises:
+            BLEInterface.BLEError: If the orchestrator is not in CONNECTING state or if the client disconnects during finalization.
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:
@@ -353,10 +339,12 @@ class ConnectionOrchestrator:
 
     def _transition_failure_to_disconnected(self, error_context: str) -> None:
         """
-        Best-effort state correction after a connection failure.
-
-        Transitions to ERROR and then DISCONNECTED, logging if either transition
-        is rejected and forcing DISCONNECTED as a final fallback.
+        Perform a best-effort state correction after a connection failure.
+        
+        Attempts to transition the connection state to ERROR and then to DISCONNECTED; if a transition is rejected, logs a warning and forces DISCONNECTED as a final fallback.
+        
+        Parameters:
+            error_context (str): Context string used in log messages to identify the failure context.
         """
         if not self.state_manager._transition_to(ConnectionState.ERROR):
             logger.warning(

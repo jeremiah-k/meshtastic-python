@@ -39,12 +39,10 @@ def sanitize_address(address: str | None) -> str | None:
 
 def _sleep(delay: float) -> None:
     """
-    Block execution for the specified number of seconds.
-
-    Parameters
-    ----------
-        delay (float): Time to sleep in seconds; may be fractional.
-
+    Pause execution for the specified number of seconds.
+    
+    Parameters:
+        delay (float): Number of seconds to pause; may be fractional (e.g., 0.5).
     """
     time.sleep(delay)
 
@@ -56,24 +54,21 @@ async def with_timeout(
     timeout_error_factory: Callable[[str, float], Exception] | None = None,
 ) -> T:
     """
-    Await an awaitable with an optional timeout.
-
-    Parameters
-    ----------
-        awaitable (Awaitable[T]): Awaitable to run.
-        timeout (float | None): Maximum seconds to wait; if None, wait indefinitely.
-        label (str): Short operation label used by timeout_error_factory.
-        timeout_error_factory (Callable[[str, float], Exception] | None): Optional factory
-            used to map timeout to a specific exception type.
-
-    Returns
-    -------
-        T: The awaitable result.
-
-    Raises
-    ------
-        Exception: Raises asyncio.TimeoutError on timeout unless timeout_error_factory is supplied.
-
+    Run an awaitable with an optional timeout.
+    
+    Parameters:
+        awaitable (Awaitable[T]): The awaitable to execute.
+        timeout (float | None): Maximum seconds to wait; None means wait indefinitely.
+        label (str): Short operation label passed to the timeout_error_factory when a timeout occurs.
+        timeout_error_factory (Callable[[str, float], Exception] | None): Optional factory that receives (label, timeout)
+            and returns the exception to raise when the operation times out.
+    
+    Returns:
+        T: The result produced by the awaitable.
+    
+    Raises:
+        asyncio.TimeoutError: If the timeout elapses and no timeout_error_factory is provided.
+        Exception: The exception returned by timeout_error_factory(label, timeout) when a timeout occurs.
     """
     if timeout is None:
         return await awaitable
@@ -87,14 +82,12 @@ async def with_timeout(
 
 def resolve_ble_module() -> ModuleType | None:
     """
-    Locate the first available BLE module for the package.
-
-    Attempts to import "meshtastic.interfaces.ble" then "meshtastic.ble_interface" in order and returns the first module that can be imported.
-
-    Returns
-    -------
-        The imported module as a ModuleType if found, `None` otherwise.
-
+    Locate and return the first available BLE-related module for the package.
+    
+    Checks for available modules in priority order and returns the first successfully imported module.
+    
+    Returns:
+        ModuleType | None: The imported BLE module if found, otherwise `None`.
     """
     for module_name in (
         "meshtastic.interfaces.ble",

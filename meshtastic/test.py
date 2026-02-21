@@ -51,13 +51,13 @@ class _FallbackDotMap(dict):
 
     def __setattr__(self, key: str, value: Any) -> None:
         """
-        Assign a value to a dictionary key using attribute-style access.
-
-        Parameters
-        ----------
-            key (str): Attribute name to store as a dictionary key.
-            value (Any): Value to assign to the key.
-
+        Set an item in the mapping using attribute-style access.
+        
+        Dunder (double-underscore) attribute names are delegated to object attribute assignment to avoid interfering with Python internals; other names create or update mapping entries.
+        
+        Parameters:
+            key (str): Attribute name to store as a mapping key.
+            value (Any): Value to assign.
         """
         # Guard dunder names to avoid interfering with Python internals.
         # Note: This asymmetry with __getattr__ (which raises) is intentional
@@ -112,16 +112,14 @@ logger = logging.getLogger(__name__)
 def onReceive(packet: dict, interface: Any) -> None:
     """
     Handle an incoming packet and record clear-text messages.
-
-    Ignores packets that originated from the current sendingInterface. Converts the packet to a
-    DotMap and, if its decoded.portnum matches PortNum.TEXT_MESSAGE_APP, appends the converted
-    packet to the module-level receivedPackets list when that list is set.
-
-    Parameters
-    ----------
+    
+    If the packet did not originate from the current sendingInterface, convert it to a DotMap.
+    If the packet's decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level
+    receivedPackets list is set, append the converted packet to receivedPackets.
+    
+    Parameters:
         packet (dict): Raw packet data as received.
         interface (Any): Interface object that delivered the packet.
-
     """
     if sendingInterface != interface:
         # print(f"From {interface.stream.port}: {packet}")
@@ -135,12 +133,10 @@ def onReceive(packet: dict, interface: Any) -> None:
 
 def onNode(node: Any) -> None:
     """
-    Notify that a node database entry changed.
-
-    Parameters
-    ----------
-        node (Any): The node entry that changed or a payload describing the change (typically a node database record).
-
+    Log that a node database entry changed.
+    
+    Parameters:
+        node (Any): The node database entry or a payload describing the change.
     """
     logger.info("Node changed: %s", node)
 
@@ -279,14 +275,11 @@ def testThread(numTests: int = 50) -> bool:
 
 def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
     """
-    Notify about connection state changes by printing the topic name.
-
-    Parameters
-    ----------
+    Log that a connection's state changed using the topic name.
+    
+    Parameters:
         interface (Any): The interface whose connection state changed.
-        topic (Any): The connection topic object or value; if it has a `getName()`
-            method that name is used, otherwise `str(topic)` is printed.
-
+        topic (Any): The connection topic object; if it provides a `getName()` method that name is used, otherwise `str(topic)` is used.
     """
     _ = interface
     topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
@@ -353,11 +346,9 @@ def testAll(numTests: int = 5) -> bool:
 
 def testSimulator() -> None:
     """
-    Connect to a Meshtastic simulator on localhost over TCP and run a short integration check.
-
-    Attempts to open a TCP connection to a local meshtastic-native simulator, query node
-    information, request the simulator to exit, and close the connection. Exits the process with
-    status 0 on success and status 1 if a connection or I/O error occurs.
+    Run a short integration check against a Meshtastic simulator on localhost.
+    
+    Connects to the simulator over TCP, requests node information and a simulator shutdown, and then exits the process; exits with status code 0 on success and 1 on error.
     """
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")
