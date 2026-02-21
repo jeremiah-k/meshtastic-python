@@ -11,11 +11,17 @@
 
 Use this policy for all code changes (especially AI-assisted refactors):
 
-- Public API names should be `camelCase` (for example `sendText`, `sendData`).
-- Internal helpers should be underscore-prefixed `snake_case` (for example `_send_packet`).
+- New public API names should prefer `camelCase` (for example `sendText`,
+  `sendData`).
+- Existing public compatibility names must remain callable, including legacy BLE
+  `snake_case` names documented below.
+- Internal helpers should be underscore-prefixed `snake_case` (for example
+  `_send_packet`).
 - Do not break existing public API names for compatibility.
 - Symbols in internal subsystem modules (like `meshtastic/interfaces/ble/*`) are
   internal by default unless exposed through the primary package facade.
+- AI-assisted refactors must not auto-rename BLE compatibility symbols or
+  remove compatibility aliases unless maintainers explicitly request it.
 
 ### BLE compatibility rule
 
