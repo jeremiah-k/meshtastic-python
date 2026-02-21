@@ -86,7 +86,8 @@ protobufs/            # Protocol Buffer source definitions
 
 - Use custom exception classes when appropriate (e.g., `MeshInterface.MeshInterfaceError`)
 - Provide meaningful error messages
-- Use `our_exit()` from `meshtastic.util` for CLI exits with error codes
+- For CLI exits, use the local `_cli_exit()` helper in `meshtastic/__main__.py`.
+- Treat `meshtastic.util.our_exit()` as compatibility-only (legacy external callers), not as the preferred path for new code.
 
 ## Testing
 

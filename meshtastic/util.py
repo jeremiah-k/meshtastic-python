@@ -242,17 +242,12 @@ def fixme(message: str) -> NoReturn:
 
 def our_exit(message: str, return_value: int = 1) -> NoReturn:
     """
-    Exit the process after printing a message to stderr.
+    Print a message and exit the process.
 
-    This is a compatibility shim for the historical CLI exit helper.
-    Canonical CLI code should use _cli_exit in meshtastic.__main__.
+    This compatibility helper intentionally preserves its historical behavior:
+    print to stdout, then call sys.exit(return_value).
     """
-    warnings.warn(
-        "our_exit is deprecated; use _cli_exit in meshtastic.__main__ instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    print(message, file=sys.stderr)
+    print(message)
     sys.exit(return_value)
 
 
