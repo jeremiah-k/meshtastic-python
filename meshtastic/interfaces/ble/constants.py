@@ -3,7 +3,7 @@
 import importlib.metadata
 import logging
 import re
-from typing import Optional, Tuple, cast
+from typing import cast
 
 logger = logging.getLogger("meshtastic.ble")
 
@@ -40,7 +40,7 @@ class BLEConfig:
     TRANSIENT_READ_RETRY_DELAY = 0.1
     SEND_PROPAGATION_DELAY = 0.01
     GATT_IO_TIMEOUT = 10.0
-    NOTIFICATION_START_TIMEOUT: Optional[float] = 10.0
+    NOTIFICATION_START_TIMEOUT: float | None = 10.0
     CONNECTION_TIMEOUT = 60.0
     EMPTY_READ_WARNING_COOLDOWN = 10.0
     AUTO_RECONNECT_INITIAL_DELAY = 1.0
@@ -53,7 +53,7 @@ class BLEConfig:
     # this path relies on bleak's private/undocumented `_backend.get_devices` API.
     # We gate at 1.1.0 (higher than the baseline bleak requirement) to reduce
     # compatibility risk from older private API variants.
-    BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: Tuple[int, int, int] = (1, 1, 0)
+    BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: tuple[int, int, int] = (1, 1, 0)
     BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
     # Runner configuration
     RUNNER_LOOP_READY_TIMEOUT_SECONDS = 5.0
@@ -116,7 +116,7 @@ BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIME
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
-def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
+def _parse_version_triplet(version_str: str) -> tuple[int, int, int]:
     """
     Parse a version string into a three-integer (major, minor, patch) tuple.
 
@@ -158,7 +158,7 @@ def _parse_version_triplet(version_str: str) -> Tuple[int, int, int]:
         matches.append("0")
     # re.findall(r"\d+", ...) only returns strings of digits, so int() will always succeed
     return cast(
-        Tuple[int, int, int],
+        "tuple[int, int, int]",
         tuple(int(segment) for segment in matches[:3]),
     )
 

@@ -28,7 +28,7 @@ import time
 import weakref
 from contextlib import contextmanager
 from threading import RLock
-from typing import Any, Dict, Generator, Optional, Set
+from typing import Any, Generator
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.utils import sanitize_address
@@ -36,18 +36,18 @@ from meshtastic.interfaces.ble.utils import sanitize_address
 logger = logging.getLogger("meshtastic.ble")
 
 _REGISTRY_LOCK = RLock()
-_ADDR_LOCKS: Dict[str, RLock] = {}
-_CONNECTED_ADDRS: Set[str] = set()
+_ADDR_LOCKS: dict[str, RLock] = {}
+_CONNECTED_ADDRS: set[str] = set()
 # Optional owner references for active connected-address claims.
-_CONNECTED_OWNERS: Dict[str, Optional["weakref.ReferenceType[Any]"]] = {}
-_CONNECTED_OWNER_IDS: Dict[str, Optional[int]] = {}
-_CONNECTED_MARKED_AT: Dict[str, float] = {}
+_CONNECTED_OWNERS: dict[str, weakref.ReferenceType[Any] | None] = {}
+_CONNECTED_OWNER_IDS: dict[str, int | None] = {}
+_CONNECTED_MARKED_AT: dict[str, float] = {}
 # Track locks that are currently held to prevent premature cleanup
-_LOCK_HOLDERS: Dict[str, int] = {}  # key -> count of holders
+_LOCK_HOLDERS: dict[str, int] = {}  # key -> count of holders
 
 
-def clearAllRegistries() -> None:
-    """Reset all gating registries (test helper)."""
+def _clear_all_registries() -> None:
+    """Reset all gating registries (internal helper)."""
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()
         _CONNECTED_ADDRS.clear()
@@ -57,34 +57,29 @@ def clearAllRegistries() -> None:
         _LOCK_HOLDERS.clear()
 
 
-def clear_all_registries() -> None:
-    """Backward-compatible snake_case wrapper for clearAllRegistries."""
-    clearAllRegistries()
+def clearAllRegistries() -> None:
+    """Public alias for _clear_all_registries (used in tests)."""
+    _clear_all_registries()
 
 
-def addrKey(addr: Optional[str]) -> Optional[str]:
+def _addr_key(addr: str | None) -> str | None:
     """
-    Normalize a BLE address into a registry key.
+    Internal helper: Normalize a BLE address into a registry key.
 
     Parameters
     ----------
-        addr (Optional[str]): The BLE address to normalize; may be None, empty, or whitespace.
+        addr (str | None): The BLE address to normalize; may be None, empty, or whitespace.
 
     Returns
     -------
-        Optional[str]: The sanitized address string, or None if the input is None, empty, or contains only whitespace.
+        str | None: The sanitized address string, or None if the input is None, empty, or contains only whitespace.
 
     """
     sanitized = sanitize_address(addr)
     return sanitized if sanitized else None
 
 
-def addr_key(addr: Optional[str]) -> Optional[str]:
-    """Backward-compatible snake_case wrapper for addrKey."""
-    return addrKey(addr)
-
-
-def _get_addr_lock(key: Optional[str]) -> RLock:
+def _get_addr_lock(key: str | None) -> RLock:
     """
     Get the process-wide reentrant lock for a normalized address key.
 
@@ -94,18 +89,18 @@ def _get_addr_lock(key: Optional[str]) -> RLock:
 
     Parameters
     ----------
-        key (Optional[str]): A raw or already-normalized address key; `None` selects the global registry lock.
+        key (str | None): A raw or already-normalized address key; `None` selects the global registry lock.
 
     Returns
     -------
         RLock: The per-address reentrant lock for `key`, or the global registry lock if `key` is None.
 
     """
-    key = addr_key(key)
+    key = _addr_key(key)
     return _get_addr_lock_by_key(key)
 
 
-def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
+def _get_addr_lock_by_key(key: str | None) -> RLock:
     """
     Get the process-wide reentrant lock for a normalized address key.
 
@@ -113,7 +108,7 @@ def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
 
     Parameters
     ----------
-        key (Optional[str]): Normalized address key; `None` selects the global registry lock.
+        key (str | None): Normalized address key; `None` selects the global registry lock.
 
     Returns
     -------
@@ -133,7 +128,7 @@ def _get_addr_lock_by_key(key: Optional[str]) -> RLock:
         return lock
 
 
-def _release_addr_lock(key: Optional[str]) -> None:
+def _release_addr_lock(key: str | None) -> None:
     """
     Decrement the holder count for the per-address lock identified by key.
 
@@ -141,14 +136,14 @@ def _release_addr_lock(key: Optional[str]) -> None:
 
     Parameters
     ----------
-        key (Optional[str]): An address or already-normalized key identifying the per-address lock; use None for the registry.
+        key (str | None): An address or already-normalized key identifying the per-address lock; use None for the registry.
 
     """
-    key = addr_key(key)
+    key = _addr_key(key)
     _release_addr_lock_by_key(key)
 
 
-def _release_addr_lock_by_key(key: Optional[str]) -> None:
+def _release_addr_lock_by_key(key: str | None) -> None:
     """
     Decrement the holder count for a normalized address key and remove its lock when unused.
 
@@ -156,7 +151,7 @@ def _release_addr_lock_by_key(key: Optional[str]) -> None:
 
     Parameters
     ----------
-        key (Optional[str]): Normalized address registry key (or None).
+        key (str | None): Normalized address registry key (or None).
 
     """
     if key is None:
@@ -170,7 +165,7 @@ def _release_addr_lock_by_key(key: Optional[str]) -> None:
                 logger.debug("Cleaned up address lock for %s", key)
 
 
-def _cleanup_addr_lock(key: Optional[str]) -> None:
+def _cleanup_addr_lock(key: str | None) -> None:
     """
     Remove a per-address lock from the registry when there are no remaining holders.
 
@@ -178,7 +173,7 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
 
     Parameters
     ----------
-        key (Optional[str]): Normalized address key identifying the per-address lock, or `None` to indicate no action.
+        key (str | None): Normalized address key identifying the per-address lock, or `None` to indicate no action.
 
     """
     if key is None:
@@ -198,13 +193,13 @@ def _cleanup_addr_lock(key: Optional[str]) -> None:
             )
 
 
-def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
+def _owner_ref(owner: Any | None) -> weakref.ReferenceType[Any] | None:
     """
     Return a weak reference to `owner` if it is provided and supports weak references.
 
     Returns
     -------
-        Optional[weakref.ReferenceType[Any]]: A weak reference to `owner`, or `None` if `owner` is `None` or not weak-referenceable.
+        weakref.ReferenceType[Any] | None: A weak reference to `owner`, or `None` if `owner` is `None` or not weak-referenceable.
 
     """
     if owner is None:
@@ -219,22 +214,22 @@ def _owner_ref(owner: Optional[Any]) -> Optional["weakref.ReferenceType[Any]"]:
         return None
 
 
-def _owner_connected_state(owner: Any) -> Optional[bool]:
+def _owner_connected_state(owner: Any) -> bool | None:
     """
-    Obtain an owner's connection state exposed via an `is_connection_connected` attribute or callable.
+    Obtain an owner's connection state exposed via an `_is_connection_connected` attribute or callable.
 
-    If the owner exposes `is_connection_connected` as a callable it will be invoked; exceptions during invocation result in `None`. If the attribute is a boolean, that value is returned.
+    If the owner exposes `_is_connection_connected` as a callable it will be invoked; exceptions during invocation result in `None`. If the attribute is a boolean, that value is returned.
 
     Parameters
     ----------
-        owner (Any): Object that may expose an `is_connection_connected` boolean or callable.
+        owner (Any): Object that may expose an `_is_connection_connected` boolean or callable.
 
     Returns
     -------
-        Optional[bool]: `True` if the owner reports connected, `False` if it reports disconnected, or `None` if not available or on error invoking the callable.
+        bool | None: `True` if the owner reports connected, `False` if it reports disconnected, or `None` if not available or on error invoking the callable.
 
     """
-    connection_state = getattr(owner, "is_connection_connected", None)
+    connection_state = getattr(owner, "_is_connection_connected", None)
     if callable(connection_state):
         try:
             connection_state = connection_state()
@@ -269,7 +264,7 @@ def _remove_connected_record_locked(key: str) -> None:
     _CONNECTED_MARKED_AT.pop(key, None)
 
 
-def _mark_connected(addr: Optional[str], owner: Optional[Any] = None) -> None:
+def _mark_connected(addr: str | None, owner: Any | None = None) -> None:
     """
     Record that a BLE address is connected and capture optional owner metadata.
 
@@ -281,12 +276,12 @@ def _mark_connected(addr: Optional[str], owner: Optional[Any] = None) -> None:
 
     Parameters
     ----------
-        addr (Optional[str]): The BLE address to mark connected; may be None or empty (no-op).
-        owner (Optional[Any]): Optional owner object associated with the connection; a weak reference
+        addr (str | None): The BLE address to mark connected; may be None or empty (no-op).
+        owner (Any | None): Optional owner object associated with the connection; a weak reference
             is stored when the object supports weak references and the owner's `id` is recorded.
 
     """
-    key = addr_key(addr)
+    key = _addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
@@ -296,7 +291,7 @@ def _mark_connected(addr: Optional[str], owner: Optional[Any] = None) -> None:
         _CONNECTED_MARKED_AT[key] = time.monotonic()
 
 
-def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None:
+def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
     """
     Mark an address as disconnected and remove its connection bookkeeping.
 
@@ -304,11 +299,11 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
 
     Parameters
     ----------
-        addr (Optional[str]): Address to mark disconnected; will be normalized internally. If `None` or empty, the call is a no-op.
-        owner (Optional[Any]): Optional owner object; when provided, the recorded live owner must be the same object for the disconnect to be applied.
+        addr (str | None): Address to mark disconnected; will be normalized internally. If `None` or empty, the call is a no-op.
+        owner (Any | None): Optional owner object; when provided, the recorded live owner must be the same object for the disconnect to be applied.
 
     """
-    key = addr_key(addr)
+    key = _addr_key(addr)
     if key is None:
         return
     with _REGISTRY_LOCK:
@@ -337,7 +332,7 @@ def _mark_disconnected(addr: Optional[str], owner: Optional[Any] = None) -> None
 
 
 @contextmanager
-def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
+def _addr_lock_context(addr: str | None) -> Generator[RLock, None, None]:
     """
     Provide the per-address reentrant lock for a normalized BLE address key while managing its internal holder count.
 
@@ -345,14 +340,14 @@ def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
 
     Parameters
     ----------
-        addr (Optional[str]): BLE address or already-normalized address key; None selects the global registry lock.
+        addr (str | None): BLE address or already-normalized address key; None selects the global registry lock.
 
     Yields
     ------
         RLock: The per-address reentrant lock for the given address (not acquired).
 
     """
-    key = addr_key(addr)
+    key = _addr_key(addr)
     lock = _get_addr_lock_by_key(key)
     try:
         # NOTE: We intentionally yield WITHOUT acquiring the lock.
@@ -363,29 +358,29 @@ def _addr_lock_context(addr: Optional[str]) -> Generator[RLock, None, None]:
         _release_addr_lock_by_key(key)
 
 
-def isCurrentlyConnectedElsewhere(
-    addr: Optional[str], owner: Optional[Any] = None
+def _is_currently_connected_elsewhere(
+    addr: str | None, owner: Any | None = None
 ) -> bool:
     """
-    Determine whether a BLE address is recorded as connected by a different owner.
+    Internal helper: Determine whether a BLE address is recorded as connected by a different owner.
 
-    Normalizes the provided address via addr_key; if normalization yields None the function returns False. While checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an unowned claim has expired.
+    Normalizes the provided address via _addr_key; if normalization yields None the function returns False. While checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an unowned claim has expired.
 
     Parameters
     ----------
-        addr (Optional[str]): BLE address to check; will be normalized via addr_key.
-        owner (Optional[Any]): Caller's owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere.
+        addr (str | None): BLE address to check; will be normalized via _addr_key.
+        owner (Any | None): Caller's owner instance; if it matches the recorded owner by identity or recorded id, the address is not considered connected elsewhere.
 
     Returns
     -------
         True if the normalized address is marked connected by a different owner, False otherwise.
 
     """
-    key = addr_key(addr)
+    key = _addr_key(addr)
     if key is None:
         return False
 
-    owner_to_check: Optional[Any] = None
+    owner_to_check: Any | None = None
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
             return False
@@ -477,10 +472,3 @@ def isCurrentlyConnectedElsewhere(
             return False
 
         return True
-
-
-def is_currently_connected_elsewhere(
-    addr: Optional[str], owner: Optional[Any] = None
-) -> bool:
-    """Backward-compatible snake_case wrapper for isCurrentlyConnectedElsewhere."""
-    return isCurrentlyConnectedElsewhere(addr, owner=owner)

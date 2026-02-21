@@ -139,7 +139,7 @@ class _FakeDiscoveryClient:
         _ = (exc_type, exc, tb)
         return False
 
-    def discover(self, **_kwargs: Any) -> Dict[str, Any]:
+    def _discover(self, **_kwargs: Any) -> Dict[str, Any]:
         """
         Provide the preconfigured discovery result for use in tests.
 
@@ -150,7 +150,11 @@ class _FakeDiscoveryClient:
         """
         return self._discover_result
 
-    def async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
+    def discover(self, **kwargs: Any) -> Dict[str, Any]:
+        """Alias for _discover."""
+        return self._discover(**kwargs)
+
+    def _async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
         """
         Run the given coroutine to completion using the configured await implementation or the default runner.
 
@@ -167,6 +171,10 @@ class _FakeDiscoveryClient:
         if self._async_await_impl is not None:
             return self._async_await_impl(coro, timeout)
         return asyncio.run(coro)
+
+    def async_await(self, coro: Any, timeout: Optional[float] = None) -> Any:
+        """Alias for _async_await."""
+        return self._async_await(coro, timeout)
 
 
 def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Event:
@@ -255,7 +263,9 @@ class _StrategyOverride(ConnectedStrategy):
         """
         self._delegate = delegate
 
-    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+    async def _discover(
+        self, address: Optional[str], timeout: float
+    ) -> List[BLEDevice]:
         """
         Delegate BLE device discovery for the given address and timeout.
 
@@ -292,14 +302,11 @@ class _ReconnectTestNotificationManager:
         self.resubscribed: List[Tuple[Any, float]] = []
         self._fail_on_resubscribe = fail_on_resubscribe
 
-    def cleanup_all(self) -> None:
+    def _cleanup_all(self) -> None:
         """Record notification cleanup calls."""
         self.cleaned += 1
 
-    # Legacy private alias retained for any tests that call it directly.
-    _cleanup_all = cleanup_all
-
-    def resubscribe_all(self, client: Any, timeout: float) -> None:
+    def _resubscribe_all(self, client: Any, timeout: float) -> None:
         """
         Record a resubscription request for testing, or raise if resubscriptions are configured to fail.
 
@@ -317,9 +324,6 @@ class _ReconnectTestNotificationManager:
             raise AssertionError("Should not resubscribe without a client")
         self.resubscribed.append((client, timeout))
 
-    # Legacy private alias retained for any tests that call it directly.
-    _resubscribe_all = resubscribe_all
-
 
 class _ReconnectTestScheduler:
     """Shared reconnect-scheduler test double for reconnect worker tests."""
@@ -332,13 +336,13 @@ class _ReconnectTestScheduler:
         """
         self.cleared = False
 
-    def clear_thread_reference(self) -> None:
+    def _clear_thread_reference(self) -> None:
         """Record that reconnect thread reference cleanup was requested."""
         self.cleared = True
 
 
 def test_find_device_returns_single_scan_result() -> None:
-    """find_device should return the lone scanned device."""
+    """FindDevice should return the lone scanned device."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
     # Intentional constructor bypass: inject a controlled _discovery_manager
@@ -346,10 +350,10 @@ def test_find_device_returns_single_scan_result() -> None:
     iface = object.__new__(ble_mod.BLEInterface)
     scanned_device = _create_ble_device(address="11:22:33:44:55:66", name="Test Device")
     iface._discovery_manager = SimpleNamespace(  # type: ignore[assignment]
-        discover_devices=lambda _address: [scanned_device]
+        _discover_devices=lambda _address: [scanned_device]
     )
 
-    result = ble_mod.BLEInterface.find_device(iface, None)
+    result = ble_mod.BLEInterface.findDevice(iface, None)
 
     assert result is scanned_device
 
@@ -381,31 +385,31 @@ def test_ble_device_constructor_support_probe_shape():
 def test_state_manager_closing_only_for_disconnect():
     """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()
-    assert state_manager.is_closing is False
+    assert state_manager._is_closing is False
     # DISCONNECTED -> DISCONNECTING is not allowed (semantically incorrect:
     # you can't "begin disconnecting" from an already-disconnected state).
     # The proper path is through a connected/active state first.
-    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
-    assert state_manager.is_closing is False
-    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
-    assert state_manager.is_closing is True
-    assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
-    assert state_manager.is_closing is False
+    assert state_manager._transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager._is_closing is False
+    assert state_manager._transition_to(ConnectionState.DISCONNECTING) is True
+    assert state_manager._is_closing is True
+    assert state_manager._transition_to(ConnectionState.DISCONNECTED) is True
+    assert state_manager._is_closing is False
     # ERROR state should also not be "closing"
-    assert state_manager.transition_to(ConnectionState.ERROR) is True
-    assert state_manager.is_closing is False
+    assert state_manager._transition_to(ConnectionState.ERROR) is True
+    assert state_manager._is_closing is False
 
 
 def test_state_manager_allows_error_to_disconnecting_shutdown():
     """State manager should support ERROR -> DISCONNECTING for deterministic close paths."""
     state_manager = BLEStateManager()
 
-    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
-    assert state_manager.transition_to(ConnectionState.ERROR) is True
-    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
-    assert state_manager.is_closing is True
-    assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
-    assert state_manager.is_closing is False
+    assert state_manager._transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager._transition_to(ConnectionState.ERROR) is True
+    assert state_manager._transition_to(ConnectionState.DISCONNECTING) is True
+    assert state_manager._is_closing is True
+    assert state_manager._transition_to(ConnectionState.DISCONNECTED) is True
+    assert state_manager._is_closing is False
 
 
 def test_ble_interface_defaults_auto_reconnect_disabled(
@@ -441,9 +445,9 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     with iface._state_lock:
         iface.client = active_client  # type: ignore[assignment]
         iface._disconnect_notified = False
-        iface._state_manager.reset_to_disconnected()
-        assert iface._state_manager.transition_to(ConnectionState.CONNECTING) is True
-        assert iface._state_manager.transition_to(ConnectionState.CONNECTED) is True
+        iface._state_manager._reset_to_disconnected()
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
+        assert iface._state_manager._transition_to(ConnectionState.CONNECTED) is True
 
     # Stale callback by BLEClient instance should be ignored.
     assert iface._handle_disconnect("stale-client", client=stale_client) is True  # type: ignore[arg-type]
@@ -502,8 +506,8 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         with iface._state_lock:
             iface.client = initial_client  # type: ignore[assignment]
             iface._disconnect_notified = False
-            iface._state_manager.reset_to_disconnected()
-            iface._state_manager.transition_to(ConnectionState.CONNECTED)
+            iface._state_manager._reset_to_disconnected()
+            iface._state_manager._transition_to(ConnectionState.CONNECTED)
         return initial_client
 
     monkeypatch.setattr(BLEInterface, "connect", _init_connect_stub, raising=True)
@@ -522,20 +526,20 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         iface.client = None
         iface._disconnect_notified = False
         iface._connection_alias_key = None
-        iface._state_manager.reset_to_disconnected()
+        iface._state_manager._reset_to_disconnected()
 
     connect_waiting = threading.Event()
     allow_connect = threading.Event()
     establish_called = threading.Event()
     thread_errors: "Queue[tuple[str, Exception]]" = Queue()
 
-    def _gate_check_stub(addr_key: Optional[str], owner: Optional[Any] = None) -> bool:
+    def _gate_check_stub(_addr_key: Optional[str], owner: Optional[Any] = None) -> bool:
         """
         Block test caller until the test releases a connection gate and record that the gate was reached.
 
         Parameters
         ----------
-            addr_key (Optional[str]): Address key that must be provided (asserted non-None); used to identify the gated connection.
+            _addr_key (Optional[str]): Address key that must be provided (asserted non-None); used to identify the gated connection.
             owner (Optional[Any]): Ignored; present to match the gate-check signature.
 
         Returns
@@ -544,11 +548,11 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
 
         Raises
         ------
-            AssertionError: If `addr_key` is None or if waiting for the test to release the gate times out (12 seconds).
+            AssertionError: If `_addr_key` is None or if waiting for the test to release the gate times out (12 seconds).
 
         """
         _ = owner
-        assert addr_key is not None
+        assert _addr_key is not None
         connect_waiting.set()
         if not allow_connect.wait(timeout=12.0):
             raise AssertionError("Timed out waiting to release connect gate check")
@@ -566,26 +570,20 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
 
         """
         with iface._state_lock:
-            assert iface._state_manager.transition_to(ConnectionState.CONNECTING)
-            assert iface._state_manager.transition_to(ConnectionState.CONNECTED)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
         establish_called.set()
         return connected_client
 
     monkeypatch.setattr(
         ble_iface_mod,
-        "is_currently_connected_elsewhere",
-        _gate_check_stub,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        ble_iface_mod,
-        "isCurrentlyConnectedElsewhere",
+        "_is_currently_connected_elsewhere",
         _gate_check_stub,
         raising=True,
     )
     monkeypatch.setattr(
         iface._connection_orchestrator,
-        "establish_connection",
+        "_establish_connection",
         _establish_connection_stub,
         raising=True,
     )
@@ -735,7 +733,7 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
 
     monkeypatch.setattr(
         iface.thread_coordinator,
-        "wait_for_event",
+        "_wait_for_event",
         raising_wait_for_event,
         raising=True,
     )
@@ -774,7 +772,7 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
 
     monkeypatch.setattr(
         iface.thread_coordinator,
-        "create_thread",
+        "_create_thread",
         should_not_create_thread,
         raising=True,
     )
@@ -783,17 +781,17 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
 
 
 def test_find_device_uses_connected_fallback_when_scan_empty():
-    """find_device should fall back to connected-device lookup when scan is empty."""
+    """FindDevice should fall back to connected-device lookup when scan is empty."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
-    # Intentional constructor bypass for isolated find_device() behavior.
+    # Intentional constructor bypass for isolated findDevice() behavior.
     iface = object.__new__(ble_mod.BLEInterface)
     fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
     iface._discovery_manager = SimpleNamespace(  # type: ignore[assignment]
-        discover_devices=lambda addr: [fallback_device] if addr else []
+        _discover_devices=lambda addr: [fallback_device] if addr else []
     )
 
-    result = BLEInterface.find_device(iface, "aa-bb-cc-dd-ee-ff")
+    result = BLEInterface.findDevice(iface, "aa-bb-cc-dd-ee-ff")
 
     assert result is fallback_device
 
@@ -802,16 +800,16 @@ def test_find_device_multiple_matches_raises():
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
 
-    # Intentional constructor bypass for isolated find_device() behavior.
+    # Intentional constructor bypass for isolated findDevice() behavior.
     iface = object.__new__(ble_mod.BLEInterface)
     devices = [
         _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Meshtastic-1"),
         _create_ble_device(address="AA-BB-CC-DD-EE-FF", name="Meshtastic-2"),
     ]
-    iface._discovery_manager = SimpleNamespace(discover_devices=lambda _addr: devices)  # type: ignore[assignment]
+    iface._discovery_manager = SimpleNamespace(_discover_devices=lambda _addr: devices)  # type: ignore[assignment]
 
     with pytest.raises(BLEInterface.BLEError) as excinfo:
-        BLEInterface.find_device(iface, "aa bb cc dd ee ff")
+        BLEInterface.findDevice(iface, "aa bb cc dd ee ff")
 
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
 
@@ -843,7 +841,7 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
     monkeypatch.setattr("meshtastic.interfaces.ble.discovery.BleakScanner", BoomScanner)
 
     strategy = ConnectedStrategy()
-    result = asyncio.run(strategy.discover(address="AA:BB", timeout=1.0))
+    result = asyncio.run(strategy._discover(address="AA:BB", timeout=1.0))
     assert result == []
 
 
@@ -876,7 +874,7 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
 
     manager = DiscoveryManager()
 
-    devices = manager.discover_devices(address=None)
+    devices = manager._discover_devices(address=None)
 
     assert len(devices) == 1
     assert devices[0].address == filtered_device.address
@@ -915,7 +913,7 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
     manager.connected_strategy = _StrategyOverride(fake_connected)
 
-    devices = manager.discover_devices(address="AA:BB")
+    devices = manager._discover_devices(address="AA:BB")
 
     assert devices == [fallback_device]
 
@@ -957,7 +955,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
 
     manager.connected_strategy = _StrategyOverride(fake_connected)
 
-    assert manager.discover_devices(address=None) == []
+    assert manager._discover_devices(address=None) == []
 
 
 def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch):
@@ -987,7 +985,7 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch)
     )
 
     manager = DiscoveryManager()
-    devices = manager.discover_devices(address="AA:BB:CC:DD:EE:FF")
+    devices = manager._discover_devices(address="AA:BB:CC:DD:EE:FF")
 
     assert devices == [target_device]
 
@@ -1054,22 +1052,22 @@ def test_connection_validator_enforces_state():
 
     state_manager = BLEStateManager()
     validator = ConnectionValidator(
-        state_manager, state_manager.lock, BLEInterface.BLEError
+        state_manager, state_manager._lock, BLEInterface.BLEError
     )
 
-    validator.validate_connection_request()
+    validator._validate_connection_request()
 
-    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
-    assert state_manager.transition_to(ConnectionState.CONNECTED) is True
-    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
+    assert state_manager._transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager._transition_to(ConnectionState.CONNECTED) is True
+    assert state_manager._transition_to(ConnectionState.DISCONNECTING) is True
     with pytest.raises(BLEInterface.BLEError) as excinfo:
-        validator.validate_connection_request()
+        validator._validate_connection_request()
     assert "closing" in str(excinfo.value)
 
-    assert state_manager.transition_to(ConnectionState.DISCONNECTED) is True
-    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager._transition_to(ConnectionState.DISCONNECTED) is True
+    assert state_manager._transition_to(ConnectionState.CONNECTING) is True
     with pytest.raises(BLEInterface.BLEError) as excinfo:
-        validator.validate_connection_request()
+        validator._validate_connection_request()
     assert "connection in progress" in str(excinfo.value)
 
 
@@ -1078,16 +1076,16 @@ def test_connection_validator_existing_client_checks():
 
     state_manager = BLEStateManager()
     validator = ConnectionValidator(
-        state_manager, state_manager.lock, BLEInterface.BLEError
+        state_manager, state_manager._lock, BLEInterface.BLEError
     )
     client = DummyClient()
-    client.is_connected = lambda: True
+    client.isConnected = lambda: True
 
     ble_like = cast(BLEClient, client)
-    assert validator.check_existing_client(ble_like, None, None, None) is True
-    assert validator.check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
+    assert validator._check_existing_client(ble_like, None, None, None) is True
+    assert validator._check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
     assert (
-        validator.check_existing_client(client, "something-else", None, None) is False  # type: ignore[arg-type]
+        validator._check_existing_client(client, "something-else", None, None) is False  # type: ignore[arg-type]
     )
 
 
@@ -1208,7 +1206,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     """
     Verify that the BLE receive thread treats specific exceptions as fatal: it logs a fatal error message and invokes the interface's close().
 
-    The test injects a client whose read_gatt_char raises the given exception type,
+    The test injects a client whose readGattChar raises the given exception type,
     triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
     """
     # logging and threading already imported at top
@@ -1231,7 +1229,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
             super().__init__()
             self.exception_type = exception_type
 
-        def read_gatt_char(self, *_args, **_kwargs):
+        def readGattChar(self, *_args, **_kwargs):
             """
             Raise the client's configured exception to simulate a failing GATT characteristic read.
 
@@ -1289,7 +1287,7 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
             super().__init__()
             self.read_count = 0
 
-        def read_gatt_char(self, *_args, **_kwargs):
+        def readGattChar(self, *_args, **_kwargs):
             """
             Simulate a GATT characteristic read that increments self.read_count and always fails.
 
@@ -1340,7 +1338,7 @@ def test_log_notification_registration(monkeypatch):
 
             Attributes
             ----------
-                start_notify_calls (list): Recorded calls to start_notify as tuples of the arguments passed.
+                start_notify_calls (list): Recorded calls to startNotify as tuples of the arguments passed.
                 has_characteristic_map (dict): Maps characteristic UUID strings to booleans indicating presence. Initially sets
                     LEGACY_LOGRADIO_UUID, LOGRADIO_UUID, and FROMNUM_UUID to True.
 
@@ -1353,7 +1351,7 @@ def test_log_notification_registration(monkeypatch):
                 FROMNUM_UUID: True,
             }
 
-        def has_characteristic(self, uuid):
+        def hasCharacteristic(self, uuid):
             """
             Determine whether the client exposes a GATT characteristic identified by the given UUID.
 
@@ -1368,7 +1366,7 @@ def test_log_notification_registration(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, *_args, **_kwargs):
+        def startNotify(self, *_args, **_kwargs):
             """
             Record a notification registration by saving the characteristic UUID and its handler.
 
@@ -1449,7 +1447,7 @@ def test_reconnect_scheduler_tracks_threads():
             """
             self.created = []
 
-        def create_thread(self, target, name, *, daemon=True, args=(), kwargs=None):
+        def _create_thread(self, target, name, *, daemon=True, args=(), kwargs=None):
             """
             Create a lightweight thread-like SimpleNamespace, record it in self.created, and return it.
 
@@ -1479,7 +1477,7 @@ def test_reconnect_scheduler_tracks_threads():
             return thread
 
         @staticmethod
-        def start_thread(thread):
+        def _start_thread(thread):
             """
             Mark a thread-like object's `started` attribute as True.
 
@@ -1494,22 +1492,22 @@ def test_reconnect_scheduler_tracks_threads():
     coordinator = StubCoordinator()
     scheduler = ReconnectScheduler(  # noqa: PLR0913  # type: ignore[arg-type]
         state_manager,
-        state_manager.lock,
+        state_manager._lock,
         coordinator,  # type: ignore[arg-type]
         worker,  # type: ignore[arg-type]
     )
 
-    assert scheduler.schedule_reconnect(True, shutdown_event) is True
+    assert scheduler._schedule_reconnect(True, shutdown_event) is True
     assert len(coordinator.created) == 1
-    assert scheduler.schedule_reconnect(True, shutdown_event) is False
+    assert scheduler._schedule_reconnect(True, shutdown_event) is False
 
-    scheduler.clear_thread_reference()
+    scheduler._clear_thread_reference()
     assert scheduler._reconnect_thread is None
 
-    assert state_manager.transition_to(ConnectionState.CONNECTING) is True
-    assert state_manager.transition_to(ConnectionState.CONNECTED) is True
-    assert state_manager.transition_to(ConnectionState.DISCONNECTING) is True
-    assert scheduler.schedule_reconnect(True, shutdown_event) is False
+    assert state_manager._transition_to(ConnectionState.CONNECTING) is True
+    assert state_manager._transition_to(ConnectionState.CONNECTED) is True
+    assert state_manager._transition_to(ConnectionState.DISCONNECTING) is True
+    assert scheduler._schedule_reconnect(True, shutdown_event) is False
 
 
 def test_reconnect_worker_successful_attempt():
@@ -1531,7 +1529,7 @@ def test_reconnect_worker_successful_attempt():
             self.reset_called = False
             self._attempt_count = 0
 
-        def reset(self):
+        def _reset(self):
             """
             Reset the retry policy to its initial state.
 
@@ -1540,22 +1538,11 @@ def test_reconnect_worker_successful_attempt():
             self.reset_called = True
             self._attempt_count = 0
 
-        def get_attempt_count(self):
-            """
-            Get the number of reconnect attempts recorded by this policy.
-
-            Returns
-            -------
-                int: The number of reconnect attempts recorded.
-
-            """
-            return self._attempt_count
-
         def _get_attempt_count(self):
             """Return the internal attempt count for ReconnectWorker tests."""
-            return self.get_attempt_count()
+            return self._attempt_count
 
-        def next_attempt(self):
+        def _next_attempt(self):
             """
             Determine the delay before the next retry and whether another attempt should be made.
 
@@ -1570,10 +1557,6 @@ def test_reconnect_worker_successful_attempt():
             """
             self._attempt_count += 1
             return 0.1, False
-
-        def _next_attempt(self):
-            """Return the next retry tuple for ReconnectWorker tests."""
-            return self.next_attempt()
 
     class DummyInterface:
         BLEError = RuntimeError
@@ -1591,8 +1574,8 @@ def test_reconnect_worker_successful_attempt():
                 _state_manager (types.SimpleNamespace): Exposes `is_closing` (bool) to simulate shutdown state.
                 _reconnect_scheduler (_ReconnectTestScheduler): Manages reconnect thread reference and clearing.
                 auto_reconnect (bool): Whether automatic reconnect attempts are enabled.
-                is_connection_closing (bool): Simulates an in-progress connection close.
-                is_connection_connected (bool): Simulates an active connection state.
+                _is_connection_closing (bool): Simulates an in-progress connection close.
+                _is_connection_connected (bool): Simulates an active connection state.
                 address (str): Device address used for connect attempts.
                 client: Placeholder BLE client object.
                 connect_calls (list): Records addresses passed to `connect` for assertions in tests.
@@ -1603,8 +1586,8 @@ def test_reconnect_worker_successful_attempt():
             self._state_manager = SimpleNamespace(is_closing=False)
             self._reconnect_scheduler = _ReconnectTestScheduler()
             self.auto_reconnect = True
-            self.is_connection_closing = False
-            self.is_connection_connected = False
+            self._is_connection_closing = False
+            self._is_connection_connected = False
             self.address = "addr"
             self.client = object()
             self.connect_calls = []
@@ -1622,10 +1605,10 @@ def test_reconnect_worker_successful_attempt():
 
     iface = DummyInterface()
     worker = ReconnectWorker(iface, iface._reconnect_policy)  # type: ignore[arg-type]
-    worker.attempt_reconnect_loop(
+    worker._attempt_reconnect_loop(
         True,
         threading.Event(),
-        on_exit=iface._reconnect_scheduler.clear_thread_reference,
+        on_exit=iface._reconnect_scheduler._clear_thread_reference,
     )
 
     assert iface.connect_calls == ["addr"]
@@ -1684,7 +1667,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.reset_called = False
             self.attempts = 0
 
-        def reset(self):
+        def _reset(self):
             """
             Mark the retry policy as reset and clear its attempt counter.
 
@@ -1693,22 +1676,11 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.reset_called = True
             self.attempts = 0
 
-        def get_attempt_count(self):
-            """
-            Report the number of reconnect attempts recorded by the policy.
-
-            Returns
-            -------
-                int: The number of attempts recorded so far.
-
-            """
-            return self.attempts
-
         def _get_attempt_count(self):
             """Return the internal attempt count for ReconnectWorker tests."""
-            return self.get_attempt_count()
+            return self.attempts
 
-        def next_attempt(self):
+        def _next_attempt(self):
             """
             Return the delay before the next retry and whether another retry should be attempted.
 
@@ -1721,10 +1693,6 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             """
             self.attempts += 1
             return 0.25, self.attempts < 2
-
-        def _next_attempt(self):
-            """Return the next retry tuple for ReconnectWorker tests."""
-            return self.next_attempt()
 
     class FailingInterface:
         BLEError = RuntimeError
@@ -1740,8 +1708,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
                 _state_manager (SimpleNamespace): Runtime state flags (contains `is_closing`).
                 _reconnect_scheduler (_ReconnectTestScheduler): Scheduler that manages reconnect threads.
                 auto_reconnect (bool): Whether automatic reconnect attempts are enabled.
-                is_connection_closing (bool): Indicates an in-progress connection close.
-                is_connection_connected (bool): Indicates whether the interface is currently connected.
+                _is_connection_closing (bool): Indicates an in-progress connection close.
+                _is_connection_connected (bool): Indicates whether the interface is currently connected.
                 address (str): Remote device address used for connection attempts.
                 client: Placeholder for the BLE client instance (initially None).
                 connect_attempts (int): Counter of connect() invocation attempts.
@@ -1754,8 +1722,8 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self._state_manager = SimpleNamespace(is_closing=False)
             self._reconnect_scheduler = _ReconnectTestScheduler()
             self.auto_reconnect = True
-            self.is_connection_closing = False
-            self.is_connection_connected = False
+            self._is_connection_closing = False
+            self._is_connection_connected = False
             self.address = "addr"
             self.client = None
             self.connect_attempts = 0
@@ -1779,10 +1747,10 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     shutdown_event = threading.Event()
     monkeypatch.setattr(shutdown_event, "wait", mock_wait)
 
-    worker.attempt_reconnect_loop(
+    worker._attempt_reconnect_loop(
         True,
         shutdown_event,
-        on_exit=iface._reconnect_scheduler.clear_thread_reference,
+        on_exit=iface._reconnect_scheduler._clear_thread_reference,
     )
 
     assert iface.connect_attempts == 2

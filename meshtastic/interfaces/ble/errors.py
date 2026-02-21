@@ -1,7 +1,7 @@
 """Error handling utilities for BLE operations."""
 
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Callable, Optional, Type, TypeVar
+from typing import Any, Callable, Type, TypeVar
 
 from bleak.exc import BleakError
 
@@ -39,13 +39,13 @@ class BLEErrorHandler:
     """
 
     @staticmethod
-    def safe_execute(
+    def safeExecute(
         func: Callable[[], T],
-        default_return: Optional[T] = None,
+        default_return: T | None = None,
         log_error: bool = True,
         error_msg: str = "Error in operation",
         reraise: bool = False,
-    ) -> Optional[T]:
+    ) -> T | None:
         """
         Execute a zero-argument callable, returning its result or a fallback on handled errors.
 
@@ -89,19 +89,17 @@ class BLEErrorHandler:
             return default_return
 
     @staticmethod
-    def safe_cleanup(
-        func: Callable[[], Any], cleanup_name: str = "cleanup operation"
-    ) -> bool:
-        """
-        Public wrapper for best-effort cleanup operations.
-
-        Delegates to the internal cleanup helper that suppresses all non-exit
-        exceptions and returns a success boolean.
-        """
-        return BLEErrorHandler._safe_cleanup(func, cleanup_name)
+    def _safe_execute(*args, **kwargs):
+        """Backward-compatible snake_case alias for safeExecute."""
+        return BLEErrorHandler.safeExecute(*args, **kwargs)
 
     @staticmethod
-    def _safe_cleanup(
+    def safe_execute(*args, **kwargs):
+        """Backward-compatible snake_case alias for safeExecute."""
+        return BLEErrorHandler.safeExecute(*args, **kwargs)
+
+    @staticmethod
+    def safeCleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
         """
@@ -128,3 +126,13 @@ class BLEErrorHandler:
             return False
         else:
             return True
+
+    @staticmethod
+    def _safe_cleanup(*args, **kwargs):
+        """Backward-compatible snake_case alias for safeCleanup."""
+        return BLEErrorHandler.safeCleanup(*args, **kwargs)
+
+    @staticmethod
+    def safe_cleanup(*args, **kwargs):
+        """Backward-compatible snake_case alias for safeCleanup."""
+        return BLEErrorHandler.safeCleanup(*args, **kwargs)

@@ -11,46 +11,46 @@ from meshtastic.interfaces.ble.gating import (
     _CONNECTED_MARKED_AT,
     _LOCK_HOLDERS,
     _REGISTRY_LOCK,
+    _addr_key,
     _addr_lock_context,
     _cleanup_addr_lock,
     _get_addr_lock,
+    _is_currently_connected_elsewhere,
     _mark_connected,
     _mark_disconnected,
     _release_addr_lock,
-    addr_key,
-    is_currently_connected_elsewhere,
 )
 
 
 class TestAddrKey:
-    """Test cases for addr_key function."""
+    """Test cases for _addr_key function."""
 
     def test_valid_address(self):
         """Test that valid addresses are normalized correctly."""
-        assert addr_key("AA:BB:CC:DD:EE:FF") == "aabbccddeeff"
-        assert addr_key("aa-bb-cc-dd-ee-ff") == "aabbccddeeff"
-        assert addr_key("AA_BB_CC_DD_EE_FF") == "aabbccddeeff"
-        assert addr_key("aa bb cc dd ee ff") == "aabbccddeeff"
+        assert _addr_key("AA:BB:CC:DD:EE:FF") == "aabbccddeeff"
+        assert _addr_key("aa-bb-cc-dd-ee-ff") == "aabbccddeeff"
+        assert _addr_key("AA_BB_CC_DD_EE_FF") == "aabbccddeeff"
+        assert _addr_key("aa bb cc dd ee ff") == "aabbccddeeff"
 
     def test_none_address(self):
         """Test that None address returns None."""
-        assert addr_key(None) is None
+        assert _addr_key(None) is None
 
     def test_empty_address(self):
         """Test that empty address returns None."""
-        assert addr_key("") is None
+        assert _addr_key("") is None
 
     def test_whitespace_address(self):
         """Test that whitespace-only address returns None."""
-        assert addr_key("   ") is None
-        assert addr_key("\t\n") is None
+        assert _addr_key("   ") is None
+        assert _addr_key("\t\n") is None
 
     def test_different_empty_inputs_have_different_keys(self):
         """Test that different empty/None inputs all return None (not same key)."""
         # This ensures they don't share the same registry key
-        assert addr_key(None) is None
-        assert addr_key("") is None
-        assert addr_key("   ") is None
+        assert _addr_key(None) is None
+        assert _addr_key("") is None
+        assert _addr_key("   ") is None
         # All return None, which is handled specially by gating functions
 
 
@@ -90,7 +90,7 @@ class TestAddrLock:
 
     def test_lock_cleanup_removes_from_registry(self):
         """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
-        key = addr_key("testaddress")
+        key = _addr_key("testaddress")
         _get_addr_lock("testaddress")
         assert key in _ADDR_LOCKS
         # Release the holder count that was incremented by _get_addr_lock
@@ -103,12 +103,12 @@ class TestAddrLock:
         """Address locks should be removed after context exit when not connected."""
         with _addr_lock_context("temp-address"):
             pass
-        assert addr_key("temp-address") not in _ADDR_LOCKS
-        assert addr_key("temp-address") not in _LOCK_HOLDERS
+        assert _addr_key("temp-address") not in _ADDR_LOCKS
+        assert _addr_key("temp-address") not in _LOCK_HOLDERS
 
     def test_addr_lock_context_cleans_lock_on_exception(self):
         """Address-lock holder tracking should unwind correctly when the context exits via exception."""
-        key = addr_key("temp-exception-address")
+        key = _addr_key("temp-exception-address")
         assert key is not None
 
         with pytest.raises(RuntimeError, match="boom"):
@@ -206,7 +206,7 @@ class TestMarkDisconnected:
 
         owner_a = Owner()
         owner_b = Owner()
-        key = addr_key("aabbccddeeff")
+        key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner_a)
         _mark_disconnected("aabbccddeeff", owner=owner_b)
 
@@ -215,82 +215,82 @@ class TestMarkDisconnected:
 
 @pytest.mark.usefixtures("clear_registry")
 class TestIsCurrentlyConnectedElsewhere:
-    """Test cases for is_currently_connected_elsewhere function."""
+    """Test cases for _is_currently_connected_elsewhere function."""
 
     def test_returns_true_for_connected_address(self):
         """Test that it returns True for a connected address."""
         _mark_connected("aabbccddeeff")
-        assert is_currently_connected_elsewhere("aabbccddeeff")
+        assert _is_currently_connected_elsewhere("aabbccddeeff")
 
     def test_returns_false_for_non_connected_address(self):
         """Test that it returns False for a non-connected address."""
-        assert not is_currently_connected_elsewhere("aabbccddeeff")
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
 
     def test_returns_false_for_none_address(self):
         """Test that it returns False for None address."""
-        assert not is_currently_connected_elsewhere(None)
+        assert not _is_currently_connected_elsewhere(None)
 
     def test_returns_false_for_empty_address(self):
         """Test that it returns False for empty address."""
-        # Empty string normalizes to None via addr_key, same as passing None directly.
-        assert not is_currently_connected_elsewhere("")
+        # Empty string normalizes to None via _addr_key, same as passing None directly.
+        assert not _is_currently_connected_elsewhere("")
 
     def test_returns_false_for_same_owner(self):
         """A claim owned by this interface is not considered connected elsewhere."""
 
         class Owner:
-            is_connection_connected = True
+            _is_connection_connected = True
 
         owner = Owner()
         _mark_connected("aabbccddeeff", owner=owner)
 
-        assert not is_currently_connected_elsewhere("aabbccddeeff", owner=owner)
+        assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=owner)
 
     def test_returns_true_for_different_owner(self):
         """A live claim from another owner should be treated as connected elsewhere."""
 
         class Owner:
-            is_connection_connected = True
+            _is_connection_connected = True
 
         owner_a = Owner()
         owner_b = Owner()
         _mark_connected("aabbccddeeff", owner=owner_a)
 
-        assert is_currently_connected_elsewhere("aabbccddeeff", owner=owner_b)
+        assert _is_currently_connected_elsewhere("aabbccddeeff", owner=owner_b)
 
     def test_prunes_dead_owner_claim(self):
         """Dead weakref owners should be pruned automatically."""
 
         class Owner:
-            is_connection_connected = True
+            _is_connection_connected = True
 
         owner = Owner()
-        key = addr_key("aabbccddeeff")
+        key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner)
         del owner
         gc.collect()
 
-        assert not is_currently_connected_elsewhere("aabbccddeeff")
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
 
     def test_prunes_owner_claim_when_owner_not_connected(self):
         """Claims from owners no longer connected should be pruned."""
 
         class Owner:
-            is_connection_connected = False
+            _is_connection_connected = False
 
         owner = Owner()
-        key = addr_key("aabbccddeeff")
+        key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner)
 
-        assert not is_currently_connected_elsewhere("aabbccddeeff")
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
 
     def test_prunes_owner_claim_when_owner_method_reports_disconnected(self):
         """Owner methods returning False should also be treated as stale claims."""
 
         class Owner:
-            def is_connection_connected(self):
+            def _is_connection_connected(self):
                 """
                 Report whether the associated connection is currently established.
 
@@ -302,17 +302,17 @@ class TestIsCurrentlyConnectedElsewhere:
                 return False
 
         owner = Owner()
-        key = addr_key("aabbccddeeff")
+        key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner)
 
-        assert not is_currently_connected_elsewhere("aabbccddeeff")
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS
 
     def test_preserves_owner_claim_when_state_probe_raises(self):
         """State-probe exceptions should not aggressively prune active claims."""
 
         class Owner:
-            def is_connection_connected(self):
+            def _is_connection_connected(self):
                 """
                 Probe whether the owner's connection is active.
 
@@ -328,15 +328,15 @@ class TestIsCurrentlyConnectedElsewhere:
                 raise RuntimeError("probe failed")
 
         owner = Owner()
-        key = addr_key("aabbccddeeff")
+        key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner)
 
-        assert is_currently_connected_elsewhere("aabbccddeeff", owner=object())
+        assert _is_currently_connected_elsewhere("aabbccddeeff", owner=object())
         assert key in _CONNECTED_ADDRS
 
     def test_prunes_stale_unowned_claim(self, monkeypatch):
         """Unowned claims should expire after a bounded stale window."""
-        key = addr_key("aabbccddeeff")
+        key = _addr_key("aabbccddeeff")
         assert key is not None
         _mark_connected("aabbccddeeff")
         stale_now = (
@@ -349,5 +349,5 @@ class TestIsCurrentlyConnectedElsewhere:
             lambda: stale_now,
         )
 
-        assert not is_currently_connected_elsewhere("aabbccddeeff")
+        assert not _is_currently_connected_elsewhere("aabbccddeeff")
         assert key not in _CONNECTED_ADDRS

@@ -78,6 +78,8 @@ protobufs/            # Protocol Buffer source definitions
   compatibility.
 - When adding camelCase names to BLE code, keep legacy snake_case methods as
   compatibility wrappers and route both names to one implementation.
+- Avoid mass-generating aliases for internal orchestration methods; aliases are
+  strictly for historically public APIs.
 - Constants: `UPPER_SNAKE_CASE` (e.g., `BROADCAST_ADDR`, `LOCAL_ADDR`)
 
 ### Error Handling

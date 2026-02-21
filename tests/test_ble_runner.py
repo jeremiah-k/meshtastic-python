@@ -11,7 +11,7 @@ import pytest
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
-    get_zombie_runner_count,
+    getZombieRunnerCount,
 )
 
 
@@ -82,8 +82,8 @@ class TestBLECoroutineRunner:
             """
             return id(asyncio.get_running_loop())
 
-        loop_id1 = client1.async_await(get_loop_id())
-        loop_id2 = client2.async_await(get_loop_id())
+        loop_id1 = client1._async_await(get_loop_id())
+        loop_id2 = client2._async_await(get_loop_id())
 
         assert loop_id1 == loop_id2
 
@@ -97,7 +97,7 @@ class TestBLECoroutineRunner:
         thread1 = runner._thread
 
         # Force stop the loop to kill the thread
-        runner.stop()
+        runner._stop()
         assert thread1.is_alive() is False
 
         # Next operation should restart it
@@ -116,16 +116,16 @@ class TestBLECoroutineRunner:
         runner = BLECoroutineRunner()
 
         # Initially not running
-        runner.stop()  # Ensure stopped
+        runner._stop()  # Ensure stopped
         # After stopping, may or may not be running depending on singleton state
 
         # After ensuring running
         runner._ensure_running()
-        assert runner.is_running is True
+        assert runner._is_running is True
 
         # After stopping
-        runner.stop()
-        assert runner.is_running is False
+        runner._stop()
+        assert runner._is_running is False
 
     def test_cancel_pending_futures(self):
         """Verify that pending futures are properly cancelled."""
@@ -141,13 +141,13 @@ class TestBLECoroutineRunner:
             """
             await asyncio.Event().wait()
 
-        future = runner.run_coroutine_threadsafe(never_complete())
+        future = runner._run_coroutine_threadsafe(never_complete())
 
         # Future should not be done yet
         assert not future.done()
 
         # Cancel all pending futures
-        runner.cancel_pending_futures()
+        runner._cancel_pending_futures()
 
         # Future should be cancelled
         assert future.cancelled()
@@ -219,8 +219,8 @@ class TestBLECoroutineRunner:
             return None
 
         try:
-            runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
-            runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.5)
+            runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+            runner._run_coroutine_threadsafe(_noop(), startup_timeout=0.5)
             assert observed_timeouts == [0.25, 0.5]
         finally:
             with runner._instance_lock:
@@ -277,7 +277,7 @@ class TestBLECoroutineRunner:
 
         try:
             with pytest.warns(DeprecationWarning, match="startup_timeout"):
-                runner.run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
@@ -336,7 +336,7 @@ class TestBLECoroutineRunner:
         try:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always", DeprecationWarning)
-                runner.run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
             assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
         finally:
             with runner._instance_lock:
@@ -355,7 +355,9 @@ class TestBLECoroutineRunner:
         coro = _noop()
         try:
             with pytest.raises(ValueError, match="timeout or startup_timeout"):
-                runner.run_coroutine_threadsafe(coro, timeout=0.25, startup_timeout=0.5)
+                runner._run_coroutine_threadsafe(
+                    coro, timeout=0.25, startup_timeout=0.5
+                )
         finally:
             coro.close()
 
@@ -381,7 +383,7 @@ class TestBLECoroutineRunner:
     def test_zombie_runner_count(self):
         """Verify zombie runner count is tracked."""
         # Initial count should be 0
-        initial_count = get_zombie_runner_count()
+        initial_count = getZombieRunnerCount()
 
         # Create runner and force a timeout scenario
         runner = BLECoroutineRunner()
@@ -403,7 +405,7 @@ class TestBLECoroutineRunner:
 
         # The count should still be the same since we didn't call stop() with timeout
         # (zombie count only increments when stop() times out)
-        current_count = get_zombie_runner_count()
+        current_count = getZombieRunnerCount()
 
         # Count should be >= initial (may have incremented if thread didn't exit)
         assert current_count >= initial_count
@@ -478,9 +480,9 @@ class TestBLECoroutineRunner:
 
         runner = BLECoroutineRunner()
         # Ensure we don't interfere with any real runner state.
-        runner.stop()
+        runner._stop()
 
-        initial_count = get_zombie_runner_count()
+        initial_count = getZombieRunnerCount()
         fake_thread = FakeThread()
         fake_loop = FakeLoop()
         with runner._instance_lock:
@@ -489,8 +491,8 @@ class TestBLECoroutineRunner:
             runner._stop_requested = False
 
         try:
-            assert runner.stop(timeout=0.0) is False
-            assert get_zombie_runner_count() == initial_count + 1
+            assert runner._stop(timeout=0.0) is False
+            assert getZombieRunnerCount() == initial_count + 1
             assert fake_thread.join_calls == [0.0]
         finally:
             # Restore singleton runner for subsequent tests.
@@ -511,7 +513,7 @@ class TestBLECoroutineRunner:
             lambda func: unregister_calls.append(func),
         )
 
-        assert runner.stop() is True
+        assert runner._stop() is True
         assert unregister_calls == [runner._atexit_handler]
         assert runner._atexit_registered is False
 
@@ -531,7 +533,7 @@ class TestBLECoroutineRunner:
             lambda func: unregister_calls.append(func),
         )
 
-        assert runner.stop() is True
+        assert runner._stop() is True
         assert unregister_calls == [runner._atexit_handler]
         assert runner._atexit_registered is False
 
@@ -581,7 +583,7 @@ class TestBLEClientWithRunner:
         coro = dummy()
         try:
             with pytest.raises(BLEClient.BLEError) as exc_info:
-                client.async_await(coro)
+                client._async_await(coro)
         finally:
             coro.close()
 
@@ -606,19 +608,19 @@ class TestBLEClientWithRunner:
         coro = dummy()
         try:
             with pytest.raises(BLEClient.BLEError) as exc_info:
-                client.async_run(coro)
+                client._async_run(coro)
         finally:
             coro.close()
 
         assert "closed" in str(exc_info.value).lower()
 
     def test_get_zombie_thread_count_delegates_to_runner(self):
-        """Verify get_zombie_thread_count uses the runner module."""
-        from meshtastic.interfaces.ble.client import get_zombie_thread_count
+        """Verify getZombieThreadCount uses the runner module."""
+        from meshtastic.interfaces.ble.client import getZombieThreadCount
 
         # Should return same as runner function
-        runner_count = get_zombie_runner_count()
-        client_count = get_zombie_thread_count()
+        runner_count = getZombieRunnerCount()
+        client_count = getZombieThreadCount()
 
         assert client_count == runner_count
 
@@ -630,7 +632,7 @@ class TestBLEClientWithRunner:
                 """
                 Initialize the mock connected bleak client state.
 
-                Sets `is_connected` to True and initializes `disconnect_calls` to 0.
+                Sets `isConnected` to True and initializes `disconnect_calls` to 0.
                 """
                 self.is_connected = True
                 self.disconnect_calls = 0
@@ -658,7 +660,7 @@ class TestBLEClientWithRunner:
         """close() should remain best-effort when disconnect raises."""
 
         class FailingBleakClient:
-            is_connected = True
+            isConnected = True
 
             @staticmethod
             async def disconnect():

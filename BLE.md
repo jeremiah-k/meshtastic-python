@@ -82,7 +82,7 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 handler = BLEErrorHandler()
 
 # Execute a callable; return a fallback on any handled exception.
-result = handler.safe_execute(
+result = handler.safeExecute(
     lambda: risky_call(),
     default_return=None,
     error_msg="risky_call failed",
@@ -90,10 +90,10 @@ result = handler.safe_execute(
 )
 
 # Best-effort cleanup: suppresses all non-exit exceptions, returns bool.
-ok = handler.safe_cleanup(lambda: resource.close(), "resource close")
+ok = handler.safeCleanup(lambda: resource.close(), "resource close")
 ```
 
-`safe_execute` swallows `BleakError`, `DecodeError`, and
+`safeExecute` swallows `BleakError`, `DecodeError`, and
 `concurrent.futures.TimeoutError`; other exceptions are also caught unless
 `reraise=True`. `SystemExit` and `KeyboardInterrupt` are always re-raised.
 
@@ -111,16 +111,16 @@ mgr = NotificationManager()
 token = mgr.subscribe(uuid, callback)
 
 # Retrieve the most-recently-registered callback for a UUID.
-cb = mgr.get_callback(uuid)
+cb = mgr.getCallback(uuid)
 
 # Stop all notifications through a BLEClient (e.g. during shutdown).
-mgr.unsubscribe_all(client, timeout=5.0)
+mgr.unsubscribeAll(client, timeout=5.0)
 
 # Re-register all subscriptions on a new client (e.g. after reconnect).
-mgr.resubscribe_all(client, timeout=5.0)
+mgr.resubscribeAll(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
-mgr.cleanup_all()
+mgr.cleanupAll()
 ```
 
 ### `RetryPolicy` / `ReconnectPolicy`
@@ -134,7 +134,7 @@ underscore-prefixed snake_case helpers in the BLE subsystem:
 ```python
 from meshtastic.interfaces.ble.policies import RetryPolicy
 
-policy = RetryPolicy.empty_read()  # or .transient_error() / .auto_reconnect()
+policy = RetryPolicy.emptyRead()  # or .transientError() / .autoReconnect()
 
 delay = policy._get_delay(attempt)       # float, jittered exponential backoff
 should_go = policy._should_retry(count)  # bool, respects max_retries

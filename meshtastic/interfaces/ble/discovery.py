@@ -6,7 +6,7 @@ import inspect
 import time
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, cast
 
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -29,20 +29,20 @@ from meshtastic.interfaces.ble.utils import (
 
 
 @lru_cache(maxsize=1)
-def _ble_device_constructor_kwargs_support() -> Tuple[bool, bool]:
+def _ble_device_constructor_kwargs_support() -> tuple[bool, bool]:
     """
     Determine whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
 
     Returns
     -------
-        Tuple[bool, bool]: (supports_details, supports_rssi) where the first element is True if the constructor accepts a `details` kwarg and the second is True if it accepts an `rssi` kwarg.
+        tuple[bool, bool]: (supports_details, supports_rssi) where the first element is True if the constructor accepts a `details` kwarg and the second is True if it accepts an `rssi` kwarg.
 
     """
     sig = inspect.signature(BLEDevice.__init__)
     return ("details" in sig.parameters, "rssi" in sig.parameters)
 
 
-def _normalize_device_name_for_matching(name: Optional[str]) -> Optional[str]:
+def _normalize_device_name_for_matching(name: str | None) -> str | None:
     """
     Normalize a Bluetooth device name for tolerant comparisons.
 
@@ -50,11 +50,11 @@ def _normalize_device_name_for_matching(name: Optional[str]) -> Optional[str]:
 
     Parameters
     ----------
-        name (Optional[str]): Raw device name.
+        name (str | None): Raw device name.
 
     Returns
     -------
-        Optional[str]: The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
+        str | None: The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
 
     """
     if name is None:
@@ -64,8 +64,8 @@ def _normalize_device_name_for_matching(name: Optional[str]) -> Optional[str]:
 
 
 def _filter_devices_for_target_identifier(
-    devices: List[BLEDevice], target_identifier: str
-) -> List[BLEDevice]:
+    devices: list[BLEDevice], target_identifier: str
+) -> list[BLEDevice]:
     """
     Selects BLEDevice objects matching a user-supplied address or name using deterministic precedence.
 
@@ -76,12 +76,12 @@ def _filter_devices_for_target_identifier(
 
     Parameters
     ----------
-        devices (List[BLEDevice]): Candidate devices to search.
+        devices (list[BLEDevice]): Candidate devices to search.
         target_identifier (str): User-supplied address or device name to match.
 
     Returns
     -------
-        List[BLEDevice]: Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
+        list[BLEDevice]: Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
 
     """
     target_key = sanitize_address(target_identifier)
@@ -124,8 +124,8 @@ def _filter_devices_for_target_identifier(
 
 
 def _parse_scan_response(
-    response: Any, whitelist_address: Optional[str] = None
-) -> List[BLEDevice]:
+    response: Any, whitelist_address: str | None = None
+) -> list[BLEDevice]:
     """
     Convert BleakScanner.discover(return_adv=True) output into BLEDevice objects.
 
@@ -138,15 +138,15 @@ def _parse_scan_response(
     Parameters
     ----------
         response (Any): The value returned by BleakScanner.discover(return_adv=True); expected to be a dict mapping identifiers to (device, adv) tuples.
-        whitelist_address (Optional[str]): Raw address or device name target.
+        whitelist_address (str | None): Raw address or device name target.
 
     Returns
     -------
-        List[BLEDevice]: Devices matching the target (targeted mode) or devices
+        list[BLEDevice]: Devices matching the target (targeted mode) or devices
             advertising SERVICE_UUID (broad scan mode).
 
     """
-    devices: List[BLEDevice] = []
+    devices: list[BLEDevice] = []
     if response is None:
         logger.warning("BleakScanner.discover returned None")
         return devices
@@ -158,7 +158,7 @@ def _parse_scan_response(
         return devices
     target_identifier = whitelist_address.strip() if whitelist_address else None
     has_whitelist = bool(target_identifier)
-    target_candidates: List[BLEDevice] = []
+    target_candidates: list[BLEDevice] = []
     for _, value in response.items():
         if isinstance(value, tuple) and len(value) == 2:
             device, adv = value
@@ -190,18 +190,18 @@ class DiscoveryStrategy(ABC):
     """Abstract base class for device discovery strategies."""
 
     @abstractmethod
-    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+    async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
         """
         Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by address or name.
 
         Parameters
         ----------
-            address (Optional[str]): Optional target device address or name.
+            address (str | None): Optional target device address or name.
             timeout (float): Maximum time in seconds to wait for backend device enumeration.
 
         Returns
         -------
-            List[BLEDevice]: Devices that advertise SERVICE_UUID and, if
+            list[BLEDevice]: Devices that advertise SERVICE_UUID and, if
             `address` is provided, match via address-first and name-aware
             precedence rules. Returns an empty list on error.
 
@@ -213,7 +213,7 @@ class DiscoveryStrategy(ABC):
 
 
 class ConnectedStrategy(DiscoveryStrategy):
-    """Device discovery strategy that enumerates already-connected devices.
+    """Internal method: Device discovery strategy that enumerates already-connected devices.
 
     .. warning::
        This strategy uses Bleak's private ``_backend`` API to enumerate
@@ -227,19 +227,19 @@ class ConnectedStrategy(DiscoveryStrategy):
        on a public API for connected-device enumeration.
     """
 
-    async def discover(self, address: Optional[str], timeout: float) -> List[BLEDevice]:
+    async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
         """
         Enumerate already-connected BLE devices via the Bleak backend and return those advertising the configured service UUID, optionally filtered by address or name.
 
         Parameters
         ----------
-            address (Optional[str]): Target BLE address or device name to
+            address (str | None): Target BLE address or device name to
                 filter results. If None, no address/name filtering is applied.
             timeout (float): Maximum seconds to wait for the backend's device enumeration to complete.
 
         Returns
         -------
-            List[BLEDevice]: Connected devices that advertise SERVICE_UUID and,
+            list[BLEDevice]: Connected devices that advertise SERVICE_UUID and,
             if `address` is provided, match via address-first and name-aware
             precedence rules. Returns an empty list if the backend does not
             support connected-device enumeration or if an error occurs.
@@ -258,7 +258,7 @@ class ConnectedStrategy(DiscoveryStrategy):
 
         try:
             scanner = BleakScanner()
-            devices_found: List[BLEDevice] = []
+            devices_found: list[BLEDevice] = []
             # Bleak lacks a public API for enumerating already-connected devices; use
             # the private backend hook until upstream provides an official method.
             backend = getattr(scanner, "_backend", None)
@@ -285,7 +285,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                         ),
                     )
 
-                target_candidates: List[BLEDevice] = []
+                target_candidates: list[BLEDevice] = []
                 target_identifier = address.strip() if address else None
                 # BLEDevice constructor signature varies across bleak versions.
                 # Handle both `details` and legacy `rssi` kwargs when present.
@@ -310,7 +310,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                 for device in matched_candidates:
                     # Pass address and name as positional args to avoid DeprecationWarning
                     # in bleak 2.1.x where kwargs for these are deprecated.
-                    params: Dict[str, Any] = {}
+                    params: dict[str, Any] = {}
                     if supports_details:
                         # Pass the original device object as details so the backend
                         # can recognize it as an already-connected device.
@@ -360,33 +360,31 @@ class ConnectedStrategy(DiscoveryStrategy):
 class DiscoveryManager:
     """Orchestrates scanning + connected-device fallback logic."""
 
-    def __init__(
-        self, client_factory: Optional[Callable[..., BLEClient]] = None
-    ) -> None:
+    def __init__(self, client_factory: Callable[..., BLEClient] | None = None) -> None:
         """
         Create a DiscoveryManager that orchestrates BLE scanning and a connected-device fallback.
 
         Parameters
         ----------
-            client_factory (Optional[Callable[..., BLEClient]]): Optional factory used to construct BLE client instances; primarily for testing or to override the default BLE client.
+            client_factory (Callable[..., BLEClient | None]): Optional factory used to construct BLE client instances; primarily for testing or to override the default BLE client.
 
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
         self.connected_strategy = ConnectedStrategy()
-        self._client: Optional[BLEClient] = None
+        self._client: BLEClient | None = None
 
-    def discover_devices(self, address: Optional[str]) -> List[BLEDevice]:
+    def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         """
         Discover BLE devices advertising the configured service UUID and, if a target address or name is provided and the scan yields no matches, attempt a fallback enumeration of already-connected devices.
 
         Parameters
         ----------
-            address (Optional[str]): Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
+            address (str | None): Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
 
         Returns
         -------
-            List[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
+            list[BLEDevice]: Devices found by the scan and any fallback enumeration, possibly an empty list.
 
         Raises
         ------
@@ -397,7 +395,7 @@ class DiscoveryManager:
         # disconnected. A discovery-only client (never connected) should be reused.
         if self._client is not None:
             bleak = getattr(self._client, "bleak_client", None)
-            if bleak is not None and not self._client.is_connected():
+            if bleak is not None and not self._client.isConnected():
                 self._client = None
         if self._client is None:
             # Factory resolution precedence (back-compat and testability):
@@ -442,7 +440,7 @@ class DiscoveryManager:
                     )
 
         client = self._client
-        devices: List[BLEDevice] = []
+        devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:
             scan_start = time.monotonic()
@@ -455,7 +453,7 @@ class DiscoveryManager:
             # even if the Service UUID is missing from the advertisement.
             scan_uuids = [SERVICE_UUID] if not target_identifier else None
 
-            response = client.discover(
+            response = client._discover(
                 timeout=BLEConfig.BLE_SCAN_TIMEOUT,
                 return_adv=True,
                 service_uuids=scan_uuids,
@@ -487,11 +485,11 @@ class DiscoveryManager:
             logger.debug(
                 "Scan found no devices, trying fallback to already-connected devices"
             )
-            connected_coro = self.connected_strategy.discover(
+            connected_coro = self.connected_strategy._discover(
                 target_identifier, BLEConfig.BLE_SCAN_TIMEOUT
             )
             try:
-                fallback = client.async_await(
+                fallback = client._async_await(
                     connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
                 )
                 devices.extend(fallback)
