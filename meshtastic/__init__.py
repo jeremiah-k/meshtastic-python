@@ -136,24 +136,18 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """
-    Expose legacy module attributes on demand.
-
-    When asked for the name "serial", lazily imports the internal serial_interface module,
-    caches it on the module globals under "serial", and returns it; for any other name,
-    raises AttributeError.
-
-    Parameters
-    ----------
+    Provide lazy access to legacy module attributes.
+    
+    When the attribute "serial" is requested, import the internal serial_interface module, cache it on the module globals as "serial", and return it. For any other attribute, raise AttributeError.
+    
+    Parameters:
         name (str): Attribute name being accessed.
-
-    Returns
-    -------
-        module: The resolved module object for the requested attribute.
-
-    Raises
-    ------
+    
+    Returns:
+        module: The resolved module object for the requested legacy attribute (e.g., the internal serial_interface for "serial").
+    
+    Raises:
         AttributeError: If the requested attribute is not provided by this lazy loader.
-
     """
     if name == "serial":
         # Keep historical `meshtastic.serial` access, but map it to our
@@ -270,18 +264,13 @@ def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
 
 def _on_node_info_receive(iface: Any, asDict: dict[str, Any]) -> None:
     """
-    Update interface node records from a received NodeInfo ("user") payload.
-
-    If the packet contains a decoded `user` entry and a `from` sender, the function
-    ensures a node exists for the sender, stores the decoded user protobuf on that node
-    under `node["user"]`, updates `iface.nodes` to map the user's `id` to the node,
-    and refreshes per-node metadata via _receive_info_update(iface, asDict).
-
-    Parameters
-    ----------
-        iface (Any): Interface instance whose node database will be updated.
-        asDict (dict[str, Any]): Received packet dictionary (expected to contain `"decoded" -> "user"` and `"from"`).
-
+    Update the local node record from a received NodeInfo ("user") payload.
+    
+    When `asDict` contains a decoded `"user"` entry and a `"from"` sender, stores the decoded user protobuf on the sender's node under `node["user"]`, ensures `iface.nodes` maps the user's `id` to that node, and refreshes per-node metadata via _receive_info_update(iface, asDict).
+    
+    Parameters:
+        iface (Any): Interface instance managing the node database.
+        asDict (dict[str, Any]): Received packet dictionary; expected to contain `"decoded" -> "user"` and `"from"`.
     """
     logger.debug("in _on_node_info_receive() asDict:%s", asDict)
     if "decoded" in asDict:

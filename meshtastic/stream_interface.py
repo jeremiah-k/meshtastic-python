@@ -28,6 +28,12 @@ class StreamInterface(MeshInterface):
         DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
 
         def __init__(self, message: str = DEFAULT_MSG) -> None:
+            """
+            Initialize the StreamInterfaceError with a provided or default message.
+            
+            Parameters:
+                message (str): The error message to use. Defaults to DEFAULT_MSG which explains that StreamInterface is abstract and a concrete stream-backed subclass (e.g., SerialInterface) should be instantiated.
+            """
             super().__init__(message)
 
     def __init__(  # pylint: disable=R0917
@@ -126,9 +132,9 @@ class StreamInterface(MeshInterface):
 
     def _disconnected(self) -> None:
         """
-        Clean up after a disconnection and close the underlying stream if present.
-
-        Calls the superclass disconnect handler, then closes self.stream and sets it to None if a stream exists.
+        Perform superclass disconnection cleanup, close the underlying stream if present, and clear the stream reference.
+        
+        This method calls MeshInterface._disconnected(self), then, if self.stream is not None, closes it and sets self.stream to None.
         """
         MeshInterface._disconnected(self)
 
@@ -142,17 +148,11 @@ class StreamInterface(MeshInterface):
 
     def _writeBytes(self, b: bytes) -> None:
         """
-        Write bytes to the underlying stream and ensure the device has time to
-        process them.
-
-        If the stream is closed this call is ignored. The bytes are written and
-        flushed; after flushing the method sleeps to give the device time to
-        handle the data (1.0 second on Windows 11, 0.1 second otherwise).
-
-        Parameters
-        ----------
-                b (bytes): Data to write to the stream.
-
+        Write bytes to the underlying stream and pause briefly to allow the device to process them.
+        
+        If no stream is configured this call is ignored. When a stream exists the bytes are written
+        and flushed; after flushing the method sleeps to allow the device time to handle the data:
+        1.0 second on Windows 11, 0.1 second otherwise.
         """
         if self.stream:  # ignore writes when stream is closed
             self.stream.write(b)
@@ -166,12 +166,10 @@ class StreamInterface(MeshInterface):
 
     def _readBytes(self, length: int) -> bytes | None:
         """
-        Read up to the specified number of bytes from the configured underlying stream.
-
-        Returns
-        -------
-            `bytes` containing up to `length` bytes read from the stream, or `None` if no stream is configured.
-
+        Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
+        
+        Returns:
+            bytes | None: Up to `length` bytes read from the stream, or `None` when no stream is present.
         """
         if self.stream:
             return self.stream.read(length)
@@ -180,14 +178,12 @@ class StreamInterface(MeshInterface):
 
     def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """
-        Serialize a ToRadio protobuf, frame it with the protocol header, and send the framed payload to the underlying stream.
-
-        The header is START1, START2, then a two-byte big-endian payload length followed by the serialized message.
-
-        Parameters
-        ----------
-            toRadio (mesh_pb2.ToRadio): The protobuf message to serialize and transmit.
-
+        Frame and send a ToRadio protobuf to the underlying stream.
+        
+        The message is serialized and prefixed with START1, START2 and a two-byte big-endian payload length before being written to the stream.
+        
+        Parameters:
+            toRadio (mesh_pb2.ToRadio): The protobuf message to transmit.
         """
         logger.debug("Sending: %s", stripnl(toRadio))
         b: bytes = toRadio.SerializeToString()
@@ -226,16 +222,13 @@ class StreamInterface(MeshInterface):
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _handle_log_byte(self, b: bytes) -> None:
-        r"""
-        Process a single byte from the device log stream, accumulate characters into the current log line, and dispatch complete lines.
-
-        Undecodable bytes are replaced with '?'. Carriage return ('\r') bytes are ignored; newline ('\n')
-        completes the current line and dispatches it via self._handleLogLine, after which the accumulator is cleared.
-
-        Parameters
-        ----------
-            b (bytes): Single-byte bytes object from the device.
-
+        """
+        Accumulate device log bytes into the current log line and dispatch completed lines.
+        
+        Decodes the single-byte input as UTF-8, using '?' for undecodable bytes. Ignores carriage return ('\r'); on newline ('\n') calls self._handleLogLine with the accumulated line and clears the accumulator; otherwise appends the decoded character to the accumulator.
+        
+        Parameters:
+            b (bytes): A single-byte bytes object from the device log stream.
         """
 
         utf = "?"  # assume we might fail
@@ -255,11 +248,8 @@ class StreamInterface(MeshInterface):
     def __reader(self) -> None:
         """
         Background reader loop that reads from the configured stream and dispatches device log bytes and framed radio messages.
-
-        Runs in a daemon background thread, reading incoming bytes and forwarding non-protocol bytes
-        to _handle_log_byte. Recognizes protocol frames prefixed by START1/START2 with a two-byte length
-        header and delivers complete payloads to _handleFromRadio. On termination updates _last_disconnect_source,
-        logs the exit, and invokes _disconnected() to perform cleanup.
+        
+        Continuously reads incoming bytes, forwarding non-protocol bytes to _handle_log_byte and delivering complete protocol frames to _handleFromRadio. On exit records the disconnect source in _last_disconnect_source, logs the shutdown, and calls _disconnected() to perform cleanup.
         """
         logger.debug("in __reader()")
         empty = bytes()

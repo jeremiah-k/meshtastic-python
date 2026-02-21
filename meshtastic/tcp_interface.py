@@ -27,12 +27,17 @@ class TCPInterface(StreamInterface):
         noNodes: bool = False,
         timeout: float = 300.0,
     ):
-        """Open a connection to a specified IP address/hostname.
-
-        Keyword Arguments:
-            hostname {string} -- Hostname/IP address of the device to connect to
-            timeout -- How long to wait for replies (default: 300 seconds)
-
+        """
+        Initialize a TCPInterface for a meshtastic device and optionally establish a TCP connection.
+        
+        Parameters:
+            hostname (str): Hostname or IP address of the device to connect to.
+            debugOut: Optional debug output/stream; passed to the base class.
+            noProto (bool): If True, disable protocol handling.
+            connectNow (bool): If True, attempt to open the TCP connection during initialization.
+            portNumber (int): TCP port to connect to (default: DEFAULT_TCP_PORT).
+            noNodes (bool): If True, do not populate node state.
+            timeout (float): Request/response timeout in seconds (default: 300.0).
         """
 
         self.stream = None
@@ -57,6 +62,12 @@ class TCPInterface(StreamInterface):
         )
 
     def __repr__(self) -> str:
+        """
+        Return a concise string representation of the TCPInterface instance including hostname and relevant flags.
+        
+        Returns:
+            str: A representation showing the hostname and any active options: `debugOut`, `noProto`, `connectNow=False` (when not connected), a non-default `portNumber`, and `noNodes`.
+        """
         rep = f"TCPInterface({self.hostname!r}"
         if self.debugOut is not None:
             rep += f", debugOut={self.debugOut!r}"
@@ -72,20 +83,30 @@ class TCPInterface(StreamInterface):
         return rep
 
     def _socket_shutdown(self) -> None:
-        """Shutdown the socket.
-        Note: Broke out this line so the exception could be unit tested.
+        """
+        Initiates a bidirectional shutdown of the underlying socket if one exists.
+        
+        Does nothing when no socket is present.
         """
         if self.socket is not None:
             self.socket.shutdown(socket.SHUT_RDWR)
 
     def myConnect(self) -> None:
-        """Connect to socket."""
+        """
+        Establishes a TCP connection to the instance hostname and port.
+        
+        Stores the resulting connected socket on self.socket.
+        """
         logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
         self.socket = socket.create_connection(server_address)
 
     def close(self) -> None:
-        """Close a connection to the device."""
+        """
+        Close the TCP connection and stop the reader thread.
+        
+        Requests reader shutdown, calls the base-class close logic, and tears down the underlying socket (ignoring shutdown/close errors). After socket teardown, attempts to join the reader thread for up to 2.0 seconds and logs a warning if the thread does not exit in time.
+        """
         logger.debug("Closing TCP stream")
         # Request reader shutdown before parent close() to prevent reconnect-on-close behavior.
         self._wantExit = True
@@ -116,7 +137,14 @@ class TCPInterface(StreamInterface):
                 logger.warning("Reader thread did not exit within shutdown timeout")
 
     def _writeBytes(self, b: bytes) -> None:
-        """Write an array of bytes to our stream and flush."""
+        """
+        Send the full byte sequence over the TCP socket.
+        
+        Attempts to transmit all bytes; if an OSError occurs, logs a warning, shuts down and closes the socket, and clears the stored socket reference.
+        
+        Parameters:
+            b (bytes): Bytes to send.
+        """
         if self.socket is not None:
             try:
                 # sendall() guarantees full payload transmission or raises.
@@ -132,7 +160,17 @@ class TCPInterface(StreamInterface):
                 self.socket = None
 
     def _readBytes(self, length: int) -> bytes | None:
-        """Read an array of bytes from our stream."""
+        """
+        Read up to `length` bytes from the TCP socket, handling dead connections and automatic reconnection.
+        
+        If a socket is present and data is available, returns the received bytes. If the socket is detected as disconnected, the method initiates a reconnect sequence and returns `None`. If no socket is available or a shutdown is requested, sets the reader to exit and returns `None`.
+        
+        Parameters:
+            length (int): Maximum number of bytes to read.
+        
+        Returns:
+            bytes | None: The received bytes, or `None` if no data was returned because the socket is absent, a reconnect was started, or shutdown was requested.
+        """
         if self.socket is not None:
             data = self.socket.recv(length)
             # empty byte indicates a disconnected socket,

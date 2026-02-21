@@ -31,12 +31,10 @@ from meshtastic.interfaces.ble.utils import (
 @lru_cache(maxsize=1)
 def _ble_device_constructor_kwargs_support() -> tuple[bool, bool]:
     """
-    Determine whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
-
-    Returns
-    -------
-        tuple[bool, bool]: (supports_details, supports_rssi) where the first element is True if the constructor accepts a `details` kwarg and the second is True if it accepts an `rssi` kwarg.
-
+    Detect whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
+    
+    Returns:
+        tuple[bool, bool]: (supports_details, supports_rssi) — `True` if the constructor accepts a `details` keyword, `True` if it accepts an `rssi` keyword; `False` otherwise.
     """
     sig = inspect.signature(BLEDevice.__init__)
     return ("details" in sig.parameters, "rssi" in sig.parameters)
@@ -362,12 +360,10 @@ class DiscoveryManager:
 
     def __init__(self, client_factory: Callable[..., BLEClient] | None = None) -> None:
         """
-        Create a DiscoveryManager that orchestrates BLE scanning and a connected-device fallback.
-
-        Parameters
-        ----------
-            client_factory (Callable[..., BLEClient | None]): Optional factory used to construct BLE client instances; primarily for testing or to override the default BLE client.
-
+        Initialize a DiscoveryManager that orchestrates BLE scanning with a connected-device fallback.
+        
+        Parameters:
+        	client_factory (Callable[..., BLEClient] | None): Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory

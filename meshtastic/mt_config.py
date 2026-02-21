@@ -31,10 +31,9 @@ MODULE_STATE_DEFAULTS: dict[str, Any] = {
 
 def reset() -> None:
     """
-    Reset the module-level namespace to its initial pristine state.
-
-    Uses MODULE_STATE_DEFAULTS as the single source of truth for tracked
-    module state so declarations and reset behavior cannot silently drift.
+    Reset module-level state variables to their defined default values.
+    
+    Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to its initial pristine state.
     """
     module_globals = globals()
     for name, default in MODULE_STATE_DEFAULTS.items():

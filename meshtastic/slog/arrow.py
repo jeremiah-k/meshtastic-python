@@ -14,9 +14,13 @@ class ArrowWriter:
     """Writes an arrow file in a streaming fashion."""
 
     def __init__(self, file_name: str):
-        """Create a new ArrowWriter object.
-
-        file_name (str): The name of the file to write to.
+        """
+        Initialize an ArrowWriter that streams Arrow-formatted data to the given file.
+        
+        Opens a writable file sink, initializes the in-memory row buffer and schema/writer placeholders, and creates a re-entrant lock to guard concurrent access. The schema is not inferred or set until data is written or set_schema is called.
+        
+        Parameters:
+            file_name (str): Path to the output file to write Arrow stream data to.
         """
         self.sink = pa.OSFile(file_name, "wb")  # type: ignore
         self.new_rows: list[dict] = []
@@ -26,7 +30,11 @@ class ArrowWriter:
         self._lock = threading.RLock()
 
     def close(self):
-        """Close the stream and writes the file as needed."""
+        """
+        Close the writer, flush any buffered rows, and close the underlying sink.
+        
+        Flushes any accumulated rows to disk, closes the RecordBatchStreamWriter if one exists, and closes the file sink.
+        """
         with self._lock:
             self._write()
             if self.writer:

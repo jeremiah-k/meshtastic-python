@@ -12,7 +12,12 @@ from ..stream_interface import StreamInterface
 
 @pytest.mark.unit
 def test_StreamInterface():
-    """Test that we cannot instantiate a StreamInterface based on noProto."""
+    """
+    Verify that creating a StreamInterface without protocol configuration raises an error.
+    
+    Raises:
+        StreamInterface.StreamInterfaceError: when a StreamInterface is instantiated without a protocol.
+    """
     with pytest.raises(StreamInterface.StreamInterfaceError):
         StreamInterface()
 
