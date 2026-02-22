@@ -1109,7 +1109,7 @@ class BLEInterface(MeshInterface):
         return addressed_devices[0]
 
     def find_device(self, address: str | None) -> BLEDevice:
-        """Locate a Meshtastic BLEDevice by explicit address or by performing device discovery when no address is provided.
+        """Compatibility wrapper for legacy snake_case callers; delegates to findDevice().
 
         Parameters
         ----------

@@ -5,9 +5,8 @@ import binascii
 import json
 import logging
 import re
-from unittest.mock import patch
-
 from collections import Counter
+from unittest.mock import patch
 
 import pytest
 from hypothesis import given

@@ -167,7 +167,8 @@ class Node:
             return True
         try:
             return (meta.excluded_modules & excluded_bit) == 0
-        except Exception:
+        except Exception as ex:  # noqa: BLE001 - defensive metadata compatibility
+            logger.debug("Unable to evaluate module availability: %s", ex)
             return True
 
     def showChannels(self) -> None:

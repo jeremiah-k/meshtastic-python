@@ -382,8 +382,8 @@ class LogSet:
             # symlink might fail on some platforms, if it does fail silently
             try:
                 latest_dir.symlink_to(dir_name, target_is_directory=True)
-            except OSError:
-                pass
+            except OSError as ex:
+                logger.debug("Unable to update latest slog symlink: %s", ex)
 
         self.dir_name = dir_name
 

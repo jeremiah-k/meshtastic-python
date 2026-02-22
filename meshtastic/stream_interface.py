@@ -265,7 +265,7 @@ class StreamInterface(MeshInterface):
         try:
             utf = b.decode("utf-8")
         except UnicodeDecodeError:
-            pass
+            logger.debug("Non-UTF8 log byte encountered: %r", b)
 
         if utf == "\r":
             pass  # ignore

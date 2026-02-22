@@ -37,7 +37,7 @@ from meshtastic import (
     protocols,
     publishingThread,
 )
-from meshtastic.protobuf import mesh_pb2, portnums_pb2, telemetry_pb2
+from meshtastic.protobuf import channel_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
 from meshtastic.util import (
     Acknowledgment,
     Timeout,
@@ -162,7 +162,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.mask: int | None = None  # used in gpio read and gpio watch
         self.queueStatus: mesh_pb2.QueueStatus | None = None
         self.queue: collections.OrderedDict = collections.OrderedDict()
-        self._localChannels: list[Any] = []
+        self._localChannels: list[channel_pb2.Channel] = []
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
@@ -1856,7 +1856,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.sendHeartbeat() is performed outside the lock.
         """
 
-        def callback():
+        def callback() -> None:
             """Schedule the next heartbeat and emit one unless the interface is shutting down.
 
             Schedules a daemon timer to re-run this callback after a fixed interval and then calls
@@ -2049,7 +2049,7 @@ class MeshInterface:  # pylint: disable=R0902
         # the following should only be called after we have settings and channels
         self._connected()  # Tell everyone else we are ready to go
 
-    def _handleQueueStatusFromRadio(self, queueStatus) -> None:
+    def _handleQueueStatusFromRadio(self, queueStatus: mesh_pb2.QueueStatus) -> None:
         """Update internal transmit-queue state from a received QueueStatus message.
 
         Sets self.queueStatus and logs the reported free/total slots and packet id.
@@ -2303,16 +2303,27 @@ class MeshInterface:  # pylint: disable=R0902
             broadcast sources, or `None` if the node number is not present in the local node map.
         """
         if num == BROADCAST_NUM:
-            if isDest:
-                return BROADCAST_ADDR
-            else:
-                return "Unknown"
+            return BROADCAST_ADDR if isDest else "Unknown"
 
-        try:
-            return self.nodesByNum[num]["user"]["id"]  # type: ignore[index]
-        except (KeyError, TypeError):
+        nodes = self.nodesByNum
+        if nodes is None:
+            logger.debug(
+                "Node database not initialized while resolving node id for %s", num
+            )
+            return None
+        node = nodes.get(num)
+        if not isinstance(node, dict):
             logger.debug("Node %s not found for fromId", num)
             return None
+        user = node.get("user")
+        if not isinstance(user, dict):
+            logger.debug("Node %s has no user payload for fromId", num)
+            return None
+        node_id = user.get("id")
+        if not isinstance(node_id, str):
+            logger.debug("Node %s user payload has no valid id", num)
+            return None
+        return node_id
 
     def _getOrCreateByNum(self, nodeNum: int) -> dict[str, Any]:
         """Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists.
@@ -2420,11 +2431,11 @@ class MeshInterface:  # pylint: disable=R0902
         try:
             asDict["fromId"] = self._nodeNumToId(asDict["from"], False)
         except Exception as ex:
-            logger.warning(f"Not populating fromId {ex}")
+            logger.warning("Not populating fromId: %s", ex, exc_info=True)
         try:
             asDict["toId"] = self._nodeNumToId(asDict["to"])
         except Exception as ex:
-            logger.warning(f"Not populating toId {ex}")
+            logger.warning("Not populating toId: %s", ex, exc_info=True)
 
         # We could provide our objects as DotMaps - which work with . notation or as dictionaries
         # asObj = DotMap(asDict)
