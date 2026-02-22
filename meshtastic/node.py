@@ -5,8 +5,6 @@ This module provides the Node class which represents a (local or remote) node
 in the mesh, including methods for localConfig, moduleConfig, and channels management.
 """
 
-
-
 import base64
 import binascii
 import logging
