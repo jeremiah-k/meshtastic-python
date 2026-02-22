@@ -322,7 +322,6 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     toUpdate = None
 
     telemetry = (asDict.get("decoded") or {}).get("telemetry") or {}
-    node = iface._getOrCreateByNum(asDict["from"])
     if "deviceMetrics" in telemetry:
         toUpdate = "deviceMetrics"
     elif "environmentMetrics" in telemetry:
@@ -339,6 +338,7 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     updateObj = telemetry.get(toUpdate)
     if updateObj is None:
         return
+    node = iface._getOrCreateByNum(asDict["from"])
     newMetrics = node.get(toUpdate, {})
     newMetrics.update(updateObj)
     logger.debug(

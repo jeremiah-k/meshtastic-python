@@ -239,7 +239,9 @@ class TCPInterface(StreamInterface):
             return False
 
         self._reconnect_attempts += 1
-        delay = self._compute_reconnect_delay()
+        delay = (
+            0.0 if self._reconnect_attempts == 1 else self._compute_reconnect_delay()
+        )
         logger.debug(
             "Reconnect attempt %d/%d for %s in %.1fs",
             self._reconnect_attempts,
@@ -247,7 +249,7 @@ class TCPInterface(StreamInterface):
             self.hostname,
             delay,
         )
-        if not self._sleep_reconnect_delay(delay):
+        if delay > 0.0 and not self._sleep_reconnect_delay(delay):
             return False
         reconnect_ok = False
 

@@ -20,23 +20,19 @@ from ..util import Timeout
 @pytest.mark.unit
 def test_node(capsys, mock_serial_interface):
     """Test that we can instantiate a Node."""
-    with patch(
-        "meshtastic.serial_interface.SerialInterface",
-        return_value=mock_serial_interface,
-    ) as mo:
-        anode = Node(mo, "!12345678", noProto=True)
-        lc = localonly_pb2.LocalConfig()
-        anode.localConfig = lc
-        lc.lora.CopyFrom(config_pb2.Config.LoRaConfig())
-        anode.moduleConfig = localonly_pb2.LocalModuleConfig()
-        anode.showInfo()
-        out, err = capsys.readouterr()
-        assert re.search(r"Preferences", out)
-        assert re.search(r"Module preferences", out)
-        assert re.search(r"Channels", out)
-        assert re.search(r"Primary channel URL", out)
-        assert not re.search(r"remote node", out)
-        assert err == ""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    lc = localonly_pb2.LocalConfig()
+    anode.localConfig = lc
+    lc.lora.CopyFrom(config_pb2.Config.LoRaConfig())
+    anode.moduleConfig = localonly_pb2.LocalModuleConfig()
+    anode.showInfo()
+    out, err = capsys.readouterr()
+    assert re.search(r"Preferences", out)
+    assert re.search(r"Module preferences", out)
+    assert re.search(r"Channels", out)
+    assert re.search(r"Primary channel URL", out)
+    assert not re.search(r"remote node", out)
+    assert err == ""
 
 
 # TODO
@@ -277,7 +273,7 @@ def test_get_ringtone_times_out_without_response(caplog):
     """Verify get_ringtone times out when no response callback is invoked."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
-    anode._timeout.expireTimeout = 0.01
+    anode._timeout = Timeout(maxSecs=0.01)
     anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):
@@ -294,7 +290,7 @@ def test_get_canned_message_times_out_without_response(caplog):
     """Test get_canned_message returns None if the response callback is never invoked."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
-    anode._timeout.expireTimeout = 0.01
+    anode._timeout = Timeout(maxSecs=0.01)
     anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):

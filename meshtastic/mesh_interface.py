@@ -184,21 +184,10 @@ class MeshInterface:  # pylint: disable=R0902
             if timer:
                 timer.cancel()
             self._sendDisconnect()
-        # Close debugOut file handle if it was opened (e.g., by openDebugLog)
-        # Do not close standard streams (sys.stdout, sys.stderr, and their dunder backups)
-        debug_out = getattr(self, "debugOut", None)
-        if (
-            debug_out is not None
-            and hasattr(debug_out, "close")
-            and debug_out
-            not in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__)
-        ):
-            try:
-                debug_out.close()
-            except OSError as e:
-                logger.debug("Error closing debugOut: %s", e)
-            finally:
-                self.debugOut = None
+        # debugOut is caller-owned (often shared via outer context managers);
+        # do not close it here. Only clear our reference on shutdown.
+        if hasattr(self, "debugOut"):
+            self.debugOut = None
 
     def __enter__(self) -> "MeshInterface":
         """Enter a context for use with the with statement and return this MeshInterface instance.

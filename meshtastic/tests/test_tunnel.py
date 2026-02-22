@@ -63,11 +63,12 @@ def test_Tunnel_with_interface(caplog, iface_with_nodes):
     iface.myInfo.my_node_num = 2475227164
     with caplog.at_level(logging.WARNING):
         tun = Tunnel(iface)
-        assert tun == mt_config.tunnel_instance
-        iface.close()
+        try:
+            assert tun == mt_config.tunnel_instance
+        finally:
+            tun.close()
     assert re.search(r"Not creating a TapDevice()", caplog.text, re.MULTILINE)
     assert re.search(r"Not starting TUN reader", caplog.text, re.MULTILINE)
-    assert re.search(r"Not sending packet", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unitslow

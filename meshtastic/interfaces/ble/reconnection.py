@@ -311,9 +311,31 @@ class ReconnectWorker:
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
-                sleep_delay, should_retry = cast(
-                    tuple[float, bool], self._call_policy("next_attempt")
-                )
+                next_attempt = self._call_policy("next_attempt")
+                if not isinstance(next_attempt, tuple) or len(next_attempt) != 2:
+                    logger.error(
+                        "Reconnect policy next_attempt returned invalid value: %r",
+                        next_attempt,
+                    )
+                    return
+                sleep_delay, should_retry = next_attempt
+                if (
+                    not isinstance(sleep_delay, (int, float))
+                    or isinstance(sleep_delay, bool)
+                    or not isinstance(should_retry, bool)
+                ):
+                    logger.error(
+                        "Reconnect policy next_attempt returned invalid value: %r",
+                        next_attempt,
+                    )
+                    return
+                sleep_delay = float(sleep_delay)
+                if sleep_delay < 0.0:
+                    logger.error(
+                        "Reconnect policy next_attempt returned negative delay: %r",
+                        next_attempt,
+                    )
+                    return
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:
@@ -329,4 +351,7 @@ class ReconnectWorker:
                     return
         finally:
             if on_exit is not None:
-                on_exit()
+                try:
+                    on_exit()
+                except Exception:
+                    logger.exception("Reconnect loop exit callback failed")
