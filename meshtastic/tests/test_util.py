@@ -646,7 +646,7 @@ def test_fuzz_camel_to_snake(a_string):
     lowered = a_string.lower()
     src_counts = Counter(c for c in lowered if c != "_")
     res_counts = Counter(c for c in result if c != "_")
-    assert all(res_counts[c] >= src_counts[c] for c in src_counts)  # no chars dropped
+    assert res_counts == src_counts  # no chars dropped or multiplied
 
 
 @pytest.mark.unitslow
@@ -805,6 +805,7 @@ def test_fuzz_fromStr_base64_invalid_chars_raises(base64_payload):
         fromStr(f"base64:{base64_payload}")
 
 
+@pytest.mark.unit
 def test_shorthex():
     """Test the shortest hex string representations."""
     result = fromStr("0x0")
@@ -817,6 +818,7 @@ def test_shorthex():
     assert result == b"\xff\xff"
 
 
+@pytest.mark.unit
 def test_channel_hash_basics():
     """Test the default key and LongFast with channel_hash."""
     assert channel_hash(DEFAULT_KEY) == 2
@@ -831,6 +833,7 @@ def test_channel_hash_fuzz(channel_name):
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
 
 
+@pytest.mark.unit
 def test_generate_channel_hash_basics():
     """Test the default key and LongFast/MediumFast with generate_channel_hash."""
     assert generate_channel_hash("LongFast", "AQ==") == 8

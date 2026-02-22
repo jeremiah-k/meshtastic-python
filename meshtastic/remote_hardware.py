@@ -132,6 +132,11 @@ class RemoteHardwareClient:
         except pub.TopicNameError:
             # Topic may not exist yet; subscribe below to create/register it.
             already_subscribed = False
+        except Exception as ex:  # noqa: BLE001 - defensive pubsub resilience
+            logger.warning(
+                "Unable to inspect remote hardware topic subscription: %s", ex
+            )
+            already_subscribed = False
         if not already_subscribed:
             pub.subscribe(onGPIOreceive, REMOTE_HARDWARE_TOPIC)
 

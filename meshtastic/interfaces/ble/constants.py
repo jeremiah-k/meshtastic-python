@@ -118,6 +118,17 @@ BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIME
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 
 
+def __getattr__(name: str) -> object:
+    """Dynamically delegate unknown module attributes to BLEConfig.
+
+    This preserves backward-compatible module-level constant access when new
+    BLEConfig attributes are introduced without requiring an explicit alias.
+    """
+    if hasattr(BLEConfig, name):
+        return getattr(BLEConfig, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def _parse_version_triplet(version_str: str) -> tuple[int, int, int]:
     """Parse a version string into a (major, minor, patch) integer triple.
 
