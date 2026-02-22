@@ -1611,7 +1611,7 @@ def test_setOwner_with_is_licensed(caplog):
     with caplog.at_level(logging.DEBUG):
         anode.setOwner(long_name="LicensedUser", is_licensed=True)
 
-    assert re.search(r"p\.set_owner\.is_licensed:True", caplog.text, re.MULTILINE)
+    assert re.search(r"p\.set_owner\.is_licensed:True:", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit

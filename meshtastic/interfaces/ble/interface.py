@@ -1402,24 +1402,25 @@ class BLEInterface(MeshInterface):
         connected_device_key: str | None = None
         connection_alias_key: str | None = None
 
-        # Duplicate-connect check MUST run before acquiring a per-address lock to
-        # preserve lock ordering (_REGISTRY_LOCK before per-address locks).
-        if self._should_suppress_duplicate_connect(address_registry_key):
-            logger.info(
-                "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                address_registry_key or "unknown",
-            )
-            raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
-
         # Apply address gating only for explicit-address connects.
         # Discovery-mode connects intentionally skip gating to avoid holding the
         # global registry lock during long-running scan/discovery operations.
         with contextlib.ExitStack() as stack:
             if address_registry_key is not None:
-                addr_lock = stack.enter_context(
-                    _addr_lock_context(address_registry_key)
-                )
-                stack.enter_context(addr_lock)
+                # Atomically re-check duplicate suppression and acquire the
+                # per-address lock under _REGISTRY_LOCK to avoid TOCTOU races
+                # between gate checks and subsequent gate claims.
+                with _REGISTRY_LOCK:
+                    if self._should_suppress_duplicate_connect(address_registry_key):
+                        logger.info(
+                            "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                            address_registry_key or "unknown",
+                        )
+                        raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+                    addr_lock = stack.enter_context(
+                        _addr_lock_context(address_registry_key)
+                    )
+                    stack.enter_context(addr_lock)
 
             with self._connect_lock:
                 # Re-check closing state inside connect_lock for extra safety

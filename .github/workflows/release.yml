@@ -114,6 +114,7 @@ jobs:
   #       with:
   #         tag_name: ${{ needs.release_create.outputs.version }}
   #         draft: true
+  #         prerelease: true
   #         files: dist/meshtastic_mac
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,6 +150,7 @@ jobs:
         with:
           tag_name: ${{ needs.release_create.outputs.version }}
           draft: true
+          prerelease: true
           files: |
             dist/meshtastic_ubuntu
             dist/readme.txt
@@ -182,6 +184,7 @@ jobs:
   #       with:
   #         tag_name: ${{ needs.release_create.outputs.version }}
   #         draft: true
+  #         prerelease: true
   #         files: dist/meshtastic_windows.exe
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

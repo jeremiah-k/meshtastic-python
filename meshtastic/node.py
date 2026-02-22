@@ -671,7 +671,7 @@ class Node:
         # Note: These debug lines are used in unit tests
         logger.debug(f"p.set_owner.long_name:{p.set_owner.long_name}:")
         logger.debug(f"p.set_owner.short_name:{p.set_owner.short_name}:")
-        logger.debug(f"p.set_owner.is_licensed:{p.set_owner.is_licensed}")
+        logger.debug(f"p.set_owner.is_licensed:{p.set_owner.is_licensed}:")
         logger.debug(f"p.set_owner.is_unmessagable:{p.set_owner.is_unmessagable}:")
         # If sending to a remote node, wait for ACK/NAK
         if self == self.iface.localNode:

@@ -24,8 +24,16 @@ pytestmark = pytest.mark.usefixtures("platform_socket_mocks")
 @pytest.fixture(autouse=True)
 def reset_tunnel_mt_config_state() -> Generator[None, None, None]:
     """Reset mt_config module state before and after each tunnel test."""
+
+    def _close_active_tunnel() -> None:
+        tunnel = mt_config.tunnel_instance
+        if tunnel is not None:
+            tunnel.close()
+
+    _close_active_tunnel()
     mt_config.reset()
     yield
+    _close_active_tunnel()
     mt_config.reset()
 
 
@@ -72,11 +80,11 @@ def test_Tunnel_with_interface(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_onTunnelReceive_from_ourselves(caplog, iface_with_nodes):
+def test_onTunnelReceive_from_ourselves(caplog, iface_with_nodes, monkeypatch):
     """Test onTunnelReceive."""
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
-    sys.argv = [""]
+    monkeypatch.setattr(sys, "argv", [""])
     mt_config.args = sys.argv
     packet = {"decoded": {"payload": "foo"}, "from": 2475227164}
     with caplog.at_level(logging.DEBUG):
@@ -87,11 +95,11 @@ def test_onTunnelReceive_from_ourselves(caplog, iface_with_nodes):
 
 
 @pytest.mark.unit
-def test_onTunnelReceive_from_someone_else(caplog, iface_with_nodes):
+def test_onTunnelReceive_from_someone_else(caplog, iface_with_nodes, monkeypatch):
     """Test onTunnelReceive."""
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
-    sys.argv = [""]
+    monkeypatch.setattr(sys, "argv", [""])
     mt_config.args = sys.argv
     packet = {"decoded": {"payload": "foo"}, "from": 123}
     with caplog.at_level(logging.DEBUG):

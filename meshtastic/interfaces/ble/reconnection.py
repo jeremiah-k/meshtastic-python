@@ -21,6 +21,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger("meshtastic.ble")
 
 
+class ReconnectPolicyMissingMethodError(AttributeError):
+    """Raised when a required reconnect-policy method is missing."""
+
+    def __init__(self, method_name: str) -> None:
+        """Initialize with the missing method name."""
+        self.method_name = method_name
+        super().__init__(f"ReconnectPolicy missing method '{method_name}'")
+
+
 class ReconnectScheduler:
     """Manage lifecycle of the reconnect worker thread."""
 
@@ -81,8 +90,15 @@ class ReconnectScheduler:
             return False
 
         with self.state_lock:
-            # Use state manager instead of boolean flag
-            if self.state_manager._is_closing or not self.state_manager._can_connect:
+            is_closing = getattr(
+                self.interface, "_is_connection_closing", self.state_manager._is_closing
+            )
+            can_initiate_connection = getattr(
+                self.interface,
+                "_can_initiate_connection",
+                self.state_manager._can_connect,
+            )
+            if is_closing or not can_initiate_connection:
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
                 )
@@ -167,7 +183,7 @@ class ReconnectWorker:
         fallback = getattr(self.reconnect_policy, f"_{method_name}", None)
         if callable(fallback):
             return fallback(*args)
-        raise AttributeError(f"ReconnectPolicy missing method '{method_name}'")
+        raise ReconnectPolicyMissingMethodError(method_name)
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """Determine whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
@@ -223,11 +239,10 @@ class ReconnectWorker:
         on_exit : Callable[[], None] | None
             Optional callback called once when the loop finishes (successful connect, abort, or exception). (Default value = None)
         """
-        self._call_policy("reset")
-        interface = self.interface
-        override_delay: float | None = None
-
         try:
+            self._call_policy("reset")
+            interface = self.interface
+            override_delay: float | None = None
             while not shutdown_event.is_set():
                 override_delay = None
                 if self._should_abort_reconnect(auto_reconnect, "loop start"):

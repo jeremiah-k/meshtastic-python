@@ -262,6 +262,7 @@ def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
     logger.debug("in _on_position_receive() asDict:%s", asDict)
     if "decoded" in asDict:
         if "position" in asDict["decoded"] and "from" in asDict:
+            _receive_info_update(iface, asDict)
             p = asDict["decoded"]["position"]
             logger.debug("p:%s", p)
             p = iface._fixupPosition(p)
@@ -318,6 +319,8 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     logger.debug("in _on_telemetry_receive() asDict:%s", asDict)
     if "from" not in asDict:
         return
+
+    _receive_info_update(iface, asDict)
 
     toUpdate = None
 
@@ -390,6 +393,8 @@ def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
             "Dropping admin packet because 'from' field is missing: %s", asDict
         )
         return
+
+    _receive_info_update(iface, asDict)
 
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 class TCPInterface(StreamInterface):
     """Interface class for meshtastic devices over a TCP link."""
 
+    DEFAULT_CONNECT_TIMEOUT = 10.0
     DEFAULT_MAX_RECONNECT_ATTEMPTS = 8
     DEFAULT_RECONNECT_BACKOFF = 1.6
     DEFAULT_RECONNECT_BASE_DELAY = 1.0
@@ -36,6 +37,7 @@ class TCPInterface(StreamInterface):
         portNumber: int = DEFAULT_TCP_PORT,
         noNodes: bool = False,
         timeout: float = 300.0,
+        connectTimeout: float = DEFAULT_CONNECT_TIMEOUT,
     ) -> None:
         """Initialize a TCPInterface for a meshtastic device and optionally establish a TCP connection.
 
@@ -55,6 +57,8 @@ class TCPInterface(StreamInterface):
             If True, do not populate node state. (Default value = False)
         timeout : float
             Request/response timeout in seconds (default: 300.0).
+        connectTimeout : float
+            Timeout in seconds for socket connect attempts (default: 10.0).
         """
 
         self.stream = None
@@ -63,6 +67,7 @@ class TCPInterface(StreamInterface):
         self.hostname: str = hostname
         self.portNumber: int = portNumber
         self._connect_now: bool = connectNow
+        self._connect_timeout: float = connectTimeout
 
         self.socket: socket.socket | None = None
         self._reconnect_attempts = 0
@@ -124,7 +129,9 @@ class TCPInterface(StreamInterface):
         """
         logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
-        self.socket = socket.create_connection(server_address)
+        self.socket = socket.create_connection(
+            server_address, timeout=self._connect_timeout
+        )
         self._fatal_disconnect = False
 
     def close(self) -> None:
