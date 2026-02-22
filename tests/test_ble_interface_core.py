@@ -1751,7 +1751,11 @@ def test_reconnect_scheduler_tracks_threads():
             """
             thread.started = True
 
-    worker = SimpleNamespace(attempt_reconnect_loop=lambda *_args, **_kwargs: None)
+    worker = SimpleNamespace(
+        attempt_reconnect_loop=lambda *_args, **_kwargs: None,
+        _is_connection_closing=False,
+        _can_initiate_connection=True,
+    )
     coordinator = StubCoordinator()
     scheduler = ReconnectScheduler(  # noqa: PLR0913  # type: ignore[arg-type]
         state_manager,
@@ -1770,6 +1774,7 @@ def test_reconnect_scheduler_tracks_threads():
     assert state_manager._transition_to(ConnectionState.CONNECTING) is True
     assert state_manager._transition_to(ConnectionState.CONNECTED) is True
     assert state_manager._transition_to(ConnectionState.DISCONNECTING) is True
+    worker._is_connection_closing = True
     assert scheduler._schedule_reconnect(True, shutdown_event) is False
 
 

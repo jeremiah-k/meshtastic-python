@@ -90,14 +90,8 @@ class ReconnectScheduler:
             return False
 
         with self.state_lock:
-            is_closing = getattr(
-                self.interface, "_is_connection_closing", self.state_manager._is_closing
-            )
-            can_initiate_connection = getattr(
-                self.interface,
-                "_can_initiate_connection",
-                self.state_manager._can_connect,
-            )
+            is_closing = self.interface._is_connection_closing
+            can_initiate_connection = self.interface._can_initiate_connection
             if is_closing or not can_initiate_connection:
                 logger.debug(
                     "Skipping auto-reconnect scheduling because interface is closing or connection already in progress."
@@ -213,6 +207,45 @@ class ReconnectWorker:
             )
             return True
         return False
+
+    def _validate_next_attempt(self, value: Any) -> tuple[float, bool] | None:
+        """Validate reconnect-policy next_attempt() output.
+
+        Parameters
+        ----------
+        value : Any
+            Raw value returned by reconnect_policy.next_attempt().
+
+        Returns
+        -------
+        tuple[float, bool] | None
+            (sleep_delay, should_retry) on valid input, otherwise None.
+        """
+        if not isinstance(value, tuple) or len(value) != 2:
+            logger.error(
+                "Reconnect policy next_attempt returned invalid value: %r",
+                value,
+            )
+            return None
+        sleep_delay, should_retry = value
+        if (
+            not isinstance(sleep_delay, (int, float))
+            or isinstance(sleep_delay, bool)
+            or not isinstance(should_retry, bool)
+        ):
+            logger.error(
+                "Reconnect policy next_attempt returned invalid value: %r",
+                value,
+            )
+            return None
+        sleep_delay = float(sleep_delay)
+        if sleep_delay < 0.0:
+            logger.error(
+                "Reconnect policy next_attempt returned negative delay: %r",
+                value,
+            )
+            return None
+        return sleep_delay, should_retry
 
     def _attempt_reconnect_loop(  # pylint: disable=R0911
         self,
@@ -341,30 +374,10 @@ class ReconnectWorker:
                         err.method_name,
                     )
                     return
-                if not isinstance(next_attempt, tuple) or len(next_attempt) != 2:
-                    logger.error(
-                        "Reconnect policy next_attempt returned invalid value: %r",
-                        next_attempt,
-                    )
+                validated_next_attempt = self._validate_next_attempt(next_attempt)
+                if validated_next_attempt is None:
                     return
-                sleep_delay, should_retry = next_attempt
-                if (
-                    not isinstance(sleep_delay, (int, float))
-                    or isinstance(sleep_delay, bool)
-                    or not isinstance(should_retry, bool)
-                ):
-                    logger.error(
-                        "Reconnect policy next_attempt returned invalid value: %r",
-                        next_attempt,
-                    )
-                    return
-                sleep_delay = float(sleep_delay)
-                if sleep_delay < 0.0:
-                    logger.error(
-                        "Reconnect policy next_attempt returned negative delay: %r",
-                        next_attempt,
-                    )
-                    return
+                sleep_delay, should_retry = validated_next_attempt
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:

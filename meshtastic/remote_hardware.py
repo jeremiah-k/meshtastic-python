@@ -66,10 +66,20 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     # Note: proto3 omits zero-valued fields; gpioValue defaults to 0
     # See https://developers.google.com/protocol-buffers/docs/proto3#default
 
-    mask = interface.mask if interface.mask is not None else hw.get("gpioMask", 0)
-    mask = int(mask)
+    raw_mask = interface.mask if interface.mask is not None else hw.get("gpioMask", 0)
+    try:
+        mask = int(raw_mask)
+        gpio_value_int = int(gpioValue)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Could not convert gpioValue=%r or mask=%r to int.",
+            gpioValue,
+            raw_mask,
+        )
+        mask = 0
+        gpio_value_int = 0
     logger.debug("mask:%s", mask)
-    value = int(gpioValue) & mask
+    value = gpio_value_int & mask
     logger.info(
         "Received RemoteHardware type=%s, gpio_value=%s value=%s",
         hw.get("type", remote_hardware_pb2.HardwareMessage.Type.UNSET),

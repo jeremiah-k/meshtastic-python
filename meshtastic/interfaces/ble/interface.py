@@ -509,6 +509,10 @@ class BLEInterface(MeshInterface):
         address = "unknown"
         disconnect_keys: list[str] = []
         try:
+            # Lock-order invariant: release _disconnect_lock before any operations
+            # that compute/acquire address locks (addr_disconnect_key via
+            # _sorted_address_keys). disconnect_lock_released guarantees
+            # _disconnect_lock is released exactly once even on exceptions.
             # Perform state checks and state mutation atomically under the state lock.
             with self._state_lock:
                 current_state = self._state_manager._current_state
@@ -1650,7 +1654,7 @@ class BLEInterface(MeshInterface):
                 )
                 self._shutdown_event.wait(timeout=backoff)
         with self._state_lock:
-            self._last_recovery_time = now
+            self._last_recovery_time = time.monotonic()
         # If disconnect handling requests continuation (auto-reconnect path),
         # replace this crashed receive thread so reads resume after reconnect.
         if self._should_run_receive_loop():

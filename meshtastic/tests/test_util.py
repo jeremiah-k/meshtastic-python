@@ -762,15 +762,24 @@ def test_fuzz_fromStr_base64_malformed_raises(base64_payload):
         fromStr(f"base64:{base64_payload}")
 
 
-@given(
-    st.text(
-        alphabet=st.sampled_from(list(_BASE64_ALLOWED_CHARS + _BASE64_INVALID_CHARS)),
-        min_size=4,
-        max_size=128,
-    ).filter(
-        lambda s: len(s) % 4 == 0 and sum(c in _BASE64_INVALID_CHARS for c in s) == 1
+@st.composite
+def _base64_payload_with_single_invalid_char(draw):
+    """Generate base64-like payloads with valid length and exactly one invalid character."""
+    quad_count = draw(st.integers(min_value=1, max_value=32))
+    payload_len = quad_count * 4
+    chars = draw(
+        st.lists(
+            st.sampled_from(list(_BASE64_ALLOWED_CHARS)),
+            min_size=payload_len,
+            max_size=payload_len,
+        )
     )
-)
+    invalid_idx = draw(st.integers(min_value=0, max_value=payload_len - 1))
+    chars[invalid_idx] = draw(st.sampled_from(list(_BASE64_INVALID_CHARS)))
+    return "".join(chars)
+
+
+@given(_base64_payload_with_single_invalid_char())
 def test_fuzz_fromStr_base64_invalid_chars_raises(base64_payload):
     """Test that fromStr raises for base64 payloads containing invalid characters."""
     with pytest.raises(binascii.Error):

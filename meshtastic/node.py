@@ -246,7 +246,7 @@ class Node:
         Parses the decoded response packet `p` to determine whether the request was acknowledged or
         rejected, marks the interface acknowledgment flags accordingly, and if the response contains
         `getConfigResponse` or `getModuleConfigResponse` copies the returned raw config into
-        `self.localConfig` or `self.moduleConfig` respectively and prints the populated field.
+        `self.localConfig` or `self.moduleConfig` respectively and logs the populated field.
 
         Parameters
         ----------
@@ -301,7 +301,7 @@ class Node:
                     getattr(adminMessage["raw"], oneof), camel_to_snake(field)
                 )
                 config_values.CopyFrom(raw_config)
-                print(f"{camel_to_snake(field)!s}:\n{config_values!s}")
+                logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
     def requestConfig(self, configType: Any) -> None:
         """Request a configuration subset or the full configuration from this node.
@@ -883,7 +883,12 @@ class Node:
 
         p1 = admin_pb2.AdminMessage()
         p1.get_ringtone_request = True
-        self._sendAdmin(p1, wantResponse=True, onResponse=_on_ringtone_response)
+        request = self._sendAdmin(
+            p1, wantResponse=True, onResponse=_on_ringtone_response
+        )
+        if request is None:
+            logger.debug("Skipping ringtone wait because protocol send was not started")
+            return None
         if not response_event.wait(timeout=self._timeout.expireTimeout):
             logger.warning("Timed out waiting for ringtone response")
             return None
@@ -892,12 +897,14 @@ class Node:
             # Another caller may have already populated the cache while we waited.
             if self.ringtone:
                 logger.debug("ringtone:%s", self.ringtone)
-                return self.ringtone
-            if self.ringtonePart:
+                result = self.ringtone
+            elif self.ringtonePart:
                 self.ringtone = self.ringtonePart
                 logger.debug("ringtone:%s", self.ringtone)
-                return self.ringtone
-            return None
+                result = self.ringtone
+            else:
+                result = None
+        return result
 
     def _set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the node's ringtone.
@@ -1027,11 +1034,16 @@ class Node:
 
         p1 = admin_pb2.AdminMessage()
         p1.get_canned_message_module_messages_request = True
-        self._sendAdmin(
+        request = self._sendAdmin(
             p1,
             wantResponse=True,
             onResponse=_on_canned_message_response,
         )
+        if request is None:
+            logger.debug(
+                "Skipping canned-message wait because protocol send was not started"
+            )
+            return None
         if not response_event.wait(timeout=self._timeout.expireTimeout):
             logger.warning("Timed out waiting for canned message response")
             return None
@@ -1040,16 +1052,19 @@ class Node:
             # Another caller may have already populated the cache while we waited.
             if self.cannedPluginMessage:
                 logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                return self.cannedPluginMessage
-            logger.debug(
-                "self.cannedPluginMessageMessages:%s", self.cannedPluginMessageMessages
-            )
-
-            if self.cannedPluginMessageMessages:
-                self.cannedPluginMessage = self.cannedPluginMessageMessages
-                logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
-                return self.cannedPluginMessage
-            return None
+                result = self.cannedPluginMessage
+            else:
+                logger.debug(
+                    "self.cannedPluginMessageMessages:%s",
+                    self.cannedPluginMessageMessages,
+                )
+                if self.cannedPluginMessageMessages:
+                    self.cannedPluginMessage = self.cannedPluginMessageMessages
+                    logger.debug("canned_plugin_message:%s", self.cannedPluginMessage)
+                    result = self.cannedPluginMessage
+                else:
+                    result = None
+        return result
 
     def _set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message.
@@ -1702,7 +1717,7 @@ class Node:
         """Handle an incoming device metadata response packet and display the parsed metadata.
 
         Parses the decoded packet, updates the interface acknowledgment state (ACK/NAK), may retry
-        the metadata request when notified by the routing layer, and prints the device metadata
+        the metadata request when notified by the routing layer, and logs the device metadata
         fields (firmware_version, device_state_version, role, position_flags, hw_model, hasPKC,
         and excluded_modules) when available.
 
@@ -1740,20 +1755,23 @@ class Node:
         c = decoded["admin"]["raw"].get_device_metadata_response
         self._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(c))
-        print(f"\nfirmware_version: {c.firmware_version}")
-        print(f"device_state_version: {c.device_state_version}")
+        logger.info("\nfirmware_version: %s", c.firmware_version)
+        logger.info("device_state_version: %s", c.device_state_version)
         if c.role in config_pb2.Config.DeviceConfig.Role.values():
-            print(f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}")
+            logger.info("role: %s", config_pb2.Config.DeviceConfig.Role.Name(c.role))
         else:
-            print(f"role: {c.role}")
-        print(f"position_flags: {self.position_flags_list(c.position_flags)}")
+            logger.info("role: %s", c.role)
+        logger.info("position_flags: %s", self.position_flags_list(c.position_flags))
         if c.hw_model in mesh_pb2.HardwareModel.values():
-            print(f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}")
+            logger.info("hw_model: %s", mesh_pb2.HardwareModel.Name(c.hw_model))
         else:
-            print(f"hw_model: {c.hw_model}")
-        print(f"hasPKC: {c.hasPKC}")
+            logger.info("hw_model: %s", c.hw_model)
+        logger.info("hasPKC: %s", c.hasPKC)
         if c.excluded_modules > 0:
-            print(f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}")
+            logger.info(
+                "excluded_modules: %s",
+                self.excluded_modules_list(c.excluded_modules),
+            )
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
@@ -1807,11 +1825,11 @@ class Node:
         """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
 
         Inspect the routing error reason in the parsed packet `p` and:
-        - If the errorReason is not "NONE", print a NAK message and set
+        - If the errorReason is not "NONE", log a NAK message and set
           iface._acknowledgment.receivedNak to True.
-        - If the errorReason is "NONE" and the packet originates from the local node, print an
+        - If the errorReason is "NONE" and the packet originates from the local node, log an
           implicit-ACK message and set iface._acknowledgment.receivedImplAck to True.
-        - Otherwise print a normal ACK message and set iface._acknowledgment.receivedAck to True.
+        - Otherwise log a normal ACK message and set iface._acknowledgment.receivedAck to True.
 
         Parameters
         ----------
@@ -1820,13 +1838,29 @@ class Node:
             - p["decoded"]["routing"]["errorReason"]: routing error reason string.
             - p["from"]: numeric origin node identifier (string or int convertible).
         """
-        if p["decoded"]["routing"]["errorReason"] != "NONE":
+        decoded = p.get("decoded", {})
+        routing = decoded.get("routing")
+        if not isinstance(routing, dict):
+            logger.warning("Received ACK/NAK response without routing details: %s", p)
+            return
+        error_reason = routing.get("errorReason", "NONE")
+        if error_reason != "NONE":
             logger.warning(
-                f"Received a NAK, error reason: {p['decoded']['routing']['errorReason']}"
+                "Received a NAK, error reason: %s",
+                error_reason,
             )
             self.iface._acknowledgment.receivedNak = True
         else:
-            if int(p["from"]) == self.iface.localNode.nodeNum:
+            from_value = p.get("from")
+            if from_value is None:
+                logger.warning("Received ACK/NAK response without sender: %s", p)
+                return
+            try:
+                from_num = int(from_value)
+            except (TypeError, ValueError):
+                logger.warning("Received ACK/NAK response with invalid sender: %s", p)
+                return
+            if from_num == self.iface.localNode.nodeNum:
                 logger.info(
                     "Received an implicit ACK. Packet will likely arrive, but cannot be guaranteed."
                 )
