@@ -1,4 +1,25 @@
-"""Main BLE interface class."""
+"""Main BLE interface class.
+
+Concurrency model summary
+-------------------------
+`BLEInterface` intentionally centralizes connection/disconnect, receive-loop, and
+recovery control because these paths share state transitions and lock-sensitive
+invariants.
+
+When multiple locks are required, acquire in this order:
+1. `_REGISTRY_LOCK` (global address registry)
+2. per-address locks from gating (`_addr_lock_context`)
+3. `_connect_lock`
+4. `_state_lock`
+5. `_disconnect_lock`
+
+Threading model summary
+-----------------------
+- Receive thread: owns inbound packet reads and disconnect escalation.
+- Event/reconnect workers: coordinate wakeups and policy-driven reconnect.
+- Main thread: issues lifecycle operations (`connect()`, `close()`), which are
+  idempotent and synchronized through the shared state manager lock.
+"""
 
 import asyncio
 import atexit

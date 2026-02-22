@@ -1,4 +1,9 @@
-"""Tests for BLEStateManager state machine functionality."""
+"""Tests for BLEStateManager state machine functionality.
+
+This module is intentionally comprehensive: it exercises transitions, thread
+safety, race resistance, and stress/performance behavior in one place to keep
+state-machine invariants easy to audit.
+"""
 
 import gc
 import logging
