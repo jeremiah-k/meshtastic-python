@@ -385,6 +385,12 @@ def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
         `decoded.admin.raw.session_passkey` and a `from` sender field.
     """
     logger.debug("in _on_admin_receive() asDict:%s", asDict)
+    if "from" not in asDict:
+        logger.debug(
+            "Dropping admin packet because 'from' field is missing: %s", asDict
+        )
+        return
+
     try:
         adminMessage = asDict["decoded"]["admin"]["raw"]
         iface._getOrCreateByNum(asDict["from"])[
