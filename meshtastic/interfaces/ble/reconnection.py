@@ -2,7 +2,7 @@
 
 import logging
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -141,7 +141,7 @@ class ReconnectWorker:
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
-    def _call_policy(self, method_name: str, *args):
+    def _call_policy(self, method_name: str, *args: Any) -> Any:
         """Call a policy method with fallback to underscored version for backward compatibility.
 
         Parameters

@@ -647,6 +647,10 @@ def test_fuzz_snake_to_camel(a_string):
     assert "_" not in result
     if "_" not in a_string:
         assert result == a_string
+
+
+def test_snake_to_camel_examples() -> None:
+    """Test fixed snake_to_camel examples."""
     assert snake_to_camel("foo_bar") == "fooBar"
     assert snake_to_camel("alreadyCamel") == "alreadyCamel"
 

@@ -101,4 +101,6 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing():
         mock_connect.assert_not_called()
         mock_start_config.assert_not_called()
         mock_sleep.assert_not_called()
+        mock_socket.close.assert_called_once()
+        assert iface.socket is None
         iface.close()

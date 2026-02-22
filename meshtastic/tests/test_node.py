@@ -177,33 +177,33 @@ def test_exitSimulator(caplog):
     Asserts that a DEBUG-level log record contains the text "in exitSimulator".
 
     """
-    interface = MeshInterface()
-    interface.nodesByNum = {}
-    anode = Node(interface, "!ba400000", noProto=True)
-    with caplog.at_level(logging.DEBUG):
-        anode.exitSimulator()
+    with MeshInterface() as interface:
+        interface.nodesByNum = {}
+        anode = Node(interface, "!ba400000", noProto=True)
+        with caplog.at_level(logging.DEBUG):
+            anode.exitSimulator()
     assert re.search(r"in exitSimulator", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
 def test_reboot(caplog):
     """Test reboot."""
-    interface = MeshInterface()
-    interface.nodesByNum = {}
-    anode = Node(interface, 1234567890, noProto=True)
-    with caplog.at_level(logging.DEBUG):
-        anode.reboot()
+    with MeshInterface() as interface:
+        interface.nodesByNum = {}
+        anode = Node(interface, 1234567890, noProto=True)
+        with caplog.at_level(logging.DEBUG):
+            anode.reboot()
     assert re.search(r"Telling node to reboot", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
 def test_shutdown(caplog):
     """Test shutdown."""
-    interface = MeshInterface()
-    interface.nodesByNum = {}
-    anode = Node(interface, 1234567890, noProto=True)
-    with caplog.at_level(logging.DEBUG):
-        anode.shutdown()
+    with MeshInterface() as interface:
+        interface.nodesByNum = {}
+        anode = Node(interface, 1234567890, noProto=True)
+        with caplog.at_level(logging.DEBUG):
+            anode.shutdown()
     assert re.search(r"Telling node to shutdown", caplog.text, re.MULTILINE)
 
 

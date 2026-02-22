@@ -128,7 +128,7 @@ def iface_with_nodes():
     MeshInterface
         Interface instance populated with test node data and a mocked myInfo.
     """
-    nodesById = {
+    nodes_by_id = {
         "!9388f81c": {
             "num": 2475227164,
             "user": {
@@ -143,7 +143,7 @@ def iface_with_nodes():
         }
     }
 
-    nodesByNum = {
+    nodes_by_num = {
         2475227164: {
             "num": 2475227164,
             "user": {
@@ -159,8 +159,8 @@ def iface_with_nodes():
     }
     iface = MeshInterface(noProto=True)
     try:
-        iface.nodes = nodesById
-        iface.nodesByNum = nodesByNum
+        iface.nodes = nodes_by_id
+        iface.nodesByNum = nodes_by_num
         myInfo = MagicMock()
         iface.myInfo = myInfo
         iface.myInfo.my_node_num = 2475227164

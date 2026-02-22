@@ -95,7 +95,7 @@ ok = handler.safeCleanup(lambda: resource.close(), "resource close")
 
 `safeExecute` swallows `BleakError`, `DecodeError`, and
 `concurrent.futures.TimeoutError`; other exceptions are also caught unless
-`reraise=True`. `SystemExit` and `KeyboardInterrupt` are always re-raised.
+`reraise=True`. `SystemExit` and `KeyboardInterrupt` always propagate.
 
 ### `NotificationManager`
 
@@ -138,7 +138,7 @@ policy = RetryPolicy.emptyRead()  # or .transientError() / .autoReconnect()
 
 delay = policy._get_delay(attempt)       # float, jittered exponential backoff
 should_go = policy._should_retry(count)  # bool, respects max_retries
-delay, ok = policy._next_attempt()       # combined: compute delay + advance counter
+delay, ok = policy.next_attempt()        # combined: compute delay + advance counter
 ```
 
 For compatibility with existing Python projects, the stable BLE surface exposed

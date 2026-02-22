@@ -87,8 +87,7 @@ def test_onTunnelReceive_from_ourselves(mock_platform_system, caplog, iface_with
     mock_platform_system.side_effect = a_mock
     with caplog.at_level(logging.DEBUG):
         with patch("socket.socket"):
-            tun = Tunnel(iface)
-            mt_config.tunnel_instance = tun
+            Tunnel(iface)
             onTunnelReceive(packet, iface)
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
     assert re.search(r"Ignoring message we sent", caplog.text, re.MULTILINE)
@@ -110,8 +109,7 @@ def test_onTunnelReceive_from_someone_else(
     mock_platform_system.side_effect = a_mock
     with caplog.at_level(logging.DEBUG):
         with patch("socket.socket"):
-            tun = Tunnel(iface)
-            mt_config.tunnel_instance = tun
+            Tunnel(iface)
             onTunnelReceive(packet, iface)
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
 

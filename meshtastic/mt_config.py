@@ -1,4 +1,4 @@
-"""Globals singleton class.
+"""Module-level singleton namespace.
 
 The Global object is gone, as are all its setters and getters. Instead the
 module itself is the singleton namespace, which can be imported into
@@ -7,15 +7,19 @@ since we now rely on built in Python mechanisms.
 
 This is intended to make the Python read more naturally, and to make the
 intention of the code clearer and more compact. It is merely a sticking
-plaster over the use of shared mt_config, but the coupling issues wil be dealt
+plaster over the use of shared mt_config, but the coupling issues will be dealt
 with rather more easily once the code is simplified by this change.
 """
 
 import argparse
 import inspect
 import sys
+import warnings
 from typing import IO, Any
 
+# NOTE: Any additional public annotated module-level constants that are not
+# reset-managed state must either be prefixed with "_" or excluded from the
+# _annotated_state filter below.
 MODULE_STATE_DEFAULTS: dict[str, Any] = {
     "args": None,
     "parser": None,
@@ -62,7 +66,14 @@ _annotated_state: frozenset = frozenset(
     for key in _module_annotations
     if not key.startswith("_") and key != "MODULE_STATE_DEFAULTS"
 )
-if _module_annotations and _state_keys != _annotated_state:
+if not _module_annotations:
+    warnings.warn(
+        "inspect.get_annotations() returned no module annotations; skipping "
+        "mt_config state drift validation.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+elif _state_keys != _annotated_state:
     raise AssertionError(  # noqa: TRY003
         f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
         f"missing annotations: {_state_keys - _annotated_state}, "

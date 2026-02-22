@@ -47,7 +47,7 @@ jobs:
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
         id: create_release
 
         with:
@@ -108,14 +108,15 @@ jobs:
   #         pyinstaller -F -n meshtastic --collect-all meshtastic --codesign-identity "$MACOS_SIGNING_IDENTITY" meshtastic/__main__.py
 
   #     - name: Add mac to release
-  #       uses: actions/upload-release-asset@v1
+  #       run: cp dist/meshtastic dist/meshtastic_mac
+  #
+  #     - name: Add mac assets to release
+  #       uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
+  #       with:
+  #         tag_name: ${{ needs.release_create.outputs.version }}
+  #         files: dist/meshtastic_mac
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       with:
-  #         upload_url: ${{ needs.release_create.outputs.upload_url }}
-  #         asset_path: dist/meshtastic
-  #         asset_name: meshtastic_mac
-  #         asset_content_type: application/zip
 
   build-and-publish-ubuntu:
     runs-on: ubuntu-latest
@@ -144,7 +145,7 @@ jobs:
           cp standalone_readme.txt dist/readme.txt
 
       - name: Add ubuntu assets to release
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
         with:
           tag_name: ${{ needs.release_create.outputs.version }}
           files: |
@@ -172,12 +173,13 @@ jobs:
   #         pip install poetry
   #         bin/build-bin.sh
 
-  #     - name: Add windows to release
-  #       uses: actions/upload-release-asset@v1
+  #     - name: Prepare release asset name
+  #       run: Copy-Item dist/meshtastic.exe dist/meshtastic_windows.exe
+  #
+  #     - name: Add windows assets to release
+  #       uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
+  #       with:
+  #         tag_name: ${{ needs.release_create.outputs.version }}
+  #         files: dist/meshtastic_windows.exe
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       with:
-  #         upload_url: ${{ needs.release_create.outputs.upload_url }}
-  #         asset_path: dist/meshtastic.exe
-  #         asset_name: meshtastic_windows
-  #         asset_content_type: application/zip

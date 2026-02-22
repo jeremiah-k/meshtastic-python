@@ -28,7 +28,7 @@ def test_StreamInterface() -> None:
 # Note: This takes a bit, so moving from unit to slow
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
-def test_StreamInterface_with_noProto(caplog):
+def test_StreamInterface_with_noProto(caplog: pytest.LogCaptureFixture) -> None:
     """Verify noProto StreamInterface can read and write through an assigned stream."""
     stream = MagicMock()
     test_data = b"hello"

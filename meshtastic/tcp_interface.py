@@ -6,6 +6,7 @@ Meshtastic devices via TCP/IP network connections.
 
 # pylint: disable=R0917
 import contextlib
+import io
 import logging
 import socket
 import threading
@@ -24,13 +25,13 @@ class TCPInterface(StreamInterface):
     def __init__(
         self,
         hostname: str,
-        debugOut=None,
+        debugOut: io.TextIOWrapper | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         portNumber: int = DEFAULT_TCP_PORT,
         noNodes: bool = False,
         timeout: float = 300.0,
-    ):
+    ) -> None:
         """Initialize a TCPInterface for a meshtastic device and optionally establish a TCP connection.
 
         Parameters
@@ -62,8 +63,6 @@ class TCPInterface(StreamInterface):
 
         if connectNow:
             self.myConnect()
-        else:
-            self.socket = None
 
         super().__init__(
             debugOut=debugOut,
@@ -167,18 +166,22 @@ class TCPInterface(StreamInterface):
         b : bytes
             Bytes to send.
         """
-        if self.socket is not None:
-            try:
-                # sendall() guarantees full payload transmission or raises.
-                self.socket.sendall(b)
-            except OSError as ex:
-                logger.warning(
-                    "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
-                )
-                with contextlib.suppress(Exception):
+        sock = self.socket
+        if sock is None:
+            return
+        try:
+            # sendall() guarantees full payload transmission or raises.
+            sock.sendall(b)
+        except OSError as ex:
+            logger.warning(
+                "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
+            )
+            with contextlib.suppress(Exception):
+                if self.socket is sock:
                     self._socket_shutdown()
-                with contextlib.suppress(Exception):
-                    self.socket.close()
+            with contextlib.suppress(Exception):
+                sock.close()
+            if self.socket is sock:
                 self.socket = None
 
     def _attempt_reconnect(self) -> None:
@@ -248,9 +251,10 @@ class TCPInterface(StreamInterface):
             The received bytes, or `None` if no data was returned
             because the socket is absent, a reconnect was started, or shutdown was requested.
         """
-        if self.socket is not None:
+        sock = self.socket
+        if sock is not None:
             try:
-                data = self.socket.recv(length)
+                data = sock.recv(length)
             except OSError as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
@@ -260,11 +264,17 @@ class TCPInterface(StreamInterface):
                 logger.debug("dead socket, re-connecting")
                 # cleanup and reconnect socket without breaking reader thread
                 with contextlib.suppress(Exception):
-                    self._socket_shutdown()
+                    if self.socket is sock:
+                        self._socket_shutdown()
                 with contextlib.suppress(Exception):
-                    self.socket.close()
-                self.socket = None
-                self._attempt_reconnect()
+                    sock.close()
+                if self.socket is sock:
+                    self.socket = None
+                    self._attempt_reconnect()
+                else:
+                    logger.debug(
+                        "Socket changed during read cleanup, skipping reconnect"
+                    )
                 return None
             return data
 

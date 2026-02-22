@@ -2,7 +2,7 @@
 
 import logging
 import re
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -25,7 +25,8 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
     MagicMock
         An autospecced SerialInterface mock whose localNode.getChannelByName returns the mocked channel.
     """
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.localNode = MagicMock()
     channel = MagicMock()
     channel.index = channel_index
     iface.localNode.getChannelByName.return_value = channel
@@ -46,32 +47,33 @@ def test_RemoteHardwareClient():
 @pytest.mark.unit
 def test_onGPIOreceive(caplog):
     """Test onGPIOreceive."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
     iface.mask = 0xFFFFFFFF
     packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
     with caplog.at_level(logging.INFO):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
-        assert re.search(r"value=4096", caplog.text, re.MULTILINE)
+        assert re.search(r"value=4096", caplog.text)
 
 
 @pytest.mark.unit
 def test_onGPIOreceive_mask_fallback(caplog):
     """Test onGPIOreceive uses packet gpioMask when interface.mask is None."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
     iface.mask = None
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
     with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
-        assert re.search(r"mask:7", caplog.text, re.MULTILINE)
-        assert re.search(r"value=7", caplog.text, re.MULTILINE)
+        assert re.search(r"mask:7", caplog.text)
+        assert re.search(r"value=7", caplog.text)
 
 
 @pytest.mark.unit
 def test_RemoteHardwareClient_no_gpio_channel():
     """Test that RemoteHardwareClient raises MeshInterfaceError when there is no channel named 'gpio'."""
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.localNode = MagicMock()
     iface.localNode.getChannelByName.return_value = None
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         RemoteHardwareClient(iface)
@@ -86,7 +88,7 @@ def test_readGPIOs(caplog):
         rhw = RemoteHardwareClient(iface)
         with caplog.at_level(logging.DEBUG):
             rhw.readGPIOs("0x10", 123)
-        assert re.search(r"readGPIOs", caplog.text, re.MULTILINE)
+        assert re.search(r"readGPIOs", caplog.text)
         iface.sendData.assert_called_once()
         args, kwargs = iface.sendData.call_args
         assert args[1] == "0x10"
@@ -110,7 +112,7 @@ def test_writeGPIOs(caplog):
         rhw = RemoteHardwareClient(iface)
         with caplog.at_level(logging.DEBUG):
             rhw.writeGPIOs("0x10", 123, 1)
-        assert re.search(r"writeGPIOs", caplog.text, re.MULTILINE)
+        assert re.search(r"writeGPIOs", caplog.text)
         iface.sendData.assert_called_once()
         args, kwargs = iface.sendData.call_args
         assert args[1] == "0x10"
@@ -139,7 +141,7 @@ def test_watchGPIOs(caplog):
         rhw = RemoteHardwareClient(iface)
         with caplog.at_level(logging.DEBUG):
             rhw.watchGPIOs("0x10", 123)
-        assert re.search(r"watchGPIOs", caplog.text, re.MULTILINE)
+        assert re.search(r"watchGPIOs", caplog.text)
         iface.sendData.assert_called_once()
         args, kwargs = iface.sendData.call_args
         assert args[1] == "0x10"
