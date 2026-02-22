@@ -29,10 +29,6 @@ def test_StreamInterface():
 def test_StreamInterface_with_noProto(caplog):
     """Verify that a StreamInterface can be instantiated with noProto and, when assigned a stream, can write and read bytes to and from that stream.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     stream = MagicMock()
     test_data = b"hello"

@@ -64,7 +64,7 @@ _annotated_state: frozenset = frozenset(
     k for k in _module_annotations if k in _state_keys
 )
 if _module_annotations and _state_keys != _annotated_state:
-    raise AssertionError(
+    raise AssertionError(  # noqa: TRY003
         f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
         f"missing annotations: {_state_keys - _annotated_state}, "
         f"missing defaults: {_annotated_state - _state_keys}"

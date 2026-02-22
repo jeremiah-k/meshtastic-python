@@ -56,19 +56,19 @@ def _mock_sendText_helper(
     Parameters
     ----------
     text : str
-        _description_
+        The text message content to send.
     dest : Any
-        _description_
+        Destination node ID or address.
     wantAck : bool
-        _description_ (Default value = False)
+        Whether to request acknowledgement. (Default value = False)
     wantResponse : bool
-        _description_ (Default value = False)
+        Whether to request a response. (Default value = False)
     onResponse : Callable[..., Any] | None
-        _description_ (Default value = None)
+        Optional response callback. (Default value = None)
     channelIndex : int
-        _description_ (Default value = 0)
+        Channel index to send on. (Default value = 0)
     portNum : int
-        _description_ (Default value = 0)
+        Port number for the message. (Default value = 0)
     """
     _ = onResponse  # Mark as intentionally unused
     print("inside mocked sendText")
@@ -82,7 +82,7 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
-        _description_
+        Pytest monkeypatching fixture.
     """
     monkeypatch.setattr("meshtastic.util.check_if_newer_version", lambda: None)
 
@@ -92,10 +92,6 @@ def _mock_newer_version_check(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_main_init_parser_no_args(capsys):
     """Test no arguments.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = [""]
     mt_config.args = sys.argv
@@ -110,10 +106,6 @@ def test_main_init_parser_no_args(capsys):
 def test_main_init_parser_version(capsys):
     """Test --version.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--version"]
     mt_config.args = sys.argv
@@ -132,10 +124,6 @@ def test_main_init_parser_version(capsys):
 def test_main_main_version(capsys):
     """Test --version.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--version"]
     mt_config.args = sys.argv
@@ -154,10 +142,6 @@ def test_main_main_version(capsys):
 def test_main_main_no_args(capsys):
     """Test with no args.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = [""]
     mt_config.args = sys.argv
@@ -177,10 +161,6 @@ def test_main_support(capsys):
 
     Asserts that stdout contains "System", "Platform", "Machine", and "Executable", and that no stderr was produced.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--support"]
     mt_config.args = sys.argv
@@ -208,12 +188,6 @@ def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
     code 1, stderr contains "Error connecting to localhost", and the port discovery
     function was invoked.
 
-    Parameters
-    ----------
-    patched_find_ports : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -235,12 +209,6 @@ def test_main_ch_index_no_devices(patched_find_ports, _patched_tcp, capsys):
 def test_main_test_no_ports(patched_find_ports, capsys):
     """Test --test with no hardware.
 
-    Parameters
-    ----------
-    patched_find_ports : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
@@ -265,12 +233,6 @@ def test_main_test_no_ports(patched_find_ports, capsys):
 def test_main_test_one_port(patched_find_ports, capsys):
     """Test --test with one fake port.
 
-    Parameters
-    ----------
-    patched_find_ports : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
@@ -295,12 +257,6 @@ def test_main_test_one_port(patched_find_ports, capsys):
 def test_main_test_two_ports_success(patched_test_all, capsys):
     """Test --test two fake ports and testAll() is a simulated success.
 
-    Parameters
-    ----------
-    patched_test_all : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
@@ -321,12 +277,6 @@ def test_main_test_two_ports_success(patched_test_all, capsys):
 def test_main_test_two_ports_fails(patched_test_all, capsys):
     """Test --test two fake ports and testAll() is a simulated failure.
 
-    Parameters
-    ----------
-    patched_test_all : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv
@@ -351,12 +301,6 @@ def test_main_info(capsys, caplog):
     asserts stdout contains "Connected to radio" and the marker, stderr is empty, and the
     SerialInterface constructor was invoked.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-    caplog : _type_
-        _description_
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -396,14 +340,6 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
     Asserts that a SystemExit with code 1 is raised, the current user lookup was attempted,
     stderr contains guidance matching "Need to add yourself", and stdout is empty.
 
-    Parameters
-    ----------
-    patched_getlogin : _type_
-        _description_
-    capsys : _type_
-        _description_
-    caplog : _type_
-        _description_
     """
     sys.argv = ["", "--info"]
     mt_config.args = sys.argv
@@ -434,10 +370,6 @@ def test_main_info_with_permission_error(patched_getlogin, capsys, caplog):
 def test_main_info_with_tcp_interface(capsys):
     """Test --info.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--info", "--host", "meshtastic.local"]
     mt_config.args = sys.argv
@@ -468,10 +400,6 @@ def test_main_info_with_tcp_interface(capsys):
 def test_main_no_proto(capsys):
     """Test --noproto (using --info for output).
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--info", "--noproto"]
     mt_config.args = sys.argv
@@ -493,10 +421,6 @@ def test_main_no_proto(capsys):
     def my_sleep(amount):
         """_summary_.
 
-        Parameters
-        ----------
-        amount : _type_
-            _description_
         """
         print(f"amount:{amount}")
         sys.exit(0)
@@ -520,10 +444,6 @@ def test_main_info_with_seriallog_stdout(capsys):
 
     Asserts that stdout contains "Connected to radio" and the output produced by showInfo, and that nothing is written to stderr.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--info", "--seriallog", "stdout"]
     mt_config.args = sys.argv
@@ -554,10 +474,6 @@ def test_main_info_with_seriallog_stdout(capsys):
 def test_main_info_with_seriallog_output_txt(capsys):
     """Test --info.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--info", "--seriallog", "output.txt"]
     mt_config.args = sys.argv
@@ -590,10 +506,6 @@ def test_main_info_with_seriallog_output_txt(capsys):
 def test_main_qr(capsys):
     """Test --qr.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
@@ -625,15 +537,10 @@ def test_main_qr(capsys):
 def test_main_onConnected_exception(capsys):
     """Verify that running main with --qr exits with code 1 when QR code generation raises an exception.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-
     Raises
     ------
     Exception
-        _description_
+        Raised by the monkeypatched QR-code function to exercise error handling.
     """
     sys.argv = ["", "--qr"]
     mt_config.args = sys.argv
@@ -644,7 +551,7 @@ def test_main_onConnected_exception(capsys):
         Raises
         ------
         Exception
-            _description_
+            A generic Exception with the message "Fake exception.".
         """
         raise Exception("Fake exception.")  # pylint: disable=W0719
 
@@ -670,10 +577,6 @@ def test_main_nodes(capsys):
     Asserts that the output contains a "Connected to radio" message, that the mocked
     showNodes output is printed, no stderr is produced, and SerialInterface was instantiated.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--nodes"]
     mt_config.args = sys.argv
@@ -709,10 +612,6 @@ def test_main_nodes(capsys):
 def test_main_set_owner_to_bob(capsys):
     """Test --set-owner bob.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-owner", "bob"]
     mt_config.args = sys.argv
@@ -734,10 +633,6 @@ def test_main_set_owner_to_bob(capsys):
 def test_main_set_owner_short_to_bob(capsys):
     """Test --set-owner-short bob.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-owner-short", "bob"]
     mt_config.args = sys.argv
@@ -759,10 +654,6 @@ def test_main_set_owner_short_to_bob(capsys):
 def test_main_set_is_unmessageable_to_true(capsys):
     """Test --set-is-unmessageable true.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-is-unmessageable", "true"]
     mt_config.args = sys.argv
@@ -786,10 +677,6 @@ def test_main_set_is_unmessageable_to_true(capsys):
 def test_main_set_is_unmessagable_to_true(capsys):
     """Test --set-is-unmessagable true.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-is-unmessagable", "true"]
     mt_config.args = sys.argv
@@ -813,10 +700,6 @@ def test_main_set_is_unmessagable_to_true(capsys):
 def test_main_set_canned_messages(capsys):
     """Test --set-canned-message.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-canned-message", "foo"]
     mt_config.args = sys.argv
@@ -838,14 +721,6 @@ def test_main_set_canned_messages(capsys):
 def test_main_get_canned_messages(capsys, caplog, iface_with_nodes):
     """Test --get-canned-message.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-    caplog : _type_
-        _description_
-    iface_with_nodes : _type_
-        _description_
     """
     sys.argv = ["", "--get-canned-message"]
     mt_config.args = sys.argv
@@ -876,10 +751,6 @@ def test_main_set_ringtone(capsys):
     "Setting ringtone to foo,bar", stderr is empty, and the SerialInterface
     was instantiated.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-ringtone", "foo,bar"]
     mt_config.args = sys.argv
@@ -901,14 +772,6 @@ def test_main_set_ringtone(capsys):
 def test_main_get_ringtone(capsys, caplog, iface_with_nodes):
     """Test --get-ringtone.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-    caplog : _type_
-        _description_
-    iface_with_nodes : _type_
-        _description_
     """
     sys.argv = ["", "--get-ringtone"]
     mt_config.args = sys.argv
@@ -937,10 +800,6 @@ def test_main_get_ringtone(capsys, caplog, iface_with_nodes):
 def test_main_set_ham_to_KI123(capsys):
     """Test --set-ham KI123.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-ham", "KI123"]
     mt_config.args = sys.argv
@@ -954,12 +813,6 @@ def test_main_set_ham_to_KI123(capsys):
     def mock_setOwner(name, is_licensed):
         """_summary_.
 
-        Parameters
-        ----------
-        name : _type_
-            _description_
-        is_licensed : _type_
-            _description_
         """
         print(f"inside mocked setOwner name:{name} is_licensed:{is_licensed}")
 
@@ -991,10 +844,6 @@ def test_main_set_ham_to_KI123(capsys):
 def test_main_reboot(capsys):
     """Test --reboot.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--reboot"]
     mt_config.args = sys.argv
@@ -1026,10 +875,6 @@ def test_main_reboot(capsys):
 def test_main_shutdown(capsys):
     """Test --shutdown.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--shutdown"]
     mt_config.args = sys.argv
@@ -1066,10 +911,6 @@ def test_main_sendtext(capsys):
     - the mocked sendText was invoked and its debug output appeared on stdout,
     - no stderr output was produced.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--sendtext", "hello"]
     mt_config.args = sys.argv
@@ -1105,7 +946,7 @@ def test_main_sendtext_with_channel(capsys):
 
     Parameters
     ----------
-    capsys : _type_
+    capsys : pytest.CaptureFixture[str]
         Pytest capture fixture for reading stdout and stderr.
     """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "1"]
@@ -1132,12 +973,6 @@ def test_main_sendtext_with_channel(capsys):
 def test_main_sendtext_with_invalid_channel(caplog, capsys):
     """Test --sendtext.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "-1"]
     mt_config.args = sys.argv
@@ -1166,12 +1001,6 @@ def test_main_sendtext_with_invalid_channel(caplog, capsys):
 def test_main_sendtext_with_invalid_channel_nine(caplog, capsys):
     """Test --sendtext.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "9"]
     mt_config.args = sys.argv
@@ -1211,12 +1040,6 @@ def test_main_sendtext_with_dest(
 ):
     """Test --sendtext with --dest.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-    caplog : _type_
-        _description_
     """
     sys.argv = ["", "--sendtext", "hello", "--dest", "!12345678"]
     mt_config.args = sys.argv
@@ -1245,10 +1068,6 @@ def test_main_sendtext_with_dest(
 def test_main_removeposition_remote(capsys):
     """Test --remove-position with a remote dest.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--remove-position", "--dest", "!12345678"]
     mt_config.args = sys.argv
@@ -1276,10 +1095,6 @@ def test_main_removeposition_remote(capsys):
 def test_main_setlat_remote(capsys):
     """Test --setlat with a remote dest.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--setlat", "37.5", "--dest", "!12345678"]
     mt_config.args = sys.argv
@@ -1311,10 +1126,6 @@ def test_main_removeposition(capsys):
     node's removeFixedPosition was invoked (observable via its printed output), stderr is empty,
     and a SerialInterface instance was created.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--remove-position"]
     mt_config.args = sys.argv
@@ -1347,10 +1158,6 @@ def test_main_removeposition(capsys):
 def test_main_setlat(capsys):
     """Test --setlat.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--setlat", "37.5"]
     mt_config.args = sys.argv
@@ -1360,14 +1167,6 @@ def test_main_setlat(capsys):
     def mock_setFixedPosition(lat, lon, alt):
         """_summary_.
 
-        Parameters
-        ----------
-        lat : _type_
-            _description_
-        lon : _type_
-            _description_
-        alt : _type_
-            _description_
         """
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
@@ -1395,10 +1194,6 @@ def test_main_setlat(capsys):
 def test_main_setlon(capsys):
     """Test --setlon.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--setlon", "-122.1"]
     mt_config.args = sys.argv
@@ -1408,14 +1203,6 @@ def test_main_setlon(capsys):
     def mock_setFixedPosition(lat, lon, alt):
         """_summary_.
 
-        Parameters
-        ----------
-        lat : _type_
-            _description_
-        lon : _type_
-            _description_
-        alt : _type_
-            _description_
         """
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
@@ -1443,10 +1230,6 @@ def test_main_setlon(capsys):
 def test_main_setalt(capsys):
     """Test --setalt.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--setalt", "51"]
     mt_config.args = sys.argv
@@ -1456,14 +1239,6 @@ def test_main_setalt(capsys):
     def mock_setFixedPosition(lat, lon, alt):
         """_summary_.
 
-        Parameters
-        ----------
-        lat : _type_
-            _description_
-        lon : _type_
-            _description_
-        alt : _type_
-            _description_
         """
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
@@ -1491,10 +1266,6 @@ def test_main_setalt(capsys):
 def test_main_seturl(capsys):
     """Test --seturl (url used below is what is generated after a factory_reset).
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--seturl", "https://www.meshtastic.org/d/#CgUYAyIBAQ"]
     mt_config.args = sys.argv
@@ -1521,10 +1292,6 @@ def test_main_set_valid(
 ):
     """Test --set with valid field.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
     mt_config.args = sys.argv
@@ -1555,10 +1322,6 @@ def test_main_set_valid_wifi_psk(
 ):
     """Test --set with valid field.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set", "network.wifi_psk", "123456789"]
     mt_config.args = sys.argv
@@ -1589,10 +1352,6 @@ def test_main_set_invalid_wifi_psk(
 ):
     """Test --set with an invalid value (psk must be 8 or more characters).
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set", "network.wifi_psk", "1234567"]
     mt_config.args = sys.argv
@@ -1628,10 +1387,6 @@ def test_main_set_valid_camel_case(
 ):
     """Test --set with valid field.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set", "network.wifi_ssid", "foo"]
     mt_config.args = sys.argv
@@ -1663,10 +1418,6 @@ def test_main_set_with_invalid(
 ):
     """Test --set with invalid field.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set", "foo", "foo"]
     mt_config.args = sys.argv
@@ -1698,10 +1449,6 @@ def test_main_configure_with_snake_case(
 ):
     """Test --configure with valid file.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv
@@ -1740,10 +1487,6 @@ def test_main_configure_with_camel_case_keys(
 ):
     """Test --configure with valid file.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv
@@ -1777,10 +1520,6 @@ def test_main_configure_with_camel_case_keys(
 def test_main_ch_add_valid(capsys):
     """Test --ch-add with valid channel name, and that channel name does not already exist.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv
@@ -1813,10 +1552,6 @@ def test_main_ch_add_valid(capsys):
 def test_main_ch_add_invalid_name_too_long(capsys):
     """Test --ch-add with invalid channel name, name too long.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-add", "testingtestingtesting"]
     mt_config.args = sys.argv
@@ -1854,10 +1589,6 @@ def test_main_ch_add_invalid_name_too_long(capsys):
 def test_main_ch_add_but_name_already_exists(capsys):
     """Test --ch-add with a channel name that already exists.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv
@@ -1888,10 +1619,6 @@ def test_main_ch_add_but_name_already_exists(capsys):
 def test_main_ch_add_but_no_more_channels(capsys):
     """Test --ch-add with but there are no more channels.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv
@@ -1926,10 +1653,6 @@ def test_main_ch_add_but_no_more_channels(capsys):
 def test_main_ch_del(capsys):
     """Test --ch-del with valid secondary channel to be deleted.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-del", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -1955,10 +1678,6 @@ def test_main_ch_del(capsys):
 def test_main_ch_del_no_ch_index_specified(capsys):
     """Test --ch-del without a valid ch-index.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-del"]
     mt_config.args = sys.argv
@@ -1987,10 +1706,6 @@ def test_main_ch_del_no_ch_index_specified(capsys):
 def test_main_ch_del_primary_channel(capsys):
     """Test --ch-del on ch-index=0.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-del", "--ch-index", "0"]
     mt_config.args = sys.argv
@@ -2022,10 +1737,6 @@ def test_main_ch_del_primary_channel(capsys):
 def test_main_ch_enable_valid_secondary_channel(capsys):
     """Test --ch-enable with --ch-index.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-enable", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -2052,10 +1763,6 @@ def test_main_ch_enable_valid_secondary_channel(capsys):
 def test_main_ch_disable_valid_secondary_channel(capsys):
     """Test --ch-disable with --ch-index.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-disable", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -2082,10 +1789,6 @@ def test_main_ch_disable_valid_secondary_channel(capsys):
 def test_main_ch_enable_without_a_ch_index(capsys):
     """Test --ch-enable without --ch-index.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-enable"]
     mt_config.args = sys.argv
@@ -2115,10 +1818,6 @@ def test_main_ch_enable_without_a_ch_index(capsys):
 def test_main_ch_enable_primary_channel(capsys):
     """Test --ch-enable with --ch-index = 0.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-enable", "--ch-index", "0"]
     mt_config.args = sys.argv
@@ -2179,10 +1878,6 @@ def test_main_ch_longfast_on_non_primary_channel(capsys):
     cannot be set for a non-primary channel while still showing
     "Connected to radio".
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-longfast", "--ch-index", "1"]
     mt_config.args = sys.argv
@@ -2377,10 +2072,6 @@ def test_main_ch_longfast_on_non_primary_channel(capsys):
 def test_main_get_with_invalid(capsys):
     """Test --get with invalid field.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--get", "foo"]
     mt_config.args = sys.argv
@@ -2412,12 +2103,6 @@ def test_main_get_with_invalid(capsys):
 def test_main_onReceive_empty(caplog, capsys):
     """Test onReceive with empty packet - should handle gracefully without error.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     args = MagicMock()
     mt_config.args = args
@@ -2455,12 +2140,6 @@ def test_main_onReceive_with_sendtext(caplog, capsys):
     The entire point of this test is to make sure the interface.close() call
     is made in onReceive().
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--sendtext", "hello"]
     mt_config.args = sys.argv
@@ -2495,12 +2174,6 @@ def test_main_onReceive_with_sendtext(caplog, capsys):
 def test_main_onReceive_with_text(caplog, capsys):
     """Test onReceive with text.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     args = MagicMock()
     args.sendtext.return_value = "foo"
@@ -2540,10 +2213,6 @@ def test_main_onReceive_with_text(caplog, capsys):
 def test_main_onConnection(capsys):
     """Test onConnection.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = [""]
     mt_config.args = sys.argv
@@ -2559,7 +2228,7 @@ def test_main_onConnection(capsys):
 
             Returns
             -------
-            _type_
+            str
                 The fixed fake topic name `'foo'`.
             """
             return "foo"
@@ -2576,10 +2245,6 @@ def test_main_onConnection(capsys):
 def test_main_onConnection_with_non_topic(capsys):
     """Test onConnection with non-topic objects.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = [""]
     mt_config.args = sys.argv
@@ -2597,10 +2262,6 @@ def test_main_onConnection_with_non_topic(capsys):
 def test_main_export_config(capsys):
     """Test export_config() function directly.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
@@ -2657,14 +2318,14 @@ def _build_export_interface(
     Parameters
     ----------
     local_config : localonly_pb2.LocalConfig
-        _description_
+        Local device configuration to attach to the mocked interface.
     module_config : localonly_pb2.LocalModuleConfig
-        _description_
+        Module configuration to attach to the mocked interface.
 
     Returns
     -------
     MagicMock
-        _description_
+        A MagicMock instance wired up with localConfig, moduleConfig, and helper return values.
     """
     iface = MagicMock(autospec=SerialInterface)
     iface.localNode = MagicMock()
@@ -2684,10 +2345,6 @@ def _build_export_interface(
 def test_export_config_configure_round_trip_security_keys(capsys):
     """Ensure export->configure->export preserves security keys and structure.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     source_local = localonly_pb2.LocalConfig()
     source_module = localonly_pb2.LocalModuleConfig()
@@ -2848,10 +2505,6 @@ def test_set_missing_flags_false():
 def test_main_gpio_rd_no_gpio_channel(capsys):
     """Test --gpio_rd with no named gpio channel.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--gpio-rd", "0x10", "--dest", "!foo"]
     mt_config.args = sys.argv
@@ -2876,10 +2529,6 @@ def test_main_gpio_rd_no_gpio_channel(capsys):
 def test_main_gpio_rd_no_dest(capsys):
     """Test --gpio_rd with a named gpio channel but no dest was specified.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--gpio-rd", "0x2000"]
     mt_config.args = sys.argv
@@ -3512,10 +3161,6 @@ def test_main_ch_set_psk_no_ch_index(capsys):
     Asserts that the tool reports a successful connection, emits a warning that `--ch-index` must
     be specified, produces no stderr output, and raises SystemExit with code 1.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--ch-set", "psk", "foo", "--host", "meshtastic.local"]
     mt_config.args = sys.argv
@@ -3542,10 +3187,6 @@ def test_main_ch_set_psk_no_ch_index(capsys):
 def test_main_ch_set_psk_with_ch_index(capsys):
     """Test --ch-set psk.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = [
         "",
@@ -3605,10 +3246,6 @@ def test_main_ch_set_psk_with_ch_index(capsys):
 def test_onNode(capsys):
     """Test onNode.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     onNode("foo")
     out, err = capsys.readouterr()
@@ -3621,10 +3258,6 @@ def test_onNode(capsys):
 def test_tunnel_no_args(capsys):
     """Test tunnel no arguments.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = [""]
     mt_config.args = sys.argv
@@ -3643,14 +3276,6 @@ def test_tunnel_no_args(capsys):
 def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system, caplog, capsys):
     """Test tunnel with tunnel arg (act like we are on a linux system).
 
-    Parameters
-    ----------
-    mock_platform_system : _type_
-        _description_
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
@@ -3675,14 +3300,6 @@ def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system, caplog, capsys)
 def test_tunnel_subnet_arg_with_no_devices(mock_platform_system, caplog, capsys):
     """Test tunnel with subnet arg (act like we are on a linux system).
 
-    Parameters
-    ----------
-    mock_platform_system : _type_
-        _description_
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
@@ -3719,14 +3336,6 @@ def test_tunnel_tunnel_arg(
 ):
     """Test tunnel with tunnel arg (act like we are on a linux system).
 
-    Parameters
-    ----------
-    mock_platform_system : _type_
-        _description_
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
 
     # Override the time.sleep so there is no loop
@@ -3737,7 +3346,7 @@ def test_tunnel_tunnel_arg(
 
         Parameters
         ----------
-        amount : _type_
+        amount : float
             The value (typically a sleep duration) to print before exiting.
         """
         print(f"{amount}")
@@ -3844,10 +3453,6 @@ def test_remove_ignored_node():
 def test_main_set_owner_whitespace_only(capsys):
     """Test --set-owner with whitespace-only name.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-owner", "   "]
     mt_config.args = sys.argv
@@ -3872,10 +3477,6 @@ def test_main_set_owner_whitespace_only(capsys):
 def test_main_set_owner_empty_string(capsys):
     """Test --set-owner with empty string.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-owner", ""]
     mt_config.args = sys.argv
@@ -3900,10 +3501,6 @@ def test_main_set_owner_empty_string(capsys):
 def test_main_set_owner_short_whitespace_only(capsys):
     """Test --set-owner-short with whitespace-only name.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-owner-short", "   "]
     mt_config.args = sys.argv
@@ -3928,10 +3525,6 @@ def test_main_set_owner_short_whitespace_only(capsys):
 def test_main_set_owner_short_empty_string(capsys):
     """Test --set-owner-short with empty string.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-owner-short", ""]
     mt_config.args = sys.argv
@@ -3959,10 +3552,6 @@ def test_main_set_ham_whitespace_only(capsys):
     Asserts the error message "ERROR: Ham radio callsign cannot be empty or contain only
     whitespace characters" appears on stderr and that the process exits with code 1.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-ham", "   "]
     mt_config.args = sys.argv
@@ -3988,10 +3577,6 @@ def test_main_set_ham_whitespace_only(capsys):
 def test_main_set_ham_empty_string(capsys):
     """Test --set-ham with empty string.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     sys.argv = ["", "--set-ham", ""]
     mt_config.args = sys.argv

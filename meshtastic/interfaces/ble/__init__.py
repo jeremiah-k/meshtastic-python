@@ -19,8 +19,8 @@ except ImportError as exc:  # pragma: no cover - dependency guard
     ) from exc
 _ = _bleak
 
-from meshtastic.interfaces.ble.client import BLEClient  # noqa: E402
-from meshtastic.interfaces.ble.constants import (  # noqa: E402
+from meshtastic.interfaces.ble.client import BLEClient
+from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     ERROR_CONNECTION_FAILED,
     ERROR_MULTIPLE_DEVICES,
@@ -38,7 +38,7 @@ from meshtastic.interfaces.ble.constants import (  # noqa: E402
     BLEConfig,
     logger,
 )
-from meshtastic.interfaces.ble.interface import BLEInterface  # noqa: E402
+from meshtastic.interfaces.ble.interface import BLEInterface
 
 __all__ = [
     # Main classes

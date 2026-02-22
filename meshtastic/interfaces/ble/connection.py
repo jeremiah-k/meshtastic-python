@@ -313,7 +313,7 @@ class ConnectionOrchestrator:
         """
         # Initial state check under lock before performing blocking I/O
         with self.state_lock:
-            current_state = self.state_manager._state_name
+            current_state = self.state_manager._current_state
             if current_state != ConnectionState.CONNECTING:
                 logger.debug(
                     "Connection finalization aborted: state changed from CONNECTING to %s during connect",
@@ -330,7 +330,7 @@ class ConnectionOrchestrator:
 
         # Re-check state after registration under lock for atomic state transition
         with self.state_lock:
-            if self.state_manager._state_name != ConnectionState.CONNECTING:
+            if self.state_manager._current_state != ConnectionState.CONNECTING:
                 logger.debug(
                     "Connection finalization aborted: state changed during notification registration"
                 )
@@ -375,14 +375,14 @@ class ConnectionOrchestrator:
                 "Failed state transition to %s during %s (current=%s)",
                 ConnectionState.ERROR.value,
                 error_context,
-                self.state_manager._state_name.value,
+                self.state_manager._current_state.value,
             )
         if not self.state_manager._transition_to(ConnectionState.DISCONNECTED):
             logger.warning(
                 "Failed state transition to %s during %s (current=%s); forcing reset",
                 ConnectionState.DISCONNECTED.value,
                 error_context,
-                self.state_manager._state_name.value,
+                self.state_manager._current_state.value,
             )
             self.state_manager._reset_to_disconnected()
 

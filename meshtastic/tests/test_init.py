@@ -28,10 +28,6 @@ def test_init_serial_alias_points_to_internal_module():
 def test_init_on_text_receive_with_exception(caplog):
     """Test _on_text_receive.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     args = MagicMock()
     mt_config.args = args
@@ -47,10 +43,6 @@ def test_init_on_text_receive_with_exception(caplog):
 def test_init_on_position_receive(caplog):
     """Test _on_position_receive.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     args = MagicMock()
     mt_config.args = args
@@ -65,12 +57,6 @@ def test_init_on_position_receive(caplog):
 def test_init_on_node_info_receive(caplog, iface_with_nodes):
     """Test _on_node_info_receive.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    iface_with_nodes : _type_
-        _description_
     """
     args = MagicMock()
     mt_config.args = args

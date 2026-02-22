@@ -2,7 +2,7 @@
 
 import logging
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -141,6 +141,28 @@ class ReconnectWorker:
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
+
+    def _call_policy(self, method_name: str, *args):
+        """Call a policy method with fallback to underscored version for backward compatibility.
+
+        Parameters
+        ----------
+        method_name : str
+            Name of the public method to call on the policy.
+        *args
+            Arguments to pass to the policy method.
+
+        Returns
+        -------
+        Any
+            The return value from the policy method.
+        """
+        method = getattr(self.reconnect_policy, method_name, None)
+        if callable(method):
+            return method(*args)
+        # Backward compatibility for test doubles that only expose underscored methods.
+        return getattr(self.reconnect_policy, f"_{method_name}")(*args)
+
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """Determine whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
 
@@ -190,12 +212,7 @@ class ReconnectWorker:
         on_exit : Callable[[], None] | None
             Optional callback called once when the loop finishes (successful connect, abort, or exception). (Default value = None)
         """
-        reset_policy = getattr(self.reconnect_policy, "reset", None)
-        if callable(reset_policy):
-            reset_policy()
-        else:
-            # Backward compatibility for test doubles that only expose underscored methods.
-            self.reconnect_policy._reset()
+        self._call_policy("reset")
         interface = self.interface
         override_delay: float | None = None
 
@@ -204,14 +221,7 @@ class ReconnectWorker:
                 override_delay = None
                 if self._should_abort_reconnect(auto_reconnect, "loop start"):
                     return
-                get_attempt_count = getattr(
-                    self.reconnect_policy, "get_attempt_count", None
-                )
-                if callable(get_attempt_count):
-                    attempt_num = get_attempt_count() + 1
-                else:
-                    # Backward compatibility for test doubles.
-                    attempt_num = self.reconnect_policy._get_attempt_count() + 1
+                attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
                 try:
                     if interface._is_connection_connected:
                         return
@@ -290,12 +300,7 @@ class ReconnectWorker:
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
-                next_attempt = getattr(self.reconnect_policy, "next_attempt", None)
-                if callable(next_attempt):
-                    sleep_delay, should_retry = next_attempt()
-                else:
-                    # Backward compatibility for test doubles.
-                    sleep_delay, should_retry = self.reconnect_policy._next_attempt()
+                sleep_delay, should_retry = cast(tuple[float, bool], self._call_policy("next_attempt"))
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:

@@ -391,6 +391,7 @@ def _is_currently_connected_elsewhere(
         return False
 
     owner_to_check: Any | None = None
+    # Phase 1: Check under registry lock.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
             return False
@@ -440,6 +441,7 @@ def _is_currently_connected_elsewhere(
     # paths return from inside the first _REGISTRY_LOCK block above.
     connection_state = _owner_connected_state(owner_to_check)
 
+    # Phase 2: Verify owner connection state; re-check under registry lock to close the TOCTOU window.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:
             return False

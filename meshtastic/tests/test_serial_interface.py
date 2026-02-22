@@ -24,20 +24,6 @@ def test_SerialInterface_single_port(
 ):
     """Test that we can instantiate a SerialInterface with a single port.
 
-    Parameters
-    ----------
-    mocked_findPorts : _type_
-        _description_
-    mocked_serial : _type_
-        _description_
-    mocked_open : _type_
-        _description_
-    mock_hupcl : _type_
-        _description_
-    mock_sleep : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     iface = SerialInterface(noProto=True)
     iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
@@ -66,12 +52,6 @@ def test_SerialInterface_single_port(
 def test_SerialInterface_no_ports(mocked_findPorts, caplog):
     """Test that we can instantiate a SerialInterface with no ports.
 
-    Parameters
-    ----------
-    mocked_findPorts : _type_
-        _description_
-    caplog : _type_
-        _description_
     """
     serial_interface = None
     try:
@@ -92,10 +72,6 @@ def test_SerialInterface_no_ports(mocked_findPorts, caplog):
 def test_SerialInterface_multiple_ports(mocked_findPorts):
     """Test that SerialInterface raises MeshInterfaceError when multiple ports are detected.
 
-    Parameters
-    ----------
-    mocked_findPorts : _type_
-        _description_
     """
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         SerialInterface(noProto=True)

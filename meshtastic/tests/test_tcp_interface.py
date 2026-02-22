@@ -13,10 +13,6 @@ from ..tcp_interface import TCPInterface
 def test_TCPInterface(capsys):
     """Test that we can instantiate a TCPInterface.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
     """
     with patch("socket.socket") as mock_socket:
         iface = TCPInterface(hostname="localhost", noProto=True)
@@ -42,7 +38,7 @@ def test_TCPInterface_exception():
     Raises
     ------
     ValueError
-        _description_
+        If the socket connection raises a ValueError ("Fake exception.").
     """
 
     def throw_an_exception():

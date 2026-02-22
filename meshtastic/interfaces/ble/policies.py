@@ -87,13 +87,9 @@ class ReconnectPolicy:
         self._random: _RandomLike = random_source or random
         self._attempt_count = 0
 
-    def _reset(self) -> None:
-        """Reset the internal attempt counter to start a new retry cycle."""
-        self._attempt_count = 0
-
     def reset(self) -> None:
         """Reset the policy's internal attempt counter to start a new retry cycle."""
-        self._reset()
+        self._attempt_count = 0
 
     def _get_delay(self, attempt: int | None = None) -> float:
         """Compute a jittered exponential-backoff delay for a given retry attempt.
@@ -135,42 +131,20 @@ class ReconnectPolicy:
             attempt = self._attempt_count
         return self.max_retries is None or attempt < self.max_retries
 
-    def _next_attempt(self) -> tuple[float, bool]:
-        """Compute the jittered backoff delay and whether another retry is permitted for the current attempt, then advance the internal attempt counter.
-
-        The retry decision is evaluated using the pre-increment attempt count; therefore `max_retries` counts retries after the initial attempt (total attempts = 1 + max_retries).
-
-        Returns
-        -------
-        delay : float
-            Computed jittered backoff delay for the current attempt.
-        should_retry : bool
-            `True` if another retry is permitted, `False` otherwise.
-        """
-        delay = self._get_delay()
-        should_retry = self._should_retry()
-        self._attempt_count += 1
-        return delay, should_retry
-
     def next_attempt(self) -> tuple[float, bool]:
         """Compute the delay for the current retry attempt, advance the internal attempt counter, and indicate if further retries are permitted.
+
+        The retry decision is evaluated using the pre-increment attempt count; therefore `max_retries` counts retries after the initial attempt (total attempts = 1 + max_retries).
 
         Returns
         -------
         delay_and_permission : tuple[float, bool]
             A tuple where the first element is the computed jittered backoff delay in seconds, and the second element is `True` if another retry is permitted, `False` otherwise.
         """
-        return self._next_attempt()
-
-    def _get_attempt_count(self) -> int:
-        """Internal helper: return the number of attempts performed by this policy.
-
-        Returns
-        -------
-        int
-            The number of attempts performed so far.
-        """
-        return self._attempt_count
+        delay = self._get_delay()
+        should_retry = self._should_retry()
+        self._attempt_count += 1
+        return delay, should_retry
 
     def get_attempt_count(self) -> int:
         """Return the number of retry attempts performed so far.
@@ -180,7 +154,7 @@ class ReconnectPolicy:
         attempt_count : int
             The count of attempts that have been made.
         """
-        return self._get_attempt_count()
+        return self._attempt_count
 
     def _sleep_with_backoff(self, attempt: int) -> None:
         """Sleep for the policy's jittered exponential-backoff delay.

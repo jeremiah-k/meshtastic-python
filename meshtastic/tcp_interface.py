@@ -216,9 +216,21 @@ class TCPInterface(StreamInterface):
                 time.sleep(1)
                 if self._wantExit:
                     return None
-                self.myConnect()
-                # After myConnect(), socket is guaranteed to be set
-                assert self.socket is not None
+                try:
+                    self.myConnect()
+                except Exception as connect_ex:
+                    logger.warning(
+                        "Reconnect to %s failed: %s", self.hostname, connect_ex
+                    )
+                    return None
+                if self.socket is None:
+                    logger.warning(
+                        "myConnect() returned without setting socket for %s",
+                        self.hostname,
+                    )
+                    return None
+
+
                 if self._wantExit:
                     # close() may race while we reconnect; tear down the new socket
                     with contextlib.suppress(Exception):

@@ -30,14 +30,6 @@ from ..util import Timeout
 def test_MeshInterface(capsys, monkeypatch, tmp_path):
     """Test that we can instantiate a MeshInterface.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-    monkeypatch : _type_
-        _description_
-    tmp_path : _type_
-        _description_
     """
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     with MeshInterface(noProto=True) as iface:
@@ -87,10 +79,6 @@ def test_MeshInterface(capsys, monkeypatch, tmp_path):
 def test_getMyUser(iface_with_nodes):
     """Test getMyUser().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -104,10 +92,6 @@ def test_getMyUser(iface_with_nodes):
 def test_getLongName(iface_with_nodes):
     """Test getLongName().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -120,10 +104,6 @@ def test_getLongName(iface_with_nodes):
 def test_getShortName(iface_with_nodes):
     """Test getShortName().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -136,10 +116,6 @@ def test_getShortName(iface_with_nodes):
 def test_handlePacketFromRadio_no_from(caplog):
     """Test _handlePacketFromRadio with no 'from' in the mesh packet.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         meshPacket = mesh_pb2.MeshPacket()
@@ -158,10 +134,6 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
     Since we have an attribute called 'from', we cannot simply 'set' it.
     Had to implement a hack just to be able to test some code.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         meshPacket = mesh_pb2.MeshPacket()
@@ -177,10 +149,6 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
 def test_handlePacketFromRadio_no_portnum(caplog):
     """Verify that _handlePacketFromRadio logs a warning about not populating fromId when a MeshPacket has no portnum.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         meshPacket = mesh_pb2.MeshPacket()
@@ -204,10 +172,6 @@ def test_getNode_with_local():
 def test_getNode_not_local(caplog):
     """Test getNode not local.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)
@@ -223,10 +187,6 @@ def test_getNode_not_local(caplog):
 def test_getNode_not_local_timeout(caplog):
     """Test getNode not local, simulate timeout.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)
@@ -253,10 +213,6 @@ def test_getNode_not_local_timeout(caplog):
 def test_getNode_not_local_timeout_attempts(caplog):
     """Test getNode not local, simulate timeout.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)
@@ -285,10 +241,6 @@ def test_sendPosition(caplog):
 
     Creates a MeshInterface(noProto=True), calls sendPosition() while capturing DEBUG logs, and then closes the interface.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -301,12 +253,6 @@ def test_sendPosition(caplog):
 def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch, fake_timer_cls):
     """Heartbeat timer should be daemonized and cancelled during close().
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    fake_timer_cls : _type_
-        _description_
     """
 
     with MeshInterface(noProto=True) as iface:
@@ -329,12 +275,6 @@ def test_heartbeat_callback_does_not_reschedule_after_close(
 ):
     """A heartbeat callback firing after close() must not create a new timer.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    fake_timer_cls : _type_
-        _description_
     """
 
     with MeshInterface(noProto=True) as iface:
@@ -397,10 +337,6 @@ def test_connected_noop_when_closing():
 def test_handleFromRadio_with_my_info(caplog):
     """Test _handleFromRadio with my_info.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     # Note: I captured the '--debug --info' for the bytes below.
     # It "translates" to this:
@@ -427,12 +363,6 @@ def test_handleFromRadio_with_my_info(caplog):
 def test_handleFromRadio_with_node_info(caplog, capsys):
     """Test _handleFromRadio with node_info.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     # Note: I captured the '--debug --info' for the bytes below.
     # It "translates" to this:
@@ -472,12 +402,6 @@ def test_handleFromRadio_with_node_info(caplog, capsys):
 def test_handleFromRadio_with_node_info_tbeam1(caplog, capsys):
     """Test _handleFromRadio with node_info.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    capsys : _type_
-        _description_
     """
     # Note: Captured the '--debug --info' for the bytes below.
     # pylint: disable=C0301
@@ -506,10 +430,6 @@ def test_handleFromRadio_with_node_info_tbeam1(caplog, capsys):
 def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog):
     """Test _handleFromRadio with node_info with some bad data (issue#172) - ensure we do not throw exception.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     # Note: Captured the '--debug --info' for the bytes below.
     from_radio_bytes = b'"\x17\x08\xdc\x8a\x8a\xae\x02\x12\x08"\x06\x00\x00\x00\x00\x00\x00\x1a\x00=\x00\x00\xb8@'
@@ -524,10 +444,6 @@ def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog):
 def test_MeshInterface_sendToRadioImpl(caplog):
     """Test _sendToRadioImp().
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -542,10 +458,6 @@ def test_MeshInterface_sendToRadio_no_proto(caplog):
 
     Asserts that invoking the base implementation produces a log message containing "Subclass must provide toradio".
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface() as iface:
         with caplog.at_level(logging.DEBUG):
@@ -558,10 +470,6 @@ def test_MeshInterface_sendToRadio_no_proto(caplog):
 def test_sendData_too_long(caplog):
     """Test when data payload is too big.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         some_large_text = b"This is a long text that will be too long for send text."
@@ -602,10 +510,6 @@ def test_sendData_unknown_app():
 def test_sendPosition_with_a_position(caplog):
     """Test sendPosition when lat/long/alt.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -632,10 +536,6 @@ def test_sendPacket_with_no_destination():
 def test_sendPacket_with_destination_as_int(caplog):
     """Test _sendPacket() with int as a destination.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -651,10 +551,6 @@ def test_sendPacket_with_destination_starting_with_a_bang(caplog):
 
     Asserts that calling _sendPacket with a destinationId starting with "!" results in a log entry containing "Not sending packet".
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -668,10 +564,6 @@ def test_sendPacket_with_destination_starting_with_a_bang(caplog):
 def test_sendPacket_with_destination_as_BROADCAST_ADDR(caplog):
     """Test _sendPacket() with BROADCAST_ADDR as a destination.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -698,10 +590,6 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo():
 def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog):
     """Test _sendPacket() with LOCAL_ADDR as a destination with myInfo.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     with MeshInterface(noProto=True) as iface:
         myInfo = MagicMock()
@@ -718,10 +606,6 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog):
 def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes):
     """Test _sendPacket() with '' as a destination raises MeshInterfaceError when node not found.
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     meshPacket = mesh_pb2.MeshPacket()
@@ -737,12 +621,6 @@ def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes):
 def test_sendPacket_with_destination_is_blank_without_nodes(caplog, iface_with_nodes):
     """Test _sendPacket() with '' as a destination with myInfo.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.nodes = None
@@ -847,10 +725,6 @@ def test_fixupPosition():
 def test_nodeNumToId(iface_with_nodes):
     """Test _nodeNumToId().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -863,10 +737,6 @@ def test_nodeNumToId(iface_with_nodes):
 def test_nodeNumToId_not_found(iface_with_nodes):
     """Test _nodeNumToId().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -879,10 +749,6 @@ def test_nodeNumToId_not_found(iface_with_nodes):
 def test_nodeNumToId_to_all(iface_with_nodes):
     """Test _nodeNumToId().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -895,10 +761,6 @@ def test_nodeNumToId_to_all(iface_with_nodes):
 def test_getOrCreateByNum_minimal(iface_with_nodes):
     """Test _getOrCreateByNum().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -919,10 +781,6 @@ def test_getOrCreateByNum_minimal(iface_with_nodes):
 def test_getOrCreateByNum_not_found(iface_with_nodes):
     """Test _getOrCreateByNum().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -936,10 +794,6 @@ def test_getOrCreateByNum_not_found(iface_with_nodes):
 def test_getOrCreateByNum(iface_with_nodes):
     """Test _getOrCreateByNum().
 
-    Parameters
-    ----------
-    iface_with_nodes : _type_
-        _description_
     """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
@@ -961,15 +815,10 @@ def test_exit_with_exception(caplog):
 
     Asserts an ERROR-level log entry contains the ValueError message and a traceback that includes the line where the exception was raised.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-
     Raises
     ------
     ValueError
-        _description_
+        If MeshInterface raises ValueError during construction with noProto=True.
     """
     with caplog.at_level(logging.ERROR):
         try:
@@ -992,14 +841,6 @@ def test_exit_with_exception(caplog):
 def test_showNodes_exclude_self(capsys, caplog, iface_with_nodes):
     """Test that we hit that continue statement.
 
-    Parameters
-    ----------
-    capsys : _type_
-        _description_
-    caplog : _type_
-        _description_
-    iface_with_nodes : _type_
-        _description_
     """
     with caplog.at_level(logging.DEBUG):
         iface = iface_with_nodes
@@ -1059,10 +900,6 @@ def test_timeago():
 def test_timeago_fuzz(seconds):
     """Fuzz _timeago to ensure it works with any integer.
 
-    Parameters
-    ----------
-    seconds : _type_
-        _description_
     """
     val = _timeago(seconds)
     assert re.fullmatch(r"now|\d+ (secs?|mins?|hours?|days?|months?|years?) ago", val)

@@ -201,9 +201,9 @@ class BLEErrorHandler:
         Parameters
         ----------
         *args : Any
-            Positional arguments forwarded to .
+            Positional arguments forwarded to `safeCleanup`.
         **kwargs : Any
-            Keyword arguments forwarded to .
+            Keyword arguments forwarded to `safeCleanup`.
 
         Returns
         -------

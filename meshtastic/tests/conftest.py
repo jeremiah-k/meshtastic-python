@@ -130,8 +130,8 @@ def iface_with_nodes():
 
     Yields
     ------
-    _type_
-        _description_
+    MeshInterface
+        Interface instance populated with test node data and a mocked myInfo.
     """
     nodesById = {
         "!9388f81c": {

@@ -443,8 +443,8 @@ class DiscoveryManager:
                 # Duck-typed discovery clients must support scan + fallback operations:
                 # discover(), async_await(), and context manager protocol (__enter__/__exit__).
                 required_attrs = (
-                    "discover",
-                    "async_await",
+                    "_discover",
+                    "_async_await",
                     "__enter__",
                     "__exit__",
                 )

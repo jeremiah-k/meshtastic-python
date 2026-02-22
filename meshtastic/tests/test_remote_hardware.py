@@ -45,10 +45,6 @@ def test_RemoteHardwareClient():
 def test_onGPIOreceive(caplog):
     """Test onGPIOreceive.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = 0xFFFFFFFF
@@ -63,10 +59,6 @@ def test_onGPIOreceive(caplog):
 def test_onGPIOreceive_mask_fallback(caplog):
     """Test onGPIOreceive uses packet gpioMask when interface.mask is None.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = None
@@ -92,10 +84,6 @@ def test_RemoteHardwareClient_no_gpio_channel():
 def test_readGPIOs(caplog):
     """Test readGPIOs.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
@@ -120,10 +108,6 @@ def test_readGPIOs(caplog):
 def test_writeGPIOs(caplog):
     """Test writeGPIOs.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
@@ -151,10 +135,6 @@ def test_watchGPIOs(caplog):
 
     Runs watchGPIOs("0x10", 123) with DEBUG-level logging enabled and asserts that the captured logs contain "watchGPIOs".
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
     """
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)

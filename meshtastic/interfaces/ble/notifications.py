@@ -158,15 +158,15 @@ class NotificationManager:
 
         Parameters
         ----------
-        characteristic : str
-            Identifier of the BLE characteristic (for example, a UUID string or handle).
-        callback : Callable[[Any, Any], None]
-            Function invoked when a notification arrives; typically called as (sender, data).
+        client : BLEClient
+            BLE client used to stop notifications.
+        timeout : float | None
+            Per-unsubscribe timeout passed to the client's `stopNotify` method; may be None.
 
         Returns
         -------
-        int
-            Unique opaque token that identifies the tracked subscription.
+        None
+            This function does not return a value.
         """
         return self.unsubscribeAll(*args, **kwargs)
 
@@ -218,19 +218,19 @@ class NotificationManager:
             return len(self._active_subscriptions)
 
     def _resubscribe_all(self, *args, **kwargs):
-        """Re-registers all tracked subscriptions on the provided BLE client.
+        """Backward-compatible snake_case alias for resubscribeAll.
 
         Parameters
         ----------
-        characteristic : str
-            Identifier of the BLE characteristic (for example, a UUID string or handle).
-        callback : Callable[[Any, Any], None]
-            Function invoked when a notification arrives; typically called as (sender, data).
+        client : BLEClient
+            BLE client on which to call `start_notify` for each characteristic.
+        timeout : float
+            Per-subscription timeout to pass to the client's `start_notify` method.
 
         Returns
         -------
-        int
-            Unique opaque token that identifies the tracked subscription.
+        None
+            This function does not return a value.
         """
         return self.resubscribeAll(*args, **kwargs)
 

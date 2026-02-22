@@ -36,7 +36,7 @@ slow:
 
 protobufs: FORCE
 	git submodule update --init --recursive
-	git pull --rebase
+
 	git submodule update --remote --merge
 	./bin/regen-protobufs.sh
 

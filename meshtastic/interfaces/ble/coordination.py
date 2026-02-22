@@ -343,7 +343,7 @@ class ThreadCoordinator:
             `true` if the event was set before the timeout, `false` otherwise.
         """
         event = self._get_event(name)
-        if event:
+        if event is not None:
             return event.wait(timeout=timeout)
         return False
 
@@ -362,7 +362,7 @@ class ThreadCoordinator:
         """
         with self._lock:
             event = self._events.get(name)
-            if event and event.is_set():
+            if event is not None and event.is_set():
                 event.clear()
                 return True
             return False

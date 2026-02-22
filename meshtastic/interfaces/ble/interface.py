@@ -511,7 +511,7 @@ class BLEInterface(MeshInterface):
         try:
             # Perform state checks and state mutation atomically under the state lock.
             with self._state_lock:
-                current_state = self._state_manager._state_name
+                current_state = self._state_manager._current_state
                 current_client = self.client
                 is_closing = self._state_manager._is_closing or self._closed
 
@@ -941,6 +941,8 @@ class BLEInterface(MeshInterface):
         data : bytearray
             Serialized mesh_pb2.LogRecord payload from the BLE notification.
         """
+        # Safe to call the sync handler directly: this coroutine runs on the
+        # BLECoroutineRunner event loop, never blocking the calling thread.
         self._log_radio_handler(sender, data)
 
     async def legacy_log_radio_handler(self, sender: Any, data: bytearray) -> None:
@@ -953,6 +955,8 @@ class BLEInterface(MeshInterface):
         data : bytearray
             Raw notification payload containing the legacy log bytes.
         """
+        # Safe to call the sync handler directly: this coroutine runs on the
+        # BLECoroutineRunner event loop, never blocking the calling thread.
         self._legacy_log_radio_handler(sender, data)
 
     @staticmethod
@@ -1022,13 +1026,13 @@ class BLEInterface(MeshInterface):
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
-            except (
-                Exception
-            ) as e:  # noqa: BLE001  # pragma: no cover - defensive last resort
+            except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
                 return []
+
+
 
     def findDevice(self, address: str | None) -> BLEDevice:
         """Locate a Meshtastic BLEDevice by address or device name.
@@ -1140,7 +1144,7 @@ class BLEInterface(MeshInterface):
         ConnectionState
             The current connection state of the interface.
         """
-        return self._state_manager._state_name
+        return self._state_manager._current_state
 
     @property
     def _is_connection_connected(self) -> bool:
@@ -1568,9 +1572,9 @@ class BLEInterface(MeshInterface):
                         if not self._state_manager._is_closing:
                             self.close()
                         return
-                    except (
-                        Exception
-                    ) as e:  # noqa: BLE001  # pragma: no cover - defensive catch-all
+                    except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive catch-all
+
+
                         logger.exception("Unexpected error in BLE read loop")
                         if self._handle_read_loop_disconnect(repr(e), client):
                             break
@@ -1777,7 +1781,7 @@ class BLEInterface(MeshInterface):
                     "BLEInterface.close called while another shutdown is in progress; continuing with cleanup"
                 )
             # Transition to DISCONNECTING only if we're not already fully disconnected or mid-disconnect
-            if self._state_manager._state_name not in (
+            if self._state_manager._current_state not in (
                 ConnectionState.DISCONNECTED,
                 ConnectionState.DISCONNECTING,
             ):

@@ -39,9 +39,9 @@ class PPK2PowerSupply(PowerSupply):
         PowerError
             If multiple PPK2 devices are found when portName is None.
         """
-        if not portName:
+        if portName is None:
             devs = ppk2_api.PPK2_API.list_devices()
-            if not devs or len(devs) == 0:
+            if not devs:
                 raise PowerError("No PPK2 devices found")
             elif len(devs) > 1:
                 raise PowerError(
@@ -81,11 +81,14 @@ class PPK2PowerSupply(PowerSupply):
         logging.info("Connected to Power Profiler Kit II (PPK2)")
         super().__init__()  # we call this late so that the port is already open and _getRawWattHour callback works
 
-    def measurement_loop(self):
+    def measurement_loop(self) -> None:
         """Endless measurement loop that runs in a background thread.
 
         Continuously polls the PPK2 device for current samples, updating
-        min/max/sum statistics. Thread-safe using condition variables.
+        min/max/sum statistics. Note: current_min and current_max are updated
+        outside _result_lock for performance; they may briefly be inconsistent
+        under concurrent reads. Only current_sum and current_num_samples are
+        fully guarded by _result_lock.
         """
         while self.measuring:
             with self._want_measurement:
@@ -123,7 +126,7 @@ class PPK2PowerSupply(PowerSupply):
                 self.total_data_len += len(read_data)
                 self.max_data_len = max(self.max_data_len, len(read_data))
 
-    def get_min_current_mA(self):
+    def get_min_current_mA(self) -> float:
         """Return the minimum current reading in milliamperes.
 
         Returns
@@ -133,7 +136,7 @@ class PPK2PowerSupply(PowerSupply):
         """
         return self.current_min / 1000
 
-    def get_max_current_mA(self):
+    def get_max_current_mA(self) -> float:
         """Return the maximum current reading in milliamperes.
 
         Returns
@@ -143,7 +146,7 @@ class PPK2PowerSupply(PowerSupply):
         """
         return self.current_max / 1000
 
-    def get_average_current_mA(self):
+    def get_average_current_mA(self) -> float:
         """Return the average current reading in milliamperes.
 
         Returns
@@ -195,11 +198,15 @@ class PPK2PowerSupply(PowerSupply):
 
         Raises
         ------
-        AssertionError
+        PowerError
             If the supply voltage has not been set to at least 0.8V before calling this method.
         """
 
-        assert self.v > 0.8  # We must set a valid voltage before calling this method
+        if self.v <= 0.8:
+            raise PowerError(  # noqa: TRY003
+                "Supply voltage must be set above 0.8V before calling setIsSupply "
+                f"(current v={self.v!r})"
+            )
 
         self.r.set_source_voltage(
             int(self.v * 1000)

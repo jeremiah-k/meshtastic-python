@@ -122,7 +122,7 @@ class PowerLogger:
         """Capture a snapshot of current power measurements and append it to the writer.
 
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
-        The recorded row contains `time`, `average_mW`, `max_mW`, and `min_mW`. After sampling, the
+        The recorded row contains `time`, `average_mA`, `max_mA`, and `min_mA`. After sampling, the
         PowerMeter's measurements are reset and the row is written via the writer.
 
         Parameters
@@ -134,9 +134,9 @@ class PowerLogger:
             now = datetime.now()
         d = {
             "time": now,
-            "average_mW": self.pMeter.get_average_current_mA(),
-            "max_mW": self.pMeter.get_max_current_mA(),
-            "min_mW": self.pMeter.get_min_current_mA(),
+            "average_mA": self.pMeter.get_average_current_mA(),
+            "max_mA": self.pMeter.get_max_current_mA(),
+            "min_mA": self.pMeter.get_min_current_mA(),
         }
         self.pMeter.reset_measurements()
         self.writer.add_row(d)
@@ -150,9 +150,9 @@ class PowerLogger:
     def close(self) -> None:
         """Close the PowerLogger and stop logging."""
         if self.is_logging:
-            self.pMeter.close()
             self.is_logging = False
             self.thread.join()
+            self.pMeter.close()
             self.writer.close()
 
 

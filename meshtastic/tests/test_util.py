@@ -171,15 +171,10 @@ def test_fixme():
 def test_catchAndIgnore(caplog):
     """Test catchAndIgnore() does not actually throw an exception, but just logs.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-
     Raises
     ------
     Exception
-        _description_
+        Raised inside the closure to exercise the retry handler.
     """
 
     def some_closure():
@@ -279,10 +274,6 @@ def test_readnet_u16():
 def test_findPorts_when_none_found(patch_comports):
     """Test findPorts().
 
-    Parameters
-    ----------
-    patch_comports : _type_
-        _description_
     """
     assert not findPorts()
     patch_comports.assert_called()
@@ -301,7 +292,7 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports
 
     Parameters
     ----------
-    patch_comports : _type_
+    patch_comports : MagicMock
         pytest fixture that patches and returns the
         serial.tools.list_ports.comports function.
     """
@@ -325,10 +316,6 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
     considered duplicates and asserts the duplicate-elimination logic
     selects the correct remaining device.
 
-    Parameters
-    ----------
-    patch_comports : _type_
-        _description_
     """
     fake1 = _TempPort("/dev/cu.usbserial-1430", vid=0xFFFF)
     fake2 = _TempPort("/dev/cu.wchusbserial1430", vid=0xFFFE)
@@ -342,10 +329,6 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
 def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(patch_comports):
     """Test findPorts().
 
-    Parameters
-    ----------
-    patch_comports : _type_
-        _description_
     """
     fake1 = _TempPort("/dev/cu.usbserial-1430", vid=0xFFFF)
     fake2 = _TempPort("/dev/cu.wchusbserial1430", vid=0xFFFE)
@@ -430,14 +413,6 @@ def test_eliminate_duplicate_port():
 def test_is_windows11_true(patched_platform, patched_release, patched_version):
     """Test is_windows11().
 
-    Parameters
-    ----------
-    patched_platform : _type_
-        _description_
-    patched_release : _type_
-        _description_
-    patched_version : _type_
-        _description_
     """
     assert is_windows11() is True
     patched_platform.assert_called()
@@ -451,14 +426,6 @@ def test_is_windows11_true(patched_platform, patched_release, patched_version):
 def test_is_windows11_true2(patched_platform, patched_release, patched_version):
     """Test is_windows11().
 
-    Parameters
-    ----------
-    patched_platform : _type_
-        _description_
-    patched_release : _type_
-        _description_
-    patched_version : _type_
-        _description_
     """
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -472,14 +439,6 @@ def test_is_windows11_true2(patched_platform, patched_release, patched_version):
 def test_is_windows11_false(patched_platform, patched_release, patched_version):
     """Test is_windows11().
 
-    Parameters
-    ----------
-    patched_platform : _type_
-        _description_
-    patched_release : _type_
-        _description_
-    patched_version : _type_
-        _description_
     """
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -492,12 +451,6 @@ def test_is_windows11_false(patched_platform, patched_release, patched_version):
 def test_is_windows11_false_win8_1(patched_platform, patched_release):
     """Test is_windows11().
 
-    Parameters
-    ----------
-    patched_platform : _type_
-        _description_
-    patched_release : _type_
-        _description_
     """
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -509,12 +462,6 @@ def test_is_windows11_false_win8_1(patched_platform, patched_release):
 def test_is_windows11_false_winserver(patched_platform, patched_release):
     """Test is_windows11().
 
-    Parameters
-    ----------
-    patched_platform : _type_
-        _description_
-    patched_release : _type_
-        _description_
     """
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -526,10 +473,6 @@ def test_is_windows11_false_winserver(patched_platform, patched_release):
 def test_active_ports_on_supported_devices_empty(mock_platform):
     """Test active_ports_on_supported_devices().
 
-    Parameters
-    ----------
-    mock_platform : _type_
-        _description_
     """
     sds = set()
     assert active_ports_on_supported_devices(sds) == set()
@@ -542,12 +485,6 @@ def test_active_ports_on_supported_devices_empty(mock_platform):
 def test_active_ports_on_supported_devices_linux(mock_platform, mock_sp):
     """Test active_ports_on_supported_devices().
 
-    Parameters
-    ----------
-    mock_platform : _type_
-        _description_
-    mock_sp : _type_
-        _description_
     """
     mock_sp.return_value = (
         None,
@@ -570,12 +507,6 @@ def test_active_ports_on_supported_devices_linux(mock_platform, mock_sp):
 def test_active_ports_on_supported_devices_mac(mock_platform, mock_sp):
     """Test active_ports_on_supported_devices().
 
-    Parameters
-    ----------
-    mock_platform : _type_
-        _description_
-    mock_sp : _type_
-        _description_
     """
     mock_sp.return_value = (
         None,
@@ -598,12 +529,6 @@ def test_active_ports_on_supported_devices_mac(mock_platform, mock_sp):
 def test_active_ports_on_supported_devices_win(mock_platform, mock_dwp):
     """Test active_ports_on_supported_devices().
 
-    Parameters
-    ----------
-    mock_platform : _type_
-        _description_
-    mock_dwp : _type_
-        _description_
     """
     fake_device = SupportedDevice(name="a", for_firmware="heltec-v2.1")
     fake_supported_devices = [fake_device]
@@ -620,12 +545,6 @@ def test_active_ports_on_supported_devices_mac_no_duplicates_check(
 ):
     """Test active_ports_on_supported_devices().
 
-    Parameters
-    ----------
-    mock_platform : _type_
-        _description_
-    mock_sp : _type_
-        _description_
     """
     mock_sp.return_value = (
         None,
@@ -655,12 +574,6 @@ def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, m
     Verifies that given a mac-style device listing containing two related device paths, active_ports_on_supported_devices(...)
     returns only the non-duplicate host port when the duplicates check is enabled.
 
-    Parameters
-    ----------
-    mock_platform : _type_
-        _description_
-    mock_sp : _type_
-        _description_
     """
     mock_sp.return_value = (
         None,
@@ -738,10 +651,6 @@ def test_acknowledgement_reset():
 def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
     """Test that snake_to_camel and camel_to_snake roundtrip each other.
 
-    Parameters
-    ----------
-    a_string : _type_
-        _description_
     """
     value0 = snake_to_camel(a_string=a_string)
     value1 = camel_to_snake(a_string=value0)
@@ -752,10 +661,6 @@ def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
 def test_fuzz_camel_to_snake(a_string):
     """Test that camel_to_snake produces outputs with underscores for multi-word camelcase.
 
-    Parameters
-    ----------
-    a_string : _type_
-        _description_
     """
     result = camel_to_snake(a_string)
     assert "_" in result or result == a_string.lower().replace("_", "")
@@ -765,10 +670,6 @@ def test_fuzz_camel_to_snake(a_string):
 def test_fuzz_snake_to_camel(a_string):
     """Test that snake_to_camel applies the expected canonical transformation.
 
-    Parameters
-    ----------
-    a_string : _type_
-        _description_
     """
     result = snake_to_camel(a_string)
     parts = a_string.split("_")
@@ -780,10 +681,6 @@ def test_fuzz_snake_to_camel(a_string):
 def test_fuzz_stripnl(s):
     """Test that stripnl always takes away newlines.
 
-    Parameters
-    ----------
-    s : _type_
-        _description_
     """
     result = stripnl(s)
     assert "\n" not in result
@@ -793,10 +690,6 @@ def test_fuzz_stripnl(s):
 def test_fuzz_pskToString(psk):
     """Test that pskToString produces sane output for any bytes.
 
-    Parameters
-    ----------
-    psk : _type_
-        _description_
     """
     result = pskToString(psk)
     if len(psk) == 0:
@@ -822,10 +715,6 @@ def test_fuzz_pskToString(psk):
 def test_fuzz_fromStr_non_prefixed(valstr):
     """Test fromStr behavior for non-prefixed string inputs.
 
-    Parameters
-    ----------
-    valstr : _type_
-        _description_
     """
     result = fromStr(valstr)
     if len(valstr) == 0:
@@ -856,10 +745,6 @@ def test_fuzz_fromStr_non_prefixed(valstr):
 def test_fuzz_fromStr_hex_prefixed(hex_digits):
     """Test that fromStr decodes 0x-prefixed hex strings, including odd lengths.
 
-    Parameters
-    ----------
-    hex_digits : _type_
-        _description_
     """
     expected_hex = hex_digits
     if len(expected_hex) == 0:
@@ -882,10 +767,6 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits):
 def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
     """Test that fromStr raises for invalid 0x-prefixed hex strings.
 
-    Parameters
-    ----------
-    hex_digits : _type_
-        _description_
     """
     with pytest.raises(ValueError):
         fromStr(f"0x{hex_digits}")
@@ -895,10 +776,6 @@ def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
 def test_fuzz_fromStr_base64_roundtrip(raw_value):
     """Test that fromStr round-trips valid base64-prefixed payloads.
 
-    Parameters
-    ----------
-    raw_value : _type_
-        _description_
     """
     encoded = base64.b64encode(raw_value).decode("ascii")
     assert fromStr(f"base64:{encoded}") == raw_value
@@ -916,10 +793,6 @@ def test_fuzz_fromStr_base64_roundtrip(raw_value):
 def test_fuzz_fromStr_base64_malformed_raises(base64_payload):
     """Test that fromStr raises for malformed base64 payload lengths.
 
-    Parameters
-    ----------
-    base64_payload : _type_
-        _description_
     """
     with pytest.raises(binascii.Error):
         fromStr(f"base64:{base64_payload}")
@@ -947,10 +820,6 @@ def test_channel_hash_basics():
 def test_channel_hash_fuzz(channel_name):
     """Test channel_hash with fuzzed channel names, ensuring it produces single-byte values.
 
-    Parameters
-    ----------
-    channel_name : _type_
-        _description_
     """
     hashed = channel_hash(channel_name.encode("utf-8"))
     assert 0 <= hashed <= 0xFF
@@ -968,10 +837,6 @@ def test_generate_channel_hash_basics():
 def test_generate_channel_hash_fuzz_default_key(channel_name):
     """Test generate_channel_hash with fuzzed channel names and the default key, ensuring it produces single-byte values.
 
-    Parameters
-    ----------
-    channel_name : _type_
-        _description_
     """
     hashed = generate_channel_hash(channel_name, DEFAULT_KEY)
     assert 0 <= hashed <= 0xFF
@@ -981,12 +846,6 @@ def test_generate_channel_hash_fuzz_default_key(channel_name):
 def test_generate_channel_hash_fuzz_simple(channel_name, key_bytes):
     """Test generate_channel_hash with fuzzed channel names and one-byte keys, ensuring it produces single-byte values.
 
-    Parameters
-    ----------
-    channel_name : _type_
-        _description_
-    key_bytes : _type_
-        _description_
     """
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert 0 <= hashed <= 0xFF
@@ -996,12 +855,6 @@ def test_generate_channel_hash_fuzz_simple(channel_name, key_bytes):
 def test_generate_channel_hash_fuzz_aes128(channel_name, key_bytes):
     """Test generate_channel_hash with fuzzed channel names and 128-bit keys, ensuring it produces single-byte values.
 
-    Parameters
-    ----------
-    channel_name : _type_
-        _description_
-    key_bytes : _type_
-        _description_
     """
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert 0 <= hashed <= 0xFF
@@ -1011,12 +864,6 @@ def test_generate_channel_hash_fuzz_aes128(channel_name, key_bytes):
 def test_generate_channel_hash_fuzz_aes256(channel_name, key_bytes):
     """Test generate_channel_hash with fuzzed channel names and 256-bit keys, ensuring it produces single-byte values.
 
-    Parameters
-    ----------
-    channel_name : _type_
-        _description_
-    key_bytes : _type_
-        _description_
     """
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert 0 <= hashed <= 0xFF

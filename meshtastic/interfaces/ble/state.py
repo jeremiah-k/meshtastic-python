@@ -104,7 +104,7 @@ class BLEStateManager:
         return self._state_lock
 
     @property
-    def _state_name(self) -> ConnectionState:
+    def _current_state(self) -> ConnectionState:
         """Get the current BLE connection state.
 
         This property reads the manager's state while holding the internal reentrant lock to provide a consistent, thread-safe view.
@@ -126,7 +126,7 @@ class BLEStateManager:
         bool
             True if the current connection state is ConnectionState.CONNECTED, False otherwise.
         """
-        return self._state_name == ConnectionState.CONNECTED
+        return self._current_state == ConnectionState.CONNECTED
 
     @property
     def _is_closing(self) -> bool:
@@ -137,7 +137,7 @@ class BLEStateManager:
         bool
             True if the current connection state is DISCONNECTING, False otherwise.
         """
-        return self._state_name == ConnectionState.DISCONNECTING
+        return self._current_state == ConnectionState.DISCONNECTING
 
     @property
     def _can_connect(self) -> bool:
@@ -148,7 +148,7 @@ class BLEStateManager:
         bool
             True if the current state is DISCONNECTED or ERROR, False otherwise.
         """
-        return self._state_name in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
+        return self._current_state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
 
     @property
     def _is_connecting(self) -> bool:
@@ -159,7 +159,7 @@ class BLEStateManager:
         bool
             True if the current state is CONNECTING or RECONNECTING, False otherwise.
         """
-        return self._state_name in (
+        return self._current_state in (
             ConnectionState.CONNECTING,
             ConnectionState.RECONNECTING,
         )
@@ -173,7 +173,7 @@ class BLEStateManager:
         bool
             `True` if the current state is CONNECTING, RECONNECTING, or CONNECTED, `False` otherwise.
         """
-        return self._state_name in (
+        return self._current_state in (
             ConnectionState.CONNECTING,
             ConnectionState.RECONNECTING,
             ConnectionState.CONNECTED,
