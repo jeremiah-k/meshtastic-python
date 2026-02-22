@@ -164,8 +164,7 @@ class ReconnectWorker:
         if callable(fallback):
             return fallback(*args)
         raise AttributeError(
-            "ReconnectPolicy method resolution failed: missing "
-            f"'{method_name}' and '_{method_name}' on {self.reconnect_policy!r}"
+            f"ReconnectPolicy missing '{method_name}' on {self.reconnect_policy!r}"
         )
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:

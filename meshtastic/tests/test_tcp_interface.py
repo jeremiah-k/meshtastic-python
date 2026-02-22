@@ -14,19 +14,21 @@ def test_TCPInterface(capsys):
     """Test that we can instantiate a TCPInterface."""
     with patch("socket.socket") as mock_socket:
         iface = TCPInterface(hostname="localhost", noProto=True)
-        iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
-        iface.myConnect()
-        iface.showInfo()
-        iface.localNode.showInfo()
-        out, err = capsys.readouterr()
-        assert re.search(r"Owner: None \(None\)", out, re.MULTILINE)
-        assert re.search(r"Nodes", out, re.MULTILINE)
-        assert re.search(r"Preferences", out, re.MULTILINE)
-        assert re.search(r"Channels", out, re.MULTILINE)
-        assert re.search(r"Primary channel URL", out, re.MULTILINE)
-        assert err == ""
-        assert mock_socket.called
-        iface.close()
+        try:
+            iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
+            iface.myConnect()
+            iface.showInfo()
+            iface.localNode.showInfo()
+            out, err = capsys.readouterr()
+            assert re.search(r"Owner: None \(None\)", out, re.MULTILINE)
+            assert re.search(r"Nodes", out, re.MULTILINE)
+            assert re.search(r"Preferences", out, re.MULTILINE)
+            assert re.search(r"Channels", out, re.MULTILINE)
+            assert re.search(r"Primary channel URL", out, re.MULTILINE)
+            assert err == ""
+            assert mock_socket.called
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit

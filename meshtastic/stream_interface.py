@@ -219,10 +219,21 @@ class StreamInterface(MeshInterface):
         reader remains alive after the timeout.
         """
         logger.debug("Closing stream")
-        # Set _wantExit before calling MeshInterface.close() to prevent the
-        # reader thread from misinterpreting intentional shutdown as a spurious disconnect
+        self._shared_close()
+        self._join_reader_thread()
+
+    def _shared_close(self) -> None:
+        """Run close() cleanup shared by stream-like subclasses.
+
+        Sets the shutdown intent before delegating to MeshInterface.close() so
+        background readers don't treat intentional close as an unexpected
+        disconnect.
+        """
         self._wantExit = True
         MeshInterface.close(self)
+
+    def _join_reader_thread(self) -> None:
+        """Join the reader thread when it is alive and not the current thread."""
         # pyserial cancel_read doesn't seem to work, therefore we ask the
         # reader thread to close things for us
         # close() can be called before connect() starts the reader thread

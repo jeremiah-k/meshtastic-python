@@ -1,6 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
+from collections.abc import Generator
 from typing import Any, Callable, ClassVar, Type
 from unittest.mock import MagicMock
 
@@ -104,7 +105,7 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
 
 
 @pytest.fixture
-def reset_mt_config():
+def reset_mt_config() -> None:
     """Reset the global mt_config state and install a fresh ArgumentParser for tests.
 
     Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns
@@ -116,7 +117,7 @@ def reset_mt_config():
 
 
 @pytest.fixture
-def iface_with_nodes():
+def iface_with_nodes() -> Generator[MeshInterface, None, None]:
     """Provide a MeshInterface populated with a sample node and a mocked myInfo for tests.
 
     Yields a MeshInterface whose `nodes` and `nodesByNum` each contain a single node (numeric id 2475227164)

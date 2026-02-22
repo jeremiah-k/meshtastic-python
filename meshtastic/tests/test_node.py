@@ -274,13 +274,7 @@ def test_setURL_ignores_channels_over_device_limit(caplog):
 
 @pytest.mark.unit
 def test_get_ringtone_times_out_without_response(caplog):
-    """Verify that get_ringtone times out when no response callback is invoked.
-
-    Returns
-    -------
-    None
-        `None` if no ringtone response is received before the timeout.
-    """
+    """Verify get_ringtone times out when no response callback is invoked."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout.expireTimeout = 0.01

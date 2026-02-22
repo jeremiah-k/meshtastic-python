@@ -12,7 +12,6 @@ import socket
 import threading
 import time
 
-from meshtastic.mesh_interface import MeshInterface
 from meshtastic.stream_interface import StreamInterface
 
 DEFAULT_TCP_PORT = 4403
@@ -60,6 +59,12 @@ class TCPInterface(StreamInterface):
         self._connect_now: bool = connectNow
 
         self.socket: socket.socket | None = None
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 8
+        self._reconnect_backoff = 1.6
+        self._reconnect_base_delay = 1.0
+        self._reconnect_max_delay = 30.0
+        self._fatal_disconnect = False
 
         if connectNow:
             self.myConnect()
@@ -114,6 +119,7 @@ class TCPInterface(StreamInterface):
         logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
         self.socket = socket.create_connection(server_address)
+        self._fatal_disconnect = False
 
     def close(self) -> None:
         """Close the TCP connection and stop the reader thread.
@@ -124,12 +130,9 @@ class TCPInterface(StreamInterface):
         warning if the thread does not exit in time.
         """
         logger.debug("Closing TCP stream")
-        # Request reader shutdown before parent close() to prevent reconnect-on-close behavior.
-        self._wantExit = True
-        # Intentionally bypass StreamInterface.close(): TCP teardown requires
-        # socket shutdown and reader join ordering handled in this method.
-        # TODO: If StreamInterface.close() gains additional cleanup, mirror it here.
-        MeshInterface.close(self)
+        # Request shutdown using StreamInterface shared cleanup and then perform
+        # TCP-specific socket teardown before joining the reader thread.
+        self._shared_close()
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
         if self.socket is not None:
@@ -145,15 +148,7 @@ class TCPInterface(StreamInterface):
         self.socket = None
 
         # Join after socket teardown so a blocking recv() can exit promptly.
-        rx_thread = getattr(self, "_rxThread", None)
-        if (
-            rx_thread is not None
-            and rx_thread.is_alive()
-            and rx_thread != threading.current_thread()
-        ):
-            rx_thread.join(timeout=2.0)
-            if rx_thread.is_alive():
-                logger.warning("Reader thread did not exit within shutdown timeout")
+        self._join_reader_thread()
 
     def _writeBytes(self, b: bytes) -> None:
         """Send the full byte sequence over the TCP socket.
@@ -184,27 +179,69 @@ class TCPInterface(StreamInterface):
             if self.socket is sock:
                 self.socket = None
 
-    def _attempt_reconnect(self) -> None:
+    def _compute_reconnect_delay(self) -> float:
+        """Compute exponential reconnect backoff delay in seconds."""
+        exponent = max(0, self._reconnect_attempts - 1)
+        delay = self._reconnect_base_delay * (self._reconnect_backoff**exponent)
+        return min(self._reconnect_max_delay, delay)
+
+    def _on_fatal_disconnect(self, reason: str) -> None:
+        """Mark the interface as fatally disconnected and stop reconnect attempts."""
+        if self._fatal_disconnect:
+            return
+        self._fatal_disconnect = True
+        self._wantExit = True
+        logger.error(
+            "Stopping TCP reconnect for %s after %d attempts: %s",
+            self.hostname,
+            self._reconnect_attempts,
+            reason,
+        )
+
+    def _attempt_reconnect(self) -> bool:
         """Attempt to re-establish the TCP socket and rerun protocol startup.
 
-        Returns early if shutdown was requested or reconnect/setup fails.
+        Returns
+        -------
+        bool
+            `True` if reconnect and post-connect startup succeeded, `False` otherwise.
         """
-        if self._wantExit:
-            return
-        time.sleep(1)
-        if self._wantExit:
-            return
+        if (
+            self._wantExit
+            or self._fatal_disconnect
+            or self._reconnect_attempts >= self._max_reconnect_attempts
+        ):
+            if self._reconnect_attempts >= self._max_reconnect_attempts:
+                self._on_fatal_disconnect("reconnect retry limit reached")
+            return False
+
+        self._reconnect_attempts += 1
+        delay = self._compute_reconnect_delay()
+        logger.debug(
+            "Reconnect attempt %d/%d for %s in %.1fs",
+            self._reconnect_attempts,
+            self._max_reconnect_attempts,
+            self.hostname,
+            delay,
+        )
+        time.sleep(delay)
+        reconnect_ok = False
+        if self._wantExit or self._fatal_disconnect:
+            return reconnect_ok
+
         try:
             self.myConnect()
         except OSError as connect_ex:
             logger.warning("Reconnect to %s failed: %s", self.hostname, connect_ex)
-            return
+            return reconnect_ok
+
         if self.socket is None:
             logger.warning(
                 "myConnect() returned without setting socket for %s",
                 self.hostname,
             )
-            return
+            return reconnect_ok
+
         if self._wantExit:
             # close() may race while we reconnect; tear down the new socket.
             with contextlib.suppress(Exception):
@@ -212,7 +249,22 @@ class TCPInterface(StreamInterface):
             with contextlib.suppress(Exception):
                 self.socket.close()
             self.socket = None
-            return
+            return reconnect_ok
+
+        # _startConfig() can call _sendToRadio(), which drains self.queue and may
+        # block on queue space. During reader-thread reconnect this can deadlock
+        # because queue updates are also processed by the reader thread.
+        if threading.current_thread() is getattr(self, "_rxThread", None):
+            pending_queue = getattr(self, "queue", None)
+            if isinstance(pending_queue, dict) and pending_queue:
+                dropped = len(pending_queue)
+                pending_queue.clear()
+                logger.warning(
+                    "Dropped %d queued packet(s) before reconnect config on %s",
+                    dropped,
+                    self.hostname,
+                )
+
         try:
             self._startConfig()
         except Exception as config_ex:  # noqa: BLE001 - preserve reader thread survival
@@ -226,6 +278,12 @@ class TCPInterface(StreamInterface):
             with contextlib.suppress(Exception):
                 self.socket.close()
             self.socket = None
+        else:
+            self._reconnect_attempts = 0
+            self._fatal_disconnect = False
+            reconnect_ok = True
+
+        return reconnect_ok
 
     # pylint: disable=too-many-return-statements
     # Multiple early returns are intentional here for clear handling of each
@@ -276,11 +334,13 @@ class TCPInterface(StreamInterface):
                         "Socket changed during read cleanup, skipping reconnect"
                     )
                 return None
+            self._reconnect_attempts = 0
+            self._fatal_disconnect = False
             return data
 
         # Socket may be briefly nulled by a concurrent writer failure; try to
         # recover unless shutdown was explicitly requested.
-        if not self._wantExit:
+        if not self._wantExit and not self._fatal_disconnect:
             logger.debug("Socket unavailable, attempting reconnect")
             self._attempt_reconnect()
         return None
