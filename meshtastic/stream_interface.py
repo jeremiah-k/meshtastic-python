@@ -47,9 +47,7 @@ class StreamInterface(MeshInterface):
         noNodes: bool = False,
         timeout: float = 300.0,
     ) -> None:
-        """Initialize the StreamInterface, prepare its reader thread, and optionally.
-
-        open and configure the underlying stream connection.
+        """Initialize the StreamInterface, prepare its reader thread, and optionally open and configure the underlying stream connection.
 
         Parameters
         ----------

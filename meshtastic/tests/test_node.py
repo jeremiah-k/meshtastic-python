@@ -815,85 +815,71 @@ def test_writeChannel_with_no_channels_raises_mesh_error():
 
 
 @pytest.mark.unit
-def test_requestChannel_not_localNode(caplog):
+def test_requestChannel_not_localNode(caplog, mock_serial_interface):
     """Verify that requesting channel 0 on a non-local node logs a remote channel info request.
 
     Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
     calls _requestChannel(0), and asserts that an INFO log contains "Requesting channel 0 info".
 
     """
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "!12345678", noProto=True)
-        with caplog.at_level(logging.INFO):
-            anode._requestChannel(0)
-            assert re.search(
-                r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
-            )
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    with caplog.at_level(logging.INFO):
+        anode._requestChannel(0)
+        assert re.search(
+            r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
+        )
 
 
 @pytest.mark.unit
-def test_requestChannel_localNode(caplog):
+def test_requestChannel_localNode(caplog, mock_serial_interface):
     """Verify that a local node logs a local channel request when _requestChannel is called.
 
     Checks that the log contains "Requesting channel 0" and does not include "from remote node".
 
     """
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "!12345678", noProto=True)
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
 
-        # Note: Have to do this next line because every call to MagicMock object/method returns a new magic mock
-        mo.localNode = anode
-
-        with caplog.at_level(logging.DEBUG):
-            anode._requestChannel(0)
-            assert re.search(r"Requesting channel 0", caplog.text, re.MULTILINE)
-            assert not re.search(r"from remote node", caplog.text, re.MULTILINE)
+    with caplog.at_level(logging.DEBUG):
+        anode._requestChannel(0)
+        assert re.search(r"Requesting channel 0", caplog.text, re.MULTILINE)
+        assert not re.search(r"from remote node", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_requestChannels_non_localNode(caplog):
+def test_requestChannels_non_localNode(caplog, mock_serial_interface):
     """Test requestChannels() with a starting index of 0."""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "!12345678", noProto=True)
-        # Set a sentinel value to verify it gets reset
-        anode.partialChannels = [Channel()]
-        with caplog.at_level(logging.DEBUG):
-            anode.requestChannels(0)
-            assert re.search(
-                "Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
-            )
-            assert not anode.partialChannels
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    # Set a sentinel value to verify it gets reset
+    anode.partialChannels = [Channel()]
+    with caplog.at_level(logging.DEBUG):
+        anode.requestChannels(0)
+        assert re.search(
+            "Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
+        )
+        assert not anode.partialChannels
 
 
 @pytest.mark.unit
-def test_requestChannels_non_localNode_starting_index(caplog):
+def test_requestChannels_non_localNode_starting_index(caplog, mock_serial_interface):
     """Test requestChannels() with a starting index of non-0."""
-    iface = MagicMock(autospec=SerialInterface)
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
-        mo.localNode.getChannelByName.return_value = None
-        mo.myInfo.max_channels = 8
-        anode = Node(mo, "!12345678", noProto=True)
-        sentinel_channel = Channel()
-        anode.partialChannels = [sentinel_channel]
-        with caplog.at_level(logging.DEBUG):
-            anode.requestChannels(3)
-            assert re.search(
-                "Requesting channel 3 info from remote node", caplog.text, re.MULTILINE
-            )
-            # make sure it hasn't been initialized (identity check ensures list wasn't replaced)
-            assert (
-                len(anode.partialChannels) == 1
-                and anode.partialChannels[0] is sentinel_channel
-            )
+    iface = mock_serial_interface
+    anode = Node(iface, "!12345678", noProto=True)
+    sentinel_channel = Channel()
+    anode.partialChannels = [sentinel_channel]
+    with caplog.at_level(logging.DEBUG):
+        anode.requestChannels(3)
+        assert re.search(
+            "Requesting channel 3 info from remote node", caplog.text, re.MULTILINE
+        )
+        # make sure it hasn't been initialized (identity check ensures list wasn't replaced)
+        assert (
+            len(anode.partialChannels) == 1
+            and anode.partialChannels[0] is sentinel_channel
+        )
 
 
 # @pytest.mark.unit

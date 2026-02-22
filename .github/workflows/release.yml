@@ -47,7 +47,7 @@ jobs:
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         id: create_release
 
         with:
@@ -66,7 +66,7 @@ jobs:
           poetry build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@ed0c53f2e93ea5e8fb13ac15fdd93523592f28e0 # v1.13.0
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
 
@@ -110,9 +110,10 @@ jobs:
   #       run: cp dist/meshtastic dist/meshtastic_mac
   #
   #     - name: Add mac assets to release
-  #       uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
+  #       uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
   #       with:
   #         tag_name: ${{ needs.release_create.outputs.version }}
+  #         draft: true
   #         files: dist/meshtastic_mac
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -144,9 +145,10 @@ jobs:
           cp standalone_readme.txt dist/readme.txt
 
       - name: Add ubuntu assets to release
-        uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           tag_name: ${{ needs.release_create.outputs.version }}
+          draft: true
           files: |
             dist/meshtastic_ubuntu
             dist/readme.txt
@@ -176,9 +178,10 @@ jobs:
   #       run: Copy-Item dist/meshtastic.exe dist/meshtastic_windows.exe
   #
   #     - name: Add windows assets to release
-  #       uses: softprops/action-gh-release@a06a81a84d0f8624ebde66576429f0c9aab0afdd # v2.5.0
+  #       uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
   #       with:
   #         tag_name: ${{ needs.release_create.outputs.version }}
+  #         draft: true
   #         files: dist/meshtastic_windows.exe
   #       env:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

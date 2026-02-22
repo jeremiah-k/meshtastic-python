@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 class TCPInterface(StreamInterface):
     """Interface class for meshtastic devices over a TCP link."""
 
+    DEFAULT_MAX_RECONNECT_ATTEMPTS = 8
+    DEFAULT_RECONNECT_BACKOFF = 1.6
+    DEFAULT_RECONNECT_BASE_DELAY = 1.0
+    DEFAULT_RECONNECT_MAX_DELAY = 30.0
+    DEFAULT_RECONNECT_SLEEP_SLICE = 0.25
+
     def __init__(
         self,
         hostname: str,
@@ -60,10 +66,10 @@ class TCPInterface(StreamInterface):
 
         self.socket: socket.socket | None = None
         self._reconnect_attempts = 0
-        self._max_reconnect_attempts = 8
-        self._reconnect_backoff = 1.6
-        self._reconnect_base_delay = 1.0
-        self._reconnect_max_delay = 30.0
+        self._max_reconnect_attempts = self.DEFAULT_MAX_RECONNECT_ATTEMPTS
+        self._reconnect_backoff = self.DEFAULT_RECONNECT_BACKOFF
+        self._reconnect_base_delay = self.DEFAULT_RECONNECT_BASE_DELAY
+        self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
         self._fatal_disconnect = False
 
         if connectNow:
@@ -185,6 +191,23 @@ class TCPInterface(StreamInterface):
         delay = self._reconnect_base_delay * (self._reconnect_backoff**exponent)
         return min(self._reconnect_max_delay, delay)
 
+    def _sleep_reconnect_delay(self, delay: float) -> bool:
+        """Sleep reconnect delay with frequent shutdown checks.
+
+        Returns
+        -------
+        bool
+            `True` if the full delay elapsed, `False` if interrupted by shutdown.
+        """
+        deadline = time.monotonic() + delay
+        while True:
+            if self._wantExit or self._fatal_disconnect:
+                return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(self.DEFAULT_RECONNECT_SLEEP_SLICE, remaining))
+
     def _on_fatal_disconnect(self, reason: str) -> None:
         """Mark the interface as fatally disconnected and stop reconnect attempts."""
         if self._fatal_disconnect:
@@ -224,10 +247,9 @@ class TCPInterface(StreamInterface):
             self.hostname,
             delay,
         )
-        time.sleep(delay)
+        if not self._sleep_reconnect_delay(delay):
+            return False
         reconnect_ok = False
-        if self._wantExit or self._fatal_disconnect:
-            return reconnect_ok
 
         try:
             self.myConnect()

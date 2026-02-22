@@ -36,7 +36,9 @@ class ReconnectScheduler:
         Parameters
         ----------
         state_manager : BLEStateManager
-            Observes BLE lifecycle state used to decide whether reconnects may be scheduled (e.g., whether the interface is closing or a connection is active).
+            Observes BLE lifecycle state used to decide whether reconnects may
+            be scheduled (e.g., whether the interface is closing or a
+            connection is active).
         state_lock : RLock
             Re-entrant lock protecting shared BLE state and the scheduler's internal thread reference.
         thread_coordinator : ThreadCoordinator
@@ -112,7 +114,9 @@ class ReconnectScheduler:
     def _clear_thread_reference(self) -> None:
         """Internal method: Clear the internal reference to the running reconnect thread.
 
-        This operation acquires the scheduler's state_lock and sets the internal reconnect thread reference to None to record that no background reconnect worker is active.
+        This operation acquires the scheduler's state_lock and sets the internal
+        reconnect thread reference to None to record that no background
+        reconnect worker is active.
 
         Returns
         -------
@@ -163,9 +167,7 @@ class ReconnectWorker:
         fallback = getattr(self.reconnect_policy, f"_{method_name}", None)
         if callable(fallback):
             return fallback(*args)
-        raise AttributeError(
-            f"ReconnectPolicy missing '{method_name}' on {self.reconnect_policy!r}"
-        )
+        raise AttributeError(f"ReconnectPolicy missing method '{method_name}'")
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """Determine whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
@@ -205,7 +207,12 @@ class ReconnectWorker:
     ) -> None:
         """Run the reconnect loop that attempts to restore the bound BLE interface using the configured backoff policy.
 
-        Attempts reconnects until a connection succeeds, the reconnect policy stops further retries, the provided shutdown_event is set, or auto_reconnect is False. Between failed attempts the loop waits according to the policy; certain BLE/DBus errors may increase the delay. The optional on_exit callback is invoked unconditionally when the loop ends.
+        Attempts reconnects until a connection succeeds, the reconnect policy
+        stops further retries, the provided shutdown_event is set, or
+        auto_reconnect is False. Between failed attempts the loop waits
+        according to the policy; certain BLE/DBus errors may increase the
+        delay. The optional on_exit callback is invoked unconditionally when the
+        loop ends.
 
         Parameters
         ----------
