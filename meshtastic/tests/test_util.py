@@ -639,9 +639,10 @@ def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
 @pytest.mark.unitslow
 @given(st.text())
 def test_fuzz_camel_to_snake(a_string):
-    """Test that camel_to_snake produces outputs with underscores for multi-word camelcase."""
+    """Test that camel_to_snake lowercases output and preserves non-uppercase characters."""
     result = camel_to_snake(a_string)
-    assert "_" in result or result == a_string.lower().replace("_", "")
+    assert result == result.lower()  # output is always lowercase
+    assert all(c in result for c in a_string.lower() if c != "_")  # no chars dropped beyond casing
 
 
 @pytest.mark.unitslow

@@ -67,7 +67,10 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     """
     logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
-    hw = packet["decoded"]["remotehw"]
+    decoded = packet.get("decoded", {})
+    hw = decoded.get("remotehw", {})
+    if not isinstance(hw, dict):
+        return
     if "gpioValue" in hw:
         gpioValue = hw["gpioValue"]
     # Note: proto3 omits zero-valued fields; gpioValue defaults to 0
@@ -97,10 +100,10 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
 
 
 class RemoteHardwareClient:
-    """Client code to control/monitor simple hardware built into the.
+    """Client code to control and monitor simple hardware built into Meshtastic devices.
 
-    meshtastic devices. It is intended to be both a useful API/service and example
-    code for how you can connect to your own custom meshtastic services.
+    It is intended to be both a useful API/service and example code for how you can
+    connect to your own custom meshtastic services.
     """
 
     def __init__(self, iface: "MeshInterface") -> None:
@@ -134,7 +137,7 @@ class RemoteHardwareClient:
 
     def _send_hardware(
         self,
-        nodeid: int | str,
+        nodeid: int | str | None,
         r: remote_hardware_pb2.HardwareMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,

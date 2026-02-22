@@ -148,9 +148,10 @@ def _parse_version_triplet(version_str: str) -> tuple[int, int, int]:
             major = release[0] if len(release) > 0 else 0
             minor = release[1] if len(release) > 1 else 0
             patch = release[2] if len(release) > 2 else 0
-            return major, minor, patch
         except InvalidVersion:
             pass
+        else:
+            return major, minor, patch
     except ImportError:
         pass
 
@@ -159,7 +160,7 @@ def _parse_version_triplet(version_str: str) -> tuple[int, int, int]:
         matches.append("0")
     # re.findall(r"\d+", ...) only returns strings of digits, so int() will always succeed
     return cast(
-        "tuple[int, int, int]",
+        tuple[int, int, int],
         tuple(int(segment) for segment in matches[:3]),
     )
 
