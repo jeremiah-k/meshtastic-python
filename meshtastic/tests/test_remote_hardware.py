@@ -161,6 +161,7 @@ def test_send_hardware_no_nodeid():
     """Test sending no nodeid to _send_hardware()."""
     iface = _mock_iface_with_gpio_channel()
     rhw = RemoteHardwareClient(iface)
-    with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Must use a destination node ID"
+    ):
         rhw._send_hardware(None, None)
-    assert "Must use a destination node ID" in str(exc_info.value)
