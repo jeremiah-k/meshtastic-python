@@ -328,7 +328,7 @@ class ThreadCoordinator:
     def _wait_for_event(self, name: str, timeout: float | None = None) -> bool:
         """Waits for the named tracked event to be set or until the timeout elapses.
 
-        If no event is registered under `name`, returns `false` immediately.
+        If no event is registered under `name`, returns `False` immediately.
 
         Parameters
         ----------
@@ -340,7 +340,7 @@ class ThreadCoordinator:
         Returns
         -------
         bool
-            `true` if the event was set before the timeout, `false` otherwise.
+            `True` if the event was set before the timeout, `False` otherwise.
         """
         event = self._get_event(name)
         if event is not None:
@@ -358,7 +358,7 @@ class ThreadCoordinator:
         Returns
         -------
         bool
-            `true` if the named event existed and was set (and was cleared), `false` otherwise.
+            `True` if the named event existed and was set (and was cleared), `False` otherwise.
         """
         with self._lock:
             event = self._events.get(name)

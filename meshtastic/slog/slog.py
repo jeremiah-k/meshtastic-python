@@ -97,7 +97,9 @@ log_regex = re.compile(".*S:([0-9A-Za-z]+):(.*)")
 class PowerLogger:
     """Logs current watts reading periodically using PowerMeter and ArrowWriter."""
 
-    def __init__(self, pMeter: PowerMeter, file_path: str, interval=0.002) -> None:
+    def __init__(
+        self, pMeter: PowerMeter, file_path: str, interval: float = 0.002
+    ) -> None:
         """Create a PowerLogger that records periodic power readings from a PowerMeter into a Feather file and starts its background logging thread.
 
         Parameters
@@ -152,8 +154,10 @@ class PowerLogger:
         if self.is_logging:
             self.is_logging = False
             self.thread.join()
-            self.pMeter.close()
-            self.writer.close()
+            try:
+                self.pMeter.close()
+            finally:
+                self.writer.close()
 
 
 # FIXME move these defs somewhere else
@@ -422,6 +426,8 @@ class LogSet:
                 self.slog_logger.close()
             finally:
                 self.slog_logger = None
-                if self.power_logger:
-                    self.power_logger.close()
+                try:
+                    if self.power_logger:
+                        self.power_logger.close()
+                finally:
                     self.power_logger = None

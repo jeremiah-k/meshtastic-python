@@ -153,7 +153,7 @@ class NotificationManager:
                     e,
                 )
 
-    def _unsubscribe_all(self, *args, **kwargs):
+    def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Backward-compatible snake_case alias for unsubscribeAll.
 
         Parameters
@@ -168,9 +168,9 @@ class NotificationManager:
         None
             This function does not return a value.
         """
-        return self.unsubscribeAll(*args, **kwargs)
+        return self.unsubscribeAll(client, timeout=timeout)
 
-    def resubscribeAll(self, client: "BLEClient", *, timeout: float) -> None:
+    def resubscribeAll(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Resubscribe all tracked BLE notification callbacks on the given client.
 
         Uses the per-characteristic latest callback to avoid duplicate resubscription attempts when
@@ -180,7 +180,7 @@ class NotificationManager:
         ----------
         client : 'BLEClient'
             BLE client on which to call `start_notify` for each characteristic.
-        timeout : float
+        timeout : float | None
             Per-subscription timeout to pass to the client's `start_notify` method.
 
         Returns
@@ -217,14 +217,14 @@ class NotificationManager:
         with self._lock:
             return len(self._active_subscriptions)
 
-    def _resubscribe_all(self, *args, **kwargs):
+    def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Backward-compatible snake_case alias for resubscribeAll.
 
         Parameters
         ----------
         client : BLEClient
             BLE client on which to call `start_notify` for each characteristic.
-        timeout : float
+        timeout : float | None
             Per-subscription timeout to pass to the client's `start_notify` method.
 
         Returns
@@ -232,7 +232,7 @@ class NotificationManager:
         None
             This function does not return a value.
         """
-        return self.resubscribeAll(*args, **kwargs)
+        return self.resubscribeAll(client, timeout=timeout)
 
     def getCallback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
         """Retrieve the most recently registered callback for a BLE characteristic.

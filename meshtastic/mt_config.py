@@ -54,14 +54,13 @@ camel_case: bool
 # Python 3.14+ can defer module annotations; inspect.get_annotations() handles
 # eager and deferred annotation models consistently.
 _state_keys: frozenset = frozenset(MODULE_STATE_DEFAULTS)
-try:
-    _module_annotations: dict[str, Any] = inspect.get_annotations(
-        sys.modules[__name__], eval_str=False
-    )
-except (AttributeError, NameError, TypeError):
-    _module_annotations = globals().get("__annotations__", {})
+_module_annotations: dict[str, Any] = inspect.get_annotations(
+    sys.modules[__name__], eval_str=False
+)
 _annotated_state: frozenset = frozenset(
-    k for k in _module_annotations if k in _state_keys
+    key
+    for key in _module_annotations
+    if not key.startswith("_") and key != "MODULE_STATE_DEFAULTS"
 )
 if _module_annotations and _state_keys != _annotated_state:
     raise AssertionError(  # noqa: TRY003

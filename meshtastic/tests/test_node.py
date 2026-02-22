@@ -19,9 +19,7 @@ from ..util import Timeout
 
 @pytest.mark.unit
 def test_node(capsys, mock_serial_interface):
-    """Test that we can instantiate a Node.
-
-    """
+    """Test that we can instantiate a Node."""
     with patch(
         "meshtastic.serial_interface.SerialInterface",
         return_value=mock_serial_interface,
@@ -189,9 +187,7 @@ def test_exitSimulator(caplog):
 
 @pytest.mark.unit
 def test_reboot(caplog):
-    """Test reboot.
-
-    """
+    """Test reboot."""
     interface = MeshInterface()
     interface.nodesByNum = {}
     anode = Node(interface, 1234567890, noProto=True)
@@ -202,9 +198,7 @@ def test_reboot(caplog):
 
 @pytest.mark.unit
 def test_shutdown(caplog):
-    """Test shutdown.
-
-    """
+    """Test shutdown."""
     interface = MeshInterface()
     interface.nodesByNum = {}
     anode = Node(interface, 1234567890, noProto=True)
@@ -255,9 +249,7 @@ def test_setURL_valid_URL_but_no_settings():
 
 @pytest.mark.unit
 def test_setURL_ignores_channels_over_device_limit(caplog):
-    """Test that setURL ignores channels beyond the fixed device channel limit.
-
-    """
+    """Test that setURL ignores channels beyond the fixed device channel limit."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
     anode.channels = [Channel(index=i, role=Channel.Role.DISABLED) for i in range(8)]
@@ -305,9 +297,7 @@ def test_get_ringtone_times_out_without_response(caplog):
 
 @pytest.mark.unit
 def test_get_canned_message_times_out_without_response(caplog):
-    """Test get_canned_message returns None if the response callback is never invoked.
-
-    """
+    """Test get_canned_message returns None if the response callback is never invoked."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout.expireTimeout = 0.01
@@ -874,9 +864,7 @@ def test_requestChannel_localNode(caplog):
 
 @pytest.mark.unit
 def test_requestChannels_non_localNode(caplog):
-    """Test requestChannels() with a starting index of 0.
-
-    """
+    """Test requestChannels() with a starting index of 0."""
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.localNode.getChannelByName.return_value = None
@@ -894,9 +882,7 @@ def test_requestChannels_non_localNode(caplog):
 
 @pytest.mark.unit
 def test_requestChannels_non_localNode_starting_index(caplog):
-    """Test requestChannels() with a starting index of non-0.
-
-    """
+    """Test requestChannels() with a starting index of non-0."""
     iface = MagicMock(autospec=SerialInterface)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
         mo.localNode.getChannelByName.return_value = None
@@ -1602,9 +1588,7 @@ def test_setOwner_empty_short_name():
 
 @pytest.mark.unit
 def test_setOwner_valid_names(caplog):
-    """Test setOwner with valid names.
-
-    """
+    """Test setOwner with valid names."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
@@ -1619,9 +1603,7 @@ def test_setOwner_valid_names(caplog):
 
 @pytest.mark.unit
 def test_setOwner_short_name_only(caplog):
-    """Test setOwner with only short name provided.
-
-    """
+    """Test setOwner with only short name provided."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
@@ -1633,9 +1615,7 @@ def test_setOwner_short_name_only(caplog):
 
 @pytest.mark.unit
 def test_setOwner_long_name_truncates_short_name(caplog):
-    """Test setOwner truncates long short names to 4 characters.
-
-    """
+    """Test setOwner truncates long short names to 4 characters."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
@@ -1648,9 +1628,7 @@ def test_setOwner_long_name_truncates_short_name(caplog):
 
 @pytest.mark.unit
 def test_setOwner_with_is_licensed(caplog):
-    """Test setOwner sets is_licensed flag when long_name is provided.
-
-    """
+    """Test setOwner sets is_licensed flag when long_name is provided."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
@@ -1662,9 +1640,7 @@ def test_setOwner_with_is_licensed(caplog):
 
 @pytest.mark.unit
 def test_setOwner_with_is_unmessagable(caplog):
-    """Test setOwner sets is_unmessagable flag.
-
-    """
+    """Test setOwner sets is_unmessagable flag."""
     iface = MagicMock(autospec=MeshInterface)
     anode = Node(iface, 123, noProto=True)
 

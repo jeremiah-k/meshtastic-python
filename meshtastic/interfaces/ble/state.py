@@ -121,6 +121,10 @@ class BLEStateManager:
     def _is_connected(self) -> bool:
         """Whether the BLE interface is currently in the CONNECTED state.
 
+        This is a point-in-time snapshot and is not an atomic check+act
+        primitive. Callers that need atomic transitions must hold
+        `_state_lock` or use `_transition_if_in(...)`.
+
         Returns
         -------
         bool
@@ -131,6 +135,10 @@ class BLEStateManager:
     @property
     def _is_closing(self) -> bool:
         """Internal property: Indicates whether the BLE interface is in the DISCONNECTING state.
+
+        This is a point-in-time snapshot and is not an atomic check+act
+        primitive. Callers that need atomic transitions must hold
+        `_state_lock` or use `_transition_if_in(...)`.
 
         Returns
         -------
@@ -143,16 +151,27 @@ class BLEStateManager:
     def _can_connect(self) -> bool:
         """Whether a new BLE connection may be initiated.
 
+        This is a point-in-time snapshot and is not an atomic check+act
+        primitive. Callers that need atomic transitions must hold
+        `_state_lock` or use `_transition_if_in(...)`.
+
         Returns
         -------
         bool
             True if the current state is DISCONNECTED or ERROR, False otherwise.
         """
-        return self._current_state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR)
+        return self._current_state in (
+            ConnectionState.DISCONNECTED,
+            ConnectionState.ERROR,
+        )
 
     @property
     def _is_connecting(self) -> bool:
         """Whether the BLE interface is in a connecting state.
+
+        This is a point-in-time snapshot and is not an atomic check+act
+        primitive. Callers that need atomic transitions must hold
+        `_state_lock` or use `_transition_if_in(...)`.
 
         Returns
         -------
@@ -167,6 +186,10 @@ class BLEStateManager:
     @property
     def _is_active(self) -> bool:
         """Report whether the BLE interface currently has an active or pending connection.
+
+        This is a point-in-time snapshot and is not an atomic check+act
+        primitive. Callers that need atomic transitions must hold
+        `_state_lock` or use `_transition_if_in(...)`.
 
         Returns
         -------

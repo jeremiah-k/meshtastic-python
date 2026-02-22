@@ -506,4 +506,6 @@ class ConnectionOrchestrator:
             self._transition_failure_to_disconnected("unexpected connect failure")
             raise
         else:
+            # Discovery-success path: direct connect returned earlier; this
+            # returns the client finalized after findDevice/create/connect.
             return client

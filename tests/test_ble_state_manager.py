@@ -184,7 +184,9 @@ class TestBLEStateManager:
                         success = manager._transition_to(ConnectionState.CONNECTING)
                     else:
                         success = manager._transition_to(ConnectionState.DISCONNECTED)
-                    results.append((worker_id, i, success, manager._current_state.value))
+                    results.append(
+                        (worker_id, i, success, manager._current_state.value)
+                    )
                     time.sleep(0.001)  # Small delay to increase contention
             except Exception as e:  # noqa: BLE001 - errors collected for assertion
                 errors.append((worker_id, str(e)))

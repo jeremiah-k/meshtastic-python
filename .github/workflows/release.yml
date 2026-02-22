@@ -12,7 +12,6 @@ jobs:
 
     outputs:
       version: ${{ steps.get_version.outputs.version }}
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
       new_sha: ${{ steps.commit_updated.outputs.sha }}
 
     steps:
@@ -122,7 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: release_create
     permissions:
-      contents: write  # needed to upload release assets
+      contents: write # needed to upload release assets
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -139,25 +138,20 @@ jobs:
           pip install poetry
           bin/build-bin.sh
 
-      - name: Add ubuntu to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release_create.outputs.upload_url }}
-          asset_path: dist/meshtastic
-          asset_name: meshtastic_ubuntu
-          asset_content_type: application/zip
+      - name: Prepare release asset names
+        run: |
+          cp dist/meshtastic dist/meshtastic_ubuntu
+          cp standalone_readme.txt dist/readme.txt
 
-      - name: Add readme.txt to release
-        uses: actions/upload-release-asset@v1
+      - name: Add ubuntu assets to release
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          tag_name: ${{ needs.release_create.outputs.version }}
+          files: |
+            dist/meshtastic_ubuntu
+            dist/readme.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release_create.outputs.upload_url }}
-          asset_path: standalone_readme.txt
-          asset_name: readme.txt
-          asset_content_type: text/plain
 
   # build-and-publish-windows:
   #   runs-on: windows-latest

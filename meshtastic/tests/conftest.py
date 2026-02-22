@@ -123,11 +123,6 @@ def iface_with_nodes():
     and whose `myInfo.my_node_num` is set to 2475227164. Ensures the interface is closed when the fixture
     teardown runs.
 
-    Returns
-    -------
-    MeshInterface
-        Instance pre-populated with node dictionaries and a mocked `myInfo`.
-
     Yields
     ------
     MeshInterface

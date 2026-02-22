@@ -97,11 +97,10 @@ class SerialInterface(StreamInterface):
         self.stream = serial.Serial(
             self.devPath, 115200, exclusive=True, timeout=0.5, write_timeout=0
         )
-        self.stream.flush()
-        time.sleep(0.1)
-
         initialized = False
         try:
+            self.stream.flush()
+            time.sleep(0.1)
             StreamInterface.__init__(
                 self,
                 debugOut=debugOut,

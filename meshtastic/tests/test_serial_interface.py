@@ -22,9 +22,7 @@ from ..serial_interface import SerialInterface
 def test_SerialInterface_single_port(
     mocked_findPorts, mocked_serial, mocked_open, mock_hupcl, mock_sleep, capsys
 ):
-    """Test that we can instantiate a SerialInterface with a single port.
-
-    """
+    """Test that we can instantiate a SerialInterface with a single port."""
     iface = SerialInterface(noProto=True)
     iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
     iface.showInfo()
@@ -50,9 +48,7 @@ def test_SerialInterface_single_port(
 @pytest.mark.unit
 @patch("meshtastic.util.findPorts", return_value=[])
 def test_SerialInterface_no_ports(mocked_findPorts, caplog):
-    """Test that we can instantiate a SerialInterface with no ports.
-
-    """
+    """Test that we can instantiate a SerialInterface with no ports."""
     serial_interface = None
     try:
         with caplog.at_level(logging.WARNING):
@@ -70,9 +66,7 @@ def test_SerialInterface_no_ports(mocked_findPorts, caplog):
     "meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake1", "/dev/ttyUSBfake2"]
 )
 def test_SerialInterface_multiple_ports(mocked_findPorts):
-    """Test that SerialInterface raises MeshInterfaceError when multiple ports are detected.
-
-    """
+    """Test that SerialInterface raises MeshInterfaceError when multiple ports are detected."""
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         SerialInterface(noProto=True)
     mocked_findPorts.assert_called()

@@ -7,7 +7,7 @@ managers/helpers live in submodules under
 `meshtastic.interfaces.ble.*` and are not part of the compatibility surface.
 """
 
-# ruff: noqa: RUF022  # __all__ is intentionally grouped, not sorted
+# ruff: noqa: RUF022, E402  # __all__ is intentionally grouped; import guard precedes exports
 
 try:
     import bleak as _bleak

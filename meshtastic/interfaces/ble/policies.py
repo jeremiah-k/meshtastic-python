@@ -134,7 +134,10 @@ class ReconnectPolicy:
     def next_attempt(self) -> tuple[float, bool]:
         """Compute the delay for the current retry attempt, advance the internal attempt counter, and indicate if further retries are permitted.
 
-        The retry decision is evaluated using the pre-increment attempt count; therefore `max_retries` counts retries after the initial attempt (total attempts = 1 + max_retries).
+        Delay and retry permission are computed from the current zero-based retry
+        counter, then the internal counter is incremented. Therefore
+        `max_retries` counts retries after the initial attempt (total attempts
+        = 1 + max_retries).
 
         Returns
         -------

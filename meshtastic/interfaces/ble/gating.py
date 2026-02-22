@@ -274,6 +274,33 @@ def _remove_connected_record_locked(key: str) -> None:
     _CONNECTED_MARKED_AT.pop(key, None)
 
 
+def _prune_stale_unowned_claim_locked(key: str) -> bool:
+    """Prune an unowned claim when its marker timestamp is missing or stale.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to evaluate.
+
+    Returns
+    -------
+    bool
+        `True` when a stale claim was removed, `False` when claim remains valid.
+
+    Notes
+    -----
+    Must be called while holding `_REGISTRY_LOCK`.
+    """
+    marked_at = _CONNECTED_MARKED_AT.get(key)
+    if marked_at is None or (
+        time.monotonic() - marked_at > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
+    ):
+        _remove_connected_record_locked(key)
+        _cleanup_addr_lock(key)
+        return True
+    return False
+
+
 def _mark_connected(addr: str | None, owner: Any | None = None) -> None:
     """Mark a BLE address as connected and record optional owner metadata.
 
@@ -424,15 +451,7 @@ def _is_currently_connected_elsewhere(
             owner_to_check = current_owner
         else:
             # Fallback for unowned claims: prune after a safety window.
-            # If the timestamp is missing (out-of-sync records), prune immediately to
-            # avoid preserving stale claims indefinitely.
-            marked_at = _CONNECTED_MARKED_AT.get(key)
-            if marked_at is None or (
-                time.monotonic() - marked_at
-                > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
-            ):
-                _remove_connected_record_locked(key)
-                _cleanup_addr_lock(key)
+            if _prune_stale_unowned_claim_locked(key):
                 return False
 
             return True
@@ -471,13 +490,7 @@ def _is_currently_connected_elsewhere(
         if current_owner is not None:
             return True
 
-        marked_at = _CONNECTED_MARKED_AT.get(key)
-        if marked_at is None or (
-            time.monotonic() - marked_at
-            > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
-        ):
-            _remove_connected_record_locked(key)
-            _cleanup_addr_lock(key)
+        if _prune_stale_unowned_claim_locked(key):
             return False
 
         return True

@@ -1026,13 +1026,13 @@ class BLEInterface(MeshInterface):
             except (BleakError, RuntimeError) as e:
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
-            except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive last resort
+            except (
+                Exception
+            ) as e:  # noqa: BLE001  # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
                 return []
-
-
 
     def findDevice(self, address: str | None) -> BLEDevice:
         """Locate a Meshtastic BLEDevice by address or device name.
@@ -1572,58 +1572,76 @@ class BLEInterface(MeshInterface):
                         if not self._state_manager._is_closing:
                             self.close()
                         return
-                    except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive catch-all
-
-
+                    except (
+                        Exception
+                    ) as e:  # noqa: BLE001  # pragma: no cover - defensive catch-all
                         logger.exception("Unexpected error in BLE read loop")
                         if self._handle_read_loop_disconnect(repr(e), client):
                             break
                         return
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             raise
+        except (
+            BleakDBusError,
+            BLEClient.BLEError,
+            BleakError,
+            DecodeError,
+            RuntimeError,
+            OSError,
+        ):
+            logger.exception("Fatal error in BLE receive thread")
+            self._recover_receive_thread("receive_thread_fatal")
         except Exception:  # noqa: BLE001  # defensive crash-recovery for receive thread
-            # Defensive catch-all for the receive thread; keep BLE runtime alive.
             logger.exception("Unexpected fatal error in BLE receive thread")
-            if not self._state_manager._is_closing:
-                with self._state_lock:
-                    current_client = self.client
-                should_continue = self._handle_disconnect(
-                    "receive_thread_fatal", client=current_client
+            self._recover_receive_thread("receive_thread_fatal")
+
+    def _recover_receive_thread(self, disconnect_reason: str) -> None:
+        """Handle receive-thread failure and trigger guarded recovery.
+
+        Parameters
+        ----------
+        disconnect_reason : str
+            Reason string passed to disconnect handling for diagnostics.
+        """
+        if self._state_manager._is_closing:
+            return
+        with self._state_lock:
+            current_client = self.client
+        should_continue = self._handle_disconnect(
+            disconnect_reason, client=current_client
+        )
+        if not should_continue:
+            self._set_receive_wanted(False)
+            return
+        # Recovery throttling to prevent tight crash→spawn loops.
+        # All mutations of _receive_recovery_attempts and _last_recovery_time
+        # are guarded by _state_lock to prevent races with concurrent
+        # _start_receive_thread() calls that reset these fields.
+        now = time.monotonic()
+        with self._state_lock:
+            self._receive_recovery_attempts += 1
+            attempts = self._receive_recovery_attempts
+            last_recovery = self._last_recovery_time
+        if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
+            # Exponential backoff after 3 rapid failures
+            backoff = min(
+                2 ** (attempts - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD),
+                RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
+            )
+            if now - last_recovery < backoff:
+                logger.warning(
+                    "Throttling BLE receive recovery: waiting %.1fs "
+                    "before retry (attempt %d)",
+                    backoff,
+                    attempts,
                 )
-                if not should_continue:
-                    self._set_receive_wanted(False)
-                    return
-                # Recovery throttling to prevent tight crash→spawn loops.
-                # All mutations of _receive_recovery_attempts and _last_recovery_time
-                # are guarded by _state_lock to prevent races with concurrent
-                # _start_receive_thread() calls that reset these fields.
-                now = time.monotonic()
-                with self._state_lock:
-                    self._receive_recovery_attempts += 1
-                    attempts = self._receive_recovery_attempts
-                    last_recovery = self._last_recovery_time
-                if attempts > RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD:
-                    # Exponential backoff after 3 rapid failures
-                    backoff = min(
-                        2 ** (attempts - RECEIVE_RECOVERY_RAPID_FAILURE_THRESHOLD),
-                        RECEIVE_RECOVERY_MAX_BACKOFF_SEC,
-                    )
-                    if now - last_recovery < backoff:
-                        logger.warning(
-                            "Throttling BLE receive recovery: waiting %.1fs "
-                            "before retry (attempt %d)",
-                            backoff,
-                            attempts,
-                        )
-                        self._shutdown_event.wait(timeout=backoff)
-                with self._state_lock:
-                    self._last_recovery_time = now
-                # If disconnect handling requests continuation (auto-reconnect path),
-                # replace this crashed receive thread so reads resume after reconnect.
-                if self._should_run_receive_loop():
-                    self._start_receive_thread(
-                        name="BLEReceiveRecovery", reset_recovery=False
-                    )
+                self._shutdown_event.wait(timeout=backoff)
+        with self._state_lock:
+            self._last_recovery_time = now
+        # If disconnect handling requests continuation (auto-reconnect path),
+        # replace this crashed receive thread so reads resume after reconnect.
+        if self._should_run_receive_loop():
+            self._start_receive_thread(name="BLEReceiveRecovery", reset_recovery=False)
 
     def _read_from_radio_with_retries(self, client: BLEClient) -> bytes | None:
         """Read a non-empty payload from the FROMRADIO characteristic, retrying on repeated empty reads.
@@ -1740,10 +1758,15 @@ class BLEInterface(MeshInterface):
 
         logger.debug("TORADIO write: %s", b.hex())
         try:
-            # Use write-with-response to ensure delivery is acknowledged by the peripheral
+            # Intentional synchronous write-with-response: preserve in-order send
+            # semantics and apply backpressure to callers when the device stalls.
+            write_started = time.monotonic()
             client.write_gatt_char(
                 TORADIO_UUID, b, response=True, timeout=GATT_IO_TIMEOUT
             )
+            write_duration = time.monotonic() - write_started
+            if write_duration > 1.0:
+                logger.debug("Slow TORADIO write completed in %.2fs", write_duration)
             write_successful = True
         except (BleakError, BLEClient.BLEError, RuntimeError, OSError) as e:
             # Log detailed error information and wrap in our interface exception
@@ -1858,6 +1881,8 @@ class BLEInterface(MeshInterface):
         # Use unified state lock
         with self._state_lock:
             # Record final state as DISCONNECTED for observers; instance remains closed.
+            # Safe re-entrant call: _state_lock and _state_manager._lock share the
+            # same RLock instance set during state manager initialization.
             self._state_manager._transition_to(ConnectionState.DISCONNECTED)
             alias_key = self._connection_alias_key
             self._connection_alias_key = None

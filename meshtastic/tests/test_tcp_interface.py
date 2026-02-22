@@ -11,9 +11,7 @@ from ..tcp_interface import TCPInterface
 
 @pytest.mark.unit
 def test_TCPInterface(capsys):
-    """Test that we can instantiate a TCPInterface.
-
-    """
+    """Test that we can instantiate a TCPInterface."""
     with patch("socket.socket") as mock_socket:
         iface = TCPInterface(hostname="localhost", noProto=True)
         iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
@@ -33,12 +31,9 @@ def test_TCPInterface(capsys):
 
 @pytest.mark.unit
 def test_TCPInterface_exception():
-    """Test that we can instantiate a TCPInterface.
+    """Verify TCPInterface.close() handles exceptions from _socket_shutdown.
 
-    Raises
-    ------
-    ValueError
-        If the socket connection raises a ValueError ("Fake exception.").
+    Ensures shutdown exceptions are suppressed so close() completes.
     """
 
     def throw_an_exception():

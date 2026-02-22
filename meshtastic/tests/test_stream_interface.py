@@ -11,7 +11,7 @@ from ..stream_interface import START1, START2, StreamInterface
 
 
 @pytest.mark.unit
-def test_StreamInterface():
+def test_StreamInterface() -> None:
     """Verify that creating a StreamInterface without protocol configuration raises an error.
 
     Raises
@@ -19,7 +19,9 @@ def test_StreamInterface():
     StreamInterface.StreamInterfaceError
         when a StreamInterface is instantiated without a protocol.
     """
-    with pytest.raises(StreamInterface.StreamInterfaceError):
+    with pytest.raises(
+        StreamInterface.StreamInterfaceError, match=r"StreamInterface is now abstract"
+    ):
         StreamInterface()
 
 
@@ -27,9 +29,7 @@ def test_StreamInterface():
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
 def test_StreamInterface_with_noProto(caplog):
-    """Verify that a StreamInterface can be instantiated with noProto and, when assigned a stream, can write and read bytes to and from that stream.
-
-    """
+    """Verify that a StreamInterface can be instantiated with noProto and, when assigned a stream, can write and read bytes to and from that stream."""
     stream = MagicMock()
     test_data = b"hello"
     stream.read.return_value = test_data
@@ -50,13 +50,16 @@ def test_sendToRadioImpl_frames_payload() -> None:
     """Test that _sendToRadioImpl writes a properly framed payload."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
+        payload = b"hello"
         to_radio = MagicMock()
-        to_radio.SerializeToString.return_value = b"hello"
+        to_radio.SerializeToString.return_value = payload
 
         with patch.object(iface, "_writeBytes") as write_bytes:
             iface._sendToRadioImpl(to_radio)
 
-            expected = bytes([START1, START2, 0x00, 0x05]) + b"hello"
+            length_high = (len(payload) >> 8) & 0xFF
+            length_low = len(payload) & 0xFF
+            expected = bytes([START1, START2, length_high, length_low]) + payload
             write_bytes.assert_called_once_with(expected)
     finally:
         iface.close()

@@ -36,16 +36,16 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
 def test_RemoteHardwareClient():
     """Test that we can instantiate a RemoteHardwareClient instance."""
     iface = _mock_iface_with_gpio_channel()
-    rhw = RemoteHardwareClient(iface)
-    assert rhw.iface == iface
-    iface.close()
+    try:
+        rhw = RemoteHardwareClient(iface)
+        assert rhw.iface == iface
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit
 def test_onGPIOreceive(caplog):
-    """Test onGPIOreceive.
-
-    """
+    """Test onGPIOreceive."""
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = 0xFFFFFFFF
     packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
@@ -57,9 +57,7 @@ def test_onGPIOreceive(caplog):
 
 @pytest.mark.unit
 def test_onGPIOreceive_mask_fallback(caplog):
-    """Test onGPIOreceive uses packet gpioMask when interface.mask is None.
-
-    """
+    """Test onGPIOreceive uses packet gpioMask when interface.mask is None."""
     iface = MagicMock(autospec=SerialInterface)
     iface.mask = None
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
@@ -82,51 +80,51 @@ def test_RemoteHardwareClient_no_gpio_channel():
 
 @pytest.mark.unit
 def test_readGPIOs(caplog):
-    """Test readGPIOs.
-
-    """
+    """Test readGPIOs."""
     iface = _mock_iface_with_gpio_channel()
-    rhw = RemoteHardwareClient(iface)
-    with caplog.at_level(logging.DEBUG):
-        rhw.readGPIOs("0x10", 123)
-    assert re.search(r"readGPIOs", caplog.text, re.MULTILINE)
-    iface.sendData.assert_called_once()
-    args, kwargs = iface.sendData.call_args
-    assert args[1] == "0x10"
-    assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
-    payload = args[0]
-    assert payload.type == remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
-    assert payload.gpio_mask == 123
-    assert kwargs["wantAck"] is True
-    assert kwargs["channelIndex"] == rhw.channelIndex
-    assert kwargs["wantResponse"] is True
-    assert kwargs["onResponse"] is None
-    iface.close()
+    try:
+        rhw = RemoteHardwareClient(iface)
+        with caplog.at_level(logging.DEBUG):
+            rhw.readGPIOs("0x10", 123)
+        assert re.search(r"readGPIOs", caplog.text, re.MULTILINE)
+        iface.sendData.assert_called_once()
+        args, kwargs = iface.sendData.call_args
+        assert args[1] == "0x10"
+        assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
+        payload = args[0]
+        assert payload.type == remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
+        assert payload.gpio_mask == 123
+        assert kwargs["wantAck"] is True
+        assert kwargs["channelIndex"] == rhw.channelIndex
+        assert kwargs["wantResponse"] is True
+        assert kwargs["onResponse"] is None
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit
 def test_writeGPIOs(caplog):
-    """Test writeGPIOs.
-
-    """
+    """Test writeGPIOs."""
     iface = _mock_iface_with_gpio_channel()
-    rhw = RemoteHardwareClient(iface)
-    with caplog.at_level(logging.DEBUG):
-        rhw.writeGPIOs("0x10", 123, 1)
-    assert re.search(r"writeGPIOs", caplog.text, re.MULTILINE)
-    iface.sendData.assert_called_once()
-    args, kwargs = iface.sendData.call_args
-    assert args[1] == "0x10"
-    assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
-    payload = args[0]
-    assert payload.type == remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
-    assert payload.gpio_mask == 123
-    assert payload.gpio_value == 1
-    assert kwargs["wantAck"] is True
-    assert kwargs["channelIndex"] == rhw.channelIndex
-    assert kwargs["wantResponse"] is False
-    assert kwargs["onResponse"] is None
-    iface.close()
+    try:
+        rhw = RemoteHardwareClient(iface)
+        with caplog.at_level(logging.DEBUG):
+            rhw.writeGPIOs("0x10", 123, 1)
+        assert re.search(r"writeGPIOs", caplog.text, re.MULTILINE)
+        iface.sendData.assert_called_once()
+        args, kwargs = iface.sendData.call_args
+        assert args[1] == "0x10"
+        assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
+        payload = args[0]
+        assert payload.type == remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
+        assert payload.gpio_mask == 123
+        assert payload.gpio_value == 1
+        assert kwargs["wantAck"] is True
+        assert kwargs["channelIndex"] == rhw.channelIndex
+        assert kwargs["wantResponse"] is False
+        assert kwargs["onResponse"] is None
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit
@@ -137,23 +135,25 @@ def test_watchGPIOs(caplog):
 
     """
     iface = _mock_iface_with_gpio_channel()
-    rhw = RemoteHardwareClient(iface)
-    with caplog.at_level(logging.DEBUG):
-        rhw.watchGPIOs("0x10", 123)
-    assert re.search(r"watchGPIOs", caplog.text, re.MULTILINE)
-    iface.sendData.assert_called_once()
-    args, kwargs = iface.sendData.call_args
-    assert args[1] == "0x10"
-    assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
-    payload = args[0]
-    assert payload.type == remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
-    assert payload.gpio_mask == 123
-    assert kwargs["wantAck"] is True
-    assert kwargs["channelIndex"] == rhw.channelIndex
-    assert kwargs["wantResponse"] is False
-    assert kwargs["onResponse"] is None
-    assert iface.mask == 123
-    iface.close()
+    try:
+        rhw = RemoteHardwareClient(iface)
+        with caplog.at_level(logging.DEBUG):
+            rhw.watchGPIOs("0x10", 123)
+        assert re.search(r"watchGPIOs", caplog.text, re.MULTILINE)
+        iface.sendData.assert_called_once()
+        args, kwargs = iface.sendData.call_args
+        assert args[1] == "0x10"
+        assert args[2] == portnums_pb2.REMOTE_HARDWARE_APP
+        payload = args[0]
+        assert payload.type == remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
+        assert payload.gpio_mask == 123
+        assert kwargs["wantAck"] is True
+        assert kwargs["channelIndex"] == rhw.channelIndex
+        assert kwargs["wantResponse"] is False
+        assert kwargs["onResponse"] is None
+        assert iface.mask == 123
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit

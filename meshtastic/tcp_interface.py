@@ -56,6 +56,7 @@ class TCPInterface(StreamInterface):
 
         self.hostname: str = hostname
         self.portNumber: int = portNumber
+        self._connect_now: bool = connectNow
 
         self.socket: socket.socket | None = None
 
@@ -79,16 +80,18 @@ class TCPInterface(StreamInterface):
         -------
         str
             A representation showing the hostname and any active options:
-            `debugOut`, `noProto`, `connectNow=False` (when not connected), a
-            non-default `portNumber`, and `noNodes`.
+            `debugOut`, `noProto`, `connectNow=False` (when configured), socket
+            state, a non-default `portNumber`, and `noNodes`.
         """
         rep = f"TCPInterface({self.hostname!r}"
         if self.debugOut is not None:
             rep += f", debugOut={self.debugOut!r}"
         if self.noProto:
             rep += ", noProto=True"
-        if self.socket is None:
+        if not self._connect_now:
             rep += ", connectNow=False"
+        if self.socket is None:
+            rep += ", socket=None"
         if self.portNumber != DEFAULT_TCP_PORT:
             rep += f", portNumber={self.portNumber!r}"
         if self.noNodes:
@@ -124,6 +127,9 @@ class TCPInterface(StreamInterface):
         logger.debug("Closing TCP stream")
         # Request reader shutdown before parent close() to prevent reconnect-on-close behavior.
         self._wantExit = True
+        # Intentionally bypass StreamInterface.close(): TCP teardown requires
+        # socket shutdown and reader join ordering handled in this method.
+        # TODO: If StreamInterface.close() gains additional cleanup, mirror it here.
         MeshInterface.close(self)
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
@@ -175,6 +181,49 @@ class TCPInterface(StreamInterface):
                     self.socket.close()
                 self.socket = None
 
+    def _attempt_reconnect(self) -> None:
+        """Attempt to re-establish the TCP socket and rerun protocol startup.
+
+        Returns early if shutdown was requested or reconnect/setup fails.
+        """
+        if self._wantExit:
+            return
+        time.sleep(1)
+        if self._wantExit:
+            return
+        try:
+            self.myConnect()
+        except OSError as connect_ex:
+            logger.warning("Reconnect to %s failed: %s", self.hostname, connect_ex)
+            return
+        if self.socket is None:
+            logger.warning(
+                "myConnect() returned without setting socket for %s",
+                self.hostname,
+            )
+            return
+        if self._wantExit:
+            # close() may race while we reconnect; tear down the new socket.
+            with contextlib.suppress(Exception):
+                self._socket_shutdown()
+            with contextlib.suppress(Exception):
+                self.socket.close()
+            self.socket = None
+            return
+        try:
+            self._startConfig()
+        except Exception as config_ex:  # noqa: BLE001 - preserve reader thread survival
+            logger.warning(
+                "Post-reconnect config for %s failed: %s",
+                self.hostname,
+                config_ex,
+            )
+            with contextlib.suppress(Exception):
+                self._socket_shutdown()
+            with contextlib.suppress(Exception):
+                self.socket.close()
+            self.socket = None
+
     # pylint: disable=too-many-return-statements
     # Multiple early returns are intentional here for clear handling of each
     # exit condition: no socket, shutdown requested (checked twice during
@@ -185,8 +234,8 @@ class TCPInterface(StreamInterface):
 
         If a socket is present and data is available, returns the received bytes. If the
         socket is detected as disconnected, the method initiates a reconnect sequence and
-        returns `None`. If no socket is available or a shutdown is requested, sets the
-        reader to exit and returns `None`.
+        returns `None`. If no socket is available, the method attempts reconnect unless a
+        shutdown is already requested.
 
         Parameters
         ----------
@@ -197,8 +246,7 @@ class TCPInterface(StreamInterface):
         -------
         bytes | None
             The received bytes, or `None` if no data was returned
-            because the socket is absent, a reconnect was started, or shutdown was
-            requested.
+            because the socket is absent, a reconnect was started, or shutdown was requested.
         """
         if self.socket is not None:
             try:
@@ -216,38 +264,13 @@ class TCPInterface(StreamInterface):
                 with contextlib.suppress(Exception):
                     self.socket.close()
                 self.socket = None
-                if self._wantExit:
-                    return None
-                time.sleep(1)
-                if self._wantExit:
-                    return None
-                try:
-                    self.myConnect()
-                except Exception as connect_ex:
-                    logger.warning(
-                        "Reconnect to %s failed: %s", self.hostname, connect_ex
-                    )
-                    return None
-                if self.socket is None:
-                    logger.warning(
-                        "myConnect() returned without setting socket for %s",
-                        self.hostname,
-                    )
-                    return None
-
-
-                if self._wantExit:
-                    # close() may race while we reconnect; tear down the new socket
-                    with contextlib.suppress(Exception):
-                        self._socket_shutdown()
-                    with contextlib.suppress(Exception):
-                        self.socket.close()
-                    self.socket = None
-                    return None
-                self._startConfig()
+                self._attempt_reconnect()
                 return None
             return data
 
-        # no socket, break reader thread
-        self._wantExit = True
+        # Socket may be briefly nulled by a concurrent writer failure; try to
+        # recover unless shutdown was explicitly requested.
+        if not self._wantExit:
+            logger.debug("Socket unavailable, attempting reconnect")
+            self._attempt_reconnect()
         return None

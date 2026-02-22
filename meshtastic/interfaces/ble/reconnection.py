@@ -141,7 +141,6 @@ class ReconnectWorker:
         self.interface = interface
         self.reconnect_policy = reconnect_policy
 
-
     def _call_policy(self, method_name: str, *args):
         """Call a policy method with fallback to underscored version for backward compatibility.
 
@@ -161,7 +160,13 @@ class ReconnectWorker:
         if callable(method):
             return method(*args)
         # Backward compatibility for test doubles that only expose underscored methods.
-        return getattr(self.reconnect_policy, f"_{method_name}")(*args)
+        fallback = getattr(self.reconnect_policy, f"_{method_name}", None)
+        if callable(fallback):
+            return fallback(*args)
+        raise AttributeError(
+            "ReconnectPolicy method resolution failed: missing "
+            f"'{method_name}' and '_{method_name}' on {self.reconnect_policy!r}"
+        )
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
         """Determine whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
@@ -300,7 +305,9 @@ class ReconnectWorker:
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
-                sleep_delay, should_retry = cast(tuple[float, bool], self._call_policy("next_attempt"))
+                sleep_delay, should_retry = cast(
+                    tuple[float, bool], self._call_policy("next_attempt")
+                )
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:
