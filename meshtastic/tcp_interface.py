@@ -175,6 +175,11 @@ class TCPInterface(StreamInterface):
                     self.socket.close()
                 self.socket = None
 
+    # pylint: disable=too-many-return-statements
+    # Multiple early returns are intentional here for clear handling of each
+    # exit condition: no socket, shutdown requested (checked twice during
+    # reconnect wait), reconnect failure, socket not set after reconnect,
+    # shutdown during reconnect, successful reconnect, and normal data return.
     def _readBytes(self, length: int) -> bytes | None:
         """Read up to `length` bytes from the TCP socket, handling dead connections and automatic reconnection.
 

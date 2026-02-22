@@ -55,7 +55,7 @@ class PPK2PowerSupply(PowerSupply):
         self.current_min = 0
         self.current_sum = 0
         self.current_num_samples = 0
-        self.current_average = 0
+        self.current_average: float = 0.0
 
         # for tracking avera data read length (to determine if we are sleeping efficiently in measurement_loop)
         self.total_data_len = 0
