@@ -21,11 +21,6 @@ def _suppress_ble_debug_logs():
 
     Performance and memory regression tests should not be dominated by logger
     I/O or emit thousands of transition lines in CI output.
-
-    Yields
-    ------
-    _type_
-        _description_
     """
     ble_logger = logging.getLogger("meshtastic.ble")
     original_level = ble_logger.level
@@ -212,13 +207,7 @@ class TestBLEStateManager:
         assert len(results) == 500  # 5 workers * 100 iterations each
 
     def test_state_transition_logging(self, caplog):
-        """Test that state transitions are properly logged.
-
-        Parameters
-        ----------
-        caplog : _type_
-            _description_
-        """
+        """Test that state transitions are properly logged."""
         manager = BLEStateManager()
 
         with caplog.at_level("DEBUG"):
@@ -233,11 +222,6 @@ class TestBLEStateManager:
         """Ensure an invalid state transition emits a warning log.
 
         Specifically, transitioning from DISCONNECTED to CONNECTED should produce the WARNING message: "Invalid state transition: disconnected → connected".
-
-        Parameters
-        ----------
-        caplog : _type_
-            _description_
         """
         manager = BLEStateManager()
 

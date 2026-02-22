@@ -38,7 +38,7 @@ class NotificationManager:
         self._subscription_counter = 0
         self._lock = RLock()
 
-    def subscribe(
+    def _subscribe(
         self, characteristic: str, callback: Callable[[Any, Any], None]
     ) -> int:
         """Track a notification callback for a BLE characteristic so it can be cleaned up or re-registered later.
@@ -58,7 +58,7 @@ class NotificationManager:
         Notes
         -----
         Multiple subscriptions to the same characteristic are allowed; the most recently
-        registered callback for a characteristic is returned by `getCallback()`, while
+        registered callback for a characteristic is returned by `_get_callback()`, while
         all tracked subscriptions are retained for cleanup or resubscription attempts.
         """
         with self._lock:
@@ -86,24 +86,7 @@ class NotificationManager:
             self._characteristic_to_callback[characteristic] = callback
             return token
 
-    def _subscribe(self, *args, **kwargs):
-        """Backward-compatible snake_case alias for subscribe.
-
-        Parameters
-        ----------
-        characteristic : str
-            Identifier of the BLE characteristic (for example, a UUID string or handle).
-        callback : Callable[[Any, Any], None]
-            Function invoked when a notification arrives; typically called as (sender, data).
-
-        Returns
-        -------
-        int
-            Unique opaque token that identifies the tracked subscription.
-        """
-        return self.subscribe(*args, **kwargs)
-
-    def cleanupAll(self) -> None:
+    def _cleanup_all(self) -> None:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
         Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the subscription token counter to zero. This operation is performed while holding the manager's internal lock.
@@ -117,16 +100,7 @@ class NotificationManager:
             self._characteristic_to_callback.clear()
             self._subscription_counter = 0
 
-    def _cleanup_all(self):
-        """Backward-compatible snake_case alias for cleanupAll.
-
-        Returns
-        -------
-        None
-        """
-        return self.cleanupAll()
-
-    def unsubscribeAll(self, client: "BLEClient", *, timeout: float | None) -> None:
+    def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Stop notifications for every characteristic currently tracked and ignore any errors.
 
         Parameters
@@ -153,24 +127,7 @@ class NotificationManager:
                     e,
                 )
 
-    def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
-        """Backward-compatible snake_case alias for unsubscribeAll.
-
-        Parameters
-        ----------
-        client : BLEClient
-            BLE client used to stop notifications.
-        timeout : float | None
-            Per-unsubscribe timeout passed to the client's `stopNotify` method; may be None.
-
-        Returns
-        -------
-        None
-            This function does not return a value.
-        """
-        return self.unsubscribeAll(client, timeout=timeout)
-
-    def resubscribeAll(self, client: "BLEClient", *, timeout: float | None) -> None:
+    def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Resubscribe all tracked BLE notification callbacks on the given client.
 
         Uses the per-characteristic latest callback to avoid duplicate resubscription attempts when
@@ -217,24 +174,7 @@ class NotificationManager:
         with self._lock:
             return len(self._active_subscriptions)
 
-    def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
-        """Backward-compatible snake_case alias for resubscribeAll.
-
-        Parameters
-        ----------
-        client : BLEClient
-            BLE client on which to call `start_notify` for each characteristic.
-        timeout : float | None
-            Per-subscription timeout to pass to the client's `start_notify` method.
-
-        Returns
-        -------
-        None
-            This function does not return a value.
-        """
-        return self.resubscribeAll(client, timeout=timeout)
-
-    def getCallback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
+    def _get_callback(self, characteristic: str) -> Callable[[Any, Any], None] | None:
         """Retrieve the most recently registered callback for a BLE characteristic.
 
         Parameters
@@ -249,18 +189,3 @@ class NotificationManager:
         """
         with self._lock:
             return self._characteristic_to_callback.get(characteristic)
-
-    def _get_callback(self, *args, **kwargs):
-        """Retrieve the most recently registered callback for a BLE characteristic using a snake_case name for backward compatibility.
-
-        Parameters
-        ----------
-        characteristic : str
-            BLE characteristic identifier (e.g., UUID or handle) to look up.
-
-        Returns
-        -------
-        Callable[[Any, Any], None] | None
-            The most recently registered callback for the characteristic, or None if no callback is registered.
-        """
-        return self.getCallback(*args, **kwargs)

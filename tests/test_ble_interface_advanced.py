@@ -47,13 +47,7 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
 
 
 def test_log_notification_registration_missing_characteristics(monkeypatch):
-    """Test that log notification registration handles missing characteristics gracefully.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Test that log notification registration handles missing characteristics gracefully."""
     # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
     class MockClientWithoutLogChars(DummyClient):
@@ -94,13 +88,6 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """Record a notification registration by appending a (uuid, handler) tuple to self.start_notify_calls.
 
             If called with at least two positional arguments, the first is treated as the characteristic UUID and the second as the notification handler; any additional positional or keyword arguments are ignored.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
@@ -130,15 +117,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
 
 def test_receive_loop_handles_decode_error(monkeypatch, caplog):
-    """Test that the receive loop handles DecodeError gracefully without closing.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
-    """
+    """Test that the receive loop handles DecodeError gracefully without closing."""
     # logging, threading, and time already imported at top
     # FROMRADIO_UUID already imported at top as ble_mod.FROMRADIO_UUID
 
@@ -151,13 +130,6 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
             """Return raw GATT characteristic bytes for this test client.
 
             When the requested UUID equals ble_mod.FROMRADIO_UUID, returns malformed protobuf bytes to simulate a decode error; otherwise returns empty bytes.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
 
             Returns
             -------
@@ -222,13 +194,6 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     - The receive thread remains active and _want_receive remains True.
 
     Uses test fixtures for monkeypatching and logging; does not document those fixtures.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
     """
     _ = caplog  # Mark as unused
     # time and meshtastic.mesh_interface already imported at top
@@ -243,7 +208,6 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
         ----------
         topic : Any
             The event topic name.
-        **kwargs : _type_
             Key/value pairs comprising the event payload; stored as a dict.
 
         Notes
@@ -284,7 +248,6 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
         Returns
         -------
-        _type_
             The value returned by the preserved original close function.
         """
         close_called.append(True)
@@ -371,17 +334,9 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
     This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
-
     Raises
     ------
     __UnknownError__
-        _description_
     """
     # logging already imported at top
     # BleakError already imported at top as ble_mod.BleakError, BLEInterface
@@ -405,13 +360,6 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
         def write_gatt_char(self, *_args, **_kwargs):
             """Simulate a failing GATT characteristic write.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
 
             Raises
             ------
@@ -475,17 +423,10 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 def test_rapid_connect_disconnect_stress_test(caplog):
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-
     Raises
     ------
     RuntimeError
-        _description_
     RuntimeError
-        _description_
     """
     # logging, threading, and time already imported at top
     # MagicMock, patch already imported at top
@@ -527,13 +468,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
             Increments the client's connect_count and returns the client instance. If the client is configured to fail, raises a RuntimeError.
 
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
-
             Returns
             -------
             self
@@ -554,7 +488,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
             Returns
             -------
-            _type_
                 `True` because this mock simulates a persistent connection.
             """
             return True
@@ -563,13 +496,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """Record a disconnect attempt on the mock client.
 
             Increments the `disconnect_count` attribute by 1. Any positional or keyword arguments are accepted for call-site compatibility and ignored.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
             self.disconnect_count += 1
 
@@ -577,26 +503,12 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """Accept any positional and keyword arguments and perform no action.
 
             This stub is a no-op placeholder that intentionally ignores all inputs.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
 
         def stopNotify(self, *_args, **_kwargs):
             """Compatibility shim that accepts any arguments and performs no action.
 
             Provided for API compatibility with BLE client implementations; accepts any positional and keyword arguments and does nothing.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
 
     class StressTestClient(BLEClient):
@@ -620,9 +532,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
                 Value returned by isConnected checks to represent the current connection state.
             _should_fail_connect : bool
                 If True, simulated connect attempts will fail.
-            _eventLoop : _type_
                 Placeholder for an event loop to suppress test warnings.
-            _eventThread : _type_
                 Placeholder for an event thread to suppress test warnings.
             """
             self.bleak_client = MockBleakRootClient()  # type: ignore[assignment]
@@ -638,13 +548,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """Simulate a BLE client connection for tests.
 
             Increments the client's connect_count and returns the client instance. If the client is configured to fail, raises a RuntimeError.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
 
             Returns
             -------
@@ -666,7 +569,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
             Returns
             -------
-            _type_
                 True if the mock client is configured as connected, False otherwise.
             """
             return self.is_connected_result
@@ -675,13 +577,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """Record a disconnect attempt on the mock client.
 
             Increments the `disconnect_count` attribute by 1. Any positional or keyword arguments are accepted for call-site compatibility and ignored.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
             self.disconnect_count += 1
 
@@ -689,26 +584,12 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """Accept any positional and keyword arguments and perform no action.
 
             This stub is a no-op placeholder that intentionally ignores all inputs.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
 
         def stopNotify(self, *_args, **_kwargs):
             """Compatibility shim that accepts any arguments and performs no action.
 
             Provided for API compatibility with BLE client implementations; accepts any positional and keyword arguments and does nothing.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
 
         def close(self):
@@ -734,7 +615,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         Yields
         ------
         tuple[BLEInterface, 'StressTestClient']
-            _description_
         """
 
         outer_client = StressTestClient()
@@ -896,15 +776,9 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 def test_ble_client_is_connected_exception_handling(caplog):
     """Test that BLEClient.isConnected handles exceptions gracefully.
 
-    Parameters
-    ----------
-    caplog : _type_
-        _description_
-
     Raises
     ------
     __UnknownError__
-        _description_
     """
     # logging already imported at top
     # BLEClient already imported at top as ble_mod.BLEClient
@@ -968,15 +842,9 @@ def test_ble_client_is_connected_exception_handling(caplog):
 def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     """BLEClient._async_await should wrap FutureTimeoutError in BLEInterface.BLEError.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Raises
     ------
     FutureTimeoutError
-        _description_
     """
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
@@ -986,23 +854,11 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     class _FakeFuture:
         """_summary_.
 
-        Attributes
-        ----------
-        cancelled : _type_
-            _description_
-        coro : _type_
-            _description_
-        callbacks : _type_
-            _description_
-
         Methods
         -------
         result(_timeout=None)
-            _description_
         cancel()
-            _description_
         add_done_callback(callback)
-            _description_
         """
 
         def __init__(self):
@@ -1076,13 +932,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     monkeypatch.setattr(client, "_async_run", _fake_async_run)
 
     async def _test_coro():
-        """Run a no-op coroutine used for tests.
-
-        Returns
-        -------
-        _type_
-            _description_
-        """
+        """Run a no-op coroutine used for tests."""
         return None
 
     # BLEClient._async_await raises BLEClient.BLEError for timeouts
@@ -1101,34 +951,19 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
     """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Raises
     ------
     RuntimeError
-        _description_
     """
     client = ble_mod.BLEClient()
 
     class _FakeFuture:
         """_summary_.
 
-        Attributes
-        ----------
-        cancelled : _type_
-            _description_
-        coro : _type_
-            _description_
-
         Methods
         -------
         result(_timeout=None)
-            _description_
         cancel()
-            _description_
         """
 
         def __init__(self):
@@ -1144,7 +979,6 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
 
             Parameters
             ----------
-            _timeout : _type_
                 Ignored; present for API compatibility.
 
             Raises
@@ -1186,13 +1020,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
     )
 
     async def _test_coro():
-        """Run a no-op coroutine used for tests.
-
-        Returns
-        -------
-        _type_
-            _description_
-        """
+        """Run a no-op coroutine used for tests."""
         return None
 
     # BLEClient._async_await raises BLEClient.BLEError for runtime errors
@@ -1210,19 +1038,10 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
 def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     """Test that _wait_for_disconnect_notifications handles exceptions gracefully.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
-
     Raises
     ------
     RuntimeError
-        _description_
     ValueError
-        _description_
     """
     # logging already imported at top
 
@@ -1277,7 +1096,6 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
             Parameters
             ----------
-            _callback : _type_
                 The callback that would have been queued (ignored).
 
             Raises
@@ -1299,17 +1117,9 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 def test_drain_publish_queue_exceptions(monkeypatch, caplog):
     """Test that _drain_publish_queue handles exceptions gracefully.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
-
     Raises
     ------
     ValueError
-        _description_
     """
     # logging, threading, and Queue already imported at top
 
@@ -1359,7 +1169,6 @@ def test_drain_publish_queue_exceptions(monkeypatch, caplog):
 
             Returns
             -------
-            _type_
                 The value returned by `_callback` if provided, otherwise `None`.
             """
             if _callback:

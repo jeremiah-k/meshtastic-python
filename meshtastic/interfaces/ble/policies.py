@@ -218,12 +218,12 @@ class RetryPolicy:
     """Static retry policy presets for BLE operations."""
 
     # Backwards-compatible attribute accessors that return fresh instances.
-    EMPTY_READ = _PolicyDescriptor("emptyRead")
-    TRANSIENT_ERROR = _PolicyDescriptor("transientError")
-    AUTO_RECONNECT = _PolicyDescriptor("autoReconnect")
+    EMPTY_READ = _PolicyDescriptor("_empty_read")
+    TRANSIENT_ERROR = _PolicyDescriptor("_transient_error")
+    AUTO_RECONNECT = _PolicyDescriptor("_auto_reconnect")
 
     @staticmethod
-    def emptyRead() -> ReconnectPolicy:
+    def _empty_read() -> ReconnectPolicy:
         """Policy configured for retrying empty BLE read responses.
 
         Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to 1.0 second, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
@@ -242,7 +242,7 @@ class RetryPolicy:
         )
 
     @staticmethod
-    def transientError() -> ReconnectPolicy:
+    def _transient_error() -> ReconnectPolicy:
         """Create a ReconnectPolicy tuned for transient BLE read errors.
 
         Returns
@@ -259,7 +259,7 @@ class RetryPolicy:
         )
 
     @staticmethod
-    def autoReconnect() -> ReconnectPolicy:
+    def _auto_reconnect() -> ReconnectPolicy:
         """Create a ReconnectPolicy preset for automatic BLE reconnection.
 
         Returns

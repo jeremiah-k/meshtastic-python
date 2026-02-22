@@ -62,14 +62,6 @@ def _clear_all_registries() -> None:
         _LOCK_HOLDERS.clear()
 
 
-def clearAllRegistries() -> None:
-    """Reset all internal BLE connection-gating registries to their initial, empty state.
-
-    This clears per-address locks, connected-address bookkeeping, owner references, timestamps, and holder counts; primarily intended for use by tests to restore a clean module state.
-    """
-    _clear_all_registries()
-
-
 def _addr_key(addr: str | None) -> str | None:
     """Normalize a BLE address into a registry key.
 

@@ -39,7 +39,7 @@ class BLEErrorHandler:
     """
 
     @staticmethod
-    def safeExecute(
+    def _safe_execute(
         func: Callable[[], T],
         default_return: T | None = None,
         log_error: bool = True,
@@ -104,43 +104,7 @@ class BLEErrorHandler:
             return default_return
 
     @staticmethod
-    def _safe_execute(*args, **kwargs):
-        """Provides a backward-compatible snake_case entry point that executes a callable using the module's BLE error handling.
-
-        Parameters
-        ----------
-        *args : Any
-            Positional arguments forwarded to `safeExecute`.
-        **kwargs : Any
-            Keyword arguments forwarded to `safeExecute`.
-
-        Returns
-        -------
-        Any
-            The callable's result, or the provided `default_return` if a handled BLE-related error occurred; may re-raise the original exception when configured.
-        """
-        return BLEErrorHandler.safeExecute(*args, **kwargs)
-
-    @staticmethod
-    def safe_execute(*args, **kwargs):
-        """Execute a zero-argument callable with centralized BLE error handling and return its result or a provided default on handled errors.
-
-        Parameters
-        ----------
-        *args : Any
-            Positional arguments forwarded to `safeExecute`.
-        **kwargs : Any
-            Keyword arguments forwarded to `safeExecute`.
-
-        Returns
-        -------
-        Any
-            The callable's return value, or the provided `default_return` when a handled BLE-related error occurs.
-        """
-        return BLEErrorHandler.safeExecute(*args, **kwargs)
-
-    @staticmethod
-    def safeCleanup(
+    def _safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
         """Run a zero-argument cleanup callable and suppress any exceptions.
@@ -175,39 +139,3 @@ class BLEErrorHandler:
             return False
         else:
             return True
-
-    @staticmethod
-    def _safe_cleanup(*args, **kwargs):
-        """Execute a cleanup callable and return whether it completed without raising an exception.
-
-        Parameters
-        ----------
-        *args : Any
-            Positional arguments forwarded to the cleanup call; expected usage is a single zero-argument callable.
-        **kwargs : Any
-            Keyword arguments forwarded to the cleanup call; supports `cleanup_name` (str) to label the operation in logs.
-
-        Returns
-        -------
-        bool
-            `True` if the cleanup callable completed without raising (excluding `SystemExit` and `KeyboardInterrupt`), `False` if an exception was caught.
-        """
-        return BLEErrorHandler.safeCleanup(*args, **kwargs)
-
-    @staticmethod
-    def safe_cleanup(*args, **kwargs):
-        """Backward-compatible snake_case alias for safeCleanup.
-
-        Parameters
-        ----------
-        *args : Any
-            Positional arguments forwarded to `safeCleanup`.
-        **kwargs : Any
-            Keyword arguments forwarded to `safeCleanup`.
-
-        Returns
-        -------
-        bool
-            True if the cleanup completed without raising, False otherwise.
-        """
-        return BLEErrorHandler.safeCleanup(*args, **kwargs)

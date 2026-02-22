@@ -51,7 +51,6 @@ if TYPE_CHECKING:
         Methods
         -------
         sendMessage(topic: str, **kwargs: Any)
-            _description_
         """
 
         def sendMessage(self, topic: str, **kwargs: Any) -> None:
@@ -81,9 +80,7 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
     Parameters
     ----------
     address : str
-        _description_
     name : str
-        _description_
 
     Returns
     -------
@@ -156,7 +153,6 @@ class _FakeDiscoveryClient:
         Parameters
         ----------
         **_kwargs : Any
-            _description_
 
         Returns
         -------
@@ -171,12 +167,10 @@ class _FakeDiscoveryClient:
         Parameters
         ----------
         **kwargs : Any
-            _description_
 
         Returns
         -------
         dict[str, Any]
-            _description_
         """
         return self._discover(**kwargs)
 
@@ -205,14 +199,11 @@ class _FakeDiscoveryClient:
         Parameters
         ----------
         coro : Any
-            _description_
         timeout : float | None
-            _description_ (Default value = None)
 
         Returns
         -------
         Any
-            _description_
         """
         return self._async_await(coro, timeout)
 
@@ -268,7 +259,6 @@ def _assert_no_fallback(message: str) -> Callable[[Any, float | None], Any]:
     Parameters
     ----------
     message : str
-        _description_
 
     Returns
     -------
@@ -278,7 +268,6 @@ def _assert_no_fallback(message: str) -> Callable[[Any, float | None], Any]:
     Raises
     ------
     AssertionError
-        _description_
     """
 
     def _raise(_coro: Any, _timeout: float | None = None) -> Any:
@@ -290,7 +279,6 @@ def _assert_no_fallback(message: str) -> Callable[[Any, float | None], Any]:
         Raises
         ------
         AssertionError
-            _description_
         """
         raise AssertionError(message)
 
@@ -308,11 +296,9 @@ class _StrategyOverride(ConnectedStrategy):
 
         Parameters
         ----------
-        delegate (Callable[[str | None, float], Awaitable[list[BLEDevice]]]): : _type_
             Async callable invoked as delegate(address, timeout) that returns a list of
             discovered BLEDevice objects for the optional address and timeout in seconds.
         delegate : Callable[[str | None, float], Awaitable[list[BLEDevice]]]
-            _description_
         """
         self._delegate = delegate
 
@@ -471,7 +457,6 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
-        _description_
     """
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     assert iface.auto_reconnect is False
@@ -479,13 +464,7 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
 
 
 def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
-    """Stale disconnect callbacks must not clear the current active client.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Stale disconnect callbacks must not clear the current active client."""
     stale_client = DummyClient()
     iface = _build_interface(monkeypatch, stale_client)
 
@@ -534,17 +513,9 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
     This test forces connect() to hold the per-address lock while _handle_disconnect()
     runs, then releases connect to ensure both operations complete.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    clear_registry : _type_
-        _description_
-
     Raises
     ------
     AssertionError
-        _description_
     """
     _ = clear_registry
     import meshtastic.interfaces.ble.interface as ble_iface_mod
@@ -643,9 +614,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         Parameters
         ----------
         *_args : Any
-            _description_
         **_kwargs : Any
-            _description_
 
         Returns
         -------
@@ -725,13 +694,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
-    """Transient read retries should pass a zero-based attempt index to policy delay.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Transient read retries should pass a zero-based attempt index to policy delay."""
     iface = _build_interface(monkeypatch, DummyClient())
     delay_attempts: list[int] = []
 
@@ -788,15 +751,9 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
 def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
     """Outer receive-loop exceptions should use normal disconnect handling.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Raises
     ------
     RuntimeError
-        _description_
     """
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
@@ -808,7 +765,6 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
         Parameters
         ----------
         timeout : float | None
-            _description_ (Default value = None)
 
         Raises
         ------
@@ -828,11 +784,8 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
         Parameters
         ----------
         source : str
-            _description_
         client : Any | None
-            _description_ (Default value = None)
         bleak_client : Any | None
-            _description_ (Default value = None)
 
         Returns
         -------
@@ -868,15 +821,9 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
 def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
     """Receive thread start helper should no-op once the interface is closed.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Raises
     ------
     AssertionError
-        _description_
     """
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
@@ -884,13 +831,6 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
 
     def should_not_create_thread(*_args, **_kwargs):
         """Fail if thread creation is attempted after the interface has been closed.
-
-        Parameters
-        ----------
-        *_args : _type_
-            _description_
-        **_kwargs : _type_
-            _description_
 
         Raises
         ------
@@ -946,15 +886,9 @@ def test_find_device_multiple_matches_raises():
 def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
     """ConnectedStrategy should not touch private backend when guard disallows it.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Raises
     ------
     AssertionError
-        _description_
     """
 
     monkeypatch.setattr(
@@ -985,13 +919,7 @@ def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
 
 
 def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
-    """DiscoveryManager should return only devices advertising the Meshtastic service UUID.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """DiscoveryManager should return only devices advertising the Meshtastic service UUID."""
 
     filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
     other_device = _create_ble_device("11:22:33:44:55:66", "Other")
@@ -1026,13 +954,7 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
 
 
 def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
-    """When no devices are discovered via BLE scan, DiscoveryManager should fall back to connected strategy.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """When no devices are discovered via BLE scan, DiscoveryManager should fall back to connected strategy."""
 
     fallback_device = _create_ble_device("AA:BB", "Fallback")
 
@@ -1071,13 +993,7 @@ def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
 
 
 def test_discovery_manager_skips_fallback_without_address(monkeypatch):
-    """Connected-device fallback should not run when no address filter is provided.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Connected-device fallback should not run when no address filter is provided."""
 
     monkeypatch.setattr(
         ble_mod,
@@ -1118,13 +1034,7 @@ def test_discovery_manager_skips_fallback_without_address(monkeypatch):
 
 
 def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch):
-    """Targeted discovery should keep only exact address/name matches.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Targeted discovery should keep only exact address/name matches."""
     target_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Target")
     other_meshtastic_device = _create_ble_device("11:22:33:44:55:66", "Other")
 
@@ -1188,15 +1098,9 @@ def test_discovery_manager_destructor_does_not_close_client():
     class StubDiscoveryClient:
         """_summary_.
 
-        Attributes
-        ----------
-        close_calls : _type_
-            _description_
-
         Methods
         -------
         close()
-            _description_
         """
 
         def __init__(self):
@@ -1266,13 +1170,7 @@ def test_connection_validator_existing_client_checks():
 
 
 def test_close_idempotent(monkeypatch):
-    """Test that close() is idempotent and only calls disconnect once.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Test that close() is idempotent and only calls disconnect once."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
@@ -1286,15 +1184,7 @@ def test_close_idempotent(monkeypatch):
 
 @pytest.mark.parametrize("exc_cls", [BleakError, RuntimeError, OSError])
 def test_close_handles_errors(monkeypatch, exc_cls):
-    """Test that close() handles various exception types gracefully.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    exc_cls : _type_
-        _description_
-    """
+    """Test that close() handles various exception types gracefully."""
     # pub already imported at top as mesh_iface_module.pub
 
     calls = []
@@ -1308,7 +1198,6 @@ def test_close_handles_errors(monkeypatch, exc_cls):
         ----------
         topic : str
             Pubsub topic identifier.
-        **kwargs : _type_
             Additional message fields to capture.
         """
         calls.append((topic, kwargs))
@@ -1341,13 +1230,7 @@ def test_close_handles_errors(monkeypatch, exc_cls):
 
 
 def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
-    """close() should avoid scheduling disconnect coroutines during finalization.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """close() should avoid scheduling disconnect coroutines during finalization."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client)
 
@@ -1363,13 +1246,7 @@ def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
 
 
 def test_close_clears_ble_threads(monkeypatch):
-    """Closing the interface should leave no BLE* threads running.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Closing the interface should leave no BLE* threads running."""
     # threading already imported at top
 
     client = DummyClient()
@@ -1410,19 +1287,9 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
     The test injects a client whose read_gatt_char raises the given exception type,
     triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
-    exc_type : _type_
-        _description_
-
     Raises
     ------
     __UnknownError__
-        _description_
     """
     # logging and threading already imported at top
 
@@ -1445,13 +1312,6 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
 
         def read_gatt_char(self, *_args, **_kwargs):
             """Raise the client's configured exception to simulate a failing GATT characteristic read.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
 
             Raises
             ------
@@ -1494,17 +1354,9 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
 
     The interface should retry on transient BleakError before giving up and closing.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    caplog : _type_
-        _description_
-
     Raises
     ------
     BleakError
-        _description_
     """
     caplog.set_level(logging.DEBUG)
 
@@ -1520,13 +1372,6 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
             """Simulate a GATT characteristic read that increments self.read_count and always fails.
 
             Increments self.read_count and then raises a BleakError with the message "transient error".
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
 
             Raises
             ------
@@ -1561,13 +1406,7 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
 
 
 def test_log_notification_registration(monkeypatch):
-    """Test that log notifications are properly registered for both legacy and current log UUIDs.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """Test that log notifications are properly registered for both legacy and current log UUIDs."""
     # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
     class MockClientWithLogChars(DummyClient):
@@ -1611,13 +1450,6 @@ def test_log_notification_registration(monkeypatch):
             """Record a notification registration by saving the characteristic UUID and its handler.
 
             If called with at least two positional arguments, treats the first as the characteristic UUID and the second as the notification handler, and appends the pair to self.start_notify_calls. Any additional positional or keyword arguments are accepted and ignored.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
             """
             # Extract uuid and handler from args if available
             if len(_args) >= 2:
@@ -1667,13 +1499,7 @@ def test_log_notification_registration(monkeypatch):
 
 
 def test_close_unsubscribes_tracked_notifications(monkeypatch):
-    """close() should best-effort stop tracked notifications before client teardown.
-
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    """
+    """close() should best-effort stop tracked notifications before client teardown."""
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
@@ -1692,13 +1518,7 @@ def test_reconnect_scheduler_tracks_threads():
     shutdown_event = threading.Event()
 
     class StubCoordinator:
-        """_summary_.
-
-        Attributes
-        ----------
-        created : _type_
-            _description_
-        """
+        """_summary_."""
 
         def __init__(self):
             """Initialize the instance and prepare storage for items created during tests.
@@ -1782,13 +1602,7 @@ def test_reconnect_worker_successful_attempt():
     """ReconnectWorker should reconnect and clear thread references on success; cleanup/resubscribe are handled by the interface layer, not the worker."""
 
     class StubPolicy:
-        """_summary_.
-
-        Attributes
-        ----------
-        reset_called : _type_
-            _description_
-        """
+        """_summary_."""
 
         def __init__(self):
             """Initialize the stub retry policy used by reconnect tests.
@@ -1797,9 +1611,7 @@ def test_reconnect_worker_successful_attempt():
 
             Attributes
             ----------
-            reset_called : _type_
                 True if reset() has been invoked.
-            _attempt_count : _type_
                 Number of connection attempts recorded.
             """
             self.reset_called = False
@@ -1814,13 +1626,7 @@ def test_reconnect_worker_successful_attempt():
             self._attempt_count = 0
 
         def _get_attempt_count(self):
-            """Return the internal attempt count for ReconnectWorker tests.
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Return the internal attempt count for ReconnectWorker tests."""
             return self._attempt_count
 
         def _next_attempt(self):
@@ -1841,21 +1647,9 @@ def test_reconnect_worker_successful_attempt():
     class DummyInterface:
         """_summary_.
 
-        Attributes
-        ----------
-        auto_reconnect : _type_
-            _description_
-        address : _type_
-            _description_
-        client : _type_
-            _description_
-        connect_calls : _type_
-            _description_
-
         Methods
         -------
         connect(address)
-            _description_
         """
 
         BLEError = RuntimeError
@@ -1883,7 +1677,6 @@ def test_reconnect_worker_successful_attempt():
                 Simulates an active connection state.
             address : str
                 Device address used for connect attempts.
-            client : _type_
                 Placeholder BLE client object.
             connect_calls : list
                 Records addresses passed to `connect` for assertions in tests.
@@ -1934,15 +1727,9 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     - the reconnect policy was reset,
     - the reconnect scheduler cleared its thread reference.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Raises
     ------
     BLEError
-        _description_
     """
 
     sleep_calls = []
@@ -1969,15 +1756,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
         return False
 
     class LimitedPolicy:
-        """_summary_.
-
-        Attributes
-        ----------
-        reset_called : _type_
-            _description_
-        attempts : _type_
-            _description_
-        """
+        """_summary_."""
 
         def __init__(self):
             """Initialize a stub reconnect policy for tests, resetting counters and flags.
@@ -2001,13 +1780,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             self.attempts = 0
 
         def _get_attempt_count(self):
-            """Return the internal attempt count for ReconnectWorker tests.
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Return the internal attempt count for ReconnectWorker tests."""
             return self.attempts
 
         def _next_attempt(self):
@@ -2026,21 +1799,9 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     class FailingInterface:
         """_summary_.
 
-        Attributes
-        ----------
-        auto_reconnect : _type_
-            _description_
-        address : _type_
-            _description_
-        client : _type_
-            _description_
-        connect_attempts : _type_
-            _description_
-
         Methods
         -------
         connect(*_args, **_kwargs)
-            _description_
         """
 
         BLEError = RuntimeError
@@ -2066,7 +1827,6 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
                 Indicates whether the interface is currently connected.
             address : str
                 Remote device address used for connection attempts.
-            client : _type_
                 Placeholder for the BLE client instance (initially None).
             connect_attempts : int
                 Counter of connect() invocation attempts.
@@ -2089,19 +1849,11 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
 
             Increments the instance's `connect_attempts` counter and raises an error to emulate a failed connection.
 
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
-
             Raises
             ------
             self.BLEError
                 raised with message "boom".
             BLEError
-                _description_
             """
             self.connect_attempts += 1
             raise self.BLEError("boom")

@@ -253,8 +253,8 @@ class BLEInterface(MeshInterface):
 
         # Initialize retry counter for transient read errors
         # Policies are immutable presets; cache instances to avoid churn in hot loops.
-        self._empty_read_policy = RetryPolicy.emptyRead()
-        self._transient_read_policy = RetryPolicy.transientError()
+        self._empty_read_policy = RetryPolicy._empty_read()
+        self._transient_read_policy = RetryPolicy._transient_error()
         self._read_retry_count = 0
         self._last_empty_read_warning = 0.0
         self._suppressed_empty_read_warnings = 0
@@ -726,8 +726,8 @@ class BLEInterface(MeshInterface):
         finally:
             self.thread_coordinator._set_event("read_trigger")
 
-    def fromNumHandler(self, sender: Any, data: bytearray) -> None:
-        """Public FROMNUM notification handler.
+    def from_num_handler(self, sender: Any, data: bytearray) -> None:
+        """Backward-compatibility handler for FROMNUM notifications.
 
         Parameters
         ----------
@@ -737,10 +737,6 @@ class BLEInterface(MeshInterface):
             Raw FROMNUM notification payload.
         """
         self._from_num_handler(sender, data)
-
-    def from_num_handler(self, sender: Any, data: bytearray) -> None:
-        """Backward-compatibility alias for fromNumHandler()."""
-        self.fromNumHandler(sender, data)
 
     def _register_notifications(self, client: BLEClient) -> None:
         """Register BLE characteristic notification handlers on the given BLE client.
@@ -937,10 +933,8 @@ class BLEInterface(MeshInterface):
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
             )
 
-    async def logRadioHandler(self, sender: Any, data: bytearray) -> None:
-        """Process a protobuf LogRecord radio notification payload.
-
-        Parses a protobuf-formatted LogRecord contained in `data` and emits the resulting log line(s) into the interface's log handling flow.
+    async def log_radio_handler(self, sender: Any, data: bytearray) -> None:
+        """Backward-compatibility handler for protobuf LogRecord notifications.
 
         Parameters
         ----------
@@ -953,12 +947,8 @@ class BLEInterface(MeshInterface):
         # BLECoroutineRunner event loop, never blocking the calling thread.
         self._log_radio_handler(sender, data)
 
-    async def log_radio_handler(self, sender: Any, data: bytearray) -> None:
-        """Backward-compatibility alias for logRadioHandler()."""
-        await self.logRadioHandler(sender, data)
-
-    async def legacyLogRadioHandler(self, sender: Any, data: bytearray) -> None:
-        """Compatibility wrapper that delegates legacy BLE log notification callbacks to the internal legacy log handler.
+    async def legacy_log_radio_handler(self, sender: Any, data: bytearray) -> None:
+        """Backward-compatibility handler for legacy log notifications.
 
         Parameters
         ----------
@@ -970,10 +960,6 @@ class BLEInterface(MeshInterface):
         # Safe to call the sync handler directly: this coroutine runs on the
         # BLECoroutineRunner event loop, never blocking the calling thread.
         self._legacy_log_radio_handler(sender, data)
-
-    async def legacy_log_radio_handler(self, sender: Any, data: bytearray) -> None:
-        """Backward-compatibility alias for legacyLogRadioHandler()."""
-        await self.legacyLogRadioHandler(sender, data)
 
     @staticmethod
     async def _with_timeout(

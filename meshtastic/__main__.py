@@ -252,11 +252,11 @@ def getPref(node: Any, comp_name: str) -> bool:
 
         Parameters
         ----------
-        config_type : _type_
+        config_type : Any
             Object with a `name` attribute identifying the configuration section.
         uni_name : str
             The preference name within the configuration section.
-        pref_value : _type_
+        pref_value : Any
             The preference value to print; an iterable when `repeated` is True.
         repeated : bool
             If True, treat `pref_value` as a sequence and print the list of stringified values.
@@ -1168,8 +1168,7 @@ def onConnected(interface: MeshInterface) -> None:
 
             Parameters
             ----------
-            modem_preset : _type_
-                int | EnumValue
+            modem_preset : int | EnumValue
                 Modem preset identifier to apply (numeric index or enum value understood by firmware).
             """
             channelIndex = mt_config.channel_index
@@ -2945,7 +2944,7 @@ def tunnelMain():
     Raises
     ------
     RuntimeError
-        _description_
+        If CLI arguments could not be parsed or initialization failed.
     """
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.parser = parser
