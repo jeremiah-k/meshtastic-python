@@ -1,16 +1,15 @@
-"""Stream Interface base class
-"""
+"""Stream Interface base class."""
+
 import io
 import logging
 import threading
 import time
-import traceback
+from typing import cast
 
-from typing import Optional, cast
-
-import serial # type: ignore[import-untyped]
+import serial  # type: ignore[import-untyped]
 
 from meshtastic.mesh_interface import MeshInterface
+from meshtastic.protobuf import mesh_pb2
 from meshtastic.util import is_windows11, stripnl
 
 START1 = 0x94
@@ -21,62 +20,108 @@ logger = logging.getLogger(__name__)
 
 
 class StreamInterface(MeshInterface):
-    """Interface class for meshtastic devices over a stream link (serial, TCP, etc)"""
+    """Interface class for meshtastic devices over a stream link (serial, TCP, etc)."""
 
-    def __init__( # pylint: disable=R0917
+    class StreamInterfaceError(MeshInterface.MeshInterfaceError):
+        """Raised when StreamInterface is instantiated without a concrete stream."""
+
+        DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
+
+        def __init__(self, message: str = DEFAULT_MSG) -> None:
+            """
+            Initialize the StreamInterfaceError with a provided or default message.
+
+            Parameters:
+                message (str): The error message to use. Defaults to DEFAULT_MSG which
+                    explains that StreamInterface is abstract and a concrete
+                    stream-backed subclass (e.g., SerialInterface) should be instantiated.
+            """
+            super().__init__(message)
+
+    def __init__(  # pylint: disable=R0917
         self,
-        debugOut: Optional[io.TextIOWrapper] = None,
+        debugOut: io.TextIOWrapper | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
-        timeout: int = 300
+        timeout: float = 300.0,
     ) -> None:
-        """Constructor, opens a connection to self.stream
+        """
+        Initialize the StreamInterface, prepare its reader thread, and optionally
+        open and configure the underlying stream connection.
 
-        Keyword Arguments:
-            debugOut {stream} -- If a stream is provided, any debug serial output from the
-                                 device will be emitted to that stream. (default: {None})
-            timeout -- How long to wait for replies (default: 300 seconds)
+        Parameters
+        ----------
+            debugOut (io.TextIOWrapper | None): If provided, device debug serial output will be written to this stream.
+            noProto (bool): If True, skip protocol-specific startup and allow using this class without a concrete stream implementation.
+            connectNow (bool): If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration.
+            noNodes (bool): Passed to the MeshInterface initializer to control node discovery behavior.
+            timeout (float): Seconds to wait for replies and configuration operations.
 
         Raises:
-            Exception: [description]
-            Exception: [description]
+        ------
+            StreamInterfaceError: If this class has not been specialized with a concrete
+                `self.stream` and `noProto` is False (indicates
+                StreamInterface is abstract).
+
         """
 
+        # Initialize disconnect provenance early so pylint (and callers) see a
+        # defined attribute even if initialization aborts before stream setup.
+        self._last_disconnect_source = "stream.initialized"
+
         if not hasattr(self, "stream") and not noProto:
-            raise Exception( # pylint: disable=W0719
-                "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
-            )
-        self.stream: Optional[serial.Serial] # only serial uses this, TCPInterface overrides the relevant methods instead
+            raise StreamInterface.StreamInterfaceError()
+        self.stream: serial.Serial | None = cast(
+            serial.Serial | None,
+            getattr(self, "stream", None),
+        )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
 
-        # FIXME, figure out why daemon=True causes reader thread to exit too early
-        self._rxThread = threading.Thread(target=self.__reader, args=(), daemon=True, name="stream reader")
+        # daemon=True so the reader thread does not prevent process exit;
+        # callers must call close() explicitly for a clean shutdown.
+        self._rxThread = threading.Thread(
+            target=self.__reader, args=(), daemon=True, name="stream reader"
+        )
 
-        MeshInterface.__init__(self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout)
+        MeshInterface.__init__(
+            self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
+        )
 
         # Start the reader thread after superclass constructor completes init
         if connectNow:
-            self.connect()
-            if not noProto:
-                self.waitForConfig()
+            # Use a sentinel attribute to detect if subclass provides its own stream I/O.
+            # This is more robust than method identity checks which break with decorators.
+            _provides_own_stream = getattr(self, "_provides_own_stream", False)
+            if self.stream is None and not _provides_own_stream:
+                logger.debug(
+                    "No stream configured for %s; deferring connect()",
+                    self.__class__.__name__,
+                )
+            else:
+                self.connect()
+                if not noProto:
+                    self.waitForConfig()
 
     def connect(self) -> None:
-        """Connect to our radio
+        """
+        Establish the connection to the radio and start the background
+        reader and configuration process.
 
-        Normally this is called automatically by the constructor, but if you
-        passed in connectNow=False you can manually start the reading thread later.
+        Sends wake/resynchronization bytes to the device, starts the reader
+        thread, begins protocol configuration, and — if the instance uses the
+        protocol — waits for the protocol/database download to complete.
         """
 
         # Send some bogus UART characters to force a sleeping device to wake, and
         # if the reading statemachine was parsing a bad packet make sure
         # we write enough start bytes to force it to resync (we don't use START1
         # because we want to ensure it is looking for START1)
-        p: bytes = bytearray([START2] * 32)
+        p: bytes = bytes([START2] * 32)
         self._writeBytes(p)
         time.sleep(0.1)  # wait 100ms to give device time to start running
 
@@ -88,19 +133,29 @@ class StreamInterface(MeshInterface):
             self._waitConnected()
 
     def _disconnected(self) -> None:
-        """We override the superclass implementation to close our port"""
+        """
+        Perform superclass disconnection cleanup, close the underlying stream if present, and clear the stream reference.
+
+        This method calls MeshInterface._disconnected(self), then, if self.stream is not None, closes it and sets self.stream to None.
+        """
         MeshInterface._disconnected(self)
 
         logger.debug("Closing our port")
         # pylint: disable=E0203
-        if not self.stream is None:
+        if self.stream is not None:
             # pylint: disable=E0203
             self.stream.close()
             # pylint: disable=W0201
             self.stream = None
 
     def _writeBytes(self, b: bytes) -> None:
-        """Write an array of bytes to our stream and flush"""
+        """
+        Write bytes to the underlying stream and pause briefly to allow the device to process them.
+
+        If no stream is configured this call is ignored. When a stream exists the bytes are written
+        and flushed; after flushing the method sleeps to allow the device time to handle the data:
+        1.0 second on Windows 11, 0.1 second otherwise.
+        """
         if self.stream:  # ignore writes when stream is closed
             self.stream.write(b)
             self.stream.flush()
@@ -111,44 +166,84 @@ class StreamInterface(MeshInterface):
                 # we sleep here to give the TBeam a chance to work
                 time.sleep(0.1)
 
-    def _readBytes(self, length) -> Optional[bytes]:
-        """Read an array of bytes from our stream"""
+    def _readBytes(self, length: int) -> bytes | None:
+        """
+        Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
+
+        Returns:
+            bytes | None: Up to `length` bytes read from the stream, or `None` when no stream is present.
+        """
         if self.stream:
             return self.stream.read(length)
         else:
             return None
 
-    def _sendToRadioImpl(self, toRadio) -> None:
-        """Send a ToRadio protobuf to the device"""
-        logger.debug(f"Sending: {stripnl(toRadio)}")
+    def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
+        """
+        Frame and send a ToRadio protobuf to the underlying stream.
+
+        The message is serialized and prefixed with START1, START2 and a two-byte big-endian payload length before being written to the stream.
+
+        Parameters:
+            toRadio (mesh_pb2.ToRadio): The protobuf message to transmit.
+        """
+        logger.debug("Sending: %s", stripnl(toRadio))
         b: bytes = toRadio.SerializeToString()
         bufLen: int = len(b)
         # We convert into a string, because the TCP code doesn't work with byte arrays
         header: bytes = bytes([START1, START2, (bufLen >> 8) & 0xFF, bufLen & 0xFF])
-        logger.debug(f"sending header:{header!r} b:{b!r}")
+        logger.debug("sending header:%r b:%r", header, b)
         self._writeBytes(header + b)
 
     def close(self) -> None:
-        """Close a connection to the device"""
+        """
+        Shut down the stream connection and request the background reader thread to exit.
+
+        Sets the internal shutdown flag to request reader termination, attempts to join the reader thread
+        for up to 2 seconds (skipping join if the thread was never started), and logs a warning if the
+        reader remains alive after the timeout.
+        """
         logger.debug("Closing stream")
+        # Set _wantExit before calling MeshInterface.close() to prevent the
+        # reader thread from misinterpreting intentional shutdown as a spurious disconnect
+        self._wantExit = True
         MeshInterface.close(self)
         # pyserial cancel_read doesn't seem to work, therefore we ask the
         # reader thread to close things for us
-        self._wantExit = True
-        if self._rxThread != threading.current_thread():
-            self._rxThread.join()  # wait for it to exit
+        # close() can be called before connect() starts the reader thread
+        # (e.g., tests using connectNow=False). In that case join() would raise.
+        # Also handle partially initialized objects from early __init__ returns.
+        rx_thread = getattr(self, "_rxThread", None)
+        if (
+            rx_thread is not None
+            and rx_thread != threading.current_thread()
+            and rx_thread.is_alive()
+        ):
+            rx_thread.join(timeout=2.0)
+            if rx_thread.is_alive():
+                logger.warning("Reader thread did not exit within shutdown timeout")
 
-    def _handleLogByte(self, b):
-        """Handle a byte that is part of a log message from the device."""
+    def _handle_log_byte(self, b: bytes) -> None:
+        r"""
+        Accumulate device log bytes into the current log line and dispatch completed lines.
+
+        Decodes the single-byte input as UTF-8, using '?' for undecodable bytes. Ignores
+        carriage return ('\r'); on newline ('\n') calls self._handleLogLine with the
+        accumulated line and clears the accumulator; otherwise appends the decoded
+        character to the accumulator.
+
+        Parameters:
+            b (bytes): A single-byte bytes object from the device log stream.
+        """
 
         utf = "?"  # assume we might fail
         try:
             utf = b.decode("utf-8")
-        except:
+        except UnicodeDecodeError:
             pass
 
         if utf == "\r":
-            pass    # ignore
+            pass  # ignore
         elif utf == "\n":
             self._handleLogLine(self.cur_log_line)
             self.cur_log_line = ""
@@ -156,17 +251,26 @@ class StreamInterface(MeshInterface):
             self.cur_log_line += utf
 
     def __reader(self) -> None:
-        """The reader thread that reads bytes from our stream"""
+        """
+        Background reader loop that reads from the configured stream and dispatches
+        device log bytes and framed radio messages.
+
+        Continuously reads incoming bytes, forwarding non-protocol bytes to
+        _handle_log_byte and delivering complete protocol frames to _handleFromRadio.
+        On exit records the disconnect source in _last_disconnect_source, logs the
+        shutdown, and calls _disconnected() to perform cleanup.
+        """
         logger.debug("in __reader()")
         empty = bytes()
+        disconnect_source = "stream.reader_exit"
 
         try:
             while not self._wantExit:
                 # logger.debug("reading character")
-                b: Optional[bytes] = self._readBytes(1)
+                b: bytes | None = self._readBytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
-                if b is not None and len(cast(bytes, b)) > 0:
+                if b is not None and len(b) > 0:
                     c: int = b[0]
                     # logger.debug(f'c:{c}')
                     ptr: int = len(self._rxBuf)
@@ -179,7 +283,7 @@ class StreamInterface(MeshInterface):
                             self._rxBuf = empty  # failed to find start
                             # This must be a log message from the device
 
-                            self._handleLogByte(b)
+                            self._handle_log_byte(b)
 
                     elif ptr == 1:  # looking for START2
                         if c != START2:
@@ -200,11 +304,10 @@ class StreamInterface(MeshInterface):
                         if len(self._rxBuf) != 0 and ptr + 1 >= packetlen + HEADER_LEN:
                             try:
                                 self._handleFromRadio(self._rxBuf[HEADER_LEN:])
-                            except Exception as ex:
-                                logger.error(
-                                    f"Error while handling message from radio {ex}"
+                            except Exception:
+                                logger.exception(
+                                    "Error while handling message from radio"
                                 )
-                                traceback.print_exc()
                             self._rxBuf = empty
                 else:
                     # logger.debug(f"timeout")
@@ -213,20 +316,26 @@ class StreamInterface(MeshInterface):
             if (
                 not self._wantExit
             ):  # We might intentionally get an exception during shutdown
+                disconnect_source = "stream.serial_exception"
                 logger.warning(
-                    f"Meshtastic serial port disconnected, disconnecting... {ex}"
+                    "Meshtastic serial port disconnected, disconnecting... %s", ex
                 )
-        except OSError as ex:
+            else:
+                disconnect_source = "stream.close_requested"
+        except OSError:
             if (
                 not self._wantExit
             ):  # We might intentionally get an exception during shutdown
-                logger.error(
-                    f"Unexpected OSError, terminating meshtastic reader... {ex}"
-                )
-        except Exception as ex:
-            logger.error(
-                f"Unexpected exception, terminating meshtastic reader... {ex}"
-            )
+                disconnect_source = "stream.os_error"
+                logger.exception("Unexpected OSError, terminating meshtastic reader...")
+            else:
+                disconnect_source = "stream.close_requested"
+        except Exception:
+            disconnect_source = "stream.exception"
+            logger.exception("Unexpected exception, terminating meshtastic reader...")
         finally:
+            if self._wantExit and disconnect_source == "stream.reader_exit":
+                disconnect_source = "stream.close_requested"
+            self._last_disconnect_source = disconnect_source
             logger.debug("reader is exiting")
             self._disconnected()

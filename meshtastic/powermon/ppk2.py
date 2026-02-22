@@ -3,7 +3,6 @@
 import logging
 import threading
 import time
-from typing import Optional
 
 from ppk2_api import ppk2_api  # type: ignore[import-untyped]
 
@@ -15,10 +14,21 @@ class PPK2PowerSupply(PowerSupply):
     Power Profiler Kit II is what you should google to find it for purchase.
     """
 
-    def __init__(self, portName: Optional[str] = None):
-        """Initialize the PowerSupply object.
+    def __init__(self, portName: str | None = None):
+        """
+        Initialize a PPK2PowerSupply and prepare it for measurements.
 
-        portName (str, optional): The port name of the power supply. Defaults to "/dev/ttyACM0".
+        If portName is None the constructor auto-discovers connected PPK2 devices
+        and selects the single available device; it raises PowerError if no devices
+        are found or if multiple devices are present. Opens a PPK2_API connection to
+        the device, initializes measurement state and synchronization primitives, creates
+        (but does not start) the background measurement thread, logs the connection,
+        and then calls the superclass initializer.
+
+        Parameters:
+            portName (str | None): Serial port or device identifier for the PPK2
+                device. If None, the constructor attempts to auto-discover a single
+                connected PPK2 device; provide a value to select a specific device.
         """
         if not portName:
             devs = ppk2_api.PPK2_API.list_devices()

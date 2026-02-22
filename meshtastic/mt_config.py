@@ -13,27 +13,59 @@ with rather more easily once the code is simplified by this change.
 
 """
 
-from typing import Any, Optional
+import argparse
+import inspect
+import sys
+from typing import IO, Any
 
-def reset():
-    """
-    Restore the namespace to pristine condition.
-    """
-    # pylint: disable=W0603
-    global args, parser, channel_index, logfile, tunnelInstance, camel_case
-    args = None
-    parser = None
-    channel_index = None
-    logfile = None
-    tunnelInstance = None
+MODULE_STATE_DEFAULTS: dict[str, Any] = {
+    "args": None,
+    "parser": None,
+    "channel_index": None,
+    "logfile": None,
+    "tunnel_instance": None,
     # TODO: to migrate to camel_case for v1.3 change this value to True
-    camel_case = False
+    "camel_case": False,
+}
 
-# These assignments are used instead of calling reset()
-# purely to shut pylint up.
-args = None
-parser = None
-channel_index = None
-logfile = None
-tunnelInstance: Optional[Any] = None
-camel_case = False
+
+def reset() -> None:
+    """
+    Reset module-level state variables to their defined default values.
+
+    Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to its initial pristine state.
+    """
+    module_globals = globals()
+    for name, default in MODULE_STATE_DEFAULTS.items():
+        module_globals[name] = default
+
+
+# Declared module state managed via reset().
+args: argparse.Namespace | None
+parser: argparse.ArgumentParser | None
+channel_index: int | None
+logfile: IO[str] | None
+tunnel_instance: Any | None
+camel_case: bool
+
+# Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.
+# Python 3.14+ can defer module annotations; inspect.get_annotations() handles
+# eager and deferred annotation models consistently.
+_state_keys: frozenset = frozenset(MODULE_STATE_DEFAULTS)
+try:
+    _module_annotations: dict[str, Any] = inspect.get_annotations(
+        sys.modules[__name__], eval_str=False
+    )
+except (AttributeError, NameError, TypeError):
+    _module_annotations = globals().get("__annotations__", {})
+_annotated_state: frozenset = frozenset(
+    k for k in _module_annotations if k in _state_keys
+)
+if _module_annotations and _state_keys != _annotated_state:
+    raise AssertionError(
+        f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
+        f"missing annotations: {_state_keys - _annotated_state}, "
+        f"missing defaults: {_annotated_state - _state_keys}"
+    )
+
+reset()

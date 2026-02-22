@@ -6,7 +6,7 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 
 ## Technology Stack
 
-- **Language**: Python 3.9 - 3.14
+- **Language**: Python 3.10 - 3.14
 - **Package Manager**: Poetry
 - **Testing**: pytest with hypothesis for property-based testing
 - **Linting**: pylint
@@ -16,14 +16,31 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 
 ## Project Structure
 
-```
+```text
 meshtastic/           # Main library package
 ├── __init__.py       # Core interface classes and pub/sub topics
 ├── __main__.py       # CLI entry point
 ├── mesh_interface.py # Base interface class for all connection types
 ├── serial_interface.py
 ├── tcp_interface.py
-├── ble_interface.py
+├── ble_interface.py  # BLE compatibility shim (imports from interfaces/ble/)
+├── interfaces/       # Modular interface implementations
+│   └── ble/          # BLE subsystem (refactored)
+│       ├── __init__.py
+│       ├── client.py        # BLEClient wrapper for Bleak
+│       ├── connection.py    # Connection lifecycle management
+│       ├── constants.py     # Configuration and timeouts
+│       ├── coordination.py  # Thread coordination utilities
+│       ├── discovery.py     # Device discovery strategies
+│       ├── errors.py        # Error handling utilities
+│       ├── gating.py        # Process-wide connection gating
+│       ├── interface.py     # Main BLEInterface implementation
+│       ├── notifications.py # Notification subscription management
+│       ├── policies.py      # Retry policies
+│       ├── reconnection.py  # Auto-reconnect scheduling
+│       ├── runner.py        # Singleton asyncio runner
+│       ├── state.py         # Connection state machine
+│       └── utils.py         # BLE utility functions
 ├── node.py           # Node representation and configuration
 ├── protobuf/         # Generated Protocol Buffer files (*_pb2.py, *_pb2.pyi)
 ├── tests/            # Unit and integration tests
@@ -40,14 +57,18 @@ protobufs/            # Protocol Buffer source definitions
 - Follow PEP 8 style conventions
 - Use type hints for function parameters and return values
 - Document public functions and classes with docstrings
+- Use Google-style docstrings for new and edited docstrings (Ruff pydocstyle convention)
 - Prefer explicit imports over wildcard imports
 - Use `logging` module instead of print statements for debug output
 
 ### Type Annotations
 
 - Add type hints to all new code
-- Use `Optional[T]` for nullable types
-- Use `Dict`, `List`, `Tuple` from `typing` module for Python 3.9 compatibility
+- Project typing baseline is Python 3.10+.
+- Use PEP 604 unions (`X | None`, `A | B`) and built-in generics (`dict[K, V]`, `list[T]`, `tuple[T, ...]`) in new and edited annotations.
+- Do not convert `|` unions to `Optional`/`Union` for compatibility with Python 3.9 (that is out of scope for this project).
+- Avoid mass formatting-only annotation churn; normalize types in the area you are already changing.
+- If LSP/type-checking appears to reject PEP 604 syntax, fix the interpreter/version configuration (project `venv` / Poetry environment) before editing code.
 - Protobuf types are in `meshtastic.protobuf.*_pb2` modules
 
 ### Naming Conventions
@@ -55,13 +76,25 @@ protobufs/            # Protocol Buffer source definitions
 - Classes: `PascalCase` (e.g., `MeshInterface`, `SerialInterface`)
 - Functions/methods: `camelCase` for public API (e.g., `sendText`, `sendData`)
 - Internal functions: `snake_case` with leading underscore (e.g., `_send_packet`)
+- BLE compatibility exception: keep the historical BLE public method names from
+  the pre-refactor `meshtastic.ble_interface` surface (snake_case such as
+  `find_device`, `read_gatt_char`, `start_notify`) to preserve existing project
+  compatibility.
+- BLE camelCase promotions are intentionally narrow: keep only `findDevice`,
+  `isConnected`, and `stopNotify` as promoted BLE camelCase names unless
+  maintainers explicitly request additional promotions.
+- When adding approved camelCase BLE names, keep legacy snake_case methods as
+  compatibility wrappers and route both names to one implementation.
+- Avoid mass-generating aliases for internal orchestration methods; aliases are
+  strictly for historically public APIs.
 - Constants: `UPPER_SNAKE_CASE` (e.g., `BROADCAST_ADDR`, `LOCAL_ADDR`)
 
 ### Error Handling
 
 - Use custom exception classes when appropriate (e.g., `MeshInterface.MeshInterfaceError`)
 - Provide meaningful error messages
-- Use `our_exit()` from `meshtastic.util` for CLI exits with error codes
+- For CLI exits, use the local `_cli_exit()` helper in `meshtastic/__main__.py`.
+- Treat `meshtastic.util.our_exit()` as compatibility-only (legacy external callers), not as the preferred path for new code.
 
 ## Testing
 
@@ -184,6 +217,7 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 ## Dependencies
 
 ### Required
+
 - `pyserial` - Serial port communication
 - `protobuf` - Protocol Buffers
 - `pypubsub` - Pub/sub messaging
@@ -193,6 +227,7 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 - `requests` - HTTP requests
 
 ### Optional (extras)
+
 - `cli` extra: `pyqrcode`, `print-color`, `dotmap`, `argcomplete`
 - `tunnel` extra: `pytap2`
 - `analysis` extra: `dash`, `pandas`
