@@ -218,7 +218,7 @@ class Node:
             channel count.
         """
         self.channels = list(channels)
-        self._fixupChannels()
+        self._fixup_channels()
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -271,9 +271,9 @@ class Node:
                 oneof = "get_config_response"
                 resp = adminMessage["getConfigResponse"]
                 if not resp:
-                    print("Received empty config response from node.")
+                    logger.warning("Received empty config response from node.")
                     return
-                field = list(resp.keys())[0]
+                field = next(iter(resp.keys()))
                 config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(
                     camel_to_snake(field)
                 )
@@ -283,16 +283,16 @@ class Node:
                 oneof = "get_module_config_response"
                 resp = adminMessage["getModuleConfigResponse"]
                 if not resp:
-                    print("Received empty module config response from node.")
+                    logger.warning("Received empty module config response from node.")
                     return
-                field = list(resp.keys())[0]
+                field = next(iter(resp.keys()))
                 config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
                     camel_to_snake(field)
                 )
                 if config_type is not None:
                     config_values = getattr(self.moduleConfig, config_type.name)
             else:
-                print(
+                logger.warning(
                     "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
                 )
                 return
@@ -543,7 +543,7 @@ class Node:
         adminIndex = self.iface.localNode._getAdminChannelIndex()
 
         self.channels.pop(channelIndex)
-        self._fixupChannels()  # expand back to 8 channels
+        self._fixup_channels()  # expand back to 8 channels
 
         index = channelIndex
         while index < 8:
@@ -827,15 +827,11 @@ class Node:
                     "Error on response: %s", p["decoded"]["routing"]["errorReason"]
                 )
         if errorFound is False:
-            if "decoded" in p:
-                if "admin" in p["decoded"]:
-                    if "raw" in p["decoded"]["admin"]:
-                        ringtone_part = p["decoded"]["admin"][
-                            "raw"
-                        ].get_ringtone_response
-                        with self._ringtone_lock:
-                            self.ringtonePart = ringtone_part
-                        logger.debug("self.ringtonePart:%s", ringtone_part)
+            if "admin" in p["decoded"] and "raw" in p["decoded"]["admin"]:
+                ringtone_part = p["decoded"]["admin"]["raw"].get_ringtone_response
+                with self._ringtone_lock:
+                    self.ringtonePart = ringtone_part
+                logger.debug("self.ringtonePart:%s", ringtone_part)
 
     def _get_ringtone(self) -> str | None:
         """Retrieve the node's ringtone as a single concatenated string.
@@ -975,18 +971,16 @@ class Node:
                     "Error on response: %s", p["decoded"]["routing"]["errorReason"]
                 )
         if errorFound is False:
-            if "decoded" in p:
-                if "admin" in p["decoded"]:
-                    if "raw" in p["decoded"]["admin"]:
-                        canned_messages = p["decoded"]["admin"][
-                            "raw"
-                        ].get_canned_message_module_messages_response
-                        with self._canned_message_lock:
-                            self.cannedPluginMessageMessages = canned_messages
-                        logger.debug(
-                            "self.cannedPluginMessageMessages:%s",
-                            canned_messages,
-                        )
+            if "admin" in p["decoded"] and "raw" in p["decoded"]["admin"]:
+                canned_messages = p["decoded"]["admin"][
+                    "raw"
+                ].get_canned_message_module_messages_response
+                with self._canned_message_lock:
+                    self.cannedPluginMessageMessages = canned_messages
+                logger.debug(
+                    "self.cannedPluginMessageMessages:%s",
+                    canned_messages,
+                )
 
     def _get_canned_message(self) -> str | None:
         """Retrieve the device's canned message, requesting parts from the node if not already cached.
@@ -1667,7 +1661,7 @@ class Node:
             onResponse = self.onAckNak
         return self._sendAdmin(p, onResponse=onResponse)
 
-    def _fixupChannels(self) -> None:
+    def _fixup_channels(self) -> None:
         """Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
 
         If `channels` is None this is a no-op. Otherwise this method sets each channel's `index`
@@ -1683,9 +1677,9 @@ class Node:
         for index, ch in enumerate(channels):
             ch.index = index  # fixup indexes
 
-        self._fillChannels()
+        self._fill_channels()
 
-    def _fillChannels(self) -> None:
+    def _fill_channels(self) -> None:
         """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
 
         If `self.channels` is None this is a no-op. Appends new Channel objects with
@@ -1805,7 +1799,7 @@ class Node:
             logger.debug("Finished downloading channels")
 
             self.channels = self.partialChannels
-            self._fixupChannels()
+            self._fixup_channels()
         else:
             self._requestChannel(index + 1)
 
@@ -1979,7 +1973,7 @@ class Node:
         - `index` (int): zero-based channel index.
         - `role` (str): channel role name.
         - `name` (str): channel settings name, or an empty string if unset.
-        - `hash` (str | None): computed channel hash when both `name` and PSK are present, otherwise `None`.
+        - `hash` (int | None): computed channel hash when both `name` and PSK are present, otherwise `None`.
 
         Returns
         -------

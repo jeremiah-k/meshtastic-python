@@ -120,7 +120,7 @@ class BLEInterface(MeshInterface):
 
     def __init__(
         self,
-        address: str | None,
+        address: str | None = None,
         noProto: bool = False,
         debugOut: IO[str] | None = None,
         noNodes: bool = False,
@@ -493,14 +493,14 @@ class BLEInterface(MeshInterface):
         """
         if not self._disconnect_lock.acquire(blocking=False):
             # Another disconnect handler is active; this is expected during concurrent
-            # disconnect callbacks. The active handler will process the disconnect.
-            # Return False (neutral) rather than claiming reconnect will be scheduled,
-            # since the active handler may decide not to reconnect.
+            # disconnect callbacks. The active handler will process the disconnect,
+            # including deciding whether to keep running and schedule reconnect.
+            # Return True so callers like the read loop do not stop prematurely.
             logger.debug(
                 "Disconnect from %s skipped: another disconnect handler is active.",
                 source,
             )
-            return False
+            return True
         disconnect_lock_released = False
         target_client = client
         previous_client: BLEClient | None = None

@@ -193,12 +193,17 @@ publishingThread = DeferredExecution("publishing")
 logger = logging.getLogger(__name__)
 
 
+ResponseCallback = Callable[[dict[str, Any]], Any]
+ProtobufFactory = Callable[[], Any]
+OnReceive = Callable[[Any, dict[str, Any]], None]
+
+
 class ResponseHandler(NamedTuple):
     """A pending response callback, waiting for a response to one of our messages."""
 
     # requestId: int - used only as a key
     #: a callable to call when a response is received
-    callback: Callable
+    callback: ResponseCallback
     #: Whether ACKs and NAKs should be passed to this handler
     ackPermitted: bool = False
     # FIXME, add timestamp and age out old requests
@@ -210,9 +215,9 @@ class KnownProtocol(NamedTuple):
     #: A descriptive name (e.g. "text", "user", "admin")
     name: str
     #: If set, will be called to parse as a protocol buffer
-    protobufFactory: Callable | None = None
+    protobufFactory: ProtobufFactory | None = None
     #: If set, invoked as onReceive(interface, packet)
-    onReceive: Callable | None = None
+    onReceive: OnReceive | None = None
 
 
 def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:

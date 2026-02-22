@@ -276,7 +276,7 @@ class ReconnectWorker:
                     )
                     interface.connect(interface.address)
                 except ReconnectPolicyMissingMethodError as err:
-                    logger.error(
+                    logger.exception(
                         "Reconnect policy missing required method '%s'",
                         err.method_name,
                     )
@@ -336,7 +336,7 @@ class ReconnectWorker:
                 try:
                     next_attempt = self._call_policy("next_attempt")
                 except ReconnectPolicyMissingMethodError as err:
-                    logger.error(
+                    logger.exception(
                         "Reconnect policy missing required method '%s'",
                         err.method_name,
                     )

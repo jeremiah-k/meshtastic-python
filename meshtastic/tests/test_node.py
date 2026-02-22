@@ -274,6 +274,7 @@ def test_get_ringtone_times_out_without_response(caplog):
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout = Timeout(maxSecs=0.01)
+    anode._timeout.sleepInterval = 0.001
     anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):
@@ -291,6 +292,7 @@ def test_get_canned_message_times_out_without_response(caplog):
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout = Timeout(maxSecs=0.01)
+    anode._timeout.sleepInterval = 0.001
     anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):
@@ -1445,7 +1447,7 @@ def test_set_favorite(favorite):
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.setFavorite(favorite)
     assert amesg.set_favorite_node == 502009325
     iface.sendData.assert_called_once()
@@ -1464,7 +1466,7 @@ def test_remove_favorite(favorite):
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.removeFavorite(favorite)
 
     assert amesg.remove_favorite_node == 502009325
@@ -1484,7 +1486,7 @@ def test_set_ignored(ignored):
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.setIgnored(ignored)
     assert amesg.set_ignored_node == 502009325
     iface.sendData.assert_called_once()
@@ -1503,7 +1505,7 @@ def test_remove_ignored(ignored):
     iface = MagicMock(autospec=SerialInterface)
     node = Node(iface, 12345678)
     amesg = admin_pb2.AdminMessage()
-    with patch("meshtastic.admin_pb2.AdminMessage", return_value=amesg):
+    with patch("meshtastic.node.admin_pb2.AdminMessage", return_value=amesg):
         node.removeIgnored(ignored)
 
     assert amesg.remove_ignored_node == 502009325
