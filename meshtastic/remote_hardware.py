@@ -146,7 +146,7 @@ class RemoteHardwareClient:
 
         Parameters
         ----------
-        nodeid : int | str
+        nodeid : int | str | None
             Destination node ID.
         r : remote_hardware_pb2.HardwareMessage
             The hardware message payload to send.

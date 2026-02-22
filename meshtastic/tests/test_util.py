@@ -7,6 +7,8 @@ import logging
 import re
 from unittest.mock import patch
 
+from collections import Counter
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -642,7 +644,10 @@ def test_fuzz_camel_to_snake(a_string):
     """Test that camel_to_snake lowercases output and preserves non-uppercase characters."""
     result = camel_to_snake(a_string)
     assert result == result.lower()  # output is always lowercase
-    assert all(c in result for c in a_string.lower() if c != "_")  # no chars dropped beyond casing
+    lowered = a_string.lower()
+    src_counts = Counter(c for c in lowered if c != "_")
+    res_counts = Counter(c for c in result if c != "_")
+    assert all(res_counts[c] >= src_counts[c] for c in src_counts)  # no chars dropped
 
 
 @pytest.mark.unitslow
@@ -655,6 +660,7 @@ def test_fuzz_snake_to_camel(a_string):
         assert result == a_string
 
 
+@pytest.mark.unit
 def test_snake_to_camel_examples() -> None:
     """Test fixed snake_to_camel examples."""
     assert snake_to_camel("foo_bar") == "fooBar"
