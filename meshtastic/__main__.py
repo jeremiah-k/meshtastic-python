@@ -1922,9 +1922,9 @@ def common():
                             )
                         )
                     except BLEInterface.BLEError as e:
-                        _cli_exit(str(e), 1)
+                        _cli_exit(f"[BLE] {e}", 1)
                     except MeshInterface.MeshInterfaceError as e:
-                        _cli_exit(str(e), 1)
+                        _cli_exit(f"[BLE] {e}", 1)
                 elif args.host:
                     try:
                         tcp_hostname, tcp_port = _parse_host_port(
@@ -1942,7 +1942,7 @@ def common():
                             )
                         )
                     except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(str(ex), 1)
+                        _cli_exit(f"Error connecting to {args.host}: {ex}", 1)
                     except OSError as ex:
                         _cli_exit(f"Error connecting to {args.host}:{ex}", 1)
                 else:
@@ -1981,7 +1981,7 @@ def common():
                         message += f"Error was:{ex}"
                         _cli_exit(message)
                     except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(str(ex), 1)
+                        _cli_exit(f"[Serial] {ex}", 1)
                     except OSError as ex:
                         message = "OS Error:\n"
                         message += "  The serial device couldn't be opened, it might be in use by another process.\n"
@@ -2000,12 +2000,16 @@ def common():
                                 )
                             )
                         except MeshInterface.MeshInterfaceError as ex:
-                            _cli_exit(str(ex), 1)
+                            _cli_exit(f"[TCP localhost] {ex}", 1)
                         except OSError as ex:
                             _cli_exit(f"Error connecting to localhost:{ex}", 1)
 
                 if client is None:
-                    _cli_exit("Error: no interface was established", 1)
+                    _cli_exit(
+                        "Error: No interface was established. "
+                        "Check connection parameters (BLE address, TCP host, or serial port).",
+                        1,
+                    )
                 # We assume client is fully connected now
                 onConnected(client)
 

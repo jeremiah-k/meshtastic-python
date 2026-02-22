@@ -420,8 +420,14 @@ class Node:
         Raises
         ------
         MeshInterfaceError
-            If `config_name` is not one of the supported names.
+            If `config_name` is not one of the supported names, or if
+            localConfig/moduleConfig has not been loaded.
         """
+        if self.localConfig is None or self.moduleConfig is None:
+            self._raise_interface_error(
+                "Error: No localConfig has been read. "
+                "Request config from the device before writing."
+            )
         p = admin_pb2.AdminMessage()
 
         config_dispatch: dict[str, tuple[str, Any]] = {

@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 NO_GPIO_CHANNEL_ERROR = (
     "No channel named 'gpio' was found. "
-    "On the sending and receiving nodes create a channel named 'gpio'."
+    "On the sending and receiving nodes create a channel named 'gpio'.\n"
+    "For example, run '--ch-add gpio' on one device, then '--seturl' on\n"
+    "the other devices using the url from the device where the channel was added."
 )
 
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
@@ -158,7 +160,7 @@ class RemoteHardwareClient:
         """
         if not nodeid:
             raise _get_mesh_interface_error()(
-                "Must use a destination node ID for this operation."
+                "Must use a destination node ID for this operation (use --dest)."
             )
         return self.iface.sendData(
             r,

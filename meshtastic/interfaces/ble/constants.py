@@ -98,7 +98,8 @@ ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or add
 
 ERROR_WRITING_BLE = (
     "Error writing BLE. This is often caused by missing Bluetooth "
-    "permissions (e.g. not being in the 'bluetooth' group) or pairing issues."
+    "permissions (e.g. not being in the 'bluetooth' group) or pairing issues "
+    "(did you enter the pairing PIN on your computer?)."
 )
 ERROR_CONNECTION_FAILED = "Connection failed: {0}"
 ERROR_NO_PERIPHERALS_FOUND = (
