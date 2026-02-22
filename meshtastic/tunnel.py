@@ -1,4 +1,4 @@
-"""Code for IP tunnel over a mesh
+"""Code for IP tunnel over a mesh.
 
 # Note python-pytuntap was too buggy
 # using pip3 install pytap2
@@ -18,38 +18,80 @@
 import logging
 import platform
 import threading
+from contextlib import suppress
 
-from pubsub import pub # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped]
 from pytap2 import TapDevice
 
-from meshtastic.protobuf import portnums_pb2
 from meshtastic import mt_config
+from meshtastic.protobuf import portnums_pb2
 from meshtastic.util import ipstr, readnet_u16
 
 logger = logging.getLogger(__name__)
+TUNNEL_TOPIC = "meshtastic.receive.data.IP_TUNNEL_APP"
 
-def onTunnelReceive(packet, interface):  # pylint: disable=W0613
-    """Callback for received tunneled messages from mesh."""
-    logger.debug(f"in onTunnelReceive()")
-    tunnelInstance = mt_config.tunnelInstance
-    tunnelInstance.onReceive(packet)
+
+def onTunnelReceive(packet, interface):
+    """Handle received tunneled messages from mesh.
+
+    Parameters
+    ----------
+    packet : dict
+        Mesh packet containing the tunneled data payload.
+    interface : Any
+        Interface object that received the packet (unused).
+    """
+    _ = interface
+    logger.debug("in onTunnelReceive()")
+    tunnel_instance = mt_config.tunnel_instance
+    if tunnel_instance is None:
+        logger.warning("Received tunnel packet but no active tunnel instance is set.")
+        return
+    tunnel_instance.onReceive(packet)
 
 
 class Tunnel:
-    """A TUN based IP tunnel over meshtastic"""
+    """A TUN based IP tunnel over meshtastic."""
 
     class TunnelError(Exception):
-        """An exception class for general tunnel errors"""
+        """An exception class for general tunnel errors."""
+
         def __init__(self, message):
+            """Initialize the TunnelError with a human-readable message.
+
+            Parameters
+            ----------
+            message : str
+                Description of the tunnel-related error.
+            """
             self.message = message
             super().__init__(self.message)
 
-    def __init__(self, iface, subnet: str="10.115", netmask: str="255.255.0.0") -> None:
-        """
-        Constructor
+    def __init__(
+        self, iface, subnet: str = "10.115", netmask: str = "255.255.0.0"
+    ) -> None:
+        """Initialize a Tunnel bound to a mesh interface and subnet.
 
-        iface is the already open MeshInterface instance
-        subnet is used to construct our network number (normally 10.115.x.x)
+        Creates and configures tunnel state, registers this instance as the global
+        mt_config.tunnel_instance, and conditionally creates and brings up a TUN
+        (TapDevice) and a background reader thread unless the mesh interface has
+        noProto enabled.
+
+        Parameters
+        ----------
+        iface : Any
+            An already-open MeshInterface instance providing .myInfo, .nodes,
+            .node numbers, .noProto, and .sendData behavior.
+        subnet : str
+            Subnet prefix used to form tunnel IPs (default "10.115").
+        netmask : str
+            Netmask to assign to the TUN device (default "255.255.0.0").
+
+        Raises
+        ------
+        Tunnel.TunnelError
+            If iface, subnet, or netmask is missing, or if the
+            process is not running on a Linux system.
         """
 
         if not iface:
@@ -65,9 +107,12 @@ class Tunnel:
         self.subnetPrefix = subnet
 
         if platform.system() != "Linux":
-            raise Tunnel.TunnelError("Tunnel() can only be run instantiated on a Linux system")
+            raise Tunnel.TunnelError(
+                "Tunnel() can only be run instantiated on a Linux system"
+            )
 
-        mt_config.tunnelInstance = self
+        mt_config.tunnel_instance = self
+        self._subscribed = False
 
         """A list of chatty UDP services we should never accidentally
         forward to our slow network"""
@@ -75,7 +120,7 @@ class Tunnel:
             1900,  # SSDP
             5353,  # multicast DNS
             9001,  # Yggdrasil multicast discovery
-            64512, # cjdns beacon
+            64512,  # cjdns beacon
         }
 
         """A list of TCP services to block"""
@@ -98,7 +143,8 @@ class Tunnel:
             "feature to work).  Mesh members:"
         )
 
-        pub.subscribe(onTunnelReceive, "meshtastic.receive.data.IP_TUNNEL_APP")
+        pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
+        self._subscribed = True
         myAddr = self._nodeNumToIp(self.iface.myInfo.my_node_num)
 
         if self.iface.nodes:
@@ -112,7 +158,7 @@ class Tunnel:
         self.tun = None
         if self.iface.noProto:
             logger.warning(
-                f"Not creating a TapDevice() because it is disabled by noProto"
+                "Not creating a TapDevice() because it is disabled by noProto"
             )
         else:
             self.tun = TapDevice(name="mesh")
@@ -121,9 +167,7 @@ class Tunnel:
 
         self._rxThread = None
         if self.iface.noProto:
-            logger.warning(
-                f"Not starting TUN reader because it is disabled by noProto"
-            )
+            logger.warning("Not starting TUN reader because it is disabled by noProto")
         else:
             logger.debug(f"starting TUN reader, our IP address is {myAddr}")
             self._rxThread = threading.Thread(
@@ -132,7 +176,16 @@ class Tunnel:
             self._rxThread.start()
 
     def onReceive(self, packet):
-        """onReceive"""
+        """Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.
+
+        Ignores packets originating from the local node. If protocol handling is enabled (iface.noProto is False)
+        and the packet is not filtered by _shouldFilterPacket, writes packet["decoded"]["payload"] to the TUN device.
+
+        Parameters
+        ----------
+        packet : dict
+            Mesh packet; expected to contain a "from" node number and a "decoded" dict with a "payload" bytes object.
+        """
         p = packet["decoded"]["payload"]
         if packet["from"] == self.iface.myInfo.my_node_num:
             logger.debug("Ignoring message we sent")
@@ -141,11 +194,22 @@ class Tunnel:
             # we don't really need to check for filtering here (sender should have checked),
             # but this provides useful debug printing on types of packets received
             if not self.iface.noProto:
-                if not self._shouldFilterPacket(p):
+                if self.tun is not None and not self._shouldFilterPacket(p):
                     self.tun.write(p)
 
     def _shouldFilterPacket(self, p):
-        """Given a packet, decode it and return true if it should be ignored"""
+        """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
+
+        Parameters
+        ----------
+        p : bytes
+            Raw IPv4 packet bytes beginning at the IP header.
+
+        Returns
+        -------
+        bool
+            `True` if the packet should be ignored (filtered), `False` otherwise.
+        """
         protocol = p[8 + 1]
         srcaddr = p[12:16]
         destAddr = p[16:20]
@@ -186,13 +250,21 @@ class Tunnel:
         else:
             logger.warning(
                 f"forwarding unexpected protocol 0x{protocol:02x}, "
-                "src={ipstr(srcaddr)}, dest={ipstr(destAddr)}"
+                f"src={ipstr(srcaddr)}, dest={ipstr(destAddr)}"
             )
 
         return ignore
 
     def __tunReader(self):
+        """Background thread that reads IP packets from the TUN device and forwards them to the mesh.
+
+        Continuously reads packets from the TUN device, checks if they should be filtered,
+        and sends non-filtered packets to the appropriate mesh node based on destination IP.
+        """
         tap = self.tun
+        if tap is None:
+            logger.debug("TUN reader exiting: no active TUN device")
+            return
         logger.debug("TUN reader running")
         while True:
             p = tap.read()
@@ -203,7 +275,22 @@ class Tunnel:
                 self.sendPacket(destAddr, p)
 
     def _ipToNodeId(self, ipAddr):
-        # We only consider the last 16 bits of the nodenum for IP address matching
+        """Convert a 4-byte IP address to the corresponding mesh node ID.
+
+        Uses the last 16 bits of the IP address to match against the low 16 bits
+        of known node numbers in the mesh.
+
+        Parameters
+        ----------
+        ipAddr : bytes
+            4-byte IPv4 address in network byte order.
+
+        Returns
+        -------
+        str | None
+            The mesh node ID string if a matching node is found, "^all" for
+            broadcast address 255.255, or None if no matching node exists.
+        """
         ipBits = ipAddr[2] * 256 + ipAddr[3]
 
         if ipBits == 0xFFFF:
@@ -217,10 +304,30 @@ class Tunnel:
         return None
 
     def _nodeNumToIp(self, nodeNum):
+        """Construct an IPv4 address in the tunnel subnet for a given node number.
+
+        Parameters
+        ----------
+        nodeNum : int
+            Node number; the low 16 bits are used to form the final two octets of the returned address.
+
+        Returns
+        -------
+        str
+            IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
+        """
         return f"{self.subnetPrefix}.{(nodeNum >> 8) & 0xff}.{nodeNum & 0xff}"
 
     def sendPacket(self, destAddr, p):
-        """Forward the provided IP packet into the mesh"""
+        """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
+
+        Parameters
+        ----------
+        destAddr : bytes
+            4-byte IPv4 address in network byte order identifying the packet's destination.
+        p : bytes
+            Raw IP packet bytes to be forwarded.
+        """
         nodeId = self._ipToNodeId(destAddr)
         if nodeId is not None:
             logger.debug(
@@ -233,5 +340,16 @@ class Tunnel:
             )
 
     def close(self):
-        """Close"""
-        self.tun.close()
+        """Close the Tunnel's TUN device.
+
+        Closes the underlying TUN/TAP device and releases associated resources held by it.
+        """
+        if self.tun is not None:
+            self.tun.close()
+            self.tun = None
+        if mt_config.tunnel_instance is self:
+            mt_config.tunnel_instance = None
+        if self._subscribed:
+            with suppress(Exception):
+                pub.unsubscribe(onTunnelReceive, TUNNEL_TOPIC)
+            self._subscribed = False

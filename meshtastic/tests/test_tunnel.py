@@ -1,4 +1,5 @@
-"""Meshtastic unit tests for tunnel.py"""
+"""Meshtastic unit tests for tunnel.py."""
+
 import logging
 import re
 import sys
@@ -9,6 +10,7 @@ import pytest
 from meshtastic import mt_config
 
 from ..tcp_interface import TCPInterface
+
 try:
     # Depends upon pytap2, not installed by default
     from ..tunnel import Tunnel, onTunnelReceive
@@ -19,7 +21,13 @@ except ImportError:
 @pytest.mark.unit
 @patch("platform.system")
 def test_Tunnel_on_non_linux_system(mock_platform_system):
-    """Test that we cannot instantiate a Tunnel on a non Linux system"""
+    """Test that we cannot instantiate a Tunnel on a non Linux system.
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    """
     a_mock = MagicMock()
     a_mock.return_value = "notLinux"
     mock_platform_system.side_effect = a_mock
@@ -34,7 +42,13 @@ def test_Tunnel_on_non_linux_system(mock_platform_system):
 @pytest.mark.unit
 @patch("platform.system")
 def test_Tunnel_without_interface(mock_platform_system):
-    """Test that we can not instantiate a Tunnel without a valid interface"""
+    """Test that we can not instantiate a Tunnel without a valid interface.
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    """
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
     mock_platform_system.side_effect = a_mock
@@ -46,7 +60,17 @@ def test_Tunnel_without_interface(mock_platform_system):
 @pytest.mark.unitslow
 @patch("platform.system")
 def test_Tunnel_with_interface(mock_platform_system, caplog, iface_with_nodes):
-    """Test that we can not instantiate a Tunnel without a valid interface"""
+    """Test that we can not instantiate a Tunnel without a valid interface.
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
     a_mock = MagicMock()
@@ -55,7 +79,7 @@ def test_Tunnel_with_interface(mock_platform_system, caplog, iface_with_nodes):
     with caplog.at_level(logging.WARNING):
         with patch("socket.socket"):
             tun = Tunnel(iface)
-            assert tun == mt_config.tunnelInstance
+            assert tun == mt_config.tunnel_instance
             iface.close()
     assert re.search(r"Not creating a TapDevice()", caplog.text, re.MULTILINE)
     assert re.search(r"Not starting TUN reader", caplog.text, re.MULTILINE)
@@ -65,7 +89,17 @@ def test_Tunnel_with_interface(mock_platform_system, caplog, iface_with_nodes):
 @pytest.mark.unitslow
 @patch("platform.system")
 def test_onTunnelReceive_from_ourselves(mock_platform_system, caplog, iface_with_nodes):
-    """Test onTunnelReceive"""
+    """Test onTunnelReceive.
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
     sys.argv = [""]
@@ -77,7 +111,7 @@ def test_onTunnelReceive_from_ourselves(mock_platform_system, caplog, iface_with
     with caplog.at_level(logging.DEBUG):
         with patch("socket.socket"):
             tun = Tunnel(iface)
-            mt_config.tunnelInstance = tun
+            mt_config.tunnel_instance = tun
             onTunnelReceive(packet, iface)
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
     assert re.search(r"Ignoring message we sent", caplog.text, re.MULTILINE)
@@ -88,7 +122,17 @@ def test_onTunnelReceive_from_ourselves(mock_platform_system, caplog, iface_with
 def test_onTunnelReceive_from_someone_else(
     mock_platform_system, caplog, iface_with_nodes
 ):
-    """Test onTunnelReceive"""
+    """Test onTunnelReceive.
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
     sys.argv = [""]
@@ -100,7 +144,7 @@ def test_onTunnelReceive_from_someone_else(
     with caplog.at_level(logging.DEBUG):
         with patch("socket.socket"):
             tun = Tunnel(iface)
-            mt_config.tunnelInstance = tun
+            mt_config.tunnel_instance = tun
             onTunnelReceive(packet, iface)
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
 
@@ -108,7 +152,17 @@ def test_onTunnelReceive_from_someone_else(
 @pytest.mark.unitslow
 @patch("platform.system")
 def test_shouldFilterPacket_random(mock_platform_system, caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # random packet
@@ -128,7 +182,17 @@ def test_shouldFilterPacket_random(mock_platform_system, caplog, iface_with_node
 def test_shouldFilterPacket_in_blacklist(
     mock_platform_system, caplog, iface_with_nodes
 ):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # faked IGMP
@@ -146,7 +210,17 @@ def test_shouldFilterPacket_in_blacklist(
 @pytest.mark.unitslow
 @patch("platform.system")
 def test_shouldFilterPacket_icmp(mock_platform_system, caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # faked ICMP
@@ -165,7 +239,17 @@ def test_shouldFilterPacket_icmp(mock_platform_system, caplog, iface_with_nodes)
 @pytest.mark.unit
 @patch("platform.system")
 def test_shouldFilterPacket_udp(mock_platform_system, caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # faked UDP
@@ -186,7 +270,17 @@ def test_shouldFilterPacket_udp(mock_platform_system, caplog, iface_with_nodes):
 def test_shouldFilterPacket_udp_blacklisted(
     mock_platform_system, caplog, iface_with_nodes
 ):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # faked UDP
@@ -207,7 +301,17 @@ def test_shouldFilterPacket_udp_blacklisted(
 @pytest.mark.unit
 @patch("platform.system")
 def test_shouldFilterPacket_tcp(mock_platform_system, caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # faked TCP
@@ -228,7 +332,17 @@ def test_shouldFilterPacket_tcp(mock_platform_system, caplog, iface_with_nodes):
 def test_shouldFilterPacket_tcp_blacklisted(
     mock_platform_system, caplog, iface_with_nodes
 ):
-    """Test _shouldFilterPacket()"""
+    """Test _shouldFilterPacket().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     # faked TCP
@@ -249,7 +363,17 @@ def test_shouldFilterPacket_tcp_blacklisted(
 @pytest.mark.unitslow
 @patch("platform.system")
 def test_ipToNodeId_none(mock_platform_system, caplog, iface_with_nodes):
-    """Test _ipToNodeId()"""
+    """Test _ipToNodeId().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     a_mock = MagicMock()
@@ -265,7 +389,17 @@ def test_ipToNodeId_none(mock_platform_system, caplog, iface_with_nodes):
 @pytest.mark.unitslow
 @patch("platform.system")
 def test_ipToNodeId_all(mock_platform_system, caplog, iface_with_nodes):
-    """Test _ipToNodeId()"""
+    """Test _ipToNodeId().
+
+    Parameters
+    ----------
+    mock_platform_system : _type_
+        _description_
+    caplog : _type_
+        _description_
+    iface_with_nodes : _type_
+        _description_
+    """
     iface = iface_with_nodes
     iface.noProto = True
     a_mock = MagicMock()

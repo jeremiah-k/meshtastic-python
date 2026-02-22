@@ -1,17 +1,22 @@
-"""Meshtastic unit tests for util.py"""
+"""Meshtastic unit tests for util.py."""
 
+import base64
+import binascii
 import json
 import logging
 import re
 from unittest.mock import patch
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
-from meshtastic.supported_device import SupportedDevice
 from meshtastic.protobuf import mesh_pb2
+from meshtastic.supported_device import SupportedDevice
 from meshtastic.util import (
     DEFAULT_KEY,
+    Acknowledgment,
+    FixmeError,
     Timeout,
     active_ports_on_supported_devices,
     camel_to_snake,
@@ -28,28 +33,45 @@ from meshtastic.util import (
     hexstr,
     ipstr,
     is_windows11,
-    our_exit,
+    message_to_json,
     pskToString,
     quoteBooleans,
     readnet_u16,
     remove_keys_from_dict,
     snake_to_camel,
     stripnl,
-    support_info,
-    message_to_json,
-    Acknowledgment
 )
+
+
+class _TempPort:
+    """Stub port object for serial-port discovery tests."""
+
+    device: str | None
+    vid: int | None
+
+    def __init__(self, device: str | None = None, vid: int | None = None) -> None:
+        """Create a temporary port stub with an optional device path and USB vendor ID.
+
+        Parameters
+        ----------
+        device : str | None
+            Port device path (e.g., '/dev/ttyUSB0') or None to leave unset. (Default value = None)
+        vid : int | None
+            USB vendor ID as an integer, or None to leave unset. (Default value = None)
+        """
+        self.device = device
+        self.vid = vid
 
 
 @pytest.mark.unit
 def test_genPSK256():
-    """Test genPSK256"""
+    """Test genPSK256."""
     assert genPSK256() != ""
 
 
 @pytest.mark.unit
 def test_fromStr():
-    """Test fromStr"""
+    """Test fromStr."""
     assert fromStr("") == b""
     assert fromStr("0x12") == b"\x12"
     assert fromStr("t")
@@ -73,7 +95,7 @@ def test_fromStr():
 
 @pytest.mark.unitslow
 def test_quoteBooleans():
-    """Test quoteBooleans"""
+    """Test quoteBooleans."""
     assert quoteBooleans("") == ""
     assert quoteBooleans("foo") == "foo"
     assert quoteBooleans("true") == "true"
@@ -84,7 +106,7 @@ def test_quoteBooleans():
 
 @pytest.mark.unit
 def test_fromPSK():
-    """Test fromPSK"""
+    """Test fromPSK."""
     assert fromPSK("random") != ""
     assert fromPSK("none") == b"\x00"
     assert fromPSK("default") == b"\x01"
@@ -94,7 +116,7 @@ def test_fromPSK():
 
 @pytest.mark.unit
 def test_stripnl():
-    """Test stripnl"""
+    """Test stripnl."""
     assert stripnl("") == ""
     assert stripnl("a\n") == "a"
     assert stripnl(" a \n ") == "a"
@@ -103,90 +125,72 @@ def test_stripnl():
 
 @pytest.mark.unit
 def test_pskToString_empty_string():
-    """Test pskToString empty string"""
-    assert pskToString("") == "unencrypted"
+    """Test pskToString empty string."""
+    assert pskToString(b"") == "unencrypted"
 
 
 @pytest.mark.unit
 def test_pskToString_string():
-    """Test pskToString string"""
-    assert pskToString("hunter123") == "secret"
+    """Test pskToString string."""
+    assert pskToString(b"hunter123") == "secret"
 
 
 @pytest.mark.unit
 def test_pskToString_one_byte_zero_value():
-    """Test pskToString one byte that is value of 0"""
+    """Test pskToString one byte that is value of 0."""
     assert pskToString(bytes([0x00])) == "unencrypted"
 
 
 @pytest.mark.unitslow
 def test_pskToString_one_byte_non_zero_value():
-    """Test pskToString one byte that is non-zero"""
+    """Test pskToString one byte that is non-zero."""
     assert pskToString(bytes([0x01])) == "default"
 
 
 @pytest.mark.unitslow
 def test_pskToString_many_bytes():
-    """Test pskToString many bytes"""
+    """Test pskToString many bytes."""
     assert pskToString(bytes([0x02, 0x01])) == "secret"
 
 
 @pytest.mark.unit
 def test_pskToString_simple():
-    """Test pskToString simple"""
+    """Test pskToString simple."""
     assert pskToString(bytes([0x03])) == "simple2"
 
 
 @pytest.mark.unitslow
-def test_our_exit_zero_return_value(capsys):
-    """Test our_exit with a zero return value"""
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        our_exit("Warning: Some message", 0)
-    out, err = capsys.readouterr()
-    assert re.search(r"Warning: Some message", out, re.MULTILINE)
-    assert err == ""
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 0
-
-
-@pytest.mark.unitslow
-def test_our_exit_non_zero_return_value(capsys):
-    """Test our_exit with a non-zero return value"""
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        our_exit("Error: Some message", 1)
-    out, err = capsys.readouterr()
-    assert re.search(r"Error: Some message", out, re.MULTILINE)
-    assert err == ""
-    assert pytest_wrapped_e.type == SystemExit
-    assert pytest_wrapped_e.value.code == 1
-
-
-@pytest.mark.unitslow
 def test_fixme():
-    """Test fixme()"""
-    with pytest.raises(Exception) as pytest_wrapped_e:
+    """Test fixme()."""
+    with pytest.raises(FixmeError) as pytest_wrapped_e:
         fixme("some exception")
-    assert pytest_wrapped_e.type == Exception
-
-
-@pytest.mark.unit
-def test_support_info(capsys):
-    """Test support_info"""
-    support_info()
-    out, err = capsys.readouterr()
-    assert re.search(r"System", out, re.MULTILINE)
-    assert re.search(r"Platform", out, re.MULTILINE)
-    assert re.search(r"Machine", out, re.MULTILINE)
-    assert re.search(r"Executable", out, re.MULTILINE)
-    assert err == ""
+    assert pytest_wrapped_e.type is FixmeError
 
 
 @pytest.mark.unit
 def test_catchAndIgnore(caplog):
-    """Test catchAndIgnore() does not actually throw an exception, but just logs"""
+    """Test catchAndIgnore() does not actually throw an exception, but just logs.
+
+    Parameters
+    ----------
+    caplog : _type_
+        _description_
+
+    Raises
+    ------
+    Exception
+        _description_
+    """
 
     def some_closure():
-        raise Exception("foo") # pylint: disable=W0719
+        """Raise an Exception with the message "foo".
+
+        Raises
+        ------
+        Exception
+            Always raised with message "foo".
+        """
+        raise Exception("foo")  # pylint: disable=W0719  # noqa: TRY002
 
     with caplog.at_level(logging.DEBUG):
         catchAndIgnore("something", some_closure)
@@ -195,31 +199,31 @@ def test_catchAndIgnore(caplog):
 
 @pytest.mark.unitslow
 def test_remove_keys_from_dict_empty_keys_empty_dict():
-    """Test when keys and dict both are empty"""
+    """Test when keys and dict both are empty."""
     assert not remove_keys_from_dict((), {})
 
 
 @pytest.mark.unitslow
 def test_remove_keys_from_dict_empty_dict():
-    """Test when dict is empty"""
-    assert not remove_keys_from_dict(("a"), {})
+    """Test when dict is empty."""
+    assert not remove_keys_from_dict(("a",), {})
 
 
 @pytest.mark.unit
 def test_remove_keys_from_dict_empty_keys():
-    """Test when keys is empty"""
+    """Test when keys is empty."""
     assert remove_keys_from_dict((), {"a": 1}) == {"a": 1}
 
 
 @pytest.mark.unitslow
 def test_remove_keys_from_dict():
-    """Test remove_keys_from_dict()"""
-    assert remove_keys_from_dict(("b"), {"a": 1, "b": 2}) == {"a": 1}
+    """Test remove_keys_from_dict()."""
+    assert remove_keys_from_dict(("b",), {"a": 1, "b": 2}) == {"a": 1}
 
 
 @pytest.mark.unitslow
 def test_remove_keys_from_dict_multiple_keys():
-    """Test remove_keys_from_dict()"""
+    """Test remove_keys_from_dict()."""
     keys = ("a", "b")
     adict = {"a": 1, "b": 2, "c": 3}
     assert remove_keys_from_dict(keys, adict) == {"c": 3}
@@ -227,8 +231,8 @@ def test_remove_keys_from_dict_multiple_keys():
 
 @pytest.mark.unit
 def test_remove_keys_from_dict_nested():
-    """Test remove_keys_from_dict()"""
-    keys = "b"
+    """Test remove_keys_from_dict()."""
+    keys = ("b",)
     adict = {"a": {"b": 1}, "b": 2, "c": 3}
     exp = {"a": {}, "c": 3}
     assert remove_keys_from_dict(keys, adict) == exp
@@ -236,44 +240,50 @@ def test_remove_keys_from_dict_nested():
 
 @pytest.mark.unitslow
 def test_Timeout_not_found():
-    """Test Timeout()"""
-    to = Timeout(0.2)
+    """Test Timeout()."""
+    to = Timeout(1)
     attrs = "foo"
     to.waitForSet("bar", attrs)
 
 
 @pytest.mark.unitslow
 def test_Timeout_found():
-    """Test Timeout()"""
-    to = Timeout(0.2)
+    """Test Timeout()."""
+    to = Timeout(1)
     attrs = ()
     to.waitForSet("bar", attrs)
 
 
 @pytest.mark.unitslow
 def test_hexstr():
-    """Test hexstr()"""
+    """Test hexstr()."""
     assert hexstr(b"123") == "31:32:33"
     assert hexstr(b"") == ""
 
 
 @pytest.mark.unitslow
 def test_ipstr():
-    """Test ipstr()"""
+    """Test ipstr()."""
     assert ipstr(b"1234") == "49.50.51.52"
     assert ipstr(b"") == ""
 
 
 @pytest.mark.unitslow
 def test_readnet_u16():
-    """Test readnet_u16()"""
+    """Test readnet_u16()."""
     assert readnet_u16(b"123456", 2) == 13108
 
 
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports", return_value=[])
 def test_findPorts_when_none_found(patch_comports):
-    """Test findPorts()"""
+    """Test findPorts().
+
+    Parameters
+    ----------
+    patch_comports : _type_
+        _description_
+    """
     assert not findPorts()
     patch_comports.assert_called()
 
@@ -281,17 +291,22 @@ def test_findPorts_when_none_found(patch_comports):
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports")
 def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports):
-    """Test findPorts()"""
+    """Verify that findPorts() removes duplicate serial devices when.
 
-    class TempPort:
-        """temp class for port"""
+    eliminate_duplicates is True.
 
-        def __init__(self, device=None, vid=None):
-            self.device = device
-            self.vid = vid
+    Sets the patched comports() to return two port-like objects representing
+    the same physical device and asserts findPorts(eliminate_duplicates=True)
+    returns only the deduplicated device path.
 
-    fake1 = TempPort("/dev/cu.usbserial-1430", vid="fake1")
-    fake2 = TempPort("/dev/cu.wchusbserial1430", vid="fake2")
+    Parameters
+    ----------
+    patch_comports : _type_
+        pytest fixture that patches and returns the
+        serial.tools.list_ports.comports function.
+    """
+    fake1 = _TempPort("/dev/cu.usbserial-1430", vid=0xFFFF)
+    fake2 = _TempPort("/dev/cu.wchusbserial1430", vid=0xFFFE)
     patch_comports.return_value = [fake1, fake2]
     assert findPorts(eliminate_duplicates=True) == ["/dev/cu.wchusbserial1430"]
     patch_comports.assert_called()
@@ -302,17 +317,21 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports
 def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed(
     patch_comports,
 ):
-    """Test findPorts()"""
+    """Verifies that findPorts(eliminate_duplicates=True) returns the expected.
 
-    class TempPort:
-        """temp class for port"""
+    single port when duplicate devices are reported in reversed order.
 
-        def __init__(self, device=None, vid=None):
-            self.device = device
-            self.vid = vid
+    Patches the comports listing to simulate two ports that should be
+    considered duplicates and asserts the duplicate-elimination logic
+    selects the correct remaining device.
 
-    fake1 = TempPort("/dev/cu.usbserial-1430", vid="fake1")
-    fake2 = TempPort("/dev/cu.wchusbserial1430", vid="fake2")
+    Parameters
+    ----------
+    patch_comports : _type_
+        _description_
+    """
+    fake1 = _TempPort("/dev/cu.usbserial-1430", vid=0xFFFF)
+    fake2 = _TempPort("/dev/cu.wchusbserial1430", vid=0xFFFE)
     patch_comports.return_value = [fake2, fake1]
     assert findPorts(eliminate_duplicates=True) == ["/dev/cu.wchusbserial1430"]
     patch_comports.assert_called()
@@ -321,17 +340,15 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports")
 def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(patch_comports):
-    """Test findPorts()"""
+    """Test findPorts().
 
-    class TempPort:
-        """temp class for port"""
-
-        def __init__(self, device=None, vid=None):
-            self.device = device
-            self.vid = vid
-
-    fake1 = TempPort("/dev/cu.usbserial-1430", vid="fake1")
-    fake2 = TempPort("/dev/cu.wchusbserial1430", vid="fake2")
+    Parameters
+    ----------
+    patch_comports : _type_
+        _description_
+    """
+    fake1 = _TempPort("/dev/cu.usbserial-1430", vid=0xFFFF)
+    fake2 = _TempPort("/dev/cu.wchusbserial1430", vid=0xFFFE)
     patch_comports.return_value = [fake1, fake2]
     assert findPorts() == ["/dev/cu.usbserial-1430", "/dev/cu.wchusbserial1430"]
     patch_comports.assert_called()
@@ -339,7 +356,7 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(patch_comp
 
 @pytest.mark.unitslow
 def test_convert_mac_addr():
-    """Test convert_mac_addr()"""
+    """Test convert_mac_addr()."""
     assert convert_mac_addr("/c0gFyhb") == "fd:cd:20:17:28:5b"
     assert convert_mac_addr("fd:cd:20:17:28:5b") == "fd:cd:20:17:28:5b"
     assert convert_mac_addr("") == ""
@@ -347,7 +364,7 @@ def test_convert_mac_addr():
 
 @pytest.mark.unit
 def test_snake_to_camel():
-    """Test snake_to_camel"""
+    """Test snake_to_camel."""
     assert snake_to_camel("") == ""
     assert snake_to_camel("foo") == "foo"
     assert snake_to_camel("foo_bar") == "fooBar"
@@ -356,7 +373,7 @@ def test_snake_to_camel():
 
 @pytest.mark.unit
 def test_camel_to_snake():
-    """Test camel_to_snake"""
+    """Test camel_to_snake."""
     assert camel_to_snake("") == ""
     assert camel_to_snake("foo") == "foo"
     assert camel_to_snake("Foo") == "foo"
@@ -366,7 +383,7 @@ def test_camel_to_snake():
 
 @pytest.mark.unit
 def test_eliminate_duplicate_port():
-    """Test eliminate_duplicate_port()"""
+    """Test eliminate_duplicate_port()."""
     assert not eliminate_duplicate_port([])
     assert eliminate_duplicate_port(["/dev/fake"]) == ["/dev/fake"]
     assert eliminate_duplicate_port(["/dev/fake", "/dev/fake1"]) == [
@@ -384,6 +401,9 @@ def test_eliminate_duplicate_port():
     assert eliminate_duplicate_port(
         ["/dev/cu.wchusbserial1430", "/dev/cu.usbserial-1430"]
     ) == ["/dev/cu.wchusbserial1430"]
+    assert eliminate_duplicate_port(
+        ["/dev/cu.usbserial-1234", "/dev/cu.wchusbserial5678"]
+    ) == ["/dev/cu.usbserial-1234", "/dev/cu.wchusbserial5678"]
     assert eliminate_duplicate_port(
         ["/dev/cu.SLAB_USBtoUART", "/dev/cu.usbserial-0001"]
     ) == ["/dev/cu.usbserial-0001"]
@@ -408,7 +428,17 @@ def test_eliminate_duplicate_port():
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
 def test_is_windows11_true(patched_platform, patched_release, patched_version):
-    """Test is_windows11()"""
+    """Test is_windows11().
+
+    Parameters
+    ----------
+    patched_platform : _type_
+        _description_
+    patched_release : _type_
+        _description_
+    patched_version : _type_
+        _description_
+    """
     assert is_windows11() is True
     patched_platform.assert_called()
     patched_release.assert_called()
@@ -419,7 +449,17 @@ def test_is_windows11_true(patched_platform, patched_release, patched_version):
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
 def test_is_windows11_true2(patched_platform, patched_release, patched_version):
-    """Test is_windows11()"""
+    """Test is_windows11().
+
+    Parameters
+    ----------
+    patched_platform : _type_
+        _description_
+    patched_release : _type_
+        _description_
+    patched_version : _type_
+        _description_
+    """
     assert is_windows11() is False
     patched_platform.assert_called()
     patched_release.assert_called()
@@ -430,7 +470,17 @@ def test_is_windows11_true2(patched_platform, patched_release, patched_version):
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
 def test_is_windows11_false(patched_platform, patched_release, patched_version):
-    """Test is_windows11()"""
+    """Test is_windows11().
+
+    Parameters
+    ----------
+    patched_platform : _type_
+        _description_
+    patched_release : _type_
+        _description_
+    patched_version : _type_
+        _description_
+    """
     assert is_windows11() is False
     patched_platform.assert_called()
     patched_release.assert_called()
@@ -440,23 +490,47 @@ def test_is_windows11_false(patched_platform, patched_release, patched_version):
 @patch("platform.release", return_value="8.1")
 @patch("platform.system", return_value="Windows")
 def test_is_windows11_false_win8_1(patched_platform, patched_release):
-    """Test is_windows11()"""
+    """Test is_windows11().
+
+    Parameters
+    ----------
+    patched_platform : _type_
+        _description_
+    patched_release : _type_
+        _description_
+    """
     assert is_windows11() is False
     patched_platform.assert_called()
     patched_release.assert_called()
+
 
 @patch("platform.release", return_value="2022Server")
 @patch("platform.system", return_value="Windows")
 def test_is_windows11_false_winserver(patched_platform, patched_release):
-    """Test is_windows11()"""
+    """Test is_windows11().
+
+    Parameters
+    ----------
+    patched_platform : _type_
+        _description_
+    patched_release : _type_
+        _description_
+    """
     assert is_windows11() is False
     patched_platform.assert_called()
     patched_release.assert_called()
 
+
 @pytest.mark.unit
 @patch("platform.system", return_value="Linux")
 def test_active_ports_on_supported_devices_empty(mock_platform):
-    """Test active_ports_on_supported_devices()"""
+    """Test active_ports_on_supported_devices().
+
+    Parameters
+    ----------
+    mock_platform : _type_
+        _description_
+    """
     sds = set()
     assert active_ports_on_supported_devices(sds) == set()
     mock_platform.assert_called()
@@ -466,7 +540,15 @@ def test_active_ports_on_supported_devices_empty(mock_platform):
 @patch("subprocess.getstatusoutput")
 @patch("platform.system", return_value="Linux")
 def test_active_ports_on_supported_devices_linux(mock_platform, mock_sp):
-    """Test active_ports_on_supported_devices()"""
+    """Test active_ports_on_supported_devices().
+
+    Parameters
+    ----------
+    mock_platform : _type_
+        _description_
+    mock_sp : _type_
+        _description_
+    """
     mock_sp.return_value = (
         None,
         "crw-rw-rw-  1 root        wheel   0x9000000 Feb  8 22:22 /dev/ttyUSBfake",
@@ -486,7 +568,15 @@ def test_active_ports_on_supported_devices_linux(mock_platform, mock_sp):
 @patch("subprocess.getstatusoutput")
 @patch("platform.system", return_value="Darwin")
 def test_active_ports_on_supported_devices_mac(mock_platform, mock_sp):
-    """Test active_ports_on_supported_devices()"""
+    """Test active_ports_on_supported_devices().
+
+    Parameters
+    ----------
+    mock_platform : _type_
+        _description_
+    mock_sp : _type_
+        _description_
+    """
     mock_sp.return_value = (
         None,
         "crw-rw-rw-  1 root        wheel   0x9000000 Feb  8 22:22 /dev/cu.usbserial-foo",
@@ -506,7 +596,15 @@ def test_active_ports_on_supported_devices_mac(mock_platform, mock_sp):
 @patch("meshtastic.util.detect_windows_port", return_value={"COM2"})
 @patch("platform.system", return_value="Windows")
 def test_active_ports_on_supported_devices_win(mock_platform, mock_dwp):
-    """Test active_ports_on_supported_devices()"""
+    """Test active_ports_on_supported_devices().
+
+    Parameters
+    ----------
+    mock_platform : _type_
+        _description_
+    mock_dwp : _type_
+        _description_
+    """
     fake_device = SupportedDevice(name="a", for_firmware="heltec-v2.1")
     fake_supported_devices = [fake_device]
     assert active_ports_on_supported_devices(fake_supported_devices) == {"COM2"}
@@ -520,7 +618,15 @@ def test_active_ports_on_supported_devices_win(mock_platform, mock_dwp):
 def test_active_ports_on_supported_devices_mac_no_duplicates_check(
     mock_platform, mock_sp
 ):
-    """Test active_ports_on_supported_devices()"""
+    """Test active_ports_on_supported_devices().
+
+    Parameters
+    ----------
+    mock_platform : _type_
+        _description_
+    mock_sp : _type_
+        _description_
+    """
     mock_sp.return_value = (
         None,
         (
@@ -544,7 +650,18 @@ def test_active_ports_on_supported_devices_mac_no_duplicates_check(
 @patch("subprocess.getstatusoutput")
 @patch("platform.system", return_value="Darwin")
 def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, mock_sp):
-    """Test active_ports_on_supported_devices()"""
+    """Ensure duplicate mac device entries are deduplicated when duplicate checking is enabled.
+
+    Verifies that given a mac-style device listing containing two related device paths, active_ports_on_supported_devices(...)
+    returns only the non-duplicate host port when the duplicates check is enabled.
+
+    Parameters
+    ----------
+    mock_platform : _type_
+        _description_
+    mock_sp : _type_
+        _description_
+    """
     mock_sp.return_value = (
         None,
         (
@@ -562,18 +679,31 @@ def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, m
     mock_platform.assert_called()
     mock_sp.assert_called()
 
+
 @pytest.mark.unit
 def test_message_to_json_shows_all():
-    """Test that message_to_json prints fields that aren't included in data passed in"""
+    """Test that message_to_json prints fields that aren't included in data passed in."""
     actual = json.loads(message_to_json(mesh_pb2.MyNodeInfo()))
-    expected = { "myNodeNum": 0, "rebootCount": 0, "minAppVersion": 0, "deviceId": "", "pioEnv": "", 'firmwareEdition': 'VANILLA', 'nodedbCount': 0 }
-    assert actual == expected
+    # Check that expected keys are present with expected values, rather than
+    # asserting exact equality, to avoid fragility when protobuf schema adds fields.
+    expected = {
+        "myNodeNum": 0,
+        "rebootCount": 0,
+        "minAppVersion": 0,
+        "deviceId": "",
+        "pioEnv": "",
+        "firmwareEdition": "VANILLA",
+        "nodedbCount": 0,
+    }
+    for key, value in expected.items():
+        assert (
+            actual.get(key) == value
+        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+
 
 @pytest.mark.unit
 def test_acknowledgement_reset():
-    """
-    Test that the reset method can set all fields back to False
-    """
+    """Test that the reset method can set all fields back to False."""
     test_ack_obj = Acknowledgment()
     # everything's set to False; let's set it to True to get a good test
     test_ack_obj.receivedAck = True
@@ -582,6 +712,7 @@ def test_acknowledgement_reset():
     test_ack_obj.receivedTraceRoute = True
     test_ack_obj.receivedTelemetry = True
     test_ack_obj.receivedPosition = True
+    test_ack_obj.receivedWaypoint = True
     test_ack_obj.reset()
     assert test_ack_obj.receivedAck is False
     assert test_ack_obj.receivedNak is False
@@ -589,43 +720,84 @@ def test_acknowledgement_reset():
     assert test_ack_obj.receivedTraceRoute is False
     assert test_ack_obj.receivedTelemetry is False
     assert test_ack_obj.receivedPosition is False
+    assert test_ack_obj.receivedWaypoint is False
 
-@given(a_string=st.text(
-    alphabet=st.characters(
-        codec='ascii',
-        min_codepoint=0x5F,
-        max_codepoint=0x7A,
-        exclude_characters=r'`',
-    )).filter(
-        lambda x: x not in [''] and x[0] not in "_" and x[-1] not in '_' and not re.search(r'__', x)
-    ))
+
+@given(
+    a_string=st.text(
+        alphabet=st.characters(
+            codec="ascii",
+            min_codepoint=0x5F,
+            max_codepoint=0x7A,
+            exclude_characters=r"`",
+        )
+    ).filter(
+        lambda x: x != "" and x[0] != "_" and x[-1] != "_" and not re.search(r"__", x)
+    )
+)
 def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
-    """Test that snake_to_camel and camel_to_snake roundtrip each other"""
+    """Test that snake_to_camel and camel_to_snake roundtrip each other.
+
+    Parameters
+    ----------
+    a_string : _type_
+        _description_
+    """
     value0 = snake_to_camel(a_string=a_string)
     value1 = camel_to_snake(a_string=value0)
     assert a_string == value1, (a_string, value1)
 
+
 @given(st.text())
 def test_fuzz_camel_to_snake(a_string):
-    """Test that camel_to_snake produces outputs with underscores for multi-word camelcase"""
+    """Test that camel_to_snake produces outputs with underscores for multi-word camelcase.
+
+    Parameters
+    ----------
+    a_string : _type_
+        _description_
+    """
     result = camel_to_snake(a_string)
     assert "_" in result or result == a_string.lower().replace("_", "")
 
+
 @given(st.text())
 def test_fuzz_snake_to_camel(a_string):
-    """Test that snake_to_camel removes underscores"""
+    """Test that snake_to_camel applies the expected canonical transformation.
+
+    Parameters
+    ----------
+    a_string : _type_
+        _description_
+    """
     result = snake_to_camel(a_string)
-    assert "_" not in result or result == a_string.split("_")[0] + "".join(ele.title() for ele in a_string.split("_")[1:])
+    parts = a_string.split("_")
+    expected = parts[0] + "".join(part.title() for part in parts[1:])
+    assert result == expected
+
 
 @given(st.text())
 def test_fuzz_stripnl(s):
-    """Test that stripnl always takes away newlines"""
+    """Test that stripnl always takes away newlines.
+
+    Parameters
+    ----------
+    s : _type_
+        _description_
+    """
     result = stripnl(s)
     assert "\n" not in result
 
+
 @given(st.binary())
 def test_fuzz_pskToString(psk):
-    """Test that pskToString produces sane output for any bytes"""
+    """Test that pskToString produces sane output for any bytes.
+
+    Parameters
+    ----------
+    psk : _type_
+        _description_
+    """
     result = pskToString(psk)
     if len(psk) == 0:
         assert result == "unencrypted"
@@ -640,16 +812,24 @@ def test_fuzz_pskToString(psk):
     else:
         assert result == "secret"
 
-@given(st.text())
-def test_fuzz_fromStr(valstr):
-    """Test that fromStr produces mostly-useful output given any string"""
+
+@given(
+    st.text(
+        alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
+        max_size=256,
+    ).filter(lambda s: not s.startswith("0x") and not s.startswith("base64:"))
+)
+def test_fuzz_fromStr_non_prefixed(valstr):
+    """Test fromStr behavior for non-prefixed string inputs.
+
+    Parameters
+    ----------
+    valstr : _type_
+        _description_
+    """
     result = fromStr(valstr)
-    if valstr.startswith("0x"):
-        assert isinstance(result, bytes)
-    elif valstr.startswith("base64:"):
-        assert isinstance(result, bytes)
-    elif len(valstr) == 0:
-        assert result == b''
+    if len(valstr) == 0:
+        assert result == b""
     elif valstr.lower() in {"t", "true", "yes"}:
         assert result is True
     elif valstr.lower() in {"f", "false", "no"}:
@@ -665,53 +845,178 @@ def test_fuzz_fromStr(valstr):
             except ValueError:
                 assert isinstance(result, str)
 
+
+@given(
+    st.text(
+        alphabet=st.sampled_from(list("0123456789abcdefABCDEF")),
+        min_size=0,
+        max_size=64,
+    )
+)
+def test_fuzz_fromStr_hex_prefixed(hex_digits):
+    """Test that fromStr decodes 0x-prefixed hex strings, including odd lengths.
+
+    Parameters
+    ----------
+    hex_digits : _type_
+        _description_
+    """
+    expected_hex = hex_digits
+    if len(expected_hex) == 0:
+        expected_hex = "00"
+    elif len(expected_hex) % 2 == 1:
+        expected_hex = "0" + expected_hex
+    assert fromStr(f"0x{hex_digits}") == bytes.fromhex(expected_hex)
+
+
+@given(
+    st.text(
+        alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
+        min_size=1,
+        max_size=64,
+    ).filter(
+        lambda s: re.fullmatch(r"[0-9a-fA-F]+", s) is None
+        and not any(ch.isspace() for ch in s)
+    )
+)
+def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
+    """Test that fromStr raises for invalid 0x-prefixed hex strings.
+
+    Parameters
+    ----------
+    hex_digits : _type_
+        _description_
+    """
+    with pytest.raises(ValueError):
+        fromStr(f"0x{hex_digits}")
+
+
+@given(st.binary(max_size=256))
+def test_fuzz_fromStr_base64_roundtrip(raw_value):
+    """Test that fromStr round-trips valid base64-prefixed payloads.
+
+    Parameters
+    ----------
+    raw_value : _type_
+        _description_
+    """
+    encoded = base64.b64encode(raw_value).decode("ascii")
+    assert fromStr(f"base64:{encoded}") == raw_value
+
+
+@given(
+    st.text(
+        alphabet=st.sampled_from(
+            list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+        ),
+        min_size=1,
+        max_size=65,
+    ).filter(lambda s: len(s) % 4 == 1)
+)
+def test_fuzz_fromStr_base64_malformed_raises(base64_payload):
+    """Test that fromStr raises for malformed base64 payload lengths.
+
+    Parameters
+    ----------
+    base64_payload : _type_
+        _description_
+    """
+    with pytest.raises(binascii.Error):
+        fromStr(f"base64:{base64_payload}")
+
+
 def test_shorthex():
-    """Test the shortest hex string representations"""
-    result = fromStr('0x0')
-    assert result == b'\x00'
-    result = fromStr('0x5')
-    assert result == b'\x05'
-    result = fromStr('0xffff')
-    assert result == b'\xff\xff'
+    """Test the shortest hex string representations."""
+    result = fromStr("0x0")
+    assert result == b"\x00"
+    result = fromStr("0x5")
+    assert result == b"\x05"
+    result = fromStr("0x123")
+    assert result == b"\x01#"
+    result = fromStr("0xffff")
+    assert result == b"\xff\xff"
+
 
 def test_channel_hash_basics():
-    "Test the default key and LongFast with channel_hash"
+    """Test the default key and LongFast with channel_hash."""
     assert channel_hash(DEFAULT_KEY) == 2
     assert channel_hash("LongFast".encode("utf-8")) == 10
 
+
 @given(st.text(min_size=1, max_size=12))
 def test_channel_hash_fuzz(channel_name):
-    "Test channel_hash with fuzzed channel names, ensuring it produces single-byte values"
+    """Test channel_hash with fuzzed channel names, ensuring it produces single-byte values.
+
+    Parameters
+    ----------
+    channel_name : _type_
+        _description_
+    """
     hashed = channel_hash(channel_name.encode("utf-8"))
     assert 0 <= hashed <= 0xFF
 
+
 def test_generate_channel_hash_basics():
-    "Test the default key and LongFast/MediumFast with generate_channel_hash"
+    """Test the default key and LongFast/MediumFast with generate_channel_hash."""
     assert generate_channel_hash("LongFast", "AQ==") == 8
     assert generate_channel_hash("LongFast", bytes([1])) == 8
     assert generate_channel_hash("LongFast", DEFAULT_KEY) == 8
     assert generate_channel_hash("MediumFast", DEFAULT_KEY) == 31
 
+
 @given(st.text(min_size=1, max_size=12))
 def test_generate_channel_hash_fuzz_default_key(channel_name):
-    "Test generate_channel_hash with fuzzed channel names and the default key, ensuring it produces single-byte values"
+    """Test generate_channel_hash with fuzzed channel names and the default key, ensuring it produces single-byte values.
+
+    Parameters
+    ----------
+    channel_name : _type_
+        _description_
+    """
     hashed = generate_channel_hash(channel_name, DEFAULT_KEY)
     assert 0 <= hashed <= 0xFF
 
+
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=1, max_size=1))
 def test_generate_channel_hash_fuzz_simple(channel_name, key_bytes):
-    "Test generate_channel_hash with fuzzed channel names and one-byte keys, ensuring it produces single-byte values"
+    """Test generate_channel_hash with fuzzed channel names and one-byte keys, ensuring it produces single-byte values.
+
+    Parameters
+    ----------
+    channel_name : _type_
+        _description_
+    key_bytes : _type_
+        _description_
+    """
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert 0 <= hashed <= 0xFF
+
 
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=16, max_size=16))
 def test_generate_channel_hash_fuzz_aes128(channel_name, key_bytes):
-    "Test generate_channel_hash with fuzzed channel names and 128-bit keys, ensuring it produces single-byte values"
+    """Test generate_channel_hash with fuzzed channel names and 128-bit keys, ensuring it produces single-byte values.
+
+    Parameters
+    ----------
+    channel_name : _type_
+        _description_
+    key_bytes : _type_
+        _description_
+    """
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert 0 <= hashed <= 0xFF
 
+
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=32, max_size=32))
 def test_generate_channel_hash_fuzz_aes256(channel_name, key_bytes):
-    "Test generate_channel_hash with fuzzed channel names and 256-bit keys, ensuring it produces single-byte values"
+    """Test generate_channel_hash with fuzzed channel names and 256-bit keys, ensuring it produces single-byte values.
+
+    Parameters
+    ----------
+    channel_name : _type_
+        _description_
+    key_bytes : _type_
+        _description_
+    """
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert 0 <= hashed <= 0xFF

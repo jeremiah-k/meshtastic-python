@@ -3,7 +3,7 @@
 import argparse
 import logging
 import os
-from typing import cast, List
+from typing import cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
@@ -21,15 +21,34 @@ from ..slog import root_dir
 pd.options.mode.copy_on_write = True
 
 
-def to_pmon_names(arr) -> List[str]:
-    """Convert the power monitor state numbers to their corresponding names.
+def to_pmon_names(arr) -> list[str | None]:
+    """Map a sequence of power-monitor state integers to their enum name strings.
 
-    arr (list): List of power monitor state numbers.
+    Parameters
+    ----------
+    arr : Iterable[int]
+        Sequence of power-monitor state values.
 
-    Returns the List of corresponding power monitor state names.
+    Returns
+    -------
+    list[str | None]
+        List of corresponding enum names; elements are `None`
+        when a value cannot be mapped or represents the "None" state.
     """
 
     def to_pmon_name(n):
+        """Map a power-monitor state numeric value to its corresponding enum name.
+
+        Parameters
+        ----------
+        n : int | any
+            Numeric value (or value convertible to int) representing a PowerMon.State.
+
+        Returns
+        -------
+        str | None
+            The enum name string for the given state, or `None` if the value does not map to a known state.
+        """
         try:
             s = powermon_pb2.PowerMon.State.Name(int(n))
             return s if s != "None" else None
@@ -40,11 +59,21 @@ def to_pmon_names(arr) -> List[str]:
 
 
 def read_pandas(filepath: str) -> pd.DataFrame:
-    """Read a feather file and convert it to a pandas DataFrame.
+    """Load a Feather file and map Arrow column types to pandas nullable dtypes to preserve nullability.
 
-    filepath (str): Path to the feather file.
+    Converts Arrow column types to appropriate pandas extension dtypes (e.g., nullable
+    integer, boolean, and string dtypes) so that integer/boolean columns retain
+    nullability instead of being cast to float.
 
-    Returns the pandas DataFrame.
+    Parameters
+    ----------
+    filepath : str
+        Path to the Feather file to read.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame whose columns use pandas nullable dtypes where applicable.
     """
     # per https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
     # use this to get nullable int fields treated as ints rather than floats in pandas
@@ -63,15 +92,46 @@ def read_pandas(filepath: str) -> pd.DataFrame:
         pa.string(): pd.StringDtype(),
     }
 
-    return cast(pd.DataFrame, feather.read_table(filepath).to_pandas(types_mapper=dtype_mapping.get))  # type: ignore[arg-type]
+    def _types_mapper(data_type: pa.DataType) -> pd.api.extensions.ExtensionDtype:
+        """Map a PyArrow DataType to a pandas nullable ExtensionDtype.
+
+        Parameters
+        ----------
+        data_type : pa.DataType
+            The Arrow data type to map.
+
+        Returns
+        -------
+        pd.api.extensions.ExtensionDtype
+            The corresponding pandas nullable extension
+            dtype if a predefined mapping exists; otherwise a pandas ArrowDtype wrapping
+            the provided Arrow type.
+        """
+        mapped = dtype_mapping.get(data_type)
+        if mapped is not None:
+            return mapped
+        return pd.ArrowDtype(data_type)
+
+    return cast(
+        pd.DataFrame,
+        feather.read_table(filepath).to_pandas(types_mapper=_types_mapper),
+    )
 
 
 def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
-    """Get the power monitor raises from the slog DataFrame.
+    """Extract rows where one or more power monitors transitioned to the raised state.
 
-        dslog (pd.DataFrame): The slog DataFrame.
+    Parameters
+    ----------
+    dslog : pd.DataFrame
+        Slog DataFrame that must contain `pm_mask` and `time` columns.
 
-    Returns the DataFrame containing the power monitor raises.
+    Returns
+    -------
+    pd.DataFrame
+        Subset of rows where power-monitor raises occurred.
+        Columns are `time` and `pm_raises` (a list of raised power-monitor
+        name strings).
     """
     pmon_events = dslog[dslog["pm_mask"].notnull()]
 
@@ -92,7 +152,18 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
 
     # pylint: disable=unused-variable
     def get_endtime(row):
-        """Find the corresponding fall event."""
+        """Find the corresponding fall event for a given raise event.
+
+        Parameters
+        ----------
+        row : pd.Series
+            A row from the pmon_raises DataFrame.
+
+        Returns
+        -------
+        pd.Series | None
+            The matching fall event row, or None if not found.
+        """
         following = pmon_falls[
             (pmon_falls["pm_falls"] == row["pm_raises"])
             & (pmon_falls["time"] > row["time"])
@@ -106,11 +177,19 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_board_info(dslog: pd.DataFrame) -> tuple:
-    """Get the board information from the slog DataFrame.
+    """Retrieve board model name and software version from a slog DataFrame.
 
-    dslog (pd.DataFrame): The slog DataFrame.
+    Parameters
+    ----------
+    dslog : pd.DataFrame
+        Slog DataFrame containing at least the 'sw_version' and 'board_id' columns.
 
-    Returns a tuple containing the board ID and software version.
+    Returns
+    -------
+    tuple
+        (board_model_name, sw_version) where `board_model_name` is the
+        HardwareModel enum name string derived from `board_id`, and `sw_version`
+        is the software version string.
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     sw_version = board_info.iloc[0]["sw_version"]
@@ -119,7 +198,13 @@ def get_board_info(dslog: pd.DataFrame) -> tuple:
 
 
 def create_argparser() -> argparse.ArgumentParser:
-    """Create the argument parser for the script."""
+    """Create the command-line argument parser for analysis tools.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        Configured argument parser instance.
+    """
     parser = argparse.ArgumentParser(description="Meshtastic power analysis tools")
     group = parser
     group.add_argument(
@@ -136,11 +221,17 @@ def create_argparser() -> argparse.ArgumentParser:
 
 
 def create_dash(slog_path: str) -> Dash:
-    """Create a Dash application for visualizing power consumption data.
+    """Create a Dash application that visualizes Meshtastic power data from a slog directory.
 
-    slog_path (str): Path to the slog directory.
+    Parameters
+    ----------
+    slog_path : str
+        Path to the slog directory containing `power.feather` and `slog.feather`.
 
-    Returns the Dash application.
+    Returns
+    -------
+    Dash
+        Configured Dash application with line and scatter traces for average, max, and min power and markers for power-monitor raise events.
     """
     app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -150,6 +241,20 @@ def create_dash(slog_path: str) -> Dash:
     pmon_raises = get_pmon_raises(dslog)
 
     def set_legend(f, name):
+        """Set the legend name and enable legend display for the first trace in a figure.
+
+        Parameters
+        ----------
+        f : plotly.graph_objects.Figure
+            The Plotly figure to modify.
+        name : str
+            The legend name to set for the first trace.
+
+        Returns
+        -------
+        plotly.graph_objects.Figure
+            The modified figure with updated legend settings.
+        """
         f["data"][0]["showlegend"] = True
         f["data"][0]["name"] = name
         return f
@@ -186,8 +291,11 @@ def create_dash(slog_path: str) -> Dash:
 
 
 def main():
-    """Entry point of the script."""
+    """Entry point of the script.
 
+    Parses command-line arguments, reads the slog data, and optionally starts
+    a Dash web server for visualization.
+    """
     parser = create_argparser()
     args = parser.parse_args()
     if not args.slog:
