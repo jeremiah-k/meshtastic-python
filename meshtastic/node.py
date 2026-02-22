@@ -270,6 +270,9 @@ class Node:
             if "getConfigResponse" in adminMessage:
                 oneof = "get_config_response"
                 resp = adminMessage["getConfigResponse"]
+                if not resp:
+                    print("Received empty config response from node.")
+                    return
                 field = list(resp.keys())[0]
                 config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(
                     camel_to_snake(field)
@@ -279,6 +282,9 @@ class Node:
             elif "getModuleConfigResponse" in adminMessage:
                 oneof = "get_module_config_response"
                 resp = adminMessage["getModuleConfigResponse"]
+                if not resp:
+                    print("Received empty module config response from node.")
+                    return
                 field = list(resp.keys())[0]
                 config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
                     camel_to_snake(field)
@@ -406,62 +412,49 @@ class Node:
         """
         p = admin_pb2.AdminMessage()
 
-        if config_name == "device":
-            p.set_config.device.CopyFrom(self.localConfig.device)
-        elif config_name == "position":
-            p.set_config.position.CopyFrom(self.localConfig.position)
-        elif config_name == "power":
-            p.set_config.power.CopyFrom(self.localConfig.power)
-        elif config_name == "network":
-            p.set_config.network.CopyFrom(self.localConfig.network)
-        elif config_name == "display":
-            p.set_config.display.CopyFrom(self.localConfig.display)
-        elif config_name == "lora":
-            p.set_config.lora.CopyFrom(self.localConfig.lora)
-        elif config_name == "bluetooth":
-            p.set_config.bluetooth.CopyFrom(self.localConfig.bluetooth)
-        elif config_name == "security":
-            p.set_config.security.CopyFrom(self.localConfig.security)
-        elif config_name == "mqtt":
-            p.set_module_config.mqtt.CopyFrom(self.moduleConfig.mqtt)
-        elif config_name == "serial":
-            p.set_module_config.serial.CopyFrom(self.moduleConfig.serial)
-        elif config_name == "external_notification":
-            p.set_module_config.external_notification.CopyFrom(
-                self.moduleConfig.external_notification
-            )
-        elif config_name == "store_forward":
-            p.set_module_config.store_forward.CopyFrom(self.moduleConfig.store_forward)
-        elif config_name == "range_test":
-            p.set_module_config.range_test.CopyFrom(self.moduleConfig.range_test)
-        elif config_name == "telemetry":
-            p.set_module_config.telemetry.CopyFrom(self.moduleConfig.telemetry)
-        elif config_name == "canned_message":
-            p.set_module_config.canned_message.CopyFrom(
-                self.moduleConfig.canned_message
-            )
-        elif config_name == "audio":
-            p.set_module_config.audio.CopyFrom(self.moduleConfig.audio)
-        elif config_name == "remote_hardware":
-            p.set_module_config.remote_hardware.CopyFrom(
-                self.moduleConfig.remote_hardware
-            )
-        elif config_name == "neighbor_info":
-            p.set_module_config.neighbor_info.CopyFrom(self.moduleConfig.neighbor_info)
-        elif config_name == "detection_sensor":
-            p.set_module_config.detection_sensor.CopyFrom(
-                self.moduleConfig.detection_sensor
-            )
-        elif config_name == "ambient_lighting":
-            p.set_module_config.ambient_lighting.CopyFrom(
-                self.moduleConfig.ambient_lighting
-            )
-        elif config_name == "paxcounter":
-            p.set_module_config.paxcounter.CopyFrom(self.moduleConfig.paxcounter)
-        else:
+        config_dispatch: dict[str, tuple[str, Any]] = {
+            "device": ("set_config", self.localConfig.device),
+            "position": ("set_config", self.localConfig.position),
+            "power": ("set_config", self.localConfig.power),
+            "network": ("set_config", self.localConfig.network),
+            "display": ("set_config", self.localConfig.display),
+            "lora": ("set_config", self.localConfig.lora),
+            "bluetooth": ("set_config", self.localConfig.bluetooth),
+            "security": ("set_config", self.localConfig.security),
+            "mqtt": ("set_module_config", self.moduleConfig.mqtt),
+            "serial": ("set_module_config", self.moduleConfig.serial),
+            "external_notification": (
+                "set_module_config",
+                self.moduleConfig.external_notification,
+            ),
+            "store_forward": ("set_module_config", self.moduleConfig.store_forward),
+            "range_test": ("set_module_config", self.moduleConfig.range_test),
+            "telemetry": ("set_module_config", self.moduleConfig.telemetry),
+            "canned_message": ("set_module_config", self.moduleConfig.canned_message),
+            "audio": ("set_module_config", self.moduleConfig.audio),
+            "remote_hardware": (
+                "set_module_config",
+                self.moduleConfig.remote_hardware,
+            ),
+            "neighbor_info": ("set_module_config", self.moduleConfig.neighbor_info),
+            "detection_sensor": (
+                "set_module_config",
+                self.moduleConfig.detection_sensor,
+            ),
+            "ambient_lighting": (
+                "set_module_config",
+                self.moduleConfig.ambient_lighting,
+            ),
+            "paxcounter": ("set_module_config", self.moduleConfig.paxcounter),
+        }
+        config_entry = config_dispatch.get(config_name)
+        if config_entry is None:
             self._raise_interface_error(
                 f"Error: No valid config with name {config_name}"
             )
+        setter_name, source_config = config_entry
+        config_setter = getattr(p, setter_name)
+        getattr(config_setter, config_name).CopyFrom(source_config)
 
         logger.debug(f"Wrote: {config_name}")
         if self == self.iface.localNode:
@@ -1115,6 +1108,8 @@ class Node:
     def get_ringtone(self) -> str | None:
         """Compatibility wrapper that returns the node's ringtone.
 
+        Canonical public method: getRingtone().
+
         Returns
         -------
         ringtone : str | None
@@ -1124,6 +1119,8 @@ class Node:
 
     def set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's ringtone.
+
+        Backward-compatibility alias for setRingtone().
 
         Parameters
         ----------
@@ -1140,6 +1137,8 @@ class Node:
     def get_canned_message(self) -> str | None:
         """Return the device's canned message.
 
+        Canonical public method: getCannedMessage().
+
         Returns
         -------
         str | None
@@ -1149,6 +1148,8 @@ class Node:
 
     def set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message using a backward-compatible snake_case wrapper.
+
+        Backward-compatibility alias for setCannedMessage().
 
         Parameters
         ----------
@@ -1594,12 +1595,12 @@ class Node:
 
         p = mesh_pb2.Position()
         if isinstance(lat, float) and lat != 0.0:
-            p.latitude_i = int(lat / 1e-7)
+            p.latitude_i = int(lat * 1e7)
         elif isinstance(lat, int) and lat != 0:
             p.latitude_i = lat
 
         if isinstance(lon, float) and lon != 0.0:
-            p.longitude_i = int(lon / 1e-7)
+            p.longitude_i = int(lon * 1e7)
         elif isinstance(lon, int) and lon != 0:
             p.longitude_i = lon
 
@@ -1908,8 +1909,7 @@ class Node:
         ):  # unless a special channel index was used, we want to use the admin index
             adminIndex = self.iface.localNode._getAdminChannelIndex()
         logger.debug(f"adminIndex:{adminIndex}")
-        nodeid = to_node_num(self.nodeNum)
-        node_info = self.iface._getOrCreateByNum(nodeid)
+        node_info = self.iface._getOrCreateByNum(self.nodeNum)
         passkey = node_info.get("adminSessionPassKey")
         if isinstance(passkey, bytes):
             p.session_passkey = passkey

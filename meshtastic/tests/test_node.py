@@ -349,14 +349,14 @@ def test_getChannelByChannelIndex():
     """Test getChannelByChannelIndex()."""
     anode = Node(MagicMock(autospec=MeshInterface), "!12345678", noProto=True)
 
-    channel1 = Channel(index=1, role=Channel.Role.PRIMARY)  # primary channel
-    channel2 = Channel(index=2, role=Channel.Role.SECONDARY)  # secondary channel
-    channel3 = Channel(index=3, role=Channel.Role.DISABLED)
-    channel4 = Channel(index=4, role=Channel.Role.DISABLED)
-    channel5 = Channel(index=5, role=Channel.Role.DISABLED)
-    channel6 = Channel(index=6, role=Channel.Role.DISABLED)
-    channel7 = Channel(index=7, role=Channel.Role.DISABLED)
-    channel8 = Channel(index=8, role=Channel.Role.DISABLED)
+    channel1 = Channel(index=0, role=Channel.Role.PRIMARY)  # primary channel
+    channel2 = Channel(index=1, role=Channel.Role.SECONDARY)  # secondary channel
+    channel3 = Channel(index=2, role=Channel.Role.DISABLED)
+    channel4 = Channel(index=3, role=Channel.Role.DISABLED)
+    channel5 = Channel(index=4, role=Channel.Role.DISABLED)
+    channel6 = Channel(index=5, role=Channel.Role.DISABLED)
+    channel7 = Channel(index=6, role=Channel.Role.DISABLED)
+    channel8 = Channel(index=7, role=Channel.Role.DISABLED)
 
     channels = [
         channel1,

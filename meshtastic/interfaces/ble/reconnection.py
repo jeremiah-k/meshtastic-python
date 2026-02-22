@@ -247,8 +247,9 @@ class ReconnectWorker:
                 override_delay = None
                 if self._should_abort_reconnect(auto_reconnect, "loop start"):
                     return
-                attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
+                attempt_num = 0
                 try:
+                    attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
                     if interface._is_connection_connected:
                         return
                     device_addr = _addr_key(getattr(interface, "address", None))
@@ -274,6 +275,12 @@ class ReconnectWorker:
                         attempt_num,
                     )
                     interface.connect(interface.address)
+                except ReconnectPolicyMissingMethodError as err:
+                    logger.error(
+                        "Reconnect policy missing required method '%s'",
+                        err.method_name,
+                    )
+                    return
                 except interface.BLEError as err:
                     if self._should_abort_reconnect(auto_reconnect, "BLEError"):
                         return
@@ -326,7 +333,14 @@ class ReconnectWorker:
 
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
-                next_attempt = self._call_policy("next_attempt")
+                try:
+                    next_attempt = self._call_policy("next_attempt")
+                except ReconnectPolicyMissingMethodError as err:
+                    logger.error(
+                        "Reconnect policy missing required method '%s'",
+                        err.method_name,
+                    )
+                    return
                 if not isinstance(next_attempt, tuple) or len(next_attempt) != 2:
                     logger.error(
                         "Reconnect policy next_attempt returned invalid value: %r",

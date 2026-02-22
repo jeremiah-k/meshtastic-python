@@ -1924,6 +1924,8 @@ def common():
                         )
                     except BLEInterface.BLEError as e:
                         _cli_exit(str(e), 1)
+                    except MeshInterface.MeshInterfaceError as e:
+                        _cli_exit(str(e), 1)
                 elif args.host:
                     try:
                         tcp_hostname, tcp_port = _parse_host_port(
@@ -1940,6 +1942,8 @@ def common():
                                 timeout=args.timeout,
                             )
                         )
+                    except MeshInterface.MeshInterfaceError as ex:
+                        _cli_exit(str(ex), 1)
                     except OSError as ex:
                         _cli_exit(f"Error connecting to {args.host}:{ex}", 1)
                 else:
@@ -1977,6 +1981,8 @@ def common():
                         message += "  After running that command, log out and re-login for it to take effect.\n"
                         message += f"Error was:{ex}"
                         _cli_exit(message)
+                    except MeshInterface.MeshInterfaceError as ex:
+                        _cli_exit(str(ex), 1)
                     except OSError as ex:
                         message = "OS Error:\n"
                         message += "  The serial device couldn't be opened, it might be in use by another process.\n"
@@ -1994,6 +2000,8 @@ def common():
                                     timeout=args.timeout,
                                 )
                             )
+                        except MeshInterface.MeshInterfaceError as ex:
+                            _cli_exit(str(ex), 1)
                         except OSError as ex:
                             _cli_exit(f"Error connecting to localhost:{ex}", 1)
 

@@ -215,18 +215,18 @@ class KnownProtocol(NamedTuple):
     onReceive: Callable | None = None
 
 
-def _on_text_receive(iface: Any, asDict: dict[str, Any]) -> None:
+def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Decode text payloads from a received packet and update per-node metadata.
 
     If the packet's decoded.payload contains valid UTF-8, store the decoded string in
-    asDict["decoded"]["text"]. If decoding fails, leave that field unset and log an error.
+    as_dict["decoded"]["text"]. If decoding fails, leave that field unset and log an error.
     Always invokes the interface's info-update path to refresh node metadata based on the packet.
 
     Parameters
     ----------
     iface : Any
         The interface instance that received the packet.
-    asDict : dict[str, Any]
+    as_dict : dict[str, Any]
         Packet dictionary expected to contain
         decoded.payload (bytes) where the text is stored.
     """
@@ -236,71 +236,71 @@ def _on_text_receive(iface: Any, asDict: dict[str, Any]) -> None:
     #
     # Usually btw this problem is caused by apps sending binary data but setting the payload type to
     # text.
-    logger.debug("in _on_text_receive() asDict:%s", asDict)
+    logger.debug("in _on_text_receive() as_dict:%s", as_dict)
     try:
-        asBytes = asDict["decoded"]["payload"]
-        asDict["decoded"]["text"] = asBytes.decode("utf-8")
+        as_bytes = as_dict["decoded"]["payload"]
+        as_dict["decoded"]["text"] = as_bytes.decode("utf-8")
     except (UnicodeDecodeError, KeyError, AttributeError):
         logger.exception("Malformatted utf8 in text message")
-    _receive_info_update(iface, asDict)
+    _receive_info_update(iface, as_dict)
 
 
-def _on_position_receive(iface: Any, asDict: dict[str, Any]) -> None:
+def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Update the sender node's stored position when a received packet contains position data.
 
-    If asDict contains a "from" field and a decoded "position", the position is normalized
+    If as_dict contains a "from" field and a decoded "position", the position is normalized
     using the interface's fixup routine and written to that node's "position" entry.
 
     Parameters
     ----------
     iface : Any
         Interface instance that provides position normalization and node lookup helpers.
-    asDict : dict[str, Any]
+    as_dict : dict[str, Any]
         Packet dictionary expected to contain
         "from" and "decoded"->"position".
     """
-    logger.debug("in _on_position_receive() asDict:%s", asDict)
-    if "decoded" in asDict:
-        if "position" in asDict["decoded"] and "from" in asDict:
-            _receive_info_update(iface, asDict)
-            p = asDict["decoded"]["position"]
+    logger.debug("in _on_position_receive() as_dict:%s", as_dict)
+    if "decoded" in as_dict:
+        if "position" in as_dict["decoded"] and "from" in as_dict:
+            _receive_info_update(iface, as_dict)
+            p = as_dict["decoded"]["position"]
             logger.debug("p:%s", p)
             p = iface._fixupPosition(p)
             logger.debug("after fixup p:%s", p)
             # update node DB as needed
-            iface._getOrCreateByNum(asDict["from"])["position"] = p
+            iface._getOrCreateByNum(as_dict["from"])["position"] = p
 
 
-def _on_node_info_receive(iface: Any, asDict: dict[str, Any]) -> None:
+def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Update the local node record from a received NodeInfo ("user") payload.
 
-    When `asDict` contains a decoded `"user"` entry and a `"from"` sender, stores
+    When `as_dict` contains a decoded `"user"` entry and a `"from"` sender, stores
     the decoded user protobuf on the sender's node under `node["user"]`, ensures
     `iface.nodes` maps the user's `id` to that node, and refreshes per-node metadata
-    via _receive_info_update(iface, asDict).
+    via _receive_info_update(iface, as_dict).
 
     Parameters
     ----------
     iface : Any
         Interface instance managing the node database.
-    asDict : dict[str, Any]
+    as_dict : dict[str, Any]
         Received packet dictionary; expected to contain
         `"decoded" -> "user"` and `"from"`.
     """
-    logger.debug("in _on_node_info_receive() asDict:%s", asDict)
-    if "decoded" in asDict:
-        if "user" in asDict["decoded"] and "from" in asDict:
-            p = asDict["decoded"]["user"]
+    logger.debug("in _on_node_info_receive() as_dict:%s", as_dict)
+    if "decoded" in as_dict:
+        if "user" in as_dict["decoded"] and "from" in as_dict:
+            p = as_dict["decoded"]["user"]
             # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
             # update node DB as needed
-            n = iface._getOrCreateByNum(asDict["from"])
+            n = iface._getOrCreateByNum(as_dict["from"])
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
             iface.nodes[p["id"]] = n
-            _receive_info_update(iface, asDict)
+            _receive_info_update(iface, as_dict)
 
 
-def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
+def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Update the appropriate telemetry section on the sender node when a telemetry packet is received.
 
     Merges metrics from the packet's `decoded.telemetry` into one of the node's telemetry
@@ -312,19 +312,19 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     ----------
     iface : Any
         Interface instance used to look up or create the target node.
-    asDict : dict[str, Any]
+    as_dict : dict[str, Any]
         Received packet dictionary; expected to include
         a `from` key and may include `decoded.telemetry`.
     """
-    logger.debug("in _on_telemetry_receive() asDict:%s", asDict)
-    if "from" not in asDict:
+    logger.debug("in _on_telemetry_receive() as_dict:%s", as_dict)
+    if "from" not in as_dict:
         return
 
-    _receive_info_update(iface, asDict)
+    _receive_info_update(iface, as_dict)
 
     toUpdate = None
 
-    telemetry = (asDict.get("decoded") or {}).get("telemetry") or {}
+    telemetry = (as_dict.get("decoded") or {}).get("telemetry") or {}
     if "deviceMetrics" in telemetry:
         toUpdate = "deviceMetrics"
     elif "environmentMetrics" in telemetry:
@@ -341,23 +341,23 @@ def _on_telemetry_receive(iface: Any, asDict: dict[str, Any]) -> None:
     updateObj = telemetry.get(toUpdate)
     if updateObj is None:
         return
-    node = iface._getOrCreateByNum(asDict["from"])
+    node = iface._getOrCreateByNum(as_dict["from"])
     newMetrics = node.get(toUpdate, {})
     newMetrics.update(updateObj)
     logger.debug(
-        "updating %s metrics for %s to %s", toUpdate, asDict["from"], newMetrics
+        "updating %s metrics for %s to %s", toUpdate, as_dict["from"], newMetrics
     )
     node[toUpdate] = newMetrics
 
 
-def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
+def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
     """Update per-node metadata fields based on information present in a received packet dictionary.
 
     Parameters
     ----------
     iface : Any
         The interface instance whose node store will be updated.
-    asDict : dict[str, Any]
+    as_dict : dict[str, Any]
         Parsed packet dictionary; if it contains a "from"
         key, the node identified by that value will have these fields set:
         - lastReceived: the full packet dictionary
@@ -365,47 +365,47 @@ def _receive_info_update(iface: Any, asDict: dict[str, Any]) -> None:
         - snr: value of `rxSnr` from the packet (or None)
         - hopLimit: value of `hopLimit` from the packet (or None)
     """
-    if "from" in asDict:
-        node = iface._getOrCreateByNum(asDict["from"])
-        node["lastReceived"] = asDict
-        node["lastHeard"] = asDict.get("rxTime")
-        node["snr"] = asDict.get("rxSnr")
-        node["hopLimit"] = asDict.get("hopLimit")
+    if "from" in as_dict:
+        node = iface._getOrCreateByNum(as_dict["from"])
+        node["lastReceived"] = as_dict
+        node["lastHeard"] = as_dict.get("rxTime")
+        node["snr"] = as_dict.get("rxSnr")
+        node["hopLimit"] = as_dict.get("hopLimit")
 
 
-def _on_admin_receive(iface: Any, asDict: dict[str, Any]) -> None:
+def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Store the admin session passkey from an admin packet on the sending node.
 
-    If the expected fields are present in `asDict`, sets the sender node's
+    If the expected fields are present in `as_dict`, sets the sender node's
     "adminSessionPassKey" to the extracted `session_passkey`.
 
     Parameters
     ----------
     iface : Any
         The interface instance managing the node database.
-    asDict : dict[str, Any]
+    as_dict : dict[str, Any]
         Received packet dictionary; expected to contain
         `decoded.admin.raw.session_passkey` and a `from` sender field.
     """
-    logger.debug("in _on_admin_receive() asDict:%s", asDict)
-    if "from" not in asDict:
+    logger.debug("in _on_admin_receive() as_dict:%s", as_dict)
+    if "from" not in as_dict:
         logger.debug(
-            "Dropping admin packet because 'from' field is missing: %s", asDict
+            "Dropping admin packet because 'from' field is missing: %s", as_dict
         )
         return
 
-    _receive_info_update(iface, asDict)
+    _receive_info_update(iface, as_dict)
 
     try:
-        adminMessage = asDict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(asDict["from"])[
+        adminMessage = as_dict["decoded"]["admin"]["raw"]
+        iface._getOrCreateByNum(as_dict["from"])[
             "adminSessionPassKey"
         ] = adminMessage.session_passkey
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
         logger.debug(
             "Admin session passkey not extracted from packet (expected for non-admin packets): %s",
-            asDict,
+            as_dict,
             exc_info=True,
         )
 

@@ -50,9 +50,12 @@ def test_Tunnel_on_non_linux_system(platform_socket_mocks):
     """Test that we cannot instantiate a Tunnel on a non Linux system."""
     mock_platform_system, _ = platform_socket_mocks
     mock_platform_system.return_value = "notLinux"
-    with pytest.raises(Tunnel.TunnelError) as pytest_wrapped_e:
-        iface = TCPInterface(hostname="localhost", noProto=True)
-        Tunnel(iface)
+    iface = TCPInterface(hostname="localhost", noProto=True)
+    try:
+        with pytest.raises(Tunnel.TunnelError) as pytest_wrapped_e:
+            Tunnel(iface)
+    finally:
+        iface.close()
     assert pytest_wrapped_e.type == Tunnel.TunnelError
 
 
