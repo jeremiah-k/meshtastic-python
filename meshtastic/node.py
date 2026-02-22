@@ -51,6 +51,8 @@ EMPTY_LONG_NAME_MSG = "Long Name cannot be empty or contain only whitespace char
 EMPTY_SHORT_NAME_MSG = (
     "Short Name cannot be empty or contain only whitespace characters"
 )
+# Maximum length for long_name (per protobuf definition in mesh.options)
+MAX_LONG_NAME_LEN = 40
 
 
 class Node:
@@ -645,6 +647,11 @@ class Node:
             # Validate that long_name is not empty or whitespace-only
             if not long_name:
                 self._raise_interface_error(EMPTY_LONG_NAME_MSG)
+            if len(long_name) > MAX_LONG_NAME_LEN:
+                long_name = long_name[:MAX_LONG_NAME_LEN]
+                logger.warning(
+                    f"Long name is longer than {MAX_LONG_NAME_LEN} characters, truncating to '{long_name}'"
+                )
             p.set_owner.long_name = long_name
             p.set_owner.is_licensed = is_licensed
         if short_name is not None:
