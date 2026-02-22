@@ -15,7 +15,7 @@ except ImportError:
 
 @pytest.mark.unit
 def test_analysis(caplog):
-    """Test analysis processing"""
+    """Test analysis processing."""
 
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     slog_input_dir = os.path.join(cur_dir, "slog-test-input")

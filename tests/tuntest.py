@@ -31,17 +31,17 @@ protocolBlacklist = {
 
 
 def hexstr(barray):
-    """Print a string of hex digits"""
+    """Print a string of hex digits."""
     return ":".join("{:02x}".format(x) for x in barray)
 
 
 def ipstr(barray):
-    """Print a string of ip digits"""
+    """Print a string of ip digits."""
     return ".".join("{}".format(x) for x in barray)
 
 
 def readnet_u16(p, offset):
-    """Read big endian u16 (network byte order)"""
+    """Read big endian u16 (network byte order)."""
     return p[offset] * 256 + p[offset + 1]
 
 

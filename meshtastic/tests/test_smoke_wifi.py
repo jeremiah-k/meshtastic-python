@@ -1,8 +1,9 @@
 """Meshtastic smoke tests a device setup with wifi.
 
-   Need to have run the following on an esp32 device:
-      meshtastic --set wifi_ssid 'foo' --set wifi_password 'sekret'
+Need to have run the following on an esp32 device:
+   meshtastic --set wifi_ssid 'foo' --set wifi_password 'sekret'
 """
+
 import re
 import subprocess
 
@@ -11,7 +12,7 @@ import pytest
 
 @pytest.mark.smokewifi
 def test_smokewifi_info():
-    """Test --info"""
+    """Test --info."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --info --host meshtastic.local"
     )

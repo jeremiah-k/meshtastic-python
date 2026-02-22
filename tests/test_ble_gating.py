@@ -112,7 +112,6 @@ class TestAddrLock:
         Raises
         ------
         RuntimeError
-            _description_
         """
         key = _addr_key("temp-exception-address")
         assert key is not None
@@ -161,7 +160,6 @@ class TestMarkDisconnected:
 
         Parameters
         ----------
-        clear_registry : _type_
             pytest fixture that clears gating registries before use.
         """
         _ = clear_registry
@@ -312,7 +310,6 @@ class TestIsCurrentlyConnectedElsewhere:
 
                 Returns
                 -------
-                _type_
                     `True` if the connection is established, `False` otherwise.
                 """
                 return False
@@ -330,7 +327,6 @@ class TestIsCurrentlyConnectedElsewhere:
         Raises
         ------
         RuntimeError
-            _description_
         """
 
         class Owner:
@@ -341,7 +337,6 @@ class TestIsCurrentlyConnectedElsewhere:
 
                 Returns
                 -------
-                _type_
                     `True` if the owner's connection is active, `False` otherwise.
 
                 Raises
@@ -359,13 +354,7 @@ class TestIsCurrentlyConnectedElsewhere:
         assert key in _CONNECTED_ADDRS
 
     def test_prunes_stale_unowned_claim(self, monkeypatch):
-        """Unowned claims should expire after a bounded stale window.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """Unowned claims should expire after a bounded stale window."""
         key = _addr_key("aabbccddeeff")
         assert key is not None
         _mark_connected("aabbccddeeff")

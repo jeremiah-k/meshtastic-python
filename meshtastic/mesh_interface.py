@@ -445,9 +445,8 @@ class MeshInterface:  # pylint: disable=R0902
 
             Returns
             -------
-            Optional[str]
+            str | None
                 A concise relative time string such as "now", "5 sec ago", or "2 min ago",
-            _type_
                 or `None` if `ts` is `None`, `0`, or represents a time in the future.
             """
             if ts is None or ts == 0:
@@ -473,7 +472,6 @@ class MeshInterface:  # pylint: disable=R0902
             -------
             Any
                 The value found at the given path, or `None` if any intermediate
-            _type_
                 key is missing or an intermediate value is not a dictionary.
             """
             # Guard against None or non-dict input
@@ -635,7 +633,7 @@ class MeshInterface:  # pylint: disable=R0902
         Raises
         ------
         MeshInterfaceError
-            _description_
+            If channel retrieval repeatedly fails or times out.
         """
         if nodeId in (LOCAL_ADDR, BROADCAST_ADDR):
             return self.localNode
@@ -692,15 +690,15 @@ class MeshInterface:  # pylint: disable=R0902
         replyId : int | None
             If provided, marks this packet as a response to the given message ID. (Default value = None)
         wantAck : bool
-            _description_ (Default value = False)
+            If True, request transport-level acknowledgment. (Default value = False)
         wantResponse : bool
-            _description_ (Default value = False)
+            If True, request an application-level response. (Default value = False)
         onResponse : Callable[[dict[str, Any]], Any] | None
-            _description_ (Default value = None)
+            Optional callback for the response. (Default value = None)
         channelIndex : int
-            _description_ (Default value = 0)
+            Channel index to send on. (Default value = 0)
         portNum : portnums_pb2.PortNum.ValueType
-            _description_ (Default value = portnums_pb2.PortNum.TEXT_MESSAGE_APP)
+            Application port number for the text message. (Default value = portnums_pb2.PortNum.TEXT_MESSAGE_APP)
 
         Returns
         -------
@@ -832,13 +830,8 @@ class MeshInterface:  # pylint: disable=R0902
         Raises
         ------
         MeshInterface.MeshInterfaceError
-            If the payload exceeds the maximum allowed size or a valid
-        packet id cannot be generated, or if an invalid port number is supplied.
-            _description_
-        MeshInterfaceError
-            _description_
-        MeshInterfaceError
-            _description_
+            If the payload exceeds the maximum allowed size, a valid
+            packet id cannot be generated, or if an invalid port number is supplied.
         """
 
         if getattr(data, "SerializeToString", None):
@@ -970,7 +963,7 @@ class MeshInterface:  # pylint: disable=R0902
         Raises
         ------
         MeshInterfaceError
-            _description_
+            If a routing error occurs or no response is received from the node.
         """
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.POSITION_APP
@@ -1053,10 +1046,12 @@ class MeshInterface:  # pylint: disable=R0902
 
         Parameters
         ----------
-        Side effects: : _type_
-            Prints formatted route strings to stdout and sets self._acknowledgment.receivedTraceRoute to True.
         p : dict[str, Any]
-            _description_
+            The traceroute response packet.
+
+        Notes
+        -----
+        Prints formatted route strings to stdout and sets self._acknowledgment.receivedTraceRoute to True.
         """
         UNK_SNR = -128  # Value representing unknown SNR
 
@@ -1247,15 +1242,13 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
         p : dict[str, Any]
             Decoded packet dictionary produced by _handlePacketFromRadio. Must contain "decoded"
-        with a "portnum" string and either a "payload" (Telemetry protobuf bytes) for TELEMETRY_APP : _type_
-            _description_
-        or a "routing" mapping for ROUTING_APP. : _type_
-            _description_
+            with a "portnum" string and either a "payload" (Telemetry protobuf bytes) for TELEMETRY_APP
+            or a "routing" mapping for ROUTING_APP.
 
         Raises
         ------
         MeshInterfaceError
-            _description_
+            If the destination node requires a newer firmware version for telemetry responses.
         """
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.TELEMETRY_APP
@@ -1319,7 +1312,7 @@ class MeshInterface:  # pylint: disable=R0902
         Raises
         ------
         MeshInterfaceError
-            _description_
+            If the destination node requires a newer firmware version for waypoint responses.
         """
         if p["decoded"]["portnum"] == portnums_pb2.PortNum.Name(
             portnums_pb2.PortNum.WAYPOINT_APP
@@ -1533,12 +1526,8 @@ class MeshInterface:  # pylint: disable=R0902
 
         Raises
         ------
-        MeshInterfaceError
-            _description_
-        MeshInterfaceError
-            _description_
-        MeshInterfaceError
-            _description_
+        MeshInterface.MeshInterfaceError
+            If the destination node is not found in the node database or if no info is available.
         """
 
         # We allow users to talk to the local node before we've completed the full connection flow...
@@ -1613,8 +1602,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If the configuration is not received before the interface timeout.
-        MeshInterfaceError
-            _description_
         """
         success = (
             self._timeout.waitForSet(self, attrs=("myInfo", "nodes"))
@@ -1632,8 +1619,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If waiting times out before an ACK/NAK is received.
-        MeshInterfaceError
-            _description_
         """
         success = self._timeout.waitForAckNak(self._acknowledgment)
         if not success:
@@ -1655,8 +1640,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If the wait times out before a traceroute response is received.
-        MeshInterfaceError
-            _description_
         """
         success = self._timeout.waitForTraceRoute(waitFactor, self._acknowledgment)
         if not success:
@@ -1669,8 +1652,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If a telemetry response is not received before the configured timeout.
-        MeshInterfaceError
-            _description_
         """
         success = self._timeout.waitForTelemetry(self._acknowledgment)
         if not success:
@@ -1683,8 +1664,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If waiting for the position times out.
-        MeshInterfaceError
-            _description_
         """
         success = self._timeout.waitForPosition(self._acknowledgment)
         if not success:
@@ -1697,8 +1676,8 @@ class MeshInterface:  # pylint: disable=R0902
 
         Raises
         ------
-        MeshInterfaceError
-            _description_
+        MeshInterface.MeshInterfaceError
+            If the wait times out before a waypoint acknowledgment is received.
         """
         success = self._timeout.waitForWaypoint(self._acknowledgment)
         if not success:
@@ -1709,9 +1688,8 @@ class MeshInterface:  # pylint: disable=R0902
 
         Returns
         -------
-        dict
+        dict | None
             The local node's node-info entry from `nodesByNum`, or `None` if `myInfo`
-        _type_
             or `nodesByNum` is unset or the local node entry is missing.
         """
         if self.myInfo is None or self.nodesByNum is None:
@@ -1811,8 +1789,6 @@ class MeshInterface:  # pylint: disable=R0902
             If waiting timed out.
         Exception
             Re-raises a stored fatal exception if one occurred during connection.
-        MeshInterfaceError
-            _description_
         """
         if not self.noProto:
             if not self.isConnected.wait(timeout):  # timeout after x seconds
@@ -1836,8 +1812,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If `currentPacketId` is None and a packet id cannot be generated.
-        MeshInterfaceError
-            _description_
         """
         if self.currentPacketId is None:
             raise MeshInterface.MeshInterfaceError(
@@ -1999,8 +1973,7 @@ class MeshInterface:  # pylint: disable=R0902
         ----------
         toRadio : mesh_pb2.ToRadio
             The ToRadio protobuf to send; if it contains a `packet` field
-        the contained MeshPacket will be queued for transmission. : _type_
-            _description_
+            the contained MeshPacket will be queued for transmission.
         """
         if self.noProto:
             logger.warning(
@@ -2086,7 +2059,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         Parameters
         ----------
-        queueStatus : _type_
+        queueStatus : mesh_pb2.QueueStatus
             An object (protobuf-like) with attributes `free`, `maxlen`,
             `res`, and `mesh_packet_id` describing the radio's transmit-queue state.
         """
@@ -2321,13 +2294,12 @@ class MeshInterface:  # pylint: disable=R0902
             When True treat the broadcast number as a destination (return
             BROADCAST_ADDR); when False treat it as an unknown source (return "Unknown"). (Default value = True)
         num : int
-            _description_
+            Numeric node identifier.
 
         Returns
         -------
-        _type_
+        str | None
             The node ID string, BROADCAST_ADDR for broadcast destinations, "Unknown" for
-        _type_
             broadcast sources, or `None` if the node number is not present in the local node map.
         """
         if num == BROADCAST_NUM:
@@ -2348,7 +2320,7 @@ class MeshInterface:  # pylint: disable=R0902
         Parameters
         ----------
         nodeNum : int
-            _description_
+            Numeric node identifier.
 
         Returns
         -------
@@ -2359,10 +2331,6 @@ class MeshInterface:  # pylint: disable=R0902
         ------
         MeshInterface.MeshInterfaceError
             If nodeNum is the broadcast node number or if the node database has not been initialized.
-        MeshInterfaceError
-            _description_
-        MeshInterfaceError
-            _description_
         """
         if nodeNum == BROADCAST_NUM:
             raise MeshInterface.MeshInterfaceError(
@@ -2429,7 +2397,7 @@ class MeshInterface:  # pylint: disable=R0902
         Returns
         -------
         None
-            _description_
+            This method does not return a value.
         """
         asDict = google.protobuf.json_format.MessageToDict(meshPacket)
 

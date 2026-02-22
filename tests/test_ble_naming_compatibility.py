@@ -27,7 +27,6 @@ def test_ble_client_naming_compatibility():
     assert hasattr(BLEClient, "close")
     assert hasattr(BLEClient, "async_await")
     assert hasattr(BLEClient, "async_run")
-
     # Explicit low-risk promotions
     assert hasattr(BLEClient, "isConnected")
     assert hasattr(BLEClient, "stopNotify")
@@ -36,19 +35,11 @@ def test_ble_client_naming_compatibility():
 
 
 def test_ble_diagnostic_naming_compatibility():
-    """Verify that legacy snake_case diagnostics are still available."""
-    from meshtastic.interfaces.ble.client import (
-        get_zombie_thread_count,
-        getZombieThreadCount,
-    )
-    from meshtastic.interfaces.ble.runner import (
-        get_zombie_runner_count,
-        getZombieRunnerCount,
-    )
+    """Verify that snake_case diagnostics are available."""
+    from meshtastic.interfaces.ble.client import get_zombie_thread_count
+    from meshtastic.interfaces.ble.runner import get_zombie_runner_count
 
-    assert getZombieThreadCount is not None
     assert get_zombie_thread_count is not None
-    assert getZombieRunnerCount is not None
     assert get_zombie_runner_count is not None
 
 

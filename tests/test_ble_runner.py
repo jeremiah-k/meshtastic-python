@@ -11,7 +11,7 @@ import pytest
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
-    getZombieRunnerCount,
+    get_zombie_runner_count,
 )
 
 
@@ -20,11 +20,6 @@ def ensure_runner_running():
     """Ensure the BLECoroutineRunner singleton is running for the duration of a test.
 
     Start the BLECoroutineRunner before the test and re-validate or restart it after the test to prevent singleton state leakage between tests. Intended for use as an autouse pytest fixture.
-
-    Yields
-    ------
-    _type_
-        _description_
     """
     runner = BLECoroutineRunner()
     runner._ensure_running()
@@ -156,13 +151,7 @@ class TestBLECoroutineRunner:
         assert future.cancelled()
 
     def test_ensure_running_timeout_raises(self, monkeypatch):
-        """_ensure_running should fail fast when loop readiness does not arrive.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """_ensure_running should fail fast when loop readiness does not arrive."""
         runner = BLECoroutineRunner()
         never_ready = threading.Event()
         monkeypatch.setattr(runner, "_start_locked", lambda: never_ready)
@@ -173,13 +162,7 @@ class TestBLECoroutineRunner:
     def test_run_coroutine_threadsafe_supports_startup_timeout_aliases(
         self, monkeypatch
     ):
-        """Both startup_timeout and legacy timeout should drive runner startup wait.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """Both startup_timeout and legacy timeout should drive runner startup wait."""
         runner = BLECoroutineRunner()
         observed_timeouts = []
 
@@ -198,7 +181,6 @@ class TestBLECoroutineRunner:
 
                 Returns
                 -------
-                _type_
                     True if the runner is active, False otherwise.
                 """
                 return True
@@ -230,13 +212,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
 
         async def _noop():
-            """Run a coroutine that does nothing.
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Run a coroutine that does nothing."""
             return None
 
         try:
@@ -248,13 +224,7 @@ class TestBLECoroutineRunner:
                 runner._loop = original_loop
 
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
-        """Legacy timeout alias should emit a deprecation warning.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """Legacy timeout alias should emit a deprecation warning."""
         runner = BLECoroutineRunner()
         monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
 
@@ -267,7 +237,6 @@ class TestBLECoroutineRunner:
 
                 Returns
                 -------
-                _type_
                     True if the runner is active, False otherwise.
                 """
                 return True
@@ -299,13 +268,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
 
         async def _noop():
-            """Run a coroutine that does nothing.
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Run a coroutine that does nothing."""
             return None
 
         try:
@@ -318,13 +281,7 @@ class TestBLECoroutineRunner:
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
     ):
-        """Explicit startup_timeout should not emit timeout-alias deprecation warnings.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """Explicit startup_timeout should not emit timeout-alias deprecation warnings."""
         runner = BLECoroutineRunner()
         monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
 
@@ -337,7 +294,6 @@ class TestBLECoroutineRunner:
 
                 Returns
                 -------
-                _type_
                     True if the runner is active, False otherwise.
                 """
                 return True
@@ -369,13 +325,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
 
         async def _noop():
-            """Run a coroutine that does nothing.
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Run a coroutine that does nothing."""
             return None
 
         try:
@@ -392,13 +342,7 @@ class TestBLECoroutineRunner:
         runner = BLECoroutineRunner()
 
         async def _noop():
-            """Run a coroutine that does nothing.
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Run a coroutine that does nothing."""
             return None
 
         coro = _noop()
@@ -432,7 +376,7 @@ class TestBLECoroutineRunner:
     def test_zombie_runner_count(self):
         """Verify zombie runner count is tracked."""
         # Initial count should be 0
-        initial_count = getZombieRunnerCount()
+        initial_count = get_zombie_runner_count()
 
         # Create runner and force a timeout scenario
         runner = BLECoroutineRunner()
@@ -454,7 +398,7 @@ class TestBLECoroutineRunner:
 
         # The count should still be the same since we didn't call stop() with timeout
         # (zombie count only increments when stop() times out)
-        current_count = getZombieRunnerCount()
+        current_count = get_zombie_runner_count()
 
         # Count should be >= initial (may have incremented if thread didn't exit)
         assert current_count >= initial_count
@@ -468,11 +412,8 @@ class TestBLECoroutineRunner:
             Methods
             -------
             is_running()
-                _description_
             stop()
-                _description_
             call_soon_threadsafe(fn)
-                _description_
             """
 
             def is_running(self) -> bool:
@@ -493,7 +434,6 @@ class TestBLECoroutineRunner:
                 Returns
                 -------
                 None
-                    _description_
                 """
                 return None
 
@@ -510,17 +450,10 @@ class TestBLECoroutineRunner:
         class FakeThread:
             """_summary_.
 
-            Attributes
-            ----------
-            join_calls : _type_
-                _description_
-
             Methods
             -------
             is_alive()
-                _description_
             join(timeout=None)
-                _description_
             """
 
             def __init__(self):
@@ -557,7 +490,7 @@ class TestBLECoroutineRunner:
         # Ensure we don't interfere with any real runner state.
         runner._stop()
 
-        initial_count = getZombieRunnerCount()
+        initial_count = get_zombie_runner_count()
         fake_thread = FakeThread()
         fake_loop = FakeLoop()
         with runner._instance_lock:
@@ -567,7 +500,7 @@ class TestBLECoroutineRunner:
 
         try:
             assert runner._stop(timeout=0.0) is False
-            assert getZombieRunnerCount() == initial_count + 1
+            assert get_zombie_runner_count() == initial_count + 1
             assert fake_thread.join_calls == [0.0]
         finally:
             # Restore singleton runner for subsequent tests.
@@ -578,13 +511,7 @@ class TestBLECoroutineRunner:
             runner._ensure_running()
 
     def test_stop_unregisters_atexit_handler(self, monkeypatch):
-        """Explicit stop should unregister the runner atexit callback.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """Explicit stop should unregister the runner atexit callback."""
         runner = BLECoroutineRunner()
         runner._ensure_running()
         unregister_calls = []
@@ -599,13 +526,7 @@ class TestBLECoroutineRunner:
         assert runner._atexit_registered is False
 
     def test_restart_reregisters_atexit_handler(self, monkeypatch):
-        """Runner restart should re-register the atexit callback after explicit stop.
-
-        Parameters
-        ----------
-        monkeypatch : _type_
-            _description_
-        """
+        """Runner restart should re-register the atexit callback after explicit stop."""
         runner = BLECoroutineRunner()
         runner._ensure_running()
         register_calls = []
@@ -700,12 +621,12 @@ class TestBLEClientWithRunner:
         assert "closed" in str(exc_info.value).lower()
 
     def test_get_zombie_thread_count_delegates_to_runner(self):
-        """Verify getZombieThreadCount uses the runner module."""
-        from meshtastic.interfaces.ble.client import getZombieThreadCount
+        """Verify get_zombie_thread_count uses the runner module."""
+        from meshtastic.interfaces.ble.client import get_zombie_thread_count
 
         # Should return same as runner function
-        runner_count = getZombieRunnerCount()
-        client_count = getZombieThreadCount()
+        runner_count = get_zombie_runner_count()
+        client_count = get_zombie_thread_count()
 
         assert client_count == runner_count
 
@@ -715,17 +636,9 @@ class TestBLEClientWithRunner:
         class ConnectedBleakClient:
             """_summary_.
 
-            Attributes
-            ----------
-            is_connected : _type_
-                _description_
-            disconnect_calls : _type_
-                _description_
-
             Methods
             -------
             disconnect()
-                _description_
             """
 
             def __init__(self):
@@ -760,7 +673,6 @@ class TestBLEClientWithRunner:
         Raises
         ------
         RuntimeError
-            _description_
         """
 
         class FailingBleakClient:

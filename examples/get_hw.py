@@ -1,5 +1,5 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/get_hw.py
+To run: python examples/get_hw.py.
 """
 
 import sys

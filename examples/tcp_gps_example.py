@@ -1,5 +1,5 @@
 """Demonstration of how to look up a radio's location via its LAN connection.
-   Before running, connect your machine to the same WiFi network as the radio.
+Before running, connect your machine to the same WiFi network as the radio.
 """
 
 import meshtastic

@@ -37,7 +37,6 @@ def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     Parameters
     ----------
     monkeypatch : pytest.MonkeyPatch
-        _description_
 
     Returns
     -------
@@ -72,11 +71,6 @@ def mock_pubsub(monkeypatch):
     The injected module exposes a `pub` attribute (a SimpleNamespace) with
     `subscribe` and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Returns
     -------
     module
@@ -99,14 +93,8 @@ def mock_publishing_thread(monkeypatch):
 
     The stub exposes a queueWork(callback) callable that invokes the provided callback immediately if it is truthy. The mocked module is registered under both "publishingThread" and "meshtastic.publishingThread".
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Returns
     -------
-    _type_
         The mocked publishingThread module inserted into sys.modules.
     """
     publishing_thread_module = types.ModuleType("publishingThread")
@@ -139,14 +127,8 @@ def mock_tabulate(monkeypatch):
 
     The fake module exposes a `tabulate(*args, **kwargs)` function that always returns an empty string.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Returns
     -------
-    _type_
         The fake `tabulate` module inserted into `sys.modules`.
     """
     tabulate_module = types.ModuleType("tabulate")
@@ -166,11 +148,6 @@ def mock_bleak(monkeypatch):
     `BLEDevice` (simple type with `address` and `name`),
     and `bleak.backends.device.BLEDevice` for compatibility.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-
     Returns
     -------
     types.ModuleType
@@ -182,27 +159,14 @@ def mock_bleak(monkeypatch):
     class _StubBleakClient:
         """_summary_.
 
-        Attributes
-        ----------
-        address : _type_
-            _description_
-        services : _type_
-            _description_
-
         Methods
         -------
         connect(**_kwargs)
-            _description_
         disconnect(**_kwargs)
-            _description_
         start_notify(*_args, **_kwargs)
-            _description_
         read_gatt_char(*_args, **_kwargs)
-            _description_
         write_gatt_char(*_args, **_kwargs)
-            _description_
         is_connected()
-            _description_
         """
 
         def __init__(self, address=None, **_kwargs):
@@ -212,7 +176,6 @@ def mock_bleak(monkeypatch):
             ----------
             address : str | None
                 BLE device address associated with this client, or None. (Default value = None)
-            **_kwargs : _type_
                 Additional keyword arguments are accepted and ignored.
 
             Attributes
@@ -232,8 +195,6 @@ def mock_bleak(monkeypatch):
             ----------
             _kwargs : dict
                 Arbitrary keyword arguments that are ignored.
-            **_kwargs : _type_
-                _description_
 
             Returns
             -------
@@ -243,48 +204,18 @@ def mock_bleak(monkeypatch):
             return None
 
         async def disconnect(self, **_kwargs):
-            """No-op disconnect that ignores any provided keyword arguments.
-
-            Parameters
-            ----------
-            **_kwargs : _type_
-                _description_
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """No-op disconnect that ignores any provided keyword arguments."""
             return None
 
         async def start_notify(self, *_args, **_kwargs):
             """Compatibility shim for the bleak start_notify API.
 
             Accepts and ignores positional and keyword arguments typically passed to `start_notify` (char_specifier, callback, *args, **kwargs) and performs no action.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
-
-            Returns
-            -------
-            _type_
-                _description_
             """
             return None
 
         async def read_gatt_char(self, *_args, **_kwargs):
             """Provide an empty value for any GATT characteristic read.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
 
             Returns
             -------
@@ -294,20 +225,7 @@ def mock_bleak(monkeypatch):
             return b""
 
         async def write_gatt_char(self, *_args, **_kwargs):
-            """Accept any positional and keyword arguments and perform no action.
-
-            Parameters
-            ----------
-            *_args : _type_
-                _description_
-            **_kwargs : _type_
-                _description_
-
-            Returns
-            -------
-            _type_
-                _description_
-            """
+            """Accept any positional and keyword arguments and perform no action."""
             return None
 
         def is_connected(self):
@@ -338,15 +256,7 @@ def mock_bleak(monkeypatch):
         return []
 
     class _StubBLEDevice:
-        """_summary_.
-
-        Attributes
-        ----------
-        address : _type_
-            _description_
-        name : _type_
-            _description_
-        """
+        """_summary_."""
 
         def __init__(self, address=None, name=None):
             """Create a minimal BLE device representation with an optional address and name.
@@ -374,11 +284,6 @@ def mock_bleak(monkeypatch):
         @staticmethod
         async def discover(**_kwargs):
             """Simulate BLE device discovery.
-
-            Parameters
-            ----------
-            **_kwargs : _type_
-                _description_
 
             Returns
             -------
@@ -415,16 +320,8 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
 
     The created module is attached to the provided `mock_bleak` as its `exc` attribute and inserted into `sys.modules` under the name `"bleak.exc"`.
 
-    Parameters
-    ----------
-    monkeypatch : _type_
-        _description_
-    mock_bleak : _type_
-        _description_
-
     Returns
     -------
-    _type_
         The created `bleak.exc` module.
     """
     bleak_exc_module = types.ModuleType("bleak.exc")
@@ -489,7 +386,6 @@ class DummyClient:
 
         Parameters
         ----------
-        _specifier : _type_
             Identifier of the characteristic to check (for example, a UUID string or characteristic object).
 
         Returns
@@ -503,18 +399,6 @@ class DummyClient:
         """Simulate subscribing to a BLE characteristic notification for tests.
 
         Accepts any arguments and performs no action.
-
-        Parameters
-        ----------
-        *_args : _type_
-            _description_
-        **_kwargs : _type_
-            _description_
-
-        Returns
-        -------
-        _type_
-            _description_
         """
         return None
 
@@ -522,49 +406,17 @@ class DummyClient:
         """Simulate unsubscribing from BLE notifications during tests.
 
         When a positional characteristic argument is provided, appends the first positional argument to the instance's stop_notify_calls list for later inspection.
-
-        Parameters
-        ----------
-        *args : _type_
-            _description_
-        **_kwargs : _type_
-            _description_
-
-        Returns
-        -------
-        _type_
-            _description_
         """
         if args:
             self.stop_notify_calls.append(args[0])
         return None
 
     def stop_notify(self, *args, **kwargs):
-        """Backward-compatible snake_case alias for stopNotify.
-
-        Parameters
-        ----------
-        *args : _type_
-            _description_
-        **kwargs : _type_
-            _description_
-
-        Returns
-        -------
-        _type_
-            _description_
-        """
+        """Backward-compatible snake_case alias for stopNotify."""
         return self.stopNotify(*args, **kwargs)
 
     def read_gatt_char(self, *_args, **_kwargs) -> bytes:
         """Provide a fixed empty-bytes response for any GATT characteristic read.
-
-        Parameters
-        ----------
-        *_args : _type_
-            _description_
-        **_kwargs : _type_
-            _description_
 
         Returns
         -------
@@ -589,7 +441,6 @@ class DummyClient:
         Returns
         -------
         bool
-            _description_
         """
         return self.isConnected()
 
@@ -597,13 +448,6 @@ class DummyClient:
         """Record a disconnect invocation and optionally raise a configured exception.
 
         Increments the instance's `disconnect_calls` counter. If `disconnect_exception` is set, that exception is raised instead of returning normally.
-
-        Parameters
-        ----------
-        *_args : _type_
-            _description_
-        **_kwargs : _type_
-            _description_
 
         Raises
         ------
@@ -622,13 +466,7 @@ class DummyClient:
         self.close_calls += 1
 
     def _get_services(self):
-        """Stub for _get_services.
-
-        Returns
-        -------
-        _type_
-            _description_
-        """
+        """Stub for _get_services."""
         return self.services
 
 
@@ -648,28 +486,9 @@ def stub_atexit(
 
     Parameters
     ----------
-    monkeypatch : _type_
         pytest.MonkeyPatch
         Fixture used to apply the attribute patches.
-    mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread: : _type_
         Fixtures accepted solely to enforce fixture ordering; not otherwise used.
-    mock_serial : _type_
-        _description_
-    mock_pubsub : _type_
-        _description_
-    mock_tabulate : _type_
-        _description_
-    mock_bleak : _type_
-        _description_
-    mock_bleak_exc : _type_
-        _description_
-    mock_publishing_thread : _type_
-        _description_
-
-    Yields
-    ------
-    _type_
-        _description_
     """
     registered = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).
@@ -765,9 +584,7 @@ def _build_interface(
             BLEInterface-like instance being patched.
         _address : str | None
             Address passed to connect; recorded in the module-level `connect_calls`.
-        *args : _type_
             Additional positional arguments (ignored).
-        **kwargs : _type_
             Additional keyword arguments (ignored).
 
         Returns
@@ -791,7 +608,6 @@ def _build_interface(
         Returns
         -------
         None
-            _description_
         """
         return None
 
@@ -803,12 +619,10 @@ def _build_interface(
         Parameters
         ----------
         name : str
-            _description_
 
         Returns
         -------
         None
-            _description_
         """
         _ = (_self, name)
         return None

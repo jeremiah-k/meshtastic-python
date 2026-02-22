@@ -5,7 +5,7 @@ from datetime import datetime
 
 
 class PowerError(Exception):
-    """An exception class for powermon errors"""
+    """An exception class for powermon errors."""
 
     def __init__(self, message):
         self.message = message
@@ -23,7 +23,7 @@ class PowerMeter:
         """Close the power meter."""
 
     def get_average_current_mA(self) -> float:
-        """Returns average current of last measurement in mA (since last call to this method)"""
+        """Returns average current of last measurement in mA (since last call to this method)."""
         return math.nan
 
     def get_min_current_mA(self):

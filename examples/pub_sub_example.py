@@ -1,5 +1,5 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/pub_sub_example.py
+To run: python examples/pub_sub_example.py.
 """
 
 import sys

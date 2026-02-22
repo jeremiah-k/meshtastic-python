@@ -39,7 +39,7 @@ class RidenPowerSupply(PowerSupply):
         self.r.set_output(1)
 
     def get_average_current_mA(self) -> float:
-        """Returns average current of last measurement in mA (since last call to this method)"""
+        """Returns average current of last measurement in mA (since last call to this method)."""
         now = datetime.now()
         nowWattHour = self._getRawWattHour()
         watts = (

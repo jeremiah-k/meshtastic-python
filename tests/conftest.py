@@ -12,16 +12,10 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture
 def clear_registry() -> Iterator[None]:
-    """Reset BLE gating global registries before and after each test.
-
-    Yields
-    ------
-    None
-        _description_
-    """
-    gating.clearAllRegistries()
+    """Reset BLE gating global registries before and after each test."""
+    gating._clear_all_registries()
     yield
-    gating.clearAllRegistries()
+    gating._clear_all_registries()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -29,11 +23,6 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
     """Ensure BLECoroutineRunner is stopped at the end of the test session.
 
     This prevents the runner's background thread from hanging during pytest exit.
-
-    Yields
-    ------
-    None
-        _description_
     """
     yield
     # Stop the BLECoroutineRunner singleton at session end
