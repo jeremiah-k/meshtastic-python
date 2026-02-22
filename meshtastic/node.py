@@ -276,11 +276,15 @@ class Node:
                     logger.warning("Received empty config response from node.")
                     return
                 field = next(iter(resp.keys()))
-                config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(
-                    camel_to_snake(field)
-                )
-                if config_type is not None:
-                    config_values = getattr(self.localConfig, config_type.name)
+                field_name = camel_to_snake(field)
+                config_type = self.localConfig.DESCRIPTOR.fields_by_name.get(field_name)
+                if config_type is None:
+                    logger.warning(
+                        "Ignoring unknown LocalConfig field in getConfigResponse: %s",
+                        field_name,
+                    )
+                    return
+                config_values = getattr(self.localConfig, config_type.name)
             elif "getModuleConfigResponse" in adminMessage:
                 oneof = "get_module_config_response"
                 resp = adminMessage["getModuleConfigResponse"]
@@ -288,11 +292,17 @@ class Node:
                     logger.warning("Received empty module config response from node.")
                     return
                 field = next(iter(resp.keys()))
+                field_name = camel_to_snake(field)
                 config_type = self.moduleConfig.DESCRIPTOR.fields_by_name.get(
-                    camel_to_snake(field)
+                    field_name
                 )
-                if config_type is not None:
-                    config_values = getattr(self.moduleConfig, config_type.name)
+                if config_type is None:
+                    logger.warning(
+                        "Ignoring unknown ModuleConfig field in getModuleConfigResponse: %s",
+                        field_name,
+                    )
+                    return
+                config_values = getattr(self.moduleConfig, config_type.name)
             else:
                 logger.warning(
                     "Did not receive a valid response. Make sure to have a shared channel named 'admin'."
@@ -1693,6 +1703,12 @@ class Node:
         channels = self.channels
         if channels is None:
             return
+
+        if len(channels) > 8:
+            logger.warning(
+                "Truncating channel list from %d to 8 entries", len(channels)
+            )
+            del channels[8:]
 
         # Add extra disabled channels as needed
         # This is needed because the protobufs will have index **missing** if the channel number is zero

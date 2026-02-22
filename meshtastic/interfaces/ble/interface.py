@@ -1815,7 +1815,7 @@ class BLEInterface(MeshInterface):
 
         # Release lock before calling MeshInterface.close() to avoid deadlock
         # If MeshInterface.close() acquires locks that other paths also acquire, holding state_lock would cause lock inversion
-        if self._shutdown_event:
+        if self._shutdown_event is not None:
             self._shutdown_event.set()
 
         self._set_receive_wanted(False)  # Tell the thread we want it to stop
@@ -1968,6 +1968,8 @@ class BLEInterface(MeshInterface):
         connected : bool
             True when the interface is connected, False when disconnected.
         """
+        # Lazy import avoids circular dependency with mesh_interface; `pub` is
+        # module-level/runtime-injected there and not exposed in type stubs.
         from meshtastic.mesh_interface import (
             pub as mesh_pub,  # type: ignore[attr-defined]
         )

@@ -11,14 +11,14 @@
 
 - [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)
 - also execute `poetry install --all-extras --with dev,powermon` for all optional dependencies
-- check your code with github ci actions locally
+- check your code with GitHub CI actions locally
   - You need to have act installed. You can get it at https://nektosact.com/
-  - on linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
-  - on windows:
-    - linux checks (linux docker): `act --matrix "python-version:3.12"`
-    - windows checks (windows host): `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
+  - on Linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
+  - on Windows:
+    - Linux checks (Linux docker): `act --matrix "python-version:3.12"`
+    - Windows checks (Windows host): `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
 - or run all locally:
   - run `poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"`
   - run `poetry run mypy meshtastic/`
   - run `poetry run pytest`
-  - more commands see [CI workflow](https://github.com/meshtastic/python/blob/master/.github/workflows/ci.yml)
+  - more commands see [CI workflow](workflows/ci.yml)

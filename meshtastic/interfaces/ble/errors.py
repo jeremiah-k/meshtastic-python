@@ -1,14 +1,14 @@
 """Error handling utilities for BLE operations."""
 
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Callable, Type, TypeVar
+from typing import Any, Callable, TypeVar
 
 from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.constants import logger
 
 # Import DecodeError from protobuf, or create a fallback if not available
-DecodeError: Type[Exception]
+DecodeError: type[Exception]
 try:
     from google.protobuf.message import DecodeError as _ProtobufDecodeError
 except ImportError:

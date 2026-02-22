@@ -1,7 +1,7 @@
 """Remote hardware."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Type
+from typing import TYPE_CHECKING, Any, Callable
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -17,15 +17,15 @@ NO_GPIO_CHANNEL_ERROR = (
     "On the sending and receiving nodes create a channel named 'gpio'."
 )
 
-_MESH_INTERFACE_ERROR: Type[Exception] | None = None
+_MESH_INTERFACE_ERROR: type[Exception] | None = None
 
 
-def _get_mesh_interface_error() -> Type[Exception]:
+def _get_mesh_interface_error() -> type[Exception]:
     """Resolve MeshInterfaceError lazily to avoid module-import cycles.
 
     Returns
     -------
-    MeshInterfaceError : Type[Exception]
+    MeshInterfaceError : type[Exception]
         The cached MeshInterface.MeshInterfaceError exception class.
     """
     global _MESH_INTERFACE_ERROR  # pylint: disable=global-statement

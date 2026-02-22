@@ -614,6 +614,7 @@ def test_acknowledgement_reset():
     assert test_ack_obj.receivedWaypoint is False
 
 
+@pytest.mark.unitslow
 @given(
     a_string=st.text(
         alphabet=st.characters(
@@ -633,6 +634,7 @@ def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
     assert a_string == value1, (a_string, value1)
 
 
+@pytest.mark.unitslow
 @given(st.text())
 def test_fuzz_camel_to_snake(a_string):
     """Test that camel_to_snake produces outputs with underscores for multi-word camelcase."""
@@ -640,6 +642,7 @@ def test_fuzz_camel_to_snake(a_string):
     assert "_" in result or result == a_string.lower().replace("_", "")
 
 
+@pytest.mark.unitslow
 @given(st.text())
 def test_fuzz_snake_to_camel(a_string):
     """Test that snake_to_camel satisfies core invariants."""
@@ -655,6 +658,7 @@ def test_snake_to_camel_examples() -> None:
     assert snake_to_camel("alreadyCamel") == "alreadyCamel"
 
 
+@pytest.mark.unitslow
 @given(st.text())
 def test_fuzz_stripnl(s):
     """Test that stripnl always takes away newlines."""
@@ -662,6 +666,7 @@ def test_fuzz_stripnl(s):
     assert "\n" not in result
 
 
+@pytest.mark.unitslow
 @given(st.binary())
 def test_fuzz_pskToString(psk):
     """Test that pskToString produces sane output for any bytes."""
@@ -680,6 +685,7 @@ def test_fuzz_pskToString(psk):
         assert result == "secret"
 
 
+@pytest.mark.unitslow
 @given(
     st.text(
         alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
@@ -707,6 +713,7 @@ def test_fuzz_fromStr_non_prefixed(valstr):
                 assert isinstance(result, str)
 
 
+@pytest.mark.unitslow
 @given(
     st.text(
         alphabet=st.sampled_from(list("0123456789abcdefABCDEF")),
@@ -724,6 +731,7 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits):
     assert fromStr(f"0x{hex_digits}") == bytes.fromhex(expected_hex)
 
 
+@pytest.mark.unitslow
 @given(
     st.text(
         alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x7E),
@@ -740,6 +748,7 @@ def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
         fromStr(f"0x{hex_digits}")
 
 
+@pytest.mark.unitslow
 @given(st.binary(max_size=256))
 def test_fuzz_fromStr_base64_roundtrip(raw_value):
     """Test that fromStr round-trips valid base64-prefixed payloads."""
@@ -747,6 +756,7 @@ def test_fuzz_fromStr_base64_roundtrip(raw_value):
     assert fromStr(f"base64:{encoded}") == raw_value
 
 
+@pytest.mark.unitslow
 @given(
     st.text(
         alphabet=st.sampled_from(
@@ -779,6 +789,7 @@ def _base64_payload_with_single_invalid_char(draw):
     return "".join(chars)
 
 
+@pytest.mark.unitslow
 @given(_base64_payload_with_single_invalid_char())
 def test_fuzz_fromStr_base64_invalid_chars_raises(base64_payload):
     """Test that fromStr raises for base64 payloads containing invalid characters."""
@@ -804,6 +815,7 @@ def test_channel_hash_basics():
     assert channel_hash("LongFast".encode("utf-8")) == 10
 
 
+@pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12))
 def test_channel_hash_fuzz(channel_name):
     """Test channel_hash with fuzzed channel names, ensuring it produces single-byte values."""
