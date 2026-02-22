@@ -285,10 +285,11 @@ class BLEInterface(MeshInterface):
             # and future connection attempts will fail.  (BlueZ kinda sucks)
             # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
             self._exit_handler = atexit.register(self.close)
-        except Exception as e:
+        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
             self.close()
-            if isinstance(e, BLEInterface.BLEError):
-                raise
+            raise
+        except (BleakError, BLEClient.BLEError, OSError, RuntimeError) as e:
+            self.close()
             raise BLEInterface.BLEError(ERROR_CONNECTION_FAILED.format(e)) from e
 
     def __repr__(self) -> str:
