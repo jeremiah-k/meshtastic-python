@@ -49,20 +49,20 @@ DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
 def quoteBooleans(a_string: str) -> str:
     """Replace occurrences of the literal substrings ": true" and ": false" with ": 'true'" and ": 'false'".
 
-        Only the exact, case-sensitive substrings are replaced; other variants (e.g.,
-        "True", "true,", or without the leading colon and space) are not
-        modified.
+    Only the exact, case-sensitive substrings are replaced; other variants (e.g.,
+    "True", "true,", or without the leading colon and space) are not
+    modified.
 
-        Parameters
-        ----------
-        a_string : str
-            Input string to process.
+    Parameters
+    ----------
+    a_string : str
+        Input string to process.
 
-        Returns
-        -------
-        str
-            The input string with matching boolean literals quoted.
-        """
+    Returns
+    -------
+    str
+        The input string with matching boolean literals quoted.
+    """
     tmp: str = a_string.replace(": true", ": 'true'")
     tmp = tmp.replace(": false", ": 'false'")
     return tmp
@@ -166,18 +166,18 @@ def fromStr(valstr: str) -> Any:
 def toStr(raw_value: Any) -> str:
     """Convert a value into a string suitable for configuration storage.
 
-        For `bytes`, returns "base64:<data>" where `<data>` is the base64 encoding of the bytes; otherwise returns `str(raw_value)`.
+    For `bytes`, returns "base64:<data>" where `<data>` is the base64 encoding of the bytes; otherwise returns `str(raw_value)`.
 
-        Parameters
-        ----------
-        raw_value : Any
-            Value to convert to string.
+    Parameters
+    ----------
+    raw_value : Any
+        Value to convert to string.
 
-        Returns
-        -------
-        str
-            A string suitable for storing in configuration — "base64:<data>" for bytes, otherwise the result of `str(raw_value)`.
-        """
+    Returns
+    -------
+    str
+        A string suitable for storing in configuration — "base64:<data>" for bytes, otherwise the result of `str(raw_value)`.
+    """
     if isinstance(raw_value, bytes):
         return "base64:" + base64.b64encode(raw_value).decode("utf-8")
     return str(raw_value)
@@ -238,21 +238,21 @@ class FixmeError(Exception):
 def fixme(message: str) -> NoReturn:
     """Raise a FixmeError with the given message prefixed by "FIXME: ".
 
-        Parameters
-        ----------
-        message : str
-            Message to include in the exception.
+    Parameters
+    ----------
+    message : str
+        Message to include in the exception.
 
-        Raises
-        ------
-        FixmeError
-            Always raised with the message prefixed by "FIXME: ".
-        """
+    Raises
+    ------
+    FixmeError
+        Always raised with the message prefixed by "FIXME: ".
+    """
     raise FixmeError("FIXME: " + message)
 
 
 def our_exit(message: str, return_value: int = 1) -> NoReturn:
-    """Prints the given message to standard output and exits the process with the specified return code.
+    """Print the given message to standard output and exit the process with the specified return code.
 
     Parameters
     ----------
@@ -341,7 +341,7 @@ class dotdict(DotDict):  # pylint: disable=invalid-name
     """Backward-compatible deprecated alias for DotDict."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initializer for the deprecated `dotdict` alias that forwards arguments to dict
+        """Initialize the deprecated `dotdict` alias, forwarding arguments to dict
         initialization and emits a DeprecationWarning advising to use `DotDict`.
 
         Parameters
@@ -448,7 +448,7 @@ class Timeout:
         acknowledgment: "Acknowledgment",
         attr: str = "receivedTraceRoute",
     ) -> bool:
-        """Waits up to an adjusted timeout for a traceroute acknowledgment flag on the given Acknowledgment to become set.
+        """Wait up to an adjusted timeout for a traceroute acknowledgment flag on the given Acknowledgment to become set.
 
         Parameters
         ----------
@@ -647,16 +647,16 @@ def remove_keys_from_dict(keys: tuple | list | set, adict: dict) -> dict:
 def channel_hash(data: bytes) -> int:
     """Compute an XOR-based hash of the given byte sequence.
 
-        Parameters
-        ----------
-        data : bytes
-            Byte sequence to hash.
+    Parameters
+    ----------
+    data : bytes
+        Byte sequence to hash.
 
-        Returns
-        -------
-        int
-            Integer hash equal to the bitwise XOR of all bytes in `data`.
-        """
+    Returns
+    -------
+    int
+        Integer hash equal to the bitwise XOR of all bytes in `data`.
+    """
     result = 0
     for char in data:
         result ^= char
@@ -700,16 +700,16 @@ def generate_channel_hash(name: str | bytes, key: str | bytes) -> int:
 def hexstr(barray: bytes) -> str:
     """Convert a byte sequence to a colon-separated lowercase hex string.
 
-        Parameters
-        ----------
-        barray : bytes
-            Byte sequence to convert.
+    Parameters
+    ----------
+    barray : bytes
+        Byte sequence to convert.
 
-        Returns
-        -------
-        str
-            Colon-separated two-digit lowercase hexadecimal pairs representing the input bytes (e.g., "01:ab:ff").
-        """
+    Returns
+    -------
+    str
+        Colon-separated two-digit lowercase hexadecimal pairs representing the input bytes (e.g., "01:ab:ff").
+    """
     return ":".join(f"{x:02x}" for x in barray)
 
 
@@ -811,15 +811,15 @@ def camel_to_snake(a_string: str) -> str:
 def detect_supported_devices() -> set:
     """Detect available supported USB devices on the host by matching discovered vendor IDs against known supported vendor IDs.
 
-        Searches the host OS for attached USB devices (Linux: lsusb, Windows: Get-PnpDevice
-        via PowerShell, macOS: system_profiler) and collects any devices whose vendor IDs
-        appear in the module's known vendor list.
+    Searches the host OS for attached USB devices (Linux: lsusb, Windows: Get-PnpDevice
+    via PowerShell, macOS: system_profiler) and collects any devices whose vendor IDs
+    appear in the module's known vendor list.
 
-        Returns
-        -------
-        set[SupportedDevice]
-            A set of supported device descriptors for matching devices; empty set if none are found.
-        """
+    Returns
+    -------
+    set[SupportedDevice]
+        A set of supported device descriptors for matching devices; empty set if none are found.
+    """
     system: str = platform.system()
     # print(f'system:{system}')
 
@@ -964,7 +964,7 @@ def eliminate_duplicate_port(ports: list) -> list:
 
 
 def is_windows11() -> bool:
-    """Detects whether the host operating system is Windows 11.
+    """Detect whether the host operating system is Windows 11.
 
     Returns
     -------
@@ -1003,16 +1003,16 @@ def get_unique_vendor_ids() -> set[str]:
 def get_devices_with_vendor_id(vid: str) -> set:  # set[SupportedDevice]
     """Get supported devices matching a USB vendor ID.
 
-        Parameters
-        ----------
-        vid : str
-            USB vendor ID as a hex string (e.g., "0x239A").
+    Parameters
+    ----------
+    vid : str
+        USB vendor ID as a hex string (e.g., "0x239A").
 
-        Returns
-        -------
-        set[SupportedDevice]
-            Set of SupportedDevice entries whose `usb_vendor_id_in_hex` equals `vid`.
-        """
+    Returns
+    -------
+    set[SupportedDevice]
+        Set of SupportedDevice entries whose `usb_vendor_id_in_hex` equals `vid`.
+    """
     sd = set()
     for d in supported_devices:
         if d.usb_vendor_id_in_hex == vid:
@@ -1047,22 +1047,22 @@ def _discover_unix_ports(bp: str) -> set[str]:
 def active_ports_on_supported_devices(
     sds: Any, eliminate_duplicates: bool = False
 ) -> set[str]:
-    """Collects active serial port paths corresponding to the given supported devices for the current operating system.
+    """Collect active serial port paths corresponding to the given supported devices for the current operating system.
 
-        Parameters
-        ----------
-        sds : Iterable[SupportedDevice]
-            An iterable of SupportedDevice-like objects that expose
-            platform-specific base port attributes (e.g., `baseport_on_linux`,
-            `baseport_on_mac`, `baseport_on_windows`) used to discover matching ports.
-        eliminate_duplicates : bool
-            If True, collapse likely duplicate port entries using platform-dependent heuristics before returning. (Default value = False)
+    Parameters
+    ----------
+    sds : Iterable[SupportedDevice]
+        An iterable of SupportedDevice-like objects that expose
+        platform-specific base port attributes (e.g., `baseport_on_linux`,
+        `baseport_on_mac`, `baseport_on_windows`) used to discover matching ports.
+    eliminate_duplicates : bool
+        If True, collapse likely duplicate port entries using platform-dependent heuristics before returning. (Default value = False)
 
-        Returns
-        -------
-        set[str]
-            A set of active port path strings (for example, "/dev/ttyUSB0" on Unix or "COM3" on Windows).
-        """
+    Returns
+    -------
+    set[str]
+        A set of active port path strings (for example, "/dev/ttyUSB0" on Unix or "COM3" on Windows).
+    """
     ports: set = set()
     baseports: set = set()
     system: str = platform.system()
@@ -1259,19 +1259,19 @@ def to_node_num(node_id: int | str) -> int:
 def flags_to_list(flag_type: Any, flags: int) -> list[str]:
     """Convert a protobuf enum bitfield into a list of active flag names.
 
-        Parameters
-        ----------
-        flag_type : Any
-            Protobuf EnumTypeWrapper providing `.keys()` and `.Value(name)` for enum members.
-        flags : int
-            Integer bitfield containing combined enum flag values.
+    Parameters
+    ----------
+    flag_type : Any
+        Protobuf EnumTypeWrapper providing `.keys()` and `.Value(name)` for enum members.
+    flags : int
+        Integer bitfield containing combined enum flag values.
 
-        Returns
-        -------
-        list[str]
-            Ordered list of enum member names present in `flags`. If any bits remain that do not match known members,
-            a single string of the form `UNKNOWN_ADDITIONAL_FLAGS(<remaining>)` is appended.
-        """
+    Returns
+    -------
+    list[str]
+        Ordered list of enum member names present in `flags`. If any bits remain that do not match known members,
+        a single string of the form `UNKNOWN_ADDITIONAL_FLAGS(<remaining>)` is appended.
+    """
     ret = []
     for key in flag_type.keys():
         if key == "EXCLUDED_NONE":

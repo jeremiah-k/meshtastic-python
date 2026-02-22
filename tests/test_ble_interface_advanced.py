@@ -1004,6 +1004,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
         add_done_callback(callback)
             _description_
         """
+
         def __init__(self):
             """Create a cancellation tracker for an asynchronous operation.
 
@@ -1129,6 +1130,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
         cancel()
             _description_
         """
+
         def __init__(self):
             """Initialize the fake future object.
 

@@ -204,6 +204,7 @@ def mock_bleak(monkeypatch):
         is_connected()
             _description_
         """
+
         def __init__(self, address=None, **_kwargs):
             """Initialize a minimal test BLE client with an associated address and a lightweight services shim.
 
@@ -346,6 +347,7 @@ def mock_bleak(monkeypatch):
         name : _type_
             _description_
         """
+
         def __init__(self, address=None, name=None):
             """Create a minimal BLE device representation with an optional address and name.
 
@@ -361,6 +363,7 @@ def mock_bleak(monkeypatch):
 
     class _StubBleakScanner:
         """_summary_."""
+
         def __init__(self):
             """Initialize a BleakScanner stub that reports no BLE devices.
 
@@ -428,10 +431,12 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
 
     class _StubBleakError(Exception):
         """_summary_."""
+
         pass
 
     class _StubBleakDBusError(_StubBleakError):
         """_summary_."""
+
         pass
 
     bleak_exc_module.BleakError = _StubBleakError

@@ -304,7 +304,7 @@ class Tunnel:
         return None
 
     def _nodeNumToIp(self, nodeNum):
-        """Constructs an IPv4 address in the tunnel subnet for a given node number.
+        """Construct an IPv4 address in the tunnel subnet for a given node number.
 
         Parameters
         ----------

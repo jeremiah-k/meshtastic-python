@@ -26,7 +26,7 @@ class NotificationManager:
         - _characteristic_to_callback: maps a characteristic UUID to the most recently registered callback.
         - _subscription_counter: monotonic counter used to allocate unique subscription tokens.
         - _lock: re-entrant lock protecting access to subscription state.
-        
+
         Returns
         -------
         None
@@ -107,7 +107,7 @@ class NotificationManager:
         """Clear all tracked BLE notification subscriptions and per-characteristic callbacks.
 
         Removes every active subscription entry, clears the characteristic-to-callback mapping, and resets the subscription token counter to zero. This operation is performed while holding the manager's internal lock.
-        
+
         Returns
         -------
         None
@@ -135,7 +135,7 @@ class NotificationManager:
             BLE client used to stop notifications.
         timeout : float | None
             Per-unsubscribe timeout passed to the client's `stopNotify` method; may be None.
-        
+
         Returns
         -------
         None
@@ -182,7 +182,7 @@ class NotificationManager:
             BLE client on which to call `start_notify` for each characteristic.
         timeout : float
             Per-subscription timeout to pass to the client's `start_notify` method.
-        
+
         Returns
         -------
         None

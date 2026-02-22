@@ -53,6 +53,7 @@ if TYPE_CHECKING:
         sendMessage(topic: str, **kwargs: Any)
             _description_
         """
+
         def sendMessage(self, topic: str, **kwargs: Any) -> None:
             """Publish a message to the specified pubsub topic.
 
@@ -736,6 +737,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
 
     class StubTransientPolicy:
         """_summary_."""
+
         def _should_retry(self, attempt: int) -> bool:
             """Decide whether to perform another retry based on the zero-based attempt index.
 
@@ -1196,6 +1198,7 @@ def test_discovery_manager_destructor_does_not_close_client():
         close()
             _description_
         """
+
         def __init__(self):
             """Initialize the test stub and reset its close-call counter.
 
@@ -1696,6 +1699,7 @@ def test_reconnect_scheduler_tracks_threads():
         created : _type_
             _description_
         """
+
         def __init__(self):
             """Initialize the instance and prepare storage for items created during tests.
 
@@ -1780,6 +1784,7 @@ def test_reconnect_worker_successful_attempt():
         reset_called : _type_
             _description_
         """
+
         def __init__(self):
             """Initialize the stub retry policy used by reconnect tests.
 
@@ -1847,6 +1852,7 @@ def test_reconnect_worker_successful_attempt():
         connect(address)
             _description_
         """
+
         BLEError = RuntimeError
 
         def __init__(self):
@@ -1967,6 +1973,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
         attempts : _type_
             _description_
         """
+
         def __init__(self):
             """Initialize a stub reconnect policy for tests, resetting counters and flags.
 
@@ -2030,6 +2037,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
         connect(*_args, **_kwargs)
             _description_
         """
+
         BLEError = RuntimeError
 
         def __init__(self):

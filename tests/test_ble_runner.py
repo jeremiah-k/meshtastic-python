@@ -191,6 +191,7 @@ class TestBLECoroutineRunner:
 
         class _LoopStub:
             """_summary_."""
+
             @staticmethod
             def is_running():
                 """Report whether the BLE coroutine runner is currently active.
@@ -259,6 +260,7 @@ class TestBLECoroutineRunner:
 
         class _LoopStub:
             """_summary_."""
+
             @staticmethod
             def is_running():
                 """Report whether the BLE coroutine runner is currently active.
@@ -328,6 +330,7 @@ class TestBLECoroutineRunner:
 
         class _LoopStub:
             """_summary_."""
+
             @staticmethod
             def is_running():
                 """Report whether the BLE coroutine runner is currently active.
@@ -471,6 +474,7 @@ class TestBLECoroutineRunner:
             call_soon_threadsafe(fn)
                 _description_
             """
+
             def is_running(self) -> bool:
                 """Report whether the runner's event loop thread is currently active.
 
@@ -518,6 +522,7 @@ class TestBLECoroutineRunner:
             join(timeout=None)
                 _description_
             """
+
             def __init__(self):
                 """Initialize the fake thread and prepare a list to record calls to `join`.
 
@@ -722,6 +727,7 @@ class TestBLEClientWithRunner:
             disconnect()
                 _description_
             """
+
             def __init__(self):
                 """Initialize the mock connected bleak client state.
 
@@ -759,6 +765,7 @@ class TestBLEClientWithRunner:
 
         class FailingBleakClient:
             """_summary_."""
+
             isConnected = True
 
             @staticmethod

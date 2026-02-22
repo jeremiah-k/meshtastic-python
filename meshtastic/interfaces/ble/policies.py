@@ -189,7 +189,7 @@ class ReconnectPolicy:
         ----------
         attempt : int
             Zero-based attempt index used to compute the delay.
-        
+
         Returns
         -------
         None
@@ -207,7 +207,7 @@ class _PolicyDescriptor:
         ----------
         factory_name : str
             Name of the factory method attribute on the owner class.
-        
+
         Returns
         -------
         None

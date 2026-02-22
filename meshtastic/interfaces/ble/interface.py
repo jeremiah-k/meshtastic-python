@@ -1263,7 +1263,7 @@ class BLEInterface(MeshInterface):
         -------
         client_and_keys : tuple[BLEClient, str | None, str | None]
             A tuple containing the connected BLE client, the connected device key, and the connection alias key.
-        
+
         Notes
         -----
         Must be called while holding _connect_lock.

@@ -97,7 +97,7 @@ class TCPInterface(StreamInterface):
         return rep
 
     def _socket_shutdown(self) -> None:
-        """Initiates a bidirectional shutdown of the underlying socket if one exists.
+        """Initiate a bidirectional shutdown of the underlying socket if one exists.
 
         Does nothing when no socket is present.
         """
@@ -105,7 +105,7 @@ class TCPInterface(StreamInterface):
             self.socket.shutdown(socket.SHUT_RDWR)
 
     def myConnect(self) -> None:
-        """Establishes a TCP connection to the instance hostname and port.
+        """Establish a TCP connection to the instance hostname and port.
 
         Stores the resulting connected socket on self.socket.
         """
@@ -217,6 +217,8 @@ class TCPInterface(StreamInterface):
                 if self._wantExit:
                     return None
                 self.myConnect()
+                # After myConnect(), socket is guaranteed to be set
+                assert self.socket is not None
                 if self._wantExit:
                     # close() may race while we reconnect; tear down the new socket
                     with contextlib.suppress(Exception):

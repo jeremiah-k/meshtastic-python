@@ -1,10 +1,11 @@
+# pylint: disable=too-many-lines
 """Node class for representing and managing mesh nodes.
 
 This module provides the Node class which represents a (local or remote) node
 in the mesh, including methods for localConfig, moduleConfig, and channels management.
 """
 
-# pylint: disable=too-many-lines
+
 
 import base64
 import binascii
@@ -133,7 +134,7 @@ class Node:
 
     @staticmethod
     def excluded_modules_list(excluded_modules: int) -> list[str]:
-        """Converts an ExcludedModules bitfield to a list of excluded module names.
+        """Convert an ExcludedModules bitfield to a list of excluded module names.
 
         Parameters
         ----------
@@ -351,7 +352,7 @@ class Node:
         self.writeChannel(0)
 
     def waitForConfig(self, attribute: str = "channels") -> bool:
-        """Waits until a given attribute on the node's localConfig is populated or the timeout elapses.
+        """Wait until a given attribute on the node's localConfig is populated or the timeout elapses.
 
         Parameters
         ----------
@@ -584,7 +585,7 @@ class Node:
         return None
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
-        """Finds the first channel whose role is DISABLED.
+        """Find the first channel whose role is DISABLED.
 
         Returns
         -------

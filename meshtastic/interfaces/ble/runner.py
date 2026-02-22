@@ -77,8 +77,6 @@ class BLECoroutineRunner:
         - The runner registers an atexit handler for graceful shutdown
         - If the loop crashes, it will be automatically restarted on next use
 
-    Examples
-    --------
     """
 
     _instance: "BLECoroutineRunner | None" = None

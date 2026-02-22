@@ -208,6 +208,7 @@ class TestMarkDisconnected:
 
         class Owner:
             """_summary_."""
+
             pass
 
         owner_a = Owner()
@@ -246,6 +247,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             """_summary_."""
+
             _is_connection_connected = True
 
         owner = Owner()
@@ -258,6 +260,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             """_summary_."""
+
             _is_connection_connected = True
 
         owner_a = Owner()
@@ -271,6 +274,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             """_summary_."""
+
             _is_connection_connected = True
 
         owner = Owner()
@@ -287,6 +291,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             """_summary_."""
+
             _is_connection_connected = False
 
         owner = Owner()
@@ -301,6 +306,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             """_summary_."""
+
             def _is_connection_connected(self):
                 """Report whether the associated connection is currently established.
 
@@ -329,6 +335,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
         class Owner:
             """_summary_."""
+
             def _is_connection_connected(self):
                 """Probe whether the owner's connection is active.
 
