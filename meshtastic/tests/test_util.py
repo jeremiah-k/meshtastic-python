@@ -46,6 +46,8 @@ _BASE64_ALLOWED_CHARS = (
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 )
 _BASE64_INVALID_CHARS = "!\"#$%&'()*,-.:;<>?@[\\]^_`{|}~"
+_HASH_BYTE_MIN = 0
+_HASH_BYTE_MAX = 0xFF
 
 
 class _TempPort:
@@ -820,7 +822,7 @@ def test_channel_hash_basics():
 def test_channel_hash_fuzz(channel_name):
     """Test channel_hash with fuzzed channel names, ensuring it produces single-byte values."""
     hashed = channel_hash(channel_name.encode("utf-8"))
-    assert 0 <= hashed <= 0xFF
+    assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
 
 
 def test_generate_channel_hash_basics():
@@ -831,29 +833,33 @@ def test_generate_channel_hash_basics():
     assert generate_channel_hash("MediumFast", DEFAULT_KEY) == 31
 
 
+@pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12))
 def test_generate_channel_hash_fuzz_default_key(channel_name):
     """Test generate_channel_hash with fuzzed channel names and the default key, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, DEFAULT_KEY)
-    assert 0 <= hashed <= 0xFF
+    assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
 
 
+@pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=1, max_size=1))
 def test_generate_channel_hash_fuzz_simple(channel_name, key_bytes):
     """Test generate_channel_hash with fuzzed channel names and one-byte keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
-    assert 0 <= hashed <= 0xFF
+    assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
 
 
+@pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=16, max_size=16))
 def test_generate_channel_hash_fuzz_aes128(channel_name, key_bytes):
     """Test generate_channel_hash with fuzzed channel names and 128-bit keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
-    assert 0 <= hashed <= 0xFF
+    assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
 
 
+@pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=32, max_size=32))
 def test_generate_channel_hash_fuzz_aes256(channel_name, key_bytes):
     """Test generate_channel_hash with fuzzed channel names and 256-bit keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
-    assert 0 <= hashed <= 0xFF
+    assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX

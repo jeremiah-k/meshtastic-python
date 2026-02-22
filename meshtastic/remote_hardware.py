@@ -12,11 +12,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+GPIO_CHANNEL_NAME = "gpio"
+REMOTE_HARDWARE_TOPIC = "meshtastic.receive.remotehw"
 NO_GPIO_CHANNEL_ERROR = (
-    "No channel named 'gpio' was found. "
-    "On the sending and receiving nodes create a channel named 'gpio'.\n"
-    "For example, run '--ch-add gpio' on one device, then '--seturl' on\n"
+    f"No channel named '{GPIO_CHANNEL_NAME}' was found. "
+    f"On the sending and receiving nodes create a channel named '{GPIO_CHANNEL_NAME}'.\n"
+    f"For example, run '--ch-add {GPIO_CHANNEL_NAME}' on one device, then '--seturl' on\n"
     "the other devices using the url from the device where the channel was added."
+)
+MISSING_DEST_NODE_ID_ERROR = (
+    "Must use a destination node ID for this operation (use --dest)."
 )
 
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
@@ -112,21 +117,20 @@ class RemoteHardwareClient:
             If the local node has no channel named "gpio".
         """
         self.iface = iface
-        ch = iface.localNode.getChannelByName("gpio")
+        ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
         if not ch:
-            raise _get_mesh_interface_error()(NO_GPIO_CHANNEL_ERROR)
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
 
         already_subscribed = False
         try:
-            already_subscribed = pub.isSubscribed(
-                onGPIOreceive, "meshtastic.receive.remotehw"
-            )
-        except Exception:  # noqa: BLE001 - topic may not exist yet
+            already_subscribed = pub.isSubscribed(onGPIOreceive, REMOTE_HARDWARE_TOPIC)
+        except pub.TopicNameError:
             # Topic may not exist yet; subscribe below to create/register it.
             already_subscribed = False
         if not already_subscribed:
-            pub.subscribe(onGPIOreceive, "meshtastic.receive.remotehw")
+            pub.subscribe(onGPIOreceive, REMOTE_HARDWARE_TOPIC)
 
     def _send_hardware(
         self,
@@ -158,10 +162,9 @@ class RemoteHardwareClient:
         MeshInterface.MeshInterfaceError
             If no destination node ID is provided.
         """
-        if not nodeid:
-            raise _get_mesh_interface_error()(
-                "Must use a destination node ID for this operation (use --dest)."
-            )
+        if nodeid is None or nodeid == "":
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         return self.iface.sendData(
             r,
             nodeid,
