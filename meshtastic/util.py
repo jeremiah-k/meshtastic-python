@@ -170,10 +170,10 @@ def fromStr(valstr: str) -> Any:
     else:
         try:
             val = int(valstr)
-        except ValueError:
+        except (ValueError, TypeError):
             try:
                 val = float(valstr)
-            except ValueError:
+            except (ValueError, TypeError):
                 val = valstr  # Not a float or an int, assume string
     return val
 
@@ -1276,7 +1276,7 @@ def _to_node_num(node_id: int | str) -> int:
         return int(s, 16)
     try:
         return int(s, 10)
-    except ValueError:
+    except (ValueError, TypeError):
         return int(s, 16)
 
 

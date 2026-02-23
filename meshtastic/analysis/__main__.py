@@ -55,7 +55,7 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
         try:
             s = powermon_pb2.PowerMon.State.Name(cast(Any, int(n)))
             return s if s != "None" else None
-        except ValueError:
+        except (ValueError, TypeError):
             return None
 
     return [to_pmon_name(x) for x in arr]

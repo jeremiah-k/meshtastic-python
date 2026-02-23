@@ -13,14 +13,17 @@ _MESHTASTIC_BIN = shutil.which("meshtastic") or "meshtastic"
 @pytest.mark.smoke2
 def test_smoke2_info() -> None:
     """Test --info with 2 devices connected serially."""
-    result = subprocess.run(
-        [_MESHTASTIC_BIN, "--info"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            [_MESHTASTIC_BIN, "--info"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(f"meshtastic --info timed out after 30 seconds: {exc}")
     assert re.search(r"Warning: Multiple", result.stdout, re.MULTILINE)
     assert result.returncode == 1
 
@@ -28,14 +31,17 @@ def test_smoke2_info() -> None:
 @pytest.mark.smoke2
 def test_smoke2_test() -> None:
     """Test --test."""
-    result = subprocess.run(
-        [_MESHTASTIC_BIN, "--test"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-        timeout=60,
-    )
+    try:
+        result = subprocess.run(
+            [_MESHTASTIC_BIN, "--test"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(f"meshtastic --test timed out after 60 seconds: {exc}")
     assert re.search(r"Writing serial debugging", result.stdout, re.MULTILINE)
     assert re.search(r"Ports opened", result.stdout, re.MULTILINE)
     assert re.search(r"Running [1-9]\d* tests", result.stdout, re.MULTILINE)

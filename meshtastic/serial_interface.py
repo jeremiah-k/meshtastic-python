@@ -41,8 +41,8 @@ class SerialInterface(StreamInterface):
             "/dev/ttyUSB0"). If None, a single available Meshtastic port will be
             auto-detected; if none are found, a fallback StreamInterface without a
             serial connection is created. (Default value = None)
-        debugOut : IO[str] | None
-            Optional stream to emit raw debug serial output. (Default value = None)
+        debugOut : IO[str] | Callable[[str], Any] | None
+            Optional stream or callable to emit raw debug serial output. (Default value = None)
         noProto : bool
             Disable higher-level protocol handling when True. (Default value = False)
         connectNow : bool

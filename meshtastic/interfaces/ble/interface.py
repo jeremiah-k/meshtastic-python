@@ -142,7 +142,7 @@ class BLEInterface(MeshInterface):
         self,
         address: str | None = None,
         noProto: bool = False,
-        debugOut: IO[str] | None = None,
+        debugOut: IO[str] | Callable[[str], Any] | None = None,
         noNodes: bool = False,
         timeout: float = 300.0,
         *,
@@ -160,8 +160,8 @@ class BLEInterface(MeshInterface):
             If True, schedule automatic reconnection after unexpected disconnects. (Default value = False)
         noProto : bool
             If True, skip protobuf protocol initialization. (Default value = False)
-        debugOut : IO[str] | None
-            Optional stream for debug output; if None, uses sys.stderr. (Default value = None)
+        debugOut : IO[str] | Callable[[str], Any] | None
+            Optional stream or callable for debug output; if None, uses sys.stderr. (Default value = None)
         noNodes : bool
             If True, skip node database initialization. (Default value = False)
         timeout : float

@@ -10,7 +10,7 @@ import logging
 import socket
 import threading
 import time
-from typing import IO
+from typing import IO, Any, Callable
 
 from meshtastic.stream_interface import StreamInterface
 
@@ -31,7 +31,7 @@ class TCPInterface(StreamInterface):
     def __init__(
         self,
         hostname: str,
-        debugOut: IO[str] | None = None,
+        debugOut: IO[str] | Callable[[str], Any] | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         portNumber: int = DEFAULT_TCP_PORT,
@@ -45,8 +45,8 @@ class TCPInterface(StreamInterface):
         ----------
         hostname : str
             Hostname or IP address of the device to connect to.
-        debugOut : IO[str] | None
-            Optional debug output/stream; passed to the base class. (Default value = None)
+        debugOut : IO[str] | Callable[[str], Any] | None
+            Optional debug output stream or callable; passed to the base class. (Default value = None)
         noProto : bool
             If True, disable protocol handling. (Default value = False)
         connectNow : bool

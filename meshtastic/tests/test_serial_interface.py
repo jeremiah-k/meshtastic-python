@@ -99,6 +99,8 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
 
     iface = SerialInterface(noProto=True, connectNow=False)
     stream.is_open = False
+    # Defensive safety-net: side_effect would catch unexpected flush() calls,
+    # but SerialInterface.close() skips flush when is_open is False.
     stream.flush.side_effect = RuntimeError("flush on closed stream")
     iface.close()
 
