@@ -3,7 +3,7 @@
 import logging
 import re
 import sys
-from unittest.mock import mock_open, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -20,8 +20,13 @@ from ..serial_interface import SerialInterface
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_SerialInterface_single_port(
-    mocked_findPorts, mocked_serial, mocked_open, mock_hupcl, mock_sleep, capsys
-):
+    mocked_findPorts: MagicMock,
+    mocked_serial: MagicMock,
+    mocked_open: MagicMock,
+    mock_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test that we can instantiate a SerialInterface with a single port."""
     iface = SerialInterface(noProto=True)
     iface.localNode.localConfig.lora.CopyFrom(config_pb2.Config.LoRaConfig())
@@ -47,7 +52,9 @@ def test_SerialInterface_single_port(
 
 @pytest.mark.unit
 @patch("meshtastic.util.findPorts", return_value=[])
-def test_SerialInterface_no_ports(mocked_findPorts, caplog):
+def test_SerialInterface_no_ports(
+    mocked_findPorts: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test that we can instantiate a SerialInterface with no ports."""
     serial_interface = None
     try:
@@ -65,7 +72,7 @@ def test_SerialInterface_no_ports(mocked_findPorts, caplog):
 @patch(
     "meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake1", "/dev/ttyUSBfake2"]
 )
-def test_SerialInterface_multiple_ports(mocked_findPorts):
+def test_SerialInterface_multiple_ports(mocked_findPorts: MagicMock) -> None:
     """Test that SerialInterface raises MeshInterfaceError when multiple ports are detected."""
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         SerialInterface(noProto=True)
@@ -81,8 +88,12 @@ def test_SerialInterface_multiple_ports(mocked_findPorts):
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_SerialInterface_close_skips_flush_when_stream_closed(
-    mocked_findPorts, mocked_serial, mocked_open, mock_hupcl, mock_sleep
-):
+    mocked_findPorts: MagicMock,
+    mocked_serial: MagicMock,
+    mocked_open: MagicMock,
+    mock_hupcl: MagicMock,
+    mock_sleep: MagicMock,
+) -> None:
     """close() should not fail when stream exists but is already closed."""
     stream = mocked_serial.return_value
 

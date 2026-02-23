@@ -278,8 +278,8 @@ class StructuredLogger:
 
         # We need a closure here because the subscription API is very strict about exact arg matching
         def listen_glue(
-            line, interface
-        ):  # pylint: disable=unused-argument  # noqa: ARG001
+            line, interface  # pylint: disable=unused-argument  # noqa: ARG001
+        ):
             """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters

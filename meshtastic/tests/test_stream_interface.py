@@ -90,14 +90,11 @@ def test_write_and_read_skip_when_stream_not_open() -> None:
 def test_close_closes_stream_even_without_reader_thread() -> None:
     """close() should release stream resources even when connectNow=False."""
     iface = StreamInterface(noProto=True, connectNow=False)
-    try:
-        stream = MagicMock()
-        stream.is_open = True
-        iface.stream = stream
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
 
-        iface.close()
+    iface.close()
 
-        stream.close.assert_called_once()
-        assert iface.stream is None
-    finally:
-        iface.close()
+    stream.close.assert_called_once()
+    assert iface.stream is None

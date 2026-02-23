@@ -9,7 +9,7 @@ import logging
 import sys
 import time
 import types
-from typing import IO
+from typing import IO, Any, Callable
 
 import serial  # type: ignore[import-untyped]
 
@@ -26,7 +26,7 @@ class SerialInterface(StreamInterface):
     def __init__(
         self,
         devPath: str | None = None,
-        debugOut: IO[str] | None = None,
+        debugOut: IO[str] | Callable[[str], Any] | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,

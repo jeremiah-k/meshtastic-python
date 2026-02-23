@@ -11,7 +11,7 @@ from ..tcp_interface import TCPInterface
 
 
 @pytest.mark.unit
-def test_TCPInterface(capsys):
+def test_TCPInterface(capsys: pytest.CaptureFixture[str]) -> None:
     """Test that we can instantiate a TCPInterface."""
     with patch("socket.socket") as mock_socket:
         iface = TCPInterface(hostname="localhost", noProto=True)
@@ -33,13 +33,13 @@ def test_TCPInterface(capsys):
 
 
 @pytest.mark.unit
-def test_TCPInterface_exception():
+def test_TCPInterface_exception() -> None:
     """Verify TCPInterface.close() handles exceptions from _socket_shutdown.
 
     Ensures shutdown exceptions are suppressed so close() completes.
     """
 
-    def throw_an_exception():
+    def throw_an_exception() -> None:
         """Raise a ValueError with the message "Fake exception.".
 
         Raises
@@ -62,7 +62,7 @@ def test_TCPInterface_exception():
 
 
 @pytest.mark.unit
-def test_TCPInterface_without_connecting():
+def test_TCPInterface_without_connecting() -> None:
     """Test that we can instantiate a TCPInterface with connectNow as false."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
@@ -70,7 +70,7 @@ def test_TCPInterface_without_connecting():
 
 
 @pytest.mark.unit
-def test_TCPInterface_write_uses_sendall():
+def test_TCPInterface_write_uses_sendall() -> None:
     """Test that _writeBytes uses sendall to avoid partial writes."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
@@ -84,7 +84,7 @@ def test_TCPInterface_write_uses_sendall():
 
 
 @pytest.mark.unit
-def test_TCPInterface_read_empty_does_not_reconnect_when_closing():
+def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
     """Test that _readBytes avoids reconnect attempts during intentional shutdown."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
