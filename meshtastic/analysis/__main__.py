@@ -5,7 +5,7 @@ import ipaddress
 import logging
 import os
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
@@ -16,12 +16,24 @@ import pyarrow as pa
 from dash import Dash, dcc, html  # type: ignore[import-untyped]
 from pyarrow import feather
 
-from .. import mesh_pb2, powermon_pb2
+from .. import mesh_pb2, powermon_pb2, util
 from ..slog import root_dir
-from ..util import our_exit
 
 # Configure panda options
 pd.options.mode.copy_on_write = True
+
+
+def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
+    """Exit this analysis CLI entrypoint with a user-facing message.
+
+    Parameters
+    ----------
+    message : str
+        Message to print before exiting.
+    return_value : int
+        Process exit code (0 for success, non-zero for error).
+    """
+    util.our_exit(message, return_value)
 
 
 def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
@@ -359,7 +371,7 @@ def main() -> None:
 
     Parses command-line arguments, reads the slog data, and optionally starts
     a Dash web server for visualization. Expected startup/data-loading
-    exceptions are converted to user-facing CLI exits via `our_exit()`.
+    exceptions are converted to user-facing CLI exits via `_cli_exit()`.
     """
     parser = create_argparser()
     args = parser.parse_args()
@@ -369,7 +381,7 @@ def main() -> None:
     try:
         app = create_dash(slog_path=args.slog)
     except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
-        our_exit(f"Error loading slog data: {exc}")
+        _cli_exit(f"Error loading slog data: {exc}")
 
     port = int(args.port)
     debug = bool(args.debug)

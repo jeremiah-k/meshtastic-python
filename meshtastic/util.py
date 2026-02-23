@@ -267,9 +267,13 @@ def fixme(message: str) -> NoReturn:
 
 
 def our_exit(message: str, return_value: int = 1) -> NoReturn:
-    """Exit the current CLI process with consistent user-visible behavior.
+    """Compatibility helper that prints a message and exits the process.
 
-    This helper is intended for command-line entrypoints (`**/__main__.py`).
+    This function is retained for backward compatibility with existing external
+    callers. Entrypoint modules should prefer local CLI helpers (for example
+    ``_cli_exit()`` in ``meshtastic/__main__.py``) so CLI policy remains owned
+    by the CLI layer.
+
     Library code should raise exceptions instead of calling this directly so
     callers can handle errors programmatically.
 
