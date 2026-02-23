@@ -95,17 +95,15 @@ reset()
 # Backwards compatibility aliases for renamed module state
 # ---------------------------------------------------------------------------
 
+_COMPAT_ALIASES: dict[str, str] = {
+    "tunnelInstance": "tunnel_instance",
+}
+
 
 def __getattr__(name: str) -> Any:
-    """Provide backwards-compatible access to renamed module attributes.
-
-    Emits a DeprecationWarning when accessing old camelCase names.
-    """
-    _compat_aliases = {
-        "tunnelInstance": "tunnel_instance",
-    }
-    if name in _compat_aliases:
-        new_name = _compat_aliases[name]
+    """Provide backwards-compatible access to renamed module attributes."""
+    if name in _COMPAT_ALIASES:
+        new_name = _COMPAT_ALIASES[name]
         warnings.warn(
             f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
             DeprecationWarning,
@@ -116,15 +114,9 @@ def __getattr__(name: str) -> Any:
 
 
 def __setattr__(name: str, value: Any) -> None:
-    """Provide backwards-compatible setter for renamed module attributes.
-
-    Emits a DeprecationWarning when setting old camelCase names.
-    """
-    _compat_aliases = {
-        "tunnelInstance": "tunnel_instance",
-    }
-    if name in _compat_aliases:
-        new_name = _compat_aliases[name]
+    """Provide backwards-compatible setter for renamed module attributes."""
+    if name in _COMPAT_ALIASES:
+        new_name = _COMPAT_ALIASES[name]
         warnings.warn(
             f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
             DeprecationWarning,
