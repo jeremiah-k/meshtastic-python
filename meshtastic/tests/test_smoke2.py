@@ -1,21 +1,17 @@
 """Meshtastic smoke tests with 2 devices connected via USB."""
 
 import re
-import shutil
 import subprocess
 
 import pytest
 
-# Resolve meshtastic binary path to avoid Ruff S607 (partial executable path)
-_MESHTASTIC_BIN = shutil.which("meshtastic") or "meshtastic"
-
 
 @pytest.mark.smoke2
-def test_smoke2_info() -> None:
+def test_smoke2_info(meshtastic_bin: str) -> None:
     """Test --info with 2 devices connected serially."""
     try:
         result = subprocess.run(
-            [_MESHTASTIC_BIN, "--info"],
+            [meshtastic_bin, "--info"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -29,11 +25,11 @@ def test_smoke2_info() -> None:
 
 
 @pytest.mark.smoke2
-def test_smoke2_test() -> None:
+def test_smoke2_test(meshtastic_bin: str) -> None:
     """Test --test."""
     try:
         result = subprocess.run(
-            [_MESHTASTIC_BIN, "--test"],
+            [meshtastic_bin, "--test"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

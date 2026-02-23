@@ -27,6 +27,7 @@ import contextlib
 import struct
 import threading
 import time
+import warnings
 from queue import Empty
 from threading import Event
 from typing import (
@@ -306,6 +307,12 @@ class BLEInterface(MeshInterface):
             # Note: the on disconnected callback will call our self.close which will make us nicely wait for threads to exit
             self._exit_handler = atexit.register(self.close)
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            self.close()
+            raise
+        except MeshInterface.MeshInterfaceError:
+            # BLEInterface.BLEError and any other MeshInterfaceError subclass raised
+            # by connect() (e.g., ERROR_CONNECTION_SUPPRESSED) need cleanup before
+            # propagating.  Re-raise without wrapping to preserve the original message.
             self.close()
             raise
         except (BleakError, BLEClient.BLEError, OSError, RuntimeError) as e:
@@ -1119,6 +1126,10 @@ class BLEInterface(MeshInterface):
     def find_device(self, address: str | None) -> BLEDevice:
         """Compatibility wrapper for legacy snake_case callers; delegates to findDevice().
 
+        .. deprecated::
+            Use :meth:`findDevice` instead. The snake_case method name is retained
+            for backward compatibility only.
+
         Parameters
         ----------
         address : str | None
@@ -1129,6 +1140,11 @@ class BLEInterface(MeshInterface):
         BLEDevice
             The resolved BLEDevice matching the address or discovered selection.
         """
+        warnings.warn(
+            "find_device is deprecated; use findDevice",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.findDevice(address)
 
     def _sanitize_address(self, address: str | None) -> str | None:

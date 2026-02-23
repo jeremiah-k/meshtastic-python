@@ -209,6 +209,7 @@ class SerialInterface(StreamInterface):
         Returns
         -------
         None
-            Always returns None, as per context manager protocol.
+            Always returns None to ensure exceptions are never suppressed,
+            regardless of the base class behavior.
         """
-        return super().__exit__(exc_type, exc_val, exc_tb)
+        super().__exit__(exc_type, exc_val, exc_tb)

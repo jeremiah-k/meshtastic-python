@@ -271,6 +271,10 @@ def create_argparser() -> argparse.ArgumentParser:
         dest="port",
         help="Port for the Dash server (default: 8051).",
     )
+    group.add_argument(
+        "--dest",
+        help="Specify target node (required by CLI contract, unused by analysis).",
+    )
 
     return parser
 

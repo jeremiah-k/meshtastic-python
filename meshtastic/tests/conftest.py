@@ -1,6 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
+import shutil
 from collections.abc import Generator
 from typing import Any, Callable, ClassVar
 from unittest.mock import MagicMock, create_autospec
@@ -210,3 +211,23 @@ def _mock_gpio_iface_fixture() -> Generator[MagicMock, None, None]:
         yield iface
     finally:
         iface.close()
+
+
+@pytest.fixture(scope="session")
+def meshtastic_bin() -> str:
+    """Resolve the meshtastic CLI binary path or skip tests if not found.
+
+    Returns
+    -------
+    str
+        The absolute path to the meshtastic CLI binary.
+
+    Raises
+    ------
+    pytest.skip
+        If the meshtastic CLI is not found in PATH.
+    """
+    exe = shutil.which("meshtastic")
+    if exe is None:
+        pytest.skip("meshtastic CLI not found in PATH")
+    return exe
