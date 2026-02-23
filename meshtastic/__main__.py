@@ -14,7 +14,7 @@ import platform
 import sys
 import time
 from types import ModuleType
-from typing import Any, NoReturn
+from typing import Any
 
 import yaml
 from google.protobuf.json_format import MessageToDict
@@ -33,6 +33,9 @@ from meshtastic.protobuf import (
     mesh_pb2,
     portnums_pb2,
 )
+
+# CLI boundary rule: entrypoints call `our_exit()`, library modules raise exceptions.
+from meshtastic.util import our_exit
 from meshtastic.version import get_active_version
 
 argcomplete: ModuleType | None = None
@@ -83,26 +86,6 @@ _PREFERENCE_FIELD_ALIASES: dict[str, str] = {
     "display.use_12_hour": "display.use_12h_clock",
     "display.use12_hour": "display.use_12h_clock",
 }
-
-
-def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
-    """Exit the CLI process after printing a message to the appropriate stream.
-
-    This is a CLI-specific helper that should not be used by library code.
-    Library code should raise exceptions instead, which the CLI will catch
-    and handle appropriately.
-
-    Parameters
-    ----------
-    message : str
-        Message to print before exiting.
-    return_value : int
-        Process exit code; 0 indicates success, non-zero
-        indicates failure (defaults to 1).
-    """
-    output_stream = sys.stderr if return_value != 0 else sys.stdout
-    print(message, file=output_stream)
-    sys.exit(return_value)
 
 
 def support_info() -> None:
@@ -619,12 +602,12 @@ def onConnected(interface: MeshInterface) -> None:
             short_name = args.set_owner_short.strip() if args.set_owner_short else None
 
             if long_name is not None and not long_name:
-                _cli_exit(
+                our_exit(
                     "ERROR: Long Name cannot be empty or contain only whitespace characters"
                 )
 
             if short_name is not None and not short_name:
-                _cli_exit(
+                our_exit(
                     "ERROR: Short Name cannot be empty or contain only whitespace characters"
                 )
 
@@ -713,7 +696,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.set_ham:
             if not args.set_ham.strip():
-                _cli_exit(
+                our_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
             closeNow = True
@@ -834,7 +817,7 @@ def onConnected(interface: MeshInterface) -> None:
                     ),
                 )
             else:
-                _cli_exit(
+                our_exit(
                     f"Warning: {channelIndex} is not a valid channel. Channel must not be DISABLED."
                 )
 
@@ -851,7 +834,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.request_telemetry:
             if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
+                our_exit("Warning: Must use a destination node ID.")
             else:
                 channelIndex = mt_config.channel_index or 0
                 if checkChannel(interface, channelIndex):
@@ -877,7 +860,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.request_position:
             if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
+                our_exit("Warning: Must use a destination node ID.")
             else:
                 channelIndex = mt_config.channel_index or 0
                 if checkChannel(interface, channelIndex):
@@ -892,7 +875,7 @@ def onConnected(interface: MeshInterface) -> None:
 
         if args.gpio_wrb or args.gpio_rd or args.gpio_watch:
             if args.dest == BROADCAST_ADDR:
-                _cli_exit("Warning: Must use a destination node ID.")
+                our_exit("Warning: Must use a destination node ID.")
             else:
                 rhc = remote_hardware.RemoteHardwareClient(interface)
 
@@ -990,7 +973,7 @@ def onConnected(interface: MeshInterface) -> None:
                     # Validate owner name before setting
                     owner_name = str(configuration["owner"]).strip()
                     if not owner_name:
-                        _cli_exit(
+                        our_exit(
                             "ERROR: Long Name cannot be empty or contain only whitespace characters"
                         )
                     print(f"Setting device owner to {configuration['owner']}")
@@ -1004,7 +987,7 @@ def onConnected(interface: MeshInterface) -> None:
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["owner_short"]).strip()
                     if not owner_short_name:
-                        _cli_exit(
+                        our_exit(
                             "ERROR: Short Name cannot be empty or contain only whitespace characters"
                         )
                     print(
@@ -1020,7 +1003,7 @@ def onConnected(interface: MeshInterface) -> None:
                     # Validate owner short name before setting
                     owner_short_name = str(configuration["ownerShort"]).strip()
                     if not owner_short_name:
-                        _cli_exit(
+                        our_exit(
                             "ERROR: Short Name cannot be empty or contain only whitespace characters"
                         )
                     print(
@@ -1132,7 +1115,7 @@ def onConnected(interface: MeshInterface) -> None:
                         f.write(config_txt)
                     print(f"Exported configuration to {args.export_config}")
                 except Exception as e:
-                    _cli_exit(f"ERROR: Failed to write config file: {e}")
+                    our_exit(f"ERROR: Failed to write config file: {e}")
 
         if args.ch_set_url:
             closeNow = True
@@ -1152,23 +1135,23 @@ def onConnected(interface: MeshInterface) -> None:
             ch_add_idx = mt_config.channel_index
             if ch_add_idx is not None:
                 # Since we set the channel index after adding a channel, don't allow --ch-index
-                _cli_exit(
+                our_exit(
                     "Warning: '--ch-add' and '--ch-index' are incompatible. Channel not added."
                 )
             closeNow = True
             if len(args.ch_add) > 10:
-                _cli_exit("Warning: Channel name must be shorter. Channel not added.")
+                our_exit("Warning: Channel name must be shorter. Channel not added.")
             n = interface.getNode(args.dest, **getNode_kwargs)
             ch = n.getChannelByName(args.ch_add)
             if ch:
-                _cli_exit(
+                our_exit(
                     f"Warning: This node already has a '{args.ch_add}' channel. No changes were made."
                 )
             else:
                 # get the first channel that is disabled (i.e., available)
                 ch = n.getDisabledChannel()
                 if not ch:
-                    _cli_exit("Warning: No free channels were found")
+                    our_exit("Warning: No free channels were found")
                 chs = channel_pb2.ChannelSettings()
                 chs.psk = meshtastic.util.genPSK256()
                 chs.name = args.ch_add
@@ -1187,10 +1170,10 @@ def onConnected(interface: MeshInterface) -> None:
 
             ch_del_idx = mt_config.channel_index
             if ch_del_idx is None:
-                _cli_exit("Warning: Need to specify '--ch-index' for '--ch-del'.", 1)
+                our_exit("Warning: Need to specify '--ch-index' for '--ch-del'.", 1)
             else:
                 if ch_del_idx == 0:
-                    _cli_exit("Warning: Cannot delete primary channel.", 1)
+                    our_exit("Warning: Cannot delete primary channel.", 1)
                 else:
                     print(f"Deleting channel {ch_del_idx}")
                     interface.getNode(args.dest, **getNode_kwargs).deleteChannel(
@@ -1212,7 +1195,7 @@ def onConnected(interface: MeshInterface) -> None:
             """
             channelIndex = mt_config.channel_index
             if channelIndex is not None and channelIndex > 0:
-                _cli_exit("Warning: Cannot set modem preset for non-primary channel", 1)
+                our_exit("Warning: Cannot set modem preset for non-primary channel", 1)
             # Overwrite modem_preset
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if len(node.localConfig.ListFields()) == 0:
@@ -1249,8 +1232,8 @@ def onConnected(interface: MeshInterface) -> None:
 
             _idx: int | None = mt_config.channel_index
             if _idx is None:
-                _cli_exit("Warning: Need to specify '--ch-index'.", 1)
-            # _idx is now narrowed to int due to NoReturn from _cli_exit
+                our_exit("Warning: Need to specify '--ch-index'.", 1)
+            # _idx is now narrowed to int due to NoReturn from our_exit
             node = interface.getNode(args.dest, **getNode_kwargs)
             ch = node.channels[_idx]  # type: ignore[index]
 
@@ -1261,7 +1244,7 @@ def onConnected(interface: MeshInterface) -> None:
                     "which can cause errors in some clients. Whenever possible, use --ch-add and --ch-del instead."
                 )
                 if _idx == 0:
-                    _cli_exit("Warning: Cannot enable/disable PRIMARY channel.")
+                    our_exit("Warning: Cannot enable/disable PRIMARY channel.")
 
                 enable = True  # default to enable
                 if args.ch_enable:
@@ -1399,7 +1382,7 @@ def onConnected(interface: MeshInterface) -> None:
                     stress.run()
                     closeNow = True  # exit immediately after stress test
             else:
-                _cli_exit(
+                our_exit(
                     "The powermon module could not be loaded. "
                     "You may need to run `poetry install --with powermon`. "
                     f"Import Error was: {powermon_exception}"
@@ -1445,7 +1428,7 @@ def onConnected(interface: MeshInterface) -> None:
 
     except Exception as ex:
         logger.exception("Unhandled exception in onConnected: %s", ex)
-        _cli_exit(f"Aborting due to: {ex}", 1)
+        our_exit(f"Aborting due to: {ex}", 1)
 
 
 def printConfig(config: Any) -> None:
@@ -1734,14 +1717,14 @@ def create_power_meter() -> None:
     if args.power_voltage:
         v = float(args.power_voltage)
         if v < 0.8 or v > 5.0:
-            _cli_exit("Voltage must be between 0.8 and 5.0")
+            our_exit("Voltage must be between 0.8 and 5.0")
 
     if args.power_riden:
         meter = RidenPowerSupply(args.power_riden)
     elif args.power_ppk2_supply or args.power_ppk2_meter:
         meter = PPK2PowerSupply()
         if v <= 0:
-            _cli_exit("Voltage must be specified for PPK2")
+            our_exit("Voltage must be specified for PPK2")
         meter.setVoltage(
             v
         )  # PPK2 requires setting voltage before selecting supply mode
@@ -1766,7 +1749,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
 
     Supports bracketed IPv6 (`[addr]` or `[addr]:port`), bare IPv6 (`addr:...`),
     and single-colon host:port forms. Port-range and malformed IPv6/bracket syntax
-    errors exit via `_cli_exit` with existing CLI messages.
+    errors exit via `our_exit` with existing CLI messages.
 
     Parameters
     ----------
@@ -1787,7 +1770,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
         # Bracketed IPv6: [addr] or [addr]:port
         bracket_end = host_str.find("]")
         if bracket_end == -1:
-            _cli_exit(
+            our_exit(
                 f"Error: malformed IPv6 address in --host '{host_str}'.",
                 1,
             )
@@ -1796,7 +1779,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
             remainder = host_str[bracket_end + 1 :]
             if remainder:
                 if not remainder.startswith(":"):
-                    _cli_exit(
+                    our_exit(
                         f"Error: unexpected characters after IPv6 address in --host '{host_str}'.",
                         1,
                     )
@@ -1805,7 +1788,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
                     try:
                         parsed_port = int(tcp_port_str)
                     except ValueError:
-                        _cli_exit(
+                        our_exit(
                             f"Error: invalid TCP port in --host '{host_str}'.",
                             1,
                         )
@@ -1813,7 +1796,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
                         if 1 <= parsed_port <= 65535:
                             tcp_port = parsed_port
                         else:
-                            _cli_exit(
+                            our_exit(
                                 f"Error: invalid TCP port in --host '{host_str}'.",
                                 1,
                             )
@@ -1831,7 +1814,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
 
         tcp_hostname = candidate_host
         if not 1 <= parsed_port <= 65535:
-            _cli_exit(
+            our_exit(
                 f"Error: invalid TCP port in --host '{host_str}'.",
                 1,
             )
@@ -1850,7 +1833,7 @@ def common() -> None:
     subscribes to message topics, opens the requested transport (BLE, TCP, or serial),
     calls onConnected with the established MeshInterface, and blocks until interrupted when
     a persistent session mode (listen, tunnel, noproto, or reply) is requested. On
-    fatal errors the CLI exits via _cli_exit with an explanatory message.
+    fatal errors the CLI exits via our_exit with an explanatory message.
 
     Raises
     ------
@@ -1880,11 +1863,11 @@ def common() -> None:
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
-        _cli_exit("", 1)
+        our_exit("", 1)
     else:
         if args.support:
             support_info()
-            _cli_exit("", 0)
+            our_exit("", 0)
 
         if args.list_fields:
             printAvailableConfigFields()
@@ -1894,21 +1877,21 @@ def common() -> None:
         if args.set_owner is not None:
             stripped_long_name = args.set_owner.strip()
             if not stripped_long_name:
-                _cli_exit(
+                our_exit(
                     "ERROR: Long Name cannot be empty or contain only whitespace characters"
                 )
 
         if args.set_owner_short is not None:
             stripped_short_name = args.set_owner_short.strip()
             if not stripped_short_name:
-                _cli_exit(
+                our_exit(
                     "ERROR: Short Name cannot be empty or contain only whitespace characters"
                 )
 
         if args.set_ham is not None:
             stripped_ham_name = args.set_ham.strip()
             if not stripped_ham_name:
-                _cli_exit(
+                our_exit(
                     "ERROR: Ham radio callsign cannot be empty or contain only whitespace characters"
                 )
 
@@ -1933,18 +1916,18 @@ def common() -> None:
                 "This option has been deprecated, see help below for the correct replacement..."
             )
             parser.print_help(sys.stderr)
-            _cli_exit("", 1)
+            our_exit("", 1)
         elif args.test:
             if meshtastic_test is None:
-                _cli_exit(
+                our_exit(
                     "Test module could not be imported. Ensure you have the 'dotmap' module installed."
                 )
             else:
                 result = meshtastic_test.testAll()
                 if not result:
-                    _cli_exit("Warning: Test was not successful.")
+                    our_exit("Warning: Test was not successful.")
                 else:
-                    _cli_exit("Test was a success.", 0)
+                    our_exit("Test was a success.", 0)
         else:
             # Use ExitStack to guarantee cleanup on early exits or exceptions
             with contextlib.ExitStack() as stack:
@@ -1967,7 +1950,7 @@ def common() -> None:
                     logger.debug("BLE scan starting")
                     for x in BLEInterface.scan():
                         print(f"Found: name='{x.name}' address='{x.address}'")
-                    _cli_exit("BLE scan finished", 0)
+                    our_exit("BLE scan finished", 0)
 
                 client: MeshInterface | None = None
                 if args.ble:
@@ -1983,9 +1966,9 @@ def common() -> None:
                             )
                         )
                     except BLEInterface.BLEError as e:
-                        _cli_exit(f"[BLE] {e}", 1)
+                        our_exit(f"[BLE] {e}", 1)
                     except MeshInterface.MeshInterfaceError as e:
-                        _cli_exit(f"[BLE] {e}", 1)
+                        our_exit(f"[BLE] {e}", 1)
                 elif args.host:
                     try:
                         tcp_hostname, tcp_port = _parse_host_port(
@@ -2003,9 +1986,9 @@ def common() -> None:
                             )
                         )
                     except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(f"Error connecting to {args.host}: {ex}", 1)
+                        our_exit(f"Error connecting to {args.host}: {ex}", 1)
                     except OSError as ex:
-                        _cli_exit(f"Error connecting to {args.host}:{ex}", 1)
+                        our_exit(f"Error connecting to {args.host}:{ex}", 1)
                 else:
                     try:
                         client = stack.enter_context(
@@ -2029,7 +2012,7 @@ def common() -> None:
                         message += "    3. Are the necessary drivers installed?\n"
                         message += "    4. Are you using a **power-only USB cable**? A power-only cable cannot transmit data.\n"
                         message += "       Ensure you are using a **data-capable USB cable**.\n"
-                        _cli_exit(message, 1)
+                        our_exit(message, 1)
                     except PermissionError as ex:
                         try:
                             username = os.getlogin()
@@ -2040,15 +2023,15 @@ def common() -> None:
                         message += f"     sudo usermod -a -G dialout {username}\n"
                         message += "  After running that command, log out and re-login for it to take effect.\n"
                         message += f"Error was:{ex}"
-                        _cli_exit(message)
+                        our_exit(message)
                     except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(f"[Serial] {ex}", 1)
+                        our_exit(f"[Serial] {ex}", 1)
                     except OSError as ex:
                         message = "OS Error:\n"
                         message += "  The serial device couldn't be opened, it might be in use by another process.\n"
                         message += "  Please close any applications or webpages that may be using the device and try again.\n"
                         message += f"\nOriginal error: {ex}"
-                        _cli_exit(message)
+                        our_exit(message)
                     if client is None or client.devPath is None:
                         try:
                             client = stack.enter_context(
@@ -2061,12 +2044,12 @@ def common() -> None:
                                 )
                             )
                         except MeshInterface.MeshInterfaceError as ex:
-                            _cli_exit(f"[TCP localhost] {ex}", 1)
+                            our_exit(f"[TCP localhost] {ex}", 1)
                         except OSError as ex:
-                            _cli_exit(f"Error connecting to localhost:{ex}", 1)
+                            our_exit(f"Error connecting to localhost:{ex}", 1)
 
                 if client is None:
-                    _cli_exit(
+                    our_exit(
                         "Error: No interface was established. "
                         "Check connection parameters (BLE address, TCP host, or serial port).",
                         1,

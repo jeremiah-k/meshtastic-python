@@ -331,7 +331,8 @@ def main() -> None:
     """Entry point of the script.
 
     Parses command-line arguments, reads the slog data, and optionally starts
-    a Dash web server for visualization.
+    a Dash web server for visualization. Expected startup/data-loading
+    exceptions are converted to user-facing CLI exits via `our_exit()`.
     """
     parser = create_argparser()
     args = parser.parse_args()

@@ -267,16 +267,26 @@ def fixme(message: str) -> NoReturn:
 
 
 def our_exit(message: str, return_value: int = 1) -> NoReturn:
-    """Print the given message to standard output and exit the process with the specified return code.
+    """Exit the current CLI process with consistent user-visible behavior.
+
+    This helper is intended for command-line entrypoints (`**/__main__.py`).
+    Library code should raise exceptions instead of calling this directly so
+    callers can handle errors programmatically.
+
+    Stream routing matches conventional CLI behavior:
+    - `return_value == 0`: message is written to stdout
+    - `return_value != 0`: message is written to stderr
 
     Parameters
     ----------
     message : str
-        Message to print before exiting.
+        Message to print before exiting. An empty string is allowed and still
+        emits a newline, preserving historical CLI behavior.
     return_value : int
-        Exit code passed to sys.exit (default 1).
+        Exit code passed to `sys.exit()` (default 1).
     """
-    print(message)
+    output_stream = sys.stdout if return_value == 0 else sys.stderr
+    print(message, file=output_stream)
     sys.exit(return_value)
 
 
