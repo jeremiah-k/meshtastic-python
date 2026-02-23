@@ -1,5 +1,7 @@
 {
   "pythonVersion": "3.10",
+  "venvPath": ".",
+  "venv": "venv",
   "include": ["meshtastic", "examples", "tests"],
   "exclude": [
     "**/__pycache__",
