@@ -115,7 +115,7 @@ class Node:
         return r
 
     @staticmethod
-    def position_flags_list(position_flags: int) -> list[str]:
+    def positionFlagsList(position_flags: int) -> list[str]:
         """Convert a PositionConfig position flags bitfield into a list of flag names.
 
         Parameters
@@ -133,7 +133,12 @@ class Node:
         )
 
     @staticmethod
-    def excluded_modules_list(excluded_modules: int) -> list[str]:
+    def position_flags_list(position_flags: int) -> list[str]:
+        """Backward-compatible alias for positionFlagsList."""
+        return Node.positionFlagsList(position_flags)
+
+    @staticmethod
+    def excludedModulesList(excluded_modules: int) -> list[str]:
         """Convert an ExcludedModules bitfield to a list of excluded module names.
 
         Parameters
@@ -148,7 +153,12 @@ class Node:
         """
         return flagsToList(mesh_pb2.ExcludedModules, excluded_modules)
 
-    def module_available(self, excluded_bit: int) -> bool:
+    @staticmethod
+    def excluded_modules_list(excluded_modules: int) -> list[str]:
+        """Backward-compatible alias for excludedModulesList."""
+        return Node.excludedModulesList(excluded_modules)
+
+    def moduleAvailable(self, excluded_bit: int) -> bool:
         """Determine whether a specific module bit is allowed by the interface metadata.
 
         Parameters
@@ -170,6 +180,10 @@ class Node:
         except Exception as ex:  # noqa: BLE001 - defensive metadata compatibility
             logger.debug("Unable to evaluate module availability: %s", ex)
             return True
+
+    def module_available(self, excluded_bit: int) -> bool:
+        """Backward-compatible alias for moduleAvailable."""
+        return self.moduleAvailable(excluded_bit)
 
     def showChannels(self) -> None:
         """Print a human-readable list of configured channels and their shareable URLs.
@@ -215,7 +229,7 @@ class Node:
 
         Parameters
         ----------
-        channels : Sequence[channel_pb2.Channel]
+        channels : collections.abc.Sequence[meshtastic.protobuf.channel_pb2.Channel]
             Sequence of channel protobufs to assign to this node. The assigned
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
@@ -316,7 +330,7 @@ class Node:
                 config_values.CopyFrom(raw_config)
                 logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
-    def requestConfig(self, configType: Any) -> None:
+    def requestConfig(self, configType: int | Any) -> None:
         """Request a configuration subset or the full configuration from this node.
 
         If `configType` is an int it is treated as a config index. If it is a protobuf
@@ -328,7 +342,7 @@ class Node:
 
         Parameters
         ----------
-        configType : Any
+        configType : int | Any
             Numeric config index or a
             protobuf field descriptor indicating which config field to fetch.
         """

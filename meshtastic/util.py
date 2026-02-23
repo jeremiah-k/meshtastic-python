@@ -637,19 +637,21 @@ class DeferredExecution:
                 logger.exception("Unexpected error in deferred execution")
 
 
-def remove_keys_from_dict(keys: tuple | list | set, adict: dict) -> dict:
+def remove_keys_from_dict(
+    keys: tuple[Any, ...] | list[Any] | set[Any], adict: dict[str, Any]
+) -> dict[str, Any]:
     """Remove the given keys from a dictionary and all nested dictionaries.
 
     Parameters
     ----------
-    keys : tuple | list | set
+    keys : tuple[Any, ...] | list[Any] | set[Any]
         Iterable of keys to remove from the dictionary and any nested dict values.
-    adict : dict
+    adict : dict[str, Any]
         Dictionary to process; this dictionary is modified in place.
 
     Returns
     -------
-    dict
+    dict[str, Any]
         The same `adict` after removal of matching keys.
     """
     for key in keys:
@@ -1059,13 +1061,13 @@ def _discover_unix_ports(bp: str) -> set[str]:
 
 
 def active_ports_on_supported_devices(
-    sds: Any, eliminate_duplicates: bool = False
+    sds: Iterable[SupportedDevice], eliminate_duplicates: bool = False
 ) -> set[str]:
     """Collect active serial port paths corresponding to the given supported devices for the current operating system.
 
     Parameters
     ----------
-    sds : Iterable[SupportedDevice]
+    sds : collections.abc.Iterable[meshtastic.supported_device.SupportedDevice]
         An iterable of SupportedDevice-like objects that expose
         platform-specific base port attributes (e.g., `baseport_on_linux`,
         `baseport_on_mac`, `baseport_on_windows`) used to discover matching ports.

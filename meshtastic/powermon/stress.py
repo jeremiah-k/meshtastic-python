@@ -1,5 +1,5 @@
-"""Power stress testing support.
-"""
+"""Power stress testing support."""
+
 import logging
 import time
 
@@ -7,7 +7,7 @@ from ..protobuf import portnums_pb2, powermon_pb2
 
 
 def onPowerStressResponse(packet, interface):
-    """Delete me? FIXME"""
+    """Delete me? FIXME."""
     logging.debug(f"packet:{packet} interface:{interface}")
     # interface.gotResponse = True
 

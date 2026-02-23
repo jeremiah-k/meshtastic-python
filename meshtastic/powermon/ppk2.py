@@ -1,7 +1,6 @@
 """Classes for logging power consumption of meshtastic devices."""
 
 import logging
-import warnings
 import threading
 import time
 
