@@ -4,6 +4,7 @@ This module provides the SerialInterface class which handles communication with
 Meshtastic devices via USB/serial connections.
 """
 
+import contextlib
 import logging
 import sys
 import time
@@ -162,15 +163,17 @@ class SerialInterface(StreamInterface):
         delegates remaining cleanup to StreamInterface.close(). This operation may block
         briefly while flushing.
         """
-        if self.stream:  # Stream can be null if we were already closed
+        stream = self.stream
+        if stream is not None and getattr(stream, "is_open", True):
             # Flush and sleep to ensure all pending data is transmitted before closing.
             # This workaround ensures the device receives all data before the serial
             # connection is terminated, particularly important for some USB-serial
             # adapters and hardware configurations.
-            self.stream.flush()
-            time.sleep(0.1)
-            self.stream.flush()
-            time.sleep(0.1)
+            with contextlib.suppress(Exception):
+                stream.flush()
+                time.sleep(0.1)
+                stream.flush()
+                time.sleep(0.1)
         logger.debug("Closing Serial stream")
         StreamInterface.close(self)
 

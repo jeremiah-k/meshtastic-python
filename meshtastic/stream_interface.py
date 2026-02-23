@@ -1,5 +1,6 @@
 """Stream Interface base class."""
 
+import contextlib
 import logging
 import threading
 import time
@@ -250,10 +251,17 @@ class StreamInterface(MeshInterface):
 
         Sets the shutdown intent before delegating to MeshInterface.close() so
         background readers don't treat intentional close as an unexpected
-        disconnect.
+        disconnect. Then proactively closes the underlying stream (if present)
+        to unblock any pending reads and ensure resources are released even when
+        no reader thread was started (e.g. connectNow=False tests).
         """
         self._wantExit = True
         MeshInterface.close(self)
+        s = self.stream
+        if s is not None:
+            with contextlib.suppress(Exception):
+                s.close()
+            self.stream = None
 
     def _join_reader_thread(self) -> None:
         """Join the reader thread when it is alive and not the current thread."""

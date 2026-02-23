@@ -63,3 +63,41 @@ def test_sendToRadioImpl_frames_payload() -> None:
             write_bytes.assert_called_once_with(expected)
     finally:
         iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_and_read_skip_when_stream_not_open() -> None:
+    """_writeBytes/_readBytes should ignore a configured-but-closed stream."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = False
+        iface.stream = stream
+
+        iface._writeBytes(b"hello")
+        assert iface._readBytes(5) is None
+
+        stream.write.assert_not_called()
+        stream.flush.assert_not_called()
+        stream.read.assert_not_called()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_closes_stream_even_without_reader_thread() -> None:
+    """close() should release stream resources even when connectNow=False."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        iface.stream = stream
+
+        iface.close()
+
+        stream.close.assert_called_once()
+        assert iface.stream is None
+    finally:
+        iface.close()

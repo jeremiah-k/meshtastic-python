@@ -1,6 +1,7 @@
 """Meshtastic unit tests for tcp_interface.py."""
 
 import re
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -106,3 +107,75 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing():
         mock_socket.close.assert_called_once()
         assert iface.socket is None
         iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
+    """Ensure reader-thread reconnect clears queued packets before _startConfig().
+
+    This locks in the deadlock-avoidance behavior documented in _attempt_reconnect:
+    when reconnect runs on the reader thread, pending packets are dropped so
+    _startConfig() cannot block waiting on queue progress that depends on the same
+    thread.
+    """
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._rxThread = threading.current_thread()
+            iface.queue[1] = True
+            iface.queue[2] = True
+            mock_socket = MagicMock()
+
+            with (
+                patch.object(iface, "myConnect") as mock_connect,
+                patch.object(iface, "_startConfig") as mock_start_config,
+            ):
+
+                def _connect_side_effect() -> None:
+                    iface.socket = mock_socket
+
+                def _start_config_side_effect() -> None:
+                    assert len(iface.queue) == 0
+
+                mock_connect.side_effect = _connect_side_effect
+                mock_start_config.side_effect = _start_config_side_effect
+
+                assert iface._attempt_reconnect() is True
+
+            mock_connect.assert_called_once()
+            mock_start_config.assert_called_once()
+            assert len(iface.queue) == 0
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_attempt_reconnect_does_not_wait_connected() -> None:
+    """Reconnect should run startup without calling _waitConnected().
+
+    _attempt_reconnect() is used from the background reader thread path, so it
+    must not introduce a wait on protocol responses that are processed by that
+    same thread.
+    """
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            with (
+                patch.object(iface, "myConnect") as mock_connect,
+                patch.object(iface, "_startConfig") as mock_start_config,
+                patch.object(iface, "_waitConnected") as mock_wait_connected,
+            ):
+
+                def _connect_side_effect() -> None:
+                    iface.socket = mock_socket
+
+                mock_connect.side_effect = _connect_side_effect
+
+                assert iface._attempt_reconnect() is True
+
+            mock_connect.assert_called_once()
+            mock_start_config.assert_called_once()
+            mock_wait_connected.assert_not_called()
+        finally:
+            iface.close()

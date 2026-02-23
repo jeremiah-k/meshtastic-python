@@ -72,3 +72,30 @@ def test_SerialInterface_multiple_ports(mocked_findPorts):
     mocked_findPorts.assert_called()
     assert "Multiple serial ports were detected" in str(exc_info.value)
     assert "'--port'" in str(exc_info.value)
+
+
+@pytest.mark.unit
+@patch("time.sleep")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("serial.Serial")
+@patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
+def test_SerialInterface_close_skips_flush_when_stream_closed(
+    mocked_findPorts, mocked_serial, mocked_open, mock_hupcl, mock_sleep
+):
+    """close() should not fail when stream exists but is already closed."""
+    stream = mocked_serial.return_value
+
+    iface = SerialInterface(noProto=True, connectNow=False)
+    stream.is_open = False
+    stream.flush.side_effect = RuntimeError("flush on closed stream")
+    iface.close()
+
+    # flush can be called during __init__ for setup; we only guarantee close()
+    # won't raise and still performs underlying cleanup.
+    assert mocked_findPorts.called
+    stream.close.assert_called()
+    if sys.platform != "win32":
+        mocked_open.assert_called()
+        mock_hupcl.assert_called()
+    mock_sleep.assert_called()
