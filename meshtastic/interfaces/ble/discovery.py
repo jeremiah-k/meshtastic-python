@@ -1,45 +1,21 @@
 """BLE device discovery strategies."""
 
-import asyncio
-import contextlib
-import inspect
 import time
-from abc import ABC, abstractmethod
-from functools import lru_cache
 from typing import Any, Callable, cast
 
-from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
-    BLEAK_VERSION,
-    ERROR_TIMEOUT,
     SERVICE_UUID,
     BLEConfig,
-    _bleak_supports_connected_fallback,
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
     sanitize_address,
-    with_timeout,
 )
-
-
-@lru_cache(maxsize=1)
-def _ble_device_constructor_kwargs_support() -> tuple[bool, bool]:
-    """Detect whether BLEDevice.__init__ accepts the keyword arguments "details" and "rssi".
-
-    Returns
-    -------
-    tuple[bool, bool]
-        (supports_details, supports_rssi) — `True` if the constructor accepts a `details` keyword, `True` if it accepts an `rssi` keyword; `False` otherwise.
-    """
-    sig = inspect.signature(BLEDevice.__init__)
-    return ("details" in sig.parameters, "rssi" in sig.parameters)
-
 
 def _normalize_device_name_for_matching(name: str | None) -> str | None:
     """Normalize a Bluetooth device name for tolerant comparisons.
@@ -190,199 +166,11 @@ def _parse_scan_response(
     return devices
 
 
-class DiscoveryStrategy(ABC):
-    """Abstract base class for device discovery strategies."""
-
-    @abstractmethod
-    async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
-        """Enumerates connected BLE devices that advertise the configured service UUID, optionally filtered by address or name.
-
-        Parameters
-        ----------
-        address : str | None
-            Optional target device address or name.
-        timeout : float
-            Maximum time in seconds to wait for backend device enumeration.
-
-        Returns
-        -------
-        list[BLEDevice]
-            Devices that advertise SERVICE_UUID and, if `address` is provided,
-            match via address-first and name-aware precedence rules.
-            Returns an empty list on error.
-
-        Raises
-        ------
-        BleakDBusError
-            Re-raised when the underlying backend reports a DBus-specific error.
-        """
-
-
-class ConnectedStrategy(DiscoveryStrategy):
-    """Internal method: Device discovery strategy that enumerates already-connected devices.
-
-    .. warning::
-       This strategy uses Bleak's private ``_backend`` API to enumerate
-       already-connected devices. This is not part of Bleak's public API
-       and may break in future Bleak versions. The strategy is version-gated
-       via ``_bleak_supports_connected_fallback()`` and will return an
-       empty list if the Bleak version is too old or if the private API
-       is unavailable.
-
-       See: https://github.com/hbldh/bleak/issues/ for upstream status
-       on a public API for connected-device enumeration.
-    """
-
-    async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
-        """Enumerate already-connected BLE devices via the Bleak backend and return those advertising the configured service UUID, optionally filtered by address or name.
-
-        Parameters
-        ----------
-        address : str | None
-            Target BLE address or device name to
-            filter results. If None, no address/name filtering is applied.
-        timeout : float
-            Maximum seconds to wait for the backend's device enumeration to complete.
-
-        Returns
-        -------
-        list[BLEDevice]
-            Connected devices that advertise SERVICE_UUID and, if `address` is provided,
-            match via address-first and name-aware precedence rules. Returns an empty
-            list if the backend does not support connected-device enumeration or if
-            an error occurs.
-
-        Raises
-        ------
-        BleakError
-            If a BLE-specific error occurs during device enumeration.
-        RuntimeError
-            If the timeout elapses before backend device enumeration completes.
-        """
-        if not _bleak_supports_connected_fallback():
-            logger.debug(
-                "Skipping fallback connected-device scan; bleak %s < %s",
-                BLEAK_VERSION,
-                ".".join(
-                    str(part)
-                    for part in BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
-                ),
-            )
-            return []
-
-        try:
-            scanner = BleakScanner()
-            devices_found: list[BLEDevice] = []
-            # Bleak lacks a public API for enumerating already-connected devices; use
-            # the private backend hook until upstream provides an official method.
-            backend = getattr(scanner, "_backend", None)
-            if backend and hasattr(backend, "get_devices"):
-                getter = backend.get_devices
-                # TODO: Replace this private backend access if bleak adds a public API for enumerating connected devices.
-                if inspect.iscoroutinefunction(getter):
-                    backend_devices = await with_timeout(
-                        getter(),
-                        timeout,
-                        "connected-device enumeration",
-                        timeout_error_factory=lambda label, timeout_secs: RuntimeError(
-                            ERROR_TIMEOUT.format(label, timeout_secs)
-                        ),
-                    )
-                else:
-                    loop = asyncio.get_running_loop()
-                    backend_devices = await with_timeout(
-                        loop.run_in_executor(None, getter),
-                        timeout,
-                        "connected-device enumeration",
-                        timeout_error_factory=lambda label, timeout_secs: RuntimeError(
-                            ERROR_TIMEOUT.format(label, timeout_secs)
-                        ),
-                    )
-
-                target_candidates: list[BLEDevice] = []
-                target_identifier = address.strip() if address else None
-                # BLEDevice constructor signature varies across bleak versions.
-                # Handle both `details` and legacy `rssi` kwargs when present.
-                supports_details, supports_rssi = (
-                    _ble_device_constructor_kwargs_support()
-                )
-                for device in backend_devices or []:
-                    metadata = getattr(device, "metadata", None) or {}
-                    uuids = metadata.get("uuids", [])
-                    if SERVICE_UUID not in uuids:
-                        continue
-
-                    target_candidates.append(device)
-
-                if target_identifier:
-                    matched_candidates = _filter_devices_for_target_identifier(
-                        target_candidates, target_identifier
-                    )
-                else:
-                    matched_candidates = target_candidates
-
-                for device in matched_candidates:
-                    # Pass address and name as positional args to avoid DeprecationWarning
-                    # in bleak 2.1.x where kwargs for these are deprecated.
-                    params: dict[str, Any] = {}
-                    if supports_details:
-                        # Pass the original device object as details so the backend
-                        # can recognize it as an already-connected device.
-                        params["details"] = device
-                    if supports_rssi:
-                        rssi = getattr(device, "rssi", None)
-                        if rssi is not None:
-                            params["rssi"] = rssi
-                    device_copy = BLEDevice(device.address, device.name, **params)
-                    # Preserve RSSI where constructor kwargs are unsupported.
-                    # Note: some BLEDevice variants use __slots__ without `rssi`.
-                    if not supports_rssi and hasattr(device, "rssi"):
-                        try:
-                            device_copy.rssi = device.rssi  # type: ignore[attr-defined]
-                        except AttributeError:
-                            pass
-                    original_metadata = getattr(device, "metadata", None)
-                    if original_metadata:
-                        try:
-                            device_copy.metadata = dict(original_metadata)  # type: ignore[attr-defined]
-                        except (AttributeError, TypeError):
-                            pass
-                    devices_found.append(device_copy)
-            else:
-                logger.debug(
-                    "Connected-device enumeration not supported on this bleak backend."
-                )
-                return []
-        except BleakDBusError as e:
-            logger.warning(
-                "Connected device discovery failed due to DBus error: %s",
-                e,
-                exc_info=True,
-            )
-            raise
-        except (BleakError, RuntimeError) as e:
-            logger.warning("Connected device discovery failed: %s", e, exc_info=True)
-            return []
-        except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
-            raise
-        except Exception as e:  # pragma: no cover - defensive last resort
-            # Defensive last resort to keep discovery best-effort
-            logger.warning(
-                "Unexpected error during connected device discovery: %s",
-                e,
-                exc_info=True,
-            )
-            return []
-        # try-else: no exception raised during backend enumeration.
-        else:
-            return devices_found
-
-
 class DiscoveryManager:
-    """Orchestrates scanning + connected-device fallback logic."""
+    """Orchestrates BLE device scanning."""
 
     def __init__(self, client_factory: Callable[..., BLEClient] | None = None) -> None:
-        """Initialize a DiscoveryManager that orchestrates BLE scanning with a connected-device fallback.
+        """Initialize a DiscoveryManager that orchestrates BLE scanning.
 
         Parameters
         ----------
@@ -391,21 +179,20 @@ class DiscoveryManager:
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
-        self.connected_strategy = ConnectedStrategy()
         self._client: BLEClient | None = None
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
-        """Discover BLE devices advertising the configured service UUID and, if a target address or name is provided and the scan yields no matches, attempt a fallback enumeration of already-connected devices.
+        """Discover BLE devices advertising the configured service UUID.
 
         Parameters
         ----------
         address : str | None
-            Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found and a connected-device fallback will be attempted if the scan finds no matches.
+            Bluetooth address or device name to filter results; when provided the scan is run broadly to ensure the target is found.
 
         Returns
         -------
         list[BLEDevice]
-            Devices found by the scan and any fallback enumeration, possibly an empty list.
+            Devices found by the scan, possibly an empty list.
 
         Raises
         ------
@@ -457,7 +244,7 @@ class DiscoveryManager:
             # Accept BLEClient instances or any object with the required interface
             # (duck typing allows test fixtures while still catching errors)
             if not isinstance(self._client, BLEClient):
-                # Duck-typed discovery clients must support scan + fallback operations:
+                # Duck-typed discovery clients must support scan operations:
                 # discover(), async_await(), and context manager protocol (__enter__/__exit__).
                 required_attrs = (
                     "_discover",
@@ -514,26 +301,6 @@ class DiscoveryManager:
                 "Unexpected error during device discovery: %s", e, exc_info=True
             )
             devices = []
-
-        if not devices and target_identifier:
-            logger.debug(
-                "Scan found no devices, trying fallback to already-connected devices"
-            )
-            connected_coro = self.connected_strategy._discover(
-                target_identifier, BLEConfig.BLE_SCAN_TIMEOUT
-            )
-            try:
-                fallback = client._async_await(
-                    connected_coro, timeout=BLEConfig.BLE_SCAN_TIMEOUT
-                )
-                devices.extend(fallback)
-            except (SystemExit, KeyboardInterrupt):
-                raise
-            except Exception as e:  # pragma: no cover - best effort logging
-                logger.warning("Connected device fallback failed: %s", e, exc_info=True)
-                # Attempt to close the coroutine if async_await failed before scheduling
-                with contextlib.suppress(Exception):
-                    connected_coro.close()
 
         return devices
 

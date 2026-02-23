@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
     Callable,
     Protocol,
     cast,
@@ -31,9 +30,7 @@ from meshtastic.interfaces.ble import (
 )
 from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.discovery import (
-    ConnectedStrategy,
     DiscoveryManager,
-    _ble_device_constructor_kwargs_support,
     _filter_devices_for_target_identifier,
     _parse_scan_response,
 )
@@ -73,9 +70,7 @@ else:  # pragma: no cover - import only at runtime
 
 
 def _create_ble_device(address: str, name: str) -> BLEDevice:
-    """Construct a BLEDevice using a constructor signature compatible with the installed bleak version.
-
-    If the installed bleak's BLEDevice constructor accepts `details` and/or `rssi`, this function supplies an empty dict for `details` and `0` for `rssi` so the returned instance is compatible across bleak versions.
+    """Construct a BLEDevice for testing.
 
     Parameters
     ----------
@@ -85,15 +80,9 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
     Returns
     -------
     BLEDevice
-        A BLEDevice instance constructed with the arguments supported by the installed bleak version.
+        A BLEDevice instance for use in tests.
     """
-    params: dict[str, Any] = {"address": address, "name": name}
-    supports_details, supports_rssi = _ble_device_constructor_kwargs_support()
-    if supports_details:
-        params["details"] = {}
-    if supports_rssi:
-        params["rssi"] = 0
-    return BLEDevice(**params)
+    return BLEDevice(address=address, name=name, details={})
 
 
 class _FakeDiscoveryClient:
@@ -253,73 +242,6 @@ def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Ev
     return close_called
 
 
-def _assert_no_fallback(message: str) -> Callable[[Any, float | None], Any]:
-    """Create a callable that raises an AssertionError with the given message when invoked.
-
-    Parameters
-    ----------
-    message : str
-
-    Returns
-    -------
-    Callable[[Any, float | None], Any]
-        A function taking (coro, timeout=None) that always raises AssertionError(message).
-
-    Raises
-    ------
-    AssertionError
-    """
-
-    def _raise(_coro: Any, _timeout: float | None = None) -> Any:
-        """Raise an AssertionError to indicate this async-await path must not be used.
-
-        The parameters are ignored; calling this function will always raise an AssertionError
-        carrying the configured failure message.
-
-        Raises
-        ------
-        AssertionError
-        """
-        raise AssertionError(message)
-
-    return _raise
-
-
-class _StrategyOverride(ConnectedStrategy):
-    """Adapt an async callable into a ConnectedStrategy-compatible object for testing."""
-
-    def __init__(
-        self,
-        delegate: Callable[[str | None, float], Awaitable[list[BLEDevice]]],
-    ) -> None:
-        """Wrap an asynchronous discovery coroutine for use as a ConnectedStrategy.
-
-        Parameters
-        ----------
-            Async callable invoked as delegate(address, timeout) that returns a list of
-            discovered BLEDevice objects for the optional address and timeout in seconds.
-        delegate : Callable[[str | None, float], Awaitable[list[BLEDevice]]]
-        """
-        self._delegate = delegate
-
-    async def _discover(self, address: str | None, timeout: float) -> list[BLEDevice]:
-        """Delegate BLE device discovery for the given address and timeout.
-
-        Parameters
-        ----------
-        address : str | None
-            Bluetooth address to filter results, or `None` to discover any device.
-        timeout : float
-            Maximum time in seconds to wait for discovery.
-
-        Returns
-        -------
-        list[BLEDevice]
-            Discovered BLEDevice instances that match the request.
-        """
-        return await self._delegate(address, timeout)
-
-
 class _ReconnectTestNotificationManager:
     """Shared notification-manager test double for reconnect worker tests."""
 
@@ -408,15 +330,6 @@ def test_ble_package_and_legacy_facade_exports_match():
     import meshtastic.ble_interface as legacy_ble_mod
 
     assert set(ble_mod.__all__) == set(legacy_ble_mod.__all__)
-
-
-def test_ble_device_constructor_support_probe_shape():
-    """BLEDevice constructor support probe should return a bool/bool tuple."""
-    supports = _ble_device_constructor_kwargs_support()
-
-    assert isinstance(supports, tuple)
-    assert len(supports) == 2
-    assert all(isinstance(flag, bool) for flag in supports)
 
 
 def test_state_manager_closing_only_for_disconnect():
@@ -849,22 +762,6 @@ def test_start_receive_thread_skips_when_interface_closed(monkeypatch):
     iface._start_receive_thread(name="BLEReceiveAfterClose")
 
 
-def test_find_device_uses_connected_fallback_when_scan_empty():
-    """FindDevice should fall back to connected-device lookup when scan is empty."""
-    # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
-
-    # Intentional constructor bypass for isolated findDevice() behavior.
-    iface = object.__new__(ble_mod.BLEInterface)
-    fallback_device = _create_ble_device(address="AA:BB:CC:DD:EE:FF", name="Fallback")
-    iface._discovery_manager = SimpleNamespace(  # type: ignore[assignment]
-        _discover_devices=lambda addr: [fallback_device] if addr else []
-    )
-
-    result = BLEInterface.findDevice(iface, "aa-bb-cc-dd-ee-ff")
-
-    assert result is fallback_device
-
-
 def test_find_device_multiple_matches_raises():
     """Providing an address that matches multiple devices should raise BLEError."""
     # BLEDevice and BLEInterface already imported at top as ble_mod.BLEDevice, ble_mod.BLEInterface
@@ -881,41 +778,6 @@ def test_find_device_multiple_matches_raises():
         BLEInterface.findDevice(iface, "aa bb cc dd ee ff")
 
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
-
-
-def test_connected_strategy_skips_private_backend_when_guard_fails(monkeypatch):
-    """ConnectedStrategy should not touch private backend when guard disallows it.
-
-    Raises
-    ------
-    AssertionError
-    """
-
-    monkeypatch.setattr(
-        "meshtastic.interfaces.ble.discovery._bleak_supports_connected_fallback",
-        lambda: False,
-    )
-
-    class BoomScanner:
-        """Mock scanner that raises an exception when instantiated."""
-
-        def __init__(self):
-            """Prevent creating the scanner when the guard condition fails.
-
-            Raises
-            ------
-            AssertionError
-                Always raised with message "BleakScanner should not be instantiated when guard fails".
-            """
-            raise AssertionError(
-                "BleakScanner should not be instantiated when guard fails"
-            )
-
-    monkeypatch.setattr("meshtastic.interfaces.ble.discovery.BleakScanner", BoomScanner)
-
-    strategy = ConnectedStrategy()
-    result = asyncio.run(strategy._discover(address="AA:BB", timeout=1.0))
-    assert result == []
 
 
 def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
@@ -939,9 +801,6 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
         "BLEClient",
         lambda **_kwargs: _FakeDiscoveryClient(
             discover_result,
-            async_await_impl=_assert_no_fallback(
-                "Fallback should not be attempted when scan succeeds"
-            ),
         ),
     )
 
@@ -951,86 +810,6 @@ def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
 
     assert len(devices) == 1
     assert devices[0].address == filtered_device.address
-
-
-def test_discovery_manager_uses_connected_strategy_when_scan_empty(monkeypatch):
-    """When no devices are discovered via BLE scan, DiscoveryManager should fall back to connected strategy."""
-
-    fallback_device = _create_ble_device("AA:BB", "Fallback")
-
-    monkeypatch.setattr(
-        ble_mod,
-        "BLEClient",
-        lambda **_kwargs: _FakeDiscoveryClient({}),
-    )
-
-    manager = DiscoveryManager()
-
-    async def fake_connected(address: str | None, timeout: float) -> list[BLEDevice]:
-        """Return the predefined fallback BLE device when invoked with the expected address and timeout.
-
-        Parameters
-        ----------
-        address : str | None
-            Expected device address; should be "AA:BB".
-        timeout : float
-            Expected scan timeout; should equal ble_mod.BLEConfig.BLE_SCAN_TIMEOUT.
-
-        Returns
-        -------
-        list[BLEDevice]
-            A list containing the single fallback device.
-        """
-        assert address == "AA:BB"
-        assert timeout == ble_mod.BLEConfig.BLE_SCAN_TIMEOUT
-        return [fallback_device]
-
-    manager.connected_strategy = _StrategyOverride(fake_connected)
-
-    devices = manager._discover_devices(address="AA:BB")
-
-    assert devices == [fallback_device]
-
-
-def test_discovery_manager_skips_fallback_without_address(monkeypatch):
-    """Connected-device fallback should not run when no address filter is provided."""
-
-    monkeypatch.setattr(
-        ble_mod,
-        "BLEClient",
-        lambda **_kwargs: _FakeDiscoveryClient({}),
-    )
-
-    manager = DiscoveryManager()
-
-    fallback_called = False
-
-    async def fake_connected(
-        address: str | None, timeout: float
-    ) -> list[BLEDevice]:  # pragma: no cover - should not run
-        """Mark the connected-fallback as invoked for tests and return an empty list.
-
-        Sets the enclosing `fallback_called` flag to True to indicate the fallback was exercised.
-
-        Parameters
-        ----------
-        address : str | None
-            Address passed to the fallback; accepted but ignored.
-        timeout : float
-            Timeout value passed to the fallback; accepted but ignored.
-
-        Returns
-        -------
-        list[BLEDevice]
-            An empty list indicating no connected devices were found.
-        """
-        nonlocal fallback_called
-        fallback_called = True
-        return []
-
-    manager.connected_strategy = _StrategyOverride(fake_connected)
-
-    assert manager._discover_devices(address=None) == []
 
 
 def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch):
@@ -1053,9 +832,6 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch)
         "BLEClient",
         lambda **_kwargs: _FakeDiscoveryClient(
             discover_result,
-            async_await_impl=_assert_no_fallback(
-                "Fallback should not run for targeted whitelist match"
-            ),
         ),
     )
 

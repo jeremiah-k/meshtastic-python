@@ -78,7 +78,6 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
-    _ble_device_constructor_kwargs_support,
     _parse_scan_response,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
@@ -126,7 +125,7 @@ class BLEInterface(MeshInterface):
         - ThreadCoordinator: Thread/event lifecycle and coordination utilities
         - BLEErrorHandler: Standardized error handling patterns
         - NotificationManager: Tracks active notifications for reconnect-safe resubscription
-        - DiscoveryManager: Scans and falls back to connected-device enumeration
+        - DiscoveryManager: Scans for Meshtastic BLE devices with address normalization
         - ConnectionValidator: Enforces connection preconditions
         - ClientManager: Owns BLEClient lifecycle and cleanup operations
         - ConnectionOrchestrator: Coordinates connection establishment
@@ -1094,29 +1093,17 @@ class BLEInterface(MeshInterface):
                     "No peripherals found for %s via scan; attempting direct address connect",
                     address,
                 )
-                # Create a synthetic BLEDevice only for direct address connection attempts
-                # This allows the connection logic to attempt direct connect without verification
                 if not sanitized:
                     raise self.BLEError(ERROR_ADDRESS_RESOLUTION_FAILED)
-                # Bleak BLEDevice constructor parameters vary across versions
-                # (for example, some versions require/accept "details" while
-                # others differ in optional metadata fields). Use signature
-                # inspection to construct a compatible synthetic BLEDevice.
-                supports_details, supports_rssi = (
-                    _ble_device_constructor_kwargs_support()
-                )
-                params: dict[str, Any] = {}
-                if supports_details:
-                    params["details"] = {}  # Empty details for synthetic device
-                if supports_rssi:
-                    params["rssi"] = 0
+                # Create a synthetic BLEDevice for direct address connection.
+                # This allows the connection logic to attempt direct connect without
+                # verification, supporting pre-bonded devices (e.g., via bluetoothctl).
                 logger.debug(
-                    "Creating synthetic BLEDevice for direct connect: address=%s, sanitized=%s, params=%s",
+                    "Creating synthetic BLEDevice for direct connect: address=%s, sanitized=%s",
                     address,
                     sanitized,
-                    list(params.keys()),
                 )
-                return BLEDevice(address, address, **params)
+                return BLEDevice(address, address, {})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]

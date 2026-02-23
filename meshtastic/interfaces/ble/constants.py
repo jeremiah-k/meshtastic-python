@@ -1,17 +1,8 @@
 """BLE constants and configuration."""
 
-import importlib.metadata
 import logging
-import re
-from typing import cast
 
 logger = logging.getLogger("meshtastic.ble")
-
-# Get bleak version using importlib.metadata (reliable method)
-try:
-    BLEAK_VERSION = importlib.metadata.version("bleak")
-except importlib.metadata.PackageNotFoundError:
-    BLEAK_VERSION = "0.0.0"
 
 # BLE Service and Characteristic UUIDs
 SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
@@ -49,11 +40,6 @@ class BLEConfig:
     AUTO_RECONNECT_JITTER_RATIO = 0.15
     DBUS_ERROR_RECONNECT_DELAY = 30.0
     CONNECTION_GATE_UNOWNED_STALE_SECONDS = 300.0
-    # Minimum bleak version for connected-device fallback:
-    # this path relies on bleak's private/undocumented `_backend.get_devices` API.
-    # We gate at 1.1.0 (higher than the baseline bleak requirement) to reduce
-    # compatibility risk from older private API variants.
-    BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION: tuple[int, int, int] = (1, 1, 0)
     BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = 2.0
     # Runner configuration
     RUNNER_LOOP_READY_TIMEOUT_SECONDS = 5.0
@@ -85,9 +71,6 @@ AUTO_RECONNECT_BACKOFF = BLEConfig.AUTO_RECONNECT_BACKOFF
 AUTO_RECONNECT_JITTER_RATIO = BLEConfig.AUTO_RECONNECT_JITTER_RATIO
 DBUS_ERROR_RECONNECT_DELAY = BLEConfig.DBUS_ERROR_RECONNECT_DELAY
 CONNECTION_GATE_UNOWNED_STALE_SECONDS = BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
-BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION = (
-    BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
-)
 
 # Error message constants
 ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
@@ -127,65 +110,3 @@ def __getattr__(name: str) -> object:
     if hasattr(BLEConfig, name):
         return getattr(BLEConfig, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-def _parse_version_triplet(version_str: str) -> tuple[int, int, int]:
-    """Parse a version string into a (major, minor, patch) integer triple.
-
-    Non-numeric segments are ignored; the result is padded with zeros if fewer than
-    three numeric components are present and truncated to three components if more
-    are present.
-
-    Parameters
-    ----------
-    version_str : str
-        Version string to parse (e.g., "1.2.3" or "2.0.0rc1").
-
-    Returns
-    -------
-    tuple[int, int, int]
-        (major, minor, patch) extracted from the version string.
-    """
-    # Prefer packaging.version when available (PEP 440-aware), with a regex
-    # fallback for minimal environments where packaging is unavailable.
-    try:
-        from packaging.version import (  # type: ignore[import-untyped]
-            InvalidVersion,
-            Version,
-        )
-
-        try:
-            parsed = Version(version_str or "0")
-            release = parsed.release
-            major = release[0] if len(release) > 0 else 0
-            minor = release[1] if len(release) > 1 else 0
-            patch = release[2] if len(release) > 2 else 0
-        except InvalidVersion:
-            pass
-        else:
-            return major, minor, patch
-    except ImportError:
-        pass
-
-    matches = re.findall(r"\d+", version_str or "")
-    while len(matches) < 3:
-        matches.append("0")
-    # re.findall(r"\d+", ...) only returns strings of digits, so int() will always succeed
-    return cast(
-        tuple[int, int, int],
-        tuple(int(segment) for segment in matches[:3]),
-    )
-
-
-def _bleak_supports_connected_fallback() -> bool:
-    """Determine whether the installed Bleak package supports the connected-device fallback by meeting the configured minimum version.
-
-    Returns
-    -------
-    bool
-        `True` if the installed Bleak version is greater than or equal to BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION, `False` otherwise.
-    """
-    return (
-        _parse_version_triplet(BLEAK_VERSION)
-        >= BLEConfig.BLEAK_CONNECTED_DEVICE_FALLBACK_MIN_VERSION
-    )

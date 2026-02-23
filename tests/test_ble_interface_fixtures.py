@@ -275,11 +275,9 @@ def mock_bleak(monkeypatch):
         """_summary_."""
 
         def __init__(self):
-            """Initialize a BleakScanner stub that reports no BLE devices.
+            """Initialize a BleakScanner stub that reports no BLE devices."""
 
-            Sets self._backend to a SimpleNamespace exposing get_devices() which returns an empty list.
-            """
-            self._backend = SimpleNamespace(get_devices=lambda: [])
+            pass
 
         @staticmethod
         async def discover(**_kwargs):

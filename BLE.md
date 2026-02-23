@@ -15,7 +15,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 | `BLEStateManager`                        | Centralized state machine (`DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING`)           |
 | `BLEErrorHandler`                        | Unified exception-handling helpers used across the BLE subsystem                              |
 | `NotificationManager`                    | Tracks active GATT notification subscriptions so they can be resubscribed after reconnects    |
-| `DiscoveryManager`                       | Scan-based and connected-device-enumeration discovery with address normalization              |
+| `DiscoveryManager`                       | Scan-based BLE device discovery with address normalization                                    |
 | `ConnectionValidator`                    | Enforces connection preconditions before any lock is acquired                                 |
 | `ClientManager`                          | Owns `BLEClient` lifecycle and safe-close operations                                          |
 | `ConnectionOrchestrator`                 | Coordinates a full connection attempt: validate → discover → connect → register notifications |
