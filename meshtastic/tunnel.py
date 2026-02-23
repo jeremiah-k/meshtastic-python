@@ -16,6 +16,7 @@
 """
 
 import logging
+import warnings
 import platform
 import threading
 from contextlib import suppress
@@ -111,7 +112,7 @@ class Tunnel:
         """
 
         if not iface:
-            raise Tunnel.TunnelError("Tunnel() must have a interface")
+            raise Tunnel.TunnelError("Tunnel() must have an interface")
 
         if not subnet:
             raise Tunnel.TunnelError("Tunnel() must have a subnet")
@@ -228,7 +229,11 @@ class Tunnel:
             # but this provides useful debug printing on types of packets received
             if not self.iface.noProto:
                 if self.tun is not None and not self._should_filter_packet(p):
-                    self.tun.write(p)
+                    try:
+                        self.tun.write(p)
+                    except OSError:
+                        logger.debug("TUN write skipped: device closed during shutdown")
+
 
     def _should_filter_packet(self, p: bytes) -> bool:
         """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.

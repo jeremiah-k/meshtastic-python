@@ -111,7 +111,7 @@ def __getattr__(name: str) -> Any:
             stacklevel=2,
         )
         return globals()[new_name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")  # noqa: TRY003
 
 
 class _MtConfigModule(types.ModuleType):

@@ -43,7 +43,7 @@ class StreamInterface(MeshInterface):
             """
             super().__init__(message)
 
-    class PayloadTooLargeError(StreamInterfaceError):
+    class PayloadTooLargeError(MeshInterface.MeshInterfaceError):
         """Raised when a serialized ToRadio payload exceeds MAX_TO_FROM_RADIO_SIZE."""
 
         def __init__(self, payload_size: int, max_size: int) -> None:
@@ -137,6 +137,8 @@ class StreamInterface(MeshInterface):
         p: bytes = bytes([START2] * 32)
         self._writeBytes(p)
         time.sleep(0.1)  # wait 100ms to give device time to start running
+        # Reset shutdown flag so reconnect works after close()
+        self._wantExit = False
 
         # Check if thread has already been started (threads can only be started once)
         # If ident is not None, the thread was started before and needs recreation

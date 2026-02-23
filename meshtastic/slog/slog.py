@@ -136,6 +136,7 @@ class PowerLogger:
         )
         self.interval = interval
         self._warned_legacy_mw_without_voltage = False
+        self._reading_lock = threading.Lock()
         self.is_logging = True
         self.thread = threading.Thread(
             target=self._logging_thread, name="PowerLogger", daemon=True
@@ -271,9 +272,7 @@ class StructuredLogger:
         self.raw_file: io.TextIOWrapper | None = None
 
         # We need a closure here because the subscription API is very strict about exact arg matching
-        def listen_glue(
-            line, interface
-        ):  # pylint: disable=unused-argument  # noqa: ARG001
+        def listen_glue(line, interface):  # pylint: disable=unused-argument  # noqa: ARG001
             """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters
