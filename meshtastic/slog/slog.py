@@ -92,7 +92,7 @@ log_defs = {
     ]
 }
 log_regex = re.compile(".*S:([0-9A-Za-z]+):(.*)")
-POWER_LOG_SCHEMA_METADATA: dict[bytes, bytes] = {
+POWER_LOG_SCHEMA_METADATA: dict[bytes | str, bytes | str] = {
     b"deprecated_fields": (
         b"Legacy *_mW fields are deprecated aliases. Prefer *_mA for current. "
         b"When nominal voltage is available, *_mW stores converted power in mW."
@@ -119,17 +119,18 @@ class PowerLogger:
         """
         self.pMeter = pMeter
         self.writer = FeatherWriter(file_path)
+        power_schema_fields: list[tuple[str, pa.DataType]] = [
+            ("time", pa.timestamp("us")),
+            ("average_mA", pa.float64()),
+            ("max_mA", pa.float64()),
+            ("min_mA", pa.float64()),
+            ("average_mW", pa.float64()),
+            ("max_mW", pa.float64()),
+            ("min_mW", pa.float64()),
+        ]
         self.writer.set_schema(
             pa.schema(
-                [
-                    pa.field("time", pa.timestamp("us")),
-                    pa.field("average_mA", pa.float64()),
-                    pa.field("max_mA", pa.float64()),
-                    pa.field("min_mA", pa.float64()),
-                    pa.field("average_mW", pa.float64()),
-                    pa.field("max_mW", pa.float64()),
-                    pa.field("min_mW", pa.float64()),
-                ],
+                power_schema_fields,
                 metadata=POWER_LOG_SCHEMA_METADATA,
             )
         )
