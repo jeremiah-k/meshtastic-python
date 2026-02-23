@@ -139,8 +139,8 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: mesh_pb2.DeviceMetadata | None = (
             None  # We don't have device metadata yet
         )
-        # responseHandlers is shared by _addResponseHandler (sendData path) and
-        # _handlePacketFromRadio (receive thread). Use this lock to serialize
+        # responseHandlers is shared by _add_response_handler (sendData path) and
+        # _handle_packet_from_radio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
         self._response_handlers_lock = threading.RLock()
         self.responseHandlers: dict[int, ResponseHandler] = (
@@ -171,7 +171,7 @@ class MeshInterface:  # pylint: disable=R0902
         # the meshtastic.log.line publish instead.  Alas though changing that now would be a breaking API change
         # for any external consumers of the library.
         if debugOut:
-            pub.subscribe(MeshInterface._printLogLine, "meshtastic.log.line")
+            pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
 
     def close(self) -> None:
         """Shut down the interface, cancel any pending heartbeat, mark the interface as closing, and send a disconnect to the radio."""
@@ -186,7 +186,7 @@ class MeshInterface:  # pylint: disable=R0902
                 self.heartbeatTimer = None
             if timer:
                 timer.cancel()
-            self._sendDisconnect()
+            self._send_disconnect()
         # debugOut is caller-owned (often shared via outer context managers);
         # do not close it here. Only clear our reference on shutdown.
         if hasattr(self, "debugOut"):
@@ -228,7 +228,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.close()
 
     @staticmethod
-    def _printLogLine(line: str, interface: Any) -> None:
+    def _print_log_line(line: str, interface: Any) -> None:
         """Format and emit a single log line to the configured debug output.
 
         If a color printer is available and the interface is using stdout, apply a color
@@ -262,7 +262,7 @@ class MeshInterface:  # pylint: disable=R0902
         elif hasattr(interface.debugOut, "write"):
             interface.debugOut.write(line + "\n")
 
-    def _handleLogLine(self, line: str) -> None:
+    def _handle_log_line(self, line: str) -> None:
         """Publish a device log line to the "meshtastic.log.line" topic, normalizing any trailing newline.
 
         Parameters
@@ -278,17 +278,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         pub.sendMessage("meshtastic.log.line", line=line, interface=self)
 
-    def _handle_log_line(self, line: str) -> None:
-        """Snake_case alias for _handleLogLine for naming consistency.
-
-        Parameters
-        ----------
-        line : str
-            Log text received from the device.
-        """
-        self._handleLogLine(line)
-
-    def _handleLogRecord(self, record: mesh_pb2.LogRecord) -> None:
+    def _handle_log_record(self, record: mesh_pb2.LogRecord) -> None:
         """Process a protobuf LogRecord by extracting its message text and handling it as a device log line.
 
         Parameters
@@ -297,7 +287,7 @@ class MeshInterface:  # pylint: disable=R0902
             Protobuf log record containing the `message` field to be processed.
         """
         # For now we just try to format the line as if it had come in over the serial port
-        self._handleLogLine(record.message)
+        self._handle_log_line(record.message)
 
     def showInfo(self, file: IO[str] | None = None) -> str:
         """Return a human-readable JSON summary of the mesh interface including owner, local node info, metadata, and known nodes.
@@ -782,7 +772,7 @@ class MeshInterface:  # pylint: disable=R0902
         prox.data = data
         toRadio = mesh_pb2.ToRadio()
         toRadio.mqttClientProxyMessage.CopyFrom(prox)
-        self._sendToRadio(toRadio)
+        self._send_to_radio(toRadio)
 
     def sendData(  # pylint: disable=R0913
         self,
@@ -871,7 +861,7 @@ class MeshInterface:  # pylint: disable=R0902
         meshPacket.decoded.payload = data
         meshPacket.decoded.portnum = portNum
         meshPacket.decoded.want_response = wantResponse
-        meshPacket.id = self._generatePacketId()
+        meshPacket.id = self._generate_packet_id()
         if replyId is not None:
             meshPacket.decoded.reply_id = replyId
         if priority is not None:
@@ -879,10 +869,10 @@ class MeshInterface:  # pylint: disable=R0902
 
         if onResponse is not None:
             logger.debug("Setting a response handler for requestId %s", meshPacket.id)
-            self._addResponseHandler(
+            self._add_response_handler(
                 meshPacket.id, onResponse, ackPermitted=onResponseAckPermitted
             )
-        p = self._sendPacket(
+        p = self._send_packet(
             meshPacket,
             destinationId,
             wantAck=wantAck,
@@ -1085,7 +1075,7 @@ class MeshInterface:  # pylint: disable=R0902
             str
                 The node's ID string if known; otherwise the node number formatted as an 8-digit lowercase hexadecimal string.
             """
-            return self._nodeNumToId(node_num, False) or f"{node_num:08x}"
+            return self._node_num_to_id(node_num, False) or f"{node_num:08x}"
 
         def _format_snr(snr_value: int | None) -> str:
             """Format an SNR value encoded in quarter-dB units into a human-readable string.
@@ -1254,7 +1244,7 @@ class MeshInterface:  # pylint: disable=R0902
         Parameters
         ----------
         p : dict[str, Any]
-            Decoded packet dictionary produced by _handlePacketFromRadio. Must contain "decoded"
+            Decoded packet dictionary produced by _handle_packet_from_radio. Must contain "decoded"
             with a "portnum" string and either a "payload" (Telemetry protobuf bytes) for TELEMETRY_APP
             or a "routing" mapping for ROUTING_APP.
 
@@ -1476,7 +1466,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.waitForWaypoint()
         return d
 
-    def _addResponseHandler(
+    def _add_response_handler(
         self,
         requestId: int,
         callback: Callable[[dict[str, Any]], Any],
@@ -1500,7 +1490,7 @@ class MeshInterface:  # pylint: disable=R0902
                 callback=callback, ackPermitted=ackPermitted
             )
 
-    def _sendPacket(
+    def _send_packet(
         self,
         meshPacket: mesh_pb2.MeshPacket,
         destinationId: int | str = BROADCAST_ADDR,
@@ -1545,7 +1535,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         # We allow users to talk to the local node before we've completed the full connection flow...
         if self.myInfo is not None and destinationId != self.myInfo.my_node_num:
-            self._waitConnected()
+            self._wait_connected()
 
         toRadio = mesh_pb2.ToRadio()
 
@@ -1596,7 +1586,7 @@ class MeshInterface:  # pylint: disable=R0902
         # if the user hasn't set an ID for this packet (likely and recommended),
         # we should pick a new unique ID so the message can be tracked.
         if meshPacket.id == 0:
-            meshPacket.id = self._generatePacketId()
+            meshPacket.id = self._generate_packet_id()
 
         toRadio.packet.CopyFrom(meshPacket)
         if self.noProto:
@@ -1605,7 +1595,7 @@ class MeshInterface:  # pylint: disable=R0902
             )
         else:
             logger.debug("Sending packet: %s", stripnl(meshPacket))
-            self._sendToRadio(toRadio)
+            self._send_to_radio(toRadio)
         return meshPacket
 
     def waitForConfig(self) -> None:
@@ -1788,7 +1778,7 @@ class MeshInterface:  # pylint: disable=R0902
             return node.get_ringtone()
         return None
 
-    def _waitConnected(self, timeout: float = 30.0) -> None:
+    def _wait_connected(self, timeout: float = 30.0) -> None:
         """Wait until the interface is marked connected or the timeout elapses.
 
         Parameters
@@ -1813,7 +1803,7 @@ class MeshInterface:  # pylint: disable=R0902
         if self.failure is not None:
             raise self.failure
 
-    def _generatePacketId(self) -> int:
+    def _generate_packet_id(self) -> int:
         """Generate a new 32-bit packet identifier combining a 10-bit monotonic counter with randomized upper bits.
 
         Returns
@@ -1857,9 +1847,9 @@ class MeshInterface:  # pylint: disable=R0902
         """Send a heartbeat message to the radio to indicate the interface is alive."""
         p = mesh_pb2.ToRadio()
         p.heartbeat.CopyFrom(mesh_pb2.Heartbeat())
-        self._sendToRadio(p)
+        self._send_to_radio(p)
 
-    def _startHeartbeat(self) -> None:
+    def _start_heartbeat(self) -> None:
         """Start a recurring daemon timer that sends a heartbeat to the radio every 300 seconds.
 
         Schedules and runs the first heartbeat immediately and then re-schedules a daemon
@@ -1913,7 +1903,7 @@ class MeshInterface:  # pylint: disable=R0902
                 self.isConnected.set()
                 start_heartbeat = True
         if start_heartbeat:
-            self._startHeartbeat()
+            self._start_heartbeat()
         # Check _closing again before publishing to avoid race with close()
         with self._heartbeat_lock:
             should_publish = self.isConnected.is_set() and not self._closing
@@ -1924,7 +1914,7 @@ class MeshInterface:  # pylint: disable=R0902
                 )
             )
 
-    def _startConfig(self) -> None:
+    def _start_config(self) -> None:
         """Initialize internal node/config state and request the radio's configuration.
 
         Resets local state used during configuration (myInfo, nodes, nodesByNum, and local channel list),
@@ -1944,15 +1934,15 @@ class MeshInterface:  # pylint: disable=R0902
             if self.configId == NODELESS_WANT_CONFIG_ID:
                 self.configId = self.configId + 1
         startConfig.want_config_id = self.configId
-        self._sendToRadio(startConfig)
+        self._send_to_radio(startConfig)
 
-    def _sendDisconnect(self) -> None:
+    def _send_disconnect(self) -> None:
         """Notify the radio device that this interface is disconnecting."""
         m = mesh_pb2.ToRadio()
         m.disconnect = True
-        self._sendToRadio(m)
+        self._send_to_radio(m)
 
-    def _queueHasFreeSpace(self) -> bool:
+    def _queue_has_free_space(self) -> bool:
         # We never got queueStatus, maybe the firmware is old
         """Indicate whether the cached transmit queue has free slots.
 
@@ -1965,7 +1955,7 @@ class MeshInterface:  # pylint: disable=R0902
             return True
         return self.queueStatus.free > 0
 
-    def _queueClaim(self) -> None:
+    def _queue_claim(self) -> None:
         """Decrement the cached transmit-queue free-slot counter when a packet is claimed.
 
         Does nothing if queue status information is not available.
@@ -1974,7 +1964,7 @@ class MeshInterface:  # pylint: disable=R0902
             return
         self.queueStatus.free -= 1
 
-    def _sendToRadio(self, toRadio: mesh_pb2.ToRadio) -> None:
+    def _send_to_radio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Queue and transmit a ToRadio protobuf to the radio device.
 
         If the ToRadio has a MeshPacket in its `packet` field, that packet is enqueued and will be
@@ -1998,7 +1988,7 @@ class MeshInterface:  # pylint: disable=R0902
             if not toRadio.HasField("packet"):
                 # not a meshpacket -- send immediately, give queue a chance,
                 # this makes heartbeat trigger queue
-                self._sendToRadioImpl(toRadio)
+                self._send_to_radio_impl(toRadio)
             else:
                 # meshpacket -- queue
                 self.queue[toRadio.packet.id] = toRadio
@@ -2007,7 +1997,7 @@ class MeshInterface:  # pylint: disable=R0902
 
             while self.queue:
                 # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
-                while not self._queueHasFreeSpace():
+                while not self._queue_has_free_space():
                     logger.debug("Waiting for free space in TX Queue")
                     time.sleep(0.5)
                 try:
@@ -2019,10 +2009,10 @@ class MeshInterface:  # pylint: disable=R0902
                 resentQueue[packetId] = packet
                 if not isinstance(packet, mesh_pb2.ToRadio):
                     continue
-                self._queueClaim()
+                self._queue_claim()
                 if packet != toRadio:
                     logger.debug("Resending packet ID %08x %s", packetId, packet)
-                self._sendToRadioImpl(packet)
+                self._send_to_radio_impl(packet)
 
             # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
             for packetId, packet in resentQueue.items():
@@ -2035,7 +2025,7 @@ class MeshInterface:  # pylint: disable=R0902
                     self.queue[packetId] = packet
             # logger.warn("queue + resentQueue: " + " ".join(f'{k:08x}' for k in self.queue))
 
-    def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
+    def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Transport hook that delivers a ToRadio protobuf to the radio device.
 
         Subclasses must override this method to perform the actual transmission; the base
@@ -2048,7 +2038,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         logger.error(f"Subclass must provide toradio: {toRadio}")
 
-    def _handleConfigComplete(self) -> None:
+    def _handle_config_complete(self) -> None:
         """Finalize initial configuration by applying collected local channels and marking the interface as connected.
 
         Sets the local node's channels from the internally collected
@@ -2062,7 +2052,9 @@ class MeshInterface:  # pylint: disable=R0902
         # the following should only be called after we have settings and channels
         self._connected()  # Tell everyone else we are ready to go
 
-    def _handleQueueStatusFromRadio(self, queueStatus: mesh_pb2.QueueStatus) -> None:
+    def _handle_queue_status_from_radio(
+        self, queueStatus: mesh_pb2.QueueStatus
+    ) -> None:
         """Update internal transmit-queue state from a received QueueStatus message.
 
         Sets self.queueStatus and logs the reported free/total slots and packet id.
@@ -2094,7 +2086,7 @@ class MeshInterface:  # pylint: disable=R0902
             )
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
 
-    def _handleFromRadio(self, fromRadioBytes: bytes) -> None:
+    def _handle_from_radio(self, fromRadioBytes: bytes) -> None:
         """Handle a raw FromRadio protobuf payload: update interface state and publish corresponding events.
 
         Processes the provided protobuf bytes to update myInfo, metadata, node records, local configuration/moduleConfig,
@@ -2113,7 +2105,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         fromRadio = mesh_pb2.FromRadio()
         logger.debug(
-            "in mesh_interface.py _handleFromRadio() fromRadioBytes: %r",
+            "in mesh_interface.py _handle_from_radio() fromRadioBytes: %r",
             fromRadioBytes,
         )
         try:
@@ -2135,15 +2127,15 @@ class MeshInterface:  # pylint: disable=R0902
         elif fromRadio.HasField("node_info"):
             logger.debug("Received nodeinfo: %s", asDict["nodeInfo"])
 
-            node = self._getOrCreateByNum(asDict["nodeInfo"]["num"])
+            node = self._get_or_create_by_num(asDict["nodeInfo"]["num"])
             node.update(asDict["nodeInfo"])
             try:
-                newpos = self._fixupPosition(node["position"])
+                newpos = self._fixup_position(node["position"])
                 node["position"] = newpos
             except KeyError:
                 logger.debug("Node has no position key")
 
-            # no longer necessary since we're mutating directly in nodesByNum via _getOrCreateByNum
+            # no longer necessary since we're mutating directly in nodesByNum via _get_or_create_by_num
             # self.nodesByNum[node["num"]] = node
             if "user" in node:  # Some nodes might not have user/ids assigned yet
                 if "id" in node["user"]:
@@ -2158,15 +2150,15 @@ class MeshInterface:  # pylint: disable=R0902
             # we ignore the config_complete_id, it is unneeded for our
             # stream API fromRadio.config_complete_id
             logger.debug("Config complete ID %s", self.configId)
-            self._handleConfigComplete()
+            self._handle_config_complete()
         elif fromRadio.HasField("channel"):
-            self._handleChannel(fromRadio.channel)
+            self._handle_channel(fromRadio.channel)
         elif fromRadio.HasField("packet"):
-            self._handlePacketFromRadio(fromRadio.packet)
+            self._handle_packet_from_radio(fromRadio.packet)
         elif fromRadio.HasField("log_record"):
-            self._handleLogRecord(fromRadio.log_record)
+            self._handle_log_record(fromRadio.log_record)
         elif fromRadio.HasField("queueStatus"):
-            self._handleQueueStatusFromRadio(fromRadio.queueStatus)
+            self._handle_queue_status_from_radio(fromRadio.queueStatus)
         elif fromRadio.HasField("clientNotification"):
             publishingThread.queueWork(
                 lambda: pub.sendMessage(
@@ -2199,7 +2191,7 @@ class MeshInterface:  # pylint: disable=R0902
             # subclass version that closes the serial port
             MeshInterface._disconnected(self)
 
-            self._startConfig()  # redownload the node db etc...
+            self._start_config()  # redownload the node db etc...
 
         elif fromRadio.HasField("config") or fromRadio.HasField("moduleConfig"):
             if fromRadio.config.HasField("device"):
@@ -2272,7 +2264,7 @@ class MeshInterface:  # pylint: disable=R0902
         else:
             logger.debug("Unexpected FromRadio payload")
 
-    def _fixupPosition(self, position: dict[str, Any]) -> dict[str, Any]:
+    def _fixup_position(self, position: dict[str, Any]) -> dict[str, Any]:
         """Convert integer micro-degree coordinates in a position dict to floating-point degrees.
 
         If present, 'latitudeI' and 'longitudeI' are converted to 'latitude' and 'longitude'
@@ -2294,7 +2286,7 @@ class MeshInterface:  # pylint: disable=R0902
             position["longitude"] = position["longitudeI"] * 1e-7
         return position
 
-    def _nodeNumToId(self, num: int, isDest: bool = True) -> str | None:
+    def _node_num_to_id(self, num: int, isDest: bool = True) -> str | None:
         """Map a mesh numeric node number to its node ID string or a broadcast/unknown literal.
 
         If num equals the broadcast numeric constant, returns BROADCAST_ADDR when isDest is True
@@ -2338,7 +2330,7 @@ class MeshInterface:  # pylint: disable=R0902
             return None
         return node_id
 
-    def _getOrCreateByNum(self, nodeNum: int) -> dict[str, Any]:
+    def _get_or_create_by_num(self, nodeNum: int) -> dict[str, Any]:
         """Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists.
 
         Parameters
@@ -2380,7 +2372,7 @@ class MeshInterface:  # pylint: disable=R0902
             self.nodesByNum[nodeNum] = n
             return n
 
-    def _handleChannel(self, channel: channel_pb2.Channel) -> None:
+    def _handle_channel(self, channel: channel_pb2.Channel) -> None:
         """Record a received local channel descriptor for later configuration.
 
         Parameters
@@ -2390,7 +2382,7 @@ class MeshInterface:  # pylint: disable=R0902
         """
         self._localChannels.append(channel)
 
-    def _handlePacketFromRadio(
+    def _handle_packet_from_radio(
         self, meshPacket: mesh_pb2.MeshPacket, hack: bool = False
     ) -> None:
         """Process an incoming MeshPacket from the radio and publish an appropriate meshtastic.receive event.
@@ -2442,11 +2434,11 @@ class MeshInterface:  # pylint: disable=R0902
 
         # /add fromId and toId fields based on the node ID
         try:
-            asDict["fromId"] = self._nodeNumToId(asDict["from"], False)
+            asDict["fromId"] = self._node_num_to_id(asDict["from"], False)
         except Exception as ex:
             logger.warning("Not populating fromId: %s", ex, exc_info=True)
         try:
-            asDict["toId"] = self._nodeNumToId(asDict["to"])
+            asDict["toId"] = self._node_num_to_id(asDict["to"])
         except Exception as ex:
             logger.warning("Not populating toId: %s", ex, exc_info=True)
 

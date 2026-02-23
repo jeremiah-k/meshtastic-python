@@ -274,10 +274,10 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
             _receive_info_update(iface, as_dict)
             p = as_dict["decoded"]["position"]
             logger.debug("p:%s", p)
-            p = iface._fixupPosition(p)
+            p = iface._fixup_position(p)
             logger.debug("after fixup p:%s", p)
             # update node DB as needed
-            iface._getOrCreateByNum(as_dict["from"])["position"] = p
+            iface._get_or_create_by_num(as_dict["from"])["position"] = p
 
 
 def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -302,7 +302,7 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
             p = as_dict["decoded"]["user"]
             # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
             # update node DB as needed
-            n = iface._getOrCreateByNum(as_dict["from"])
+            n = iface._get_or_create_by_num(as_dict["from"])
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
             iface.nodes[p["id"]] = n
@@ -350,7 +350,7 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     updateObj = telemetry.get(toUpdate)
     if updateObj is None:
         return
-    node = iface._getOrCreateByNum(as_dict["from"])
+    node = iface._get_or_create_by_num(as_dict["from"])
     newMetrics = node.get(toUpdate, {})
     newMetrics.update(updateObj)
     logger.debug(
@@ -375,7 +375,7 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
         - hopLimit: value of `hopLimit` from the packet (or None)
     """
     if "from" in as_dict:
-        node = iface._getOrCreateByNum(as_dict["from"])
+        node = iface._get_or_create_by_num(as_dict["from"])
         node["lastReceived"] = as_dict
         node["lastHeard"] = as_dict.get("rxTime")
         node["snr"] = as_dict.get("rxSnr")
@@ -407,7 +407,7 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
 
     try:
         adminMessage = as_dict["decoded"]["admin"]["raw"]
-        iface._getOrCreateByNum(as_dict["from"])[
+        iface._get_or_create_by_num(as_dict["from"])[
             "adminSessionPassKey"
         ] = adminMessage.session_passkey
     except (KeyError, AttributeError):

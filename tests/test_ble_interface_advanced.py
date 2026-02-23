@@ -293,7 +293,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
     # Simulate config completion to publish connected=True and verify it was emitted
     iface.isConnected.clear()
-    monkeypatch.setattr(iface, "_startHeartbeat", lambda: None)
+    monkeypatch.setattr(iface, "_start_heartbeat", lambda: None)
     iface._connected()
     reconnect_events = [
         (topic, kw)
@@ -330,7 +330,7 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
 
 def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
-    """Verify that _sendToRadioImpl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
+    """Verify that _send_to_radio_impl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
 
     This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
 
@@ -380,7 +380,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
     # This should raise BLEInterface.BLEError
     with pytest.raises(BLEInterface.BLEError) as exc_info:
-        iface._sendToRadioImpl(to_radio)
+        iface._send_to_radio_impl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
     assert (
@@ -397,7 +397,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     iface2 = _build_interface(monkeypatch, client2)
 
     with pytest.raises(BLEInterface.BLEError) as exc_info:
-        iface2._sendToRadioImpl(to_radio)
+        iface2._send_to_radio_impl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
     assert "Error during write operation: RuntimeError" in caplog.text
@@ -411,7 +411,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     iface3 = _build_interface(monkeypatch, client3)
 
     with pytest.raises(BLEInterface.BLEError) as exc_info:
-        iface3._sendToRadioImpl(to_radio)
+        iface3._send_to_radio_impl(to_radio)
 
     assert "Error writing BLE" in str(exc_info.value)
     assert "Error during write operation: OSError" in caplog.text

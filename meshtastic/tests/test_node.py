@@ -18,7 +18,7 @@ from ..util import Timeout
 
 
 class _FakeSendAdminProtocol(Protocol):
-    """Callable protocol for fake _sendAdmin helpers with optional parameters."""
+    """Callable protocol for fake _send_admin helpers with optional parameters."""
 
     def __call__(
         self,
@@ -32,8 +32,8 @@ class _FakeSendAdminProtocol(Protocol):
 def _autospec_with_local_node(spec_class: type[Any]) -> Any:
     """Create an autospecced interface mock with a localNode attribute."""
     iface = create_autospec(spec_class, instance=True)
-    local_node = MagicMock(spec=["_getAdminChannelIndex"])
-    local_node._getAdminChannelIndex.return_value = 0
+    local_node = MagicMock(spec=["_get_admin_channel_index"])
+    local_node._get_admin_channel_index.return_value = 0
     iface.localNode = local_node
     return iface
 
@@ -46,7 +46,7 @@ def _make_fake_send_admin(
     response_payload: dict[str, Any] | None = None,
     return_packet: mesh_pb2.MeshPacket | None = None,
 ) -> _FakeSendAdminProtocol:
-    """Create a configurable fake for Node._sendAdmin used by canned-message tests."""
+    """Create a configurable fake for Node._send_admin used by canned-message tests."""
 
     def _fake_send_admin(
         msg: admin_pb2.AdminMessage,
@@ -97,7 +97,7 @@ def test_get_canned_message_returns_cached_value(mock_serial_interface: Any) -> 
     anode.cannedPluginMessage = "cached message"
 
     send_admin = MagicMock()
-    anode._sendAdmin = send_admin  # type: ignore[method-assign]
+    anode._send_admin = send_admin  # type: ignore[method-assign]
 
     assert anode.get_canned_message() == "cached message"
     send_admin.assert_not_called()
@@ -120,7 +120,7 @@ def test_get_canned_message_requests_and_caches_value(
         response_payload=response_payload,
         return_packet=request_packet,
     )
-    anode._sendAdmin = fake_send_admin  # type: ignore[method-assign,assignment]
+    anode._send_admin = fake_send_admin  # type: ignore[method-assign,assignment]
 
     assert anode.get_canned_message() == "hello world"
     assert anode.cannedPluginMessage == "hello world"
@@ -150,7 +150,7 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
         expected_want_response=False,
         return_packet=sent_packet,
     )
-    anode._sendAdmin = fake_send_admin  # type: ignore[method-assign,assignment]
+    anode._send_admin = fake_send_admin  # type: ignore[method-assign,assignment]
 
     result = anode.set_canned_message("fresh")
 
@@ -270,7 +270,7 @@ def test_get_ringtone_times_out_without_response(caplog):
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout = Timeout(maxSecs=0.01)
     anode._timeout.sleepInterval = 0.001
-    anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):
         result = anode.get_ringtone()
@@ -288,7 +288,7 @@ def test_get_canned_message_times_out_without_response(caplog):
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     anode._timeout = Timeout(maxSecs=0.01)
     anode._timeout.sleepInterval = 0.001
-    anode._sendAdmin = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):
         result = anode.get_canned_message()
@@ -366,13 +366,13 @@ def test_requestChannel_not_localNode(caplog, mock_serial_interface):
     """Verify that requesting channel 0 on a non-local node logs a remote channel info request.
 
     Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
-    calls _requestChannel(0), and asserts that an INFO log contains "Requesting channel 0 info".
+    calls _request_channel(0), and asserts that an INFO log contains "Requesting channel 0 info".
 
     """
     iface = mock_serial_interface
     anode = Node(iface, "!12345678", noProto=True)
     with caplog.at_level(logging.INFO):
-        anode._requestChannel(0)
+        anode._request_channel(0)
         assert re.search(
             r"Requesting channel 0 info from remote node", caplog.text, re.MULTILINE
         )
@@ -380,7 +380,7 @@ def test_requestChannel_not_localNode(caplog, mock_serial_interface):
 
 @pytest.mark.unit
 def test_requestChannel_localNode(caplog, mock_serial_interface):
-    """Verify that a local node logs a local channel request when _requestChannel is called.
+    """Verify that a local node logs a local channel request when _request_channel is called.
 
     Checks that the log contains "Requesting channel 0" and does not include "from remote node".
 
@@ -390,7 +390,7 @@ def test_requestChannel_localNode(caplog, mock_serial_interface):
     iface.localNode = anode
 
     with caplog.at_level(logging.DEBUG):
-        anode._requestChannel(0)
+        anode._request_channel(0)
         assert re.search(r"Requesting channel 0", caplog.text, re.MULTILINE)
         assert not re.search(r"from remote node", caplog.text, re.MULTILINE)
 
@@ -569,7 +569,7 @@ def test_setOwner_valid_names(caplog):
         anode.setOwner(long_name="ValidName", short_name="VN")
 
     # Should not raise any exceptions
-    # Note: When noProto=True, _sendAdmin is not called as the method returns early
+    # Note: When noProto=True, _send_admin is not called as the method returns early
     assert re.search(r"p\.set_owner\.long_name:ValidName:", caplog.text, re.MULTILINE)
     assert re.search(r"p\.set_owner\.short_name:VN:", caplog.text, re.MULTILINE)
 

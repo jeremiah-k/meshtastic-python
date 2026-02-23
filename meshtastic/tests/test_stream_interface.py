@@ -37,8 +37,8 @@ def test_StreamInterface_with_noProto(caplog: pytest.LogCaptureFixture) -> None:
         iface = StreamInterface(noProto=True, connectNow=False)
         try:
             iface.stream = stream
-            iface._writeBytes(test_data)
-            data = iface._readBytes(len(test_data))
+            iface._write_bytes(test_data)
+            data = iface._read_bytes(len(test_data))
             assert data == test_data
         finally:
             iface.close()
@@ -47,15 +47,15 @@ def test_StreamInterface_with_noProto(caplog: pytest.LogCaptureFixture) -> None:
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_sendToRadioImpl_frames_payload() -> None:
-    """Test that _sendToRadioImpl writes a properly framed payload."""
+    """Test that _send_to_radio_impl writes a properly framed payload."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         payload = b"hello"
         to_radio = MagicMock()
         to_radio.SerializeToString.return_value = payload
 
-        with patch.object(iface, "_writeBytes") as write_bytes:
-            iface._sendToRadioImpl(to_radio)
+        with patch.object(iface, "_write_bytes") as write_bytes:
+            iface._send_to_radio_impl(to_radio)
 
             length_high = (len(payload) >> 8) & 0xFF
             length_low = len(payload) & 0xFF
@@ -68,15 +68,15 @@ def test_sendToRadioImpl_frames_payload() -> None:
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_write_and_read_skip_when_stream_not_open() -> None:
-    """_writeBytes/_readBytes should ignore a configured-but-closed stream."""
+    """_write_bytes/_read_bytes should ignore a configured-but-closed stream."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         stream = MagicMock()
         stream.is_open = False
         iface.stream = stream
 
-        iface._writeBytes(b"hello")
-        assert iface._readBytes(5) is None
+        iface._write_bytes(b"hello")
+        assert iface._read_bytes(5) is None
 
         stream.write.assert_not_called()
         stream.flush.assert_not_called()

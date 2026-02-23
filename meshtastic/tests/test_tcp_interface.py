@@ -71,13 +71,13 @@ def test_TCPInterface_without_connecting() -> None:
 
 @pytest.mark.unit
 def test_TCPInterface_write_uses_sendall() -> None:
-    """Test that _writeBytes uses sendall to avoid partial writes."""
+    """Test that _write_bytes uses sendall to avoid partial writes."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         mock_socket = MagicMock()
         iface.socket = mock_socket
 
-        iface._writeBytes(b"abc")
+        iface._write_bytes(b"abc")
 
         mock_socket.sendall.assert_called_once_with(b"abc")
         iface.close()
@@ -85,7 +85,7 @@ def test_TCPInterface_write_uses_sendall() -> None:
 
 @pytest.mark.unit
 def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
-    """Test that _readBytes avoids reconnect attempts during intentional shutdown."""
+    """Test that _read_bytes avoids reconnect attempts during intentional shutdown."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         mock_socket = MagicMock()
@@ -95,10 +95,10 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
 
         with (
             patch.object(iface, "myConnect") as mock_connect,
-            patch.object(iface, "_startConfig") as mock_start_config,
+            patch.object(iface, "_start_config") as mock_start_config,
             patch("meshtastic.tcp_interface.time.sleep") as mock_sleep,
         ):
-            data = iface._readBytes(1)
+            data = iface._read_bytes(1)
 
         assert data is None
         mock_connect.assert_not_called()
@@ -111,11 +111,11 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
 
 @pytest.mark.unit
 def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
-    """Ensure reader-thread reconnect clears queued packets before _startConfig().
+    """Ensure reader-thread reconnect clears queued packets before _start_config().
 
     This locks in the deadlock-avoidance behavior documented in _attempt_reconnect:
     when reconnect runs on the reader thread, pending packets are dropped so
-    _startConfig() cannot block waiting on queue progress that depends on the same
+    _start_config() cannot block waiting on queue progress that depends on the same
     thread.
     """
     with patch("socket.socket"):
@@ -128,7 +128,7 @@ def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
 
             with (
                 patch.object(iface, "myConnect") as mock_connect,
-                patch.object(iface, "_startConfig") as mock_start_config,
+                patch.object(iface, "_start_config") as mock_start_config,
             ):
 
                 def _connect_side_effect() -> None:
@@ -151,7 +151,7 @@ def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
 
 @pytest.mark.unit
 def test_TCPInterface_attempt_reconnect_does_not_wait_connected() -> None:
-    """Reconnect should run startup without calling _waitConnected().
+    """Reconnect should run startup without calling _wait_connected().
 
     _attempt_reconnect() is used from the background reader thread path, so it
     must not introduce a wait on protocol responses that are processed by that
@@ -163,8 +163,8 @@ def test_TCPInterface_attempt_reconnect_does_not_wait_connected() -> None:
             mock_socket = MagicMock()
             with (
                 patch.object(iface, "myConnect") as mock_connect,
-                patch.object(iface, "_startConfig") as mock_start_config,
-                patch.object(iface, "_waitConnected") as mock_wait_connected,
+                patch.object(iface, "_start_config") as mock_start_config,
+                patch.object(iface, "_wait_connected") as mock_wait_connected,
             ):
 
                 def _connect_side_effect() -> None:

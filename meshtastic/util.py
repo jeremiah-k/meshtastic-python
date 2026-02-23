@@ -852,7 +852,6 @@ def detect_supported_devices() -> set[SupportedDevice]:
         A set of supported device descriptors for matching devices; empty set if none are found.
     """
     system: str = platform.system()
-    # print(f'system:{system}')
 
     possible_devices = set()
     if system == "Linux":
@@ -863,11 +862,8 @@ def detect_supported_devices() -> set[SupportedDevice]:
         _, lsusb_output = subprocess.getstatusoutput("lsusb")
         vids = get_unique_vendor_ids()
         for vid in vids:
-            # print(f'looking for {vid}...')
             search = f" {vid}:"
-            # print(f'search:"{search}"')
             if re.search(search, lsusb_output, re.MULTILINE):
-                # print(f'Found vendor id that matches')
                 devices = get_devices_with_vendor_id(vid)
                 for device in devices:
                     possible_devices.add(device)
@@ -878,15 +874,11 @@ def detect_supported_devices() -> set[SupportedDevice]:
             'powershell.exe "[Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;'
             'Get-PnpDevice -PresentOnly | Format-List"'
         )
-        # print(f'sp_output:{sp_output}')
         vids = get_unique_vendor_ids()
         for vid in vids:
-            # print(f'looking for {vid.upper()}...')
             search = f"DeviceID.*{vid.upper()}&"
             # search = f'{vid.upper()}'
-            # print(f'search:"{search}"')
             if re.search(search, sp_output, re.MULTILINE):
-                # print(f'Found vendor id that matches')
                 devices = get_devices_with_vendor_id(vid)
                 for device in devices:
                     possible_devices.add(device)
@@ -898,11 +890,8 @@ def detect_supported_devices() -> set[SupportedDevice]:
         _, sp_output = subprocess.getstatusoutput("system_profiler SPUSBDataType")
         vids = get_unique_vendor_ids()
         for vid in vids:
-            # print(f'looking for {vid}...')
             search = f"Vendor ID: 0x{vid}"
-            # print(f'search:"{search}"')
             if re.search(search, sp_output, re.MULTILINE):
-                # print(f'Found vendor id that matches')
                 devices = get_devices_with_vendor_id(vid)
                 for device in devices:
                     possible_devices.add(device)
@@ -928,7 +917,6 @@ def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
 
     if sd:
         system = platform.system()
-        # print(f'in detect_windows_needs_driver system:{system}')
 
         if system == "Windows":
             # if windows, see if we can find a DeviceId with the vendor id
@@ -937,11 +925,8 @@ def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
             command += f"'*{sd.usb_vendor_id_in_hex.upper()}*'"
             command += ')} | Format-List"'
 
-            # print(f'command:{command}')
             _, sp_output = subprocess.getstatusoutput(command)
-            # print(f'sp_output:{sp_output}')
             search = "CM_PROB_FAILED_INSTALL"
-            # print(f'search:"{search}"')
             if re.search(search, sp_output, re.MULTILINE):
                 need_to_install_driver = True
                 # if the want to see the reason
@@ -1108,7 +1093,6 @@ def active_ports_on_supported_devices(
         for d in sds:
             # find the port(s)
             com_ports = detect_windows_port(d)
-            # print(f'com_ports:{com_ports}')
             # add all ports
             for com_port in com_ports:
                 ports.add(com_port)
@@ -1155,12 +1139,9 @@ def detect_windows_port(
             command += f"'*{vendor_id.upper()}*'"
             command += ')} | Format-List"'
 
-            # print(f'command:{command}')
             _, sp_output = subprocess.getstatusoutput(command)
-            # print(f'sp_output:{sp_output}')
             p = re.compile(r"\(COM(.*)\)")
             for x in p.findall(sp_output):
-                # print(f'x:{x}')
                 ports.add(f"COM{x}")
     return ports
 

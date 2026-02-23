@@ -5,7 +5,7 @@ import ipaddress
 import logging
 import os
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
@@ -19,6 +19,24 @@ from pyarrow import feather
 from .. import mesh_pb2, powermon_pb2
 from ..slog import root_dir
 from ..util import our_exit
+
+
+def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
+    """Exit the CLI with an error message.
+
+    This is the preferred exit path for the CLI. It wraps our_exit for
+    backwards compatibility with legacy external callers that might be
+    monkeypatching or calling our_exit directly.
+
+    Parameters
+    ----------
+    message : str
+        The message to print.
+    return_value : int
+        The exit code (default 1).
+    """
+    our_exit(message, return_value)
+
 
 # Configure panda options
 pd.options.mode.copy_on_write = True
@@ -369,7 +387,7 @@ def main() -> None:
     try:
         app = create_dash(slog_path=args.slog)
     except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
-        our_exit(f"Error loading slog data: {exc}")
+        _cli_exit(f"Error loading slog data: {exc}")
 
     port = int(args.port)
     debug = bool(args.debug)

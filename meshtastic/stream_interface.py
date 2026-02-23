@@ -136,7 +136,7 @@ class StreamInterface(MeshInterface):
         # we write enough start bytes to force it to resync (we don't use START1
         # because we want to ensure it is looking for START1)
         p: bytes = bytes([START2] * 32)
-        self._writeBytes(p)
+        self._write_bytes(p)
         time.sleep(0.1)  # wait 100ms to give device time to start running
         # Reset shutdown flag so reconnect works after close()
         self._wantExit = False
@@ -149,10 +149,10 @@ class StreamInterface(MeshInterface):
             )
         self._rxThread.start()
 
-        self._startConfig()
+        self._start_config()
 
         if not self.noProto:  # Wait for the db download if using the protocol
-            self._waitConnected()
+            self._wait_connected()
 
     def _disconnected(self) -> None:
         """Perform superclass disconnection cleanup, close the underlying stream if present, and clear the stream reference.
@@ -169,7 +169,7 @@ class StreamInterface(MeshInterface):
             # pylint: disable=W0201
             self.stream = None
 
-    def _writeBytes(self, b: bytes) -> None:
+    def _write_bytes(self, b: bytes) -> None:
         """Write bytes to the underlying stream and pause briefly to allow the device to process them.
 
         If no stream is configured this call is ignored. When a stream exists the bytes are written
@@ -194,7 +194,7 @@ class StreamInterface(MeshInterface):
                 # we sleep here to give the TBeam a chance to work
                 time.sleep(0.1)
 
-    def _readBytes(self, length: int) -> bytes | None:
+    def _read_bytes(self, length: int) -> bytes | None:
         """Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
 
         Parameters
@@ -213,7 +213,7 @@ class StreamInterface(MeshInterface):
         else:
             return None
 
-    def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
+    def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Frame and send a ToRadio protobuf to the underlying stream.
 
         The message is serialized and prefixed with START1, START2 and a two-byte big-endian payload length before being written to the stream.
@@ -234,7 +234,7 @@ class StreamInterface(MeshInterface):
         # We convert into a string, because the TCP code doesn't work with byte arrays
         header: bytes = bytes([START1, START2, (bufLen >> 8) & 0xFF, bufLen & 0xFF])
         logger.debug("sending header:%r b:%r", header, b)
-        self._writeBytes(header + b)
+        self._write_bytes(header + b)
 
     def close(self) -> None:
         """Shut down the stream connection and request the background reader thread to exit.
@@ -313,7 +313,7 @@ class StreamInterface(MeshInterface):
         """Background reader loop that reads from the configured stream and dispatches device log bytes and framed radio messages.
 
         Continuously reads incoming bytes, forwarding non-protocol bytes to
-        _handle_log_byte and delivering complete protocol frames to _handleFromRadio.
+        _handle_log_byte and delivering complete protocol frames to _handle_from_radio.
         On exit records the disconnect source in _last_disconnect_source, logs the
         shutdown, and calls _disconnected() to perform cleanup.
         """
@@ -324,7 +324,7 @@ class StreamInterface(MeshInterface):
         try:
             while not self._wantExit:
                 # logger.debug("reading character")
-                b: bytes | None = self._readBytes(1)
+                b: bytes | None = self._read_bytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
                 if b:
@@ -360,7 +360,7 @@ class StreamInterface(MeshInterface):
 
                         if len(self._rxBuf) != 0 and ptr + 1 >= packetlen + HEADER_LEN:
                             try:
-                                self._handleFromRadio(self._rxBuf[HEADER_LEN:])
+                                self._handle_from_radio(self._rxBuf[HEADER_LEN:])
                             except Exception:
                                 logger.exception(
                                     "Error while handling message from radio"
