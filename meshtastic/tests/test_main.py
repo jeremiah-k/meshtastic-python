@@ -16,6 +16,7 @@ import yaml
 
 from meshtastic import mt_config
 from meshtastic.__main__ import (
+    _normalize_pref_name,
     _prefix_base64_key,
     _set_missing_flags_false,
     export_config,
@@ -117,6 +118,21 @@ def test_main_init_parser_version(capsys):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_main_init_parser_help_mentions_list_fields(capsys) -> None:
+    """Test --help mentions dynamic config field discovery."""
+    sys.argv = ["", "--help"]
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        initParser()
+    assert pytest_wrapped_e.type is SystemExit
+    assert pytest_wrapped_e.value.code == 0
+    out, err = capsys.readouterr()
+    assert "--list-fields" in out
+    assert "protobuf schemas" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_main_version(capsys):
     """Test --version."""
     sys.argv = ["", "--version"]
@@ -129,6 +145,30 @@ def test_main_main_version(capsys):
     out, err = capsys.readouterr()
     assert re.match(r"[0-9]+\.[0-9]+[\.a][0-9]", out)
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_list_fields_prints_known_fields_and_alias(capsys) -> None:
+    """Test --list-fields prints dynamic protobuf fields and compatibility aliases."""
+    sys.argv = ["", "--list-fields"]
+    main()
+    out, err = capsys.readouterr()
+    assert "Local config fields:" in out
+    assert "bluetooth.enabled" in out
+    assert "bluetooth.mode" in out
+    assert "bluetooth.fixed_pin" in out
+    assert "display.units" in out
+    assert "display.use_12h_clock" in out
+    assert "display.use_12_hour -> display.use_12h_clock" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+def test_normalize_pref_name_display_alias() -> None:
+    """Test legacy display field aliases normalize to canonical names."""
+    assert _normalize_pref_name("display.use_12_hour") == "display.use_12h_clock"
+    assert _normalize_pref_name("display.use12Hour") == "display.use_12h_clock"
 
 
 @pytest.mark.unit
@@ -1233,6 +1273,35 @@ def test_main_set_valid(
             out, err = capsys.readouterr()
             assert re.search(r"Connected to radio", out, re.MULTILINE)
             assert re.search(r"Set network.wifi_ssid to foo", out, re.MULTILINE)
+            assert err == ""
+            mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("serial.Serial")
+@patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
+def test_main_set_valid_display_use_12_hour_alias(
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
+):
+    """Test --set accepts legacy display.use_12_hour alias."""
+    sys.argv = ["", "--set", "display.use_12_hour", "true"]
+    mt_config.args = sys.argv
+
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
+
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ) as mo:
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert re.search(r"Set display.use_12h_clock to true", out, re.MULTILINE)
+            assert anode.localConfig.display.use_12h_clock is True
             assert err == ""
             mo.assert_called()
 

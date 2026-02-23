@@ -26,7 +26,13 @@ import meshtastic.util
 from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.ble_interface import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
-from meshtastic.protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
+from meshtastic.protobuf import (
+    channel_pb2,
+    config_pb2,
+    localonly_pb2,
+    mesh_pb2,
+    portnums_pb2,
+)
 from meshtastic.version import get_active_version
 
 argcomplete: ModuleType | None = None
@@ -71,6 +77,12 @@ except (ImportError, AttributeError) as exc:
     logging.getLogger(__name__).debug("powermon/slog not available: %s", exc)
 
 logger = logging.getLogger(__name__)
+
+# Backward-compatible aliases for renamed config fields.
+_PREFERENCE_FIELD_ALIASES: dict[str, str] = {
+    "display.use_12_hour": "display.use_12h_clock",
+    "display.use12_hour": "display.use_12h_clock",
+}
 
 
 def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
@@ -218,6 +230,30 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
+def _normalize_pref_name(comp_name: str) -> str:
+    """Normalize a preference path to canonical snake_case and apply aliases."""
+    canonical = ".".join(
+        meshtastic.util.camel_to_snake(part.strip()) for part in comp_name.split(".")
+    )
+    normalized = _PREFERENCE_FIELD_ALIASES.get(canonical, canonical)
+    if normalized != canonical:
+        logger.debug(
+            "Using compatibility alias for config field %s -> %s",
+            comp_name,
+            normalized,
+        )
+    return normalized
+
+
+def _display_pref_name(comp_name: str) -> str:
+    """Format a canonical preference path for user-facing output."""
+    if not mt_config.camel_case:
+        return comp_name
+    return ".".join(
+        meshtastic.util.snake_to_camel(part) for part in comp_name.split(".")
+    )
+
+
 def getPref(node: Any, comp_name: str) -> bool:
     """Retrieve and display a configuration preference or channel field for a node.
 
@@ -268,6 +304,7 @@ def getPref(node: Any, comp_name: str) -> bool:
         print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
         logger.debug(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
 
+    comp_name = _normalize_pref_name(comp_name)
     name = splitCompoundName(comp_name)
     wholeField = name[0] == name[1]  # We want the whole field
 
@@ -402,6 +439,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         `True` if the named field was found and successfully set or updated, `False` otherwise.
     """
 
+    comp_name = _normalize_pref_name(comp_name)
     name = splitCompoundName(comp_name)
 
     snake_name = meshtastic.util.camel_to_snake(name[-1])
@@ -906,7 +944,8 @@ def onConnected(interface: MeshInterface) -> None:
                     continue
                 last_pref = pref_item
                 found = False
-                field = splitCompoundName(pref_item[0].lower())[0]
+                normalized_pref_name = _normalize_pref_name(pref_item[0])
+                field = splitCompoundName(normalized_pref_name)[0]
                 for config in [node.localConfig, node.moduleConfig]:
                     config_type = config.DESCRIPTOR.fields_by_name.get(field)
                     if config_type:
@@ -914,7 +953,7 @@ def onConnected(interface: MeshInterface) -> None:
                             node.requestConfig(
                                 config.DESCRIPTOR.fields_by_name.get(field)
                             )
-                        found = setPref(config, pref_item[0], pref_item[1])
+                        found = setPref(config, normalized_pref_name, pref_item[1])
                         if found:
                             any_found = True
                             fields.add(field)
@@ -1436,6 +1475,22 @@ def printConfig(config: Any) -> None:
                 print(f"    {temp_name}")
 
 
+def printAvailableConfigFields() -> None:
+    """Print all current config fields from protobuf descriptors plus aliases."""
+    print("Local config fields:")
+    printConfig(localonly_pb2.LocalConfig())
+    print("")
+    print("Module config fields:")
+    printConfig(localonly_pb2.LocalModuleConfig())
+    if _PREFERENCE_FIELD_ALIASES:
+        print("")
+        print("Compatibility aliases:")
+        for alias_name, canonical_name in sorted(_PREFERENCE_FIELD_ALIASES.items()):
+            print(
+                f"    {_display_pref_name(alias_name)} -> {_display_pref_name(canonical_name)}"
+            )
+
+
 def onNode(node: Any) -> None:
     """Notify about a node database change by printing the changed node.
 
@@ -1831,6 +1886,10 @@ def common() -> None:
             support_info()
             _cli_exit("", 0)
 
+        if args.list_fields:
+            printAvailableConfigFields()
+            return
+
         # Early validation for owner names before attempting device connection
         if args.set_owner is not None:
             stripped_long_name = args.set_owner.strip()
@@ -2197,12 +2256,22 @@ def addConfigArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     group.add_argument(
         "--get",
         help=(
-            "Get a preferences field. Use an invalid field such as '0' to get a list of all fields."
-            " Can use either snake_case or camelCase format. (ex: 'power.ls_secs' or 'power.lsSecs')"
+            "Get a preferences field. Use --list-fields to print all available fields"
+            " from current protobuf schemas. Can use either snake_case or camelCase"
+            " format. (ex: 'power.ls_secs' or 'power.lsSecs')"
         ),
         nargs=1,
         action="append",
         metavar="FIELD",
+    )
+
+    group.add_argument(
+        "--list-fields",
+        help=(
+            "List all configurable fields discovered from protobuf schemas and exit."
+            " Includes compatibility aliases for renamed fields."
+        ),
+        action="store_true",
     )
 
     group.add_argument(
