@@ -1,10 +1,9 @@
 """Stream Interface base class."""
 
-import io
 import logging
 import threading
 import time
-from typing import cast
+from typing import IO, cast
 
 import serial  # type: ignore[import-untyped]
 
@@ -41,7 +40,7 @@ class StreamInterface(MeshInterface):
 
     def __init__(  # pylint: disable=R0917
         self,
-        debugOut: io.TextIOWrapper | None = None,
+        debugOut: IO[str] | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
@@ -51,7 +50,7 @@ class StreamInterface(MeshInterface):
 
         Parameters
         ----------
-        debugOut : io.TextIOWrapper | None
+        debugOut : IO[str] | None
             If provided, device debug serial output will be written to this stream. (Default value = None)
         noProto : bool
             If True, skip protocol-specific startup and allow using this class without a concrete stream implementation. (Default value = False)
@@ -112,9 +111,7 @@ class StreamInterface(MeshInterface):
                     self.waitForConfig()
 
     def connect(self) -> None:
-        """Establish the connection to the radio and start the background.
-
-        reader and configuration process.
+        """Establish the connection to the radio and start the background reader and configuration process.
 
         Sends wake/resynchronization bytes to the device, starts the reader
         thread, begins protocol configuration, and — if the instance uses the

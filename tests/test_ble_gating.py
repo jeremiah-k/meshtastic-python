@@ -205,7 +205,7 @@ class TestMarkDisconnected:
         """Disconnect from a different owner should not clear an active claim."""
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             pass
 
@@ -244,7 +244,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """A claim owned by this interface is not considered connected elsewhere."""
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             _is_connection_connected = True
 
@@ -257,7 +257,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """A live claim from another owner should be treated as connected elsewhere."""
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             _is_connection_connected = True
 
@@ -271,7 +271,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """Dead weakref owners should be pruned automatically."""
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             _is_connection_connected = True
 
@@ -288,7 +288,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """Claims from owners no longer connected should be pruned."""
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             _is_connection_connected = False
 
@@ -303,7 +303,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """Owner methods returning False should also be treated as stale claims."""
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             def _is_connection_connected(self):
                 """Report whether the associated connection is currently established.
@@ -330,7 +330,7 @@ class TestIsCurrentlyConnectedElsewhere:
         """
 
         class Owner:
-            """_summary_."""
+            """Test owner stub."""
 
             def _is_connection_connected(self):
                 """Probe whether the owner's connection is active.

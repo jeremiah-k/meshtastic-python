@@ -2,7 +2,7 @@
 
 # Note python-pytuntap was too buggy
 # using pip3 install pytap2
-# make sure to "sudo setcap cap_net_admin+eip /usr/bin/python3.8" so python can access tun device without being root
+# make sure to "sudo setcap cap_net_admin+eip /usr/bin/python3.10" so python can access tun device without being root
 # sudo ip tuntap del mode tun tun0
 # sudo bin/run.sh --port /dev/ttyUSB0 --setch-shortfast
 # sudo bin/run.sh --port /dev/ttyUSB0 --tunnel --debug
@@ -19,6 +19,7 @@ import logging
 import platform
 import threading
 from contextlib import suppress
+from typing import Any
 
 from pubsub import pub  # type: ignore[import-untyped]
 from pytap2 import TapDevice
@@ -68,7 +69,10 @@ class Tunnel:
             super().__init__(self.message)
 
     def __init__(
-        self, iface, subnet: str = "10.115", netmask: str = "255.255.0.0"
+        self,
+        iface: Any,
+        subnet: str = "10.115",
+        netmask: str = "255.255.0.0",
     ) -> None:
         """Initialize a Tunnel bound to a mesh interface and subnet.
 
@@ -145,7 +149,10 @@ class Tunnel:
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
-        myAddr = self._nodeNumToIp(self.iface.myInfo.my_node_num)
+        my_info = self.iface.myInfo
+        if my_info is None:
+            raise Tunnel.TunnelError("Tunnel() requires iface.myInfo to be initialized")
+        myAddr = self._nodeNumToIp(my_info.my_node_num)
 
         if self.iface.nodes:
             for node in self.iface.nodes.values():

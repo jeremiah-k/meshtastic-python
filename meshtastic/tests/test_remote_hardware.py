@@ -162,8 +162,11 @@ def test_watchGPIOs(caplog):
 def test_send_hardware_no_nodeid():
     """Test sending no nodeid to _send_hardware()."""
     iface = _mock_iface_with_gpio_channel()
-    rhw = RemoteHardwareClient(iface)
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Must use a destination node ID"
-    ):
-        rhw._send_hardware(None, None)
+    try:
+        rhw = RemoteHardwareClient(iface)
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError, match="Must use a destination node ID"
+        ):
+            rhw._send_hardware(None, None)  # type: ignore[arg-type]
+    finally:
+        iface.close()

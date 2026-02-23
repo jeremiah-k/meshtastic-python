@@ -43,11 +43,11 @@ def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     types.ModuleType
         The mocked `serial` module object that was inserted into sys.modules.
     """
-    serial_module = types.ModuleType("serial")
+    serial_module: Any = types.ModuleType("serial")
 
     # Create tools submodule
-    tools_module = types.ModuleType("serial.tools")
-    list_ports_module = types.ModuleType("serial.tools.list_ports")
+    tools_module: Any = types.ModuleType("serial.tools")
+    list_ports_module: Any = types.ModuleType("serial.tools.list_ports")
     list_ports_module.comports = lambda *_args, **_kwargs: []
     tools_module.list_ports = list_ports_module
     serial_module.tools = tools_module
@@ -76,7 +76,7 @@ def mock_pubsub(monkeypatch):
     module
         The injected `pubsub` module.
     """
-    pubsub_module = types.ModuleType("pubsub")
+    pubsub_module: Any = types.ModuleType("pubsub")
     pubsub_module.pub = SimpleNamespace(
         subscribe=lambda *_args, **_kwargs: None,
         sendMessage=lambda *_args, **_kwargs: None,
@@ -97,7 +97,7 @@ def mock_publishing_thread(monkeypatch):
     -------
         The mocked publishingThread module inserted into sys.modules.
     """
-    publishing_thread_module = types.ModuleType("publishingThread")
+    publishing_thread_module: Any = types.ModuleType("publishingThread")
 
     def queueWork(callback):
         """Execute the provided callback immediately.
@@ -131,7 +131,7 @@ def mock_tabulate(monkeypatch):
     -------
         The fake `tabulate` module inserted into `sys.modules`.
     """
-    tabulate_module = types.ModuleType("tabulate")
+    tabulate_module: Any = types.ModuleType("tabulate")
     tabulate_module.tabulate = lambda *_args, **_kwargs: ""
 
     monkeypatch.setitem(sys.modules, "tabulate", tabulate_module)
@@ -153,7 +153,7 @@ def mock_bleak(monkeypatch):
     types.ModuleType
         The fake `bleak` module object inserted into `sys.modules`.
     """
-    bleak_module = types.ModuleType("bleak")
+    bleak_module: Any = types.ModuleType("bleak")
     bleak_module.__version__ = "2.1.1"
 
     class _StubBleakClient:
@@ -299,9 +299,9 @@ def mock_bleak(monkeypatch):
     bleak_module.__path__ = []
 
     # Provide bleak.backends.device.BLEDevice for production imports
-    bleak_backends_module = types.ModuleType("bleak.backends")
+    bleak_backends_module: Any = types.ModuleType("bleak.backends")
     bleak_backends_module.__path__ = []
-    bleak_backends_device_module = types.ModuleType("bleak.backends.device")
+    bleak_backends_device_module: Any = types.ModuleType("bleak.backends.device")
     bleak_backends_device_module.BLEDevice = _StubBLEDevice
     bleak_backends_module.device = bleak_backends_device_module
     bleak_module.backends = bleak_backends_module
@@ -315,7 +315,9 @@ def mock_bleak(monkeypatch):
 
 
 @pytest.fixture
-def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-name
+def mock_bleak_exc(
+    monkeypatch, mock_bleak: Any
+):  # pylint: disable=redefined-outer-name
     """Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
 
     The created module is attached to the provided `mock_bleak` as its `exc` attribute and inserted into `sys.modules` under the name `"bleak.exc"`.
@@ -324,7 +326,7 @@ def mock_bleak_exc(monkeypatch, mock_bleak):  # pylint: disable=redefined-outer-
     -------
         The created `bleak.exc` module.
     """
-    bleak_exc_module = types.ModuleType("bleak.exc")
+    bleak_exc_module: Any = types.ModuleType("bleak.exc")
 
     class _StubBleakError(Exception):
         """_summary_."""

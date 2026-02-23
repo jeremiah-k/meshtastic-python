@@ -6,11 +6,11 @@ Meshtastic devices via TCP/IP network connections.
 
 # pylint: disable=R0917
 import contextlib
-import io
 import logging
 import socket
 import threading
 import time
+from typing import IO
 
 from meshtastic.stream_interface import StreamInterface
 
@@ -31,7 +31,7 @@ class TCPInterface(StreamInterface):
     def __init__(
         self,
         hostname: str,
-        debugOut: io.TextIOWrapper | None = None,
+        debugOut: IO[str] | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         portNumber: int = DEFAULT_TCP_PORT,
@@ -45,7 +45,7 @@ class TCPInterface(StreamInterface):
         ----------
         hostname : str
             Hostname or IP address of the device to connect to.
-        debugOut : TextIOWrapper | None
+        debugOut : IO[str] | None
             Optional debug output/stream; passed to the base class. (Default value = None)
         noProto : bool
             If True, disable protocol handling. (Default value = False)

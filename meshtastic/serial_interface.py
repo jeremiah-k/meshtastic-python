@@ -8,7 +8,7 @@ import logging
 import sys
 import time
 import types
-from io import TextIOWrapper
+from typing import IO
 
 import serial  # type: ignore[import-untyped]
 
@@ -25,7 +25,7 @@ class SerialInterface(StreamInterface):
     def __init__(
         self,
         devPath: str | None = None,
-        debugOut: TextIOWrapper | None = None,
+        debugOut: IO[str] | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
@@ -40,7 +40,7 @@ class SerialInterface(StreamInterface):
             "/dev/ttyUSB0"). If None, a single available Meshtastic port will be
             auto-detected; if none are found, a fallback StreamInterface without a
             serial connection is created. (Default value = None)
-        debugOut : TextIOWrapper | None
+        debugOut : IO[str] | None
             Optional stream to emit raw debug serial output. (Default value = None)
         noProto : bool
             Disable higher-level protocol handling when True. (Default value = False)
@@ -117,14 +117,14 @@ class SerialInterface(StreamInterface):
                     self.stream.close()
                     self.stream = None
 
-    def _set_hupcl_with_termios(self, f: TextIOWrapper) -> None:
+    def _set_hupcl_with_termios(self, f: IO[str]) -> None:
         """Clear the terminal HUPCL (hang-up-on-close) flag for the given device file to prevent the device from rebooting when RTS/DTR change.
 
         On Windows this is a no-op.
 
         Parameters
         ----------
-        f : TextIOWrapper
+        f : IO[str]
             Open file-like handle for the serial device whose terminal attributes will be adjusted.
         """
         if sys.platform == "win32":

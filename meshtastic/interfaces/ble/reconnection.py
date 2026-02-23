@@ -2,7 +2,7 @@
 
 import logging
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -28,6 +28,13 @@ class ReconnectPolicyMissingMethodError(AttributeError):
         """Initialize with the missing method name."""
         self.method_name = method_name
         super().__init__(f"ReconnectPolicy missing method '{method_name}'")
+
+
+class NextAttempt(NamedTuple):
+    """Validated reconnect scheduling decision from policy.next_attempt()."""
+
+    delay: float
+    should_retry: bool
 
 
 class ReconnectScheduler:
@@ -208,7 +215,7 @@ class ReconnectWorker:
             return True
         return False
 
-    def _validate_next_attempt(self, value: Any) -> tuple[float, bool] | None:
+    def _validate_next_attempt(self, value: Any) -> NextAttempt | None:
         """Validate reconnect-policy next_attempt() output.
 
         Parameters
@@ -218,8 +225,8 @@ class ReconnectWorker:
 
         Returns
         -------
-        tuple[float, bool] | None
-            (sleep_delay, should_retry) on valid input, otherwise None.
+        NextAttempt | None
+            (delay, should_retry) on valid input, otherwise None.
         """
         if not isinstance(value, tuple) or len(value) != 2:
             logger.error(
@@ -245,7 +252,7 @@ class ReconnectWorker:
                 value,
             )
             return None
-        return sleep_delay, should_retry
+        return NextAttempt(delay=sleep_delay, should_retry=should_retry)
 
     def _attempt_reconnect_loop(  # pylint: disable=R0911
         self,
@@ -377,7 +384,8 @@ class ReconnectWorker:
                 validated_next_attempt = self._validate_next_attempt(next_attempt)
                 if validated_next_attempt is None:
                     return
-                sleep_delay, should_retry = validated_next_attempt
+                sleep_delay = validated_next_attempt.delay
+                should_retry = validated_next_attempt.should_retry
                 if override_delay is not None:
                     sleep_delay = max(sleep_delay, override_delay)
                 if not should_retry:

@@ -5,6 +5,7 @@
 import base64
 import logging
 import re
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,135 +36,112 @@ def test_node(capsys, mock_serial_interface):
     assert err == ""
 
 
-# TODO
-# @pytest.mark.unit
-# def test_node_requestConfig(capsys):
-#    """Test run requestConfig"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#            anode = Node(mo, 'bar')
-#            anode.requestConfig()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Requesting preferences from remote node', out, re.MULTILINE)
-#    assert err == ''
+# Legacy commented tests were removed from this section. RequestConfig and other
+# Node flows should continue to be reintroduced as active tests over time.
 
 
-# @pytest.mark.unit
-# def test_node_get_canned_message_with_all_parts(capsys):
-#    """Test run get_canned_message()"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#            # we have a sleep in this method, so override it so it goes fast
-#            with patch('time.sleep'):
-#                anode = Node(mo, 'bar')
-#                anode.cannedPluginMessagePart1 = 'a'
-#                anode.cannedPluginMessagePart2 = 'b'
-#                anode.cannedPluginMessagePart3 = 'c'
-#                anode.cannedPluginMessagePart4 = 'd'
-#                anode.cannedPluginMessagePart5 = 'e'
-#                anode.get_canned_message()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'canned_plugin_message:abcde', out, re.MULTILINE)
-#    assert err == ''
-#
-#
-# @pytest.mark.unit
-# def test_node_get_canned_message_with_some_parts(capsys):
-#    """Test run get_canned_message()"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#        with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#            # we have a sleep in this method, so override it so it goes fast
-#            with patch('time.sleep'):
-#                anode = Node(mo, 'bar')
-#                anode.cannedPluginMessagePart1 = 'a'
-#                anode.get_canned_message()
-#    out, err = capsys.readouterr()
-#    assert re.search(r'canned_plugin_message:a', out, re.MULTILINE)
-#    assert err == ''
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_one_part(caplog):
-#    """Test run set_canned_message()"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                anode.set_canned_message('foo')
-#    assert re.search(r"Setting canned message 'foo' part 1", caplog.text, re.MULTILINE)
-#    assert not re.search(r"Setting canned message '' part 2", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_200(caplog):
-#    """Test run set_canned_message() 200 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                message_200_chars_long = 'a' * 200
-#                anode.set_canned_message(message_200_chars_long)
-#    assert re.search(r" part 1", caplog.text, re.MULTILINE)
-#    assert not re.search(r"Setting canned message '' part 2", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_201(caplog):
-#    """Test run set_canned_message() 201 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                message_201_chars_long = 'a' * 201
-#                anode.set_canned_message(message_201_chars_long)
-#    assert re.search(r" part 1", caplog.text, re.MULTILINE)
-#    assert re.search(r"Setting canned message 'a' part 2", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_1000(caplog):
-#    """Test run set_canned_message() 1000 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    amesg = MagicMock(autospec=AdminMessage)
-#    with caplog.at_level(logging.DEBUG):
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            with patch('meshtastic.admin_pb2.AdminMessage', return_value=amesg):
-#                anode = Node(mo, 'bar')
-#                message_1000_chars_long = 'a' * 1000
-#                anode.set_canned_message(message_1000_chars_long)
-#    assert re.search(r" part 1", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 2", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 3", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 4", caplog.text, re.MULTILINE)
-#    assert re.search(r" part 5", caplog.text, re.MULTILINE)
-#
-#
-# @pytest.mark.unit
-# def test_node_set_canned_message_1001(capsys):
-#    """Test run set_canned_message() 1001 characters long"""
-#    iface = MagicMock(autospec=SerialInterface)
-#    with pytest.raises(SystemExit) as pytest_wrapped_e:
-#        with patch('meshtastic.serial_interface.SerialInterface', return_value=iface) as mo:
-#            anode = Node(mo, 'bar')
-#            message_1001_chars_long = 'a' * 1001
-#            anode.set_canned_message(message_1001_chars_long)
-#    assert pytest_wrapped_e.type is SystemExit
-#    assert pytest_wrapped_e.value.code == 1
-#    out, err = capsys.readouterr()
-#    assert re.search(r'Warning: The canned message', out, re.MULTILINE)
-#    assert err == ''
+@pytest.mark.unit
+def test_get_canned_message_returns_cached_value(mock_serial_interface):
+    """get_canned_message should return the cached message without sending."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.cannedPluginMessage = "cached message"
+
+    send_admin = MagicMock()
+    anode._sendAdmin = send_admin  # type: ignore[method-assign]
+
+    assert anode.get_canned_message() == "cached message"
+    send_admin.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_canned_message_requests_and_caches_value(mock_serial_interface):
+    """get_canned_message should request, cache, and return the response payload."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    response_raw = admin_pb2.AdminMessage()
+    response_raw.get_canned_message_module_messages_response = "hello world"
+    sent_messages: list[admin_pb2.AdminMessage] = []
+
+    def _fake_send_admin(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse=None,
+        adminIndex: int = 0,
+    ):
+        _ = adminIndex
+        sent_messages.append(msg)
+        assert wantResponse is True
+        assert onResponse is not None
+        onResponse(
+            {
+                "decoded": {
+                    "admin": {
+                        "raw": response_raw,
+                    }
+                }
+            }
+        )
+        return object()
+
+    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign]
+
+    assert anode.get_canned_message() == "hello world"
+    assert anode.cannedPluginMessage == "hello world"
+    assert len(sent_messages) == 1
+    assert sent_messages[0].get_canned_message_module_messages_request is True
+
+    # A second call should use cache and avoid another request.
+    assert anode.get_canned_message() == "hello world"
+    assert len(sent_messages) == 1
+
+
+@pytest.mark.unit
+def test_set_canned_message_sends_payload_and_invalidates_cache(mock_serial_interface):
+    """set_canned_message should send payload and clear cached message values."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.cannedPluginMessage = "stale"
+    anode.cannedPluginMessageMessages = "stale-part"
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_admin(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse=None,
+        adminIndex: int = 0,
+    ):
+        captured["msg"] = msg
+        captured["wantResponse"] = wantResponse
+        captured["onResponse"] = onResponse
+        captured["adminIndex"] = adminIndex
+        return "sent"
+
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign]
+
+    result = anode.set_canned_message("fresh")
+
+    assert result == "sent"
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.set_canned_message_module_messages == "fresh"
+    assert captured["wantResponse"] is False
+    on_response = captured["onResponse"]
+    assert callable(on_response)
+    assert getattr(on_response, "__self__", None) is anode
+    assert getattr(on_response, "__func__", None) is Node.onAckNak
+    assert captured["adminIndex"] == 0
+    assert anode.cannedPluginMessage is None
+    assert anode.cannedPluginMessageMessages is None
+
+
+@pytest.mark.unit
+def test_set_canned_message_over_limit_raises(mock_serial_interface):
+    """set_canned_message should reject messages longer than 200 chars."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="The canned message must be 200 characters or fewer",
+    ):
+        anode.set_canned_message("a" * 201)
 
 
 @pytest.mark.unit

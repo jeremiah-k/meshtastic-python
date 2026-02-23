@@ -5,6 +5,7 @@ import threading
 import time
 import warnings
 from concurrent.futures import Future
+from typing import Any, cast
 
 import pytest
 
@@ -97,6 +98,7 @@ class TestBLECoroutineRunner:
 
         # Force stop the loop to kill the thread
         runner._stop()
+        assert thread1 is not None
         assert thread1.is_alive() is False
 
         # Next operation should restart it
@@ -187,7 +189,7 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
-            runner._loop = _LoopStub()
+            runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
             """Close the provided coroutine without executing it and return a completed Future with result None.
@@ -243,7 +245,7 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
-            runner._loop = _LoopStub()
+            runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
             """Close the provided coroutine without executing it and return a completed Future with result None.
@@ -300,7 +302,7 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
-            runner._loop = _LoopStub()
+            runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
             """Close the provided coroutine without executing it and return a completed Future with result None.
@@ -660,7 +662,7 @@ class TestBLEClientWithRunner:
 
         client = BLEClient()
         bleak_client = ConnectedBleakClient()
-        client.bleak_client = bleak_client
+        client.bleak_client = cast(Any, bleak_client)
 
         client.close()
 
@@ -692,7 +694,7 @@ class TestBLEClientWithRunner:
                 raise RuntimeError("boom")
 
         client = BLEClient()
-        client.bleak_client = FailingBleakClient()
+        client.bleak_client = cast(Any, FailingBleakClient())
 
         client.close()
 

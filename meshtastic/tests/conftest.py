@@ -2,8 +2,8 @@
 
 import argparse
 from collections.abc import Generator
-from typing import Any, Callable, ClassVar, Type
-from unittest.mock import MagicMock
+from typing import Any, Callable, ClassVar
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -13,12 +13,12 @@ from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
 
 
-def _create_context_manager_mock(spec_class: Type) -> MagicMock:
+def _create_context_manager_mock(spec_class: type[Any]) -> MagicMock:
     """Create a MagicMock that behaves as a context manager for the given spec class.
 
     Parameters
     ----------
-    spec_class : Type
+    spec_class : type[Any]
         Class to use as the mock's specification (e.g., SerialInterface).
 
     Returns
@@ -26,7 +26,7 @@ def _create_context_manager_mock(spec_class: Type) -> MagicMock:
     MagicMock
         A mock whose `__enter__` returns the mock itself and whose `__exit__` returns `None`.
     """
-    mock = MagicMock(spec=spec_class)
+    mock = create_autospec(spec_class, instance=True)
     mock.__enter__ = MagicMock(return_value=mock)
     mock.__exit__ = MagicMock(return_value=None)
     return mock
@@ -81,7 +81,7 @@ class FakeTimer:
 
 
 @pytest.fixture(name="fake_timer_cls")
-def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"]:
+def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> type["FakeTimer"]:
     """Install a per-fixture FakeTimer subclass in place of meshtastic.mesh_interface.threading.Timer for use in tests.
 
     Parameters
@@ -91,7 +91,7 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> Type["FakeTimer"
 
     Returns
     -------
-    Type['FakeTimer']
+    type['FakeTimer']
         The FakeTimer subclass that was installed.
     """
 

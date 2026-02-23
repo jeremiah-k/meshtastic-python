@@ -15,7 +15,7 @@ class PPK2PowerSupply(PowerSupply):
     Power Profiler Kit II is what you should google to find it for purchase.
     """
 
-    def __init__(self, portName: str | None = None):
+    def __init__(self, portName: str | None = None) -> None:
         """Initialize a PPK2PowerSupply and prepare it for measurements.
 
         If portName is None the constructor auto-discovers connected PPK2 devices
@@ -163,7 +163,7 @@ class PPK2PowerSupply(PowerSupply):
             # measurements are in microamperes, divide by 1000
             return self.current_average / 1000
 
-    def reset_measurements(self):
+    def reset_measurements(self) -> None:
         """Reset the current measurement statistics."""
         # Use the last reading as the new only reading (to ensure we always have a valid current reading)
         self.current_sum = 0
@@ -186,7 +186,7 @@ class PPK2PowerSupply(PowerSupply):
         self.measurement_thread.join()  # wait for our thread to finish
         super().close()
 
-    def setIsSupply(self, is_supply: bool):
+    def setIsSupply(self, is_supply: bool) -> None:
         """Set the PPK2 mode to either power supply or amp meter.
 
         If in supply mode we will provide power ourself, otherwise we are just an amp meter.
@@ -234,10 +234,10 @@ class PPK2PowerSupply(PowerSupply):
             )  # FIXME - crufty way to ensure we do one set of reads to discard bogus fake power readings in the FIFO
             self.reset_measurements()
 
-    def powerOn(self):
+    def powerOn(self) -> None:
         """Power on the DUT (Device Under Test)."""
         self.r.toggle_DUT_power("ON")
 
-    def powerOff(self):
+    def powerOff(self) -> None:
         """Power off the DUT (Device Under Test)."""
         self.r.toggle_DUT_power("OFF")

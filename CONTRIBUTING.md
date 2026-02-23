@@ -15,8 +15,10 @@
 - Do not churn code with typing-only mass rewrites; normalize typing style only
   in areas already being edited.
 - If your LSP/type checker suggests replacing `|` with `Optional`/`Union`,
-  fix the tool's interpreter/version configuration first (project `venv` /
-  Poetry env), rather than rewriting annotations for Python 3.9 compatibility.
+  fix the tool's interpreter/version configuration first (Poetry-managed env),
+  rather than rewriting annotations for legacy pre-3.10 compatibility.
+- Do not require contributors to manually create/activate a venv; use
+  `poetry install ...` and run tools via `poetry run ...`.
 
 ## Docstring style
 

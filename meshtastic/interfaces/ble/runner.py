@@ -654,6 +654,8 @@ class BLECoroutineRunner:
             If the event loop fails to become ready within the configured timeout.
         """
         with self._instance_lock:
+            # _is_running acquires _instance_lock internally; this is safe because
+            # _instance_lock is intentionally an RLock (reentrant).
             if self._is_running:
                 return False
 

@@ -1,7 +1,7 @@
 """Shared pytest fixtures for BLE tests."""
 
 import logging
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
 
@@ -34,7 +34,9 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
 
     try:
         runner = BLECoroutineRunner()
-        runner.stop(timeout=2.0)
+        stop_runner = getattr(runner, "stop", None)
+        if callable(stop_runner):
+            stop_runner(timeout=2.0)
     except Exception as exc:  # noqa: BLE001 - teardown must not raise
         logger.debug(
             "Failed to stop BLECoroutineRunner during test cleanup: %s",

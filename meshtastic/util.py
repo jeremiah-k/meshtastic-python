@@ -1,6 +1,7 @@
 """Utility functions."""
 
 import base64
+import glob
 import logging
 import os
 import platform
@@ -278,7 +279,7 @@ def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
     try:
         closure()
     except Exception:
-        logger.exception(f"Exception thrown in {reason}")
+        logger.exception("Exception thrown in %s", reason)
 
 
 def findPorts(eliminate_duplicates: bool = False) -> list[str]:
@@ -1031,16 +1032,11 @@ def _discover_unix_ports(bp: str) -> set[str]:
     Returns
     -------
     set[str]
-        Matching absolute device paths discovered by `ls`, or an empty set.
+        Matching absolute device paths, or an empty set.
     """
     discovered_ports: set[str] = set()
-    command = f"ls -al /dev/{bp}* 2> /dev/null"
-    _, ls_output = subprocess.getstatusoutput(command)
-    if ls_output:
-        for line in ls_output.split("\n"):
-            parts = line.split()
-            if parts:
-                discovered_ports.add(parts[-1])
+    for path in glob.glob(f"/dev/{bp}*"):
+        discovered_ports.add(path)
     return discovered_ports
 
 

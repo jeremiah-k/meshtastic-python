@@ -469,14 +469,11 @@ def test_active_ports_on_supported_devices_empty(mock_platform):
 
 
 @pytest.mark.unit
-@patch("subprocess.getstatusoutput")
+@patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Linux")
-def test_active_ports_on_supported_devices_linux(mock_platform, mock_sp):
+def test_active_ports_on_supported_devices_linux(mock_platform, mock_glob):
     """Test active_ports_on_supported_devices()."""
-    mock_sp.return_value = (
-        None,
-        "crw-rw-rw-  1 root        wheel   0x9000000 Feb  8 22:22 /dev/ttyUSBfake",
-    )
+    mock_glob.return_value = ["/dev/ttyUSBfake"]
     fake_device = SupportedDevice(
         name="a", for_firmware="heltec-v2.1", baseport_on_linux="ttyUSB"
     )
@@ -485,18 +482,15 @@ def test_active_ports_on_supported_devices_linux(mock_platform, mock_sp):
         "/dev/ttyUSBfake"
     }
     mock_platform.assert_called()
-    mock_sp.assert_called()
+    mock_glob.assert_called()
 
 
 @pytest.mark.unit
-@patch("subprocess.getstatusoutput")
+@patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Darwin")
-def test_active_ports_on_supported_devices_mac(mock_platform, mock_sp):
+def test_active_ports_on_supported_devices_mac(mock_platform, mock_glob):
     """Test active_ports_on_supported_devices()."""
-    mock_sp.return_value = (
-        None,
-        "crw-rw-rw-  1 root        wheel   0x9000000 Feb  8 22:22 /dev/cu.usbserial-foo",
-    )
+    mock_glob.return_value = ["/dev/cu.usbserial-foo"]
     fake_device = SupportedDevice(
         name="a", for_firmware="heltec-v2.1", baseport_on_linux="cu.usbserial-"
     )
@@ -505,7 +499,7 @@ def test_active_ports_on_supported_devices_mac(mock_platform, mock_sp):
         "/dev/cu.usbserial-foo"
     }
     mock_platform.assert_called()
-    mock_sp.assert_called()
+    mock_glob.assert_called()
 
 
 @pytest.mark.unit
@@ -521,19 +515,16 @@ def test_active_ports_on_supported_devices_win(mock_platform, mock_dwp):
 
 
 @pytest.mark.unit
-@patch("subprocess.getstatusoutput")
+@patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Darwin")
 def test_active_ports_on_supported_devices_mac_no_duplicates_check(
-    mock_platform, mock_sp
+    mock_platform, mock_glob
 ):
     """Test active_ports_on_supported_devices()."""
-    mock_sp.return_value = (
-        None,
-        (
-            "crw-rw-rw-  1 root  wheel  0x9000005 Mar  8 10:05 /dev/cu.usbmodem53230051441\n"
-            "crw-rw-rw-  1 root  wheel  0x9000003 Mar  8 10:06 /dev/cu.wchusbserial53230051441"
-        ),
-    )
+    mock_glob.return_value = [
+        "/dev/cu.usbmodem53230051441",
+        "/dev/cu.wchusbserial53230051441",
+    ]
     fake_device = SupportedDevice(
         name="a", for_firmware="tbeam", baseport_on_mac="cu.usbmodem"
     )
@@ -543,26 +534,25 @@ def test_active_ports_on_supported_devices_mac_no_duplicates_check(
         "/dev/cu.wchusbserial53230051441",
     }
     mock_platform.assert_called()
-    mock_sp.assert_called()
+    mock_glob.assert_called()
 
 
 @pytest.mark.unit
-@patch("subprocess.getstatusoutput")
+@patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Darwin")
-def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, mock_sp):
+def test_active_ports_on_supported_devices_mac_duplicates_check(
+    mock_platform, mock_glob
+):
     """Ensure duplicate mac device entries are deduplicated when duplicate checking is enabled.
 
     Verifies that given a mac-style device listing containing two related device paths, active_ports_on_supported_devices(...)
     returns only the non-duplicate host port when the duplicates check is enabled.
 
     """
-    mock_sp.return_value = (
-        None,
-        (
-            "crw-rw-rw-  1 root  wheel  0x9000005 Mar  8 10:05 /dev/cu.usbmodem53230051441\n"
-            "crw-rw-rw-  1 root  wheel  0x9000003 Mar  8 10:06 /dev/cu.wchusbserial53230051441"
-        ),
-    )
+    mock_glob.return_value = [
+        "/dev/cu.usbmodem53230051441",
+        "/dev/cu.wchusbserial53230051441",
+    ]
     fake_device = SupportedDevice(
         name="a", for_firmware="tbeam", baseport_on_mac="cu.usbmodem"
     )
@@ -571,7 +561,7 @@ def test_active_ports_on_supported_devices_mac_duplicates_check(mock_platform, m
         "/dev/cu.wchusbserial53230051441"
     }
     mock_platform.assert_called()
-    mock_sp.assert_called()
+    mock_glob.assert_called()
 
 
 @pytest.mark.unit

@@ -4,10 +4,11 @@ import logging
 import threading
 import time
 import types
+from collections.abc import Iterator
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Iterator, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,7 +23,6 @@ from meshtastic.interfaces.ble.constants import (
     LEGACY_LOGRADIO_UUID,
     LOGRADIO_UUID,
 )
-from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.interface import BLEInterface
 from meshtastic.protobuf import mesh_pb2
 
@@ -441,26 +441,17 @@ def test_rapid_connect_disconnect_stress_test(caplog):
     mock_device.address = "00:11:22:33:44:55"
     mock_device.name = "Test Device"
 
-    class MockBleakRootClient:
-        """Mock BleakRootClient that tracks operations for stress testing."""
+    class BaseMockBleakClient:
+        """Shared BLE client stub behavior for stress-test doubles."""
 
-        def __init__(self):
-            """Initialize a test BLE client and its simulation state.
-
-            Attributes
-            ----------
-            connect_count : int
-                Number of simulated connect attempts.
-            disconnect_count : int
-                Number of simulated disconnect attempts.
-            address : str
-                Mock Bluetooth address identifying the client.
-            _should_fail_connect : bool
-                If True, `connect()` will simulate a failure by raising an error.
-            """
+        def __init__(
+            self, address: str = "00:11:22:33:44:55", is_connected_result: bool = True
+        ):
+            """Initialize the shared BLE test stub state."""
             self.connect_count = 0
             self.disconnect_count = 0
-            self.address = "00:11:22:33:44:55"
+            self.address = address
+            self.is_connected_result = is_connected_result
             self._should_fail_connect = False
 
         def connect(self, *_args, **_kwargs):
@@ -484,93 +475,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             return self
 
         def is_connected(self):
-            """Indicate whether the mock client is connected.
-
-            Returns
-            -------
-                `True` because this mock simulates a persistent connection.
-            """
-            return True
-
-        def disconnect(self, *_args, **_kwargs):
-            """Record a disconnect attempt on the mock client.
-
-            Increments the `disconnect_count` attribute by 1. Any positional or keyword arguments are accepted for call-site compatibility and ignored.
-            """
-            self.disconnect_count += 1
-
-        def start_notify(self, *_args, **_kwargs):
-            """Accept any positional and keyword arguments and perform no action.
-
-            This stub is a no-op placeholder that intentionally ignores all inputs.
-            """
-
-        def stopNotify(self, *_args, **_kwargs):
-            """Compatibility shim that accepts any arguments and performs no action.
-
-            Provided for API compatibility with BLE client implementations; accepts any positional and keyword arguments and does nothing.
-            """
-
-    class StressTestClient(BLEClient):
-        """Mock client that simulates rapid connect/disconnect cycles."""
-
-        def __init__(self):  # pylint: disable=super-init-not-called
-            # Don't call super().__init__() to avoid creating real event loop
-            """Create a mock BLE root client that simulates a Bleak client and connection state for tests.
-
-            Initializes attributes used by tests to emulate connect/disconnect behavior:
-
-            Attributes
-            ----------
-            bleak_client : MockBleakRootClient
-                Mock underlying Bleak client used to emulate BLE operations.
-            connect_count : int
-                Number of simulated successful connect attempts.
-            disconnect_count : int
-                Number of simulated disconnect attempts.
-            is_connected_result : bool
-                Value returned by isConnected checks to represent the current connection state.
-            _should_fail_connect : bool
-                If True, simulated connect attempts will fail.
-                Placeholder for an event loop to suppress test warnings.
-                Placeholder for an event thread to suppress test warnings.
-            """
-            self.bleak_client = MockBleakRootClient()  # type: ignore[assignment]
-            self.connect_count = 0
-            self.disconnect_count = 0
-            self.is_connected_result = True
-            self._should_fail_connect = False
-            # Add mock event loop attributes to prevent warnings
-            self._eventLoop = None
-            self._eventThread = None
-
-        def connect(self, *_args, **_kwargs):
-            """Simulate a BLE client connection for tests.
-
-            Increments the client's connect_count and returns the client instance. If the client is configured to fail, raises a RuntimeError.
-
-            Returns
-            -------
-            self
-                The mock client instance with connect_count incremented.
-
-            Raises
-            ------
-            RuntimeError
-                If the client is configured to fail connecting.
-            """
-            if self._should_fail_connect:
-                raise RuntimeError("connect fail")  # noqa: TRY003
-            self.connect_count += 1
-            return self
-
-        def is_connected(self):
-            """Report whether the mock client is configured as connected.
-
-            Returns
-            -------
-                True if the mock client is configured as connected, False otherwise.
-            """
+            """Report whether the mock client is configured as connected."""
             return self.is_connected_result
 
         def disconnect(self, *_args, **_kwargs):
@@ -591,6 +496,55 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
             Provided for API compatibility with BLE client implementations; accepts any positional and keyword arguments and does nothing.
             """
+
+    class MockBleakRootClient(BaseMockBleakClient):
+        """Mock BleakRootClient that tracks operations for stress testing."""
+
+    class StressTestClient(BLEClient):
+        """Mock client that simulates rapid connect/disconnect cycles."""
+
+        def __init__(self):  # pylint: disable=super-init-not-called
+            # Don't call super().__init__() to avoid creating real event loop
+            """Create a mock BLE root client that simulates a Bleak client and connection state for tests.
+
+            Initializes attributes used by tests to emulate connect/disconnect behavior:
+
+            Attributes
+            ----------
+            bleak_client : MockBleakRootClient
+                Mock underlying Bleak client used to emulate BLE operations.
+            _should_fail_connect : bool
+                If True, simulated connect attempts will fail.
+                Placeholder for an event loop to suppress test warnings.
+                Placeholder for an event thread to suppress test warnings.
+            """
+            self.bleak_client = MockBleakRootClient()  # type: ignore[assignment]
+            self._should_fail_connect = False
+            # Add mock event loop attributes to prevent warnings
+            self._eventLoop = None
+            self._eventThread = None
+
+        def connect(self, *_args, **_kwargs):
+            """Delegate connection behavior to the shared bleak client stub."""
+            bleak_client = cast(Any, self.bleak_client)
+            bleak_client._should_fail_connect = self._should_fail_connect
+            return bleak_client.connect(*_args, **_kwargs)
+
+        def is_connected(self):
+            """Delegate connection-state queries to the shared bleak client stub."""
+            return cast(Any, self.bleak_client).is_connected()
+
+        def disconnect(self, *_args, **_kwargs):
+            """Delegate disconnect behavior to the shared bleak client stub."""
+            cast(Any, self.bleak_client).disconnect(*_args, **_kwargs)
+
+        def start_notify(self, *_args, **_kwargs):
+            """Delegate notify-start behavior to the shared bleak client stub."""
+            cast(Any, self.bleak_client).start_notify(*_args, **_kwargs)
+
+        def stopNotify(self, *_args, **_kwargs):
+            """Delegate notify-stop behavior to the shared bleak client stub."""
+            cast(Any, self.bleak_client).stopNotify(*_args, **_kwargs)
 
         def close(self):
             """No-op close method used in tests to avoid interacting with the event loop.
@@ -688,7 +642,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             Triggers ten disconnect callbacks roughly 0.01 seconds apart to exercise the interface's reconnect and disconnect handling during tests.
             """
             for _ in range(10):
-                iface._on_ble_disconnect(client.bleak_client)
+                iface._on_ble_disconnect(cast(Any, client.bleak_client))
                 time.sleep(0.01)  # Very short delay between disconnects
 
         # Start rapid disconnect simulation in a separate thread
@@ -715,7 +669,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             """
             for i in range(5):
                 try:
-                    iface2._on_ble_disconnect(client2.bleak_client)
+                    iface2._on_ble_disconnect(cast(Any, client2.bleak_client))
                     time.sleep(0.005)
                 except (RuntimeError, AttributeError, KeyError) as e:
                     logging.debug(
@@ -742,7 +696,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
         # Verify thread-safety - no exceptions should be raised
         assert client2.bleak_client is not None
-        assert client2.bleak_client.disconnect_count >= 0
+        assert cast(Any, client2.bleak_client).disconnect_count >= 0
 
     # Test 3: Stress test with connection failures
     with create_interface_with_auto_reconnect() as (iface3, client3):
@@ -752,7 +706,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         # Exceptions are expected and suppressed to continue stress testing
         for _ in range(5):
             try:
-                iface3._on_ble_disconnect(client3.bleak_client)
+                iface3._on_ble_disconnect(cast(Any, client3.bleak_client))
                 time.sleep(0.01)
             except Exception as e:  # noqa: BLE001 - expected during failure stress
                 logging.debug(
@@ -810,33 +764,34 @@ def test_ble_client_is_connected_exception_handling(caplog):
             raise self.exception_type("conn check failed")  # noqa: TRY003
 
     # Create BLEClient with a mock bleak client that raises exceptions
-    ble_client = BLEClient.__new__(BLEClient)
-    ble_client.bleak_client = ExceptionBleakClient(AttributeError)
-    # Initialize error_handler since __new__ bypasses __init__
-    ble_client.error_handler = BLEErrorHandler()
+    ble_client = ble_mod.BLEClient(log_if_no_address=False)
+    try:
+        ble_client.bleak_client = cast(Any, ExceptionBleakClient(AttributeError))
 
-    # Should return False and log debug message when AttributeError occurs
-    result = ble_client.isConnected()
-    assert result is False
-    assert "Unable to read bleak connection state" in caplog.text
+        # Should return False and log debug message when AttributeError occurs
+        result = ble_client.isConnected()
+        assert result is False
+        assert "Unable to read bleak connection state" in caplog.text
 
-    # Clear caplog
-    caplog.clear()
+        # Clear caplog
+        caplog.clear()
 
-    # Test TypeError
-    ble_client.bleak_client = ExceptionBleakClient(TypeError)
-    result = ble_client.isConnected()
-    assert result is False
-    assert "Unable to read bleak connection state" in caplog.text
+        # Test TypeError
+        ble_client.bleak_client = cast(Any, ExceptionBleakClient(TypeError))
+        result = ble_client.isConnected()
+        assert result is False
+        assert "Unable to read bleak connection state" in caplog.text
 
-    # Clear caplog
-    caplog.clear()
+        # Clear caplog
+        caplog.clear()
 
-    # Test RuntimeError
-    ble_client.bleak_client = ExceptionBleakClient(RuntimeError)
-    result = ble_client.isConnected()
-    assert result is False
-    assert "Unable to read bleak connection state" in caplog.text
+        # Test RuntimeError
+        ble_client.bleak_client = cast(Any, ExceptionBleakClient(RuntimeError))
+        result = ble_client.isConnected()
+        assert result is False
+        assert "Unable to read bleak connection state" in caplog.text
+    finally:
+        ble_client.close()
 
 
 def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
@@ -852,13 +807,16 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     client = ble_mod.BLEClient()  # address=None keeps underlying bleak client unset
 
     class _FakeFuture:
-        """_summary_.
+        """Future stub that simulates timeout behavior for _async_await tests.
 
         Methods
         -------
         result(_timeout=None)
+            Raises FutureTimeoutError to emulate timeout on wait.
         cancel()
+            Marks the fake future as cancelled.
         add_done_callback(callback)
+            Stores completion callbacks for later inspection.
         """
 
         def __init__(self):
@@ -958,12 +916,14 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
     client = ble_mod.BLEClient()
 
     class _FakeFuture:
-        """_summary_.
+        """Future stub that simulates runtime-failure behavior for _async_await tests.
 
         Methods
         -------
         result(_timeout=None)
+            Raises RuntimeError("loop is closed").
         cancel()
+            Marks the fake future as cancelled.
         """
 
         def __init__(self):

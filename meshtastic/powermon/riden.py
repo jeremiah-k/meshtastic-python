@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 
-from riden import Riden
+from riden.riden import Riden
 
 from .power_supply import PowerSupply
 
@@ -36,10 +36,10 @@ class RidenPowerSupply(PowerSupply):
         self.r.set_v_set(
             self.v
         )  # my WM1110 devboard header is directly connected to the 3.3V rail
-        self.r.set_output(1)
+        self.r.set_output(True)
 
     def get_average_current_mA(self) -> float:
-        """Returns average current of last measurement in mA (since last call to this method)"""
+        """Return average current of last measurement in mA since the previous call."""
         now = datetime.now()
         nowWattHour = self._getRawWattHour()
         watts = (

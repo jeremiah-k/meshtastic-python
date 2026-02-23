@@ -33,18 +33,22 @@ class ArrowWriter:
         # Re-entrant: _write() can call set_schema() while the same lock is held.
         self._lock = threading.RLock()
 
-    def close(self):
+    def close(self) -> None:
         """Close the writer, flush any buffered rows, and close the underlying sink.
 
         Flushes any accumulated rows to disk, closes the RecordBatchStreamWriter if one exists, and closes the file sink.
         """
         with self._lock:
-            self._write()
-            if self.writer:
-                self.writer.close()
-            self.sink.close()
+            try:
+                self._write()
+            finally:
+                try:
+                    if self.writer:
+                        self.writer.close()
+                finally:
+                    self.sink.close()
 
-    def set_schema(self, schema: pa.Schema):
+    def set_schema(self, schema: pa.Schema) -> None:
         """Set the schema for the file.
 
         Only needed for datasets where we can't learn it from the first record written.
@@ -59,19 +63,22 @@ class ArrowWriter:
             self.schema = schema
             self.writer = pa.ipc.new_stream(self.sink, schema)
 
-    def _write(self):
+    def _write(self) -> None:
         """Write the new rows to the file."""
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
                 self.set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
 
+            assert self.writer is not None
             self.writer.write_batch(
-                pa.RecordBatch.from_pylist(self.new_rows, schema=self.schema)
+                pa.RecordBatch.from_pylist(  # type: ignore[attr-defined]
+                    self.new_rows, schema=self.schema
+                )
             )
             self.new_rows = []
 
-    def add_row(self, row_dict: dict):
+    def add_row(self, row_dict: dict) -> None:
         """Add a row to the arrow file.
 
         We will automatically learn the schema from the first row. But all rows must use that schema.
@@ -108,7 +115,7 @@ class FeatherWriter(ArrowWriter):
         super().__init__(file_name + ".arrow")
         self.base_file_name = file_name
 
-    def close(self):
+    def close(self) -> None:
         """Close the writer and convert the temporary Arrow file to Feather format.
 
         Converts the temporary .arrow file to a compressed .feather file and
@@ -129,5 +136,5 @@ class FeatherWriter(ArrowWriter):
                 array = pa.ipc.open_stream(source).read_all()
 
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
-            feather.write_feather(array, dest_name, compression="zstd")
+            feather.write_feather(array, dest_name, compression="zstd")  # type: ignore[arg-type]
             os.remove(src_name)

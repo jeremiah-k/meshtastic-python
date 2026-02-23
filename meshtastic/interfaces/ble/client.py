@@ -113,7 +113,7 @@ class BLEClient:
         # Use singleton runner for all BLE operations
         self._runner = BLECoroutineRunner()
 
-        if not address:
+        if address is None:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
             # Discovery-only instances won't have a connected bleak_client

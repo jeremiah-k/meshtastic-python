@@ -251,12 +251,17 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
         if not success:
             numFail = numFail + 1
             logger.error(
-                f"Test {testNumber} failed, expected packet not received ({numFail} failures so far)"
+                "Test %d failed, expected packet not received (%d failures so far)",
+                testNumber,
+                numFail,
             )
         else:
             numSuccess = numSuccess + 1
             logger.info(
-                f"Test {testNumber} succeeded {numSuccess} successes {numFail} failures so far"
+                "Test %d succeeded %d successes %d failures so far",
+                testNumber,
+                numSuccess,
+                numFail,
             )
 
         time.sleep(1)

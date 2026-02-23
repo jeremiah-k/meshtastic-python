@@ -3,7 +3,7 @@
 import argparse
 import logging
 import os
-from typing import cast
+from typing import Any, cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
@@ -36,12 +36,12 @@ def to_pmon_names(arr) -> list[str | None]:
         when a value cannot be mapped or represents the "None" state.
     """
 
-    def to_pmon_name(n):
+    def to_pmon_name(n: Any) -> str | None:
         """Map a power-monitor state numeric value to its corresponding enum name.
 
         Parameters
         ----------
-        n : int | any
+        n : Any
             Numeric value (or value convertible to int) representing a PowerMon.State.
 
         Returns
@@ -50,7 +50,7 @@ def to_pmon_names(arr) -> list[str | None]:
             The enum name string for the given state, or `None` if the value does not map to a known state.
         """
         try:
-            s = powermon_pb2.PowerMon.State.Name(int(n))
+            s = powermon_pb2.PowerMon.State.Name(cast(Any, int(n)))
             return s if s != "None" else None
         except ValueError:
             return None
@@ -92,7 +92,9 @@ def read_pandas(filepath: str) -> pd.DataFrame:
         pa.string(): pd.StringDtype(),
     }
 
-    def _types_mapper(data_type: pa.DataType) -> pd.api.extensions.ExtensionDtype:
+    def _types_mapper(
+        data_type: pa.DataType,
+    ) -> pd.api.extensions.ExtensionDtype | None:
         """Map a PyArrow DataType to a pandas nullable ExtensionDtype.
 
         Parameters
@@ -102,7 +104,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 
         Returns
         -------
-        pd.api.extensions.ExtensionDtype
+        pd.api.extensions.ExtensionDtype | None
             The corresponding pandas nullable extension
             dtype if a predefined mapping exists; otherwise a pandas ArrowDtype wrapping
             the provided Arrow type.
@@ -114,7 +116,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 
     return cast(
         pd.DataFrame,
-        feather.read_table(filepath).to_pandas(types_mapper=_types_mapper),
+        feather.read_table(filepath).to_pandas(types_mapper=cast(Any, _types_mapper)),
     )
 
 
@@ -176,7 +178,7 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     return pmon_raises
 
 
-def get_board_info(dslog: pd.DataFrame) -> tuple:
+def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """Retrieve board model name and software version from a slog DataFrame.
 
     Parameters
@@ -186,7 +188,7 @@ def get_board_info(dslog: pd.DataFrame) -> tuple:
 
     Returns
     -------
-    tuple
+    tuple[str, str]
         (board_model_name, sw_version) where `board_model_name` is the
         HardwareModel enum name string derived from `board_id`, and `sw_version`
         is the software version string.
@@ -275,7 +277,13 @@ def create_dash(slog_path: str) -> Dash:
     fake_y = np.full(len(pmon_raises), 10.0)
     pmon_points = px.scatter(pmon_raises, x="time", y=fake_y, text="pm_raises")
 
-    fig = go.Figure(data=max_pwr_points.data + avg_pwr_lines.data + pmon_points.data)
+    figure_data = (
+        list(max_pwr_points.data)
+        + list(avg_pwr_lines.data)
+        + list(min_pwr_points.data)
+        + list(pmon_points.data)
+    )
+    fig = go.Figure(data=figure_data)
 
     fig.update_layout(
         legend={"yanchor": "top", "y": 0.99, "xanchor": "left", "x": 0.01}

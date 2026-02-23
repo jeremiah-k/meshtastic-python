@@ -176,6 +176,9 @@ def _parse_scan_response(
         has_service = SERVICE_UUID in (suuids or [])
 
         if has_whitelist:
+            # Targeted scans intentionally skip SERVICE_UUID filtering here.
+            # _filter_devices_for_target_identifier() handles direct-address/name
+            # matching, and DiscoveryManager uses scan_uuids=None for that flow.
             target_candidates.append(device)
         elif has_service:
             devices.append(device)
@@ -337,6 +340,12 @@ class ConnectedStrategy(DiscoveryStrategy):
                         try:
                             device_copy.rssi = device.rssi  # type: ignore[attr-defined]
                         except AttributeError:
+                            pass
+                    original_metadata = getattr(device, "metadata", None)
+                    if original_metadata:
+                        try:
+                            device_copy.metadata = dict(original_metadata)  # type: ignore[attr-defined]
+                        except (AttributeError, TypeError):
                             pass
                     devices_found.append(device_copy)
             else:

@@ -7,5 +7,5 @@
 # other useful options
 # -j build-and-publish-ubuntu
 
-# also: we only run one of the 4 matrix tests, because otherwise it absolutely hammers the CPU (so many containers and threads)
-act -P ubuntu-latest=-self-hosted --matrix "python-version:3.8" "$@"
+# also: we only run one matrix variant locally, because otherwise it absolutely hammers the CPU
+act -P ubuntu-latest=-self-hosted --matrix "python-version:3.13" "$@"
