@@ -89,3 +89,47 @@ elif _state_keys != _annotated_state:
     warnings.warn(drift_message, RuntimeWarning, stacklevel=1)
 
 reset()
+
+
+# ---------------------------------------------------------------------------
+# Backwards compatibility aliases for renamed module state
+# ---------------------------------------------------------------------------
+
+
+def __getattr__(name: str) -> Any:
+    """Provide backwards-compatible access to renamed module attributes.
+
+    Emits a DeprecationWarning when accessing old camelCase names.
+    """
+    _compat_aliases = {
+        "tunnelInstance": "tunnel_instance",
+    }
+    if name in _compat_aliases:
+        new_name = _compat_aliases[name]
+        warnings.warn(
+            f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return globals()[new_name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __setattr__(name: str, value: Any) -> None:
+    """Provide backwards-compatible setter for renamed module attributes.
+
+    Emits a DeprecationWarning when setting old camelCase names.
+    """
+    _compat_aliases = {
+        "tunnelInstance": "tunnel_instance",
+    }
+    if name in _compat_aliases:
+        new_name = _compat_aliases[name]
+        warnings.warn(
+            f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        globals()[new_name] = value
+    else:
+        globals()[name] = value
