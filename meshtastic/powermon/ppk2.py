@@ -56,6 +56,8 @@ class PPK2PowerSupply(PowerSupply):
         self.current_sum = 0
         self.current_num_samples = 0
         self.current_average: float = 0.0
+        self.last_reported_min = 0
+        self.last_reported_max = 0
 
         # for tracking avera data read length (to determine if we are sleeping efficiently in measurement_loop)
         self.total_data_len = 0
@@ -132,9 +134,13 @@ class PPK2PowerSupply(PowerSupply):
         Returns
         -------
         float
-            Minimum current in mA.
+            Minimum current in mA. If there are no new samples since the last
+            reset, returns the last reported minimum to avoid transient empty-window values.
         """
-        return self.current_min / 1000
+        with self._result_lock:
+            if self.current_num_samples != 0:
+                self.last_reported_min = self.current_min
+            return self.last_reported_min / 1000
 
     def get_max_current_mA(self) -> float:
         """Return the maximum current reading in milliamperes.
@@ -142,9 +148,13 @@ class PPK2PowerSupply(PowerSupply):
         Returns
         -------
         float
-            Maximum current in mA.
+            Maximum current in mA. If there are no new samples since the last
+            reset, returns the last reported maximum to avoid transient empty-window values.
         """
-        return self.current_max / 1000
+        with self._result_lock:
+            if self.current_num_samples != 0:
+                self.last_reported_max = self.current_max
+            return self.last_reported_max / 1000
 
     def get_average_current_mA(self) -> float:
         """Return the average current reading in milliamperes.
@@ -164,8 +174,11 @@ class PPK2PowerSupply(PowerSupply):
             return self.current_average / 1000
 
     def reset_measurements(self) -> None:
-        """Reset the current measurement statistics."""
+        """Reset current-window accumulators while preserving last reported extrema."""
         with self._result_lock:
+            if self.current_num_samples != 0:
+                self.last_reported_min = self.current_min
+                self.last_reported_max = self.current_max
             self.current_sum = 0
             self.current_num_samples = 0
 
