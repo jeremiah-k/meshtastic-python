@@ -84,11 +84,13 @@ class StreamInterface(MeshInterface):
         # defined attribute even if initialization aborts before stream setup.
         self._last_disconnect_source = "stream.initialized"
 
-        if not hasattr(self, "stream") and not noProto:
+        _provides_own_stream = getattr(self, "_provides_own_stream", False)
+        if not hasattr(self, "stream") and not noProto and not _provides_own_stream:
             raise StreamInterface.StreamInterfaceError()
+        local_stream = getattr(self, "stream", None)
         self.stream: serial.Serial | None = cast(
             serial.Serial | None,
-            getattr(self, "stream", None),
+            local_stream,
         )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytes()  # empty
         self._wantExit = False
@@ -110,7 +112,6 @@ class StreamInterface(MeshInterface):
         if connectNow:
             # Use a sentinel attribute to detect if subclass provides its own stream I/O.
             # This is more robust than method identity checks which break with decorators.
-            _provides_own_stream = getattr(self, "_provides_own_stream", False)
             if self.stream is None and not _provides_own_stream:
                 logger.debug(
                     "No stream configured for %s; deferring connect()",
@@ -177,7 +178,9 @@ class StreamInterface(MeshInterface):
         b : bytes
             Bytes to write to the stream.
         """
-        if self.stream:  # ignore writes when stream is closed
+        if self.stream is not None and getattr(self.stream, "is_open", True):
+            # Ignore writes when stream is None or not open. Note: _disconnected()
+            # sets self.stream to None for the common shutdown path.
             self.stream.write(b)
             self.stream.flush()
             # win11 might need a bit more time, too
@@ -200,7 +203,7 @@ class StreamInterface(MeshInterface):
         bytes | None
             Up to `length` bytes read from the stream, or `None` when no stream is present.
         """
-        if self.stream:
+        if self.stream is not None and getattr(self.stream, "is_open", True):
             return self.stream.read(length)
         else:
             return None

@@ -1,6 +1,7 @@
 """Unit tests for PPK2 power-meter measurement state behavior."""
 
 import threading
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -76,3 +77,38 @@ def test_get_min_max_update_only_when_new_samples_exist() -> None:
     ppk.current_max = 8_000
     assert ppk.get_min_current_mA() == pytest.approx(4.0)
     assert ppk.get_max_current_mA() == pytest.approx(8.0)
+
+
+@pytest.mark.unit
+def test_setIsSupply_starts_measurement_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """setIsSupply() should start measurement and reader thread when not already running."""
+    ppk = _make_ppk2_stub()
+    ppk.v = 3.3
+    ppk.r = MagicMock()
+    ppk.measurement_thread = MagicMock()
+    ppk.measurement_thread.is_alive.return_value = False
+    monkeypatch.setattr("meshtastic.powermon.ppk2.time.sleep", lambda _: None)
+
+    ppk.setIsSupply(is_supply=True)
+
+    ppk.r.set_source_voltage.assert_called_once_with(3300)
+    ppk.r.start_measuring.assert_called_once()
+    ppk.r.use_source_meter.assert_called_once()
+    ppk.measurement_thread.start.assert_called_once()
+
+
+@pytest.mark.unit
+def test_setIsSupply_does_not_restart_when_already_measuring() -> None:
+    """setIsSupply() should not re-issue start_measuring when reader thread is active."""
+    ppk = _make_ppk2_stub()
+    ppk.v = 3.3
+    ppk.r = MagicMock()
+    ppk.measurement_thread = MagicMock()
+    ppk.measurement_thread.is_alive.return_value = True
+
+    ppk.setIsSupply(is_supply=False)
+
+    ppk.r.set_source_voltage.assert_called_once_with(3300)
+    ppk.r.start_measuring.assert_not_called()
+    ppk.r.use_ampere_meter.assert_called_once()
+    ppk.measurement_thread.start.assert_not_called()

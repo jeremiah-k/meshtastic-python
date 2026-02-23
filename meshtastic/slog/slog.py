@@ -92,6 +92,12 @@ log_defs = {
     ]
 }
 log_regex = re.compile(".*S:([0-9A-Za-z]+):(.*)")
+POWER_LOG_SCHEMA_METADATA: dict[bytes, bytes] = {
+    b"deprecated_fields": (
+        b"Legacy *_mW fields are deprecated aliases. Prefer *_mA for current. "
+        b"When nominal voltage is available, *_mW stores converted power in mW."
+    ),
+}
 
 
 class PowerLogger:
@@ -113,24 +119,46 @@ class PowerLogger:
         """
         self.pMeter = pMeter
         self.writer = FeatherWriter(file_path)
+        self.writer.set_schema(
+            pa.schema(
+                [
+                    pa.field("time", pa.timestamp("us")),
+                    pa.field("average_mA", pa.float64()),
+                    pa.field("max_mA", pa.float64()),
+                    pa.field("min_mA", pa.float64()),
+                    pa.field("average_mW", pa.float64()),
+                    pa.field("max_mW", pa.float64()),
+                    pa.field("min_mW", pa.float64()),
+                ],
+                metadata=POWER_LOG_SCHEMA_METADATA,
+            )
+        )
         self.interval = interval
+        self._warned_legacy_mw_without_voltage = False
         self.is_logging = True
         self.thread = threading.Thread(
             target=self._logging_thread, name="PowerLogger", daemon=True
         )
         self.thread.start()
 
+    def _nominal_voltage_v(self) -> float | None:
+        """Return nominal supply voltage in volts when available on the power meter."""
+        raw_v = getattr(self.pMeter, "v", None)
+        if isinstance(raw_v, (int, float)) and raw_v > 0:
+            return float(raw_v)
+        return None
+
     def store_current_reading(self, now: datetime | None = None) -> None:
         """Capture a snapshot of current power measurements and append it to the writer.
 
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
         The recorded row contains `time`, `average_mA`, `max_mA`, and `min_mA`.
-        Legacy `*_mW` aliases are also written with the same numeric values for
-        backward compatibility with existing analysis tools and downstream consumers.
-        This keeps old readers working while we standardize field names to match the
-        `get_*_current_mA()` API (current in mA, not power in mW). No unit conversion
-        is performed for these aliases. After sampling, the PowerMeter's measurements
-        are reset and the row is written via the writer.
+        Legacy `*_mW` aliases are retained for compatibility. When a nominal
+        voltage is available on the meter (`pMeter.v`), those aliases are
+        converted to milliwatts via ``mW = mA * V``. If no voltage is available,
+        aliases fall back to the legacy behavior (same numeric value as mA)
+        and a one-time warning is emitted. After sampling, the PowerMeter's
+        measurements are reset and the row is written via the writer.
 
         Parameters
         ----------
@@ -142,16 +170,30 @@ class PowerLogger:
         average_mA = self.pMeter.get_average_current_mA()
         max_mA = self.pMeter.get_max_current_mA()
         min_mA = self.pMeter.get_min_current_mA()
+        nominal_voltage = self._nominal_voltage_v()
+        if nominal_voltage is None:
+            average_mW = average_mA
+            max_mW = max_mA
+            min_mW = min_mA
+            if not self._warned_legacy_mw_without_voltage:
+                logger.warning(
+                    "Power meter does not expose nominal voltage; storing legacy *_mW aliases with mA-equivalent values."
+                )
+                self._warned_legacy_mw_without_voltage = True
+        else:
+            average_mW = average_mA * nominal_voltage
+            max_mW = max_mA * nominal_voltage
+            min_mW = min_mA * nominal_voltage
         d = {
             "time": now,
             "average_mA": average_mA,
             "max_mA": max_mA,
             "min_mA": min_mA,
             # Historical field names kept as aliases to avoid schema breakage.
-            # Values are still current measurements from get_*_current_mA().
-            "average_mW": average_mA,
-            "max_mW": max_mA,
-            "min_mW": min_mA,
+            # Prefer *_mA for current values in new consumers.
+            "average_mW": average_mW,
+            "max_mW": max_mW,
+            "min_mW": min_mW,
         }
         self.pMeter.reset_measurements()
         self.writer.add_row(d)
@@ -228,7 +270,9 @@ class StructuredLogger:
         self.raw_file: io.TextIOWrapper | None = None
 
         # We need a closure here because the subscription API is very strict about exact arg matching
-        def listen_glue(line, interface):  # pylint: disable=unused-argument  # noqa: ARG001
+        def listen_glue(
+            line, interface
+        ):  # pylint: disable=unused-argument  # noqa: ARG001
             """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters
@@ -279,7 +323,10 @@ class StructuredLogger:
                     f = self.raw_file
                     self.raw_file = None  # mark that we are shutting down
                 if f:
-                    f.close()  # Close the raw.txt file
+                    try:
+                        f.close()  # Close the raw.txt file
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.warning("Failed to close raw log file: %s", exc)
 
     def _onLogMessage(self, line: str) -> None:
         """Process a single raw log line, extract any structured slog fields, and persist the resulting record.
@@ -415,8 +462,15 @@ class LogSet:
             )
         except Exception:
             if self.power_logger:
-                self.power_logger.close()
-                self.power_logger = None
+                try:
+                    self.power_logger.close()
+                except Exception as close_exc:  # noqa: BLE001 - preserve original
+                    logger.warning(
+                        "Ignoring secondary error while closing power logger during startup failure: %s",
+                        close_exc,
+                    )
+                finally:
+                    self.power_logger = None
             raise
 
         # Store a lambda so we can find it again to unregister

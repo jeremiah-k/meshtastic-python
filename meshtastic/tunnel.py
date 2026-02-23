@@ -164,34 +164,40 @@ class Tunnel:
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
         mt_config.tunnel_instance = self
-        myAddr = self._node_num_to_ip(my_info.my_node_num)
-
-        if self.iface.nodes:
-            for node in self.iface.nodes.values():
-                nodeId = node["user"]["id"]
-                ip = self._node_num_to_ip(node["num"])
-                logger.info("Node %s has IP address %s", nodeId, ip)
-
-        logger.debug("creating TUN device with MTU=200")
-        # FIXME - figure out real max MTU, it should be 240 - the overhead bytes for SubPacket and Data
         self.tun = None
-        if self.iface.noProto:
-            logger.warning(
-                "Not creating a TapDevice() because it is disabled by noProto"
-            )
-        else:
-            self.tun = TapDevice(name="mesh")
-            self.tun.up()
-            self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)
+        try:
+            myAddr = self._node_num_to_ip(my_info.my_node_num)
 
-        if self.iface.noProto:
-            logger.warning("Not starting TUN reader because it is disabled by noProto")
-        else:
-            logger.debug("starting TUN reader, our IP address is %s", myAddr)
-            self._rx_thread = threading.Thread(
-                target=self.__tun_reader, args=(), daemon=True
-            )
-            self._rx_thread.start()
+            if self.iface.nodes:
+                for node in self.iface.nodes.values():
+                    nodeId = node["user"]["id"]
+                    ip = self._node_num_to_ip(node["num"])
+                    logger.info("Node %s has IP address %s", nodeId, ip)
+
+            logger.debug("creating TUN device with MTU=200")
+            # FIXME - figure out real max MTU, it should be 240 - the overhead bytes for SubPacket and Data
+            if self.iface.noProto:
+                logger.warning(
+                    "Not creating a TapDevice() because it is disabled by noProto"
+                )
+            else:
+                self.tun = TapDevice(name="mesh")
+                self.tun.up()
+                self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)
+
+            if self.iface.noProto:
+                logger.warning(
+                    "Not starting TUN reader because it is disabled by noProto"
+                )
+            else:
+                logger.debug("starting TUN reader, our IP address is %s", myAddr)
+                self._rx_thread = threading.Thread(
+                    target=self.__tun_reader, args=(), daemon=True
+                )
+                self._rx_thread.start()
+        except Exception:
+            self.close()
+            raise
 
     def onReceive(self, packet: dict[str, Any]) -> None:
         """Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.

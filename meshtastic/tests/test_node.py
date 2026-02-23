@@ -4,7 +4,7 @@ import base64
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Protocol, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -15,6 +15,18 @@ from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2, mesh_p
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Timeout
+
+
+class _FakeSendAdminProtocol(Protocol):
+    """Callable protocol for fake _sendAdmin helpers with optional parameters."""
+
+    def __call__(
+        self,
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> mesh_pb2.MeshPacket | None: ...
 
 
 def _autospec_with_local_node(spec_class: type[Any]) -> Any:
@@ -33,10 +45,7 @@ def _make_fake_send_admin(
     expected_want_response: bool | None = None,
     response_payload: dict[str, Any] | None = None,
     return_packet: mesh_pb2.MeshPacket | None = None,
-) -> Callable[
-    [admin_pb2.AdminMessage, bool, Callable[[dict[str, Any]], Any] | None, int],
-    mesh_pb2.MeshPacket | None,
-]:
+) -> _FakeSendAdminProtocol:
     """Create a configurable fake for Node._sendAdmin used by canned-message tests."""
 
     def _fake_send_admin(
@@ -249,6 +258,7 @@ def test_setURL_ignores_channels_over_device_limit(caplog):
         anode.setURL(url)
 
     assert re.search(r"URL contains more than 8 channels", caplog.text, re.MULTILINE)
+    assert len(anode.channels) == 8
     assert anode.channels[0].settings.name == "ch0"
     assert anode.channels[7].settings.name == "ch7"
 

@@ -18,6 +18,7 @@ from pyarrow import feather
 
 from .. import mesh_pb2, powermon_pb2
 from ..slog import root_dir
+from ..util import our_exit
 
 # Configure panda options
 pd.options.mode.copy_on_write = True
@@ -172,11 +173,32 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     if board_info.empty:
-        raise ValueError("No board info rows found in slog")  # noqa: TRY003
+        raise ValueError("No board info rows found in slog")
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
     board_id = mesh_pb2.HardwareModel.Name(cast(Any, int(first_row["board_id"])))
     return (board_id, sw_version)
+
+
+def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) -> str:
+    """Choose a power-series column while preserving compatibility.
+
+    Historical logs used ``*_mW`` field names. New logs expose corrected
+    ``*_mA`` names. Prefer the legacy column when present and non-empty to keep
+    existing datasets stable, otherwise fall back to the corrected name.
+    """
+    if legacy_name in frame.columns and not frame[legacy_name].isna().all():
+        return legacy_name
+    if new_name in frame.columns:
+        return new_name
+    if legacy_name in frame.columns:
+        # Keep compatibility with legacy-only logs even if values are all null.
+        return legacy_name
+    error_msg = (
+        "Missing required power column. Expected one of "
+        f"{legacy_name!r} or {new_name!r}; available columns: {list(frame.columns)!r}"
+    )
+    raise ValueError(error_msg)
 
 
 def create_argparser() -> argparse.ArgumentParser:
@@ -233,27 +255,6 @@ def create_dash(slog_path: str) -> Dash:
     dslog = read_pandas(os.path.join(slog_path, "slog.feather"))
 
     pmon_raises = get_pmon_raises(dslog)
-
-    def choose_power_column(
-        frame: pd.DataFrame, legacy_name: str, new_name: str
-    ) -> str:
-        """Choose a power-series column while preserving compatibility.
-
-        Historical logs used ``*_mW`` field names even though the values came
-        from ``get_*_current_mA()`` (current measurements). New logs expose the
-        corrected ``*_mA`` names. Prefer legacy columns when present to preserve
-        behavior for existing datasets, but accept corrected names when legacy
-        columns are absent.
-        """
-        if legacy_name in frame.columns:
-            return legacy_name
-        if new_name in frame.columns:
-            return new_name
-        error_msg = (
-            "Missing required power column. Expected one of "
-            f"{legacy_name!r} or {new_name!r}; available columns: {list(frame.columns)!r}"
-        )
-        raise ValueError(error_msg)
 
     def set_legend(f: go.Figure, name: str) -> go.Figure:
         """Set the legend name and enable legend display for the first trace in a figure.
@@ -337,7 +338,11 @@ def main() -> None:
     if not args.slog:
         args.slog = os.path.join(root_dir(), "latest")
 
-    app = create_dash(slog_path=args.slog)
+    try:
+        app = create_dash(slog_path=args.slog)
+    except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
+        our_exit(f"Error loading slog data: {exc}")
+
     port = 8051
     debug = bool(args.debug)
     host = str(args.host)

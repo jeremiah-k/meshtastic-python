@@ -156,6 +156,7 @@ class PPK2PowerSupply(PowerSupply):
 
     def get_average_current_mA(self) -> float:
         """Return the average current reading in milliamperes.
+
         Returns
         -------
         float
@@ -189,6 +190,22 @@ class PPK2PowerSupply(PowerSupply):
 
         with self._want_measurement:
             self._want_measurement.notify()  # notify the measurement loop to read immediately
+
+    def getMinCurrentmA(self) -> float:
+        """Backward-compatible camelCase wrapper for get_min_current_mA."""
+        return self.get_min_current_mA()
+
+    def getMaxCurrentmA(self) -> float:
+        """Backward-compatible camelCase wrapper for get_max_current_mA."""
+        return self.get_max_current_mA()
+
+    def getAverageCurrentmA(self) -> float:
+        """Backward-compatible camelCase wrapper for get_average_current_mA."""
+        return self.get_average_current_mA()
+
+    def resetMeasurements(self) -> None:
+        """Backward-compatible camelCase wrapper for reset_measurements."""
+        self.reset_measurements()
 
     def close(self) -> None:
         """Close the power meter and release resources."""
@@ -225,8 +242,12 @@ class PPK2PowerSupply(PowerSupply):
         )  # set source voltage in mV BEFORE setting source mode
         # Note: source voltage must be set even if we are using the amp meter mode
 
-        # must be after setting source voltage and before setting mode
-        self.r.start_measuring()  # send command to ppk2
+        # Avoid re-issuing start while actively measuring: some devices flush/restart
+        # buffered data if start_measuring() is sent again mid-session.
+        is_measuring = self.measurement_thread.is_alive()
+        if not is_measuring:
+            # must be after setting source voltage and before setting mode
+            self.r.start_measuring()  # send command to ppk2
 
         if (
             not is_supply
@@ -235,16 +256,16 @@ class PPK2PowerSupply(PowerSupply):
         else:
             self.r.use_source_meter()  # set source meter mode
 
-        if not self.measurement_thread.is_alive():
+        if not is_measuring:
             self.measuring = True
-            self.reset_measurements()
+            self.resetMeasurements()
 
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()
             time.sleep(
                 0.2
             )  # FIXME - crufty way to ensure we do one set of reads to discard bogus fake power readings in the FIFO
-            self.reset_measurements()
+            self.resetMeasurements()
 
     def powerOn(self) -> None:
         """Power on the DUT (Device Under Test)."""

@@ -666,7 +666,7 @@ def test_acknowledgement_reset():
         lambda x: x != "" and x[0] != "_" and x[-1] != "_" and not re.search(r"__", x)
     )
 )
-def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
+def test_roundtrip_snake_to_camel_camel_to_snake(a_string: str) -> None:
     """Test that snake_to_camel and camel_to_snake roundtrip each other."""
     value0 = snake_to_camel(a_string=a_string)
     value1 = camel_to_snake(a_string=value0)
@@ -675,7 +675,7 @@ def test_roundtrip_snake_to_camel_camel_to_snake(a_string):
 
 @pytest.mark.unitslow
 @given(st.text())
-def test_fuzz_camel_to_snake(a_string):
+def test_fuzz_camel_to_snake(a_string: str) -> None:
     """Test that camel_to_snake lowercases output and preserves non-uppercase characters."""
     result = camel_to_snake(a_string)
     assert result == result.lower()  # output is always lowercase
@@ -687,7 +687,7 @@ def test_fuzz_camel_to_snake(a_string):
 
 @pytest.mark.unitslow
 @given(st.text())
-def test_fuzz_snake_to_camel(a_string):
+def test_fuzz_snake_to_camel(a_string: str) -> None:
     """Test that snake_to_camel satisfies core invariants."""
     result = snake_to_camel(a_string)
     assert "_" not in result
@@ -704,7 +704,7 @@ def test_snake_to_camel_examples() -> None:
 
 @pytest.mark.unitslow
 @given(st.text())
-def test_fuzz_stripnl(s):
+def test_fuzz_stripnl(s: str) -> None:
     """Test that stripnl always takes away newlines."""
     result = stripnl(s)
     assert "\n" not in result
@@ -712,7 +712,7 @@ def test_fuzz_stripnl(s):
 
 @pytest.mark.unitslow
 @given(st.binary())
-def test_fuzz_pskToString(psk):
+def test_fuzz_pskToString(psk: bytes) -> None:
     """Test that pskToString produces sane output for any bytes."""
     result = pskToString(psk)
     if len(psk) == 0:
@@ -736,7 +736,7 @@ def test_fuzz_pskToString(psk):
         max_size=256,
     ).filter(lambda s: not s.startswith("0x") and not s.startswith("base64:"))
 )
-def test_fuzz_fromStr_non_prefixed(valstr):
+def test_fuzz_fromStr_non_prefixed(valstr: str) -> None:
     """Test fromStr behavior for non-prefixed string inputs."""
     result = fromStr(valstr)
     if len(valstr) == 0:
@@ -765,7 +765,7 @@ def test_fuzz_fromStr_non_prefixed(valstr):
         max_size=64,
     )
 )
-def test_fuzz_fromStr_hex_prefixed(hex_digits):
+def test_fuzz_fromStr_hex_prefixed(hex_digits: str) -> None:
     """Test that fromStr decodes 0x-prefixed hex strings, including odd lengths."""
     expected_hex = hex_digits
     if len(expected_hex) == 0:
@@ -786,7 +786,7 @@ def test_fuzz_fromStr_hex_prefixed(hex_digits):
         and not any(ch.isspace() for ch in s)
     )
 )
-def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
+def test_fuzz_fromStr_hex_invalid_raises(hex_digits: str) -> None:
     """Test that fromStr raises for invalid 0x-prefixed hex strings."""
     with pytest.raises(ValueError):
         fromStr(f"0x{hex_digits}")
@@ -794,7 +794,7 @@ def test_fuzz_fromStr_hex_invalid_raises(hex_digits):
 
 @pytest.mark.unitslow
 @given(st.binary(max_size=256))
-def test_fuzz_fromStr_base64_roundtrip(raw_value):
+def test_fuzz_fromStr_base64_roundtrip(raw_value: bytes) -> None:
     """Test that fromStr round-trips valid base64-prefixed payloads."""
     encoded = base64.b64encode(raw_value).decode("ascii")
     assert fromStr(f"base64:{encoded}") == raw_value
@@ -803,21 +803,19 @@ def test_fuzz_fromStr_base64_roundtrip(raw_value):
 @pytest.mark.unitslow
 @given(
     st.text(
-        alphabet=st.sampled_from(
-            list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
-        ),
+        alphabet=st.sampled_from(list(_BASE64_ALLOWED_CHARS)),
         min_size=1,
         max_size=65,
     ).filter(lambda s: len(s) % 4 == 1)
 )
-def test_fuzz_fromStr_base64_malformed_raises(base64_payload):
+def test_fuzz_fromStr_base64_malformed_raises(base64_payload: str) -> None:
     """Test that fromStr raises for malformed base64 payload lengths."""
     with pytest.raises(binascii.Error):
         fromStr(f"base64:{base64_payload}")
 
 
 @st.composite
-def _base64_payload_with_single_invalid_char(draw):
+def _base64_payload_with_single_invalid_char(draw: st.DrawFn) -> str:
     """Generate base64-like payloads with valid length and exactly one invalid character."""
     quad_count = draw(st.integers(min_value=1, max_value=32))
     payload_len = quad_count * 4
@@ -835,7 +833,7 @@ def _base64_payload_with_single_invalid_char(draw):
 
 @pytest.mark.unitslow
 @given(_base64_payload_with_single_invalid_char())
-def test_fuzz_fromStr_base64_invalid_chars_raises(base64_payload):
+def test_fuzz_fromStr_base64_invalid_chars_raises(base64_payload: str) -> None:
     """Test that fromStr raises for base64 payloads containing invalid characters."""
     with pytest.raises(binascii.Error):
         fromStr(f"base64:{base64_payload}")
@@ -863,7 +861,7 @@ def test_channel_hash_basics():
 
 @pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12))
-def test_channel_hash_fuzz(channel_name):
+def test_channel_hash_fuzz(channel_name: str) -> None:
     """Test channel_hash with fuzzed channel names, ensuring it produces single-byte values."""
     hashed = channel_hash(channel_name.encode("utf-8"))
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
@@ -880,7 +878,7 @@ def test_generate_channel_hash_basics():
 
 @pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12))
-def test_generate_channel_hash_fuzz_default_key(channel_name):
+def test_generate_channel_hash_fuzz_default_key(channel_name: str) -> None:
     """Test generate_channel_hash with fuzzed channel names and the default key, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, DEFAULT_KEY)
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
@@ -888,7 +886,7 @@ def test_generate_channel_hash_fuzz_default_key(channel_name):
 
 @pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=1, max_size=1))
-def test_generate_channel_hash_fuzz_simple(channel_name, key_bytes):
+def test_generate_channel_hash_fuzz_simple(channel_name: str, key_bytes: bytes) -> None:
     """Test generate_channel_hash with fuzzed channel names and one-byte keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
@@ -896,7 +894,7 @@ def test_generate_channel_hash_fuzz_simple(channel_name, key_bytes):
 
 @pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=16, max_size=16))
-def test_generate_channel_hash_fuzz_aes128(channel_name, key_bytes):
+def test_generate_channel_hash_fuzz_aes128(channel_name: str, key_bytes: bytes) -> None:
     """Test generate_channel_hash with fuzzed channel names and 128-bit keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
@@ -904,7 +902,7 @@ def test_generate_channel_hash_fuzz_aes128(channel_name, key_bytes):
 
 @pytest.mark.unitslow
 @given(st.text(min_size=1, max_size=12), st.binary(min_size=32, max_size=32))
-def test_generate_channel_hash_fuzz_aes256(channel_name, key_bytes):
+def test_generate_channel_hash_fuzz_aes256(channel_name: str, key_bytes: bytes) -> None:
     """Test generate_channel_hash with fuzzed channel names and 256-bit keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX

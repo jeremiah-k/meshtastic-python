@@ -15,6 +15,7 @@ import argparse
 import inspect
 import os
 import sys
+import types
 import warnings
 from typing import IO, Any
 
@@ -113,15 +114,20 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __setattr__(name: str, value: Any) -> None:
-    """Provide backwards-compatible setter for renamed module attributes."""
-    if name in _COMPAT_ALIASES:
-        new_name = _COMPAT_ALIASES[name]
-        warnings.warn(
-            f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        globals()[new_name] = value
-    else:
-        globals()[name] = value
+class _MtConfigModule(types.ModuleType):
+    """Module subclass used to intercept deprecated compatibility assignments."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _COMPAT_ALIASES:
+            new_name = _COMPAT_ALIASES[name]
+            warnings.warn(
+                f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            super().__setattr__(new_name, value)
+            return
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _MtConfigModule
