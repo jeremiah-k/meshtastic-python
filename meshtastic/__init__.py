@@ -124,6 +124,7 @@ __all__ = [
     "ProtobufFactory",
     "protocols",
     "pub",
+    "publishingThread",
     "remote_hardware_pb2",
     "ResponseCallback",
     "ResponseHandler",
