@@ -237,6 +237,26 @@ def create_dash(slog_path: str) -> Dash:
 
     pmon_raises = get_pmon_raises(dslog)
 
+    def choose_power_column(
+        frame: pd.DataFrame, legacy_name: str, new_name: str
+    ) -> str:
+        """Choose a power-series column while preserving compatibility.
+
+        Historical logs used ``*_mW`` field names even though the values came
+        from ``get_*_current_mA()`` (current measurements). New logs expose the
+        corrected ``*_mA`` names. Prefer legacy columns when present to preserve
+        behavior for existing datasets, but accept corrected names when legacy
+        columns are absent.
+        """
+        if legacy_name in frame.columns:
+            return legacy_name
+        if new_name in frame.columns:
+            return new_name
+        raise ValueError(
+            "Missing required power column. Expected one of "
+            f"{legacy_name!r} or {new_name!r}; available columns: {list(frame.columns)!r}"
+        )
+
     def set_legend(f: go.Figure, name: str) -> go.Figure:
         """Set the legend name and enable legend display for the first trace in a figure.
 
@@ -256,15 +276,17 @@ def create_dash(slog_path: str) -> Dash:
         f["data"][0]["name"] = name
         return f
 
-    avg_pwr_lines = px.line(dpwr, x="time", y="average_mW").update_traces(
-        line_color="red"
-    )
+    avg_col = choose_power_column(dpwr, legacy_name="average_mW", new_name="average_mA")
+    max_col = choose_power_column(dpwr, legacy_name="max_mW", new_name="max_mA")
+    min_col = choose_power_column(dpwr, legacy_name="min_mW", new_name="min_mA")
+
+    avg_pwr_lines = px.line(dpwr, x="time", y=avg_col).update_traces(line_color="red")
     set_legend(avg_pwr_lines, "avg power")
-    max_pwr_points = px.scatter(dpwr, x="time", y="max_mW").update_traces(
+    max_pwr_points = px.scatter(dpwr, x="time", y=max_col).update_traces(
         marker_color="blue"
     )
     set_legend(max_pwr_points, "max power")
-    min_pwr_points = px.scatter(dpwr, x="time", y="min_mW").update_traces(
+    min_pwr_points = px.scatter(dpwr, x="time", y=min_col).update_traces(
         marker_color="green"
     )
     set_legend(min_pwr_points, "min power")

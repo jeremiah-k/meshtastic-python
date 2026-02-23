@@ -124,8 +124,13 @@ class PowerLogger:
         """Capture a snapshot of current power measurements and append it to the writer.
 
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
-        The recorded row contains `time`, `average_mA`, `max_mA`, and `min_mA`. After sampling, the
-        PowerMeter's measurements are reset and the row is written via the writer.
+        The recorded row contains `time`, `average_mA`, `max_mA`, and `min_mA`.
+        Legacy `*_mW` aliases are also written with the same numeric values for
+        backward compatibility with existing analysis tools and downstream consumers.
+        This keeps old readers working while we standardize field names to match the
+        `get_*_current_mA()` API (current in mA, not power in mW). No unit conversion
+        is performed for these aliases. After sampling, the PowerMeter's measurements
+        are reset and the row is written via the writer.
 
         Parameters
         ----------
@@ -134,17 +139,25 @@ class PowerLogger:
         """
         if now is None:
             now = datetime.now()
+        average_mA = self.pMeter.get_average_current_mA()
+        max_mA = self.pMeter.get_max_current_mA()
+        min_mA = self.pMeter.get_min_current_mA()
         d = {
             "time": now,
-            "average_mA": self.pMeter.get_average_current_mA(),
-            "max_mA": self.pMeter.get_max_current_mA(),
-            "min_mA": self.pMeter.get_min_current_mA(),
+            "average_mA": average_mA,
+            "max_mA": max_mA,
+            "min_mA": min_mA,
+            # Historical field names kept as aliases to avoid schema breakage.
+            # Values are still current measurements from get_*_current_mA().
+            "average_mW": average_mA,
+            "max_mW": max_mA,
+            "min_mW": min_mA,
         }
         self.pMeter.reset_measurements()
         self.writer.add_row(d)
 
     def _logging_thread(self) -> None:
-        """Background thread for logging the current watts reading."""
+        """Background thread for logging periodic current readings."""
         while self.is_logging:
             self.store_current_reading()
             time.sleep(self.interval)

@@ -24,16 +24,16 @@ class PowerMeter:
         """Close the power meter."""
 
     def get_average_current_mA(self) -> float:
-        """Returns average current of last measurement in mA (since last call to this method)."""
+        """Return average current of last measurement in mA (since last call to this method)."""
         return math.nan
 
     def get_min_current_mA(self) -> float:
-        """Returns max current in mA (since last call to this method)."""
+        """Return min current in mA (since last call to this method)."""
         # Subclasses must override for a better implementation
         return self.get_average_current_mA()
 
     def get_max_current_mA(self) -> float:
-        """Returns max current in mA (since last call to this method)."""
+        """Return max current in mA (since last call to this method)."""
         # Subclasses must override for a better implementation
         return self.get_average_current_mA()
 
