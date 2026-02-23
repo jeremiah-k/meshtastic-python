@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock
@@ -90,6 +91,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     power_logger.pMeter = meter
     power_logger.writer = writer
     power_logger._warned_legacy_mw_without_voltage = False
+    power_logger._reading_lock = threading.Lock()
 
     now = datetime(2026, 1, 1, 12, 0, 0)
     power_logger.store_current_reading(now=now)
@@ -121,6 +123,7 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
     power_logger.pMeter = meter
     power_logger.writer = writer
     power_logger._warned_legacy_mw_without_voltage = False
+    power_logger._reading_lock = threading.Lock()
 
     with caplog.at_level(logging.WARNING):
         power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 0))

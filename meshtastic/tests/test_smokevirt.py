@@ -302,7 +302,7 @@ def test_smokevirt_ch_set_name():
 
 @pytest.mark.smokevirt
 def test_smokevirt_ch_set_downlink_and_uplink():
-    """Test -ch-set downlink_enabled X and --ch-set uplink_enabled X."""
+    """Test --ch-set downlink_enabled X and --ch-set uplink_enabled X."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-set downlink_enabled false --ch-set uplink_enabled false"
     )

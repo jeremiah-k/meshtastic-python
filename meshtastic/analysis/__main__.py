@@ -4,9 +4,8 @@ import argparse
 import ipaddress
 import logging
 import os
-import sys
 from collections.abc import Iterable
-from typing import Any, NoReturn, cast
+from typing import Any, cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
@@ -19,6 +18,7 @@ from pyarrow import feather
 
 from .. import mesh_pb2, powermon_pb2
 from ..slog import root_dir
+from ..util import our_exit
 
 # Configure panda options
 pd.options.mode.copy_on_write = True
@@ -59,26 +59,6 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
             return None
 
     return [to_pmon_name(x) for x in arr]
-
-
-def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
-    """Exit the CLI process after printing a message to the appropriate stream.
-
-    This is a CLI-specific helper that should not be used by library code.
-    Library code should raise exceptions instead, which the CLI will catch
-    and handle appropriately.
-
-    Parameters
-    ----------
-    message : str
-        Message to print before exiting.
-    return_value : int
-        Process exit code; 0 indicates success, non-zero
-        indicates failure (defaults to 1).
-    """
-    output_stream = sys.stderr if return_value != 0 else sys.stdout
-    print(message, file=output_stream)
-    sys.exit(return_value)
 
 
 def read_pandas(filepath: str) -> pd.DataFrame:
@@ -193,7 +173,7 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     if board_info.empty:
-        raise ValueError("No board info rows found in slog")
+        raise ValueError("No board info rows found in slog")  # noqa: TRY003
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
     board_id = mesh_pb2.HardwareModel.Name(cast(Any, int(first_row["board_id"])))
@@ -361,7 +341,7 @@ def main() -> None:
     try:
         app = create_dash(slog_path=args.slog)
     except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
-        _cli_exit(f"Error loading slog data: {exc}")
+        our_exit(f"Error loading slog data: {exc}")
 
     port = 8051
     debug = bool(args.debug)

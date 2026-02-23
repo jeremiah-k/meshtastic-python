@@ -180,11 +180,12 @@ class StreamInterface(MeshInterface):
         b : bytes
             Bytes to write to the stream.
         """
-        if self.stream is not None and getattr(self.stream, "is_open", True):
+        s = self.stream
+        if s is not None and getattr(s, "is_open", True):
             # Ignore writes when stream is None or not open. Note: _disconnected()
             # sets self.stream to None for the common shutdown path.
-            self.stream.write(b)
-            self.stream.flush()
+            s.write(b)
+            s.flush()
             # win11 might need a bit more time, too
             if self.is_windows11:
                 time.sleep(1.0)
@@ -205,8 +206,9 @@ class StreamInterface(MeshInterface):
         bytes | None
             Up to `length` bytes read from the stream, or `None` when no stream is present.
         """
-        if self.stream is not None and getattr(self.stream, "is_open", True):
-            return self.stream.read(length)
+        s = self.stream
+        if s is not None and getattr(s, "is_open", True):
+            return s.read(length)
         else:
             return None
 

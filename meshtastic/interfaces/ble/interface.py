@@ -1050,8 +1050,8 @@ class BLEInterface(MeshInterface):
                 logger.warning("Device scan failed: %s", e, exc_info=True)
                 return []
             except (
-                Exception
-            ) as e:  # noqa: BLE001  # pragma: no cover - defensive last resort
+                Exception  # noqa: BLE001
+            ) as e:  # pragma: no cover - defensive last resort
                 logger.warning(
                     "Unexpected error during device scan: %s", e, exc_info=True
                 )
@@ -1585,8 +1585,8 @@ class BLEInterface(MeshInterface):
                             self.close()
                         return
                     except (
-                        Exception
-                    ) as e:  # noqa: BLE001  # pragma: no cover - defensive catch-all
+                        Exception  # noqa: BLE001
+                    ) as e:  # pragma: no cover - defensive catch-all
                         logger.exception("Unexpected error in BLE read loop")
                         if self._handle_read_loop_disconnect(repr(e), client):
                             break

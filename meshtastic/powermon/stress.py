@@ -2,11 +2,12 @@
 
 import logging
 import time
+from typing import Any, Callable
 
 from ..protobuf import portnums_pb2, powermon_pb2
 
 
-def onPowerStressResponse(packet, interface):
+def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     """Delete me? FIXME."""
     logging.debug(f"packet:{packet} interface:{interface}")
     # interface.gotResponse = True
@@ -17,7 +18,7 @@ class PowerStressClient:
     The client stub for talking to the firmware PowerStress module.
     """
 
-    def __init__(self, iface, node_id=None):
+    def __init__(self, iface: Any, node_id: int | None = None) -> None:
         """
         Create a new PowerStressClient instance.
 
@@ -36,8 +37,8 @@ class PowerStressClient:
         self,
         cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
         num_seconds: float = 0.0,
-        onResponse=None,
-    ):
+        onResponse: Callable[[dict[str, Any]], None] | None = None,
+    ) -> Any:
         """Client goo for talking with the device side agent."""
         r = powermon_pb2.PowerStressMessage()
         r.cmd = cmd
@@ -57,11 +58,30 @@ class PowerStressClient:
         self,
         cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
         num_seconds: float = 0.0,
-    ):
-        """Send a power stress command and wait for the ack."""
+        ack_timeout: float = 30.0,
+    ) -> bool:
+        """Send a power stress command and wait for the ack.
+
+        Parameters
+        ----------
+        cmd : powermon_pb2.PowerStressMessage.Opcode.ValueType
+            The power stress command to send.
+        num_seconds : float
+            Duration for timed stress commands. A value of 0.0 means
+            "run-until-ack". (Default value = 0.0)
+        ack_timeout : float
+            Maximum seconds to wait for an ack when `num_seconds` is 0.0.
+            (Default value = 30.0)
+
+        Returns
+        -------
+        bool
+            `True` if an ack was observed, `False` if timed out.
+        """
         gotAck = False
 
-        def onResponse(packet: dict):  # pylint: disable=unused-argument
+        def onResponse(packet: dict[str, Any]) -> None:  # noqa: ARG001
+            _ = packet
             nonlocal gotAck
             gotAck = True
 
@@ -71,9 +91,13 @@ class PowerStressClient:
         self.sendPowerStress(cmd, onResponse=onResponse, num_seconds=num_seconds)
 
         if num_seconds == 0.0:
-            # Wait for the response and then continue
-            while not gotAck:
+            # Wait for the response and then continue, with a safety timeout.
+            deadline = time.monotonic() + ack_timeout
+            while not gotAck and time.monotonic() < deadline:
                 time.sleep(0.1)
+            if not gotAck:
+                logging.error("Timed out waiting for power stress ack!")
+                return False
         else:
             # we wait a little bit longer than the time the UUT would be waiting (to make sure all of its messages are handled first)
             time.sleep(
@@ -81,15 +105,17 @@ class PowerStressClient:
             )  # completely block our thread for the duration of the test
             if not gotAck:
                 logging.error("Did not receive ack for power stress command!")
+                return False
+        return True
 
 
 class PowerStress:
     """Walk the UUT through a set of power states so we can capture repeatable power consumption measurements."""
 
-    def __init__(self, iface):
+    def __init__(self, iface: Any) -> None:
         self.client = PowerStressClient(iface)
 
-    def run(self):
+    def run(self) -> None:
         """Run the power stress test."""
         try:
             self.client.syncPowerStress(powermon_pb2.PowerStressMessage.PRINT_INFO)

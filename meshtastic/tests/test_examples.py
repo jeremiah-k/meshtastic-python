@@ -18,13 +18,14 @@ def test_examples_hello_world_serial_no_arg():
 
 
 @pytest.mark.examples
-def test_examples_hello_world_serial_with_arg(capsys):
+def test_examples_hello_world_serial_with_arg() -> None:
     """Test hello_world_serial with arg."""
-    return_value, _ = subprocess.getstatusoutput(
-        "source venv/bin/activate; python3 examples/hello_world_serial.py hello"
+    result = subprocess.run(
+        ["venv/bin/python3", "examples/hello_world_serial.py", "hello"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    assert return_value == 1
-    _, err = capsys.readouterr()
-    assert err == ""
-    # TODO: Why does this not work?
-    # assert out == 'Warning: No Meshtastic devices detected.'
+    assert result.returncode == 1
+    assert result.stderr == ""
+    assert "Warning: No Meshtastic devices detected." in result.stdout

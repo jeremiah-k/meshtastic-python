@@ -43,7 +43,7 @@ def test_choose_power_column_falls_back_to_new_when_legacy_all_null() -> None:
 
 
 @pytest.mark.unit
-def test_main_routes_load_errors_through_cli_exit(
+def test_main_routes_load_errors_through_our_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """main() should emit a graceful CLI error when slog loading fails."""
@@ -53,15 +53,15 @@ def test_main_routes_load_errors_through_cli_exit(
         _ = slog_path
         raise ValueError("bad slog")
 
-    def _fake_cli_exit(message: str, return_value: int = 1) -> None:
+    def _fake_our_exit(message: str, return_value: int = 1) -> None:
         _ = return_value
         captured["message"] = message
         raise SystemExit(1)
 
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
-    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+    monkeypatch.setattr(analysis_main, "our_exit", _fake_our_exit)
     monkeypatch.setattr(
-        sys, "argv", ["fakescriptname", "--no-server", "--slog", "/tmp/does-not-matter"]
+        sys, "argv", ["fakescriptname", "--no-server", "--slog", os.devnull]
     )
 
     with pytest.raises(SystemExit):
