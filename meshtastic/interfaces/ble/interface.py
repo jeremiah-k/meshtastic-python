@@ -1835,84 +1835,87 @@ class BLEInterface(MeshInterface):
             ):
                 self._state_manager._transition_to(ConnectionState.DISCONNECTING)
 
-        # Release lock before calling MeshInterface.close() to avoid deadlock
-        # If MeshInterface.close() acquires locks that other paths also acquire, holding state_lock would cause lock inversion
-        if self._shutdown_event is not None:
-            self._shutdown_event.set()
+        try:
+            # Release lock before calling MeshInterface.close() to avoid deadlock
+            # If MeshInterface.close() acquires locks that other paths also acquire, holding state_lock would cause lock inversion
+            if self._shutdown_event is not None:
+                self._shutdown_event.set()
 
-        self._set_receive_wanted(False)  # Tell the thread we want it to stop
-        self.thread_coordinator._wake_waiting_threads(
-            "read_trigger", "reconnected_event"
-        )  # Wake all waiting threads
-        if self._receiveThread:
-            if self._receiveThread is threading.current_thread():
-                logger.debug("close() called from receive thread; skipping self-join")
-            else:
-                self.thread_coordinator._join_thread(
-                    self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
-                )
-                if self._receiveThread.is_alive():
-                    logger.warning(
-                        "BLE receive thread did not exit within %.1fs",
-                        RECEIVE_THREAD_JOIN_TIMEOUT,
+            self._set_receive_wanted(False)  # Tell the thread we want it to stop
+            self.thread_coordinator._wake_waiting_threads(
+                "read_trigger", "reconnected_event"
+            )  # Wake all waiting threads
+            if self._receiveThread:
+                if self._receiveThread is threading.current_thread():
+                    logger.debug("close() called from receive thread; skipping self-join")
+                else:
+                    self.thread_coordinator._join_thread(
+                        self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT
                     )
-            self._receiveThread = None
+                    if self._receiveThread.is_alive():
+                        logger.warning(
+                            "BLE receive thread did not exit within %.1fs",
+                            RECEIVE_THREAD_JOIN_TIMEOUT,
+                        )
+                self._receiveThread = None
 
-        # Close parent interface (stops publishing thread, etc.)
-        self.error_handler._safe_execute(
-            lambda: MeshInterface.close(self), error_msg="Error closing mesh interface"
-        )
+            # Close parent interface (stops publishing thread, etc.)
+            self.error_handler._safe_execute(
+                lambda: MeshInterface.close(self),
+                error_msg="Error closing mesh interface",
+            )
 
-        if self._exit_handler:
-            atexit.unregister(self._exit_handler)
-            self._exit_handler = None
+            if self._exit_handler:
+                atexit.unregister(self._exit_handler)
+                self._exit_handler = None
 
-        # Use unified state lock
-        with self._state_lock:
-            client = self.client
-            # Don't close client if it was already replaced (race condition)
-            # Only close if it's still the current client
+            # Use unified state lock
+            with self._state_lock:
+                client = self.client
+                # Don't close client if it was already replaced (race condition)
+                # Only close if it's still the current client
+                if client is not None:
+                    self.client = None
+            # Only close the client if we were the one who replaced it
+            # If it was replaced by a reconnection, the new connection path will clean it up
             if client is not None:
-                self.client = None
-        # Only close the client if we were the one who replaced it
-        # If it was replaced by a reconnection, the new connection path will clean it up
-        if client is not None:
-            self._notification_manager._unsubscribe_all(
-                client, timeout=NOTIFICATION_START_TIMEOUT
-            )
-            self._disconnect_and_close_client(client)
-        self._notification_manager._cleanup_all()
+                self._notification_manager._unsubscribe_all(
+                    client, timeout=NOTIFICATION_START_TIMEOUT
+                )
+                self._disconnect_and_close_client(client)
+            self._notification_manager._cleanup_all()
 
-        # Use unified state lock
-        # Send disconnected indicator if not already notified
-        notify = False
-        with self._state_lock:
-            if not self._disconnect_notified:
-                self._disconnect_notified = True
-                notify = True
+            # Use unified state lock
+            # Send disconnected indicator if not already notified
+            notify = False
+            with self._state_lock:
+                if not self._disconnect_notified:
+                    self._disconnect_notified = True
+                    notify = True
 
-        if notify:
-            self._disconnected()  # send the disconnected indicator up to clients
-            self._wait_for_disconnect_notifications()
+            if notify:
+                self._disconnected()  # send the disconnected indicator up to clients
+                self._wait_for_disconnect_notifications()
 
-        if self._discovery_manager is not None:
-            self.error_handler._safe_cleanup(
-                self._discovery_manager.close, "discovery manager close"
-            )
-            self._discovery_manager = None
+            if self._discovery_manager is not None:
+                self.error_handler._safe_cleanup(
+                    self._discovery_manager.close, "discovery manager close"
+                )
+                self._discovery_manager = None
 
-        # Clean up thread coordinator
-        self.thread_coordinator._cleanup()
-        # Use unified state lock
-        with self._state_lock:
-            # Record final state as DISCONNECTED for observers; instance remains closed.
-            # Safe re-entrant call: _state_lock and _state_manager._lock share the
-            # same RLock instance set during state manager initialization.
-            self._state_manager._transition_to(ConnectionState.DISCONNECTED)
-            alias_key = self._connection_alias_key
-            self._connection_alias_key = None
-        close_key = _addr_key(self.address)
-        self._mark_address_keys_disconnected(close_key, alias_key)
+            # Clean up thread coordinator
+            self.thread_coordinator._cleanup()
+        finally:
+            # Use unified state lock
+            with self._state_lock:
+                # Record final state as DISCONNECTED for observers; instance remains closed.
+                # Safe re-entrant call: _state_lock and _state_manager._lock share the
+                # same RLock instance set during state manager initialization.
+                self._state_manager._transition_to(ConnectionState.DISCONNECTED)
+                alias_key = self._connection_alias_key
+                self._connection_alias_key = None
+            close_key = _addr_key(self.address)
+            self._mark_address_keys_disconnected(close_key, alias_key)
 
     def _wait_for_disconnect_notifications(self, timeout: float | None = None) -> None:
         """Wait up to timeout seconds for the publishing thread to flush pending publish callbacks.
