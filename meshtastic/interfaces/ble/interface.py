@@ -294,9 +294,9 @@ class BLEInterface(MeshInterface):
             logger.debug("BLE connected")
 
             logger.debug("Mesh configure starting")
-            self._startConfig()
+            self._start_config()
             if not self.noProto:
-                self._waitConnected(timeout=CONNECTION_TIMEOUT)
+                self._wait_connected(timeout=CONNECTION_TIMEOUT)
                 self.waitForConfig()
 
             # FROMNUM notification is set in _register_notifications
@@ -390,7 +390,7 @@ class BLEInterface(MeshInterface):
                 )
                 return
             thread = self.thread_coordinator._create_thread(
-                target=self._receiveFromRadioImpl,
+                target=self._receive_from_radio_impl,
                 name=name,
                 daemon=True,
             )
@@ -912,7 +912,7 @@ class BLEInterface(MeshInterface):
     def _log_radio_handler(self, _: Any, b: bytearray) -> None:
         """Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
-        Parses the notification payload as a mesh_pb2.LogRecord and forwards its message to self._handleLogLine. If the record includes a `source` the message is prefixed with "[source] ". Malformed records are logged and ignored.
+        Parses the notification payload as a mesh_pb2.LogRecord and forwards its message to self._handle_log_line. If the record includes a `source` the message is prefixed with "[source] ". Malformed records are logged and ignored.
 
         Parameters
         ----------
@@ -930,14 +930,14 @@ class BLEInterface(MeshInterface):
                 if log_record.source
                 else log_record.message
             )
-            self._handleLogLine(message)
+            self._handle_log_line(message)
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
     def _legacy_log_radio_handler(self, _: Any, b: bytearray) -> None:
         """Deliver a legacy UTF-8 log notification payload to the log handler.
 
-        Decodes the notification payload as UTF-8, strips newline characters, and forwards the resulting string to self._handleLogLine. If decoding fails, the payload is ignored and a warning is logged.
+        Decodes the notification payload as UTF-8, strips newline characters, and forwards the resulting string to self._handle_log_line. If decoding fails, the payload is ignored and a warning is logged.
 
         Parameters
         ----------
@@ -948,7 +948,7 @@ class BLEInterface(MeshInterface):
         """
         try:
             log_radio = b.decode("utf-8").replace("\n", "")
-            self._handleLogLine(log_radio)
+            self._handle_log_line(log_radio)
         except UnicodeDecodeError:
             logger.warning(
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
@@ -1488,10 +1488,10 @@ class BLEInterface(MeshInterface):
             self._set_receive_wanted(False)
         return should_continue
 
-    def _receiveFromRadioImpl(self) -> None:
+    def _receive_from_radio_impl(self) -> None:
         """Run the main receive loop that reads FROMRADIO packets and delivers them to the packet handler.
 
-        Waits for read or reconnection events, reads payloads from the active BLE client, forwards non-empty payloads to _handleFromRadio, and manages recovery paths (transient retries, disconnect handling, and thread restart) until the interface is closing or the receive loop is stopped.
+        Waits for read or reconnection events, reads payloads from the active BLE client, forwards non-empty payloads to _handle_from_radio, and manages recovery paths (transient retries, disconnect handling, and thread restart) until the interface is closing or the receive loop is stopped.
 
         Raises
         ------
@@ -1538,7 +1538,7 @@ class BLEInterface(MeshInterface):
                             break  # Too many empty reads; exit to recheck state
                         logger.debug("FROMRADIO read: %s", payload.hex())
                         try:
-                            self._handleFromRadio(payload)
+                            self._handle_from_radio(payload)
                         except DecodeError as e:
                             # Log and continue on protobuf decode errors
                             logger.warning(
@@ -1737,7 +1737,7 @@ class BLEInterface(MeshInterface):
             cooldown,
         )
 
-    def _sendToRadioImpl(self, toRadio: mesh_pb2.ToRadio) -> None:
+    def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Send a protobuf ToRadio message over the TORADIO BLE characteristic.
 
         No-op if the serialized payload is empty or the interface is closing; on success the receive loop is signaled to process any response.

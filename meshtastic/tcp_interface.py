@@ -163,7 +163,7 @@ class TCPInterface(StreamInterface):
         # Join after socket teardown so a blocking recv() can exit promptly.
         self._join_reader_thread()
 
-    def _writeBytes(self, b: bytes) -> None:
+    def _write_bytes(self, b: bytes) -> None:
         """Send the full byte sequence over the TCP socket.
 
         Attempts to transmit all bytes; if an OSError occurs, logs a warning, shuts
@@ -282,7 +282,7 @@ class TCPInterface(StreamInterface):
             self.socket = None
             return reconnect_ok
 
-        # _startConfig() can call _sendToRadio(), which drains self.queue and may
+        # _start_config() can call _send_to_radio(), which drains self.queue and may
         # block on queue space. During reader-thread reconnect this can deadlock
         # because queue updates are also processed by the reader thread.
         if threading.current_thread() is getattr(self, "_rxThread", None):
@@ -297,7 +297,7 @@ class TCPInterface(StreamInterface):
                 )
 
         try:
-            self._startConfig()
+            self._start_config()
         except Exception as config_ex:  # noqa: BLE001 - preserve reader thread survival
             logger.warning(
                 "Post-reconnect config for %s failed: %s",
@@ -321,7 +321,7 @@ class TCPInterface(StreamInterface):
     # exit condition: no socket, shutdown requested (checked twice during
     # reconnect wait), reconnect failure, socket not set after reconnect,
     # shutdown during reconnect, successful reconnect, and normal data return.
-    def _readBytes(self, length: int) -> bytes | None:
+    def _read_bytes(self, length: int) -> bytes | None:
         """Read up to `length` bytes from the TCP socket, handling dead connections and automatic reconnection.
 
         If a socket is present and data is available, returns the received bytes. If the

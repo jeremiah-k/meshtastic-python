@@ -255,7 +255,7 @@ class Node:
             self.channels = None
             # We keep our channels in a temp array until finished
             self.partialChannels = []
-        self._requestChannel(startingIndex)
+        self._request_channel(startingIndex)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
@@ -364,7 +364,7 @@ class Node:
             else:
                 p.get_module_config_request = msgIndex  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
 
-        self._sendAdmin(p, wantResponse=True, onResponse=onResponse)
+        self._send_admin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:
             self.iface.waitForAckNak()
 
@@ -494,7 +494,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        self._sendAdmin(p, onResponse=onResponse)
+        self._send_admin(p, onResponse=onResponse)
 
     def writeChannel(self, channelIndex: int, adminIndex: int = 0) -> None:
         """Write the channel at the given index to the device.
@@ -518,7 +518,7 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_channel.CopyFrom(self.channels[channelIndex])
-        self._sendAdmin(p, adminIndex=adminIndex)
+        self._send_admin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
     def getChannelByChannelIndex(self, channelIndex: int) -> channel_pb2.Channel | None:
@@ -573,7 +573,7 @@ class Node:
 
         # we are careful here because if we move the "admin" channel the channelIndex we need to use
         # for sending admin channels will also change
-        adminIndex = self.iface.localNode._getAdminChannelIndex()
+        adminIndex = self.iface.localNode._get_admin_channel_index()
 
         self.channels.pop(channelIndex)
         self._fixup_channels()  # expand back to 8 channels
@@ -623,7 +623,7 @@ class Node:
                 return c
         return None
 
-    def _getAdminChannelIndex(self) -> int:
+    def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
 
         Returns
@@ -709,7 +709,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def getURL(self, includeAll: bool = True) -> str:
         """Build a sharable meshtastic URL encoding the node's primary channel and LoRa configuration.
@@ -840,7 +840,7 @@ class Node:
         p = admin_pb2.AdminMessage()
         p.set_config.lora.CopyFrom(channelSet.lora_config)
         self.ensureSessionKey()
-        self._sendAdmin(p)
+        self._send_admin(p)
 
     def onResponseRequestRingtone(self, p: dict[str, Any]) -> None:
         """Process an admin response containing a ringtone fragment and cache it on the Node.
@@ -921,7 +921,7 @@ class Node:
 
         p1 = admin_pb2.AdminMessage()
         p1.get_ringtone_request = True
-        request = self._sendAdmin(
+        request = self._send_admin(
             p1, wantResponse=True, onResponse=_on_ringtone_response
         )
         if request is None:
@@ -985,7 +985,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        send_result = self._sendAdmin(p, onResponse=onResponse)
+        send_result = self._send_admin(p, onResponse=onResponse)
         with self._ringtone_lock:
             # Invalidate cache after send so future reads refresh.
             self.ringtone = None
@@ -1072,7 +1072,7 @@ class Node:
 
         p1 = admin_pb2.AdminMessage()
         p1.get_canned_message_module_messages_request = True
-        request = self._sendAdmin(
+        request = self._send_admin(
             p1,
             wantResponse=True,
             onResponse=_on_canned_message_response,
@@ -1120,7 +1120,7 @@ class Node:
         Returns
         -------
         mesh_pb2.MeshPacket | None
-            The result returned by _sendAdmin for the first chunk, or `None` if the canned-message module is unavailable.
+            The result returned by _send_admin for the first chunk, or `None` if the canned-message module is unavailable.
 
         Raises
         ------
@@ -1145,7 +1145,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        send_result = self._sendAdmin(p, onResponse=onResponse)
+        send_result = self._send_admin(p, onResponse=onResponse)
         with self._canned_message_lock:
             # Invalidate cache after send so future reads refresh.
             self.cannedPluginMessage = None
@@ -1279,7 +1279,7 @@ class Node:
         p.exit_simulator = True
         logger.debug("in exitSimulator()")
 
-        return self._sendAdmin(p)
+        return self._send_admin(p)
 
     def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
@@ -1304,7 +1304,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def beginSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to open a settings edit transaction.
@@ -1328,7 +1328,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def commitSettingsTransaction(self) -> mesh_pb2.MeshPacket | None:
         """Commit the node's open settings edit transaction.
@@ -1350,7 +1350,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
@@ -1375,7 +1375,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:
         """Request the node to enter DFU (NRF52) mode.
@@ -1398,7 +1398,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
@@ -1423,7 +1423,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def getMetadata(self) -> None:
         """Request the node's device metadata and wait for an acknowledgement.
@@ -1435,7 +1435,7 @@ class Node:
         p.get_device_metadata_request = True
         logger.info("Requesting device metadata")
 
-        self._sendAdmin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
+        self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
         self.iface.waitForAckNak()
 
     def factoryReset(self, full: bool = False) -> mesh_pb2.MeshPacket | None:
@@ -1465,7 +1465,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def removeNode(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Request removal of the mesh node identified by nodeId.
@@ -1494,7 +1494,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def setFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node as a favorite in the target device's NodeDB.
@@ -1519,7 +1519,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def removeFavorite(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as a favorite in the device's NodeDB.
@@ -1544,7 +1544,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def setIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Mark a node in the device NodeDB as ignored.
@@ -1569,7 +1569,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def removeIgnored(self, nodeId: int | str) -> mesh_pb2.MeshPacket | None:
         """Unmark a node as ignored in the device's NodeDB.
@@ -1594,7 +1594,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def resetNodeDb(self) -> mesh_pb2.MeshPacket | None:
         """Request that the node clear its stored NodeDB (node database).
@@ -1617,7 +1617,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def setFixedPosition(
         self, lat: int | float, lon: int | float, alt: int
@@ -1661,7 +1661,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(a, onResponse=onResponse)
+        return self._send_admin(a, onResponse=onResponse)
 
     def removeFixedPosition(self) -> mesh_pb2.MeshPacket | None:
         """Clear the node's fixed position setting.
@@ -1682,7 +1682,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def setTime(self, timeSec: int = 0) -> mesh_pb2.MeshPacket | None:
         """Set the node's clock to the specified Unix timestamp.
@@ -1712,7 +1712,7 @@ class Node:
             onResponse = None
         else:
             onResponse = self.onAckNak
-        return self._sendAdmin(p, onResponse=onResponse)
+        return self._send_admin(p, onResponse=onResponse)
 
     def _fixup_channels(self) -> None:
         """Normalize the node's channel list by assigning sequential index values and ensuring the list contains the expected number of channels.
@@ -1848,7 +1848,7 @@ class Node:
             if len(self.partialChannels) > 0:
                 lastTried = self.partialChannels[-1].index
             logger.debug("Retrying previous channel request.")
-            self._requestChannel(lastTried)
+            self._request_channel(lastTried)
             return
 
         c = p["decoded"]["admin"]["raw"].get_channel_response
@@ -1863,7 +1863,7 @@ class Node:
             self.channels = self.partialChannels
             self._fixup_channels()
         else:
-            self._requestChannel(index + 1)
+            self._request_channel(index + 1)
 
     def onAckNak(self, p: dict[str, Any]) -> None:
         """Handle an incoming ACK/NAK admin response and update interface acknowledgment state.
@@ -1913,7 +1913,7 @@ class Node:
                 logger.info("Received an ACK.")
                 self.iface._acknowledgment.receivedAck = True
 
-    def _requestChannel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
+    def _request_channel(self, channelNum: int) -> mesh_pb2.MeshPacket | None:
         """Request settings for a single channel from this node.
 
         Sends an admin request for the channel at the given zero-based index and registers the response handler.
@@ -1939,12 +1939,12 @@ class Node:
         else:
             logger.debug(f"Requesting channel {channelNum}")
 
-        return self._sendAdmin(
+        return self._send_admin(
             p, wantResponse=True, onResponse=self.onResponseRequestChannel
         )
 
     # pylint: disable=R1710
-    def _sendAdmin(
+    def _send_admin(
         self,
         p: admin_pb2.AdminMessage,
         wantResponse: bool = False,
@@ -1979,9 +1979,9 @@ class Node:
         if (
             adminIndex == 0
         ):  # unless a special channel index was used, we want to use the admin index
-            adminIndex = self.iface.localNode._getAdminChannelIndex()
+            adminIndex = self.iface.localNode._get_admin_channel_index()
         logger.debug(f"adminIndex:{adminIndex}")
-        node_info = self.iface._getOrCreateByNum(self.nodeNum)
+        node_info = self.iface._get_or_create_by_num(self.nodeNum)
         passkey = node_info.get("adminSessionPassKey")
         if isinstance(passkey, bytes):
             p.session_passkey = passkey
@@ -2008,7 +2008,10 @@ class Node:
             )
         else:
             nodeid = toNodeNum(self.nodeNum)
-            if self.iface._getOrCreateByNum(nodeid).get("adminSessionPassKey") is None:
+            if (
+                self.iface._get_or_create_by_num(nodeid).get("adminSessionPassKey")
+                is None
+            ):
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
 
     def _get_channels_with_hash(self) -> list[dict[str, Any]]:

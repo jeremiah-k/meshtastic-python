@@ -476,7 +476,7 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         lambda _self, *, name: None,
         raising=True,
     )
-    monkeypatch.setattr(BLEInterface, "_startConfig", lambda _self: None, raising=True)
+    monkeypatch.setattr(BLEInterface, "_start_config", lambda _self: None, raising=True)
 
     iface = BLEInterface(address=target_address, noProto=True, auto_reconnect=False)
     monkeypatch.setattr(BLEInterface, "connect", real_connect, raising=True)
@@ -720,7 +720,7 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
     )
 
     iface._want_receive = True
-    iface._receiveFromRadioImpl()
+    iface._receive_from_radio_impl()
 
     assert disconnect_calls
     source, disconnected_client, disconnected_bleak = disconnect_calls[0]
@@ -1108,7 +1108,7 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
         iface.client = client  # type: ignore[assignment]
 
     iface._read_trigger.set()
-    iface._receiveFromRadioImpl()
+    iface._receive_from_radio_impl()
 
     assert "Fatal error in BLE receive thread" in caplog.text
     assert (
@@ -1167,7 +1167,7 @@ def test_bleak_error_transient_retry_logic(monkeypatch, caplog):
         iface.client = client  # type: ignore[assignment]
 
     iface._read_trigger.set()
-    iface._receiveFromRadioImpl()
+    iface._receive_from_radio_impl()
 
     assert "Transient BLE read error, retrying" in caplog.text
     assert "Fatal BLE read error after retries" in caplog.text

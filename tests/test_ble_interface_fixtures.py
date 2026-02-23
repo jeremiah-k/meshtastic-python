@@ -549,7 +549,7 @@ def stub_atexit(
 def _build_interface(
     monkeypatch: Any, client: DummyClient, *, start_receive_thread: bool = True
 ) -> "BLEInterface":
-    """Create a BLEInterface configured for tests whose `connect` is stubbed to return the supplied client and whose `_startConfig` is a no-op.
+    """Create a BLEInterface configured for tests whose `connect` is stubbed to return the supplied client and whose `_start_config` is a no-op.
 
     Parameters
     ----------
@@ -565,7 +565,7 @@ def _build_interface(
     Returns
     -------
     'BLEInterface'
-        A BLEInterface instance configured for tests. The instance has `connect` replaced to attach and return `client`, `_startConfig` replaced with a no-op, and a `_connect_stub_calls` list recording addresses passed to the stubbed `connect`.
+        A BLEInterface instance configured for tests. The instance has `connect` replaced to attach and return `client`, `_start_config` replaced with a no-op, and a `_connect_stub_calls` list recording addresses passed to the stubbed `connect`.
     """
     ble_mod = _get_ble_module()
     BleInterfaceClass = ble_mod.BLEInterface
@@ -601,7 +601,7 @@ def _build_interface(
         return client
 
     def _stub_start_config(_self: "BLEInterface") -> None:
-        """Stub replacement for BLEInterface._startConfig that performs no startup configuration.
+        """Stub replacement for BLEInterface._start_config that performs no startup configuration.
 
         Used in tests to prevent side effects during BLEInterface initialization.
 
@@ -628,7 +628,7 @@ def _build_interface(
         return None
 
     monkeypatch.setattr(BleInterfaceClass, "connect", _stub_connect)
-    monkeypatch.setattr(BleInterfaceClass, "_startConfig", _stub_start_config)
+    monkeypatch.setattr(BleInterfaceClass, "_start_config", _stub_start_config)
     if not start_receive_thread:
         monkeypatch.setattr(
             BleInterfaceClass, "_start_receive_thread", _stub_start_receive_thread
