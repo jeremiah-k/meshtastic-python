@@ -35,11 +35,6 @@ def test_node(capsys, mock_serial_interface):
     assert not re.search(r"remote node", out)
     assert err == ""
 
-
-# Legacy commented tests were removed from this section. RequestConfig and other
-# Node flows should continue to be reintroduced as active tests over time.
-
-
 @pytest.mark.unit
 def test_get_canned_message_returns_cached_value(mock_serial_interface):
     """get_canned_message should return the cached message without sending."""
