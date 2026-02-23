@@ -9,16 +9,26 @@ import pytest
 @pytest.mark.smoke2
 def test_smoke2_info():
     """Test --info with 2 devices connected serially."""
-    return_value, out = subprocess.getstatusoutput("meshtastic --info")
-    assert re.search(r"Warning: Multiple", out, re.MULTILINE)
-    assert return_value == 1
+    result = subprocess.run(
+        ["meshtastic", "--info"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert re.search(r"Warning: Multiple", result.stdout, re.MULTILINE)
+    assert result.returncode == 1
 
 
 @pytest.mark.smoke2
 def test_smoke2_test():
     """Test --test."""
-    return_value, out = subprocess.getstatusoutput("meshtastic --test")
-    assert re.search(r"Writing serial debugging", out, re.MULTILINE)
-    assert re.search(r"Ports opened", out, re.MULTILINE)
-    assert re.search(r"Running [1-9]\d* tests", out, re.MULTILINE)
-    assert return_value == 0
+    result = subprocess.run(
+        ["meshtastic", "--test"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert re.search(r"Writing serial debugging", result.stdout, re.MULTILINE)
+    assert re.search(r"Ports opened", result.stdout, re.MULTILINE)
+    assert re.search(r"Running [1-9]\d* tests", result.stdout, re.MULTILINE)
+    assert result.returncode == 0

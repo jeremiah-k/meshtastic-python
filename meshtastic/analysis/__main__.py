@@ -138,7 +138,7 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         Columns are `time` and `pm_raises` (a list of raised power-monitor
         name strings).
     """
-    pmon_events = dslog[dslog["pm_mask"].notnull()]
+    pmon_events = dslog[dslog["pm_mask"].notnull()].copy()
 
     pm_masks = pd.Series(pmon_events["pm_mask"]).to_numpy()
 
@@ -250,6 +250,14 @@ def create_argparser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="Enable Dash debug mode (safe only on localhost).",
+    )
+    group.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=8051,
+        dest="port",
+        help="Port for the Dash server (default: 8051).",
     )
 
     return parser
@@ -363,7 +371,7 @@ def main() -> None:
     except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
         our_exit(f"Error loading slog data: {exc}")
 
-    port = 8051
+    port = int(args.port)
     debug = bool(args.debug)
     host = str(args.host)
 

@@ -17,6 +17,7 @@ def test_examples_hello_world_serial_no_arg() -> None:
         capture_output=True,
         text=True,
         check=False,
+        timeout=10,
     )
     assert result.returncode == 3
 
@@ -29,6 +30,7 @@ def test_examples_hello_world_serial_with_arg() -> None:
         capture_output=True,
         text=True,
         check=False,
+        timeout=10,
     )
     assert result.returncode == 1
     assert "Warning: No Meshtastic devices detected." in result.stdout

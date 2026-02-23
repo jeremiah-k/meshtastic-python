@@ -314,11 +314,12 @@ class DiscoveryManager:
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.
 
-        If a persistent client exists, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
+        If a persistent client exists with a close method, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
         """
         if self._client:
             try:
-                self._client.close()
+                if hasattr(self._client, "close"):
+                    self._client.close()
             finally:
                 self._client = None
 

@@ -8,9 +8,9 @@ This smoke test runs against that localhost.
 
 """
 
-# noqa: S605, S607
-# File-level suppression for subprocess.getstatusoutput shell=True usage
-# which is intentional for CLI smoke tests
+# ruff: noqa: S605, S607
+# File-level suppression for subprocess.getstatusoutput shell=True usage,
+# which is intentional for CLI smoke tests.
 
 import os
 import platform
