@@ -1,6 +1,7 @@
 """Power stress testing support."""
 
 import logging
+import threading
 import time
 from typing import Any, Callable
 
@@ -8,9 +9,9 @@ from ..protobuf import portnums_pb2, powermon_pb2
 
 
 def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
-    """Delete me? FIXME."""
-    logging.debug(f"packet:{packet} interface:{interface}")
-    # interface.gotResponse = True
+    """Handle power stress responses and mark interface as having received a response."""
+    logging.debug("packet:%s interface:%s", packet, interface)
+    interface.gotResponse = True
 
 
 class PowerStressClient:
@@ -26,7 +27,7 @@ class PowerStressClient:
         """
         self.iface = iface
 
-        if not node_id:
+        if node_id is None:
             node_id = iface.myInfo.my_node_num
 
         self.node_id = node_id
@@ -78,12 +79,10 @@ class PowerStressClient:
         bool
             `True` if an ack was observed, `False` if timed out.
         """
-        gotAck = False
+        ack_event = threading.Event()
 
-        def onResponse(packet: dict[str, Any]) -> None:  # noqa: ARG001
-            _ = packet
-            nonlocal gotAck
-            gotAck = True
+        def onResponse(_packet: dict[str, Any]) -> None:
+            ack_event.set()
 
         logging.info(
             f"Sending power stress command {powermon_pb2.PowerStressMessage.Opcode.Name(cmd)}"
@@ -92,10 +91,7 @@ class PowerStressClient:
 
         if num_seconds == 0.0:
             # Wait for the response and then continue, with a safety timeout.
-            deadline = time.monotonic() + ack_timeout
-            while not gotAck and time.monotonic() < deadline:
-                time.sleep(0.1)
-            if not gotAck:
+            if not ack_event.wait(timeout=ack_timeout):
                 logging.error("Timed out waiting for power stress ack!")
                 return False
         else:
@@ -103,7 +99,7 @@ class PowerStressClient:
             time.sleep(
                 num_seconds + 0.2
             )  # completely block our thread for the duration of the test
-            if not gotAck:
+            if not ack_event.is_set():
                 logging.error("Did not receive ack for power stress command!")
                 return False
         return True
@@ -136,7 +132,9 @@ class PowerStress:
                 logging.info(
                     f"Running power stress test {s_name} for {num_seconds} seconds"
                 )
-                self.client.syncPowerStress(s, num_seconds)
+                if not self.client.syncPowerStress(s, num_seconds):
+                    logging.warning(f"Ack not received for {s_name}; aborting run.")
+                    return
 
             logging.info("Power stress test complete.")
         except KeyboardInterrupt as e:

@@ -128,12 +128,16 @@ class PowerLogger:
             ("max_mW", pa.float64()),
             ("min_mW", pa.float64()),
         ]
-        self.writer.set_schema(
-            pa.schema(
-                power_schema_fields,
-                metadata=POWER_LOG_SCHEMA_METADATA,
+        try:
+            self.writer.set_schema(
+                pa.schema(
+                    power_schema_fields,
+                    metadata=POWER_LOG_SCHEMA_METADATA,
+                )
             )
-        )
+        except Exception:
+            self.writer.close()
+            raise
         self.interval = interval
         self._warned_legacy_mw_without_voltage = False
         self._reading_lock = threading.Lock()
@@ -167,9 +171,9 @@ class PowerLogger:
         now : datetime | None
             Optional timestamp to use for the recorded row. (Default value = None)
         """
-        if now is None:
-            now = datetime.now()
         with self._reading_lock:
+            if now is None:
+                now = datetime.now()
             average_mA = self.pMeter.get_average_current_mA()
             max_mA = self.pMeter.get_max_current_mA()
             min_mA = self.pMeter.get_min_current_mA()
@@ -273,9 +277,9 @@ class StructuredLogger:
         self.raw_file: io.TextIOWrapper | None = None
 
         # We need a closure here because the subscription API is very strict about exact arg matching
-        def listen_glue(
+        def listen_glue(  # pylint: disable=unused-argument  # noqa: ARG001
             line, interface
-        ):  # pylint: disable=unused-argument  # noqa: ARG001
+        ):
             """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters

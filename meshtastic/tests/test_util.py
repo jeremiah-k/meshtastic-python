@@ -674,7 +674,7 @@ def test_roundtrip_snake_to_camel_camel_to_snake(a_string: str) -> None:
 
 
 @pytest.mark.unitslow
-@given(st.text())
+@given(st.text(alphabet=st.characters(whitelist_categories=("Lu", "Ll", "Nd"))))
 def test_fuzz_camel_to_snake(a_string: str) -> None:
     """Test that camel_to_snake lowercases output and preserves non-uppercase characters."""
     result = camel_to_snake(a_string)

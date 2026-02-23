@@ -8,6 +8,10 @@ This smoke test runs against that localhost.
 
 """
 
+# noqa: S605, S607
+# File-level suppression for subprocess.getstatusoutput shell=True usage
+# which is intentional for CLI smoke tests
+
 import os
 import platform
 import re
@@ -343,7 +347,7 @@ def test_smokevirt_ch_set_downlink_and_uplink():
 
 @pytest.mark.smokevirt
 def test_smokevirt_ch_add_and_ch_del():
-    """Test --ch-add."""
+    """Test --ch-add and --ch-del."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-index 1 --ch-del"
     )

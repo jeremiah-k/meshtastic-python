@@ -110,7 +110,12 @@ def __getattr__(name: str) -> Any:
             DeprecationWarning,
             stacklevel=2,
         )
-        return globals()[new_name]
+        try:
+            return globals()[new_name]
+        except KeyError:
+            raise AttributeError(  # noqa: TRY003
+                f"module {__name__!r} has no attribute {new_name!r}"
+            ) from None
     raise AttributeError(  # noqa: TRY003
         f"module {__name__!r} has no attribute {name!r}"
     )

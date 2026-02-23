@@ -43,7 +43,7 @@ class StreamInterface(MeshInterface):
             """
             super().__init__(message)
 
-    class PayloadTooLargeError(MeshInterface.MeshInterfaceError):
+    class PayloadTooLargeError(MeshInterface.MeshInterfaceError, ValueError):
         """Raised when a serialized ToRadio payload exceeds MAX_TO_FROM_RADIO_SIZE."""
 
         def __init__(self, payload_size: int, max_size: int) -> None:
@@ -163,7 +163,6 @@ class StreamInterface(MeshInterface):
         logger.debug("Closing our port")
         # pylint: disable=E0203
         if self.stream is not None:
-            # pylint: disable=E0203
             self.stream.close()
             # pylint: disable=W0201
             self.stream = None
@@ -277,7 +276,7 @@ class StreamInterface(MeshInterface):
         r"""Accumulate device log bytes into the current log line and dispatch completed lines.
 
         Decodes the single-byte input as UTF-8, using '?' for undecodable bytes. Ignores
-        carriage return ('\r'); on newline ('\n') calls self._handleLogLine with the
+        carriage return ('\r'); on newline ('\n') calls self._handle_log_line with the
         accumulated line and clears the accumulator; otherwise appends the decoded
         character to the accumulator.
 
@@ -296,7 +295,7 @@ class StreamInterface(MeshInterface):
         if utf == "\r":
             pass  # ignore
         elif utf == "\n":
-            self._handleLogLine(self.cur_log_line)
+            self._handle_log_line(self.cur_log_line)
             self.cur_log_line = ""
         else:
             self.cur_log_line += utf

@@ -278,6 +278,16 @@ class MeshInterface:  # pylint: disable=R0902
 
         pub.sendMessage("meshtastic.log.line", line=line, interface=self)
 
+    def _handle_log_line(self, line: str) -> None:
+        """Snake_case alias for _handleLogLine for naming consistency.
+
+        Parameters
+        ----------
+        line : str
+            Log text received from the device.
+        """
+        self._handleLogLine(line)
+
     def _handleLogRecord(self, record: mesh_pb2.LogRecord) -> None:
         """Process a protobuf LogRecord by extracting its message text and handling it as a device log line.
 

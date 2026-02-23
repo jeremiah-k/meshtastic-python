@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+from typing import NoReturn
 
 import pandas as pd
 import pytest
@@ -51,9 +52,9 @@ def test_main_routes_load_errors_through_our_exit(
 
     def _fake_create_dash(*, slog_path: str) -> None:
         _ = slog_path
-        raise ValueError("bad slog")
+        raise ValueError("bad slog")  # noqa: TRY003
 
-    def _fake_our_exit(message: str, return_value: int = 1) -> None:
+    def _fake_our_exit(message: str, return_value: int = 1) -> NoReturn:
         _ = return_value
         captured["message"] = message
         raise SystemExit(1)

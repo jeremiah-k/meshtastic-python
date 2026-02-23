@@ -186,6 +186,25 @@ def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) ->
     Historical logs used ``*_mW`` field names. New logs expose corrected
     ``*_mA`` names. Prefer the legacy column when present and non-empty to keep
     existing datasets stable, otherwise fall back to the corrected name.
+
+    Parameters
+    ----------
+    frame : pd.DataFrame
+        DataFrame whose columns are searched.
+    legacy_name : str
+        Name of the historical column (e.g. ``"average_mW"``).
+    new_name : str
+        Name of the replacement column (e.g. ``"average_mA"``).
+
+    Returns
+    -------
+    str
+        The chosen column name.
+
+    Raises
+    ------
+    ValueError
+        If neither ``legacy_name`` nor ``new_name`` is present in ``frame``.
     """
     if legacy_name in frame.columns and not frame[legacy_name].isna().all():
         return legacy_name

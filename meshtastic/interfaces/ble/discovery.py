@@ -18,6 +18,10 @@ from meshtastic.interfaces.ble.utils import (
 )
 
 
+class DiscoveryClientError(Exception):
+    """An exception class for BLE discovery client errors."""
+
+
 def _normalize_device_name_for_matching(name: str | None) -> str | None:
     """Normalize a Bluetooth device name for tolerant comparisons.
 
@@ -108,7 +112,7 @@ def _parse_scan_response(
     When `whitelist_address` is provided, matches are selected using
     address-first and name-aware precedence:
     1) exact normalized address key, 2) exact name, 3) normalized name
-    (`casefold().strip()`) only if unique. Otherwise, devices advertising
+    (`strip().casefold()`) only if unique. Otherwise, devices advertising
     `SERVICE_UUID` are returned.
 
     Parameters
@@ -160,7 +164,7 @@ def _parse_scan_response(
         elif has_service:
             devices.append(device)
 
-    if has_whitelist and target_identifier is not None:
+    if target_identifier:
         return _filter_devices_for_target_identifier(
             target_candidates, target_identifier
         )
@@ -199,9 +203,9 @@ class DiscoveryManager:
         ------
         BleakDBusError
             If a DBus/BlueZ error occurs during scanning; this error is propagated to the caller.
-        RuntimeError
+        DiscoveryClientError
             If the discovery client factory returns None.
-        RuntimeError
+        DiscoveryClientError
             If the discovery client factory returns an invalid type.
         Exception
             For other unexpected errors during device discovery.
@@ -231,15 +235,18 @@ class DiscoveryManager:
             try:
                 self._client = resolved_factory(log_if_no_address=False)
             except TypeError as exc:
-                logger.debug(
-                    "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
-                    exc,
-                    exc_info=True,
-                )
-                self._client = resolved_factory()
+                if "log_if_no_address" in str(exc):
+                    logger.debug(
+                        "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                    self._client = resolved_factory()
+                else:
+                    raise
             # Validate factory returned a valid client (duck typing for testability)
             if self._client is None:
-                raise RuntimeError(
+                raise DiscoveryClientError(
                     f"Discovery client factory returned None. Factory: {resolved_factory!r}"
                 )
             # Accept BLEClient instances or any object with the required interface
@@ -254,7 +261,7 @@ class DiscoveryManager:
                 )
                 missing = [a for a in required_attrs if not hasattr(self._client, a)]
                 if missing:
-                    raise RuntimeError(
+                    raise DiscoveryClientError(
                         f"Discovery client factory returned invalid type. "
                         f"Factory: {resolved_factory!r}, returned type: {type(self._client)!r}, "
                         f"missing required attributes: {missing}"
@@ -295,7 +302,7 @@ class DiscoveryManager:
         except (BleakError, RuntimeError) as e:
             logger.warning("Device discovery failed: %s", e, exc_info=True)
             devices = []
-        except Exception as e:  # pragma: no cover - defensive last resort
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             # Defensive last resort to keep discovery best-effort
             logger.warning(
                 "Unexpected error during device discovery: %s", e, exc_info=True

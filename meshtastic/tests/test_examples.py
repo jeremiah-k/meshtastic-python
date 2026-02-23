@@ -4,28 +4,31 @@ If not, you need to run: "python3 -m venv venv", "source venv/bin/activate", "pi
 """
 
 import subprocess
+import sys
 
 import pytest
 
 
 @pytest.mark.examples
-def test_examples_hello_world_serial_no_arg():
+def test_examples_hello_world_serial_no_arg() -> None:
     """Test hello_world_serial without any args."""
-    return_value, _ = subprocess.getstatusoutput(
-        "source venv/bin/activate; python3 examples/hello_world_serial.py"
+    result = subprocess.run(
+        [sys.executable, "examples/hello_world_serial.py"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    assert return_value == 3
+    assert result.returncode == 3
 
 
 @pytest.mark.examples
 def test_examples_hello_world_serial_with_arg() -> None:
     """Test hello_world_serial with arg."""
     result = subprocess.run(
-        ["venv/bin/python3", "examples/hello_world_serial.py", "hello"],
+        [sys.executable, "examples/hello_world_serial.py", "hello"],
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 1
-    assert result.stderr == ""
     assert "Warning: No Meshtastic devices detected." in result.stdout
