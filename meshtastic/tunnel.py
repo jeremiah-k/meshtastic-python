@@ -16,7 +16,6 @@
 """
 
 import logging
-import warnings
 import platform
 import threading
 from contextlib import suppress
@@ -233,7 +232,6 @@ class Tunnel:
                         self.tun.write(p)
                     except OSError:
                         logger.debug("TUN write skipped: device closed during shutdown")
-
 
     def _should_filter_packet(self, p: bytes) -> bool:
         """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.

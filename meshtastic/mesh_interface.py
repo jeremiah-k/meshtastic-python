@@ -117,18 +117,19 @@ class MeshInterface:  # pylint: disable=R0902
         Parameters
         ----------
         debugOut : IO[str] | Callable[[str], Any] | None
-            Destination for
-            human-readable log lines; if provided the interface will
-            publish device logs to this output. (Default value = None)
+            Destination for human-readable log lines; if provided the
+            interface will publish device logs to this output. (Default value = None)
         noProto : bool
-            If True, disable running the meshtastic protocol layer over the link (operate as a dumb serial client). (Default value = False)
+            If True, disable running the meshtastic protocol layer over the link
+            (operate as a dumb serial client). (Default value = False)
         noNodes : bool
-            If True, instruct the device not to send its node database on startup; only other configuration will be requested. (Default value = False)
+            If True, instruct the device not to send its node database on startup;
+            only other configuration will be requested. (Default value = False)
         timeout : float
             Default timeout in seconds for operations that wait for replies.
         """
         self.debugOut = debugOut
-        self.nodes: dict[str, dict] | None = None  # FIXME
+        self.nodes: dict[str, dict[str, Any]] | None = None
         self.isConnected: threading.Event = threading.Event()
         self.noProto: bool = noProto
         self.localNode: meshtastic.node.Node = meshtastic.node.Node(
@@ -155,13 +156,15 @@ class MeshInterface:  # pylint: disable=R0902
         self._closing = False
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
         self.currentPacketId: int = random.randint(0, 0xFFFFFFFF)
-        self.nodesByNum: dict[int, dict] | None = None
+        self.nodesByNum: dict[int, dict[str, Any]] | None = None
         self.noNodes: bool = noNodes
         self.configId: int | None = NODELESS_WANT_CONFIG_ID if noNodes else None
         self.gotResponse: bool = False  # used in gpio read
         self.mask: int | None = None  # used in gpio read and gpio watch
         self.queueStatus: mesh_pb2.QueueStatus | None = None
-        self.queue: collections.OrderedDict = collections.OrderedDict()
+        self.queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool] = (
+            collections.OrderedDict()
+        )
         self._localChannels: list[channel_pb2.Channel] = []
 
         # We could have just not passed in debugOut to MeshInterface, and instead told consumers to subscribe to
@@ -1683,12 +1686,12 @@ class MeshInterface:  # pylint: disable=R0902
         if not success:
             raise MeshInterface.MeshInterfaceError("Timed out waiting for waypoint")
 
-    def getMyNodeInfo(self) -> dict | None:
+    def getMyNodeInfo(self) -> dict[str, Any] | None:
         """Get the stored node-info dictionary for the local node.
 
         Returns
         -------
-        dict | None
+        dict[str, Any] | None
             The local node's node-info entry from `nodesByNum`, or `None` if `myInfo`
             or `nodesByNum` is unset or the local node entry is missing.
         """
@@ -2004,7 +2007,7 @@ class MeshInterface:  # pylint: disable=R0902
                 packetId, packet = toResend
                 # logger.warn(f"packet: {packetId:08x} {packet}")
                 resentQueue[packetId] = packet
-                if packet is False:
+                if not isinstance(packet, mesh_pb2.ToRadio):
                     continue
                 self._queueClaim()
                 if packet != toRadio:
@@ -2259,7 +2262,7 @@ class MeshInterface:  # pylint: disable=R0902
         else:
             logger.debug("Unexpected FromRadio payload")
 
-    def _fixupPosition(self, position: dict) -> dict:
+    def _fixupPosition(self, position: dict[str, Any]) -> dict[str, Any]:
         """Convert integer micro-degree coordinates in a position dict to floating-point degrees.
 
         If present, 'latitudeI' and 'longitudeI' are converted to 'latitude' and 'longitude'
@@ -2267,12 +2270,12 @@ class MeshInterface:  # pylint: disable=R0902
 
         Parameters
         ----------
-        position : dict
+        position : dict[str, Any]
             Position dictionary that may contain integer keys 'latitudeI' and 'longitudeI'.
 
         Returns
         -------
-        dict
+        dict[str, Any]
             The same position dictionary with 'latitude' and/or 'longitude' set to float degrees when corresponding integer fields were present.
         """
         if "latitudeI" in position:
@@ -2367,12 +2370,12 @@ class MeshInterface:  # pylint: disable=R0902
             self.nodesByNum[nodeNum] = n
             return n
 
-    def _handleChannel(self, channel):
+    def _handleChannel(self, channel: channel_pb2.Channel) -> None:
         """Record a received local channel descriptor for later configuration.
 
         Parameters
         ----------
-        channel : dict or protobuf
+        channel : channel_pb2.Channel
             Channel descriptor to append to the internal _localChannels list.
         """
         self._localChannels.append(channel)
