@@ -1784,7 +1784,7 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     return tcp_hostname, tcp_port
 
 
-def common():
+def common() -> None:
     """Configure logging, validate CLI arguments, establish the selected transport.
 
     interface, invoke onConnected, and optionally enter the main event loop.
@@ -2699,7 +2699,7 @@ def addRemoteAdminArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentPars
     return parser
 
 
-def initParser():
+def initParser() -> None:
     """Configure the global CLI ArgumentParser by registering all Meshtastic command.
 
     groups, enable shell autocompletion if available, parse command-line
@@ -2923,7 +2923,7 @@ def initParser():
     mt_config.parser = parser
 
 
-def main():
+def main() -> None:
     """
     Run the Meshtastic command-line entry point: initialize the argument parser, process CLI actions, and perform cleanup.
 
@@ -2940,7 +2940,7 @@ def main():
     common()
 
 
-def tunnelMain():
+def tunnelMain() -> None:
     """Start the Meshtastic CLI in IP-tunnel mode.
 
     Set tunnel mode on the parsed CLI arguments and run the shared CLI initialization and execution flow.

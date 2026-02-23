@@ -5,6 +5,7 @@
 import base64
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
@@ -12,7 +13,7 @@ import pytest
 
 from ..mesh_interface import MeshInterface
 from ..node import Node
-from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2
+from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2, mesh_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Timeout
@@ -59,19 +60,22 @@ def test_get_canned_message_returns_cached_value(mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_get_canned_message_requests_and_caches_value(mock_serial_interface):
+def test_get_canned_message_requests_and_caches_value(
+    mock_serial_interface: Any,
+) -> None:
     """get_canned_message should request, cache, and return the response payload."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     response_raw = admin_pb2.AdminMessage()
     response_raw.get_canned_message_module_messages_response = "hello world"
     sent_messages: list[admin_pb2.AdminMessage] = []
+    request_packet = mesh_pb2.MeshPacket()
 
     def _fake_send_admin(
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
-        onResponse=None,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int = 0,
-    ):
+    ) -> mesh_pb2.MeshPacket | None:
         _ = adminIndex
         sent_messages.append(msg)
         assert wantResponse is True
@@ -85,9 +89,9 @@ def test_get_canned_message_requests_and_caches_value(mock_serial_interface):
                 }
             }
         )
-        return object()
+        return request_packet
 
-    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign]
+    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign,assignment]
 
     assert anode.get_canned_message() == "hello world"
     assert anode.cannedPluginMessage == "hello world"
@@ -100,32 +104,35 @@ def test_get_canned_message_requests_and_caches_value(mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_set_canned_message_sends_payload_and_invalidates_cache(mock_serial_interface):
+def test_set_canned_message_sends_payload_and_invalidates_cache(
+    mock_serial_interface: Any,
+) -> None:
     """set_canned_message should send payload and clear cached message values."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     anode.cannedPluginMessage = "stale"
     anode.cannedPluginMessageMessages = "stale-part"
 
     captured: dict[str, object] = {}
+    sent_packet = mesh_pb2.MeshPacket()
 
     def _fake_send_admin(
         msg: admin_pb2.AdminMessage,
         wantResponse: bool = False,
-        onResponse=None,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int = 0,
-    ):
+    ) -> mesh_pb2.MeshPacket | None:
         captured["msg"] = msg
         captured["wantResponse"] = wantResponse
         captured["onResponse"] = onResponse
         captured["adminIndex"] = adminIndex
-        return "sent"
+        return sent_packet
 
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
-    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign]
+    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign,assignment]
 
     result = anode.set_canned_message("fresh")
 
-    assert result == "sent"
+    assert result is sent_packet
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.set_canned_message_module_messages == "fresh"
     assert captured["wantResponse"] is False
