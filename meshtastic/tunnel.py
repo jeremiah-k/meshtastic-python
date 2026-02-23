@@ -57,7 +57,7 @@ class Tunnel:
     class TunnelError(Exception):
         """An exception class for general tunnel errors."""
 
-        def __init__(self, message: str):
+        def __init__(self, message: str) -> None:
             """Initialize the TunnelError with a human-readable message.
 
             Parameters
@@ -205,8 +205,13 @@ class Tunnel:
         packet : dict
             Mesh packet; expected to contain a "from" node number and a "decoded" dict with a "payload" bytes object.
         """
+        if not self.iface or not getattr(self.iface, "myInfo", None):
+            logger.debug("Ignoring tunnel packet because iface.myInfo is unavailable")
+            return
+
+        my_info = self.iface.myInfo
         p = packet["decoded"]["payload"]
-        if packet["from"] == self.iface.myInfo.my_node_num:
+        if packet["from"] == my_info.my_node_num:
             logger.debug("Ignoring message we sent")
         else:
             logger.debug(
@@ -279,8 +284,10 @@ class Tunnel:
                 )
         else:
             logger.warning(
-                f"forwarding unexpected protocol 0x{protocol:02x}, "
-                f"src={ipstr(srcaddr)}, dest={ipstr(destAddr)}"
+                "forwarding unexpected protocol 0x%02x, src=%s, dest=%s",
+                protocol,
+                ipstr(srcaddr),
+                ipstr(destAddr),
             )
 
         return ignore
@@ -367,12 +374,16 @@ class Tunnel:
         nodeId = self._ip_to_node_id(destAddr)
         if nodeId is not None:
             logger.debug(
-                f"Forwarding packet bytelen={len(p)} dest={ipstr(destAddr)}, destNode={nodeId}"
+                "Forwarding packet bytelen=%d dest=%s, destNode=%s",
+                len(p),
+                ipstr(destAddr),
+                nodeId,
             )
             self.iface.sendData(p, nodeId, portnums_pb2.IP_TUNNEL_APP, wantAck=False)
         else:
             logger.warning(
-                f"Dropping packet because no node found for destIP={ipstr(destAddr)}"
+                "Dropping packet because no node found for destIP=%s",
+                ipstr(destAddr),
             )
 
     def close(self) -> None:
@@ -383,6 +394,8 @@ class Tunnel:
         when it points to this instance.
         """
         self._stop_event.set()
+        if self.tun is not None:
+            self.tun.close()
         if (
             self._rx_thread is not None
             and self._rx_thread is not threading.current_thread()
@@ -390,9 +403,7 @@ class Tunnel:
         ):
             self._rx_thread.join(timeout=2.0)
         self._rx_thread = None
-        if self.tun is not None:
-            self.tun.close()
-            self.tun = None
+        self.tun = None
         if mt_config.tunnel_instance is self:
             mt_config.tunnel_instance = None
         if self._subscribed:

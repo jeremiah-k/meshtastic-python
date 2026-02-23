@@ -40,7 +40,7 @@ def test_onGPIOreceive_mask_fallback(caplog):
     with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
-        assert re.search(r"mask:7", caplog.text)
+        assert re.search(r"mask[=:\s]+7", caplog.text)
         assert re.search(r"value=7", caplog.text)
 
 

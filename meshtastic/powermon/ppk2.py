@@ -47,8 +47,7 @@ class PPK2PowerSupply(PowerSupply):
                 raise PowerError(  # noqa: TRY003
                     "Multiple PPK2 devices found, please specify the portName"
                 )
-            else:
-                portName = devs[0]
+            portName = devs[0]
 
         self.measuring = False
         self.current_max = 0
@@ -87,10 +86,8 @@ class PPK2PowerSupply(PowerSupply):
         """Endless measurement loop that runs in a background thread.
 
         Continuously polls the PPK2 device for current samples, updating
-        min/max/sum statistics. Note: current_min and current_max are updated
-        outside _result_lock for performance; they may briefly be inconsistent
-        under concurrent reads. Only current_sum and current_num_samples are
-        fully guarded by _result_lock.
+        min/max/sum statistics under ``_result_lock`` so first-batch
+        initialization after ``reset_measurements()`` cannot race.
         """
         while self.measuring:
             with self._want_measurement:
@@ -108,18 +105,19 @@ class PPK2PowerSupply(PowerSupply):
 
                     # update invariants
                     if len(samples) > 0:
-                        if self.current_num_samples == 0:
-                            # First set of new reads, reset min/max
-                            self.current_max = 0
-                            self.current_min = samples[0]
-                            # we need at least one sample to get an initial min
-
                         # The following operations could be expensive, so do outside of the lock
                         # FIXME - change all these lists into numpy arrays to use lots less CPU
-                        self.current_max = max(self.current_max, max(samples))
-                        self.current_min = min(self.current_min, min(samples))
+                        batch_max = max(samples)
+                        batch_min = min(samples)
                         latest_sum = sum(samples)
                         with self._result_lock:
+                            if self.current_num_samples == 0:
+                                # First set of new reads, reset min/max
+                                self.current_max = batch_max
+                                self.current_min = batch_min
+                            else:
+                                self.current_max = max(self.current_max, batch_max)
+                                self.current_min = min(self.current_min, batch_min)
                             self.current_sum += latest_sum
                             self.current_num_samples += len(samples)
                         # logging.debug(f"PPK2 data_len={len(read_data)}, sample_len={len(samples)}")

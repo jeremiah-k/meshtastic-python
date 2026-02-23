@@ -32,13 +32,13 @@ from meshtastic.protobuf import (
 from meshtastic.util import (
     Timeout,
     camel_to_snake,
-    flags_to_list,
+    flagsToList,
     fromPSK,
     generate_channel_hash,
     messageToJson,
     pskToString,
     stripnl,
-    to_node_num,
+    toNodeNum,
 )
 
 if TYPE_CHECKING:
@@ -82,7 +82,7 @@ class Node:
             Maximum seconds used for operations that wait for responses. (Default value = 300.0)
         """
         self.iface = iface
-        self.nodeNum = to_node_num(nodeNum) if isinstance(nodeNum, str) else nodeNum
+        self.nodeNum = toNodeNum(nodeNum) if isinstance(nodeNum, str) else nodeNum
         self.localConfig = localonly_pb2.LocalConfig()
         self.moduleConfig = localonly_pb2.LocalModuleConfig()
         self.channels: list[channel_pb2.Channel] | None = None
@@ -128,7 +128,7 @@ class Node:
         list[str]
             Names of the flags set in `position_flags`.
         """
-        return flags_to_list(
+        return flagsToList(
             config_pb2.Config.PositionConfig.PositionFlags, position_flags
         )
 
@@ -146,7 +146,7 @@ class Node:
         list[str]
             Names of modules whose bits are set in the bitfield.
         """
-        return flags_to_list(mesh_pb2.ExcludedModules, excluded_modules)
+        return flagsToList(mesh_pb2.ExcludedModules, excluded_modules)
 
     def module_available(self, excluded_bit: int) -> bool:
         """Determine whether a specific module bit is allowed by the interface metadata.
@@ -1471,7 +1471,7 @@ class Node:
             The admin packet returned by the send operation if available, `None` otherwise.
         """
         self.ensureSessionKey()
-        nodeId = to_node_num(nodeId)
+        nodeId = toNodeNum(nodeId)
 
         p = admin_pb2.AdminMessage()
         p.remove_by_nodenum = nodeId
@@ -1496,7 +1496,7 @@ class Node:
             The response packet if one was received, `None` otherwise.
         """
         self.ensureSessionKey()
-        nodeId = to_node_num(nodeId)
+        nodeId = toNodeNum(nodeId)
 
         p = admin_pb2.AdminMessage()
         p.set_favorite_node = nodeId
@@ -1521,7 +1521,7 @@ class Node:
             The Admin packet sent to the device, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
-        nodeId = to_node_num(nodeId)
+        nodeId = toNodeNum(nodeId)
 
         p = admin_pb2.AdminMessage()
         p.remove_favorite_node = nodeId
@@ -1546,7 +1546,7 @@ class Node:
             The AdminMessage/packet sent to request the change, or `None` if no packet was sent.
         """
         self.ensureSessionKey()
-        nodeId = to_node_num(nodeId)
+        nodeId = toNodeNum(nodeId)
 
         p = admin_pb2.AdminMessage()
         p.set_ignored_node = nodeId
@@ -1571,7 +1571,7 @@ class Node:
             `mesh_pb2.MeshPacket` if an AdminMessage was sent, `None` otherwise.
         """
         self.ensureSessionKey()
-        nodeId = to_node_num(nodeId)
+        nodeId = toNodeNum(nodeId)
 
         p = admin_pb2.AdminMessage()
         p.remove_ignored_node = nodeId
@@ -1993,7 +1993,7 @@ class Node:
                 "Not ensuring session key, because protocol use is disabled by noProto"
             )
         else:
-            nodeid = to_node_num(self.nodeNum)
+            nodeid = toNodeNum(self.nodeNum)
             if self.iface._getOrCreateByNum(nodeid).get("adminSessionPassKey") is None:
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)
 

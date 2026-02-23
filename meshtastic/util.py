@@ -92,7 +92,7 @@ def fromPSK(valstr: str) -> Any:
     - "random": generate and return a new 32-byte random PSK.
     - "none": return a single zero byte to indicate no encryption.
     - "default": return a single byte with value 1 to indicate the default channel PSK.
-    - "simpleN": where N is an integer; return a single byte with value (N + 1).
+    - "simpleN": where N is an integer in 0..254; return a single byte with value (N + 1).
 
     For any other input, parse using general string-to-value rules (e.g., hex, base64,
     numeric, boolean, or plain string) and return the corresponding value.
@@ -115,8 +115,16 @@ def fromPSK(valstr: str) -> Any:
     elif valstr == "default":
         return bytes([1])  # Use default channel psk
     elif valstr.startswith("simple"):
+        digits = valstr[6:]
+        if not digits or not digits.isdigit():
+            raise ValueError('Invalid PSK format: expected "simpleN" with N in 0..254')
+        n = int(digits)
+        if not 0 <= n <= 254:
+            raise ValueError(
+                f'Invalid PSK format: expected "simpleN" with N in 0..254, got {n}'
+            )
         # Use one of the single byte encodings
-        return bytes([int(valstr[6:]) + 1])
+        return bytes([n + 1])
     else:
         return fromStr(valstr)
 
@@ -586,7 +594,7 @@ class Acknowledgment:
 class DeferredExecution:
     """A thread that accepts closures to run, and runs them as they are received."""
 
-    def __init__(self, name) -> None:
+    def __init__(self, name: str) -> None:
         """Create a DeferredExecution instance and start its daemon worker thread.
 
         Initializes an internal work queue and launches a daemon thread (named by
@@ -1229,7 +1237,7 @@ def messageToJson(message: Message, multiline: bool = False) -> str:
     return _message_to_json(message, multiline=multiline)
 
 
-def to_node_num(node_id: int | str) -> int:
+def _to_node_num(node_id: int | str) -> int:
     """Normalize a node identifier to its integer node number.
 
     Accepts an int or a string in these forms: decimal (e.g., "42"), hexadecimal with
@@ -1259,7 +1267,28 @@ def to_node_num(node_id: int | str) -> int:
         return int(s, 16)
 
 
-def flags_to_list(flag_type: Any, flags: int) -> list[str]:
+def toNodeNum(node_id: int | str) -> int:
+    """Normalize a node identifier to its integer node number.
+
+    Parameters
+    ----------
+    node_id : int | str
+        Node identifier to normalize.
+
+    Returns
+    -------
+    int
+        The parsed integer node number.
+    """
+    return _to_node_num(node_id)
+
+
+def to_node_num(node_id: int | str) -> int:
+    """Backward-compatible wrapper for :func:`toNodeNum`."""
+    return toNodeNum(node_id)
+
+
+def _flags_to_list(flag_type: Any, flags: int) -> list[str]:
     """Convert a protobuf enum bitfield into a list of active flag names.
 
     Parameters
@@ -1285,3 +1314,27 @@ def flags_to_list(flag_type: Any, flags: int) -> list[str]:
     if flags > 0:
         ret.append(f"UNKNOWN_ADDITIONAL_FLAGS({flags})")
     return ret
+
+
+def flagsToList(flag_type: Any, flags: int) -> list[str]:
+    """Convert a protobuf enum bitfield into a list of active flag names.
+
+    Parameters
+    ----------
+    flag_type : Any
+        Protobuf EnumTypeWrapper providing `.keys()` and `.Value(name)` for enum members.
+    flags : int
+        Integer bitfield containing combined enum flag values.
+
+    Returns
+    -------
+    list[str]
+        Ordered list of enum member names present in `flags`. If any bits remain that do not match known members,
+        a single string of the form `UNKNOWN_ADDITIONAL_FLAGS(<remaining>)` is appended.
+    """
+    return _flags_to_list(flag_type, flags)
+
+
+def flags_to_list(flag_type: Any, flags: int) -> list[str]:
+    """Backward-compatible wrapper for :func:`flagsToList`."""
+    return flagsToList(flag_type, flags)

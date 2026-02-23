@@ -3,7 +3,9 @@
 import logging
 from datetime import datetime
 
-from riden import Riden  # pyright: ignore[reportPrivateImportUsage]
+from riden import (  # pyright: ignore[reportPrivateImportUsage] -- riden has no py.typed stubs
+    Riden,
+)
 
 from .power_supply import PowerSupply
 
@@ -52,7 +54,9 @@ class RidenPowerSupply(PowerSupply):
         )
         self.prevPowerTime = now
         self.prevWattHour = nowWattHour
-        return watts / 1000
+        if self.v <= 0:
+            return 0.0
+        return watts / self.v * 1000
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""

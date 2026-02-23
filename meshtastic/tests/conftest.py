@@ -105,7 +105,7 @@ def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> type["FakeTimer"
 
 
 @pytest.fixture
-def reset_mt_config() -> None:
+def reset_mt_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reset the global mt_config state and install a fresh ArgumentParser for tests.
 
     Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns
@@ -113,7 +113,7 @@ def reset_mt_config() -> None:
     """
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.reset()
-    mt_config.parser = parser
+    monkeypatch.setattr(mt_config, "parser", parser)
 
 
 @pytest.fixture
@@ -129,6 +129,8 @@ def iface_with_nodes() -> Generator[MeshInterface, None, None]:
     MeshInterface
         Interface instance populated with test node data and a mocked myInfo.
     """
+    position = {"time": 1640206266}
+
     nodes_by_id = {
         "!9388f81c": {
             "num": 2475227164,
@@ -139,7 +141,7 @@ def iface_with_nodes() -> Generator[MeshInterface, None, None]:
                 "macaddr": "RBeTiPgc",
                 "hwModel": "TBEAM",
             },
-            "position": {},
+            "position": position,
             "lastHeard": 1640204888,
         }
     }
@@ -154,7 +156,7 @@ def iface_with_nodes() -> Generator[MeshInterface, None, None]:
                 "macaddr": "RBeTiPgc",
                 "hwModel": "TBEAM",
             },
-            "position": {"time": 1640206266},
+            "position": position,
             "lastHeard": 1640206266,
         }
     }

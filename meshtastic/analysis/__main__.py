@@ -28,8 +28,8 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
 
     Parameters
     ----------
-    arr : Iterable[int]
-        Sequence of power-monitor state values.
+    arr : Iterable[Any]
+        Sequence of values convertible to int representing power-monitor states.
 
     Returns
     -------
@@ -172,10 +172,7 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     if board_info.empty:
-        raise ValueError(
-            "No board info rows found in slog DataFrame (sw_version is null for all rows); "
-            f"dslog shape={dslog.shape}"
-        )
+        raise ValueError("No board info rows found in slog")
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
     board_id = mesh_pb2.HardwareModel.Name(cast(Any, int(first_row["board_id"])))
@@ -252,10 +249,11 @@ def create_dash(slog_path: str) -> Dash:
             return legacy_name
         if new_name in frame.columns:
             return new_name
-        raise ValueError(
+        error_msg = (
             "Missing required power column. Expected one of "
             f"{legacy_name!r} or {new_name!r}; available columns: {list(frame.columns)!r}"
         )
+        raise ValueError(error_msg)
 
     def set_legend(f: go.Figure, name: str) -> go.Figure:
         """Set the legend name and enable legend display for the first trace in a figure.
@@ -315,6 +313,19 @@ def create_dash(slog_path: str) -> Dash:
     return app
 
 
+def _is_loopback_host(host_value: str) -> bool:
+    """Return True when the provided host value resolves to a loopback address."""
+    host_stripped = host_value.strip()
+    if host_stripped.startswith("[") and host_stripped.endswith("]"):
+        host_stripped = host_stripped[1:-1]
+    if host_stripped.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host_stripped).is_loopback
+    except ValueError:
+        return False
+
+
 def main() -> None:
     """Entry point of the script.
 
@@ -331,17 +342,6 @@ def main() -> None:
     debug = bool(args.debug)
     host = str(args.host)
 
-    def _is_loopback_host(host_value: str) -> bool:
-        host_stripped = host_value.strip()
-        if host_stripped.startswith("[") and host_stripped.endswith("]"):
-            host_stripped = host_stripped[1:-1]
-        if host_stripped.lower() == "localhost":
-            return True
-        try:
-            return ipaddress.ip_address(host_stripped).is_loopback
-        except ValueError:
-            return False
-
     if not _is_loopback_host(host) and debug:
         logging.warning(
             "Ignoring --debug because host %s is not localhost; running with debug disabled.",
@@ -357,7 +357,7 @@ def main() -> None:
     )
 
     if not args.no_server:
-        app.run_server(debug=debug, host=host, port=port)
+        app.run(debug=debug, host=host, port=port)
     else:
         logging.info("Exiting without running visualization server")
 

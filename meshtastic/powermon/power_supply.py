@@ -66,6 +66,13 @@ class PowerSupply(PowerMeter):
         ----------
         v : float
             Requested output voltage in volts; must be a real, non-negative value.
+
+        Raises
+        ------
+        PowerError
+            If ``v`` is not a real number.
+        PowerError
+            If ``v`` is negative.
         """
         if not isinstance(v, Real):
             raise PowerError("Voltage must be a real number")  # noqa: TRY003

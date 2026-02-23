@@ -15,6 +15,29 @@ class ArrowWriterStateError(RuntimeError):
     """Raised for internal ArrowWriter state or initialization errors."""
 
 
+class SchemaAlreadySetError(ArrowWriterStateError):
+    """Raised when set_schema() is called after a schema is already configured."""
+
+    def __init__(self) -> None:
+        super().__init__("Schema already set; cannot call set_schema more than once.")
+
+
+class StreamInitError(ArrowWriterStateError):
+    """Raised when Arrow stream writer initialization fails."""
+
+    def __init__(self) -> None:
+        super().__init__("Failed to initialize Arrow stream writer.")
+
+
+class WriterNoneError(ArrowWriterStateError):
+    """Raised when writer is unexpectedly None after schema initialization."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Writer is None despite schema being set; schema initialization may have failed."
+        )
+
+
 class ArrowWriter:
     """Writes an arrow file in a streaming fashion."""
 
@@ -37,6 +60,7 @@ class ArrowWriter:
         self.writer: pa.RecordBatchStreamWriter | None = None
         # Re-entrant: _write() can call set_schema() while the same lock is held.
         self._lock = threading.RLock()
+        self._closed = False
 
     def close(self) -> None:
         """Close the writer, flush any buffered rows, and close the underlying sink.
@@ -44,6 +68,8 @@ class ArrowWriter:
         Flushes any accumulated rows to disk, closes the RecordBatchStreamWriter if one exists, and closes the file sink.
         """
         with self._lock:
+            if self._closed:
+                return
             try:
                 self._write()
             finally:
@@ -52,6 +78,7 @@ class ArrowWriter:
                         self.writer.close()
                 finally:
                     self.sink.close()
+                    self._closed = True
 
     def set_schema(self, schema: pa.Schema) -> None:
         """Set the schema for the file.
@@ -65,15 +92,11 @@ class ArrowWriter:
         """
         with self._lock:
             if self.schema is not None:
-                raise ArrowWriterStateError(
-                    "Schema already set; cannot call set_schema more than once."
-                )
+                raise SchemaAlreadySetError()
             try:
                 writer = pa.ipc.new_stream(self.sink, schema)
             except Exception as exc:
-                raise ArrowWriterStateError(
-                    "Failed to initialize Arrow stream writer."
-                ) from exc
+                raise StreamInitError() from exc
             self.schema = schema
             self.writer = writer
 
@@ -88,9 +111,7 @@ class ArrowWriter:
                 self.set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
 
             if self.writer is None:
-                raise ArrowWriterStateError(
-                    "Writer is None despite schema being set; schema initialization may have failed."
-                )
+                raise WriterNoneError()
             self.writer.write_batch(
                 pa.RecordBatch.from_pylist(  # type: ignore[attr-defined]
                     self.new_rows, schema=self.schema
@@ -144,6 +165,8 @@ class FeatherWriter(ArrowWriter):
         super().close()
         src_name = self.base_file_name + ".arrow"
         dest_name = self.base_file_name + ".feather"
+        if not os.path.exists(src_name):
+            return
         if os.path.getsize(src_name) == 0:
             logging.warning("Discarding empty file: %s", src_name)
             os.remove(src_name)
@@ -170,8 +193,15 @@ class FeatherWriter(ArrowWriter):
 
                 feather.write_feather(array, temp_name, compression="zstd")  # type: ignore[arg-type]
                 os.replace(temp_name, dest_name)
-                os.remove(src_name)
+                temp_name = None
             except Exception:
                 if temp_name and os.path.exists(temp_name):
                     os.remove(temp_name)
                 raise
+            try:
+                os.remove(src_name)
+            except OSError:
+                logging.warning(
+                    "Failed to remove temporary Arrow source file %s",
+                    src_name,
+                )

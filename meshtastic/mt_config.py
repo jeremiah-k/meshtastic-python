@@ -85,7 +85,7 @@ elif _state_keys != _annotated_state:
         "true",
         "yes",
     }:
-        raise AssertionError(drift_message)  # noqa: TRY003
+        raise AssertionError(drift_message)
     warnings.warn(drift_message, RuntimeWarning, stacklevel=1)
 
 reset()

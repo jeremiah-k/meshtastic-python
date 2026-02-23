@@ -3,7 +3,7 @@
 import logging
 import threading
 import time
-from typing import IO, cast
+from typing import IO, Any, Callable, cast
 
 import serial  # type: ignore[import-untyped]
 
@@ -38,9 +38,15 @@ class StreamInterface(MeshInterface):
             """
             super().__init__(message)
 
+    class PayloadTooLargeError(ValueError):
+        """Raised when a serialized ToRadio payload exceeds MAX_TO_FROM_RADIO_SIZE."""
+
+        def __init__(self, payload_size: int, max_size: int) -> None:
+            super().__init__(f"ToRadio payload too large ({payload_size} > {max_size})")
+
     def __init__(  # pylint: disable=R0917
         self,
-        debugOut: IO[str] | None = None,
+        debugOut: IO[str] | Callable[[str], Any] | None = None,
         noProto: bool = False,
         connectNow: bool = True,
         noNodes: bool = False,
@@ -50,8 +56,8 @@ class StreamInterface(MeshInterface):
 
         Parameters
         ----------
-        debugOut : IO[str] | None
-            If provided, device debug serial output will be written to this stream. (Default value = None)
+        debugOut : IO[str] | Callable[[str], Any] | None
+            If provided, device debug serial output will be written to this stream or callable. (Default value = None)
         noProto : bool
             If True, skip protocol-specific startup and allow using this class without a concrete stream implementation. (Default value = False)
         connectNow : bool
@@ -202,13 +208,9 @@ class StreamInterface(MeshInterface):
         b: bytes = toRadio.SerializeToString()
         bufLen: int = len(b)
         if bufLen > MAX_TO_FROM_RADIO_SIZE:
-            logger.error(
-                "ToRadio payload too large (%d bytes, max %d); not sending",
-                bufLen,
-                MAX_TO_FROM_RADIO_SIZE,
-            )
-            raise ValueError(
-                f"Serialized ToRadio payload too large ({bufLen} > {MAX_TO_FROM_RADIO_SIZE})"
+            raise StreamInterface.PayloadTooLargeError(
+                payload_size=bufLen,
+                max_size=MAX_TO_FROM_RADIO_SIZE,
             )
         # We convert into a string, because the TCP code doesn't work with byte arrays
         header: bytes = bytes([START1, START2, (bufLen >> 8) & 0xFF, bufLen & 0xFF])
@@ -246,7 +248,7 @@ class StreamInterface(MeshInterface):
         rx_thread = getattr(self, "_rxThread", None)
         if (
             rx_thread is not None
-            and rx_thread != threading.current_thread()
+            and rx_thread is not threading.current_thread()
             and rx_thread.is_alive()
         ):
             rx_thread.join(timeout=2.0)

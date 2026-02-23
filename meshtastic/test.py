@@ -7,7 +7,8 @@ import io
 import logging
 import sys
 import time
-from typing import Any
+from contextlib import suppress
+from typing import Any, NoReturn
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -116,7 +117,7 @@ sendingInterface = None
 logger = logging.getLogger(__name__)
 
 
-def onReceive(packet: dict, interface: Any) -> None:
+def onReceive(packet: dict[str, Any], interface: Any) -> None:
     """Handle an incoming packet and record clear-text messages.
 
     If the packet did not originate from the current sendingInterface, convert it to a DotMap.
@@ -366,6 +367,10 @@ def testAll(numTests: int = 5) -> bool:
         logger.info("Ports opened, starting test")
         result: bool = testThread(numTests)
     finally:
+        with suppress(Exception):
+            pub.unsubscribe(onReceive, "meshtastic.receive")
+        with suppress(Exception):
+            pub.unsubscribe(onConnection, "meshtastic.connection")
         for i in interfaces:
             i.close()
         for debug_log in debug_logs:
@@ -374,7 +379,7 @@ def testAll(numTests: int = 5) -> bool:
     return result
 
 
-def testSimulator() -> None:
+def testSimulator() -> NoReturn:
     """Run a short integration check against a Meshtastic simulator on localhost.
 
     Connects to the simulator over TCP, requests node information and a simulator
@@ -383,7 +388,7 @@ def testSimulator() -> None:
 
     Returns
     -------
-    None
+    NoReturn
         This function does not return normally; it calls sys.exit() on success or failure.
     """
     logging.basicConfig(level=logging.DEBUG)

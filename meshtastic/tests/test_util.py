@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from collections import Counter
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from hypothesis import given
@@ -69,9 +69,11 @@ class _TempPort:
 
 
 @pytest.mark.unit
-def test_genPSK256():
+def test_genPSK256() -> None:
     """Test genPSK256."""
-    assert genPSK256() != ""
+    result = genPSK256()
+    assert isinstance(result, bytes)
+    assert len(result) == 32
 
 
 @pytest.mark.unit
@@ -110,13 +112,19 @@ def test_quoteBooleans():
 
 
 @pytest.mark.unit
-def test_fromPSK():
+def test_fromPSK() -> None:
     """Test fromPSK."""
-    assert fromPSK("random") != ""
+    random_psk = fromPSK("random")
+    assert isinstance(random_psk, bytes)
+    assert len(random_psk) == 32
     assert fromPSK("none") == b"\x00"
     assert fromPSK("default") == b"\x01"
     assert fromPSK("simple22") == b"\x17"
     assert fromPSK("trash") == "trash"
+    with pytest.raises(ValueError, match=r"simpleN"):
+        fromPSK("simple")
+    with pytest.raises(ValueError, match=r"simpleN"):
+        fromPSK("simple255")
 
 
 @pytest.mark.unit
@@ -276,7 +284,7 @@ def test_readnet_u16():
 
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports", return_value=[])
-def test_findPorts_when_none_found(patch_comports):
+def test_findPorts_when_none_found(patch_comports: MagicMock) -> None:
     """Test findPorts()."""
     assert not findPorts()
     patch_comports.assert_called()
@@ -284,7 +292,9 @@ def test_findPorts_when_none_found(patch_comports):
 
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports")
-def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports):
+def test_findPorts_when_duplicate_found_and_duplicate_option_used(
+    patch_comports: MagicMock,
+) -> None:
     """Verify that findPorts() removes duplicate serial devices when.
 
     eliminate_duplicates is True.
@@ -309,8 +319,8 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used(patch_comports
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports")
 def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed(
-    patch_comports,
-):
+    patch_comports: MagicMock,
+) -> None:
     """Verifies that findPorts(eliminate_duplicates=True) returns the expected.
 
     single port when duplicate devices are reported in reversed order.
@@ -329,7 +339,9 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_used_ports_reversed
 
 @pytest.mark.unitslow
 @patch("serial.tools.list_ports.comports")
-def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(patch_comports):
+def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(
+    patch_comports: MagicMock,
+) -> None:
     """Test findPorts()."""
     fake1 = _TempPort("/dev/cu.usbserial-1430", vid=0xFFFF)
     fake2 = _TempPort("/dev/cu.wchusbserial1430", vid=0xFFFE)
@@ -411,7 +423,11 @@ def test_eliminate_duplicate_port():
 @patch("platform.version", return_value="10.0.22000.194")
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
-def test_is_windows11_true(patched_platform, patched_release, patched_version):
+def test_is_windows11_true(
+    patched_platform: MagicMock,
+    patched_release: MagicMock,
+    patched_version: MagicMock,
+) -> None:
     """Test is_windows11()."""
     assert is_windows11() is True
     patched_platform.assert_called()
@@ -422,7 +438,11 @@ def test_is_windows11_true(patched_platform, patched_release, patched_version):
 @patch("platform.version", return_value="10.0.a2200.foo")  # made up
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
-def test_is_windows11_true2(patched_platform, patched_release, patched_version):
+def test_is_windows11_true2(
+    patched_platform: MagicMock,
+    patched_release: MagicMock,
+    patched_version: MagicMock,
+) -> None:
     """Test is_windows11()."""
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -433,7 +453,11 @@ def test_is_windows11_true2(patched_platform, patched_release, patched_version):
 @patch("platform.version", return_value="10.0.17763")  # windows 10 home
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
-def test_is_windows11_false(patched_platform, patched_release, patched_version):
+def test_is_windows11_false(
+    patched_platform: MagicMock,
+    patched_release: MagicMock,
+    patched_version: MagicMock,
+) -> None:
     """Test is_windows11()."""
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -443,16 +467,23 @@ def test_is_windows11_false(patched_platform, patched_release, patched_version):
 
 @patch("platform.release", return_value="8.1")
 @patch("platform.system", return_value="Windows")
-def test_is_windows11_false_win8_1(patched_platform, patched_release):
+def test_is_windows11_false_win8_1(
+    patched_platform: MagicMock,
+    patched_release: MagicMock,
+) -> None:
     """Test is_windows11()."""
     assert is_windows11() is False
     patched_platform.assert_called()
     patched_release.assert_called()
 
 
+@pytest.mark.unit
 @patch("platform.release", return_value="2022Server")
 @patch("platform.system", return_value="Windows")
-def test_is_windows11_false_winserver(patched_platform, patched_release):
+def test_is_windows11_false_winserver(
+    patched_platform: MagicMock,
+    patched_release: MagicMock,
+) -> None:
     """Test is_windows11()."""
     assert is_windows11() is False
     patched_platform.assert_called()
@@ -461,9 +492,9 @@ def test_is_windows11_false_winserver(patched_platform, patched_release):
 
 @pytest.mark.unit
 @patch("platform.system", return_value="Linux")
-def test_active_ports_on_supported_devices_empty(mock_platform):
+def test_active_ports_on_supported_devices_empty(mock_platform: MagicMock) -> None:
     """Test active_ports_on_supported_devices()."""
-    sds = set()
+    sds: set[SupportedDevice] = set()
     assert active_ports_on_supported_devices(sds) == set()
     mock_platform.assert_called()
 
@@ -471,7 +502,10 @@ def test_active_ports_on_supported_devices_empty(mock_platform):
 @pytest.mark.unit
 @patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Linux")
-def test_active_ports_on_supported_devices_linux(mock_platform, mock_glob):
+def test_active_ports_on_supported_devices_linux(
+    mock_platform: MagicMock,
+    mock_glob: MagicMock,
+) -> None:
     """Test active_ports_on_supported_devices()."""
     mock_glob.return_value = ["/dev/ttyUSBfake"]
     fake_device = SupportedDevice(
@@ -488,7 +522,10 @@ def test_active_ports_on_supported_devices_linux(mock_platform, mock_glob):
 @pytest.mark.unit
 @patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Darwin")
-def test_active_ports_on_supported_devices_mac(mock_platform, mock_glob):
+def test_active_ports_on_supported_devices_mac(
+    mock_platform: MagicMock,
+    mock_glob: MagicMock,
+) -> None:
     """Test active_ports_on_supported_devices()."""
     mock_glob.return_value = ["/dev/cu.usbserial-foo"]
     fake_device = SupportedDevice(
@@ -505,7 +542,10 @@ def test_active_ports_on_supported_devices_mac(mock_platform, mock_glob):
 @pytest.mark.unit
 @patch("meshtastic.util.detect_windows_port", return_value={"COM2"})
 @patch("platform.system", return_value="Windows")
-def test_active_ports_on_supported_devices_win(mock_platform, mock_dwp):
+def test_active_ports_on_supported_devices_win(
+    mock_platform: MagicMock,
+    mock_dwp: MagicMock,
+) -> None:
     """Test active_ports_on_supported_devices()."""
     fake_device = SupportedDevice(name="a", for_firmware="heltec-v2.1")
     fake_supported_devices = [fake_device]
@@ -518,8 +558,9 @@ def test_active_ports_on_supported_devices_win(mock_platform, mock_dwp):
 @patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Darwin")
 def test_active_ports_on_supported_devices_mac_no_duplicates_check(
-    mock_platform, mock_glob
-):
+    mock_platform: MagicMock,
+    mock_glob: MagicMock,
+) -> None:
     """Test active_ports_on_supported_devices()."""
     mock_glob.return_value = [
         "/dev/cu.usbmodem53230051441",
@@ -541,8 +582,9 @@ def test_active_ports_on_supported_devices_mac_no_duplicates_check(
 @patch("meshtastic.util.glob.glob")
 @patch("platform.system", return_value="Darwin")
 def test_active_ports_on_supported_devices_mac_duplicates_check(
-    mock_platform, mock_glob
-):
+    mock_platform: MagicMock,
+    mock_glob: MagicMock,
+) -> None:
     """Ensure duplicate mac device entries are deduplicated when duplicate checking is enabled.
 
     Verifies that given a mac-style device listing containing two related device paths, active_ports_on_supported_devices(...)
