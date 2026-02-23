@@ -98,11 +98,8 @@ def test_writeGPIOs(caplog, mock_gpio_iface):
 
 @pytest.mark.unit
 def test_watchGPIOs(caplog, mock_gpio_iface):
-    """Verify RemoteHardwareClient.watchGPIOs logs a "watchGPIOs" marker when invoked with a GPIO node and mask.
+    """Test watchGPIOs."""
 
-    Runs watchGPIOs("0x10", 123) with DEBUG-level logging enabled and asserts that the captured logs contain "watchGPIOs".
-
-    """
     rhw = RemoteHardwareClient(mock_gpio_iface)
     with caplog.at_level(logging.DEBUG):
         rhw.watchGPIOs("0x10", 123)

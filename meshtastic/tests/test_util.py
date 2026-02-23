@@ -420,6 +420,7 @@ def test_eliminate_duplicate_port():
     ) == ["/dev/cu.wchusbserial53230051441"]
 
 
+@pytest.mark.unit
 @patch("platform.version", return_value="10.0.22000.194")
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
@@ -435,6 +436,7 @@ def test_is_windows11_true(
     patched_version.assert_called()
 
 
+@pytest.mark.unit
 @patch("platform.version", return_value="10.0.a2200.foo")  # made up
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
@@ -450,6 +452,7 @@ def test_is_windows11_true2(
     patched_version.assert_called()
 
 
+@pytest.mark.unit
 @patch("platform.version", return_value="10.0.17763")  # windows 10 home
 @patch("platform.release", return_value="10")
 @patch("platform.system", return_value="Windows")
@@ -465,6 +468,7 @@ def test_is_windows11_false(
     patched_version.assert_called()
 
 
+@pytest.mark.unit
 @patch("platform.release", return_value="8.1")
 @patch("platform.system", return_value="Windows")
 def test_is_windows11_false_win8_1(

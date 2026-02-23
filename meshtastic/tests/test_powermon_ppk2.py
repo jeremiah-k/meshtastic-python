@@ -19,6 +19,7 @@ def _make_ppk2_stub() -> PPK2PowerSupply:
     ppk.current_num_samples = 0
     ppk.current_min = 0
     ppk.current_max = 0
+    ppk.current_average = 0.0
     ppk.last_reported_min = 0
     ppk.last_reported_max = 0
     ppk.num_data_reads = 0

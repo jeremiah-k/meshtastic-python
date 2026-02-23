@@ -172,7 +172,7 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """
     board_info = dslog[dslog["sw_version"].notnull()]
     if board_info.empty:
-        raise ValueError("No board info rows found in slog")
+        raise ValueError("No board info rows found in slog")  # noqa: TRY003
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
     board_id = mesh_pb2.HardwareModel.Name(cast(Any, int(first_row["board_id"])))

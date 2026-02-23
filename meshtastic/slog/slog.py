@@ -228,9 +228,7 @@ class StructuredLogger:
         self.raw_file: io.TextIOWrapper | None = None
 
         # We need a closure here because the subscription API is very strict about exact arg matching
-        def listen_glue(
-            line, interface
-        ):  # pylint: disable=unused-argument  # noqa: ARG001
+        def listen_glue(line, interface):  # pylint: disable=unused-argument  # noqa: ARG001
             """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters
@@ -257,10 +255,11 @@ class StructuredLogger:
             pub.subscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
         except Exception:
             # If setup fails at any step, close file handles before re-raising.
-            if self.raw_file:
-                self.raw_file.close()
-                self.raw_file = None
-            self.writer.close()
+            try:
+                if self.raw_file:
+                    self.raw_file.close()
+            finally:
+                self.writer.close()
             raise
 
     def close(self) -> None:

@@ -132,8 +132,6 @@ class Tunnel:
         if my_info is None:
             raise Tunnel.UninitializedInterfaceError()
 
-        mt_config.tunnel_instance = self
-
         """A list of chatty UDP services we should never accidentally
         forward to our slow network"""
         self.udpBlacklist = {
@@ -165,6 +163,7 @@ class Tunnel:
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
+        mt_config.tunnel_instance = self
         myAddr = self._node_num_to_ip(my_info.my_node_num)
 
         if self.iface.nodes:
@@ -315,7 +314,7 @@ class Tunnel:
             destAddr = p[16:20]
 
             if not self._should_filter_packet(p):
-                self.send_packet(destAddr, p)
+                self._send_packet(destAddr, p)
 
     def _ip_to_node_id(self, ipAddr: bytes) -> str | None:
         """Convert a 4-byte IP address to the corresponding mesh node ID.
@@ -361,7 +360,7 @@ class Tunnel:
         """
         return f"{self.subnetPrefix}.{(nodeNum >> 8) & 0xff}.{nodeNum & 0xff}"
 
-    def send_packet(self, destAddr: bytes, p: bytes) -> None:
+    def _send_packet(self, destAddr: bytes, p: bytes) -> None:
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
 
         Parameters
@@ -394,8 +393,11 @@ class Tunnel:
         when it points to this instance.
         """
         self._stop_event.set()
-        if self.tun is not None:
-            self.tun.close()
+        try:
+            if self.tun is not None:
+                self.tun.close()
+        except Exception:
+            logger.exception("Error closing TUN device")
         if (
             self._rx_thread is not None
             and self._rx_thread is not threading.current_thread()
@@ -425,5 +427,5 @@ class Tunnel:
         return self._node_num_to_ip(nodeNum)
 
     def sendPacket(self, destAddr: bytes, p: bytes) -> None:
-        """Compatibility wrapper for send_packet."""
-        return self.send_packet(destAddr, p)
+        """Compatibility wrapper for _send_packet."""
+        self._send_packet(destAddr, p)

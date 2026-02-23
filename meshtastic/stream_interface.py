@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class StreamInterface(MeshInterface):
-    """Interface class for meshtastic devices over a stream link (serial, TCP, etc)."""
+    """Interface class for meshtastic devices over a stream link (serial, TCP, etc).
+
+    Subclasses that manage their own I/O (e.g., TCPInterface) should set the
+    class attribute ``_provides_own_stream = True`` to indicate that
+    ``connect()`` should be called even when ``self.stream`` is ``None``.
+    """
 
     class StreamInterfaceError(MeshInterface.MeshInterfaceError):
         """Raised when StreamInterface is instantiated without a concrete stream."""
@@ -38,7 +43,7 @@ class StreamInterface(MeshInterface):
             """
             super().__init__(message)
 
-    class PayloadTooLargeError(ValueError):
+    class PayloadTooLargeError(StreamInterfaceError):
         """Raised when a serialized ToRadio payload exceeds MAX_TO_FROM_RADIO_SIZE."""
 
         def __init__(self, payload_size: int, max_size: int) -> None:
@@ -132,6 +137,12 @@ class StreamInterface(MeshInterface):
         self._writeBytes(p)
         time.sleep(0.1)  # wait 100ms to give device time to start running
 
+        # Check if thread has already been started (threads can only be started once)
+        # If ident is not None, the thread was started before and needs recreation
+        if self._rxThread.ident is not None:
+            self._rxThread = threading.Thread(
+                target=self.__reader, args=(), daemon=True, name="stream reader"
+            )
         self._rxThread.start()
 
         self._startConfig()

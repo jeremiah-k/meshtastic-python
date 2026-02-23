@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
 
 
+_PSK_SIMPLE_MSG = 'Invalid PSK format: expected "simpleN" with N in 0..254'
+
+
 def quoteBooleans(a_string: str) -> str:
     """Replace occurrences of the literal substrings ": true" and ": false" with ": 'true'" and ": 'false'".
 
@@ -117,12 +120,10 @@ def fromPSK(valstr: str) -> Any:
     elif valstr.startswith("simple"):
         digits = valstr[6:]
         if not digits or not digits.isdigit():
-            raise ValueError('Invalid PSK format: expected "simpleN" with N in 0..254')
+            raise ValueError(_PSK_SIMPLE_MSG)
         n = int(digits)
         if not 0 <= n <= 254:
-            raise ValueError(
-                f'Invalid PSK format: expected "simpleN" with N in 0..254, got {n}'
-            )
+            raise ValueError(f"{_PSK_SIMPLE_MSG}, got {n}")
         # Use one of the single byte encodings
         return bytes([n + 1])
     else:
@@ -315,7 +316,7 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
     all_ports = serial.tools.list_ports.comports()
 
     # look for 'likely' meshtastic devices
-    ports: list = list(
+    ports: list[str] = list(
         map(
             lambda port: port.device,
             filter(
@@ -612,7 +613,7 @@ class DeferredExecution:
         )
         self.thread.start()
 
-    def queueWork(self, runnable) -> None:
+    def queueWork(self, runnable: Callable[[], Any]) -> None:
         """Enqueue a callable to be executed by the background worker thread.
 
         Parameters
@@ -937,7 +938,7 @@ def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
     return need_to_install_driver
 
 
-def eliminate_duplicate_port(ports: list) -> list:
+def eliminate_duplicate_port(ports: list[str]) -> list[str]:
     """Reduce paired serial port paths to a single representative when they likely refer to the same physical device.
 
     This function examines a list of serial port path strings and, when the list contains exactly two entries

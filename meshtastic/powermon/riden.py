@@ -1,6 +1,7 @@
 """code logging power consumption of meshtastic devices."""
 
 import logging
+import math
 from datetime import datetime
 
 from riden import (  # pyright: ignore[reportPrivateImportUsage] -- riden has no py.typed stubs
@@ -55,7 +56,7 @@ class RidenPowerSupply(PowerSupply):
         self.prevPowerTime = now
         self.prevWattHour = nowWattHour
         if self.v <= 0:
-            return 0.0
+            return math.nan
         return watts / self.v * 1000
 
     def _getRawWattHour(self) -> float:

@@ -156,11 +156,11 @@ class PPK2PowerSupply(PowerSupply):
 
     def get_average_current_mA(self) -> float:
         """Return the average current reading in milliamperes.
-
         Returns
         -------
         float
-            Average current in mA.
+            Average current in mA. If there are no new samples since the last
+            reset, returns the last calculated average.
         """
         with self._result_lock:
             if self.current_num_samples != 0:
