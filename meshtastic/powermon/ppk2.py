@@ -42,9 +42,9 @@ class PPK2PowerSupply(PowerSupply):
         if portName is None:
             devs = ppk2_api.PPK2_API.list_devices()
             if not devs:
-                raise PowerError("No PPK2 devices found")
+                raise PowerError("No PPK2 devices found")  # noqa: TRY003
             if len(devs) > 1:
-                raise PowerError(
+                raise PowerError(  # noqa: TRY003
                     "Multiple PPK2 devices found, please specify the portName"
                 )
             else:
@@ -165,9 +165,9 @@ class PPK2PowerSupply(PowerSupply):
 
     def reset_measurements(self) -> None:
         """Reset the current measurement statistics."""
-        # Use the last reading as the new only reading (to ensure we always have a valid current reading)
-        self.current_sum = 0
-        self.current_num_samples = 0
+        with self._result_lock:
+            self.current_sum = 0
+            self.current_num_samples = 0
 
         # if self.num_data_reads:
         #    logging.debug(f"max data len = {self.max_data_len},avg {self.total_data_len/self.num_data_reads}, num reads={self.num_data_reads}")

@@ -1687,14 +1687,16 @@ def create_power_meter() -> None:
         meter = PPK2PowerSupply()
         if v <= 0:
             _cli_exit("Voltage must be specified for PPK2")
-        meter.v = v  # PPK2 requires setting voltage before selecting supply mode
+        meter.setVoltage(
+            v
+        )  # PPK2 requires setting voltage before selecting supply mode
         meter.setIsSupply(args.power_ppk2_supply)
     elif args.power_sim:
         meter = SimPowerSupply()
 
     if meter and v:
         logger.info(f"Setting power supply to {v} volts")
-        meter.v = v
+        meter.setVoltage(v)
         meter.powerOn()
 
         if args.power_wait:

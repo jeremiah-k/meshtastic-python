@@ -2,7 +2,6 @@
 
 import logging
 import re
-from collections.abc import Generator
 from unittest.mock import MagicMock, create_autospec
 
 import pytest
@@ -11,37 +10,6 @@ from ..mesh_interface import MeshInterface
 from ..protobuf import portnums_pb2, remote_hardware_pb2
 from ..remote_hardware import RemoteHardwareClient, onGPIOreceive
 from ..serial_interface import SerialInterface
-
-
-def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
-    """Create a SerialInterface mock that provides a stubbed GPIO channel.
-
-    Parameters
-    ----------
-    channel_index : int
-        Index to assign to the mocked GPIO channel (default 0).
-
-    Returns
-    -------
-    MagicMock
-        An autospecced SerialInterface mock whose localNode.getChannelByName returns the mocked channel.
-    """
-    iface = create_autospec(SerialInterface, instance=True)
-    iface.localNode = MagicMock()
-    channel = MagicMock()
-    channel.index = channel_index
-    iface.localNode.getChannelByName.return_value = channel
-    return iface
-
-
-@pytest.fixture(name="mock_gpio_iface")
-def _mock_gpio_iface_fixture() -> Generator[MagicMock, None, None]:
-    """Provide a GPIO-capable mocked interface and ensure cleanup."""
-    iface = _mock_iface_with_gpio_channel()
-    try:
-        yield iface
-    finally:
-        iface.close()
 
 
 @pytest.mark.unit

@@ -352,12 +352,15 @@ def testAll(numTests: int = 5) -> bool:
     # pylint: disable=W0603
     global interfaces
     interfaces = []
+    debug_logs: list[io.TextIOWrapper] = []
 
     try:
         # Build interfaces incrementally to ensure cleanup on failure
         for port in ports:
+            debug_log = openDebugLog(port)
+            debug_logs.append(debug_log)
             interfaces.append(
-                SerialInterface(port, debugOut=openDebugLog(port), connectNow=True)
+                SerialInterface(port, debugOut=debug_log, connectNow=True)
             )
 
         logger.info("Ports opened, starting test")
@@ -365,6 +368,8 @@ def testAll(numTests: int = 5) -> bool:
     finally:
         for i in interfaces:
             i.close()
+        for debug_log in debug_logs:
+            debug_log.close()
 
     return result
 
@@ -390,7 +395,7 @@ def testSimulator() -> None:
         iface.localNode.exitSimulator()
         iface.close()
         logger.info("Integration test successful!")
-    except Exception:  # noqa: BLE001 - intentional catch-all for test exit-signaling
+    except Exception:  # intentional catch-all for test exit-signaling
         logger.exception("Error while testing simulator")
         sys.exit(1)
     sys.exit(0)

@@ -185,7 +185,6 @@ class Tunnel:
             self.tun.up()
             self.tun.ifconfig(address=myAddr, netmask=netmask, mtu=200)
 
-        self._rxThread = None
         if self.iface.noProto:
             logger.warning("Not starting TUN reader because it is disabled by noProto")
         else:
@@ -195,7 +194,7 @@ class Tunnel:
             )
             self._rx_thread.start()
 
-    def onReceive(self, packet):
+    def onReceive(self, packet: dict[str, Any]) -> None:
         """Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.
 
         Ignores packets originating from the local node. If protocol handling is enabled (iface.noProto is False)
@@ -221,7 +220,7 @@ class Tunnel:
                 if self.tun is not None and not self._should_filter_packet(p):
                     self.tun.write(p)
 
-    def _should_filter_packet(self, p):
+    def _should_filter_packet(self, p: bytes) -> bool:
         """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
 
         Parameters
@@ -248,7 +247,12 @@ class Tunnel:
             checksum = p[22:24]
             # pylint: disable=line-too-long
             logger.debug(
-                f"forwarding ICMP message src={ipstr(srcaddr)}, dest={ipstr(destAddr)}, type={icmpType}, code={icmpCode}, checksum={checksum}"
+                "forwarding ICMP message src=%s, dest=%s, type=%d, code=%d, checksum=%s",
+                ipstr(srcaddr),
+                ipstr(destAddr),
+                icmpType,
+                icmpCode,
+                checksum.hex(),
             )
             # reply to pings (swap src and dest but keep rest of packet unchanged)
             # pingback = p[:12]+p[16:20]+p[12:16]+p[20:]
@@ -281,7 +285,7 @@ class Tunnel:
 
         return ignore
 
-    def __tun_reader(self):
+    def __tun_reader(self) -> None:
         """Background thread that reads IP packets from the TUN device and forwards them to the mesh.
 
         Continuously reads packets from the TUN device, checks if they should be filtered,
@@ -306,7 +310,7 @@ class Tunnel:
             if not self._should_filter_packet(p):
                 self.send_packet(destAddr, p)
 
-    def _ip_to_node_id(self, ipAddr):
+    def _ip_to_node_id(self, ipAddr: bytes) -> str | None:
         """Convert a 4-byte IP address to the corresponding mesh node ID.
 
         Uses the last 16 bits of the IP address to match against the low 16 bits
@@ -335,7 +339,7 @@ class Tunnel:
                 return node["user"]["id"]
         return None
 
-    def _node_num_to_ip(self, nodeNum):
+    def _node_num_to_ip(self, nodeNum: int) -> str:
         """Construct an IPv4 address in the tunnel subnet for a given node number.
 
         Parameters
@@ -350,7 +354,7 @@ class Tunnel:
         """
         return f"{self.subnetPrefix}.{(nodeNum >> 8) & 0xff}.{nodeNum & 0xff}"
 
-    def send_packet(self, destAddr, p):
+    def send_packet(self, destAddr: bytes, p: bytes) -> None:
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
 
         Parameters
@@ -371,7 +375,7 @@ class Tunnel:
                 f"Dropping packet because no node found for destIP={ipstr(destAddr)}"
             )
 
-    def close(self):
+    def close(self) -> None:
         """Close tunnel resources.
 
         Stops the TUN reader thread, closes the TUN/TAP device, unsubscribes the
@@ -397,18 +401,18 @@ class Tunnel:
             self._subscribed = False
 
     # Backward-compatible aliases for existing callers/tests.
-    def _shouldFilterPacket(self, p):
+    def _shouldFilterPacket(self, p: bytes) -> bool:
         """Compatibility wrapper for _should_filter_packet."""
         return self._should_filter_packet(p)
 
-    def _ipToNodeId(self, ipAddr):
+    def _ipToNodeId(self, ipAddr: bytes) -> str | None:
         """Compatibility wrapper for _ip_to_node_id."""
         return self._ip_to_node_id(ipAddr)
 
-    def _nodeNumToIp(self, nodeNum):
+    def _nodeNumToIp(self, nodeNum: int) -> str:
         """Compatibility wrapper for _node_num_to_ip."""
         return self._node_num_to_ip(nodeNum)
 
-    def sendPacket(self, destAddr, p):
+    def sendPacket(self, destAddr: bytes, p: bytes) -> None:
         """Compatibility wrapper for send_packet."""
         return self.send_packet(destAddr, p)

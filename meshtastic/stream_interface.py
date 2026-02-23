@@ -201,6 +201,15 @@ class StreamInterface(MeshInterface):
         logger.debug("Sending: %s", stripnl(toRadio))
         b: bytes = toRadio.SerializeToString()
         bufLen: int = len(b)
+        if bufLen > MAX_TO_FROM_RADIO_SIZE:
+            logger.error(
+                "ToRadio payload too large (%d bytes, max %d); not sending",
+                bufLen,
+                MAX_TO_FROM_RADIO_SIZE,
+            )
+            raise ValueError(
+                f"Serialized ToRadio payload too large ({bufLen} > {MAX_TO_FROM_RADIO_SIZE})"
+            )
         # We convert into a string, because the TCP code doesn't work with byte arrays
         header: bytes = bytes([START1, START2, (bufLen >> 8) & 0xFF, bufLen & 0xFF])
         logger.debug("sending header:%r b:%r", header, b)
@@ -290,7 +299,7 @@ class StreamInterface(MeshInterface):
                 b: bytes | None = self._readBytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
-                if b is not None and len(b) > 0:
+                if b:
                     c: int = b[0]
                     # logger.debug(f'c:{c}')
                     ptr: int = len(self._rxBuf)

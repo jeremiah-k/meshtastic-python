@@ -28,6 +28,43 @@ def _autospec_with_local_node(spec_class: type[Any]) -> Any:
     return iface
 
 
+def _make_fake_send_admin(
+    *,
+    sent_messages: list[admin_pb2.AdminMessage] | None = None,
+    captured: dict[str, object] | None = None,
+    expected_want_response: bool | None = None,
+    response_payload: dict[str, Any] | None = None,
+    return_packet: mesh_pb2.MeshPacket | None = None,
+) -> Callable[
+    [admin_pb2.AdminMessage, bool, Callable[[dict[str, Any]], Any] | None, int],
+    mesh_pb2.MeshPacket | None,
+]:
+    """Create a configurable fake for Node._sendAdmin used by canned-message tests."""
+
+    def _fake_send_admin(
+        msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> mesh_pb2.MeshPacket | None:
+        _ = adminIndex
+        if sent_messages is not None:
+            sent_messages.append(msg)
+        if captured is not None:
+            captured["msg"] = msg
+            captured["wantResponse"] = wantResponse
+            captured["onResponse"] = onResponse
+            captured["adminIndex"] = adminIndex
+        if expected_want_response is not None:
+            assert wantResponse is expected_want_response
+        if response_payload is not None:
+            assert onResponse is not None
+            onResponse(response_payload)
+        return return_packet
+
+    return _fake_send_admin
+
+
 @pytest.mark.unit
 def test_node(capsys, mock_serial_interface):
     """Test that we can instantiate a Node."""
@@ -47,7 +84,7 @@ def test_node(capsys, mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_get_canned_message_returns_cached_value(mock_serial_interface):
+def test_get_canned_message_returns_cached_value(mock_serial_interface: Any) -> None:
     """get_canned_message should return the cached message without sending."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     anode.cannedPluginMessage = "cached message"
@@ -69,29 +106,14 @@ def test_get_canned_message_requests_and_caches_value(
     response_raw.get_canned_message_module_messages_response = "hello world"
     sent_messages: list[admin_pb2.AdminMessage] = []
     request_packet = mesh_pb2.MeshPacket()
-
-    def _fake_send_admin(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
-    ) -> mesh_pb2.MeshPacket | None:
-        _ = adminIndex
-        sent_messages.append(msg)
-        assert wantResponse is True
-        assert onResponse is not None
-        onResponse(
-            {
-                "decoded": {
-                    "admin": {
-                        "raw": response_raw,
-                    }
-                }
-            }
-        )
-        return request_packet
-
-    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign,assignment]
+    response_payload: dict[str, Any] = {"decoded": {"admin": {"raw": response_raw}}}
+    fake_send_admin = _make_fake_send_admin(
+        sent_messages=sent_messages,
+        expected_want_response=True,
+        response_payload=response_payload,
+        return_packet=request_packet,
+    )
+    anode._sendAdmin = fake_send_admin  # type: ignore[method-assign,assignment]
 
     assert anode.get_canned_message() == "hello world"
     assert anode.cannedPluginMessage == "hello world"
@@ -115,20 +137,13 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
     captured: dict[str, object] = {}
     sent_packet = mesh_pb2.MeshPacket()
 
-    def _fake_send_admin(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
-    ) -> mesh_pb2.MeshPacket | None:
-        captured["msg"] = msg
-        captured["wantResponse"] = wantResponse
-        captured["onResponse"] = onResponse
-        captured["adminIndex"] = adminIndex
-        return sent_packet
-
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
-    anode._sendAdmin = _fake_send_admin  # type: ignore[method-assign,assignment]
+    fake_send_admin = _make_fake_send_admin(
+        captured=captured,
+        expected_want_response=False,
+        return_packet=sent_packet,
+    )
+    anode._sendAdmin = fake_send_admin  # type: ignore[method-assign,assignment]
 
     result = anode.set_canned_message("fresh")
 
@@ -194,8 +209,8 @@ def test_shutdown(caplog):
 
 
 @pytest.mark.unit
-def test_setURL_empty_url():
-    """Test setURL with an empty URL."""
+def test_setURL_raises_when_channels_not_loaded() -> None:
+    """Test setURL raises when config/channels are not loaded."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Config or channels not loaded"

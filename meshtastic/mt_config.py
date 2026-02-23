@@ -13,6 +13,7 @@ with rather more easily once the code is simplified by this change.
 
 import argparse
 import inspect
+import os
 import sys
 import warnings
 from typing import IO, Any
@@ -74,10 +75,17 @@ if not _module_annotations:
         stacklevel=1,
     )
 elif _state_keys != _annotated_state:
-    raise AssertionError(  # noqa: TRY003
-        f"Drift between MODULE_STATE_DEFAULTS and type annotations — "
+    drift_message = (
+        "Drift between MODULE_STATE_DEFAULTS and type annotations — "
         f"missing annotations: {_state_keys - _annotated_state}, "
         f"missing defaults: {_annotated_state - _state_keys}"
     )
+    if os.getenv("CI_ASSERT_MODULE_STATE_DRIFT", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        raise AssertionError(drift_message)  # noqa: TRY003
+    warnings.warn(drift_message, RuntimeWarning, stacklevel=1)
 
 reset()

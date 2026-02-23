@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import warnings
+from collections.abc import Iterable
 from queue import Queue
 from typing import (
     Any,
@@ -389,7 +390,7 @@ class Timeout:
         self.sleepInterval: float = 0.1
         self.expireTimeout: float = maxSecs
 
-    def reset(self, expireTimeout=None):
+    def reset(self, expireTimeout: float | None = None) -> None:
         """Reset the expiration time used by wait loops.
 
         Parameters
@@ -401,7 +402,7 @@ class Timeout:
             self.expireTimeout if expireTimeout is None else expireTimeout
         )
 
-    def waitForSet(self, target, attrs=()) -> bool:
+    def waitForSet(self, target: Any, attrs: Iterable[str] = ()) -> bool:
         """Wait for one or more named attributes on `target` to exist and evaluate truthy before the timeout.
 
         Parameters
@@ -416,15 +417,18 @@ class Timeout:
         bool
             `true` if all named attributes are present on `target` and evaluate to true before the timeout, `false` otherwise.
         """
+        attr_names = tuple(attrs)
         self.reset()
         while time.time() < self.expireTime:
-            if all(map(lambda a: getattr(target, a, None), attrs)):
+            if all(getattr(target, attr_name, None) for attr_name in attr_names):
                 return True
             time.sleep(self.sleepInterval)
         return False
 
     def waitForAckNak(
-        self, acknowledgment, attrs=("receivedAck", "receivedNak", "receivedImplAck")
+        self,
+        acknowledgment: Any,
+        attrs: tuple[str, ...] = ("receivedAck", "receivedNak", "receivedImplAck"),
     ) -> bool:
         """Wait until any of the specified acknowledgment flags on an acknowledgment object becomes true or the timeout expires.
 
@@ -478,7 +482,7 @@ class Timeout:
             time.sleep(self.sleepInterval)
         return False
 
-    def waitForTelemetry(self, acknowledgment) -> bool:
+    def waitForTelemetry(self, acknowledgment: Any) -> bool:
         """Wait until a telemetry acknowledgement is observed or timeout expires.
 
         Parameters
@@ -501,7 +505,7 @@ class Timeout:
             time.sleep(self.sleepInterval)
         return False
 
-    def waitForPosition(self, acknowledgment) -> bool:
+    def waitForPosition(self, acknowledgment: Any) -> bool:
         """Wait until a position acknowledgment is observed or the timeout expires.
 
         Parameters
@@ -524,7 +528,7 @@ class Timeout:
             time.sleep(self.sleepInterval)
         return False
 
-    def waitForWaypoint(self, acknowledgment) -> bool:
+    def waitForWaypoint(self, acknowledgment: Any) -> bool:
         """Wait until a waypoint acknowledgement is observed or the timeout expires.
 
         Parameters
@@ -1175,7 +1179,7 @@ def check_if_newer_version() -> str | None:
     return pypi_version
 
 
-def message_to_json(message: Message, multiline: bool = False) -> str:
+def _message_to_json(message: Message, multiline: bool = False) -> str:
     """Serialize a protobuf Message to JSON while including fields that have no presence.
 
     Parameters
@@ -1222,7 +1226,7 @@ def messageToJson(message: Message, multiline: bool = False) -> str:
     json_str : str
         JSON representation of the provided message.
     """
-    return message_to_json(message, multiline=multiline)
+    return _message_to_json(message, multiline=multiline)
 
 
 def to_node_num(node_id: int | str) -> int:

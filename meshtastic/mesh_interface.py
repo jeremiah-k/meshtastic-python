@@ -42,7 +42,7 @@ from meshtastic.util import (
     Acknowledgment,
     Timeout,
     convert_mac_addr,
-    message_to_json,
+    messageToJson,
     remove_keys_from_dict,
     stripnl,
 )
@@ -305,10 +305,10 @@ class MeshInterface:  # pylint: disable=R0902
         owner = f"Owner: {self.getLongName()} ({self.getShortName()})"
         myinfo = ""
         if self.myInfo:
-            myinfo = f"\nMy info: {message_to_json(self.myInfo)}"
+            myinfo = f"\nMy info: {messageToJson(self.myInfo)}"
         metadata = ""
         if self.metadata:
-            metadata = f"\nMetadata: {message_to_json(self.metadata)}"
+            metadata = f"\nMetadata: {messageToJson(self.metadata)}"
         mesh = "\n\nNodes in mesh: "
         nodes = {}
         if self.nodes:

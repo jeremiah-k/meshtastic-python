@@ -2,12 +2,17 @@
 
 import logging
 import os
+import tempfile
 import threading
 
 import pyarrow as pa
 from pyarrow import feather
 
 CHUNK_SIZE = 1000  # disk writes are batched based on this number of rows
+
+
+class ArrowWriterStateError(RuntimeError):
+    """Raised for internal ArrowWriter state or initialization errors."""
 
 
 class ArrowWriter:
@@ -60,13 +65,15 @@ class ArrowWriter:
         """
         with self._lock:
             if self.schema is not None:
-                raise RuntimeError(
+                raise ArrowWriterStateError(
                     "Schema already set; cannot call set_schema more than once."
                 )
             try:
                 writer = pa.ipc.new_stream(self.sink, schema)
             except Exception as exc:
-                raise RuntimeError("Failed to initialize Arrow stream writer.") from exc
+                raise ArrowWriterStateError(
+                    "Failed to initialize Arrow stream writer."
+                ) from exc
             self.schema = schema
             self.writer = writer
 
@@ -81,7 +88,7 @@ class ArrowWriter:
                 self.set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
 
             if self.writer is None:
-                raise RuntimeError(
+                raise ArrowWriterStateError(
                     "Writer is None despite schema being set; schema initialization may have failed."
                 )
             self.writer.write_batch(
@@ -146,12 +153,25 @@ class FeatherWriter(ArrowWriter):
             # note: must use open_stream, not open_file/read_table because the streaming layout is different
             # data = feather.read_table(src_name)
             with pa.memory_map(src_name) as source:
-                reader = pa.ipc.open_stream(source)
-                try:
+                with pa.ipc.open_stream(source) as reader:
                     array = reader.read_all()
-                finally:
-                    reader.close()
 
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
-            feather.write_feather(array, dest_name, compression="zstd")  # type: ignore[arg-type]
-            os.remove(src_name)
+            temp_name: str | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    dir=os.path.dirname(dest_name) or ".",
+                    prefix=os.path.basename(dest_name) + ".",
+                    suffix=".tmp",
+                    delete=False,
+                ) as temp_file:
+                    temp_name = temp_file.name
+
+                feather.write_feather(array, temp_name, compression="zstd")  # type: ignore[arg-type]
+                os.replace(temp_name, dest_name)
+                os.remove(src_name)
+            except Exception:
+                if temp_name and os.path.exists(temp_name):
+                    os.remove(temp_name)
+                raise

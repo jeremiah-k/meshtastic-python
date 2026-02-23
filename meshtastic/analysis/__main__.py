@@ -1,8 +1,10 @@
 """Post-run analysis tools for meshtastic."""
 
 import argparse
+import ipaddress
 import logging
 import os
+from collections.abc import Iterable
 from typing import Any, cast
 
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
@@ -21,7 +23,7 @@ from ..slog import root_dir
 pd.options.mode.copy_on_write = True
 
 
-def to_pmon_names(arr) -> list[str | None]:
+def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
     """Map a sequence of power-monitor state integers to their enum name strings.
 
     Parameters
@@ -89,7 +91,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
         pa.bool_(): pd.BooleanDtype(),
         pa.float32(): pd.Float32Dtype(),
         pa.float64(): pd.Float64Dtype(),
-        pa.string(): pd.StringDtype(),
+        pa.string(): pd.ArrowDtype(pa.string()),
     }
 
     def _types_mapper(
@@ -150,31 +152,6 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     pmon_events["pm_falls"] = to_pmon_names(pm_falls)
 
     pmon_raises = pmon_events[pmon_events["pm_raises"].notnull()][["time", "pm_raises"]]
-    pmon_falls = pmon_events[pmon_events["pm_falls"].notnull()]
-
-    # pylint: disable=unused-variable
-    def get_endtime(row):
-        """Find the corresponding fall event for a given raise event.
-
-        Parameters
-        ----------
-        row : pd.Series
-            A row from the pmon_raises DataFrame.
-
-        Returns
-        -------
-        pd.Series | None
-            The matching fall event row, or None if not found.
-        """
-        following = pmon_falls[
-            (pmon_falls["pm_falls"] == row["pm_raises"])
-            & (pmon_falls["time"] > row["time"])
-        ]
-        return following.iloc[0] if not following.empty else None
-
-    # HMM - setting end_time doesn't work yet - leave off for now
-    # pmon_raises['end_time'] = pmon_raises.apply(get_endtime, axis=1)
-
     return pmon_raises
 
 
@@ -194,8 +171,14 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
         is the software version string.
     """
     board_info = dslog[dslog["sw_version"].notnull()]
-    sw_version = board_info.iloc[0]["sw_version"]
-    board_id = mesh_pb2.HardwareModel.Name(board_info.iloc[0]["board_id"])
+    if board_info.empty:
+        raise ValueError(
+            "No board info rows found in slog DataFrame (sw_version is null for all rows); "
+            f"dslog shape={dslog.shape}"
+        )
+    first_row = board_info.iloc[0]
+    sw_version = str(first_row["sw_version"])
+    board_id = mesh_pb2.HardwareModel.Name(cast(Any, int(first_row["board_id"])))
     return (board_id, sw_version)
 
 
@@ -219,8 +202,10 @@ def create_argparser() -> argparse.ArgumentParser:
         help="Exit immediately, without running the visualization web server",
     )
     group.add_argument(
+        "--bind-host",
         "--host",
         default="127.0.0.1",
+        dest="host",
         help="Bind address for the Dash server (default: 127.0.0.1). Use 0.0.0.0 for remote access.",
     )
     group.add_argument(
@@ -323,7 +308,19 @@ def main() -> None:
     port = 8051
     debug = bool(args.debug)
     host = str(args.host)
-    if host != "127.0.0.1" and debug:
+
+    def _is_loopback_host(host_value: str) -> bool:
+        host_stripped = host_value.strip()
+        if host_stripped.startswith("[") and host_stripped.endswith("]"):
+            host_stripped = host_stripped[1:-1]
+        if host_stripped.lower() == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(host_stripped).is_loopback
+        except ValueError:
+            return False
+
+    if not _is_loopback_host(host) and debug:
         logging.warning(
             "Ignoring --debug because host %s is not localhost; running with debug disabled.",
             host,

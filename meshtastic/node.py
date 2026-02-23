@@ -35,7 +35,7 @@ from meshtastic.util import (
     flags_to_list,
     fromPSK,
     generate_channel_hash,
-    message_to_json,
+    messageToJson,
     pskToString,
     stripnl,
     to_node_num,
@@ -182,7 +182,7 @@ class Node:
         if self.channels:
             logger.debug(f"self.channels:{self.channels}")
             for c in self.channels:
-                cStr = message_to_json(c.settings)
+                cStr = messageToJson(c.settings)
                 # don't show disabled channels
                 if channel_pb2.Channel.Role.Name(c.role) != "DISABLED":
                     print(
@@ -202,11 +202,11 @@ class Node:
         """
         prefs = ""
         if self.localConfig:
-            prefs = message_to_json(self.localConfig, multiline=True)
+            prefs = messageToJson(self.localConfig, multiline=True)
         print(f"Preferences: {prefs}\n")
         prefs = ""
         if self.moduleConfig:
-            prefs = message_to_json(self.moduleConfig, multiline=True)
+            prefs = messageToJson(self.moduleConfig, multiline=True)
         print(f"Module preferences: {prefs}\n")
         self.showChannels()
 

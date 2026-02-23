@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 
-from riden.riden import Riden
+from riden import Riden  # pyright: ignore[reportPrivateImportUsage]
 
 from .power_supply import PowerSupply
 
@@ -13,7 +13,7 @@ class RidenPowerSupply(PowerSupply):
     Only RD6006 tested but others should be similar.
     """
 
-    def __init__(self, portName: str = "/dev/ttyUSB0"):
+    def __init__(self, portName: str = "/dev/ttyUSB0") -> None:
         """Initialize the RidenPowerSupply object.
 
         portName (str, optional): The port name of the power supply. Defaults to "/dev/ttyUSB0".
@@ -30,11 +30,11 @@ class RidenPowerSupply(PowerSupply):
         self.nowWattHour = self.prevWattHour
         super().__init__()  # we call this late so that the port is already open and _getRawWattHour callback works
 
-    def setMaxCurrent(self, i: float):
+    def setMaxCurrent(self, i: float) -> None:
         """Set the maximum current the supply will provide."""
         self.r.set_i_set(i)
 
-    def powerOn(self):
+    def powerOn(self) -> None:
         """Power on the supply, with reasonable defaults for meshtastic devices."""
         self.r.set_v_set(
             self.v

@@ -218,7 +218,7 @@ def test_ip_to_node_id_none(caplog, iface_with_nodes):
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        nodeid = tun._ip_to_node_id("something not useful")
+        nodeid = tun._ip_to_node_id(b"\x00\x00\x00\x00")
         assert nodeid is None
 
 

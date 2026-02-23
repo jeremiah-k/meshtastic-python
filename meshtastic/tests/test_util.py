@@ -34,7 +34,7 @@ from meshtastic.util import (
     hexstr,
     ipstr,
     is_windows11,
-    message_to_json,
+    messageToJson,
     pskToString,
     quoteBooleans,
     readnet_u16,
@@ -173,7 +173,7 @@ def test_fixme():
 
 
 @pytest.mark.unit
-def test_catchAndIgnore(caplog):
+def test_catchAndIgnore(caplog: pytest.LogCaptureFixture) -> None:
     """Test catchAndIgnore() does not actually throw an exception, but just logs.
 
     Raises
@@ -182,7 +182,7 @@ def test_catchAndIgnore(caplog):
         Raised inside the closure to exercise the retry handler.
     """
 
-    def some_closure():
+    def some_closure() -> None:
         """Raise an Exception with the message "foo".
 
         Raises
@@ -565,9 +565,9 @@ def test_active_ports_on_supported_devices_mac_duplicates_check(
 
 
 @pytest.mark.unit
-def test_message_to_json_shows_all():
-    """Test that message_to_json prints fields that aren't included in data passed in."""
-    actual = json.loads(message_to_json(mesh_pb2.MyNodeInfo()))
+def test_messageToJson_shows_all() -> None:
+    """Test that messageToJson prints fields that aren't included in data passed in."""
+    actual = json.loads(messageToJson(mesh_pb2.MyNodeInfo()))
     # Check that expected keys are present with expected values, rather than
     # asserting exact equality, to avoid fragility when protobuf schema adds fields.
     expected = {
