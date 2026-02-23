@@ -17,6 +17,7 @@ from meshtastic.interfaces.ble.utils import (
     sanitize_address,
 )
 
+
 def _normalize_device_name_for_matching(name: str | None) -> str | None:
     """Normalize a Bluetooth device name for tolerant comparisons.
 
