@@ -7,7 +7,6 @@ import io
 import logging
 import sys
 import time
-import traceback
 from typing import Any
 
 from pubsub import pub  # type: ignore[import-untyped]
@@ -110,8 +109,6 @@ interfaces: list = []
 """A list of all packets we received while the current test was running"""
 receivedPackets: list | None = None
 
-testsRunning: bool = False
-
 testNumber: int = 0
 
 sendingInterface = None
@@ -133,7 +130,7 @@ def onReceive(packet: dict, interface: Any) -> None:
     interface : Any
         Interface object that delivered the packet.
     """
-    if sendingInterface != interface:
+    if sendingInterface is not interface:
         # print(f"From {interface.stream.port}: {packet}")
         p = DotMap(packet)
 
@@ -394,7 +391,6 @@ def testSimulator() -> None:
         iface.close()
         logger.info("Integration test successful!")
     except Exception:  # noqa: BLE001 - intentional catch-all for test exit-signaling
-        print("Error while testing simulator:", sys.exc_info()[0])
-        traceback.print_exc()
+        logger.exception("Error while testing simulator")
         sys.exit(1)
     sys.exit(0)

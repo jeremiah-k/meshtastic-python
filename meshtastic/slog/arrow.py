@@ -7,7 +7,7 @@ import threading
 import pyarrow as pa
 from pyarrow import feather
 
-chunk_size = 1000  # disk writes are batched based on this number of rows
+CHUNK_SIZE = 1000  # disk writes are batched based on this number of rows
 
 
 class ArrowWriter:
@@ -59,18 +59,31 @@ class ArrowWriter:
             The schema to use for the Arrow file.
         """
         with self._lock:
-            assert self.schema is None
+            if self.schema is not None:
+                raise RuntimeError(
+                    "Schema already set; cannot call set_schema more than once."
+                )
+            try:
+                writer = pa.ipc.new_stream(self.sink, schema)
+            except Exception as exc:
+                raise RuntimeError("Failed to initialize Arrow stream writer.") from exc
             self.schema = schema
-            self.writer = pa.ipc.new_stream(self.sink, schema)
+            self.writer = writer
 
     def _write(self) -> None:
-        """Write the new rows to the file."""
+        """Write buffered rows to the file.
+
+        Must be called with ``self._lock`` held.
+        """
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
                 self.set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
 
-            assert self.writer is not None
+            if self.writer is None:
+                raise RuntimeError(
+                    "Writer is None despite schema being set; schema initialization may have failed."
+                )
             self.writer.write_batch(
                 pa.RecordBatch.from_pylist(  # type: ignore[attr-defined]
                     self.new_rows, schema=self.schema
@@ -90,7 +103,7 @@ class ArrowWriter:
         """
         with self._lock:
             self.new_rows.append(row_dict)
-            if len(self.new_rows) >= chunk_size:
+            if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
 
 
@@ -125,15 +138,19 @@ class FeatherWriter(ArrowWriter):
         src_name = self.base_file_name + ".arrow"
         dest_name = self.base_file_name + ".feather"
         if os.path.getsize(src_name) == 0:
-            logging.warning(f"Discarding empty file: {src_name}")
+            logging.warning("Discarding empty file: %s", src_name)
             os.remove(src_name)
         else:
-            logging.info(f"Compressing log data into {dest_name}")
+            logging.info("Compressing log data into %s", dest_name)
 
             # note: must use open_stream, not open_file/read_table because the streaming layout is different
             # data = feather.read_table(src_name)
             with pa.memory_map(src_name) as source:
-                array = pa.ipc.open_stream(source).read_all()
+                reader = pa.ipc.open_stream(source)
+                try:
+                    array = reader.read_all()
+                finally:
+                    reader.close()
 
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
             feather.write_feather(array, dest_name, compression="zstd")  # type: ignore[arg-type]

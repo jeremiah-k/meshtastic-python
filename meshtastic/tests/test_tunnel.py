@@ -56,7 +56,7 @@ def test_Tunnel_on_non_linux_system(platform_socket_mocks):
             Tunnel(iface)
     finally:
         iface.close()
-    assert pytest_wrapped_e.type == Tunnel.TunnelError
+    assert issubclass(pytest_wrapped_e.type, Tunnel.TunnelError)
 
 
 @pytest.mark.unit
@@ -112,62 +112,62 @@ def test_onTunnelReceive_from_someone_else(caplog, iface_with_nodes, monkeypatch
 
 
 @pytest.mark.unitslow
-def test_shouldFilterPacket_random(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_random(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # random packet
     packet = b"1234567890123456789012345678901234567890"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert not ignore
 
 
 @pytest.mark.unitslow
-def test_shouldFilterPacket_in_blacklist(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_in_blacklist(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked IGMP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert ignore
 
 
 @pytest.mark.unitslow
-def test_shouldFilterPacket_icmp(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_icmp(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked ICMP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert re.search(r"forwarding ICMP message", caplog.text, re.MULTILINE)
         assert not ignore
 
 
 @pytest.mark.unit
-def test_shouldFilterPacket_udp(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_udp(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked UDP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert re.search(r"forwarding udp", caplog.text, re.MULTILINE)
         assert not ignore
 
 
 @pytest.mark.unitslow
-def test_shouldFilterPacket_udp_blacklisted(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_udp_blacklisted(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked UDP
@@ -176,28 +176,28 @@ def test_shouldFilterPacket_udp_blacklisted(caplog, iface_with_nodes):
     LOG_TRACE = 5
     with caplog.at_level(LOG_TRACE):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert re.search(r"ignoring blacklisted UDP", caplog.text, re.MULTILINE)
         assert ignore
 
 
 @pytest.mark.unit
-def test_shouldFilterPacket_tcp(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_tcp(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked TCP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert re.search(r"forwarding tcp", caplog.text, re.MULTILINE)
         assert not ignore
 
 
 @pytest.mark.unitslow
-def test_shouldFilterPacket_tcp_blacklisted(caplog, iface_with_nodes):
-    """Test _shouldFilterPacket()."""
+def test_should_filter_packet_tcp_blacklisted(caplog, iface_with_nodes):
+    """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked TCP
@@ -206,28 +206,28 @@ def test_shouldFilterPacket_tcp_blacklisted(caplog, iface_with_nodes):
     LOG_TRACE = 5
     with caplog.at_level(LOG_TRACE):
         tun = Tunnel(iface)
-        ignore = tun._shouldFilterPacket(packet)
+        ignore = tun._should_filter_packet(packet)
         assert re.search(r"ignoring blacklisted TCP", caplog.text, re.MULTILINE)
         assert ignore
 
 
 @pytest.mark.unitslow
-def test_ipToNodeId_none(caplog, iface_with_nodes):
-    """Test _ipToNodeId()."""
+def test_ip_to_node_id_none(caplog, iface_with_nodes):
+    """Test _ip_to_node_id()."""
     iface = iface_with_nodes
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        nodeid = tun._ipToNodeId("something not useful")
+        nodeid = tun._ip_to_node_id("something not useful")
         assert nodeid is None
 
 
 @pytest.mark.unitslow
-def test_ipToNodeId_all(caplog, iface_with_nodes):
-    """Test _ipToNodeId()."""
+def test_ip_to_node_id_all(caplog, iface_with_nodes):
+    """Test _ip_to_node_id()."""
     iface = iface_with_nodes
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        nodeid = tun._ipToNodeId(b"\x00\x00\xff\xff")
+        nodeid = tun._ip_to_node_id(b"\x00\x00\xff\xff")
         assert nodeid == "^all"

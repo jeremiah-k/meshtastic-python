@@ -1,5 +1,5 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/get_hw.py
+To run: python examples/get_hw.py.
 """
 
 import sys
@@ -14,8 +14,9 @@ if len(sys.argv) != 1:
     sys.exit(3)
 
 iface = meshtastic.serial_interface.SerialInterface()
-if iface.nodes:
+my_info = iface.myInfo
+if my_info is not None and iface.nodes:
     for n in iface.nodes.values():
-        if n["num"] == iface.myInfo.my_node_num:
+        if n["num"] == my_info.my_node_num:
             print(n["user"]["hwModel"])
 iface.close()

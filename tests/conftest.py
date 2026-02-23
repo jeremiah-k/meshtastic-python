@@ -34,7 +34,7 @@ def _stop_ble_runner_at_session_end() -> Iterator[None]:
 
     try:
         runner = BLECoroutineRunner()
-        stop_runner = getattr(runner, "stop", None)
+        stop_runner = getattr(runner, "_stop", None)
         if callable(stop_runner):
             stop_runner(timeout=2.0)
     except Exception as exc:  # noqa: BLE001 - teardown must not raise

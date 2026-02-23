@@ -182,6 +182,10 @@ class BLECoroutineRunner:
     def _is_running(self) -> bool:
         """Report whether the runner's background thread and event loop are both active.
 
+        This is an advisory/best-effort snapshot: `_thread` and `_loop` are read
+        under `_instance_lock`, but `is_alive()` / `is_running()` are evaluated
+        after releasing the lock and can become stale immediately.
+
         Returns
         -------
         bool

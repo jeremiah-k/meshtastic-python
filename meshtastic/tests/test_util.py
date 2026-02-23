@@ -492,7 +492,7 @@ def test_active_ports_on_supported_devices_mac(mock_platform, mock_glob):
     """Test active_ports_on_supported_devices()."""
     mock_glob.return_value = ["/dev/cu.usbserial-foo"]
     fake_device = SupportedDevice(
-        name="a", for_firmware="heltec-v2.1", baseport_on_linux="cu.usbserial-"
+        name="a", for_firmware="heltec-v2.1", baseport_on_mac="cu.usbserial-"
     )
     fake_supported_devices = [fake_device]
     assert active_ports_on_supported_devices(fake_supported_devices) == {

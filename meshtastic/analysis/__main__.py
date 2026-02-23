@@ -218,6 +218,16 @@ def create_argparser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit immediately, without running the visualization web server",
     )
+    group.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address for the Dash server (default: 127.0.0.1). Use 0.0.0.0 for remote access.",
+    )
+    group.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable Dash debug mode (safe only on localhost).",
+    )
 
     return parser
 
@@ -242,7 +252,7 @@ def create_dash(slog_path: str) -> Dash:
 
     pmon_raises = get_pmon_raises(dslog)
 
-    def set_legend(f, name):
+    def set_legend(f: go.Figure, name: str) -> go.Figure:
         """Set the legend name and enable legend display for the first trace in a figure.
 
         Parameters
@@ -298,7 +308,7 @@ def create_dash(slog_path: str) -> Dash:
     return app
 
 
-def main():
+def main() -> None:
     """Entry point of the script.
 
     Parses command-line arguments, reads the slog data, and optionally starts
@@ -311,10 +321,24 @@ def main():
 
     app = create_dash(slog_path=args.slog)
     port = 8051
-    logging.info(f"Running Dash visualization of {args.slog} (publicly accessible)")
+    debug = bool(args.debug)
+    host = str(args.host)
+    if host != "127.0.0.1" and debug:
+        logging.warning(
+            "Ignoring --debug because host %s is not localhost; running with debug disabled.",
+            host,
+        )
+        debug = False
+    logging.info(
+        "Running Dash visualization of %s on %s:%d (debug=%s)",
+        args.slog,
+        host,
+        port,
+        debug,
+    )
 
     if not args.no_server:
-        app.run_server(debug=True, host="0.0.0.0", port=port)
+        app.run_server(debug=debug, host=host, port=port)
     else:
         logging.info("Exiting without running visualization server")
 

@@ -373,6 +373,7 @@ class ConnectedStrategy(DiscoveryStrategy):
                 exc_info=True,
             )
             return []
+        # try-else: no exception raised during backend enumeration.
         else:
             return devices_found
 
@@ -436,10 +437,17 @@ class DiscoveryManager:
                 self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
             )
             # Attempt to create client with log_if_no_address=False; fall back
-            # for custom factories that don't accept this kwarg.
+            # for custom factories that don't accept this kwarg. This broad
+            # TypeError catch can hide internal factory TypeErrors, but we keep
+            # it for compatibility with older/custom factory signatures.
             try:
                 self._client = resolved_factory(log_if_no_address=False)
-            except TypeError:
+            except TypeError as exc:
+                logger.debug(
+                    "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
+                    exc,
+                    exc_info=True,
+                )
                 self._client = resolved_factory()
             # Validate factory returned a valid client (duck typing for testability)
             if self._client is None:

@@ -20,7 +20,10 @@ class RidenPowerSupply(PowerSupply):
         """
         self.r = r = Riden(port=portName, baudrate=115200, address=1)
         logging.info(
-            f"Connected to Riden power supply: model {r.type}, sn {r.sn}, firmware {r.fw}. Date/time updated."
+            "Connected to Riden power supply: model %s, sn %s, firmware %s. Date/time updated.",
+            r.type,
+            r.sn,
+            r.fw,
         )
         r.set_date_time(datetime.now())
         self.prevWattHour = self._getRawWattHour()
@@ -39,7 +42,7 @@ class RidenPowerSupply(PowerSupply):
         self.r.set_output(True)
 
     def get_average_current_mA(self) -> float:
-        """Return average current of last measurement in mA since the previous call."""
+        """Return average current of last measurement in mA since last call to this method."""
         now = datetime.now()
         nowWattHour = self._getRawWattHour()
         watts = (

@@ -273,9 +273,7 @@ class StreamInterface(MeshInterface):
             self.cur_log_line += utf
 
     def __reader(self) -> None:
-        """Background reader loop that reads from the configured stream and dispatches.
-
-        device log bytes and framed radio messages.
+        """Background reader loop that reads from the configured stream and dispatches device log bytes and framed radio messages.
 
         Continuously reads incoming bytes, forwarding non-protocol bytes to
         _handle_log_byte and delivering complete protocol frames to _handleFromRadio.

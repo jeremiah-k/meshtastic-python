@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 TUNNEL_TOPIC = "meshtastic.receive.data.IP_TUNNEL_APP"
 
 
-def onTunnelReceive(packet, interface):
+def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
     """Handle received tunneled messages from mesh.
 
     Parameters
@@ -57,7 +57,7 @@ class Tunnel:
     class TunnelError(Exception):
         """An exception class for general tunnel errors."""
 
-        def __init__(self, message):
+        def __init__(self, message: str):
             """Initialize the TunnelError with a human-readable message.
 
             Parameters
@@ -67,6 +67,18 @@ class Tunnel:
             """
             self.message = message
             super().__init__(self.message)
+
+    class NonLinuxError(TunnelError):
+        """Raised when Tunnel is instantiated on a non-Linux system."""
+
+        def __init__(self) -> None:
+            super().__init__("Tunnel() can only be instantiated on a Linux system")
+
+    class UninitializedInterfaceError(TunnelError):
+        """Raised when the interface does not yet have myInfo initialized."""
+
+        def __init__(self) -> None:
+            super().__init__("Tunnel() requires iface.myInfo to be initialized")
 
     def __init__(
         self,
@@ -109,14 +121,18 @@ class Tunnel:
 
         self.iface = iface
         self.subnetPrefix = subnet
+        self._subscribed = False
+        self._stop_event = threading.Event()
+        self._rx_thread: threading.Thread | None = None
 
         if platform.system() != "Linux":
-            raise Tunnel.TunnelError(
-                "Tunnel() can only be run instantiated on a Linux system"
-            )
+            raise Tunnel.NonLinuxError()
+
+        my_info = self.iface.myInfo
+        if my_info is None:
+            raise Tunnel.UninitializedInterfaceError()
 
         mt_config.tunnel_instance = self
-        self._subscribed = False
 
         """A list of chatty UDP services we should never accidentally
         forward to our slow network"""
@@ -149,16 +165,13 @@ class Tunnel:
 
         pub.subscribe(onTunnelReceive, TUNNEL_TOPIC)
         self._subscribed = True
-        my_info = self.iface.myInfo
-        if my_info is None:
-            raise Tunnel.TunnelError("Tunnel() requires iface.myInfo to be initialized")
-        myAddr = self._nodeNumToIp(my_info.my_node_num)
+        myAddr = self._node_num_to_ip(my_info.my_node_num)
 
         if self.iface.nodes:
             for node in self.iface.nodes.values():
                 nodeId = node["user"]["id"]
-                ip = self._nodeNumToIp(node["num"])
-                logger.info(f"Node { nodeId } has IP address { ip }")
+                ip = self._node_num_to_ip(node["num"])
+                logger.info("Node %s has IP address %s", nodeId, ip)
 
         logger.debug("creating TUN device with MTU=200")
         # FIXME - figure out real max MTU, it should be 240 - the overhead bytes for SubPacket and Data
@@ -176,17 +189,17 @@ class Tunnel:
         if self.iface.noProto:
             logger.warning("Not starting TUN reader because it is disabled by noProto")
         else:
-            logger.debug(f"starting TUN reader, our IP address is {myAddr}")
-            self._rxThread = threading.Thread(
-                target=self.__tunReader, args=(), daemon=True
+            logger.debug("starting TUN reader, our IP address is %s", myAddr)
+            self._rx_thread = threading.Thread(
+                target=self.__tun_reader, args=(), daemon=True
             )
-            self._rxThread.start()
+            self._rx_thread.start()
 
     def onReceive(self, packet):
         """Handle an incoming mesh packet and forward its payload into the TUN device when appropriate.
 
         Ignores packets originating from the local node. If protocol handling is enabled (iface.noProto is False)
-        and the packet is not filtered by _shouldFilterPacket, writes packet["decoded"]["payload"] to the TUN device.
+        and the packet is not filtered by _should_filter_packet, writes packet["decoded"]["payload"] to the TUN device.
 
         Parameters
         ----------
@@ -197,14 +210,18 @@ class Tunnel:
         if packet["from"] == self.iface.myInfo.my_node_num:
             logger.debug("Ignoring message we sent")
         else:
-            logger.debug(f"Received mesh tunnel message type={type(p)} len={len(p)}")
+            logger.debug(
+                "Received mesh tunnel message type=%s len=%d",
+                type(p),
+                len(p),
+            )
             # we don't really need to check for filtering here (sender should have checked),
             # but this provides useful debug printing on types of packets received
             if not self.iface.noProto:
-                if self.tun is not None and not self._shouldFilterPacket(p):
+                if self.tun is not None and not self._should_filter_packet(p):
                     self.tun.write(p)
 
-    def _shouldFilterPacket(self, p):
+    def _should_filter_packet(self, p):
         """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
 
         Parameters
@@ -224,9 +241,7 @@ class Tunnel:
         ignore = False  # Assume we will be forwarding the packet
         if protocol in self.protocolBlacklist:
             ignore = True
-            logger.log(
-                self.LOG_TRACE, f"Ignoring blacklisted protocol 0x{protocol:02x}"
-            )
+            logger.log(self.LOG_TRACE, "Ignoring blacklisted protocol 0x%02x", protocol)
         elif protocol == 0x01:  # ICMP
             icmpType = p[20]
             icmpCode = p[21]
@@ -243,17 +258,21 @@ class Tunnel:
             destport = readnet_u16(p, subheader + 2)
             if destport in self.udpBlacklist:
                 ignore = True
-                logger.log(self.LOG_TRACE, f"ignoring blacklisted UDP port {destport}")
+                logger.log(self.LOG_TRACE, "ignoring blacklisted UDP port %s", destport)
             else:
-                logger.debug(f"forwarding udp srcport={srcport}, destport={destport}")
+                logger.debug(
+                    "forwarding udp srcport=%s, destport=%s", srcport, destport
+                )
         elif protocol == 0x06:  # TCP
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
             if destport in self.tcpBlacklist:
                 ignore = True
-                logger.log(self.LOG_TRACE, f"ignoring blacklisted TCP port {destport}")
+                logger.log(self.LOG_TRACE, "ignoring blacklisted TCP port %s", destport)
             else:
-                logger.debug(f"forwarding tcp srcport={srcport}, destport={destport}")
+                logger.debug(
+                    "forwarding tcp srcport=%s, destport=%s", srcport, destport
+                )
         else:
             logger.warning(
                 f"forwarding unexpected protocol 0x{protocol:02x}, "
@@ -262,7 +281,7 @@ class Tunnel:
 
         return ignore
 
-    def __tunReader(self):
+    def __tun_reader(self):
         """Background thread that reads IP packets from the TUN device and forwards them to the mesh.
 
         Continuously reads packets from the TUN device, checks if they should be filtered,
@@ -273,15 +292,21 @@ class Tunnel:
             logger.debug("TUN reader exiting: no active TUN device")
             return
         logger.debug("TUN reader running")
-        while True:
-            p = tap.read()
+        while not self._stop_event.is_set():
+            try:
+                p = tap.read()
+            except OSError:
+                if self._stop_event.is_set():
+                    break
+                logger.exception("TUN reader terminating due to read failure")
+                break
             # logger.debug(f"IP packet received on TUN interface, type={type(p)}")
             destAddr = p[16:20]
 
-            if not self._shouldFilterPacket(p):
-                self.sendPacket(destAddr, p)
+            if not self._should_filter_packet(p):
+                self.send_packet(destAddr, p)
 
-    def _ipToNodeId(self, ipAddr):
+    def _ip_to_node_id(self, ipAddr):
         """Convert a 4-byte IP address to the corresponding mesh node ID.
 
         Uses the last 16 bits of the IP address to match against the low 16 bits
@@ -310,7 +335,7 @@ class Tunnel:
                 return node["user"]["id"]
         return None
 
-    def _nodeNumToIp(self, nodeNum):
+    def _node_num_to_ip(self, nodeNum):
         """Construct an IPv4 address in the tunnel subnet for a given node number.
 
         Parameters
@@ -325,7 +350,7 @@ class Tunnel:
         """
         return f"{self.subnetPrefix}.{(nodeNum >> 8) & 0xff}.{nodeNum & 0xff}"
 
-    def sendPacket(self, destAddr, p):
+    def send_packet(self, destAddr, p):
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
 
         Parameters
@@ -335,7 +360,7 @@ class Tunnel:
         p : bytes
             Raw IP packet bytes to be forwarded.
         """
-        nodeId = self._ipToNodeId(destAddr)
+        nodeId = self._ip_to_node_id(destAddr)
         if nodeId is not None:
             logger.debug(
                 f"Forwarding packet bytelen={len(p)} dest={ipstr(destAddr)}, destNode={nodeId}"
@@ -347,10 +372,20 @@ class Tunnel:
             )
 
     def close(self):
-        """Close the Tunnel's TUN device.
+        """Close tunnel resources.
 
-        Closes the underlying TUN/TAP device and releases associated resources held by it.
+        Stops the TUN reader thread, closes the TUN/TAP device, unsubscribes the
+        tunnel receive handler from pubsub, and clears `mt_config.tunnel_instance`
+        when it points to this instance.
         """
+        self._stop_event.set()
+        if (
+            self._rx_thread is not None
+            and self._rx_thread is not threading.current_thread()
+            and self._rx_thread.is_alive()
+        ):
+            self._rx_thread.join(timeout=2.0)
+        self._rx_thread = None
         if self.tun is not None:
             self.tun.close()
             self.tun = None
@@ -360,3 +395,20 @@ class Tunnel:
             with suppress(Exception):
                 pub.unsubscribe(onTunnelReceive, TUNNEL_TOPIC)
             self._subscribed = False
+
+    # Backward-compatible aliases for existing callers/tests.
+    def _shouldFilterPacket(self, p):
+        """Compatibility wrapper for _should_filter_packet."""
+        return self._should_filter_packet(p)
+
+    def _ipToNodeId(self, ipAddr):
+        """Compatibility wrapper for _ip_to_node_id."""
+        return self._ip_to_node_id(ipAddr)
+
+    def _nodeNumToIp(self, nodeNum):
+        """Compatibility wrapper for _node_num_to_ip."""
+        return self._node_num_to_ip(nodeNum)
+
+    def sendPacket(self, destAddr, p):
+        """Compatibility wrapper for send_packet."""
+        return self.send_packet(destAddr, p)

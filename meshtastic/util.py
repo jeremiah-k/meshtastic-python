@@ -35,12 +35,16 @@ from meshtastic.version import get_active_version
      0925 Lakeview Research Saleae Logic (logic analyzer)
 04b4:602a Cypress Semiconductor Corp. Hantek DSO-6022BL (oscilloscope)
 """
-blacklistVids: set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
+BLACKLIST_VIDS: set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 
 """Some devices are highly likely to be meshtastic.
 0x239a RAK4631
 0x303a Heltec tracker"""
-whitelistVids: set[int] = {0x239A, 0x303A}
+WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
+
+# Backward compatibility aliases (deprecated; use UPPER_SNAKE_CASE names).
+blacklistVids = BLACKLIST_VIDS
+whitelistVids = WHITELIST_VIDS
 
 logger = logging.getLogger(__name__)
 
@@ -285,8 +289,8 @@ def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
 def findPorts(eliminate_duplicates: bool = False) -> list[str]:
     """Return a sorted list of serial device paths likely to be Meshtastic radios.
 
-    If any connected ports have vendor IDs in whitelistVids, only those ports are returned;
-    otherwise returns all ports whose vendor IDs are not in blacklistVids. If
+    If any connected ports have vendor IDs in WHITELIST_VIDS, only those ports are returned;
+    otherwise returns all ports whose vendor IDs are not in BLACKLIST_VIDS. If
     eliminate_duplicates is True, the list is reduced via eliminate_duplicate_port before returning.
 
     Parameters
@@ -306,7 +310,7 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
         map(
             lambda port: port.device,
             filter(
-                lambda port: port.vid is not None and port.vid in whitelistVids,
+                lambda port: port.vid is not None and port.vid in WHITELIST_VIDS,
                 all_ports,
             ),
         )
@@ -318,7 +322,8 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
             map(
                 lambda port: port.device,
                 filter(
-                    lambda port: port.vid is not None and port.vid not in blacklistVids,
+                    lambda port: port.vid is not None
+                    and port.vid not in BLACKLIST_VIDS,
                     all_ports,
                 ),
             )
@@ -809,7 +814,7 @@ def camel_to_snake(a_string: str) -> str:
     )
 
 
-def detect_supported_devices() -> set:
+def detect_supported_devices() -> set[SupportedDevice]:
     """Detect available supported USB devices on the host by matching discovered vendor IDs against known supported vendor IDs.
 
     Searches the host OS for attached USB devices (Linux: lsusb, Windows: Get-PnpDevice
@@ -1001,7 +1006,7 @@ def get_unique_vendor_ids() -> set[str]:
     return vids
 
 
-def get_devices_with_vendor_id(vid: str) -> set:  # set[SupportedDevice]
+def get_devices_with_vendor_id(vid: str) -> set[SupportedDevice]:
     """Get supported devices matching a USB vendor ID.
 
     Parameters
@@ -1059,31 +1064,29 @@ def active_ports_on_supported_devices(
     set[str]
         A set of active port path strings (for example, "/dev/ttyUSB0" on Unix or "COM3" on Windows).
     """
-    ports: set = set()
-    baseports: set = set()
+    ports: set[str] = set()
+    baseports: set[str] = set()
     system: str = platform.system()
 
     # figure out what possible base ports there are
     for d in sds:
-        if system == "Linux":
+        if system == "Linux" and d.baseport_on_linux is not None:
             baseports.add(d.baseport_on_linux)
-        elif system == "Darwin":
+        elif system == "Darwin" and d.baseport_on_mac is not None:
             baseports.add(d.baseport_on_mac)
-        elif system == "Windows":
-            baseports.add(d.baseport_on_windows)
 
-    for bp in baseports:
-        if system in ("Linux", "Darwin"):
+    if system in ("Linux", "Darwin"):
+        for bp in baseports:
             ports |= _discover_unix_ports(bp)
-        elif system == "Windows":
-            # for each device in supported devices found
-            for d in sds:
-                # find the port(s)
-                com_ports = detect_windows_port(d)
-                # print(f'com_ports:{com_ports}')
-                # add all ports
-                for com_port in com_ports:
-                    ports.add(com_port)
+    elif system == "Windows":
+        # for each device in supported devices found
+        for d in sds:
+            # find the port(s)
+            com_ports = detect_windows_port(d)
+            # print(f'com_ports:{com_ports}')
+            # add all ports
+            for com_port in com_ports:
+                ports.add(com_port)
     if eliminate_duplicates:
         portlist: list = eliminate_duplicate_port(list(ports))
         portlist.sort()

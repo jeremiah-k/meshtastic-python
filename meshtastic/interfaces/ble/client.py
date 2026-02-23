@@ -8,7 +8,7 @@ import weakref
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import RLock
-from typing import Any, Awaitable, Coroutine, TypeVar
+from typing import Any, Awaitable, Callable, Coroutine, TypeVar
 from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
@@ -474,16 +474,12 @@ class BLEClient:
             self._closed = True
 
             # Cancel any pending futures to unblock waiting threads immediately.
-            if hasattr(self, "_pending_futures"):
-                pending_futures_lock = getattr(self, "_pending_futures_lock", None)
-                if pending_futures_lock is not None:
-                    with pending_futures_lock:
-                        pending_futures = list(self._pending_futures)
-                else:
-                    pending_futures = list(self._pending_futures)
-                for future in pending_futures:
+            def _cancel_pending(pending_futures: weakref.WeakSet[Future[Any]]) -> None:
+                for future in list(pending_futures):
                     if not future.done():
                         future.cancel()
+
+            self._with_pending_futures(_cancel_pending)
 
     def __enter__(self) -> "BLEClient":
         """Enter a context and return this BLEClient instance.
@@ -535,19 +531,15 @@ class BLEClient:
         """
         # Check if client is closed before scheduling work
         if self._closed:
+            with contextlib.suppress(Exception):
+                coro.close()
             raise self.BLEError("Cannot schedule operation: BLE client is closed")
 
         # Exception mapping contract:
         #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
         future = self._async_run(coro)
-        if hasattr(self, "_pending_futures"):
-            pending_futures_lock = getattr(self, "_pending_futures_lock", None)
-            if pending_futures_lock is not None:
-                with pending_futures_lock:
-                    self._pending_futures.add(future)
-            else:
-                self._pending_futures.add(future)
+        self._with_pending_futures(lambda pending_futures: pending_futures.add(future))
         try:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
@@ -604,13 +596,9 @@ class BLEClient:
             # Propagate as timeout-style BLEError so callers handle uniformly
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         finally:
-            if hasattr(self, "_pending_futures"):
-                pending_futures_lock = getattr(self, "_pending_futures_lock", None)
-                if pending_futures_lock is not None:
-                    with pending_futures_lock:
-                        self._pending_futures.discard(future)
-                else:
-                    self._pending_futures.discard(future)
+            self._with_pending_futures(
+                lambda pending_futures: pending_futures.discard(future)
+            )
 
     def _async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """Internal helper: Schedule a coroutine to run on the shared BLE event loop.
@@ -633,6 +621,8 @@ class BLEClient:
             If the event loop is not running or scheduling fails.
         """
         if self._closed:
+            with contextlib.suppress(Exception):
+                coro.close()
             raise self.BLEError("Cannot schedule operation: BLE client is closed")
         try:
             return self._runner._run_coroutine_threadsafe(coro)
@@ -641,6 +631,20 @@ class BLEClient:
             with contextlib.suppress(Exception):
                 coro.close()
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
+
+    def _with_pending_futures(
+        self, operation: Callable[[weakref.WeakSet[Future[Any]]], None]
+    ) -> None:
+        """Run an operation against `_pending_futures` under its lock when available."""
+        pending_futures = getattr(self, "_pending_futures", None)
+        if pending_futures is None:
+            return
+        pending_futures_lock = getattr(self, "_pending_futures_lock", None)
+        if pending_futures_lock is not None:
+            with pending_futures_lock:
+                operation(pending_futures)
+            return
+        operation(pending_futures)
 
     def async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: float | None = None

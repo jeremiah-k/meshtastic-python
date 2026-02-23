@@ -1847,7 +1847,9 @@ class BLEInterface(MeshInterface):
             )  # Wake all waiting threads
             if self._receiveThread:
                 if self._receiveThread is threading.current_thread():
-                    logger.debug("close() called from receive thread; skipping self-join")
+                    logger.debug(
+                        "close() called from receive thread; skipping self-join"
+                    )
                 else:
                     self.thread_coordinator._join_thread(
                         self._receiveThread, timeout=RECEIVE_THREAD_JOIN_TIMEOUT

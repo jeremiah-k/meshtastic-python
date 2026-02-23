@@ -57,11 +57,11 @@ camel_case: bool
 # Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.
 # Python 3.14+ can defer module annotations; inspect.get_annotations() handles
 # eager and deferred annotation models consistently.
-_state_keys: frozenset = frozenset(MODULE_STATE_DEFAULTS)
+_state_keys: frozenset[str] = frozenset(MODULE_STATE_DEFAULTS)
 _module_annotations: dict[str, Any] = inspect.get_annotations(
     sys.modules[__name__], eval_str=False
 )
-_annotated_state: frozenset = frozenset(
+_annotated_state: frozenset[str] = frozenset(
     key
     for key in _module_annotations
     if not key.startswith("_") and key != "MODULE_STATE_DEFAULTS"

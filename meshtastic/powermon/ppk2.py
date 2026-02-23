@@ -43,7 +43,7 @@ class PPK2PowerSupply(PowerSupply):
             devs = ppk2_api.PPK2_API.list_devices()
             if not devs:
                 raise PowerError("No PPK2 devices found")
-            elif len(devs) > 1:
+            if len(devs) > 1:
                 raise PowerError(
                     "Multiple PPK2 devices found, please specify the portName"
                 )
@@ -183,7 +183,8 @@ class PPK2PowerSupply(PowerSupply):
         """Close the power meter and release resources."""
         self.measuring = False
         self.r.stop_measuring()  # send command to ppk2
-        self.measurement_thread.join()  # wait for our thread to finish
+        if self.measurement_thread.is_alive():
+            self.measurement_thread.join()  # wait for our thread to finish
         super().close()
 
     def setIsSupply(self, is_supply: bool) -> None:

@@ -399,6 +399,18 @@ class ReconnectWorker:
                 if shutdown_event.wait(timeout=sleep_delay):
                     logger.debug("Reconnect wait interrupted by shutdown signal.")
                     return
+        except ReconnectPolicyMissingMethodError as err:
+            policy_name = type(self.reconnect_policy).__name__
+            logger.exception(
+                "Reconnect policy missing required method '%s'; aborting reconnect loop (policy=%s, policy=%r)",
+                err.method_name,
+                policy_name,
+                self.reconnect_policy,
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected error during reconnect loop setup; aborting reconnect"
+            )
         finally:
             if on_exit is not None:
                 try:

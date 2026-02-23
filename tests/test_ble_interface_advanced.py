@@ -524,27 +524,33 @@ def test_rapid_connect_disconnect_stress_test(caplog):
             self._eventLoop = None
             self._eventThread = None
 
+        def _delegate_to_bleak(self, method_name: str, *args, **kwargs):
+            """Invoke a method on the backing mock bleak client."""
+            bleak_client = cast(Any, self.bleak_client)
+            method = getattr(bleak_client, method_name)
+            return method(*args, **kwargs)
+
         def connect(self, *_args, **_kwargs):
             """Delegate connection behavior to the shared bleak client stub."""
             bleak_client = cast(Any, self.bleak_client)
             bleak_client._should_fail_connect = self._should_fail_connect
-            return bleak_client.connect(*_args, **_kwargs)
+            return self._delegate_to_bleak("connect", *_args, **_kwargs)
 
         def is_connected(self):
             """Delegate connection-state queries to the shared bleak client stub."""
-            return cast(Any, self.bleak_client).is_connected()
+            return self._delegate_to_bleak("is_connected")
 
         def disconnect(self, *_args, **_kwargs):
             """Delegate disconnect behavior to the shared bleak client stub."""
-            cast(Any, self.bleak_client).disconnect(*_args, **_kwargs)
+            self._delegate_to_bleak("disconnect", *_args, **_kwargs)
 
         def start_notify(self, *_args, **_kwargs):
             """Delegate notify-start behavior to the shared bleak client stub."""
-            cast(Any, self.bleak_client).start_notify(*_args, **_kwargs)
+            self._delegate_to_bleak("start_notify", *_args, **_kwargs)
 
         def stopNotify(self, *_args, **_kwargs):
             """Delegate notify-stop behavior to the shared bleak client stub."""
-            cast(Any, self.bleak_client).stopNotify(*_args, **_kwargs)
+            self._delegate_to_bleak("stopNotify", *_args, **_kwargs)
 
         def close(self):
             """No-op close method used in tests to avoid interacting with the event loop.
