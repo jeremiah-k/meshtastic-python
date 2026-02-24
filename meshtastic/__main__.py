@@ -389,7 +389,10 @@ def splitCompoundName(comp_name: str) -> list[str]:
 
 
 def traverseConfig(
-    config_root: str, config: dict[str, Any], interface_config: Any
+    config_root: str,
+    config: dict[str, Any],
+    interface_config: Any,
+    failed_fields: list[str] | None = None,
 ) -> bool:
     """Recursively apply values from a nested mapping onto a target configuration by walking dot-separated paths.
 
@@ -401,6 +404,9 @@ def traverseConfig(
         Nested mapping where keys are field names and values are either sub-mappings or leaf values to set.
     interface_config : Any
         Target configuration object that will receive the applied leaf values.
+    failed_fields : list[str] | None
+        Optional mutable list to collect failing fully-qualified field paths
+        when a leaf assignment fails. (Default value = None)
 
     Returns
     -------
@@ -412,10 +418,21 @@ def traverseConfig(
     for pref in config:
         pref_name = f"{snake_name}.{pref}"
         if isinstance(config[pref], dict):
-            if not traverseConfig(pref_name, config[pref], interface_config):
+            if not traverseConfig(
+                pref_name,
+                config[pref],
+                interface_config,
+                failed_fields=failed_fields,
+            ):
                 return False
         else:
             if not setPref(interface_config, pref_name, config[pref]):
+                if failed_fields is not None:
+                    failed_fields.append(pref_name)
+                logger.error(
+                    "Failed to apply configuration field %s from --configure",
+                    pref_name,
+                )
                 return False
 
     return True
@@ -1092,12 +1109,31 @@ def onConnected(interface: MeshInterface) -> None:
                         args.dest, **getNode_kwargs
                     ).localConfig
                     for section in configuration["config"]:
+                        failed_config_fields: list[str] = []
                         applied = traverseConfig(
-                            section, configuration["config"][section], localConfig
+                            section,
+                            configuration["config"][section],
+                            localConfig,
+                            failed_fields=failed_config_fields,
                         )
                         if not applied:
+                            failed_field_msg = (
+                                f" Failing field: {failed_config_fields[0]!r}."
+                                if failed_config_fields
+                                else ""
+                            )
+                            logger.error(
+                                "Failed to apply --configure config section %s%s",
+                                section,
+                                (
+                                    f"; failing field={failed_config_fields[0]!r}"
+                                    if failed_config_fields
+                                    else ""
+                                ),
+                            )
                             _cli_exit(
-                                f"Failed to apply config section {section!r}; check field names and values."
+                                f"Failed to apply config section {section!r}.{failed_field_msg} "
+                                "Check field names and values."
                             )
                         interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                             meshtastic.util.camel_to_snake(section)
@@ -1109,14 +1145,31 @@ def onConnected(interface: MeshInterface) -> None:
                         args.dest, **getNode_kwargs
                     ).moduleConfig
                     for section in configuration["module_config"]:
+                        failed_module_fields: list[str] = []
                         applied = traverseConfig(
                             section,
                             configuration["module_config"][section],
                             moduleConfig,
+                            failed_fields=failed_module_fields,
                         )
                         if not applied:
+                            failed_field_msg = (
+                                f" Failing field: {failed_module_fields[0]!r}."
+                                if failed_module_fields
+                                else ""
+                            )
+                            logger.error(
+                                "Failed to apply --configure module_config section %s%s",
+                                section,
+                                (
+                                    f"; failing field={failed_module_fields[0]!r}"
+                                    if failed_module_fields
+                                    else ""
+                                ),
+                            )
                             _cli_exit(
-                                f"Failed to apply module_config section {section!r}; check field names and values."
+                                f"Failed to apply module_config section {section!r}.{failed_field_msg} "
+                                "Check field names and values."
                             )
                         interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                             meshtastic.util.camel_to_snake(section)
@@ -1777,9 +1830,10 @@ def create_power_meter() -> None:
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     """Parse a host string into a TCP hostname and port.
 
-    Supports bracketed IPv6 (`[addr]` or `[addr]:port`), bare IPv6 (`addr:...`),
-    and single-colon host:port forms. Port-range and malformed IPv6/bracket syntax
-    errors exit via `_cli_exit` with existing CLI messages.
+    Supports bracketed IPv6 (`[addr]` or `[addr]:port`), bare IPv6 addresses
+    without ports, and single-colon `host:port` forms. For IPv6 with explicit
+    port, bracket syntax (`[addr]:port`) is required. Port-range and malformed
+    IPv6/bracket syntax errors exit via `_cli_exit` with existing CLI messages.
 
     Parameters
     ----------
@@ -2016,9 +2070,13 @@ def common() -> None:
                             )
                         )
                     except MeshInterface.MeshInterfaceError as ex:
-                        _cli_exit(f"Error connecting to {args.host}: {ex}", 1)
+                        _cli_exit(
+                            f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1
+                        )
                     except OSError as ex:
-                        _cli_exit(f"Error connecting to {args.host}:{ex}", 1)
+                        _cli_exit(
+                            f"Error connecting to {tcp_hostname}:{tcp_port}: {ex}", 1
+                        )
                 else:
                     try:
                         client = stack.enter_context(
@@ -2076,7 +2134,7 @@ def common() -> None:
                         except MeshInterface.MeshInterfaceError as ex:
                             _cli_exit(f"[TCP localhost] {ex}", 1)
                         except OSError as ex:
-                            _cli_exit(f"Error connecting to localhost:{ex}", 1)
+                            _cli_exit(f"Error connecting to localhost: {ex}", 1)
 
                 if client is None:
                     _cli_exit(
