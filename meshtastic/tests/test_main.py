@@ -19,6 +19,7 @@ import yaml
 from meshtastic import mt_config
 from meshtastic.__main__ import (
     _normalize_pref_name,
+    _parse_host_port,
     _prefix_base64_key,
     _set_missing_flags_false,
     export_config,
@@ -196,6 +197,44 @@ def test_normalize_pref_name_display_alias() -> None:
     assert _normalize_pref_name("display.use12Hour") == "display.use_12h_clock"
     assert _normalize_pref_name("display.use12hClock") == "display.use_12h_clock"
     assert _normalize_pref_name("display.use12HClock") == "display.use_12h_clock"
+
+
+@pytest.mark.unit
+def test_parse_host_port_with_explicit_port() -> None:
+    """Test _parse_host_port parses host:port values."""
+    hostname, port = _parse_host_port("hostname.example:4403", default_port=4403)
+    assert hostname == "hostname.example"
+    assert port == 4403
+
+
+@pytest.mark.unit
+def test_parse_host_port_with_bracketed_ipv6_port() -> None:
+    """Test _parse_host_port parses bracketed IPv6 addresses with port."""
+    hostname, port = _parse_host_port("[2001:db8::1]:4403", default_port=4403)
+    assert hostname == "2001:db8::1"
+    assert port == 4403
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_host_argument_passes_parsed_port_to_tcp_interface() -> None:
+    """Test --host host:port passes parsed host and port to TCPInterface."""
+    sys.argv = ["", "--host", "hostname.example:4403", "--set-time", "1"]
+    mt_config.args = sys.argv
+    mocked_node = MagicMock()
+    iface = MagicMock(autospec=TCPInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.tcp_interface.TCPInterface", return_value=iface) as ctor:
+        main()
+
+    mocked_node.setTime.assert_called_once_with(1)
+    ctor.assert_called_once()
+    args, kwargs = ctor.call_args
+    assert args[0] == "hostname.example"
+    assert kwargs["portNumber"] == 4403
 
 
 @pytest.mark.unit
@@ -684,6 +723,51 @@ def test_main_set_owner_short_to_bob(capsys):
         assert re.search(r"Setting device owner short to bob", out, re.MULTILINE)
         assert err == ""
         mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_set_time_with_explicit_timestamp(capsys) -> None:
+    """Test --set-time TIMESTAMP forwards the provided epoch value."""
+    epoch = 1769686798
+    sys.argv = ["", "--set-time", str(epoch)]
+    mt_config.args = sys.argv
+
+    mocked_node = MagicMock()
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r"Connected to radio", out, re.MULTILINE)
+        assert err == ""
+
+    mocked_node.setTime.assert_called_once_with(epoch)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_set_time_without_timestamp_uses_zero(capsys) -> None:
+    """Test --set-time without argument forwards 0 to trigger node-side current-time behavior."""
+    sys.argv = ["", "--set-time"]
+    mt_config.args = sys.argv
+
+    mocked_node = MagicMock()
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r"Connected to radio", out, re.MULTILINE)
+        assert err == ""
+
+    mocked_node.setTime.assert_called_once_with(0)
 
 
 @pytest.mark.unit
@@ -1359,6 +1443,36 @@ def test_main_set_valid_wifi_psk(
             assert re.search(r"Set network.wifi_psk to 123456789", out, re.MULTILINE)
             assert err == ""
             mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
+@patch("builtins.open", new_callable=mock_open, read_data="data")
+@patch("serial.Serial")
+@patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
+def test_main_set_valid_lora_hop_limit(
+    _mocked_findports, _mocked_serial, _mocked_open, _mocked_hupcl, capsys
+):
+    """Test --set lora.hop_limit applies in a single configure write."""
+    sys.argv = ["", "--set", "lora.hop_limit", "4"]
+    mt_config.args = sys.argv
+
+    with SerialInterface(noProto=True, connectNow=False) as serialInterface:
+        anode = Node(serialInterface, 1234567890, noProto=True)
+        serialInterface.localNode = anode
+
+        with patch(
+            "meshtastic.serial_interface.SerialInterface", return_value=serialInterface
+        ):
+            main()
+            out, err = capsys.readouterr()
+            assert re.search(r"Connected to radio", out, re.MULTILINE)
+            assert re.search(r"Set lora.hop_limit to 4", out, re.MULTILINE)
+            assert re.search(r"Writing lora configuration to device", out, re.MULTILINE)
+            assert err == ""
+
+    assert anode.localConfig.lora.hop_limit == 4
 
 
 @pytest.mark.unit

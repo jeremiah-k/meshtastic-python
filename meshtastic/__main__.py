@@ -2141,7 +2141,7 @@ def addConnectionArgs(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
         "--host",
         "--tcp",
         "-t",
-        help="Connect to a device using TCP, optionally passing hostname or IP address to use. (defaults to '%(const)s')",
+        help="Connect to a device using TCP, optionally passing hostname/IP or host:port. (defaults to '%(const)s')",
         nargs="?",
         default=None,
         const="localhost",
