@@ -1,16 +1,15 @@
 """Singleton asyncio runner for BLE operations.
 
-This module provides a singleton BLECoroutineRunner that manages a single, long-lived
-background thread running an asyncio event loop for all BLE operations. This approach:
+This module provides a singleton `BLECoroutineRunner` that manages a single,
+long-lived background thread running an asyncio event loop for all BLE
+operations.
 
-1. Reduces resource usage by avoiding per-client thread/loop creation
-2. Prevents "zombie thread" accumulation
-3. Simplifies cleanup and shutdown
-4. Provides consistent event loop management across all BLE clients
-
-Architecture:
-    The singleton pattern ensures all BLEClient instances share the same event loop,
-    reducing overhead from N threads to 1 thread regardless of how many clients exist.
+Notes
+-----
+- Reduces resource usage by avoiding per-client thread and loop creation.
+- Prevents zombie-thread accumulation.
+- Simplifies cleanup and shutdown.
+- Provides consistent event-loop management across all BLE clients.
 """
 
 import asyncio
@@ -36,7 +35,7 @@ _zombie_lock = threading.Lock()
 _zombie_runner_count = 0
 
 
-def getZombieRunnerCount() -> int:
+def get_zombie_runner_count() -> int:
     """Return the number of recorded zombie runner threads that failed to stop cleanly.
 
     Returns
@@ -49,14 +48,14 @@ def getZombieRunnerCount() -> int:
 
 
 # Backward-compatible alias (deprecated)
-def get_zombie_runner_count() -> int:
-    """Deprecated alias for getZombieRunnerCount."""
+def getZombieRunnerCount() -> int:
+    """Deprecated alias for get_zombie_runner_count."""
     warnings.warn(
-        "get_zombie_runner_count is deprecated, use getZombieRunnerCount instead",
+        "getZombieRunnerCount is deprecated, use get_zombie_runner_count instead",
         DeprecationWarning,
         stacklevel=2,
     )
-    return getZombieRunnerCount()
+    return get_zombie_runner_count()
 
 
 class BLECoroutineRunner:
@@ -66,16 +65,16 @@ class BLECoroutineRunner:
     reducing resource usage and avoiding potential deadlocks between different
     event loops.
 
-    Thread Safety:
-        This class is fully thread-safe. The singleton pattern uses a lock to
-        ensure only one instance exists, and all public methods are safe to call
-        from any thread.
-
-    Lifecycle:
-        - The runner is created on first access (lazy initialization)
-        - The background thread starts on first coroutine submission
-        - The runner registers an atexit handler for graceful shutdown
-        - If the loop crashes, it will be automatically restarted on next use
+    Notes
+    -----
+    - This class is thread-safe. The singleton pattern uses a lock to ensure
+      only one instance exists, and all public methods are safe to call from
+      any thread.
+    - Lifecycle:
+      - The runner is created on first access (lazy initialization).
+      - The background thread starts on first coroutine submission.
+      - The runner registers an atexit handler for graceful shutdown.
+      - If the loop crashes, it is automatically restarted on next use.
 
     """
 

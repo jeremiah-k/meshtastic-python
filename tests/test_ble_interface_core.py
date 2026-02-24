@@ -43,7 +43,7 @@ from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
-        """_summary_.
+        """Protocol for pubsub test doubles.
 
         Methods
         -------
@@ -612,7 +612,7 @@ def test_transient_read_retry_uses_zero_based_delay(monkeypatch):
     delay_attempts: list[int] = []
 
     class StubTransientPolicy:
-        """_summary_."""
+        """Retry policy stub that records delay attempt indexes."""
 
         def _should_retry(self, attempt: int) -> bool:
             """Decide whether to perform another retry based on the zero-based attempt index.
@@ -872,7 +872,7 @@ def test_discovery_manager_destructor_does_not_close_client():
     """DiscoveryManager.__del__ should avoid active client close I/O during GC."""
 
     class StubDiscoveryClient:
-        """_summary_.
+        """Discovery client stub used for destructor behavior checks.
 
         Methods
         -------
@@ -1294,7 +1294,7 @@ def test_reconnect_scheduler_tracks_threads():
     shutdown_event = threading.Event()
 
     class StubCoordinator:
-        """_summary_."""
+        """Thread coordinator stub used by reconnect scheduler tests."""
 
         def __init__(self):
             """Initialize the instance and prepare storage for items created during tests.
@@ -1378,7 +1378,7 @@ def test_reconnect_worker_successful_attempt():
     """ReconnectWorker should reconnect and clear thread references on success; cleanup/resubscribe are handled by the interface layer, not the worker."""
 
     class StubPolicy:
-        """_summary_."""
+        """Reconnect policy stub for successful reconnect tests."""
 
         def __init__(self):
             """Initialize the stub retry policy used by reconnect tests.
@@ -1421,7 +1421,7 @@ def test_reconnect_worker_successful_attempt():
             return 0.1, False
 
     class DummyInterface:
-        """_summary_.
+        """Minimal interface stub used by reconnect worker tests.
 
         Methods
         -------
@@ -1532,7 +1532,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
         return False
 
     class LimitedPolicy:
-        """_summary_."""
+        """Reconnect policy stub with a bounded retry window."""
 
         def __init__(self):
             """Initialize a stub reconnect policy for tests, resetting counters and flags.
@@ -1573,7 +1573,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
             return 0.25, self.attempts < 2
 
     class FailingInterface:
-        """_summary_.
+        """Interface stub whose connect path always fails.
 
         Methods
         -------

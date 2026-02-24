@@ -113,24 +113,25 @@ class BLEInterface(MeshInterface):
     and automatic reconnection. It extends MeshInterface with BLE-specific
     functionality while maintaining API compatibility.
 
-    Key Features:
-        - Automatic connection management and recovery
-        - Thread-safe operations with centralized thread coordination
-        - Unified error handling and logging
-        - Configurable timeouts and retry behavior
-        - Support for both legacy and modern BLE characteristics
-        - Comprehensive state management
-
-    Architecture:
-        - BLEStateManager: Centralized connection state machine with shared locking
-        - ThreadCoordinator: Thread/event lifecycle and coordination utilities
-        - BLEErrorHandler: Standardized error handling patterns
-        - NotificationManager: Tracks active notifications for reconnect-safe resubscription
-        - DiscoveryManager: Scans for Meshtastic BLE devices with address normalization
-        - ConnectionValidator: Enforces connection preconditions
-        - ClientManager: Owns BLEClient lifecycle and cleanup operations
-        - ConnectionOrchestrator: Coordinates connection establishment
-        - ReconnectScheduler / ReconnectWorker: Policy-driven reconnect attempts
+    Notes
+    -----
+    - Key features:
+      - Automatic connection management and recovery.
+      - Thread-safe operations with centralized thread coordination.
+      - Unified error handling and logging.
+      - Configurable timeouts and retry behavior.
+      - Support for both legacy and modern BLE characteristics.
+      - Comprehensive state management.
+    - Internal architecture:
+      - `BLEStateManager`: Centralized connection state machine with shared locking.
+      - `ThreadCoordinator`: Thread/event lifecycle and coordination utilities.
+      - `BLEErrorHandler`: Standardized error handling patterns.
+      - `NotificationManager`: Tracks active notifications for reconnect-safe resubscription.
+      - `DiscoveryManager`: Scans for Meshtastic BLE devices with address normalization.
+      - `ConnectionValidator`: Enforces connection preconditions.
+      - `ClientManager`: Owns BLEClient lifecycle and cleanup operations.
+      - `ConnectionOrchestrator`: Coordinates connection establishment.
+      - `ReconnectScheduler` / `ReconnectWorker`: Policy-driven reconnect attempts.
 
     Note: This interface requires appropriate Bluetooth permissions and may
     need platform-specific setup for BLE operations.

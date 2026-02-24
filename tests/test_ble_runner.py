@@ -175,7 +175,7 @@ class TestBLECoroutineRunner:
         )
 
         class _LoopStub:
-            """_summary_."""
+            """Loop stub that always reports a running event loop."""
 
             @staticmethod
             def is_running():
@@ -231,7 +231,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
 
         class _LoopStub:
-            """_summary_."""
+            """Loop stub that always reports a running event loop."""
 
             @staticmethod
             def is_running():
@@ -288,7 +288,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
 
         class _LoopStub:
-            """_summary_."""
+            """Loop stub that always reports a running event loop."""
 
             @staticmethod
             def is_running():
@@ -409,7 +409,7 @@ class TestBLECoroutineRunner:
         """stop() timeout path should increment zombie runner count."""
 
         class FakeLoop:
-            """_summary_.
+            """Loop stub used to exercise runner stop timeout behavior.
 
             Methods
             -------
@@ -450,7 +450,7 @@ class TestBLECoroutineRunner:
                 fn()
 
         class FakeThread:
-            """_summary_.
+            """Thread stub that records join timeout calls.
 
             Methods
             -------
@@ -636,7 +636,7 @@ class TestBLEClientWithRunner:
         """close() should disconnect a connected underlying bleak client before closing."""
 
         class ConnectedBleakClient:
-            """_summary_.
+            """Connected Bleak client stub used for close() behavior tests.
 
             Methods
             -------
@@ -678,7 +678,7 @@ class TestBLEClientWithRunner:
         """
 
         class FailingBleakClient:
-            """_summary_."""
+            """Bleak client stub whose disconnect always raises."""
 
             isConnected = True
 

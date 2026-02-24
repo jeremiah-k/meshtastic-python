@@ -1,4 +1,4 @@
-"""_summary_."""
+"""Naming compatibility checks for the BLE public surface."""
 
 from meshtastic.interfaces.ble import BLEClient, BLEInterface
 

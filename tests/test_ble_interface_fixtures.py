@@ -157,7 +157,7 @@ def mock_bleak(monkeypatch):
     bleak_module.__version__ = "2.1.1"
 
     class _StubBleakClient:
-        """_summary_.
+        """Minimal BleakClient test double.
 
         Methods
         -------
@@ -256,7 +256,7 @@ def mock_bleak(monkeypatch):
         return []
 
     class _StubBLEDevice:
-        """_summary_."""
+        """Minimal BLEDevice test double."""
 
         def __init__(self, address=None, name=None):
             """Create a minimal BLE device representation with an optional address and name.
@@ -272,7 +272,7 @@ def mock_bleak(monkeypatch):
             self.name = name
 
     class _StubBleakScanner:
-        """_summary_."""
+        """Minimal BleakScanner test double."""
 
         def __init__(self):
             """Initialize a BleakScanner stub that reports no BLE devices."""
@@ -327,12 +327,12 @@ def mock_bleak_exc(
     bleak_exc_module: Any = types.ModuleType("bleak.exc")
 
     class _StubBleakError(Exception):
-        """_summary_."""
+        """Stub BleakError type for tests."""
 
         pass
 
     class _StubBleakDBusError(_StubBleakError):
-        """_summary_."""
+        """Stub BleakDBusError type for tests."""
 
         pass
 
