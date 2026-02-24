@@ -126,7 +126,7 @@ def test_sync_power_stress_timed_mode_with_ack(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.unit
 def test_power_stress_run_aborts_when_print_info_ack_missing() -> None:
-    """PowerStress.run should stop early when initial PRINT_INFO command is not acknowledged."""
+    """PowerStress.run should continue on PRINT_INFO failure but abort on first state failure."""
     iface = MagicMock()
     ps = PowerStress(iface)
     ps.client = MagicMock()
@@ -134,10 +134,12 @@ def test_power_stress_run_aborts_when_print_info_ack_missing() -> None:
 
     ps.run()
 
-    ps.client.syncPowerStress.assert_called_once_with(
-        powermon_pb2.PowerStressMessage.PRINT_INFO
-    )
-
+    # PRINT_INFO failure now logs warning and continues, then aborts on LED_ON
+    assert ps.client.syncPowerStress.call_count == 2
+    first_cmd = ps.client.syncPowerStress.call_args_list[0].args[0]
+    second_cmd = ps.client.syncPowerStress.call_args_list[1].args[0]
+    assert first_cmd == powermon_pb2.PowerStressMessage.PRINT_INFO
+    assert second_cmd == powermon_pb2.PowerStressMessage.LED_ON
 
 @pytest.mark.unit
 def test_power_stress_run_stops_on_first_failed_state() -> None:

@@ -217,7 +217,7 @@ def mock_serial_interface() -> MagicMock:
 @pytest.fixture
 def power_supply() -> "PowerSupply":
     """Provide a fresh PowerSupply instance for voltage-validation tests."""
-    from meshtastic.powermon.power_supply import PowerSupply
+    from meshtastic.powermon.power_supply import PowerSupply  # pylint: disable=C0415
 
     return PowerSupply()
 
