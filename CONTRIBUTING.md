@@ -80,9 +80,9 @@ This runs the same checks as CI (pylint, mypy, pytest with coverage).
 Alternatively, run each check individually:
 
 ```bash
+poetry run pytest --cov=meshtastic --cov-report=xml
 poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
 poetry run mypy meshtastic/
-poetry run pytest --cov=meshtastic --cov-report=xml
 ```
 
 ### Using GitHub CI actions locally

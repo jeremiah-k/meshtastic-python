@@ -4,7 +4,7 @@ import argparse
 import shutil
 from collections.abc import Generator
 from typing import Any, Callable, ClassVar
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
@@ -231,3 +231,31 @@ def meshtastic_bin() -> str:
     if exe is None:
         pytest.skip("meshtastic CLI not found in PATH")
     return exe
+
+
+@pytest.fixture(scope="session")
+def mesh_tunnel_bin() -> str:
+    """Resolve the mesh-tunnel CLI binary path or skip tests if not found.
+
+    Returns
+    -------
+    str
+        The absolute path to the mesh-tunnel CLI binary.
+
+    Raises
+    ------
+    pytest.skip
+        If the mesh-tunnel CLI is not found in PATH.
+    """
+    exe = shutil.which("mesh-tunnel")
+    if exe is None:
+        pytest.skip("mesh-tunnel CLI not found in PATH")
+    return exe
+
+
+@pytest.fixture(name="platform_socket_mocks")
+def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, None]:
+    """Patch platform.system and socket.socket for tunnel tests."""
+    with patch("platform.system", return_value="Linux") as platform_mock:
+        with patch("socket.socket") as socket_mock:
+            yield platform_mock, socket_mock

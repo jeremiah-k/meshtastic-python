@@ -41,7 +41,7 @@ class WriterNoneError(ArrowWriterStateError):
 class ArrowWriter:
     """Writes an arrow file in a streaming fashion."""
 
-    def __init__(self, file_name: str):
+    def __init__(self, file_name: str) -> None:
         """Initialize an ArrowWriter that streams Arrow-formatted data to the given file.
 
         Opens a writable file sink, initializes the in-memory row buffer and
@@ -143,7 +143,7 @@ class FeatherWriter(ArrowWriter):
     feather file.
     """
 
-    def __init__(self, file_name: str):
+    def __init__(self, file_name: str) -> None:
         """Initialize a FeatherWriter that will write compressed Feather files.
 
         Creates an ArrowWriter for a temporary .arrow file that will later be

@@ -4,7 +4,7 @@ import logging
 import math
 from datetime import datetime
 
-from riden import (  # pyright: ignore[reportPrivateImportUsage] -- riden has no py.typed stubs
+from riden import (  # pyright: ignore[reportMissingTypeStubs] -- riden has no py.typed stubs
     Riden,
 )
 

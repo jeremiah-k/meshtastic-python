@@ -7,7 +7,7 @@ import io
 import logging
 import sys
 import time
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from typing import Any, NoReturn
 
 from pubsub import pub  # type: ignore[import-untyped]
@@ -348,33 +348,30 @@ def testAll(numTests: int = 5) -> bool:
         logger.error("Must have at least two devices connected to USB.")
         return False
 
-    pub.subscribe(onConnection, "meshtastic.connection")
-    pub.subscribe(onReceive, "meshtastic.receive")
+    def _safe_unsubscribe(listener: Any, topic: str) -> None:
+        """Best-effort unsubscribe helper used during teardown."""
+        with suppress(Exception):
+            pub.unsubscribe(listener, topic)
+
     # pylint: disable=W0603
     global interfaces
     interfaces = []
-    debug_logs: list[io.TextIOWrapper] = []
 
-    try:
-        # Build interfaces incrementally to ensure cleanup on failure
+    with ExitStack() as stack:
+        pub.subscribe(onConnection, "meshtastic.connection")
+        pub.subscribe(onReceive, "meshtastic.receive")
+        stack.callback(_safe_unsubscribe, onReceive, "meshtastic.receive")
+        stack.callback(_safe_unsubscribe, onConnection, "meshtastic.connection")
+
+        # Build interfaces incrementally to ensure cleanup on failure.
         for port in ports:
-            debug_log = openDebugLog(port)
-            debug_logs.append(debug_log)
-            interfaces.append(
-                SerialInterface(port, debugOut=debug_log, connectNow=True)
-            )
+            debug_log = stack.enter_context(openDebugLog(port))
+            iface = SerialInterface(port, debugOut=debug_log, connectNow=True)
+            stack.callback(iface.close)
+            interfaces.append(iface)
 
         logger.info("Ports opened, starting test")
         result: bool = testThread(numTests)
-    finally:
-        with suppress(Exception):
-            pub.unsubscribe(onReceive, "meshtastic.receive")
-        with suppress(Exception):
-            pub.unsubscribe(onConnection, "meshtastic.connection")
-        for i in interfaces:
-            i.close()
-        for debug_log in debug_logs:
-            debug_log.close()
 
     return result
 

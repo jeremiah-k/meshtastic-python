@@ -5,7 +5,6 @@ import logging
 import re
 import sys
 from collections.abc import Generator
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -39,14 +38,6 @@ def reset_tunnel_mt_config_state() -> Generator[None, None, None]:
     yield
     _close_active_tunnel()
     mt_config.reset()
-
-
-@pytest.fixture(name="platform_socket_mocks")
-def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, None]:
-    """Patch platform.system and socket.socket for tunnel tests."""
-    with patch("platform.system", return_value="Linux") as platform_mock:
-        with patch("socket.socket") as socket_mock:
-            yield platform_mock, socket_mock
 
 
 @pytest.mark.unit

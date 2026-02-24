@@ -68,6 +68,8 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
     decoded = packet.get("decoded", {})
+    if not isinstance(decoded, dict):
+        return
     hw = decoded.get("remotehw", {})
     if not isinstance(hw, dict):
         return

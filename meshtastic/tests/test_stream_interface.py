@@ -11,7 +11,7 @@ from ..stream_interface import MAX_TO_FROM_RADIO_SIZE, START1, START2, StreamInt
 
 
 @pytest.mark.unit
-def test_StreamInterface() -> None:
+def test_stream_interface() -> None:
     """Verify that creating a StreamInterface without protocol configuration raises an error.
 
     Raises
@@ -28,7 +28,7 @@ def test_StreamInterface() -> None:
 # Note: This takes a bit, so moving from unit to slow
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
-def test_StreamInterface_with_noProto(caplog: pytest.LogCaptureFixture) -> None:
+def test_stream_interface_with_no_proto(caplog: pytest.LogCaptureFixture) -> None:
     """Verify noProto StreamInterface can read and write through an assigned stream."""
     stream = MagicMock()
     test_data = b"hello"
@@ -46,7 +46,7 @@ def test_StreamInterface_with_noProto(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendToRadioImpl_frames_payload() -> None:
+def test_send_to_radio_impl_frames_payload() -> None:
     """Test that _send_to_radio_impl writes a properly framed payload."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
@@ -67,7 +67,7 @@ def test_sendToRadioImpl_frames_payload() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendToRadioImpl_rejects_oversized_payload() -> None:
+def test_send_to_radio_impl_rejects_oversized_payload() -> None:
     """_send_to_radio_impl should raise PayloadTooLargeError for payloads > 512 bytes."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:

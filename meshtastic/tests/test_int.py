@@ -7,19 +7,21 @@ import pytest
 
 
 @pytest.mark.int
-def test_int_meshtastic_no_args():
+def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
     """Test meshtastic without any args."""
-    result = subprocess.run(["meshtastic"], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        [meshtastic_bin], capture_output=True, text=True, check=False
+    )
     output = result.stdout + result.stderr
     assert re.match(r"usage: meshtastic", output)
     assert result.returncode == 1
 
 
 @pytest.mark.int
-def test_int_mesh_tunnel_no_args():
+def test_int_mesh_tunnel_no_args(mesh_tunnel_bin: str) -> None:
     """Test mesh-tunnel without any args."""
     result = subprocess.run(
-        ["mesh-tunnel"], capture_output=True, text=True, check=False
+        [mesh_tunnel_bin], capture_output=True, text=True, check=False
     )
     output = result.stdout + result.stderr
     assert re.match(r"usage: mesh-tunnel", output)
@@ -27,10 +29,10 @@ def test_int_mesh_tunnel_no_args():
 
 
 @pytest.mark.int
-def test_int_version():
+def test_int_version(meshtastic_bin: str) -> None:
     """Test '--version'."""
     result = subprocess.run(
-        ["meshtastic", "--version"], capture_output=True, text=True, check=False
+        [meshtastic_bin, "--version"], capture_output=True, text=True, check=False
     )
     output = result.stdout + result.stderr
     assert re.match(r"[0-9]+\.[0-9]+\.[0-9]", output)
@@ -38,10 +40,10 @@ def test_int_version():
 
 
 @pytest.mark.int
-def test_int_help():
+def test_int_help(meshtastic_bin: str) -> None:
     """Test '--help'."""
     result = subprocess.run(
-        ["meshtastic", "--help"], capture_output=True, text=True, check=False
+        [meshtastic_bin, "--help"], capture_output=True, text=True, check=False
     )
     output = result.stdout + result.stderr
     assert re.match(r"usage: meshtastic ", output)
@@ -49,10 +51,10 @@ def test_int_help():
 
 
 @pytest.mark.int
-def test_int_support():
+def test_int_support(meshtastic_bin: str) -> None:
     """Test '--support'."""
     result = subprocess.run(
-        ["meshtastic", "--support"], capture_output=True, text=True, check=False
+        [meshtastic_bin, "--support"], capture_output=True, text=True, check=False
     )
     output = result.stdout + result.stderr
     assert re.search(r"System", output)
