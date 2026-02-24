@@ -98,26 +98,27 @@ POWER_LOG_SCHEMA_METADATA: dict[bytes | str, bytes | str] = {
         b"When nominal voltage is available, *_mW stores converted power in mW."
     ),
 }
+POWER_LOGGER_JOIN_TIMEOUT = 1.0
 
 
 class PowerLogger:
     """Logs current watts reading periodically using PowerMeter and ArrowWriter."""
 
     def __init__(
-        self, pMeter: PowerMeter, file_path: str, interval: float = 0.002
+        self, p_meter: PowerMeter, file_path: str, interval: float = 0.002
     ) -> None:
         """Create a PowerLogger that records periodic power readings from a PowerMeter into a Feather file and starts its background logging thread.
 
         Parameters
         ----------
-        pMeter : PowerMeter
+        p_meter : PowerMeter
             Source of power measurements; its snapshot and reset methods will be used.
         file_path : str
             Path to the output Feather file where readings will be written.
         interval : float
             Time in seconds between automatic samples (default 0.002).
         """
-        self.pMeter = pMeter
+        self.p_meter = p_meter
         self.writer = FeatherWriter(file_path)
         power_schema_fields: list[pa.Field] = [
             pa.field("time", pa.timestamp("us")),
@@ -147,10 +148,24 @@ class PowerLogger:
         )
         self.thread.start()
 
+    @property
+    def pMeter(self) -> PowerMeter:
+        """Backward-compatible camelCase alias for `p_meter`."""
+        return self.p_meter
+
+    @pMeter.setter
+    def pMeter(self, value: PowerMeter) -> None:
+        """Backward-compatible camelCase alias for `p_meter` assignment."""
+        self.p_meter = value
+
     def _nominal_voltage_v(self) -> float | None:
         """Return nominal supply voltage in volts when available on the power meter."""
-        raw_v = getattr(self.pMeter, "v", None)
-        if isinstance(raw_v, (int, float)) and raw_v > 0:
+        raw_v = getattr(self.p_meter, "v", None)
+        if (
+            isinstance(raw_v, (int, float))
+            and not isinstance(raw_v, bool)
+            and raw_v > 0
+        ):
             return float(raw_v)
         return None
 
@@ -160,7 +175,7 @@ class PowerLogger:
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
         The recorded row contains `time`, `average_mA`, `max_mA`, and `min_mA`.
         Legacy `*_mW` aliases are retained for compatibility. When a nominal
-        voltage is available on the meter (`pMeter.v`), those aliases are
+        voltage is available on the meter (`p_meter.v`), those aliases are
         converted to milliwatts via ``mW = mA * V``. If no voltage is available,
         aliases fall back to the legacy behavior (same numeric value as mA)
         and a one-time warning is emitted. After sampling, the PowerMeter's
@@ -174,9 +189,9 @@ class PowerLogger:
         with self._reading_lock:
             if now is None:
                 now = datetime.now()
-            average_mA = self.pMeter.get_average_current_mA()
-            max_mA = self.pMeter.get_max_current_mA()
-            min_mA = self.pMeter.get_min_current_mA()
+            average_mA = self.p_meter.get_average_current_mA()
+            max_mA = self.p_meter.get_max_current_mA()
+            min_mA = self.p_meter.get_min_current_mA()
             nominal_voltage = self._nominal_voltage_v()
             if nominal_voltage is None:
                 average_mW = average_mA
@@ -202,7 +217,7 @@ class PowerLogger:
                 "max_mW": max_mW,
                 "min_mW": min_mW,
             }
-            self.pMeter.reset_measurements()
+            self.p_meter.reset_measurements()
             self.writer.add_row(d)
 
     def _logging_thread(self) -> None:
@@ -215,9 +230,14 @@ class PowerLogger:
         """Close the PowerLogger and stop logging."""
         if self.is_logging:
             self.is_logging = False
-            self.thread.join()
+            self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
+            if self.thread.is_alive():
+                logger.warning(
+                    "PowerLogger background thread did not stop within %.1fs; continuing teardown.",
+                    POWER_LOGGER_JOIN_TIMEOUT,
+                )
             try:
-                self.pMeter.close()
+                self.p_meter.close()
             finally:
                 self.writer.close()
 
@@ -278,8 +298,9 @@ class StructuredLogger:
 
         # We need a closure here because the subscription API is very strict about exact arg matching
         def listen_glue(
-            line, interface  # pylint: disable=unused-argument  # noqa: ARG001
-        ):
+            line: str,
+            interface: MeshInterface,  # pylint: disable=unused-argument  # noqa: ARG001
+        ) -> None:
             """Glue function to connect pubsub events to the StructuredLogger.
 
             Parameters
@@ -289,7 +310,7 @@ class StructuredLogger:
             interface : MeshInterface
                 The interface that generated the log line (unused).
             """
-            self._onLogMessage(line)
+            self._on_log_message(line)
 
         self._listen_glue = (
             listen_glue  # we must save this so it doesn't get garbage collected
@@ -335,7 +356,7 @@ class StructuredLogger:
                     except Exception as exc:  # noqa: BLE001 - best-effort cleanup
                         logger.warning("Failed to close raw log file: %s", exc)
 
-    def _onLogMessage(self, line: str) -> None:
+    def _on_log_message(self, line: str) -> None:
         """Process a single raw log line, extract any structured slog fields, and persist the resulting record.
 
         Parses the input line for a structured slog. If parsing yields fields, adds a "time"
@@ -437,7 +458,7 @@ class LogSet:
             If structured logger initialization fails.
         """
 
-        if not dir_name:
+        if dir_name is None:
             app_dir = root_dir()
             app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S"))
             app_time_dir.mkdir(exist_ok=True)
@@ -452,19 +473,25 @@ class LogSet:
                 latest_dir.symlink_to(dir_name, target_is_directory=True)
             except OSError as ex:
                 logger.debug("Unable to update latest slog symlink: %s", ex)
+        elif dir_name == "":
+            raise ValueError(
+                "dir_name must be a non-empty path when provided"
+            )  # noqa: TRY003
 
         self.dir_name = dir_name
 
-        logger.info(f"Writing slogs to {dir_name}")
+        logger.info("Writing slogs to %s", dir_name)
 
-        self.power_logger: PowerLogger | None = (
-            None
-            if not power_meter
-            else PowerLogger(power_meter, os.path.join(self.dir_name, "power"))
-        )
+        self.power_logger: PowerLogger | None = None
+        self.slog_logger: StructuredLogger | None = None
+
+        if power_meter is not None:
+            self.power_logger = PowerLogger(
+                power_meter, os.path.join(self.dir_name, "power")
+            )
 
         try:
-            self.slog_logger: StructuredLogger | None = StructuredLogger(
+            self.slog_logger = StructuredLogger(
                 client, self.dir_name, power_logger=self.power_logger
             )
         except Exception:
@@ -493,7 +520,7 @@ class LogSet:
         """
 
         if self.slog_logger:
-            logger.info(f"Closing slogs in {self.dir_name}")
+            logger.info("Closing slogs in %s", self.dir_name)
             atexit.unregister(
                 self.atexit_handler
             )  # docs say it will silently ignore if not found

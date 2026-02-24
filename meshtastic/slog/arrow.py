@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 import threading
+from typing import Literal
 
 import pyarrow as pa
 from pyarrow import feather
@@ -69,6 +70,21 @@ class ArrowWriter:
         self._lock = threading.RLock()
         self._closed = False
 
+    def __enter__(self) -> "ArrowWriter":
+        """Return self for context-manager usage."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> Literal[False]:
+        """Close the writer on context-manager exit and propagate exceptions."""
+        _ = exc_type, exc_value, traceback
+        self.close()
+        return False
+
     def close(self) -> None:
         """Close the writer, flush any buffered rows, and close the underlying sink.
 
@@ -107,6 +123,10 @@ class ArrowWriter:
             self.schema = schema
             self.writer = writer
 
+    def setSchema(self, schema: pa.Schema) -> None:
+        """Backward-compatible camelCase wrapper for set_schema()."""
+        self.set_schema(schema)
+
     def _write(self) -> None:
         """Write buffered rows to the file.
 
@@ -143,6 +163,10 @@ class ArrowWriter:
             self.new_rows.append(row_dict)
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
+
+    def addRow(self, row_dict: dict) -> None:
+        """Backward-compatible camelCase wrapper for add_row()."""
+        self.add_row(row_dict)
 
 
 class FeatherWriter(ArrowWriter):

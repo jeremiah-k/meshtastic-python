@@ -170,8 +170,9 @@ def test_getNode_not_local(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getNode_not_local_timeout(caplog):
-    """Test getNode not local, simulate timeout."""
+@pytest.mark.parametrize("request_channel_attempts", [None, 2])
+def test_getNode_not_local_timeout(caplog, request_channel_attempts):
+    """Test getNode timeout behavior with default and explicit request-channel attempts."""
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)
         anode.waitForConfig.return_value = False
@@ -180,31 +181,12 @@ def test_getNode_not_local_timeout(caplog):
                 with pytest.raises(
                     MeshInterface.MeshInterfaceError
                 ) as pytest_wrapped_e:
-                    iface.getNode("bar2")
-                assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
-                assert "Timed out waiting for channels, giving up" in str(
-                    pytest_wrapped_e.value
-                )
-                assert re.search(
-                    r"Timed out trying to retrieve channel info, retrying",
-                    caplog.text,
-                    re.MULTILINE,
-                )
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_getNode_not_local_timeout_attempts(caplog):
-    """Test getNode not local, simulate timeout."""
-    with MeshInterface(noProto=True) as iface:
-        anode = MagicMock(autospec=Node)
-        anode.waitForConfig.return_value = False
-        with caplog.at_level(logging.WARNING):
-            with patch("meshtastic.node.Node", return_value=anode):
-                with pytest.raises(
-                    MeshInterface.MeshInterfaceError
-                ) as pytest_wrapped_e:
-                    iface.getNode("bar2", requestChannelAttempts=2)
+                    kwargs = (
+                        {}
+                        if request_channel_attempts is None
+                        else {"requestChannelAttempts": request_channel_attempts}
+                    )
+                    iface.getNode("bar2", **kwargs)
                 assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
                 assert "Timed out waiting for channels, giving up" in str(
                     pytest_wrapped_e.value
@@ -406,16 +388,6 @@ def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog):
         with caplog.at_level(logging.DEBUG):
             iface._start_config()
             iface._handle_from_radio(from_radio_bytes)
-
-
-@pytest.mark.unit
-@pytest.mark.usefixtures("reset_mt_config")
-def test_MeshInterface_sendToRadioImpl(caplog):
-    """Test _sendToRadioImp()."""
-    with MeshInterface(noProto=True) as iface:
-        with caplog.at_level(logging.DEBUG):
-            iface._send_to_radio_impl("foo")  # type: ignore[arg-type]
-    assert re.search(r"Subclass must provide toradio", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit

@@ -6,12 +6,24 @@ import subprocess
 import pytest
 
 
+def _run_cli_with_timeout(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run a CLI command with a bounded timeout and fail clearly on timeout."""
+    try:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as e:
+        pytest.fail(f"meshtastic command timed out: {e}")
+
+
 @pytest.mark.int
 def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
     """Test meshtastic without any args."""
-    result = subprocess.run(
-        [meshtastic_bin], capture_output=True, text=True, check=False, timeout=30
-    )
+    result = _run_cli_with_timeout([meshtastic_bin])
     output = result.stdout + result.stderr
     assert re.match(r"usage: meshtastic", output)
     assert result.returncode == 1
@@ -20,9 +32,7 @@ def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
 @pytest.mark.int
 def test_int_mesh_tunnel_no_args(mesh_tunnel_bin: str) -> None:
     """Test mesh-tunnel without any args."""
-    result = subprocess.run(
-        [mesh_tunnel_bin], capture_output=True, text=True, check=False, timeout=30
-    )
+    result = _run_cli_with_timeout([mesh_tunnel_bin])
     output = result.stdout + result.stderr
     assert re.match(r"usage: mesh-tunnel", output)
     assert result.returncode == 1
@@ -31,13 +41,7 @@ def test_int_mesh_tunnel_no_args(mesh_tunnel_bin: str) -> None:
 @pytest.mark.int
 def test_int_version(meshtastic_bin: str) -> None:
     """Test '--version'."""
-    result = subprocess.run(
-        [meshtastic_bin, "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+    result = _run_cli_with_timeout([meshtastic_bin, "--version"])
     output = result.stdout + result.stderr
     assert re.match(r"[0-9]+\.[0-9]+\.[0-9]", output)
     assert result.returncode == 0
@@ -46,13 +50,7 @@ def test_int_version(meshtastic_bin: str) -> None:
 @pytest.mark.int
 def test_int_help(meshtastic_bin: str) -> None:
     """Test '--help'."""
-    result = subprocess.run(
-        [meshtastic_bin, "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+    result = _run_cli_with_timeout([meshtastic_bin, "--help"])
     output = result.stdout + result.stderr
     assert re.match(r"usage: meshtastic ", output)
     assert result.returncode == 0
@@ -61,13 +59,7 @@ def test_int_help(meshtastic_bin: str) -> None:
 @pytest.mark.int
 def test_int_support(meshtastic_bin: str) -> None:
     """Test '--support'."""
-    result = subprocess.run(
-        [meshtastic_bin, "--support"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+    result = _run_cli_with_timeout([meshtastic_bin, "--support"])
     output = result.stdout + result.stderr
     assert re.search(r"System", output)
     assert re.search(r"Python", output)

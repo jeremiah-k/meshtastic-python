@@ -8,7 +8,7 @@ import logging
 import sys
 import time
 from contextlib import ExitStack, suppress
-from typing import Any, NoReturn
+from typing import Any, Callable, NoReturn
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -100,7 +100,7 @@ class _FallbackDotMap(dict):
             raise AttributeError(key) from None
 
 
-DotMap: type[Any]
+DotMap: Callable[..., Any]
 try:
     from dotmap import DotMap as _ImportedDotMap  # type: ignore[import-untyped]
 except ImportError:
@@ -137,13 +137,15 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
     """
     if sendingInterface is not interface:
         # print(f"From {interface.stream.port}: {packet}")
-        p = DotMap(packet)
-
-        portnum = getattr(p.decoded, "portnum", None)
+        decoded = packet.get("decoded", {})
+        if isinstance(decoded, dict):
+            portnum = decoded.get("portnum")
+        else:
+            portnum = getattr(decoded, "portnum", None)
         if portnum == "TEXT_MESSAGE_APP":
             # We only care a about clear text packets
             if receivedPackets is not None:
-                receivedPackets.append(p)
+                receivedPackets.append(DotMap(packet))
 
 
 def onNode(node: Any) -> None:
@@ -329,6 +331,8 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
     -------
     io.TextIOWrapper
         An open text file for writing the debug log.
+        Caller must close the returned handle (for example via
+        ``ExitStack.enter_context`` as done in ``testAll``).
     """
     debugname = "log" + portName.replace("/", "_")
     logger.info("Writing serial debugging to %s", debugname)

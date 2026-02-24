@@ -1,7 +1,5 @@
 """Unit tests for PowerSupply voltage validation."""
 
-from __future__ import annotations
-
 import math
 
 import pytest
@@ -17,6 +15,26 @@ def test_set_voltage_accepts_finite_non_negative_real() -> None:
     supply.setVoltage(3.3)
 
     assert supply.v == pytest.approx(3.3)
+
+
+@pytest.mark.unit
+def test_voltage_property_setter_delegates_to_set_voltage() -> None:
+    """Assigning `v` should route through setVoltage validation."""
+    supply = PowerSupply()
+
+    supply.v = 5.0
+
+    assert supply.v == pytest.approx(5.0)
+
+
+@pytest.mark.unit
+def test_set_voltage_accepts_zero() -> None:
+    """Zero volts is a valid non-negative boundary value."""
+    supply = PowerSupply()
+
+    supply.setVoltage(0.0)
+
+    assert supply.v == pytest.approx(0.0)
 
 
 @pytest.mark.unit

@@ -81,15 +81,23 @@ def test_init_getattr_raises_for_unknown_attribute():
 @pytest.mark.unit
 def test_init_getattr_caches_serial_on_first_access():
     """Verify __getattr__ caches serial module on first access."""
-    # Clear the cached attribute if it exists
-    if hasattr(meshtastic, "serial"):
+    sentinel = object()
+    original = getattr(meshtastic, "serial", sentinel)
+
+    if original is not sentinel:
         delattr(meshtastic, "serial")
+    try:
+        # First access should trigger lazy load
+        serial = meshtastic.serial
+        assert serial is serial_interface
 
-    # First access should trigger lazy load
-    serial = meshtastic.serial
-    assert serial is serial_interface
-
-    # Second access should use cached value
-    serial2 = meshtastic.serial
-    assert serial2 is serial
-    assert serial2 is serial_interface
+        # Second access should use cached value
+        serial2 = meshtastic.serial
+        assert serial2 is serial
+        assert serial2 is serial_interface
+    finally:
+        if original is sentinel:
+            if hasattr(meshtastic, "serial"):
+                delattr(meshtastic, "serial")
+        else:
+            setattr(meshtastic, "serial", original)

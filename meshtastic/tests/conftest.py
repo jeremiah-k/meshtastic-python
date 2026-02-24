@@ -13,6 +13,8 @@ from meshtastic import mt_config
 from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
 
+_MT_CONFIG_SENTINEL = object()
+
 
 def _create_context_manager_mock(spec_class: type[Any]) -> MagicMock:
     """Create a MagicMock that behaves as a context manager for the given spec class.
@@ -115,6 +117,22 @@ def reset_mt_config(monkeypatch: pytest.MonkeyPatch) -> None:
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.reset()
     monkeypatch.setattr(mt_config, "parser", parser)
+
+
+@pytest.fixture
+def mt_config_state() -> Generator[None, None, None]:
+    """Snapshot and restore mt_config module state mutated by tests."""
+    state_keys = tuple(mt_config.MODULE_STATE_DEFAULTS.keys())
+    snapshot = {key: getattr(mt_config, key, _MT_CONFIG_SENTINEL) for key in state_keys}
+    try:
+        yield
+    finally:
+        for key, value in snapshot.items():
+            if value is _MT_CONFIG_SENTINEL:
+                if hasattr(mt_config, key):
+                    delattr(mt_config, key)
+            else:
+                setattr(mt_config, key, value)
 
 
 @pytest.fixture

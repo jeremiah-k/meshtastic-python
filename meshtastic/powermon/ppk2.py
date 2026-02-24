@@ -3,6 +3,7 @@
 import logging
 import threading
 import time
+from contextlib import suppress
 
 from ppk2_api import ppk2_api  # type: ignore[import-untyped]
 
@@ -55,8 +56,8 @@ class PPK2PowerSupply(PowerSupply):
         self.current_sum = 0
         self.current_num_samples = 0
         self.current_average: float = 0.0
-        self.last_reported_min = 0
-        self.last_reported_max = 0
+        self.last_reported_min: float = 0.0
+        self.last_reported_max: float = 0.0
 
         # for tracking avera data read length (to determine if we are sleeping efficiently in measurement_loop)
         self.total_data_len = 0
@@ -212,7 +213,19 @@ class PPK2PowerSupply(PowerSupply):
         self.measuring = False
         self.r.stop_measuring()  # send command to ppk2
         if self.measurement_thread.is_alive():
-            self.measurement_thread.join()  # wait for our thread to finish
+            self.measurement_thread.join(timeout=5.0)
+            if self.measurement_thread.is_alive():
+                logging.warning(
+                    "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
+                )
+                close_method = getattr(self.r, "close", None)
+                if callable(close_method):
+                    with suppress(Exception):
+                        close_method()
+                serial_handle = getattr(self.r, "ser", None)
+                if serial_handle is not None:
+                    with suppress(Exception):
+                        serial_handle.close()
         super().close()
 
     def setIsSupply(self, is_supply: bool) -> None:

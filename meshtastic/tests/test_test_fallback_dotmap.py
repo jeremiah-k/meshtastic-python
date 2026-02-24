@@ -30,3 +30,35 @@ def test_fallback_dotmap_wraps_existing_dict_and_persists_wrapper() -> None:
     assert dmap["config"] is wrapped
     assert dmap["config"]["threshold"] == 5
     assert dmap["config"]["enabled"] is True
+
+
+@pytest.mark.unit
+def test_fallback_dotmap_autovivifies_three_levels() -> None:
+    """Deep nested autovivification should persist intermediate maps."""
+    dmap = _FallbackDotMap()
+
+    dmap.a.b.c = 42
+
+    assert isinstance(dmap["a"]["b"], _FallbackDotMap)
+    assert dmap["a"]["b"]["c"] == 42
+
+
+@pytest.mark.unit
+def test_fallback_dotmap_dunder_guard_raises_attribute_error() -> None:
+    """Dunder attribute access should be blocked to match safety expectations."""
+    dmap = _FallbackDotMap()
+
+    with pytest.raises(AttributeError, match="__foo__"):
+        _ = dmap.__foo__
+
+
+@pytest.mark.unit
+def test_fallback_dotmap_delattr_and_missing_access() -> None:
+    """Deleting a present key should remove it and missing delete should raise."""
+    dmap = _FallbackDotMap()
+    dmap.x = 1
+
+    delattr(dmap, "x")
+
+    with pytest.raises(AttributeError, match="x"):
+        delattr(dmap, "x")
