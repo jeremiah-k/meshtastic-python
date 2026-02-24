@@ -135,7 +135,7 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path) -> None:
         {
             "int_col": pd.array([1, 2, None], dtype=pd.Int32Dtype()),
             "bool_col": pd.array([True, False, None], dtype=pd.BooleanDtype()),
-            "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),
+            "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),  # type: ignore[call-overload]
         }
     )
 
