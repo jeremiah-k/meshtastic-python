@@ -31,6 +31,15 @@ PAUSE_AFTER_COMMAND = 0.1
 PAUSE_AFTER_REBOOT = 0.2
 
 
+def _quote_shell_path(path: Path) -> str:
+    """Quote a filesystem path for subprocess.getstatusoutput shell usage."""
+    path_str = str(path)
+    if os.name == "nt":
+        escaped = path_str.replace('"', r"\"")
+        return f'"{escaped}"'
+    return shlex.quote(path_str)
+
+
 # TODO: need to fix the virtual device to have a reboot. When you issue the command
 #      below, you get "FIXME implement reboot for this platform"
 # @pytest.mark.smokevirt
@@ -733,7 +742,7 @@ def test_smokevirt_configure() -> None:
 def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path) -> None:
     """Test --export-config and --configure round-trip against the virtual device."""
     export_path = tmp_path / "smokevirt_roundtrip.yaml"
-    quoted_export_path = shlex.quote(str(export_path))
+    quoted_export_path = _quote_shell_path(export_path)
 
     export_return, export_out = subprocess.getstatusoutput(
         f"meshtastic --host localhost --export-config {quoted_export_path}"

@@ -240,7 +240,7 @@ class PowerLogger:
         self._store_current_reading(now)
 
     def store_current_reading(self, now: datetime | None = None) -> None:
-        """Deprecated; use `storeCurrentReading()` instead."""
+        """Use `storeCurrentReading()` instead."""
         warnings.warn(
             "store_current_reading() is deprecated; use storeCurrentReading() instead.",
             DeprecationWarning,
@@ -442,7 +442,7 @@ class StructuredLogger:
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
             if self.power_logger and has_structured_data:
-                self.power_logger._store_current_reading(now)
+                self.power_logger.storeCurrentReading(now)
 
         # Only acquire lock and write if raw logging is enabled
         if self.include_raw:

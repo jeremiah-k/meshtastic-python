@@ -207,7 +207,7 @@ class DiscoveryManager:
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
-        self._client: BLEClient | None = None
+        self._client: Any | None = None
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         """Discover BLE devices advertising the configured service UUID.
@@ -221,6 +221,8 @@ class DiscoveryManager:
         -------
         list[BLEDevice]
             Devices found by the scan, possibly an empty list.
+            Unexpected non-DBus exceptions are handled internally and
+            result in an empty list.
 
         Raises
         ------
@@ -230,8 +232,6 @@ class DiscoveryManager:
             If the discovery client factory returns None.
         DiscoveryClientError
             If the discovery client factory returns an invalid type.
-        Exception
-            For other unexpected errors during device discovery.
         """
         # Only discard the client if it was previously connected and has since
         # disconnected. A discovery-only client (never connected) should be reused.
@@ -296,13 +296,14 @@ class DiscoveryManager:
 
             # If we are looking for a specific address, scan everything to ensure we find it
             # even if the Service UUID is missing from the advertisement.
-            scan_uuids = [SERVICE_UUID] if not target_identifier else None
+            discover_kwargs: dict[str, Any] = {
+                "timeout": BLEConfig.BLE_SCAN_TIMEOUT,
+                "return_adv": True,
+            }
+            if not target_identifier:
+                discover_kwargs["service_uuids"] = [SERVICE_UUID]
 
-            response = client._discover(
-                timeout=BLEConfig.BLE_SCAN_TIMEOUT,
-                return_adv=True,
-                service_uuids=scan_uuids,
-            )
+            response = client._discover(**discover_kwargs)
             logger.debug(
                 "Scan completed in %.2f seconds", time.monotonic() - scan_start
             )
@@ -341,6 +342,20 @@ class DiscoveryManager:
             finally:
                 self._client = None
 
+    def __enter__(self) -> "DiscoveryManager":
+        """Return self for context-manager usage."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> None:
+        """Close the manager on context-manager exit."""
+        _ = exc_type, exc_value, traceback
+        self.close()
+
     def __del__(self) -> None:
         """Drop the internal client reference during garbage collection.
 
@@ -348,6 +363,6 @@ class DiscoveryManager:
         (for example, `client.close()`) during interpreter finalization.
         Explicit lifecycle owners should call `close()`.
         """
-        # Use setattr only; __init__ may not have completed in exceptional paths.
+        # Only set attributes; avoid calling methods as __init__ may not have completed.
         if hasattr(self, "_client"):
             self._client = None

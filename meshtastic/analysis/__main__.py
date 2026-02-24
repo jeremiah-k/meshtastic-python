@@ -194,8 +194,10 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     board_info = board_info[board_info["board_id"].notnull()]
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
-    board_id = mesh_pb2.HardwareModel.Name(cast(Any, int(first_row["board_id"])))
-    return (board_id, sw_version)
+    board_model_name = mesh_pb2.HardwareModel.Name(
+        cast(Any, int(first_row["board_id"]))
+    )
+    return (board_model_name, sw_version)
 
 
 def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) -> str:

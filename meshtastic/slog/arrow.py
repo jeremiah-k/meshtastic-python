@@ -64,7 +64,7 @@ class ArrowWriter:
             Path to the output file to write Arrow stream data to.
         """
         self.sink = pa.OSFile(file_name, "wb")  # type: ignore
-        self.new_rows: list[dict] = []
+        self.new_rows: list[dict[str, object]] = []
         self.schema: pa.Schema | None = None  # haven't yet learned the schema
         self.writer: pa.RecordBatchStreamWriter | None = None
         # Re-entrant: _write() can call set_schema() while the same lock is held.
@@ -129,7 +129,7 @@ class ArrowWriter:
             self.writer = writer
 
     def set_schema(self, schema: pa.Schema) -> None:
-        """Deprecated; call `setSchema()` instead."""
+        """Call `setSchema()` instead."""
         warnings.warn(
             "set_schema() is deprecated; use setSchema() instead.",
             DeprecationWarning,
@@ -161,14 +161,14 @@ class ArrowWriter:
             )
             self.new_rows = []
 
-    def _add_row(self, row_dict: dict) -> None:
+    def _add_row(self, row_dict: dict[str, object]) -> None:
         """Add a row to the arrow file.
 
         We will automatically learn the schema from the first row. But all rows must use that schema.
 
         Parameters
         ----------
-        row_dict : dict
+        row_dict : dict[str, object]
             Dictionary representing a single row with field names matching the schema.
         """
         with self._lock:
@@ -178,8 +178,8 @@ class ArrowWriter:
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
 
-    def add_row(self, row_dict: dict) -> None:
-        """Deprecated; call `addRow()` instead."""
+    def add_row(self, row_dict: dict[str, object]) -> None:
+        """Call `addRow()` instead."""
         warnings.warn(
             "add_row() is deprecated; use addRow() instead.",
             DeprecationWarning,
@@ -187,7 +187,7 @@ class ArrowWriter:
         )
         self._add_row(row_dict)
 
-    def addRow(self, row_dict: dict) -> None:
+    def addRow(self, row_dict: dict[str, object]) -> None:
         """Public camelCase wrapper for _add_row()."""
         self._add_row(row_dict)
 
