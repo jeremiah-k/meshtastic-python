@@ -8,6 +8,7 @@ import os
 import platform
 import re
 import sys
+from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -31,7 +32,7 @@ from meshtastic.__main__ import (
 
 # from ..ble_interface import BLEInterface
 from ..node import Node
-from ..protobuf import localonly_pb2
+from ..protobuf import config_pb2, localonly_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 
 # from ..radioconfig_pb2 import UserPreferences
@@ -169,6 +170,8 @@ def test_normalize_pref_name_display_alias() -> None:
     """Test legacy display field aliases normalize to canonical names."""
     assert _normalize_pref_name("display.use_12_hour") == "display.use_12h_clock"
     assert _normalize_pref_name("display.use12Hour") == "display.use_12h_clock"
+    assert _normalize_pref_name("display.use12hClock") == "display.use_12h_clock"
+    assert _normalize_pref_name("display.use12HClock") == "display.use_12h_clock"
 
 
 @pytest.mark.unit
@@ -2332,6 +2335,159 @@ def test_export_config_configure_round_trip_security_keys(capsys):
     )
     assert exported_round_trip == exported
     _, err = capsys.readouterr()
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_export_config_and_configure_round_trip_nonstandard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    """Round-trip --export-config/--configure with nonstandard fully-configured settings."""
+    source_local = localonly_pb2.LocalConfig()
+    source_module = localonly_pb2.LocalModuleConfig()
+
+    source_local.bluetooth.enabled = True
+    source_local.bluetooth.mode = config_pb2.Config.BluetoothConfig.NO_PIN
+    source_local.bluetooth.fixed_pin = 654321
+    source_local.display.units = config_pb2.Config.DisplayConfig.IMPERIAL
+    source_local.display.use_12h_clock = True
+    source_local.display.screen_on_secs = 45
+    source_local.power.ls_secs = 111
+    source_local.security.serial_enabled = True
+    source_local.security.private_key = b"\xaa" * 32
+    source_local.security.public_key = b"\xbb" * 32
+    source_local.security.admin_key.extend([b"\xcc" * 32, b"\xdd" * 32])
+
+    source_module.telemetry.device_update_interval = 321
+    source_module.telemetry.environment_display_fahrenheit = True
+    source_module.remote_hardware.enabled = True
+
+    export_iface = _build_export_interface(source_local, source_module)
+    export_iface.__enter__ = MagicMock(return_value=export_iface)
+    export_iface.__exit__ = MagicMock(return_value=None)
+    export_iface.getCannedMessage.return_value = "Alpha|Bravo|Charlie"
+    export_iface.getRingtone.return_value = "24:d=16,o=5,b=100:c"
+    export_iface.localNode.getURL.return_value = "https://meshtastic.org/e/#CgYSAQABAA"
+    export_iface.getMyNodeInfo.return_value = {
+        "position": {"latitude": 12.345, "longitude": -98.765, "altitude": 432}
+    }
+
+    export_path = tmp_path / "roundtrip_config.yaml"
+    sys.argv = ["", "--export-config", str(export_path)]
+    mt_config.args = sys.argv
+    with patch(
+        "meshtastic.serial_interface.SerialInterface", return_value=export_iface
+    ):
+        main()
+
+    exported = yaml.safe_load(export_path.read_text(encoding="utf-8"))
+    assert exported["owner"] == "Roundtrip Node"
+    assert exported["owner_short"] == "RT"
+    assert exported["channel_url"] == "https://meshtastic.org/e/#CgYSAQABAA"
+    assert exported["canned_messages"] == "Alpha|Bravo|Charlie"
+    assert exported["ringtone"] == "24:d=16,o=5,b=100:c"
+    assert exported["location"] == {"lat": 12.345, "lon": -98.765, "alt": 432}
+    bluetooth_cfg = exported["config"]["bluetooth"]
+    display_cfg = exported["config"]["display"]
+    power_cfg = exported["config"]["power"]
+    telemetry_cfg = exported["module_config"]["telemetry"]
+    assert bluetooth_cfg["mode"] == "NO_PIN"
+    assert bluetooth_cfg.get("fixed_pin", bluetooth_cfg.get("fixedPin")) == 654321
+    assert display_cfg["units"] == "IMPERIAL"
+    assert display_cfg.get("use_12h_clock", display_cfg.get("use12hClock")) is True
+    assert power_cfg.get("ls_secs", power_cfg.get("lsSecs")) == 111
+    assert exported["config"]["security"]["privateKey"].startswith("base64:")
+    assert exported["config"]["security"]["publicKey"].startswith("base64:")
+    assert all(
+        isinstance(v, str) and v.startswith("base64:")
+        for v in exported["config"]["security"]["adminKey"]
+    )
+    assert (
+        telemetry_cfg.get(
+            "device_update_interval", telemetry_cfg.get("deviceUpdateInterval")
+        )
+        == 321
+    )
+    assert (
+        telemetry_cfg.get(
+            "environment_display_fahrenheit",
+            telemetry_cfg.get("environmentDisplayFahrenheit"),
+        )
+        is True
+    )
+    assert exported["module_config"]["remote_hardware"]["enabled"] is True
+
+    target_local = localonly_pb2.LocalConfig()
+    target_module = localonly_pb2.LocalModuleConfig()
+    target_node = MagicMock()
+    target_node.localConfig = target_local
+    target_node.moduleConfig = target_module
+    target_node.beginSettingsTransaction = MagicMock()
+    target_node.commitSettingsTransaction = MagicMock()
+    target_node.setOwner = MagicMock()
+    target_node.setURL = MagicMock()
+    target_node.set_canned_message = MagicMock()
+    target_node.set_ringtone = MagicMock()
+    target_node.writeConfig = MagicMock()
+    target_node.setFixedPosition = MagicMock()
+
+    configure_iface = MagicMock(autospec=SerialInterface)
+    configure_iface.__enter__ = MagicMock(return_value=configure_iface)
+    configure_iface.__exit__ = MagicMock(return_value=None)
+    configure_iface.getNode.return_value = target_node
+    configure_iface.localNode = target_node
+
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    sys.argv = ["", "--configure", str(export_path)]
+    mt_config.args = sys.argv
+    with patch(
+        "meshtastic.serial_interface.SerialInterface", return_value=configure_iface
+    ):
+        main()
+
+    target_node.beginSettingsTransaction.assert_called_once()
+    target_node.commitSettingsTransaction.assert_called_once()
+    assert target_node.setOwner.call_count == 2
+    target_node.setURL.assert_called_once_with("https://meshtastic.org/e/#CgYSAQABAA")
+    target_node.set_canned_message.assert_called_once_with("Alpha|Bravo|Charlie")
+    target_node.set_ringtone.assert_called_once_with("24:d=16,o=5,b=100:c")
+    target_node.setFixedPosition.assert_called_once_with(12.345, -98.765, 432)
+
+    assert target_local.bluetooth.enabled is True
+    assert target_local.bluetooth.mode == config_pb2.Config.BluetoothConfig.NO_PIN
+    assert target_local.bluetooth.fixed_pin == 654321
+    assert target_local.display.units == config_pb2.Config.DisplayConfig.IMPERIAL
+    assert target_local.display.use_12h_clock is True
+    assert target_local.display.screen_on_secs == 45
+    assert target_local.power.ls_secs == 111
+    assert target_local.security.serial_enabled is True
+    assert target_local.security.private_key == source_local.security.private_key
+    assert target_local.security.public_key == source_local.security.public_key
+    assert list(target_local.security.admin_key) == list(
+        source_local.security.admin_key
+    )
+
+    assert target_module.telemetry.device_update_interval == 321
+    assert target_module.telemetry.environment_display_fahrenheit is True
+    assert target_module.remote_hardware.enabled is True
+
+    write_sections = [c.args[0] for c in target_node.writeConfig.call_args_list]
+    for required in (
+        "bluetooth",
+        "display",
+        "power",
+        "security",
+        "telemetry",
+        "remote_hardware",
+    ):
+        assert required in write_sections
+
+    out, err = capsys.readouterr()
+    assert re.search(r"Exported configuration to", out, re.MULTILINE)
+    assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
     assert err == ""
 
 

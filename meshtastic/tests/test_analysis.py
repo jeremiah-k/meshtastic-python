@@ -11,7 +11,7 @@ import pytest
 try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic.analysis import __main__ as analysis_main
-    from meshtastic.analysis.__main__ import choose_power_column, main
+    from meshtastic.analysis.__main__ import choose_power_column, get_board_info, main
 except ImportError:
     pytest.skip("Can't import meshtastic.analysis", allow_module_level=True)
 
@@ -69,3 +69,19 @@ def test_main_routes_load_errors_through_cli_exit(
         main()
 
     assert "Error loading slog data: bad slog" in captured["message"]
+
+
+@pytest.mark.unit
+def test_get_board_info_requires_board_id_column() -> None:
+    """get_board_info should fail with a clear error when board_id column is missing."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"]})
+    with pytest.raises(ValueError, match="No board_id rows found in slog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_requires_non_null_board_id() -> None:
+    """get_board_info should fail with a clear error when board_id is all null."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [None]})
+    with pytest.raises(ValueError, match="No board_id rows found in slog"):
+        get_board_info(frame)

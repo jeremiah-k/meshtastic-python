@@ -82,6 +82,11 @@ logger = logging.getLogger(__name__)
 _PREFERENCE_FIELD_ALIASES: dict[str, str] = {
     "display.use_12_hour": "display.use_12h_clock",
     "display.use12_hour": "display.use_12h_clock",
+    # Exported configs can contain camelCase keys from MessageToDict(),
+    # and camel_to_snake("use12hClock") yields "use12h_clock". Normalize
+    # these compatibility spellings to the canonical protobuf field name.
+    "display.use12h_clock": "display.use_12h_clock",
+    "display.use12_h_clock": "display.use_12h_clock",
 }
 
 
