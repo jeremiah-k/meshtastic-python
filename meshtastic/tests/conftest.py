@@ -3,7 +3,7 @@
 import argparse
 import shutil
 from collections.abc import Generator
-from typing import Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -12,6 +12,9 @@ from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
+
+if TYPE_CHECKING:
+    from meshtastic.powermon.power_supply import PowerSupply
 
 _MT_CONFIG_SENTINEL = object()
 
@@ -209,6 +212,14 @@ def mock_serial_interface() -> MagicMock:
     mock_iface.myInfo = MagicMock(spec=["max_channels"])
     mock_iface.myInfo.max_channels = 8
     return mock_iface
+
+
+@pytest.fixture
+def power_supply() -> "PowerSupply":
+    """Provide a fresh PowerSupply instance for voltage-validation tests."""
+    from meshtastic.powermon.power_supply import PowerSupply
+
+    return PowerSupply()
 
 
 def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:

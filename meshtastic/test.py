@@ -109,14 +109,14 @@ else:
     DotMap = _ImportedDotMap
 
 """The interfaces we are using for our tests"""
-interfaces: list = []
+interfaces: list[Any] = []
 
 """A list of all packets we received while the current test was running"""
-receivedPackets: list | None = None
+receivedPackets: list[Any] | None = None
 
 testNumber: int = 0
 
-sendingInterface = None
+sendingInterface: Any = None
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +160,11 @@ def onNode(node: Any) -> None:
 
 
 def subscribe() -> None:
-    """Subscribe to meshtastic pub/sub topics to receive node update notifications.
+    """Subscribe to node update notifications.
 
-    Registers the onNode callback for the "meshtastic.node" topic so node-change events are delivered to onNode.
+    Registers only `onNode` on the ``meshtastic.node`` topic.
+    For full test wiring (including ``onReceive`` and ``onConnection``),
+    use ``testAll()`` which subscribes those callbacks explicitly.
     """
 
     pub.subscribe(onNode, "meshtastic.node")

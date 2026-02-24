@@ -48,16 +48,19 @@ class RidenPowerSupply(PowerSupply):
         """Return average current of last measurement in mA since last call to this method."""
         now = datetime.now()
         nowWattHour = self._getRawWattHour()
-        watts = (
-            (nowWattHour - self.prevWattHour)
-            / (now - self.prevPowerTime).total_seconds()
-            * 3600
-        )
+        elapsed_s = (now - self.prevPowerTime).total_seconds()
+        if elapsed_s <= 0:
+            return math.nan
+        watts = ((nowWattHour - self.prevWattHour) / elapsed_s) * 3600
         self.prevPowerTime = now
         self.prevWattHour = nowWattHour
         if self.v <= 0:
             return math.nan
         return (watts / self.v) * 1000
+
+    def getAverageCurrentmA(self) -> float:
+        """CamelCase alias for get_average_current_mA."""
+        return self.get_average_current_mA()
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""

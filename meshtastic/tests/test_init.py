@@ -15,17 +15,20 @@ from meshtastic import (
     serial_interface,
 )
 
+from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
 
 
 @pytest.mark.unit
-def test_init_serial_alias_points_to_internal_module():
+def test_init_serial_alias_points_to_internal_module() -> None:
     """Verify meshtastic.serial resolves to the internal serial_interface module."""
     assert meshtastic.serial is serial_interface
 
 
 @pytest.mark.unit
-def test_init_on_text_receive_with_exception(caplog):
+def test_init_on_text_receive_with_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test _on_text_receive."""
     args = MagicMock()
     mt_config.args = args
@@ -38,7 +41,7 @@ def test_init_on_text_receive_with_exception(caplog):
 
 
 @pytest.mark.unit
-def test_init_on_position_receive(caplog):
+def test_init_on_position_receive(caplog: pytest.LogCaptureFixture) -> None:
     """Test _on_position_receive."""
     args = MagicMock()
     mt_config.args = args
@@ -50,11 +53,14 @@ def test_init_on_position_receive(caplog):
 
 
 @pytest.mark.unit
-def test_init_on_node_info_receive(caplog, iface_with_nodes):
+def test_init_on_node_info_receive(
+    caplog: pytest.LogCaptureFixture, iface_with_nodes: MeshInterface
+) -> None:
     """Test _on_node_info_receive."""
     args = MagicMock()
     mt_config.args = args
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     packet = {
         "from": 4808675309,
@@ -70,7 +76,7 @@ def test_init_on_node_info_receive(caplog, iface_with_nodes):
 
 
 @pytest.mark.unit
-def test_init_getattr_raises_for_unknown_attribute():
+def test_init_getattr_raises_for_unknown_attribute() -> None:
     """Verify __getattr__ raises AttributeError for unknown attributes."""
     with pytest.raises(
         AttributeError, match="module 'meshtastic' has no attribute 'nonexistent'"
@@ -79,7 +85,7 @@ def test_init_getattr_raises_for_unknown_attribute():
 
 
 @pytest.mark.unit
-def test_init_getattr_caches_serial_on_first_access():
+def test_init_getattr_caches_serial_on_first_access() -> None:
     """Verify __getattr__ caches serial module on first access."""
     sentinel = object()
     original = getattr(meshtastic, "serial", sentinel)
@@ -100,4 +106,4 @@ def test_init_getattr_caches_serial_on_first_access():
             if hasattr(meshtastic, "serial"):
                 delattr(meshtastic, "serial")
         else:
-            setattr(meshtastic, "serial", original)
+            meshtastic.serial = original  # pyright: ignore[reportAttributeAccessIssue]

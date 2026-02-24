@@ -2,6 +2,7 @@
 
 import logging
 import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,7 +28,11 @@ from ..util import Timeout
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_MeshInterface(capsys, monkeypatch, tmp_path):
+def test_MeshInterface(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """Test that we can instantiate a MeshInterface."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     with MeshInterface(noProto=True) as iface:
@@ -714,7 +719,7 @@ def test_getOrCreateByNum(iface_with_nodes):
 
 
 @pytest.mark.unit
-def test_exit_with_exception(caplog):
+def test_exit_with_exception(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that MeshInterface.__exit__ logs the exception type, value, and traceback when an exception is raised inside its context.
 
     Asserts an ERROR-level log entry contains the ValueError message and a traceback that includes the line where the exception was raised.
@@ -725,20 +730,19 @@ def test_exit_with_exception(caplog):
         If MeshInterface raises ValueError during construction with noProto=True.
     """
     with caplog.at_level(logging.ERROR):
-        try:
+        with pytest.raises(ValueError):
             with MeshInterface(noProto=True):
                 raise ValueError("Something went wrong")
-        except Exception:
-            assert re.search(
-                r"An exception of type <class \'ValueError\'> with value Something went wrong has occurred",
-                caplog.text,
-                re.MULTILINE,
-            )
-            assert re.search(
-                r"Traceback:\n.*in test_exit_with_exception\n {4}raise ValueError\(\"Something went wrong\"\)",
-                caplog.text,
-                re.MULTILINE,
-            )
+    assert re.search(
+        r"An exception of type <class \'ValueError\'> with value Something went wrong has occurred",
+        caplog.text,
+        re.MULTILINE,
+    )
+    assert re.search(
+        r"Traceback:\n.*in test_exit_with_exception\n {4}raise ValueError\(\"Something went wrong\"\)",
+        caplog.text,
+        re.MULTILINE,
+    )
 
 
 @pytest.mark.unit
@@ -775,13 +779,14 @@ def test_waitConnected_raises_an_exception():
 
 
 @pytest.mark.unit
-def test_waitConnected_isConnected_timeout():
+def test_waitConnected_isConnected_timeout() -> None:
     """Verifies that _wait_connected raises a MeshInterfaceError when the connection does not complete within the specified timeout.
 
     Asserts the raised error message contains "Timed out waiting for connection completion".
     """
     with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
-        with MeshInterface() as iface:
+        with MeshInterface(noProto=True) as iface:
+            iface.noProto = False
             iface._wait_connected(0.01)
     assert "Timed out waiting for connection completion" in str(excinfo.value)
 

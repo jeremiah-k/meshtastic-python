@@ -99,6 +99,7 @@ POWER_LOG_SCHEMA_METADATA: dict[bytes | str, bytes | str] = {
     ),
 }
 POWER_LOGGER_JOIN_TIMEOUT = 1.0
+DIR_NAME_REQUIRED_MESSAGE = "dir_name must be a non-empty path when provided"
 
 
 class PowerLogger:
@@ -217,8 +218,8 @@ class PowerLogger:
                 "max_mW": max_mW,
                 "min_mW": min_mW,
             }
-            self.p_meter.reset_measurements()
             self.writer.add_row(d)
+            self.p_meter.reset_measurements()
 
     def _logging_thread(self) -> None:
         """Background thread for logging periodic current readings."""
@@ -283,7 +284,9 @@ class StructuredLogger:
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
         all_fields = reduce(
-            (lambda x, y: x + y), map(lambda x: x.fields, log_defs.values())
+            lambda x, y: x + y,
+            map(lambda x: x.fields, log_defs.values()),
+            [],
         )
 
         self.include_raw = include_raw
@@ -377,7 +380,7 @@ class StructuredLogger:
         if m:
             src = m.group(1)
             args = m.group(2)
-            logger.debug(f"SLog {src}, args: {args}")
+            logger.debug("SLog %s, args: %s", src, args)
 
             d = log_defs.get(src)
             if d:
@@ -399,12 +402,13 @@ class StructuredLogger:
                             # If the last field is an empty string, remove it
                             del di[last_field[0]]
                 else:
-                    logger.warning(f"Failed to parse slog {line} with {d.format}")
+                    logger.warning("Failed to parse slog %s with %s", line, d.format)
             else:
-                logger.warning(f"Unknown Structured Log: {line}")
+                logger.warning("Unknown Structured Log: %s", line)
 
         # Store our structured log record
         if di or self.include_raw:
+            has_structured_data = bool(di)
             now = datetime.now()
             di["time"] = now
             if self.include_raw:
@@ -412,7 +416,7 @@ class StructuredLogger:
             self.writer.add_row(di)
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
-            if self.power_logger:
+            if self.power_logger and has_structured_data:
                 self.power_logger.store_current_reading(now)
 
         # Only acquire lock and write if raw logging is enabled
@@ -474,9 +478,7 @@ class LogSet:
             except OSError as ex:
                 logger.debug("Unable to update latest slog symlink: %s", ex)
         elif dir_name == "":
-            raise ValueError(
-                "dir_name must be a non-empty path when provided"
-            )  # noqa: TRY003
+            raise ValueError(DIR_NAME_REQUIRED_MESSAGE)
 
         self.dir_name = dir_name
 

@@ -103,7 +103,7 @@ class ArrowWriter:
                     self.sink.close()
                     self._closed = True
 
-    def set_schema(self, schema: pa.Schema) -> None:
+    def _set_schema(self, schema: pa.Schema) -> None:
         """Set the schema for the file.
 
         Only needed for datasets where we can't learn it from the first record written.
@@ -123,9 +123,13 @@ class ArrowWriter:
             self.schema = schema
             self.writer = writer
 
+    def set_schema(self, schema: pa.Schema) -> None:
+        """Backward-compatible snake_case wrapper for _set_schema()."""
+        self._set_schema(schema)
+
     def setSchema(self, schema: pa.Schema) -> None:
-        """Backward-compatible camelCase wrapper for set_schema()."""
-        self.set_schema(schema)
+        """Public camelCase wrapper for _set_schema()."""
+        self._set_schema(schema)
 
     def _write(self) -> None:
         """Write buffered rows to the file.
@@ -136,7 +140,7 @@ class ArrowWriter:
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
-                self.set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
+                self._set_schema(pa.Table.from_pylist([self.new_rows[0]]).schema)
 
             if self.writer is None:
                 raise WriterNoneError()
@@ -147,7 +151,7 @@ class ArrowWriter:
             )
             self.new_rows = []
 
-    def add_row(self, row_dict: dict) -> None:
+    def _add_row(self, row_dict: dict) -> None:
         """Add a row to the arrow file.
 
         We will automatically learn the schema from the first row. But all rows must use that schema.
@@ -164,9 +168,13 @@ class ArrowWriter:
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
 
+    def add_row(self, row_dict: dict) -> None:
+        """Backward-compatible snake_case wrapper for _add_row()."""
+        self._add_row(row_dict)
+
     def addRow(self, row_dict: dict) -> None:
-        """Backward-compatible camelCase wrapper for add_row()."""
-        self.add_row(row_dict)
+        """Public camelCase wrapper for _add_row()."""
+        self._add_row(row_dict)
 
 
 class FeatherWriter(ArrowWriter):

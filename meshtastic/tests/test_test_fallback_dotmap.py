@@ -62,3 +62,23 @@ def test_fallback_dotmap_delattr_and_missing_access() -> None:
 
     with pytest.raises(AttributeError, match="x"):
         delattr(dmap, "x")
+
+
+@pytest.mark.unit
+def test_fallback_dotmap_scalar_readback() -> None:
+    """Scalar values should be returned directly, not wrapped in maps."""
+    dmap = _FallbackDotMap()
+    dmap.x = 42
+
+    assert dmap.x == 42
+    assert not isinstance(dmap.x, _FallbackDotMap)
+
+
+@pytest.mark.unit
+def test_fallback_dotmap_dunder_setattr_delegates_to_object() -> None:
+    """Dunder setattr should not create dictionary entries."""
+    dmap = _FallbackDotMap()
+
+    object.__setattr__(dmap, "__custom__", 1)
+
+    assert "__custom__" not in dmap

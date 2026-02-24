@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import NoReturn
 
 import pandas as pd
@@ -128,7 +129,7 @@ def test_to_pmon_names_handles_none_state() -> None:
 
 
 @pytest.mark.unit
-def test_read_pandas_preserves_nullable_dtypes(tmp_path) -> None:
+def test_read_pandas_preserves_nullable_dtypes(tmp_path: Path) -> None:
     """read_pandas should map Arrow types to pandas nullable dtypes."""
     # Create a test DataFrame with various types
     test_data = pd.DataFrame(
@@ -141,7 +142,7 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path) -> None:
 
     # Write to feather
     test_file = tmp_path / "test.feather"
-    feather.write_feather(test_data, test_file)
+    feather.write_feather(test_data, str(test_file))
 
     # Read back
     result = read_pandas(str(test_file))
