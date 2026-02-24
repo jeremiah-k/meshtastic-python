@@ -187,7 +187,7 @@ class ReconnectWorker:
         raise ReconnectPolicyMissingMethodError(method_name)
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
-    """Return whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
+        """Return whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
 
         Parameters
         ----------
