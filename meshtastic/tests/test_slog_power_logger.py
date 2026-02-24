@@ -11,7 +11,12 @@ from unittest.mock import MagicMock
 import pytest
 
 try:
-    from meshtastic.slog.slog import POWER_LOG_SCHEMA_METADATA, PowerLogger
+    from meshtastic.slog.slog import (
+        POWER_LOG_SCHEMA_METADATA,
+        LogSet,
+        PowerLogger,
+        StructuredLogger,
+    )
 except ImportError:
     pytest.skip("Can't import meshtastic.slog", allow_module_level=True)
 
@@ -142,3 +147,51 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
     assert (
         caplog.text.count("Power meter does not expose nominal voltage") == 1
     ), caplog.text
+
+
+@pytest.mark.unit
+def test_on_log_message_keeps_raw_and_power_on_add_row_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """StructuredLogger should preserve raw/power side-effects when addRow fails."""
+    logger = object.__new__(StructuredLogger)
+    logger.writer = MagicMock()
+    logger.writer.addRow.side_effect = RuntimeError("writer down")
+    logger.power_logger = MagicMock()
+    logger.include_raw = True
+    raw_file = MagicMock()
+    logger.raw_file = raw_file
+    logger._raw_file_lock = threading.Lock()
+
+    line = "prefix S:B:1,2.5.0"
+    with caplog.at_level(logging.WARNING):
+        logger._on_log_message(line)
+
+    assert "Failed to write structured slog row" in caplog.text
+    raw_file.write.assert_called_once_with(f"{line}\n")
+    logger.power_logger.storeCurrentReading.assert_called_once()
+
+
+@pytest.mark.unit
+def test_log_set_close_preserves_primary_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LogSet.close should preserve slog close failure and chain power close failure."""
+    log_set = object.__new__(LogSet)
+    log_set.dir_name = "tmp"
+    log_set.atexit_handler = lambda: None
+    log_set.slog_logger = MagicMock()
+    log_set.power_logger = MagicMock()
+
+    slog_error = ValueError("slog close failed")
+    power_error = RuntimeError("power close failed")
+    log_set.slog_logger.close.side_effect = slog_error
+    log_set.power_logger.close.side_effect = power_error
+    monkeypatch.setattr("meshtastic.slog.slog.atexit.unregister", lambda _: None)
+
+    with pytest.raises(ValueError, match="slog close failed") as exc_info:
+        log_set.close()
+
+    assert exc_info.value.__cause__ is power_error
+    assert log_set.slog_logger is None
+    assert log_set.power_logger is None

@@ -154,6 +154,8 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     if "pm_mask" not in dslog.columns:
         raise ValueError("No pm_mask column found in slog")  # noqa: TRY003
     pmon_events = dslog[dslog["pm_mask"].notnull()].copy()
+    if "time" not in pmon_events.columns:
+        raise ValueError("No time column found in slog")  # noqa: TRY003
 
     pm_masks = pd.Series(pmon_events["pm_mask"]).to_numpy()
 

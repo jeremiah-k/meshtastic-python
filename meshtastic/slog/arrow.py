@@ -239,6 +239,9 @@ class FeatherWriter(ArrowWriter):
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
             temp_name: str | None = None
             try:
+                # Reserve a unique temp path in the destination directory
+                # (delete=False), then close it so write_feather can reopen
+                # that path before os.replace() performs an atomic swap.
                 with tempfile.NamedTemporaryFile(
                     mode="wb",
                     dir=os.path.dirname(dest_name) or ".",

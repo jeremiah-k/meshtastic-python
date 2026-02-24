@@ -14,7 +14,12 @@ class PowerError(Exception):
 
 
 class PowerMeter:
-    """Abstract class for power meters."""
+    """Abstract class for power meters.
+
+    Subclasses may optionally expose a numeric ``v`` attribute (volts) when a
+    nominal supply voltage is known. Consumers use this only when ``v > 0`` and
+    ignore boolean values, so subclasses should provide a real numeric value.
+    """
 
     def __init__(self) -> None:
         """Initialize the PowerMeter object."""

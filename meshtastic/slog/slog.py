@@ -438,11 +438,23 @@ class StructuredLogger:
             di["time"] = now
             if self.include_raw:
                 di["raw"] = line
-            self.writer.addRow(di)
+            try:
+                self.writer.addRow(di)
+            except Exception as exc:  # noqa: BLE001 - best-effort logging path
+                logger.warning(
+                    "Failed to write structured slog row: %s", exc, exc_info=True
+                )
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
             if self.power_logger and has_structured_data:
-                self.power_logger.storeCurrentReading(now)
+                try:
+                    self.power_logger.storeCurrentReading(now)
+                except Exception as exc:  # noqa: BLE001 - best-effort logging path
+                    logger.warning(
+                        "Failed to write corresponding power sample: %s",
+                        exc,
+                        exc_info=True,
+                    )
 
         # Only acquire lock and write if raw logging is enabled
         if self.include_raw:
@@ -551,12 +563,25 @@ class LogSet:
             atexit.unregister(
                 self.atexit_handler
             )  # docs say it will silently ignore if not found
+            slog_close_exc: Exception | None = None
+            power_close_exc: Exception | None = None
             try:
                 self.slog_logger.close()
+            except Exception as exc:  # noqa: BLE001 - preserve chaining below
+                slog_close_exc = exc
             finally:
                 self.slog_logger = None
-                try:
-                    if self.power_logger:
-                        self.power_logger.close()
-                finally:
-                    self.power_logger = None
+            try:
+                if self.power_logger:
+                    self.power_logger.close()
+            except Exception as exc:  # noqa: BLE001 - preserve chaining below
+                power_close_exc = exc
+            finally:
+                self.power_logger = None
+
+            if slog_close_exc is not None:
+                if power_close_exc is not None:
+                    raise slog_close_exc from power_close_exc
+                raise slog_close_exc
+            if power_close_exc is not None:
+                raise power_close_exc

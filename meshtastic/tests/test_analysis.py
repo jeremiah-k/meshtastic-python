@@ -174,6 +174,14 @@ def test_get_pmon_raises_extracts_raise_events() -> None:
 
 
 @pytest.mark.unit
+def test_get_pmon_raises_requires_time_column() -> None:
+    """get_pmon_raises should fail clearly when the time column is missing."""
+    dslog = pd.DataFrame({"pm_mask": [0, 1, 3]})
+    with pytest.raises(ValueError, match="No time column found in slog"):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
 def test_is_loopback_host_recognizes_localhost() -> None:
     """_is_loopback_host should recognize common loopback addresses."""
     assert _is_loopback_host("localhost")
