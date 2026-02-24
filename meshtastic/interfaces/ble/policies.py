@@ -84,7 +84,9 @@ class ReconnectPolicy:
         self.backoff = backoff
         self.jitter_ratio = jitter_ratio
         self.max_retries = max_retries
-        self._random: _RandomLike = random_source or random
+        self._random: _RandomLike = (
+            random_source if random_source is not None else random
+        )
         self._attempt_count = 0
 
     def reset(self) -> None:

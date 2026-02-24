@@ -1,6 +1,6 @@
 """Unit tests for powermon stress helpers and client behavior."""
 
-from types import SimpleNamespace
+from typing import Any, Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +12,8 @@ from ..protobuf import powermon_pb2
 @pytest.mark.unit
 def test_on_power_stress_response_sets_flag() -> None:
     """Test that onPowerStressResponse marks interface.gotResponse as True."""
-    iface = SimpleNamespace(gotResponse=False)
+    iface = MagicMock()
+    iface.gotResponse = False
     onPowerStressResponse({"decoded": {}}, iface)
     assert iface.gotResponse is True
 
@@ -20,7 +21,8 @@ def test_on_power_stress_response_sets_flag() -> None:
 @pytest.mark.unit
 def test_power_stress_client_defaults_node_id_from_iface() -> None:
     """PowerStressClient should use local node id when node_id is not provided."""
-    iface = SimpleNamespace(myInfo=SimpleNamespace(my_node_num=12345))
+    iface = MagicMock()
+    iface.myInfo.my_node_num = 12345
     client = PowerStressClient(iface)
     assert client.node_id == 12345
 
@@ -52,7 +54,11 @@ def test_sync_power_stress_wait_until_ack_success() -> None:
     iface.myInfo.my_node_num = 1
     client = PowerStressClient(iface)
 
-    def _fake_send(cmd: int, num_seconds: float = 0.0, onResponse=None):
+    def _fake_send(
+        cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
+        num_seconds: float = 0.0,
+        onResponse: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         _ = cmd, num_seconds
         assert onResponse is not None
         onResponse({"decoded": {}})
@@ -134,7 +140,11 @@ def test_sync_power_stress_timed_mode_with_ack(monkeypatch: pytest.MonkeyPatch) 
     client = PowerStressClient(iface)
     monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", lambda _: None)
 
-    def _fake_send(cmd: int, num_seconds: float = 0.0, onResponse=None):
+    def _fake_send(
+        cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
+        num_seconds: float = 0.0,
+        onResponse: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         _ = cmd, num_seconds
         assert onResponse is not None
         onResponse({"decoded": {}})
@@ -195,5 +205,5 @@ def test_power_stress_run_completes_all_states() -> None:
 
     ps.run()
 
-    # PRINT_INFO + 6 test states
-    assert ps.client.syncPowerStress.call_count == 7
+    expected_call_count = 1 + len(ps.states)
+    assert ps.client.syncPowerStress.call_count == expected_call_count
