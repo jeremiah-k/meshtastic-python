@@ -283,7 +283,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields = reduce(
+        all_fields: list[tuple[str, pa.DataType]] = reduce(
             lambda x, y: x + y,
             map(lambda x: x.fields, log_defs.values()),
             [],
