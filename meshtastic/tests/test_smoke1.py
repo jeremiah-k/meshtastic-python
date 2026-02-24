@@ -62,7 +62,7 @@ def test_set_with_invalid_setting() -> None:
 
 
 @pytest.mark.smoke1
-def test_ch_set_with_invalid_setting_patch_find_ports() -> None:
+def test_ch_set_with_invalid_setting() -> None:
     """Test '--ch-set with a_bad_setting'."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --ch-set invalid_setting foo --ch-index 0"

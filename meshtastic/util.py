@@ -170,10 +170,10 @@ def fromStr(valstr: str) -> Any:
     else:
         try:
             val = int(valstr)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError):  # TypeError for legacy callers passing non-str
             try:
                 val = float(valstr)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # TypeError for legacy callers passing non-str
                 val = valstr  # Not a float or an int, assume string
     return val
 
@@ -1280,7 +1280,7 @@ def _to_node_num(node_id: int | str) -> int:
         return int(s, 16)
     try:
         return int(s, 10)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError):  # TypeError for legacy callers passing unexpected types
         return int(s, 16)
 
 

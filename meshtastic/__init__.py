@@ -99,6 +99,9 @@ from .protobuf import (
 
 # Keep exports sorted for lint stability and easier scanning.
 # ruff: noqa: RUF022 -- sorted case-insensitively for readability.
+#
+# Note: publishingThread is exported for backwards compatibility with external
+# callers that may import it directly. It is an internal pub/sub thread helper.
 __all__ = [
     "admin_pb2",
     "apponly_pb2",

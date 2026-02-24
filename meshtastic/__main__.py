@@ -1830,10 +1830,18 @@ def create_power_meter() -> None:
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     """Parse a host string into a TCP hostname and port.
 
-    Supports bracketed IPv6 (`[addr]` or `[addr]:port`), bare IPv6 addresses
-    without ports, and single-colon `host:port` forms. For IPv6 with explicit
-    port, bracket syntax (`[addr]:port`) is required. Port-range and malformed
-    IPv6/bracket syntax errors exit via `_cli_exit` with existing CLI messages.
+    Supports:
+
+    - Bracketed IPv6 with optional port: `[addr]` or `[addr]:port`
+    - Bare IPv6 address: treated as hostname with the default port (no explicit port allowed)
+    - IPv4 or hostname with optional port: `host` or `host:port`
+
+    For IPv6 addresses that need an explicit port, bracket syntax (`[addr]:port`) is
+    required. Bare IPv6 addresses (with colons but no brackets) are treated as hostnames
+    and use the default port.
+
+    Port-range and malformed IPv6/bracket syntax errors exit via `_cli_exit` with
+    existing CLI messages.
 
     Parameters
     ----------
