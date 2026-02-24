@@ -439,7 +439,7 @@ def test_main_no_proto(capsys):
 
     # Override the time.sleep so there is no loop
     def my_sleep(amount):
-        """_summary_."""
+        """Print sleep duration and terminate to break the no-proto loop in tests."""
         print(f"amount:{amount}")
         sys.exit(0)
 
@@ -805,11 +805,11 @@ def test_main_set_ham_to_KI123(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_turnOffEncryptionOnPrimaryChannel():
-        """_summary_."""
+        """Simulate disabling encryption on the primary channel."""
         print("inside mocked turnOffEncryptionOnPrimaryChannel")
 
     def mock_setOwner(name, is_licensed):
-        """_summary_."""
+        """Simulate setOwner and print received parameters."""
         print(f"inside mocked setOwner name:{name} is_licensed:{is_licensed}")
 
     mocked_node.turnOffEncryptionOnPrimaryChannel.side_effect = (
@@ -845,7 +845,7 @@ def test_main_reboot(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_reboot():
-        """_summary_."""
+        """Simulate node reboot command."""
         print("inside mocked reboot")
 
     mocked_node.reboot.side_effect = mock_reboot
@@ -874,7 +874,7 @@ def test_main_shutdown(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_shutdown():
-        """_summary_."""
+        """Simulate node shutdown command."""
         print("inside mocked shutdown")
 
     mocked_node.shutdown.side_effect = mock_shutdown
@@ -1115,7 +1115,7 @@ def test_main_removeposition(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_removeFixedPosition():
-        """_summary_."""
+        """Simulate removing fixed position."""
         print("inside mocked removeFixedPosition")
 
     mocked_node.removeFixedPosition.side_effect = mock_removeFixedPosition
@@ -1145,7 +1145,7 @@ def test_main_setlat(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_setFixedPosition(lat, lon, alt):
-        """_summary_."""
+        """Simulate setting fixed position and print provided coordinates."""
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
 
@@ -1177,7 +1177,7 @@ def test_main_setlon(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_setFixedPosition(lat, lon, alt):
-        """_summary_."""
+        """Simulate setting fixed position and print provided coordinates."""
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
 
@@ -1209,7 +1209,7 @@ def test_main_setalt(capsys):
     mocked_node = MagicMock(autospec=Node)
 
     def mock_setFixedPosition(lat, lon, alt):
-        """_summary_."""
+        """Simulate setting fixed position and print provided coordinates."""
         print("inside mocked setFixedPosition")
         print(f"{lat} {lon} {alt}")
 
