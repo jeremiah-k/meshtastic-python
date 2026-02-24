@@ -185,7 +185,7 @@ class BLEStateManager:
 
     @property
     def _is_active(self) -> bool:
-        """Report whether the BLE interface currently has an active or pending connection.
+    """Return whether the BLE interface currently has an active or pending connection.
 
         This is a point-in-time snapshot and is not an atomic check+act
         primitive. Callers that need atomic transitions must hold
@@ -239,7 +239,7 @@ class BLEStateManager:
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
     ) -> bool:
-        """Determine whether transitioning from one ConnectionState to another is permitted by the state machine.
+    """Return whether transitioning from one ConnectionState to another is permitted by the state machine.
 
         Parameters
         ----------

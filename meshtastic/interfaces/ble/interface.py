@@ -353,7 +353,7 @@ class BLEInterface(MeshInterface):
             self._want_receive = want_receive
 
     def _should_run_receive_loop(self) -> bool:
-        """Determine whether the receive loop should run.
+        """Return whether the receive loop should run.
 
         Returns
         -------
@@ -1176,7 +1176,7 @@ class BLEInterface(MeshInterface):
 
     @property
     def _is_connection_connected(self) -> bool:
-        """Report whether the interface currently has an active BLE connection.
+        """Return whether the interface currently has an active BLE connection.
 
         Returns
         -------
@@ -1187,7 +1187,7 @@ class BLEInterface(MeshInterface):
 
     @property
     def _is_connection_closing(self) -> bool:
-        """Indicates whether the interface is shutting down or has already closed.
+        """Return whether the interface is shutting down or has already closed.
 
         Returns
         -------
@@ -1198,7 +1198,7 @@ class BLEInterface(MeshInterface):
 
     @property
     def _can_initiate_connection(self) -> bool:
-        """Determine whether the interface may start a new BLE connection.
+        """Return whether the interface may start a new BLE connection.
 
         Considers the centralized connection state and whether the interface is shutting down.
 
@@ -1225,7 +1225,7 @@ class BLEInterface(MeshInterface):
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
     def _should_suppress_duplicate_connect(self, connection_key: str | None) -> bool:
-        """Decide whether a connect attempt for the given connection key should be suppressed because an active connection for that key exists on a different interface.
+        """Return whether a connect attempt for the given connection key should be suppressed because an active connection for that key exists on a different interface.
 
         Parameters
         ----------
@@ -1482,7 +1482,7 @@ class BLEInterface(MeshInterface):
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: "BLEClient"
     ) -> bool:
-        """Decide whether the receive loop should continue after a BLE client disconnect.
+        """Return whether the receive loop should continue after a BLE client disconnect.
 
         Parameters
         ----------

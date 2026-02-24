@@ -204,7 +204,7 @@ class BLEClient:
         )
 
     def isConnected(self) -> bool:
-        """Determine whether the underlying Bleak client currently has an active connection.
+        """Return whether the underlying Bleak client currently has an active connection.
 
         Returns
         -------
@@ -218,7 +218,7 @@ class BLEClient:
             return False
 
         def _check_connection():
-            """Check whether the configured Bleak client reports an active connection.
+            """Return whether the configured Bleak client reports an active connection.
 
             This interprets either a boolean `is_connected` attribute or an `is_connected()` method on the client and coerces the result to a boolean.
 
@@ -241,7 +241,7 @@ class BLEClient:
         return bool(result)  # type: ignore[arg-type]
 
     def is_connected(self) -> bool:
-        """Check whether the BLE client is currently connected.
+        """Return whether the BLE client is currently connected.
 
         Returns
         -------
@@ -354,7 +354,7 @@ class BLEClient:
         return self.bleak_client.services
 
     def has_characteristic(self, specifier: str | UUID) -> bool:
-        """Determine whether the connected device exposes the GATT characteristic identified by specifier.
+        """Return whether the connected device exposes the GATT characteristic identified by specifier.
 
         If services are not populated, attempts to fetch services before checking.
 

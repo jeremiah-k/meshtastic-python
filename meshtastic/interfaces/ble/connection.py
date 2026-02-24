@@ -74,7 +74,7 @@ class ConnectionValidator:
         last_connection_request: str | None,
         address: str | None,
     ) -> bool:
-        """Check whether the given BLE client corresponds to the requested or a known device address.
+        """Return whether the given BLE client corresponds to the requested or a known device address.
 
         Considers the provided normalized_request, last_connection_request, the sanitized original address, and the client's bleak address. If `normalized_request` is `None`, any connected client is treated as acceptable.
 

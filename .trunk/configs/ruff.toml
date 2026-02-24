@@ -9,16 +9,5 @@ ignore = ["E501"]
 convention = "numpy"
 
 # Generated protobuf modules rely on import side effects during descriptor loading.
-# BLE interface package has relaxed docstring requirements.
 [lint.per-file-ignores]
 "meshtastic/protobuf/*_pb2.py" = ["F401"]
-"meshtastic/interfaces/ble/client.py" = ["D401"]
-"meshtastic/interfaces/ble/connection.py" = ["D401"]
-"meshtastic/interfaces/ble/coordination.py" = ["D401"]
-"meshtastic/interfaces/ble/discovery.py" = ["D401"]
-"meshtastic/interfaces/ble/gating.py" = ["D401"]
-"meshtastic/interfaces/ble/interface.py" = ["D401"]
-"meshtastic/interfaces/ble/policies.py" = ["D401"]
-"meshtastic/interfaces/ble/reconnection.py" = ["D401"]
-"meshtastic/interfaces/ble/runner.py" = ["D401"]
-"meshtastic/interfaces/ble/state.py" = ["D401"]

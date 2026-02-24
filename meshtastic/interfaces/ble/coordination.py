@@ -43,7 +43,7 @@ class _InertThread:
         raise RuntimeError(_INERT_THREAD_START_ERROR.format(name=self.name))
 
     def is_alive(self) -> bool:
-        """Report whether the inert thread is alive.
+        """Return whether the inert thread is alive.
 
         Returns
         -------
