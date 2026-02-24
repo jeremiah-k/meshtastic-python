@@ -741,6 +741,8 @@ def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path) -> None:
     assert re.match(r"Connected to radio", export_out)
     assert re.search(r"Exported configuration to", export_out, re.MULTILINE)
     assert export_return == 0
+    assert export_path.exists(), f"Expected export file at {export_path}"
+    assert export_path.stat().st_size > 0, f"Export file is empty: {export_path}"
 
     configure_return, configure_out = subprocess.getstatusoutput(
         f"meshtastic --host localhost --configure {quoted_export_path}"
@@ -784,9 +786,8 @@ def test_smokevirt_set_wifi_settings() -> None:
         "meshtastic --host localhost --get wifi_ssid --get wifi_password"
     )
     assert re.search(r"^wifi_ssid: some_ssid", out, re.MULTILINE)
-    # Password values are intentionally masked in CLI output; assert masking
-    # behavior rather than a fixture-specific literal value.
-    assert re.search(r"^wifi_password:\s+(?!temp1234)\S+", out, re.MULTILINE)
+    # Assert that the password is masked (e.g., "***") not echoed back
+    assert re.search(r"^wifi_password:\s+\*+", out, re.MULTILINE)
     assert return_value == 0
 
 

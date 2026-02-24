@@ -28,7 +28,7 @@ class _FakeThread:
         """Record that start() was called."""
         self.started = True
 
-    def join(self) -> None:
+    def join(self, timeout: float | None = None) -> None:
         """No-op join for compatibility with the production thread API."""
 
 
@@ -44,7 +44,7 @@ class _FakeWriter:
         self.schema = schema
 
     def setSchema(self, schema: Any) -> None:
-        """Backward-compatible camelCase alias used by production code."""
+        """Primary camelCase API used by production code; delegates to set_schema for schema capture."""
         self.set_schema(schema)
 
     def close(self) -> None:

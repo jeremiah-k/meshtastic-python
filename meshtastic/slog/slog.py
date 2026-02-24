@@ -184,7 +184,7 @@ class PowerLogger:
             return float(raw_v)
         return None
 
-    def store_current_reading(self, now: datetime | None = None) -> None:
+    def _store_current_reading(self, now: datetime | None = None) -> None:
         """Capture a snapshot of current power measurements and append it to the writer.
 
         If `now` is provided it is used as the timestamp; otherwise the current system time is used.
@@ -235,10 +235,23 @@ class PowerLogger:
             self.writer.addRow(d)
             self.p_meter.reset_measurements()
 
+    def storeCurrentReading(self, now: datetime | None = None) -> None:
+        """Preferred camelCase public API; see `_store_current_reading`."""
+        self._store_current_reading(now)
+
+    def store_current_reading(self, now: datetime | None = None) -> None:
+        """Deprecated; use `storeCurrentReading()` instead."""
+        warnings.warn(
+            "store_current_reading() is deprecated; use storeCurrentReading() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._store_current_reading(now)
+
     def _logging_thread(self) -> None:
         """Background thread for logging periodic current readings."""
         while self.is_logging:
-            self.store_current_reading()
+            self._store_current_reading()
             time.sleep(self.interval)
 
     def close(self) -> None:
@@ -331,9 +344,9 @@ class StructuredLogger:
             listen_glue  # we must save this so it doesn't get garbage collected
         )
         try:
-            # pass in our name->type tuples a pa.fields
+            # pass in our name->type tuples as pa.fields
             self.writer.setSchema(
-                pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
+                pa.schema([pa.field(name, typ) for name, typ in all_fields])
             )
             if self.include_raw:
                 self.raw_file = open(  # pylint: disable=consider-using-with
@@ -429,7 +442,7 @@ class StructuredLogger:
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
             if self.power_logger and has_structured_data:
-                self.power_logger.store_current_reading(now)
+                self.power_logger._store_current_reading(now)
 
         # Only acquire lock and write if raw logging is enabled
         if self.include_raw:

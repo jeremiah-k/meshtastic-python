@@ -41,7 +41,7 @@ class WriterNoneError(ArrowWriterStateError):
 
 
 class WriterClosedError(ArrowWriterStateError):
-    """Raised when add_row() is called after the writer is closed."""
+    """Raised when addRow() is called after the writer is closed."""
 
     def __init__(self) -> None:
         super().__init__("Cannot add rows to a closed ArrowWriter.")
@@ -117,6 +117,8 @@ class ArrowWriter:
             The schema to use for the Arrow file.
         """
         with self._lock:
+            if self._closed:
+                raise WriterClosedError()
             if self.schema is not None:
                 raise SchemaAlreadySetError()
             try:
@@ -127,7 +129,7 @@ class ArrowWriter:
             self.writer = writer
 
     def set_schema(self, schema: pa.Schema) -> None:
-        """Warn and delegate to `setSchema()`."""
+        """Deprecated; call `setSchema()` instead."""
         warnings.warn(
             "set_schema() is deprecated; use setSchema() instead.",
             DeprecationWarning,
@@ -177,7 +179,7 @@ class ArrowWriter:
                 self._write()
 
     def add_row(self, row_dict: dict) -> None:
-        """Warn and delegate to `addRow()`."""
+        """Deprecated; call `addRow()` instead."""
         warnings.warn(
             "add_row() is deprecated; use addRow() instead.",
             DeprecationWarning,

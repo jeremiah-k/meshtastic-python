@@ -151,6 +151,8 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         Columns are `time` and `pm_raises` (a list of raised power-monitor
         name strings).
     """
+    if "pm_mask" not in dslog.columns:
+        raise ValueError("No pm_mask column found in slog")  # noqa: TRY003
     pmon_events = dslog[dslog["pm_mask"].notnull()].copy()
 
     pm_masks = pd.Series(pmon_events["pm_mask"]).to_numpy()
@@ -160,10 +162,8 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         (pm_masks[i - 1] ^ x if i != 0 else x) for i, x in enumerate(pm_masks)
     ]
     pm_raises = [(pm_masks[i] & x) for i, x in enumerate(pm_changes)]
-    pm_falls = [(~pm_masks[i] & x if i != 0 else 0) for i, x in enumerate(pm_changes)]
 
     pmon_events["pm_raises"] = to_pmon_names(pm_raises)
-    pmon_events["pm_falls"] = to_pmon_names(pm_falls)
 
     pmon_raises = pmon_events[pmon_events["pm_raises"].notnull()][["time", "pm_raises"]]
     return pmon_raises

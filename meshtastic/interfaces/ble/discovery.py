@@ -258,7 +258,7 @@ class DiscoveryManager:
             try:
                 self._client = resolved_factory(log_if_no_address=False)
             except TypeError as exc:
-                if "log_if_no_address" in str(exc):
+                if exc.args and "log_if_no_address" in exc.args[0]:
                     logger.debug(
                         "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
                         exc,
@@ -274,12 +274,8 @@ class DiscoveryManager:
             # (duck typing allows test fixtures while still catching errors)
             if not isinstance(self._client, BLEClient):
                 # Duck-typed discovery clients must support scan operations:
-                # _discover() and context manager protocol (__enter__/__exit__).
-                required_attrs = (
-                    "_discover",
-                    "__enter__",
-                    "__exit__",
-                )
+                # _discover() is the only required method for device scanning.
+                required_attrs = ("_discover",)
                 missing = [a for a in required_attrs if not hasattr(self._client, a)]
                 if missing:
                     raise DiscoveryClientError.invalid_client(
@@ -337,7 +333,7 @@ class DiscoveryManager:
 
         If a persistent client exists with a close method, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
         """
-        if self._client:
+        if self._client is not None:
             try:
                 close = getattr(self._client, "close", None)
                 if callable(close):

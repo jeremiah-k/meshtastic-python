@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -33,7 +34,7 @@ def test_init_on_text_receive_with_exception(
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
-    packet: dict[str, object] = {}
+    packet: dict[str, Any] = {}
     with caplog.at_level(logging.DEBUG):
         _on_text_receive(iface, packet)
     assert re.search(r"in _on_text_receive", caplog.text, re.MULTILINE)
