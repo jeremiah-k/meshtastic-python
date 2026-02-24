@@ -318,8 +318,9 @@ class DiscoveryManager:
         """
         if self._client:
             try:
-                if hasattr(self._client, "close"):
-                    self._client.close()
+                close = getattr(self._client, "close", None)
+                if callable(close):
+                    close()
             finally:
                 self._client = None
 

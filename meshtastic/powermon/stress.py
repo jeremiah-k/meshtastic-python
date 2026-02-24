@@ -117,8 +117,9 @@ class PowerStress:
             if not self.client.syncPowerStress(
                 powermon_pb2.PowerStressMessage.PRINT_INFO
             ):
-                logging.warning("Ack not received for PRINT_INFO; aborting run.")
-                return
+                logging.warning(
+                    "Ack not received for PRINT_INFO; continuing with stress sequence."
+                )
 
             num_seconds = 5.0
             states = [

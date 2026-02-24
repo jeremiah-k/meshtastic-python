@@ -410,7 +410,7 @@ def main() -> None:
     )
 
     if not args.no_server:
-        app.run(debug=debug, host=host, port=port)  # type: ignore[arg-type]
+        app.run(debug=debug, host=host, port=port)
     else:
         logging.info("Exiting without running visualization server")
 

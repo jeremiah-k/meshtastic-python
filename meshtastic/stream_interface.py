@@ -164,7 +164,7 @@ class StreamInterface(MeshInterface):
         logger.debug("Closing our port")
         # pylint: disable=E0203
         if self.stream is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, ValueError, serial.SerialException):
                 self.stream.close()
             # pylint: disable=W0201
             self.stream = None
@@ -260,7 +260,7 @@ class StreamInterface(MeshInterface):
         MeshInterface.close(self)
         s = self.stream
         if s is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, ValueError, serial.SerialException):
                 s.close()
             self.stream = None
 

@@ -99,6 +99,9 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
 
     iface = SerialInterface(noProto=True, connectNow=False)
     stream.is_open = False
+    # setup may flush during constructor; only assert close() behavior.
+    stream.flush.reset_mock()
+    mock_sleep.reset_mock()
     # Defensive safety-net: side_effect would catch unexpected flush() calls,
     # but SerialInterface.close() skips flush when is_open is False.
     stream.flush.side_effect = RuntimeError("flush on closed stream")
@@ -111,4 +114,5 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
     if sys.platform != "win32":
         mocked_open.assert_called()
         mock_hupcl.assert_called()
-    mock_sleep.assert_called()
+    stream.flush.assert_not_called()
+    mock_sleep.assert_not_called()

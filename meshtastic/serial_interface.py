@@ -169,7 +169,7 @@ class SerialInterface(StreamInterface):
             # This workaround ensures the device receives all data before the serial
             # connection is terminated, particularly important for some USB-serial
             # adapters and hardware configurations.
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, ValueError, serial.SerialException):
                 stream.flush()
                 time.sleep(0.1)
                 stream.flush()
