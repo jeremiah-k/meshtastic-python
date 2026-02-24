@@ -7,8 +7,6 @@ import pytest
 
 from ..stream_interface import MAX_TO_FROM_RADIO_SIZE, START1, START2, StreamInterface
 
-# import re
-
 
 @pytest.mark.unit
 def test_stream_interface() -> None:

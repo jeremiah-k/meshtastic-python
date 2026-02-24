@@ -334,7 +334,9 @@ class BLECoroutineRunner:
             # Run forever until stopped
             loop.run_forever()
 
-        except Exception as e:
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 - runner loop must not crash caller threads
             logger.error("Error in BLECoroutineRunner loop: %s", e, exc_info=True)
         finally:
             # Clean shutdown: cancel all pending tasks
@@ -387,7 +389,7 @@ class BLECoroutineRunner:
                         logger.debug("Timeout waiting for tasks to cancel")
 
                 loop.run_until_complete(_cancel_with_timeout())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - task cancellation is best-effort
             logger.debug("Exception during task cancellation: %s", e)
 
     def _run_coroutine_threadsafe(
@@ -438,7 +440,7 @@ class BLECoroutineRunner:
 
         try:
             self._ensure_running(timeout=effective_startup_timeout)
-        except Exception:
+        except Exception:  # noqa: BLE001 - ensure coroutine is closed before re-raise
             # Close the coroutine to prevent "coroutine was never awaited" warning
             with contextlib.suppress(Exception):
                 coro.close()
@@ -455,7 +457,7 @@ class BLECoroutineRunner:
 
         try:
             future = asyncio.run_coroutine_threadsafe(coro, loop)
-        except Exception:
+        except Exception:  # noqa: BLE001 - ensure coroutine is closed before re-raise
             # Close the coroutine to prevent "coroutine was never awaited" warning
             with contextlib.suppress(Exception):
                 coro.close()
@@ -523,7 +525,9 @@ class BLECoroutineRunner:
         # Use default handler for additional processing
         try:
             loop.default_exception_handler(context)
-        except Exception as e:
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 - loop default handler failures are non-fatal
             logger.debug("Exception in default exception handler: %s", e)
 
     def _cancel_pending_futures(self) -> None:
@@ -540,7 +544,7 @@ class BLECoroutineRunner:
                 if not future.done():
                     try:
                         future.cancel()
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - cancellation is best-effort
                         logger.debug("Exception cancelling future: %s", e)
 
     def _stop(self, timeout: float = 2.0) -> bool:
@@ -562,14 +566,7 @@ class BLECoroutineRunner:
         # to avoid deadlock if the runner thread needs _instance_lock
         with self._instance_lock:
             self._stop_requested = True
-
-            # Cancel pending futures inline (already holding lock, RLock allows this)
-            for future in list(self._pending_futures):
-                if not future.done():
-                    try:
-                        future.cancel()
-                    except Exception as e:
-                        logger.debug("Exception cancelling future: %s", e)
+            self._cancel_pending_futures()
 
             # Capture thread and loop references for join/cleanup outside lock
             thread = self._thread
@@ -640,7 +637,7 @@ class BLECoroutineRunner:
         """
         try:
             self._stop(timeout=1.0)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - process-exit cleanup must not raise
             logger.debug("Exception during atexit shutdown: %s", e)
 
     def _restart(self) -> bool:

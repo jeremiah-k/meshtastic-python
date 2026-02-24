@@ -1,6 +1,7 @@
 """Meshtastic unit tests for tcp_interface.py."""
 
 import re
+import socket
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -39,7 +40,7 @@ def test_TCPInterface_exception() -> None:
     Ensures shutdown exceptions are suppressed so close() completes.
     """
 
-    def throw_an_exception() -> None:
+    def throw_an_exception(*_args: object) -> None:
         """Raise a ValueError with the message "Fake exception.".
 
         Raises
@@ -59,6 +60,20 @@ def test_TCPInterface_exception() -> None:
             iface.close()
             assert mock_socket.called
             assert mock_shutdown.called
+
+
+@pytest.mark.unit
+def test_TCPInterface_myConnect_clears_socket_timeout() -> None:
+    """MyConnect should restore blocking mode after connect-timeout use."""
+    with patch("meshtastic.tcp_interface.socket.create_connection") as mock_connect:
+        connected_socket = MagicMock()
+        mock_connect.return_value = connected_socket
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+
+        iface.myConnect()
+
+        connected_socket.settimeout.assert_called_once_with(None)
+        iface.close()
 
 
 @pytest.mark.unit
@@ -106,6 +121,24 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
         mock_sleep.assert_not_called()
         mock_socket.close.assert_called_once()
         assert iface.socket is None
+        iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_read_timeout_keeps_socket_without_reconnect() -> None:
+    """socket.timeout reads should not be treated as disconnects."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        mock_socket = MagicMock()
+        mock_socket.recv.side_effect = socket.timeout()
+        iface.socket = mock_socket
+
+        with patch.object(iface, "_attempt_reconnect") as mock_reconnect:
+            data = iface._read_bytes(1)
+
+        assert data is None
+        mock_reconnect.assert_not_called()
+        assert iface.socket is mock_socket
         iface.close()
 
 

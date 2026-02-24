@@ -1,3 +1,5 @@
+.PHONY: test ci lint docs cov virt smoke1 slow install examples protobufs FORCE
+
 # only run the fast unit tests
 test:
 	poetry run pytest -m unit

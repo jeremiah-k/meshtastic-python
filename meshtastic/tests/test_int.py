@@ -9,7 +9,7 @@ import pytest
 def _run_cli_with_timeout(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     """Run a CLI command with a bounded timeout and fail clearly on timeout."""
     try:
-        return subprocess.run(
+        return subprocess.run(  # noqa: S603
             cmd,
             capture_output=True,
             text=True,

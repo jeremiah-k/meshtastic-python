@@ -616,7 +616,9 @@ def test_smoke1_seturl_invalid_url() -> None:
 @pytest.mark.smoke1
 def test_smoke1_configure() -> None:
     """Test --configure."""
-    _, out = subprocess.getstatusoutput("meshtastic --configure example_config.yaml")
+    return_value, out = subprocess.getstatusoutput(
+        "meshtastic --configure example_config.yaml"
+    )
     assert re.match(r"Connected to radio", out)
     assert re.search("^Setting device owner to Bob TBeam", out, re.MULTILINE)
     assert re.search("^Fixing altitude at 304 meters", out, re.MULTILINE)
@@ -628,6 +630,7 @@ def test_smoke1_configure() -> None:
     assert re.search("^Set screen_on_secs to 31536000", out, re.MULTILINE)
     assert re.search("^Set wait_bluetooth_secs to 31536000", out, re.MULTILINE)
     assert re.search("^Writing modified preferences to device", out, re.MULTILINE)
+    assert return_value == 0
     # pause for the radio
     time.sleep(PAUSE_AFTER_REBOOT)
 

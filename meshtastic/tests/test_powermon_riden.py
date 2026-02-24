@@ -15,29 +15,21 @@ except ImportError:
     pytest.skip("Can't import RidenPowerSupply", allow_module_level=True)
 
 
-def _make_riden_stub() -> RidenPowerSupply:
-    """Create a minimally initialized RidenPowerSupply test instance."""
-    pps = object.__new__(RidenPowerSupply)
-    pps.r = MagicMock()
-    pps.prevPowerTime = datetime.now() - timedelta(seconds=10)
-    pps.prevWattHour = 100.0
-    pps.v = 3.3
-    return pps
-
-
 @pytest.mark.unit
-def test_set_max_current_forwards_to_device() -> None:
+def test_set_max_current_forwards_to_device(riden_stub: RidenPowerSupply) -> None:
     """Test that setMaxCurrent calls set_i_set on the underlying Riden object."""
-    pps = _make_riden_stub()
+    pps = riden_stub
     r_mock = cast(MagicMock, pps.r)
     pps.setMaxCurrent(0.123)
     r_mock.set_i_set.assert_called_once_with(0.123)
 
 
 @pytest.mark.unit
-def test_power_on_applies_voltage_and_enables_output() -> None:
+def test_power_on_applies_voltage_and_enables_output(
+    riden_stub: RidenPowerSupply,
+) -> None:
     """Test that powerOn sets configured voltage and enables output."""
-    pps = _make_riden_stub()
+    pps = riden_stub
     r_mock = cast(MagicMock, pps.r)
     pps.v = 4.2
     pps.powerOn()
@@ -46,9 +38,11 @@ def test_power_on_applies_voltage_and_enables_output() -> None:
 
 
 @pytest.mark.unit
-def test_get_average_current_ma_converts_watts_to_ma() -> None:
+def test_get_average_current_ma_converts_watts_to_ma(
+    riden_stub: RidenPowerSupply,
+) -> None:
     """Test that get_average_current_mA converts Watt-hours/time to mA."""
-    pps = _make_riden_stub()
+    pps = riden_stub
     pps.prevPowerTime = datetime.now() - timedelta(seconds=3600)
     pps.prevWattHour = 10.0
     pps._getRawWattHour = MagicMock(return_value=11.0)  # type: ignore[method-assign]
@@ -62,18 +56,36 @@ def test_get_average_current_ma_converts_watts_to_ma() -> None:
 
 
 @pytest.mark.unit
-def test_get_average_current_ma_returns_nan_for_nonpositive_voltage() -> None:
+def test_get_average_current_ma_returns_nan_for_nonpositive_voltage(
+    riden_stub: RidenPowerSupply,
+) -> None:
     """Test that get_average_current_mA returns NaN when voltage is not positive."""
-    pps = _make_riden_stub()
+    pps = riden_stub
     pps._getRawWattHour = MagicMock(return_value=pps.prevWattHour)  # type: ignore[method-assign]
     pps.v = 0.0
     assert math.isnan(pps.get_average_current_mA())
 
 
 @pytest.mark.unit
-def test_get_raw_watt_hour_updates_and_returns_wh() -> None:
+def test_get_average_current_camelcase_aliases_delegate(
+    riden_stub: RidenPowerSupply,
+) -> None:
+    """CamelCase aliases should delegate to get_average_current_mA."""
+    pps = riden_stub
+    pps.get_average_current_mA = MagicMock(return_value=123.4)  # type: ignore[method-assign]
+    delegated = cast(MagicMock, pps.get_average_current_mA)
+
+    assert pps.getAverageCurrentMA() == 123.4
+    assert pps.getAverageCurrentmA() == 123.4
+    assert delegated.call_count == 2
+
+
+@pytest.mark.unit
+def test_get_raw_watt_hour_updates_and_returns_wh(
+    riden_stub: RidenPowerSupply,
+) -> None:
     """_getRawWattHour should call update() and return r.wh."""
-    pps = _make_riden_stub()
+    pps = riden_stub
     r_mock = cast(MagicMock, pps.r)
     r_mock.wh = 42.5
     value = pps._getRawWattHour()

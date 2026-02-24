@@ -10,14 +10,13 @@ managers/helpers live in submodules under
 # ruff: noqa: RUF022, E402  # __all__ is intentionally grouped; import guard precedes exports
 
 try:
-    import bleak as _bleak
+    import bleak as _bleak  # noqa: F401
 except ImportError as exc:  # pragma: no cover - dependency guard
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003
         "BLE support requires the 'bleak' package, but it is missing. "
         "Your Meshtastic installation appears incomplete; reinstall dependencies "
         "with `poetry install` (or `pip install --upgrade meshtastic`)."
     ) from exc
-_ = _bleak
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (

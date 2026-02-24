@@ -29,21 +29,21 @@ class SupportedDevice:
         ----------
         name : str
             The name of the device.
-        version : str, optional
+        version : str or None, optional
             The version of the device.
-        for_firmware : str, optional
+        for_firmware : str or None, optional
             The firmware identifier for the device.
         device_class : str, optional
             The class of the device (e.g., "esp32", "nrf52").
-        baseport_on_linux : str, optional
+        baseport_on_linux : str or None, optional
             The base port name on Linux (e.g., "ttyUSB", "ttyACM").
-        baseport_on_mac : str, optional
+        baseport_on_mac : str or None, optional
             The base port name on macOS (e.g., "cu.usbserial", "cu.usbmodem").
         baseport_on_windows : str, optional
             The base port name on Windows (default "COM").
-        usb_vendor_id_in_hex : str, optional
+        usb_vendor_id_in_hex : str or None, optional
             The USB vendor ID in hexadecimal.
-        usb_product_id_in_hex : str, optional
+        usb_product_id_in_hex : str or None, optional
             The USB product ID in hexadecimal.
         """
         self.name = name

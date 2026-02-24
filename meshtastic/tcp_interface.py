@@ -114,13 +114,14 @@ class TCPInterface(StreamInterface):
         rep += ")"
         return rep
 
-    def _socket_shutdown(self) -> None:
-        """Initiate a bidirectional shutdown of the underlying socket if one exists.
+    def _socket_shutdown(self, sock: socket.socket | None = None) -> None:
+        """Initiate a bidirectional shutdown of the specified socket if one exists.
 
-        Does nothing when no socket is present.
+        When ``sock`` is omitted, operates on ``self.socket``.
         """
-        if self.socket is not None:
-            self.socket.shutdown(socket.SHUT_RDWR)
+        sock_to_shutdown = self.socket if sock is None else sock
+        if sock_to_shutdown is not None:
+            sock_to_shutdown.shutdown(socket.SHUT_RDWR)
 
     def myConnect(self) -> None:
         """Establish a TCP connection to the instance hostname and port.
@@ -129,9 +130,11 @@ class TCPInterface(StreamInterface):
         """
         logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
-        self.socket = socket.create_connection(
+        connected_socket = socket.create_connection(
             server_address, timeout=self._connect_timeout
         )
+        connected_socket.settimeout(None)
+        self.socket = connected_socket
         self._fatal_disconnect = False
 
     def close(self) -> None:
@@ -148,15 +151,16 @@ class TCPInterface(StreamInterface):
         self._shared_close()
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
-        if self.socket is not None:
+        sock = self.socket
+        if sock is not None:
             with contextlib.suppress(
                 Exception
             ):  # Ignore errors in shutdown, because we might have a race with the server
-                self._socket_shutdown()
+                self._socket_shutdown(sock)
             with contextlib.suppress(
                 Exception
             ):  # Ignore close races if the socket is already torn down
-                self.socket.close()
+                sock.close()
 
         self.socket = None
 
@@ -186,7 +190,7 @@ class TCPInterface(StreamInterface):
             )
             with contextlib.suppress(Exception):
                 if self.socket is sock:
-                    self._socket_shutdown()
+                    self._socket_shutdown(sock)
             with contextlib.suppress(Exception):
                 sock.close()
             if self.socket is sock:
@@ -275,11 +279,14 @@ class TCPInterface(StreamInterface):
 
         if self._wantExit:
             # close() may race while we reconnect; tear down the new socket.
+            reconnect_sock = self.socket
             with contextlib.suppress(Exception):
-                self._socket_shutdown()
+                self._socket_shutdown(reconnect_sock)
             with contextlib.suppress(Exception):
-                self.socket.close()
-            self.socket = None
+                if reconnect_sock is not None:
+                    reconnect_sock.close()
+            if self.socket is reconnect_sock:
+                self.socket = None
             return reconnect_ok
 
         # _start_config() can call _send_to_radio(), which drains self.queue and may
@@ -304,11 +311,14 @@ class TCPInterface(StreamInterface):
                 self.hostname,
                 config_ex,
             )
+            reconnect_sock = self.socket
             with contextlib.suppress(Exception):
-                self._socket_shutdown()
+                self._socket_shutdown(reconnect_sock)
             with contextlib.suppress(Exception):
-                self.socket.close()
-            self.socket = None
+                if reconnect_sock is not None:
+                    reconnect_sock.close()
+            if self.socket is reconnect_sock:
+                self.socket = None
         else:
             self._reconnect_attempts = 0
             self._fatal_disconnect = False
@@ -344,6 +354,9 @@ class TCPInterface(StreamInterface):
         if sock is not None:
             try:
                 data = sock.recv(length)
+            except socket.timeout:
+                logger.debug("Socket read timed out for %s; retaining connection", sock)
+                return None
             except OSError as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
@@ -354,7 +367,7 @@ class TCPInterface(StreamInterface):
                 # cleanup and reconnect socket without breaking reader thread
                 with contextlib.suppress(Exception):
                     if self.socket is sock:
-                        self._socket_shutdown()
+                        self._socket_shutdown(sock)
                 with contextlib.suppress(Exception):
                     sock.close()
                 if self.socket is sock:

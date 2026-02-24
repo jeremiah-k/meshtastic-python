@@ -54,12 +54,12 @@ def reset() -> None:
 
 
 # Declared module state managed via reset().
-args: argparse.Namespace | None
-parser: argparse.ArgumentParser | None
-channel_index: int | None
-logfile: IO[str] | None
-tunnel_instance: Tunnel | None
-camel_case: bool
+args: argparse.Namespace | None = None
+parser: argparse.ArgumentParser | None = None
+channel_index: int | None = None
+logfile: IO[str] | None = None
+tunnel_instance: Tunnel | None = None
+camel_case: bool = False
 
 # Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.
 # Python 3.14+ can defer module annotations; inspect.get_annotations() handles

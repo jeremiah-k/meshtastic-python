@@ -8,7 +8,7 @@ import pytest
 
 from ..mesh_interface import MeshInterface
 from ..protobuf import portnums_pb2, remote_hardware_pb2
-from ..remote_hardware import RemoteHardwareClient, onGPIOreceive
+from ..remote_hardware import WATCH_MASKS_ATTR, RemoteHardwareClient, onGPIOreceive
 from ..serial_interface import SerialInterface
 
 
@@ -23,8 +23,9 @@ def test_RemoteHardwareClient(mock_gpio_iface):
 def test_onGPIOreceive(caplog):
     """Test onGPIOreceive."""
     iface = create_autospec(SerialInterface, instance=True)
-    iface.mask = 0xFFFFFFFF
-    packet = {"decoded": {"remotehw": {"type": "foo", "gpioValue": "4096"}}}
+    packet = {
+        "decoded": {"remotehw": {"type": "foo", "gpioValue": "4096", "gpioMask": -1}}
+    }
     with caplog.at_level(logging.INFO):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
@@ -33,10 +34,22 @@ def test_onGPIOreceive(caplog):
 
 @pytest.mark.unit
 def test_onGPIOreceive_mask_fallback(caplog):
-    """Test onGPIOreceive uses packet gpioMask when interface.mask is None."""
+    """Test onGPIOreceive uses packet gpioMask when no tracked mask is available."""
     iface = create_autospec(SerialInterface, instance=True)
-    iface.mask = None
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
+    with caplog.at_level(logging.DEBUG):
+        onGPIOreceive(packet, iface)
+        assert re.search(r"Received RemoteHardware", caplog.text)
+        assert re.search(r"\bmask[=:\s]+7\b", caplog.text)
+        assert re.search(r"value=7", caplog.text)
+
+
+@pytest.mark.unit
+def test_onGPIOreceive_uses_node_watch_mask(caplog):
+    """Test onGPIOreceive falls back to tracked per-node watch mask when needed."""
+    iface = create_autospec(SerialInterface, instance=True)
+    setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
+    packet = {"from": 16, "decoded": {"remotehw": {"gpioValue": "7"}}}
     with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
@@ -96,6 +109,7 @@ def test_readGPIOs(caplog, mock_gpio_iface):
     assert kwargs["wantAck"] is True
     assert kwargs["channelIndex"] == rhw.channelIndex
     assert kwargs["wantResponse"] is True
+    # readGPIOs relies on pub/sub dispatch for default handling; no explicit callback is expected.
     assert kwargs["onResponse"] is None
 
 
@@ -139,7 +153,7 @@ def test_watchGPIOs(caplog, mock_gpio_iface):
     assert kwargs["channelIndex"] == rhw.channelIndex
     assert kwargs["wantResponse"] is False
     assert kwargs["onResponse"] is None
-    assert mock_gpio_iface.mask == 123
+    assert getattr(mock_gpio_iface, WATCH_MASKS_ATTR)["num:16"] == 123
 
 
 @pytest.mark.unit

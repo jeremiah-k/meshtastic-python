@@ -353,7 +353,7 @@ def test_handleFromRadio_with_node_info(caplog, capsys):
             out, err = capsys.readouterr()
             assert re.search(r" 1 ", out, re.MULTILINE)
             assert re.search(r"│ Unknown 67cc │ ", out, re.MULTILINE)
-            assert re.search(r"│\s+!28af67cc\s+│\s+67cc\s+|", out, re.MULTILINE)
+            assert re.search(r"│\s+!28af67cc\s+│\s+\?CC\s+│", out, re.MULTILINE)
             assert err == ""
 
 

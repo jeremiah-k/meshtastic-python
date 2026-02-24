@@ -160,7 +160,7 @@ class MeshInterface:  # pylint: disable=R0902
         self.noNodes: bool = noNodes
         self.configId: int | None = NODELESS_WANT_CONFIG_ID if noNodes else None
         self.gotResponse: bool = False  # used in gpio read
-        self.mask: int | None = None  # used in gpio read and gpio watch
+        self.mask: int | None = None  # legacy GPIO mask fallback (remote_hardware)
         self.queueStatus: mesh_pb2.QueueStatus | None = None
         self.queue: collections.OrderedDict[int, mesh_pb2.ToRadio | bool] = (
             collections.OrderedDict()

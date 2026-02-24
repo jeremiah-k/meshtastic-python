@@ -93,7 +93,7 @@ class StreamInterface(MeshInterface):
             serial.Serial | None,
             local_stream,
         )  # only serial uses this, TCPInterface overrides the relevant methods instead
-        self._rxBuf = bytes()  # empty
+        self._rxBuf = bytearray()
         self._wantExit = False
 
         self.is_windows11 = is_windows11()
@@ -143,6 +143,11 @@ class StreamInterface(MeshInterface):
 
         # Check if thread has already been started (threads can only be started once)
         # If ident is not None, the thread was started before and needs recreation
+        if self._rxThread.is_alive():
+            logger.warning(
+                "connect() called while reader thread is still alive; ignoring request"
+            )
+            return
         if self._rxThread.ident is not None:
             self._rxThread = threading.Thread(
                 target=self.__reader, args=(), daemon=True, name="stream reader"
@@ -318,7 +323,6 @@ class StreamInterface(MeshInterface):
         shutdown, and calls _disconnected() to perform cleanup.
         """
         logger.debug("in __reader()")
-        empty = bytes()
         disconnect_source = "stream.reader_exit"
 
         try:
@@ -332,19 +336,18 @@ class StreamInterface(MeshInterface):
                     # logger.debug(f'c:{c}')
                     ptr: int = len(self._rxBuf)
 
-                    # Assume we want to append this byte, fixme use bytearray instead
-                    self._rxBuf = self._rxBuf + b
+                    self._rxBuf.append(c)
 
                     if ptr == 0:  # looking for START1
                         if c != START1:
-                            self._rxBuf = empty  # failed to find start
+                            self._rxBuf.clear()  # failed to find start
                             # This must be a log message from the device
 
                             self._handle_log_byte(b)
 
                     elif ptr == 1:  # looking for START2
                         if c != START2:
-                            self._rxBuf = empty  # failed to find start2
+                            self._rxBuf.clear()  # failed to find start2
                     elif ptr >= HEADER_LEN - 1:  # we've at least got a header
                         # logger.debug('at least we received a header')
                         # big endian length follows header
@@ -354,18 +357,20 @@ class StreamInterface(MeshInterface):
                             ptr == HEADER_LEN - 1
                         ):  # we _just_ finished reading the header, validate length
                             if packetlen > MAX_TO_FROM_RADIO_SIZE:
-                                self._rxBuf = (
-                                    empty  # length was out out bounds, restart
-                                )
+                                self._rxBuf.clear()  # length was out out bounds, restart
 
-                        if len(self._rxBuf) != 0 and ptr + 1 >= packetlen + HEADER_LEN:
+                        if self._rxBuf and ptr + 1 >= packetlen + HEADER_LEN:
                             try:
-                                self._handle_from_radio(self._rxBuf[HEADER_LEN:])
+                                self._handle_from_radio(
+                                    bytes(
+                                        self._rxBuf[HEADER_LEN : packetlen + HEADER_LEN]
+                                    )
+                                )
                             except Exception:
                                 logger.exception(
                                     "Error while handling message from radio"
                                 )
-                            self._rxBuf = empty
+                            self._rxBuf.clear()
                 else:
                     # logger.debug(f"timeout")
                     pass

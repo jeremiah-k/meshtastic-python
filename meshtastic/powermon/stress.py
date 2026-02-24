@@ -85,7 +85,8 @@ class PowerStressClient:
             ack_event.set()
 
         logging.info(
-            f"Sending power stress command {powermon_pb2.PowerStressMessage.Opcode.Name(cmd)}"
+            "Sending power stress command %s",
+            powermon_pb2.PowerStressMessage.Opcode.Name(cmd),
         )
         self.sendPowerStress(cmd, onResponse=onResponse, num_seconds=num_seconds)
 
@@ -135,12 +136,14 @@ class PowerStress:
             for s in states:
                 s_name = powermon_pb2.PowerStressMessage.Opcode.Name(s)
                 logging.info(
-                    f"Running power stress test {s_name} for {num_seconds} seconds"
+                    "Running power stress test %s for %s seconds",
+                    s_name,
+                    num_seconds,
                 )
                 if not self.client.syncPowerStress(s, num_seconds):
-                    logging.warning(f"Ack not received for {s_name}; aborting run.")
+                    logging.warning("Ack not received for %s; aborting run.", s_name)
                     return
 
             logging.info("Power stress test complete.")
         except KeyboardInterrupt as e:
-            logging.warning(f"Power stress interrupted: {e}")
+            logging.warning("Power stress interrupted: %s", e)

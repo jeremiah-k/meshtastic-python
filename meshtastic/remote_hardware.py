@@ -23,6 +23,7 @@ NO_GPIO_CHANNEL_ERROR = (
 MISSING_DEST_NODE_ID_ERROR = (
     "Must use a destination node ID for this operation (use --dest)."
 )
+WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
 
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
 
@@ -45,13 +46,52 @@ def _get_mesh_interface_error() -> type[Exception]:
     return _MESH_INTERFACE_ERROR
 
 
+def _normalize_node_key(nodeid: Any) -> str | None:
+    """Normalize a node identifier to a stable string key for internal mask tracking."""
+    key: str | None = None
+    if nodeid is None or isinstance(nodeid, bool):
+        return key
+
+    if isinstance(nodeid, int):
+        key = f"num:{nodeid}"
+    elif isinstance(nodeid, str):
+        stripped = nodeid.strip()
+        if stripped:
+            if stripped.startswith("!"):
+                key = f"id:{stripped.lower()}"
+            else:
+                try:
+                    key = f"num:{int(stripped, 0)}"
+                except ValueError:
+                    key = f"id:{stripped.lower()}"
+    else:
+        try:
+            key = f"num:{int(nodeid)}"
+        except (TypeError, ValueError):
+            key = None
+
+    return key
+
+
+def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
+    """Return per-interface watch masks, creating storage if needed."""
+    watch_masks = getattr(interface, WATCH_MASKS_ATTR, None)
+    if isinstance(watch_masks, dict):
+        return watch_masks
+    watch_masks = {}
+    setattr(interface, WATCH_MASKS_ATTR, watch_masks)
+    return watch_masks
+
+
 def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     """Handle an incoming remote hardware (GPIO) response packet, log its summary, and mark the interface as having received a response.
 
     Extracts `gpioValue` from packet["decoded"]["remotehw"] (defaults to 0 if
-    absent), determines an active mask from `interface.mask` or the packet's
-    `gpioMask`, computes the masked GPIO value, logs the hardware type and
-    computed value, and sets `interface.gotResponse` to True.
+    absent), determines an active mask from packet `gpioMask` or from
+    RemoteHardwareClient watch-mask state keyed by sender node (with a final
+    legacy fallback to ``interface.mask``), computes the masked GPIO value,
+    logs the hardware type and computed value, and sets
+    `interface.gotResponse` to True.
 
     Parameters
     ----------
@@ -62,8 +102,8 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
         - "gpioMask" (int): Mask provided by the remote device.
         - "type" (int|enum): Hardware message type.
     interface : 'MeshInterface'
-        MeshInterface instance whose `mask` may override
-        the packet mask and whose `gotResponse` attribute will be set to True.
+        MeshInterface instance that may contain per-node watch mask state and
+        whose `gotResponse` attribute will be set to True.
     """
     logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
@@ -78,8 +118,21 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     # Note: proto3 omits zero-valued fields; gpioValue defaults to 0
     # See https://developers.google.com/protocol-buffers/docs/proto3#default
 
-    raw_mask = getattr(interface, "mask", None)
-    raw_mask = raw_mask if raw_mask is not None else hw.get("gpioMask", 0)
+    raw_mask = hw.get("gpioMask")
+    if raw_mask is None:
+        watch_masks = _get_watch_masks(interface)
+        for lookup_value in (packet.get("from"), packet.get("fromId")):
+            key = _normalize_node_key(lookup_value)
+            if key is not None and key in watch_masks:
+                raw_mask = watch_masks[key]
+                break
+        if raw_mask is None and len(watch_masks) == 1:
+            # Legacy fallback for packets that omit sender identity.
+            raw_mask = next(iter(watch_masks.values()))
+    if raw_mask is None:
+        raw_mask = getattr(interface, "mask", None)
+    if raw_mask is None:
+        raw_mask = 0
     try:
         mask = int(raw_mask)
         gpio_value_int = int(gpioValue)
@@ -128,6 +181,7 @@ class RemoteHardwareClient:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
+        _get_watch_masks(self.iface)
 
         already_subscribed = False
         try:
@@ -135,7 +189,7 @@ class RemoteHardwareClient:
         except pub.TopicNameError:
             # Topic may not exist yet; subscribe below to create/register it.
             already_subscribed = False
-        except Exception as ex:  # noqa: BLE001 - defensive pubsub resilience
+        except (TypeError, ValueError) as ex:
             logger.warning(
                 "Unable to inspect remote hardware topic subscription: %s", ex
             )
@@ -257,5 +311,7 @@ class RemoteHardwareClient:
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
         r.gpio_mask = mask
-        self.iface.mask = mask
+        node_key = _normalize_node_key(nodeid)
+        if node_key is not None:
+            _get_watch_masks(self.iface)[node_key] = int(mask)
         return self._send_hardware(nodeid, r)

@@ -3,6 +3,7 @@
 import argparse
 import shutil
 from collections.abc import Generator
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 from unittest.mock import MagicMock, create_autospec, patch
 
@@ -15,6 +16,7 @@ from ..serial_interface import SerialInterface
 
 if TYPE_CHECKING:
     from meshtastic.powermon.power_supply import PowerSupply
+    from meshtastic.powermon.riden import RidenPowerSupply
 
 _MT_CONFIG_SENTINEL = object()
 
@@ -220,6 +222,19 @@ def power_supply() -> "PowerSupply":
     from meshtastic.powermon.power_supply import PowerSupply  # pylint: disable=C0415
 
     return PowerSupply()
+
+
+@pytest.fixture
+def riden_stub() -> "RidenPowerSupply":
+    """Create a minimally initialized RidenPowerSupply test instance."""
+    from meshtastic.powermon.riden import RidenPowerSupply  # pylint: disable=C0415
+
+    pps = object.__new__(RidenPowerSupply)
+    pps.r = MagicMock()
+    pps.prevPowerTime = datetime.now() - timedelta(seconds=10)
+    pps.prevWattHour = 100.0
+    pps.v = 3.3
+    return pps
 
 
 def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:

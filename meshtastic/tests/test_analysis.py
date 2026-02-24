@@ -188,6 +188,22 @@ def test_get_pmon_raises_requires_time_column() -> None:
 
 
 @pytest.mark.unit
+def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
+    """get_pmon_raises should preserve current multi-bit mask mapping behavior."""
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0, 3],  # 0->3 is a simultaneous two-bit raise
+        }
+    )
+
+    result = get_pmon_raises(dslog)
+
+    # Multi-bit raises currently map to None and are filtered out by get_pmon_raises.
+    assert result.empty
+
+
+@pytest.mark.unit
 def test_is_loopback_host_recognizes_localhost() -> None:
     """_is_loopback_host should recognize common loopback addresses."""
     assert _is_loopback_host("localhost")

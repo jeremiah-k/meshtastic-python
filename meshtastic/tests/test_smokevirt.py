@@ -35,7 +35,7 @@ def _quote_shell_path(path: Path) -> str:
     """Quote a filesystem path for subprocess.getstatusoutput shell usage."""
     path_str = str(path)
     if os.name == "nt":
-        escaped = path_str.replace('"', r"\"")
+        escaped = path_str.replace('"', '""')
         return f'"{escaped}"'
     return shlex.quote(path_str)
 

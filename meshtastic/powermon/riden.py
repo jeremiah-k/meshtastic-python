@@ -58,9 +58,16 @@ class RidenPowerSupply(PowerSupply):
             return math.nan
         return (watts / self.v) * 1000
 
-    def getAverageCurrentmA(self) -> float:
+    def getAverageCurrentMA(self) -> float:
         """CamelCase alias for get_average_current_mA."""
         return self.get_average_current_mA()
+
+    def getAverageCurrentmA(self) -> float:
+        """Return average current via a deprecated camelCase alias.
+
+        Prefer getAverageCurrentMA for consistent unit capitalization.
+        """
+        return self.getAverageCurrentMA()
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""
