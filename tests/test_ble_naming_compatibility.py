@@ -8,9 +8,10 @@ def test_ble_interface_naming_compatibility():
     # We don't need to actually connect, just check for attribute existence
     assert hasattr(BLEInterface, "findDevice")
     assert hasattr(BLEInterface, "find_device")
-    assert hasattr(BLEInterface, "from_num_handler")
-    assert hasattr(BLEInterface, "log_radio_handler")
-    assert hasattr(BLEInterface, "legacy_log_radio_handler")
+    # Internal callbacks should not be public shims
+    assert not hasattr(BLEInterface, "from_num_handler")
+    assert not hasattr(BLEInterface, "log_radio_handler")
+    assert not hasattr(BLEInterface, "legacy_log_radio_handler")
 
 
 def test_ble_client_naming_compatibility():
@@ -25,8 +26,9 @@ def test_ble_client_naming_compatibility():
     assert hasattr(BLEClient, "has_characteristic")
     assert hasattr(BLEClient, "start_notify")
     assert hasattr(BLEClient, "close")
-    assert hasattr(BLEClient, "async_await")
-    assert hasattr(BLEClient, "async_run")
+    # Internal orchestration should not be public shims
+    assert not hasattr(BLEClient, "async_await")
+    assert not hasattr(BLEClient, "async_run")
     # Explicit low-risk promotions
     assert hasattr(BLEClient, "isConnected")
     assert hasattr(BLEClient, "stopNotify")
@@ -56,10 +58,10 @@ def test_ble_module_level_naming_compatibility():
 
 
 def test_reconnect_policy_naming_compatibility():
-    """Verify reconnect policy exposes camelCase names and legacy snake_case aliases."""
+    """Verify reconnect policy exposes camelCase names and no internal aliases."""
     from meshtastic.interfaces.ble.policies import ReconnectPolicy
 
     assert hasattr(ReconnectPolicy, "nextAttempt")
     assert hasattr(ReconnectPolicy, "getAttemptCount")
-    assert hasattr(ReconnectPolicy, "next_attempt")
-    assert hasattr(ReconnectPolicy, "get_attempt_count")
+    assert not hasattr(ReconnectPolicy, "next_attempt")
+    assert not hasattr(ReconnectPolicy, "get_attempt_count")

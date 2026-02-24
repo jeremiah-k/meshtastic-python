@@ -31,13 +31,13 @@ class PowerMeter:
     def close(self) -> None:
         """Close the power meter."""
 
-    def get_average_current_mA(self) -> float:
+    def getAverageCurrentMA(self) -> float:
         """Return average current of last measurement in mA (since last call to this method)."""
         return math.nan
 
-    def getAverageCurrentMA(self) -> float:
-        """CamelCase alias for get_average_current_mA."""
-        return self.get_average_current_mA()
+    def get_average_current_mA(self) -> float:
+        """Shim for getAverageCurrentMA."""
+        return self.getAverageCurrentMA()
 
     def getAverageCurrentmA(self) -> float:
         """Return average current via a deprecated camelCase alias.
@@ -51,18 +51,84 @@ class PowerMeter:
         )
         return self.getAverageCurrentMA()
 
-    def get_min_current_mA(self) -> float:
-        """Return min current in mA (since last call to this method)."""
+    def getMinCurrentMA(self) -> float:
+        """Return min current in mA since last call to this method.
+
+        Returns
+        -------
+        float
+            Minimum current in milliamperes.
+        """
         # Subclasses must override for a better implementation
-        return self.get_average_current_mA()
+        return self.getAverageCurrentMA()
+
+    def get_min_current_mA(self) -> float:
+        """Shim for getMinCurrentMA.
+
+        Returns
+        -------
+        float
+            Minimum current in milliamperes.
+        """
+        return self.getMinCurrentMA()
+
+    def getMinCurrentmA(self) -> float:
+        """Return the minimum current using a deprecated alias.
+
+        Returns
+        -------
+        float
+            Minimum current in milliamperes.
+        """
+        warnings.warn(
+            "getMinCurrentmA is deprecated, use getMinCurrentMA instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.getMinCurrentMA()
+
+    def getMaxCurrentMA(self) -> float:
+        """Return max current in mA since last call to this method.
+
+        Returns
+        -------
+        float
+            Maximum current in milliamperes.
+        """
+        # Subclasses must override for a better implementation
+        return self.getAverageCurrentMA()
 
     def get_max_current_mA(self) -> float:
-        """Return max current in mA (since last call to this method)."""
-        # Subclasses must override for a better implementation
-        return self.get_average_current_mA()
+        """Shim for getMaxCurrentMA.
+
+        Returns
+        -------
+        float
+            Maximum current in milliamperes.
+        """
+        return self.getMaxCurrentMA()
+
+    def getMaxCurrentmA(self) -> float:
+        """Return the maximum current using a deprecated alias.
+
+        Returns
+        -------
+        float
+            Maximum current in milliamperes.
+        """
+        warnings.warn(
+            "getMaxCurrentmA is deprecated, use getMaxCurrentMA instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.getMaxCurrentMA()
+
+    def resetMeasurements(self) -> None:
+        """Reset current measurements."""
 
     def reset_measurements(self) -> None:
-        """Reset current measurements."""
+        """Shim for resetMeasurements."""
+        self.resetMeasurements()
 
 
 class PowerSupply(PowerMeter):

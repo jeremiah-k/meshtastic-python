@@ -70,12 +70,12 @@ def test_get_average_current_ma_returns_nan_for_nonpositive_voltage(
 def test_get_average_current_camelcase_aliases_delegate(
     riden_stub: RidenPowerSupply,
 ) -> None:
-    """CamelCase aliases should delegate to get_average_current_mA."""
+    """CamelCase aliases should delegate to getAverageCurrentMA."""
     pps = riden_stub
-    pps.get_average_current_mA = MagicMock(return_value=123.4)  # type: ignore[method-assign]
-    delegated = cast(MagicMock, pps.get_average_current_mA)
+    pps.getAverageCurrentMA = MagicMock(return_value=123.4)  # type: ignore[method-assign]
+    delegated = cast(MagicMock, pps.getAverageCurrentMA)
 
-    assert pps.getAverageCurrentMA() == 123.4
+    assert pps.get_average_current_mA() == 123.4
     with pytest.warns(DeprecationWarning):
         assert pps.getAverageCurrentmA() == 123.4
     assert delegated.call_count == 2

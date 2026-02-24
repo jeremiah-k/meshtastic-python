@@ -1,5 +1,5 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/pub_sub_example2.py
+To run: python examples/pub_sub_example2.py.
 """
 
 import sys
@@ -17,12 +17,12 @@ if len(sys.argv) < 2:
 
 
 def onReceive(packet, interface):  # pylint: disable=unused-argument
-    """called when a packet arrives"""
+    """Handle incoming packets."""
     print(f"Received: {packet}")
 
 
 def onConnection(interface, topic=pub.AUTO_TOPIC):  # pylint: disable=unused-argument
-    """called when we (re)connect to the radio"""
+    """Handle (re)connection to the radio."""
     # defaults to broadcast, specify a destination ID if you wish
     interface.sendText("hello mesh")
 

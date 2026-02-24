@@ -151,10 +151,6 @@ class ReconnectPolicy:
         self._attempt_count += 1
         return delay, should_retry
 
-    def next_attempt(self) -> tuple[float, bool]:
-        """Return the backwards-compatible snake_case alias for nextAttempt."""
-        return self.nextAttempt()
-
     def getAttemptCount(self) -> int:
         """Return the number of retry attempts performed so far.
 
@@ -164,10 +160,6 @@ class ReconnectPolicy:
             The count of attempts that have been made.
         """
         return self._attempt_count
-
-    def get_attempt_count(self) -> int:
-        """Return the backwards-compatible snake_case alias for getAttemptCount."""
-        return self.getAttemptCount()
 
     def _sleep_with_backoff(self, attempt: int) -> None:
         """Sleep for the policy's jittered exponential-backoff delay.
