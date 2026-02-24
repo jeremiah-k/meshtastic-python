@@ -129,7 +129,7 @@ class ReconnectScheduler:
         return True
 
     def _clear_thread_reference(self) -> None:
-        """Internal method: Clear the internal reference to the running reconnect thread.
+        """Clear the internal reference to the running reconnect thread.
 
         This operation acquires the scheduler's state_lock and sets the internal
         reconnect thread reference to None to record that no background

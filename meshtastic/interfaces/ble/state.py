@@ -203,7 +203,7 @@ class BLEStateManager:
         )
 
     def _transition_to(self, new_state: ConnectionState) -> bool:
-        """Internal method: Attempt to change the manager's BLE connection state to the given target state.
+        """Attempt to change the manager's BLE connection state to the given target state.
 
         Validates the requested transition against the state machine and treats a transition to the current state as a valid no-op.
 

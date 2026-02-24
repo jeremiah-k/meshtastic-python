@@ -1397,7 +1397,7 @@ class BLEInterface(MeshInterface):
     # ---------------------------------------------------------------------
 
     def connect(self, address: str | None = None) -> BLEClient:
-        """Connects to a Meshtastic device over BLE by explicit address or by performing device discovery.
+        """Connect to a Meshtastic device over BLE by explicit address or by performing device discovery.
 
         Attempts to establish and return a connected BLE client for the requested device. If an existing compatible client is already connected, that client is returned. The method uses per-address gating to suppress duplicate concurrent connects and updates the interface's stored address and client reference on success. On failure any client opened during the attempt is closed before the error is propagated.
 

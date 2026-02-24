@@ -115,7 +115,7 @@ class ReconnectPolicy:
         )  # Clamp to [0.001, max_delay]
 
     def _should_retry(self, attempt: int | None = None) -> bool:
-        """Internal helper: determine whether another retry attempt is permitted.
+        """Return whether another retry attempt is permitted.
 
         Parameters
         ----------

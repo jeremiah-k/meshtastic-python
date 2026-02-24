@@ -389,7 +389,7 @@ def _addr_lock_context(addr: str | None) -> Generator[RLock, None, None]:
 def _is_currently_connected_elsewhere(
     addr: str | None, owner: Any | None = None
 ) -> bool:
-    """Internal helper: Determine whether a BLE address is recorded as connected by a different owner.
+    """Return whether a BLE address is recorded as connected by a different owner.
 
     Normalizes the provided address via _addr_key; if normalization yields None the function returns False. While checking, stale records are pruned when the recorded owner has been garbage-collected, reports disconnected, or an unowned claim has expired.
 

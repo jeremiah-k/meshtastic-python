@@ -304,7 +304,7 @@ class ThreadCoordinator:
             event.clear()
 
     def _set_event(self, name: str) -> None:
-        """Internal method: Set the coordinator's named event, waking any threads waiting on it.
+        """Set the coordinator's named event, waking any threads waiting on it.
 
         If no event is registered under the given name, this is a no-op.
 
@@ -317,7 +317,7 @@ class ThreadCoordinator:
             self._set_event_no_lock(name)
 
     def _clear_event(self, name: str) -> None:
-        """Internal method: Clear the tracked event with the given name.
+        """Clear the tracked event with the given name.
 
         If an event with `name` exists, clear its flag so waiting threads will block until it is set again; otherwise do nothing.
 
@@ -330,7 +330,7 @@ class ThreadCoordinator:
             self._clear_event_no_lock(name)
 
     def _wait_for_event(self, name: str, timeout: float | None = None) -> bool:
-        """Waits for the named tracked event to be set or until the timeout elapses.
+        """Wait for the named tracked event to be set or until the timeout elapses.
 
         If no event is registered under `name`, returns `False` immediately.
 

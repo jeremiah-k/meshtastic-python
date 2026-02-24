@@ -53,7 +53,7 @@ class ConnectionValidator:
         self.BLEError = error_class
 
     def _validate_connection_request(self) -> None:
-        """Internal helper: Validate that a new BLE connection may be started.
+        """Validate that a new BLE connection may be started.
 
         Raises
         ------
@@ -188,7 +188,7 @@ class ClientManager:
         new_client: BLEClient,
         old_client: BLEClient | None,
     ) -> None:
-        """Internal helper: Schedule asynchronous close of a previous BLE client when replacing it.
+        """Schedule asynchronous close of a previous BLE client when replacing it.
 
         If `old_client` is provided and is a different object than `new_client`, schedules `_safe_close_client(old_client)` to run in a background daemon thread so the caller is not blocked.
 
@@ -394,7 +394,7 @@ class ConnectionOrchestrator:
         on_connected_func: Callable,
         on_disconnect_func: Callable,
     ) -> BLEClient:
-        """Establishes a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalizes notification registration and lifecycle callbacks.
+        """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
 
         Parameters
         ----------

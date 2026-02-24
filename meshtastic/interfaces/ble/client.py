@@ -506,7 +506,7 @@ class BLEClient:
     def _async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
     ) -> Any:
-        """Waits for a coroutine scheduled on the shared BLE event loop and returns its result.
+        """Wait for a coroutine scheduled on the shared BLE event loop and return its result.
 
         Parameters
         ----------
@@ -601,7 +601,7 @@ class BLEClient:
             )
 
     def _async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
-        """Internal helper: Schedule a coroutine to run on the shared BLE event loop.
+        """Schedule a coroutine to run on the shared BLE event loop.
 
         Parameters
         ----------

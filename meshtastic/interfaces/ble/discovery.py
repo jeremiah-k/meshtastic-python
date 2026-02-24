@@ -70,7 +70,7 @@ def _normalize_device_name_for_matching(name: str | None) -> str | None:
 def _filter_devices_for_target_identifier(
     devices: list[BLEDevice], target_identifier: str
 ) -> list[BLEDevice]:
-    """Selects BLEDevice objects matching a user-supplied address or name using deterministic precedence.
+    """Select BLEDevice objects matching a user-supplied address or name using deterministic precedence.
 
     Matching precedence:
     1) Exact normalized address match.

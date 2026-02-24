@@ -381,7 +381,7 @@ class BLECoroutineRunner:
                 # Use wait_for with timeout to prevent hanging indefinitely
                 # on tasks that don't respond to cancellation
                 async def _cancel_with_timeout():
-                    """Waits for tracked pending tasks to finish cancellation up to the configured shutdown timeout.
+                    """Wait for tracked pending tasks to finish cancellation up to the configured shutdown timeout.
 
                     Gathers all pending tasks and awaits their completion (exceptions are collected) for up to BLEConfig.RUNNER_SHUTDOWN_TIMEOUT_SECONDS. If the wait times out, a debug-level message is logged.
                     """
