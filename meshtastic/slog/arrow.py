@@ -11,6 +11,7 @@ import pyarrow as pa
 from pyarrow import feather
 
 CHUNK_SIZE = 1000  # disk writes are batched based on this number of rows
+logger = logging.getLogger(__name__)
 
 
 class ArrowWriterStateError(RuntimeError):
@@ -231,10 +232,10 @@ class FeatherWriter(ArrowWriter):
         if not os.path.exists(src_name):
             return
         if os.path.getsize(src_name) == 0:
-            logging.warning("Discarding empty file: %s", src_name)
+            logger.warning("Discarding empty file: %s", src_name)
             os.remove(src_name)
         else:
-            logging.info("Compressing log data into %s", dest_name)
+            logger.info("Compressing log data into %s", dest_name)
 
             # note: must use open_stream, not open_file/read_table because the streaming layout is different
             # data = feather.read_table(src_name)
@@ -267,7 +268,7 @@ class FeatherWriter(ArrowWriter):
             try:
                 os.remove(src_name)
             except OSError:
-                logging.warning(
+                logger.warning(
                     "Failed to remove temporary Arrow source file %s",
                     src_name,
                     exc_info=True,

@@ -6,7 +6,6 @@ import logging
 import os
 import re
 import threading
-import time
 import warnings
 from dataclasses import dataclass
 from datetime import datetime
@@ -161,6 +160,7 @@ class PowerLogger:
         self._warned_legacy_mw_without_voltage = False
         self._warned_store_current_reading_deprecation = False
         self._reading_lock = threading.Lock()
+        self._stop_event = threading.Event()
         self.is_logging = True
         self.thread = threading.Thread(
             target=self._logging_thread, name="PowerLogger", daemon=True
@@ -245,7 +245,7 @@ class PowerLogger:
 
     def store_current_reading(self, now: datetime | None = None) -> None:
         """Use `storeCurrentReading()` instead."""
-        if not getattr(self, "_warned_store_current_reading_deprecation", False):
+        if not self._warned_store_current_reading_deprecation:
             warnings.warn(
                 "store_current_reading() is deprecated; use storeCurrentReading() instead.",
                 DeprecationWarning,
@@ -256,14 +256,15 @@ class PowerLogger:
 
     def _logging_thread(self) -> None:
         """Background thread for logging periodic current readings."""
-        while self.is_logging:
+        while not self._stop_event.is_set():
             self._store_current_reading()
-            time.sleep(self.interval)
+            self._stop_event.wait(self.interval)
 
     def close(self) -> None:
         """Close the PowerLogger and stop logging."""
         if self.is_logging:
             self.is_logging = False
+            self._stop_event.set()
             self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
             if self.thread.is_alive():
                 logger.warning(

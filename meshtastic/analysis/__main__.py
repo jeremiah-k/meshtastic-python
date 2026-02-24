@@ -187,18 +187,27 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
         is the software version string.
     """
     if "sw_version" not in dslog.columns:
-        raise ValueError("No sw_version column found in slog")  # noqa: TRY003
+        raise ValueError("No sw_version column found in dslog")  # noqa: TRY003
     board_info = dslog[dslog["sw_version"].notnull()]
     if board_info.empty:
-        raise ValueError("No board info rows found in slog")  # noqa: TRY003
+        raise ValueError("No board info rows found in dslog")  # noqa: TRY003
     if "board_id" not in board_info.columns or board_info["board_id"].isna().all():
-        raise ValueError("No board_id rows found in slog")  # noqa: TRY003
+        raise ValueError("No board_id rows found in dslog")  # noqa: TRY003
     board_info = board_info[board_info["board_id"].notnull()]
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
-    board_model_name = mesh_pb2.HardwareModel.Name(
-        cast(Any, int(first_row["board_id"]))
-    )
+    try:
+        board_id_value = int(first_row["board_id"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid board_id value in dslog: {first_row['board_id']!r}"
+        ) from exc  # noqa: TRY003
+    try:
+        board_model_name = mesh_pb2.HardwareModel.Name(cast(Any, board_id_value))
+    except ValueError as exc:
+        raise ValueError(
+            f"Unknown board_id value in dslog: {board_id_value!r}"
+        ) from exc  # noqa: TRY003
     return (board_model_name, sw_version)
 
 

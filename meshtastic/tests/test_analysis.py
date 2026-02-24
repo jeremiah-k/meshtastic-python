@@ -90,7 +90,7 @@ def test_main_routes_load_errors_through_cli_exit(
 def test_get_board_info_requires_board_id_column() -> None:
     """get_board_info should fail with a clear error when board_id column is missing."""
     frame = pd.DataFrame({"sw_version": ["2.5.0"]})
-    with pytest.raises(ValueError, match="No board_id rows found in slog"):
+    with pytest.raises(ValueError, match="No board_id rows found in dslog"):
         get_board_info(frame)
 
 
@@ -98,7 +98,7 @@ def test_get_board_info_requires_board_id_column() -> None:
 def test_get_board_info_requires_non_null_board_id() -> None:
     """get_board_info should fail with a clear error when board_id is all null."""
     frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [None]})
-    with pytest.raises(ValueError, match="No board_id rows found in slog"):
+    with pytest.raises(ValueError, match="No board_id rows found in dslog"):
         get_board_info(frame)
 
 
@@ -195,7 +195,7 @@ def test_is_loopback_host_recognizes_localhost() -> None:
     assert _is_loopback_host("::1")
     assert _is_loopback_host("[::1]")
     assert not _is_loopback_host("192.168.1.1")
-    assert not _is_loopback_host("0.0.0.0")
+    assert not _is_loopback_host("0.0.0.0")  # noqa: S104
     assert not _is_loopback_host("example.com")
 
 
@@ -222,8 +222,8 @@ def test_create_argparser_returns_parser() -> None:
     args = parser.parse_args(["--port", "9000"])
     assert args.port == 9000
 
-    args = parser.parse_args(["--bind-host", "0.0.0.0"])
-    assert args.host == "0.0.0.0"
+    args = parser.parse_args(["--bind-host", "0.0.0.0"])  # noqa: S104
+    assert args.host == "0.0.0.0"  # noqa: S104
 
 
 @pytest.mark.unit

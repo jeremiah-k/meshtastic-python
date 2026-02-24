@@ -16,6 +16,8 @@ class PowerError(Exception):
 class PowerMeter:
     """Abstract class for power meters.
 
+    The public current-measurement API retains legacy snake_case names for
+    compatibility with existing callers and subclasses.
     Subclasses may optionally expose a numeric ``v`` attribute (volts) when a
     nominal supply voltage is known. Consumers use this only when ``v > 0`` and
     ignore boolean values, so subclasses should provide a real numeric value.
@@ -60,16 +62,16 @@ class PowerSupply(PowerMeter):
         return self._v
 
     @v.setter
-    def v(self, value: float) -> None:
+    def v(self, value: float | int) -> None:
         """Backward-compatible voltage assignment route."""
         self.setVoltage(value)
 
-    def setVoltage(self, v: float) -> None:
+    def setVoltage(self, v: float | int) -> None:
         """Validate and set the configured output voltage.
 
         Parameters
         ----------
-        v : float
+        v : float | int
             Requested output voltage in volts; must be a real, non-negative value.
 
         Raises
