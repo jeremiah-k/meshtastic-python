@@ -219,9 +219,9 @@ class PPK2PowerSupply(PowerSupply):
                     "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
                 )
                 close_method = getattr(self.r, "close", None)
-                if callable(close_method):
+                if close_method is not None:
                     with suppress(Exception):
-                        close_method()
+                        close_method()  # pylint: disable=not-callable
                 serial_handle = getattr(self.r, "ser", None)
                 if serial_handle is not None:
                     with suppress(Exception):

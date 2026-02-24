@@ -18,7 +18,7 @@ def _run_cli_with_timeout(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         )
     except subprocess.TimeoutExpired as e:
         pytest.fail(f"meshtastic command timed out: {e}")
-
+        raise  # pragma: no cover - pytest.fail always raises
 
 @pytest.mark.int
 def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
