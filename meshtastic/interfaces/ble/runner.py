@@ -47,17 +47,6 @@ def get_zombie_runner_count() -> int:
         return _zombie_runner_count
 
 
-# Backward-compatible alias (deprecated)
-def getZombieRunnerCount() -> int:
-    """Deprecated alias for get_zombie_runner_count."""
-    warnings.warn(
-        "getZombieRunnerCount is deprecated, use get_zombie_runner_count instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_zombie_runner_count()
-
-
 class BLECoroutineRunner:
     """Singleton runner for executing coroutines in a dedicated event loop thread.
 
