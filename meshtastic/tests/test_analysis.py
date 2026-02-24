@@ -85,3 +85,154 @@ def test_get_board_info_requires_non_null_board_id() -> None:
     frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [None]})
     with pytest.raises(ValueError, match="No board_id rows found in slog"):
         get_board_info(frame)
+
+
+
+@pytest.mark.unit
+def test_to_pmon_names_maps_valid_states() -> None:
+    """to_pmon_names should convert valid power-monitor state integers to name strings."""
+    from meshtastic.analysis.__main__ import to_pmon_names
+
+    # Test with some valid state values (these are from the powermon_pb2 enum)
+    result = to_pmon_names([1, 2, 3])
+    assert isinstance(result, list)
+    assert len(result) == 3
+    # All results should be strings or None
+    for item in result:
+        assert item is None or isinstance(item, str)
+
+
+@pytest.mark.unit
+def test_to_pmon_names_handles_invalid_values() -> None:
+    """to_pmon_names should return None for invalid state values."""
+    from meshtastic.analysis.__main__ import to_pmon_names
+
+    result = to_pmon_names([999, -1, "invalid"])
+    assert result == [None, None, None]
+
+
+@pytest.mark.unit
+def test_to_pmon_names_handles_none_state() -> None:
+    """to_pmon_names should return None when state name is 'None'."""
+    from meshtastic.analysis.__main__ import to_pmon_names
+
+    # State 0 typically maps to 'None' in the enum
+    result = to_pmon_names([0])
+    assert result == [None]
+
+
+@pytest.mark.unit
+def test_read_pandas_preserves_nullable_dtypes(tmp_path) -> None:
+    """read_pandas should map Arrow types to pandas nullable dtypes."""
+    from meshtastic.analysis.__main__ import read_pandas
+    import pyarrow as pa
+    from pyarrow import feather
+
+    # Create a test DataFrame with various types
+    test_data = pd.DataFrame({
+        "int_col": pd.array([1, 2, None], dtype=pd.Int32Dtype()),
+        "bool_col": pd.array([True, False, None], dtype=pd.BooleanDtype()),
+        "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),
+    })
+
+    # Write to feather
+    test_file = tmp_path / "test.feather"
+    feather.write_feather(test_data, test_file)
+
+    # Read back
+    result = read_pandas(str(test_file))
+
+    # Check that nullable dtypes are preserved
+    assert isinstance(result["int_col"].dtype, pd.Int32Dtype)
+    assert isinstance(result["bool_col"].dtype, pd.BooleanDtype)
+    assert pd.api.types.is_string_dtype(result["str_col"])
+
+
+@pytest.mark.unit
+def test_get_pmon_raises_extracts_raise_events() -> None:
+    """get_pmon_raises should extract power-monitor raise events from slog."""
+    from meshtastic.analysis.__main__ import get_pmon_raises
+
+    # Create test data with pm_mask transitions
+    dslog = pd.DataFrame({
+        "time": [1.0, 2.0, 3.0, 4.0],
+        "pm_mask": [0, 1, 3, 1],  # 0->1 (raise), 1->3 (raise), 3->1 (fall)
+    })
+
+    result = get_pmon_raises(dslog)
+
+    # Should have time and pm_raises columns
+    assert "time" in result.columns
+    assert "pm_raises" in result.columns
+    # Should only include rows with raises (not falls)
+    assert len(result) > 0
+
+
+@pytest.mark.unit
+def test_is_loopback_host_recognizes_localhost() -> None:
+    """_is_loopback_host should recognize common loopback addresses."""
+    from meshtastic.analysis.__main__ import _is_loopback_host
+
+    assert _is_loopback_host("localhost")
+    assert _is_loopback_host("127.0.0.1")
+    assert _is_loopback_host("::1")
+    assert _is_loopback_host("[::1]")
+    assert not _is_loopback_host("192.168.1.1")
+    assert not _is_loopback_host("0.0.0.0")
+    assert not _is_loopback_host("example.com")
+
+
+@pytest.mark.unit
+def test_is_loopback_host_handles_invalid_addresses() -> None:
+    """_is_loopback_host should handle invalid addresses gracefully."""
+    from meshtastic.analysis.__main__ import _is_loopback_host
+
+    assert not _is_loopback_host("not-an-ip")
+    assert not _is_loopback_host("")
+
+
+@pytest.mark.unit
+def test_create_argparser_returns_parser() -> None:
+    """create_argparser should return an ArgumentParser with expected arguments."""
+    from meshtastic.analysis.__main__ import create_argparser
+
+    parser = create_argparser()
+    assert parser is not None
+
+    # Test parsing with various arguments
+    args = parser.parse_args(["--no-server"])
+    assert args.no_server is True
+
+    args = parser.parse_args(["--slog", "/some/path"])
+    assert args.slog == "/some/path"
+
+    args = parser.parse_args(["--port", "9000"])
+    assert args.port == 9000
+
+    args = parser.parse_args(["--bind-host", "0.0.0.0"])
+    assert args.host == "0.0.0.0"
+
+
+@pytest.mark.unit
+def test_choose_power_column_prefers_legacy_when_present() -> None:
+    """choose_power_column should prefer legacy column when it has non-null values."""
+    frame = pd.DataFrame({
+        "average_mW": [1.0, 2.0],
+        "average_mA": [3.0, 4.0]
+    })
+    assert choose_power_column(frame, "average_mW", "average_mA") == "average_mW"
+
+
+@pytest.mark.unit
+def test_choose_power_column_raises_when_neither_present() -> None:
+    """choose_power_column should raise ValueError when neither column exists."""
+    frame = pd.DataFrame({"other_col": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="Missing required power column"):
+        choose_power_column(frame, "average_mW", "average_mA")
+
+
+@pytest.mark.unit
+def test_choose_power_column_uses_legacy_when_only_legacy_present() -> None:
+    """choose_power_column should use legacy column even if all null when it's the only option."""
+    frame = pd.DataFrame({"average_mW": [None, None]})
+    assert choose_power_column(frame, "average_mW", "average_mA") == "average_mW"

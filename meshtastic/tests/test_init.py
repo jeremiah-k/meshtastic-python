@@ -67,3 +67,28 @@ def test_init_on_node_info_receive(caplog, iface_with_nodes):
     with caplog.at_level(logging.DEBUG):
         _on_node_info_receive(iface, packet)
     assert re.search(r"in _on_node_info_receive", caplog.text, re.MULTILINE)
+
+
+
+@pytest.mark.unit
+def test_init_getattr_raises_for_unknown_attribute():
+    """Verify __getattr__ raises AttributeError for unknown attributes."""
+    with pytest.raises(AttributeError, match="module 'meshtastic' has no attribute 'nonexistent'"):
+        _ = meshtastic.nonexistent
+
+
+@pytest.mark.unit
+def test_init_getattr_caches_serial_on_first_access():
+    """Verify __getattr__ caches serial module on first access."""
+    # Clear the cached attribute if it exists
+    if hasattr(meshtastic, "serial"):
+        delattr(meshtastic, "serial")
+
+    # First access should trigger lazy load
+    serial = meshtastic.serial
+    assert serial is serial_interface
+
+    # Second access should use cached value
+    serial2 = meshtastic.serial
+    assert serial2 is serial
+    assert serial2 is serial_interface
