@@ -21,6 +21,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger("meshtastic.ble")
 
 
+def _camel_to_snake(name: str) -> str:
+    """Convert a lower/upper camelCase identifier to snake_case."""
+    chars: list[str] = []
+    for idx, char in enumerate(name):
+        if char.isupper() and idx > 0:
+            chars.append("_")
+        chars.append(char.lower())
+    return "".join(chars)
+
+
 class ReconnectPolicyMissingMethodError(AttributeError):
     """Raised when a required reconnect-policy method is missing."""
 
@@ -163,7 +173,7 @@ class ReconnectWorker:
         self.reconnect_policy = reconnect_policy
 
     def _call_policy(self, method_name: str, *args: Any) -> Any:
-        """Call a policy method with fallback to underscored version for backward compatibility.
+        """Call a policy method with compatibility fallbacks for legacy naming styles.
 
         Parameters
         ----------
@@ -180,10 +190,21 @@ class ReconnectWorker:
         method = getattr(self.reconnect_policy, method_name, None)
         if callable(method):
             return method(*args)
+
+        snake_name = _camel_to_snake(method_name)
+        if snake_name != method_name:
+            snake_method = getattr(self.reconnect_policy, snake_name, None)
+            if callable(snake_method):
+                return snake_method(*args)
+
         # Backward compatibility for test doubles that only expose underscored methods.
-        fallback = getattr(self.reconnect_policy, f"_{method_name}", None)
-        if callable(fallback):
-            return fallback(*args)
+        for fallback_name in (
+            f"_{method_name}",
+            f"_{snake_name}",
+        ):
+            fallback = getattr(self.reconnect_policy, fallback_name, None)
+            if callable(fallback):
+                return fallback(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 
     def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
@@ -289,7 +310,7 @@ class ReconnectWorker:
                     return
                 attempt_num = 0
                 try:
-                    attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
+                    attempt_num = cast(int, self._call_policy("getAttemptCount")) + 1
                     if interface._is_connection_connected:
                         return
                     device_addr = _addr_key(getattr(interface, "address", None))
@@ -374,7 +395,7 @@ class ReconnectWorker:
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
                 try:
-                    next_attempt = self._call_policy("next_attempt")
+                    next_attempt = self._call_policy("nextAttempt")
                 except ReconnectPolicyMissingMethodError as err:
                     logger.exception(
                         "Reconnect policy missing required method '%s'",

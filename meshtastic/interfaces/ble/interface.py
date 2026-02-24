@@ -203,8 +203,8 @@ class BLEInterface(MeshInterface):
         #     managing the connection state machine.
         self._state_manager = BLEStateManager()  # Centralized state tracking
         self._state_lock = (
-            self._state_manager._lock
-        )  # `lock` is a property returning the shared RLock instance
+            self._state_manager.lock
+        )  # `lock` returns the shared RLock instance
         self._connect_lock = threading.RLock()  # Serializes connection attempts
         self._disconnect_lock = threading.Lock()  # Serializes disconnect handling
         self._closed: bool = (
@@ -261,6 +261,7 @@ class BLEInterface(MeshInterface):
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator._create_event("shutdown_event")
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
+        self._malformed_notification_lock = threading.Lock()
         self._ever_connected = (
             False  # Track first successful connection to tune logging
         )
@@ -716,14 +717,15 @@ class BLEInterface(MeshInterface):
         exc_info : bool
             If True, include exception traceback information in the log. (Default value = False)
         """
-        self._malformed_notification_count += 1
-        logger.debug("%s", reason, exc_info=exc_info)
-        if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
-            logger.warning(
-                "Received %d malformed FROMNUM notifications. Check BLE connection stability.",
-                self._malformed_notification_count,
-            )
-            self._malformed_notification_count = 0
+        with self._malformed_notification_lock:
+            self._malformed_notification_count += 1
+            logger.debug("%s", reason, exc_info=exc_info)
+            if self._malformed_notification_count >= MALFORMED_NOTIFICATION_THRESHOLD:
+                logger.warning(
+                    "Received %d malformed FROMNUM notifications. Check BLE connection stability.",
+                    self._malformed_notification_count,
+                )
+                self._malformed_notification_count = 0
 
     def _from_num_handler(self, _: Any, b: bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
@@ -746,7 +748,8 @@ class BLEInterface(MeshInterface):
             from_num = struct.unpack("<I", b)[0]
             logger.debug("FROMNUM notify: %d", from_num)
             # Successful parse: reset malformed counter
-            self._malformed_notification_count = 0
+            with self._malformed_notification_lock:
+                self._malformed_notification_count = 0
         except (struct.error, ValueError):
             self._handle_malformed_fromnum(
                 "Malformed FROMNUM notify; ignoring", exc_info=True
@@ -1435,16 +1438,15 @@ class BLEInterface(MeshInterface):
         # global registry lock during long-running scan/discovery operations.
         with contextlib.ExitStack() as stack:
             if address_registry_key is not None:
-                # Atomically re-check duplicate suppression and acquire the
-                # per-address lock under _REGISTRY_LOCK to avoid TOCTOU races
-                # between gate checks and subsequent gate claims.
+                if self._should_suppress_duplicate_connect(address_registry_key):
+                    logger.info(
+                        "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                        address_registry_key or "unknown",
+                    )
+                    raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+                # Acquire the per-address lock under _REGISTRY_LOCK immediately
+                # after suppression check to keep the TOCTOU window narrow.
                 with _REGISTRY_LOCK:
-                    if self._should_suppress_duplicate_connect(address_registry_key):
-                        logger.info(
-                            "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                            address_registry_key or "unknown",
-                        )
-                        raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
                     addr_lock = stack.enter_context(
                         _addr_lock_context(address_registry_key)
                     )
@@ -1480,7 +1482,7 @@ class BLEInterface(MeshInterface):
         return connected_client
 
     def _handle_read_loop_disconnect(
-        self, error_message: str, previous_client: "BLEClient"
+        self, error_message: str, previous_client: BLEClient
     ) -> bool:
         """Return whether the receive loop should continue after a BLE client disconnect.
 
@@ -1488,7 +1490,7 @@ class BLEInterface(MeshInterface):
         ----------
         error_message : str
             Human-readable description of the disconnection cause.
-        previous_client : 'BLEClient'
+        previous_client : BLEClient
             The BLE client that disconnected and may be closed.
 
         Returns
@@ -1915,7 +1917,7 @@ class BLEInterface(MeshInterface):
             # Use unified state lock
             with self._state_lock:
                 # Record final state as DISCONNECTED for observers; instance remains closed.
-                # Safe re-entrant call: _state_lock and _state_manager._lock share the
+                # Safe re-entrant call: _state_lock and _state_manager.lock share the
                 # same RLock instance set during state manager initialization.
                 self._state_manager._transition_to(ConnectionState.DISCONNECTED)
                 alias_key = self._connection_alias_key

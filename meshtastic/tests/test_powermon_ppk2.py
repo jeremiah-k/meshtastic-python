@@ -112,3 +112,14 @@ def test_setIsSupply_does_not_restart_when_already_measuring() -> None:
     ppk.r.start_measuring.assert_not_called()
     ppk.r.use_ampere_meter.assert_called_once()
     ppk.measurement_thread.start.assert_not_called()
+
+
+@pytest.mark.unit
+def test_average_current_camelcase_aliases_are_consistent() -> None:
+    """CamelCase average-current aliases should be consistent for PPK2."""
+    ppk = _make_ppk2_stub()
+    ppk.get_average_current_mA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
+
+    assert ppk.getAverageCurrentMA() == 42.0
+    with pytest.warns(DeprecationWarning):
+        assert ppk.getAverageCurrentmA() == 42.0

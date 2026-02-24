@@ -53,3 +53,13 @@ def test_ble_module_level_naming_compatibility():
 
     assert not hasattr(interface, "addr_key")
     assert not hasattr(interface, "is_currently_connected_elsewhere")
+
+
+def test_reconnect_policy_naming_compatibility():
+    """Verify reconnect policy exposes camelCase names and legacy snake_case aliases."""
+    from meshtastic.interfaces.ble.policies import ReconnectPolicy
+
+    assert hasattr(ReconnectPolicy, "nextAttempt")
+    assert hasattr(ReconnectPolicy, "getAttemptCount")
+    assert hasattr(ReconnectPolicy, "next_attempt")
+    assert hasattr(ReconnectPolicy, "get_attempt_count")

@@ -128,6 +128,22 @@ def _get_addr_lock_by_key(key: str | None) -> RLock:
         return lock
 
 
+def _maybe_remove_addr_lock_entry(key: str) -> None:
+    """Remove per-address lock bookkeeping when no holders remain and key is disconnected.
+
+    Must be called while holding `_REGISTRY_LOCK`.
+
+    Parameters
+    ----------
+    key : str
+        Normalized address key to evaluate.
+    """
+    if _LOCK_HOLDERS.get(key, 0) <= 0 and key not in _CONNECTED_ADDRS:
+        _ADDR_LOCKS.pop(key, None)
+        _LOCK_HOLDERS.pop(key, None)
+        logger.debug("Cleaned up address lock for %s", key)
+
+
 def _release_addr_lock(key: str | None) -> None:
     """Decrement the holder count for the per-address lock identified by key.
 
@@ -157,10 +173,7 @@ def _release_addr_lock_by_key(key: str | None) -> None:
     with _REGISTRY_LOCK:
         if key in _LOCK_HOLDERS:
             _LOCK_HOLDERS[key] = max(0, _LOCK_HOLDERS[key] - 1)
-            if _LOCK_HOLDERS[key] <= 0 and key not in _CONNECTED_ADDRS:
-                _ADDR_LOCKS.pop(key, None)
-                _LOCK_HOLDERS.pop(key, None)
-                logger.debug("Cleaned up address lock for %s", key)
+            _maybe_remove_addr_lock_entry(key)
 
 
 def _cleanup_addr_lock(key: str | None) -> None:
@@ -176,18 +189,15 @@ def _cleanup_addr_lock(key: str | None) -> None:
     if key is None:
         return
     with _REGISTRY_LOCK:
-        # Only cleanup if no holders remain
         holder_count = _LOCK_HOLDERS.get(key, 0)
-        if holder_count <= 0 and key not in _CONNECTED_ADDRS:
-            _ADDR_LOCKS.pop(key, None)
-            _LOCK_HOLDERS.pop(key, None)
-            logger.debug("Cleaned up address lock for %s", key)
-        else:
+        if holder_count > 0 or key in _CONNECTED_ADDRS:
             logger.debug(
                 "Skipping cleanup of address lock for %s (holders: %d)",
                 key,
                 holder_count,
             )
+            return
+        _maybe_remove_addr_lock_entry(key)
 
 
 def _owner_ref(owner: Any | None) -> weakref.ReferenceType[Any] | None:

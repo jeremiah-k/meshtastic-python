@@ -1,7 +1,5 @@
 """Unit tests for powermon stress helpers and client behavior."""
 
-from __future__ import annotations
-
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 

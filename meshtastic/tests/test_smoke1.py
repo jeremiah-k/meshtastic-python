@@ -246,7 +246,7 @@ def test_smoke1_ch_set_modem_config() -> None:
 
 @pytest.mark.smoke1
 def test_smoke1_ch_values() -> None:
-    """Test --ch-vlongslow --ch-longslow, --ch-longfast, --ch-mediumslow, --ch-medfast,
+    """Test --ch-vlongslow --ch-longslow, --ch-longfast, --ch-medslow, --ch-medfast,
     --ch-shortslow, and --ch-shortfast arguments.
     """
     exp = {

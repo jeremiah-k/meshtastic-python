@@ -1,6 +1,7 @@
 """code logging power consumption of meshtastic devices."""
 
 import math
+import warnings
 from datetime import datetime
 from numbers import Real
 
@@ -33,6 +34,22 @@ class PowerMeter:
     def get_average_current_mA(self) -> float:
         """Return average current of last measurement in mA (since last call to this method)."""
         return math.nan
+
+    def getAverageCurrentMA(self) -> float:
+        """CamelCase alias for get_average_current_mA."""
+        return self.get_average_current_mA()
+
+    def getAverageCurrentmA(self) -> float:
+        """Return average current via a deprecated camelCase alias.
+
+        Prefer getAverageCurrentMA for consistent unit capitalization.
+        """
+        warnings.warn(
+            "getAverageCurrentmA is deprecated, use getAverageCurrentMA instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.getAverageCurrentMA()
 
     def get_min_current_mA(self) -> float:
         """Return min current in mA (since last call to this method)."""

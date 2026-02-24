@@ -93,8 +93,8 @@ class BLEStateManager:
         self._state = ConnectionState.DISCONNECTED
 
     @property
-    def _lock(self) -> RLock:
-        """Access the internal RLock that serializes BLE state transitions.
+    def lock(self) -> RLock:
+        """Access the shared RLock that serializes BLE state transitions.
 
         Returns
         -------
@@ -102,6 +102,11 @@ class BLEStateManager:
             The reentrant lock used to protect state changes.
         """
         return self._state_lock
+
+    @property
+    def _lock(self) -> RLock:
+        """Backward-compatible alias for :attr:`lock`."""
+        return self.lock
 
     @property
     def _current_state(self) -> ConnectionState:

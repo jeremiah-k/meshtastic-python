@@ -2,7 +2,6 @@
 
 import logging
 import math
-import warnings
 from datetime import datetime
 
 from riden import (
@@ -59,22 +58,6 @@ class RidenPowerSupply(PowerSupply):
         if self.v <= 0:
             return math.nan
         return (watts / self.v) * 1000
-
-    def getAverageCurrentMA(self) -> float:
-        """CamelCase alias for get_average_current_mA."""
-        return self.get_average_current_mA()
-
-    def getAverageCurrentmA(self) -> float:
-        """Return average current via a deprecated camelCase alias.
-
-        Prefer getAverageCurrentMA for consistent unit capitalization.
-        """
-        warnings.warn(
-            "getAverageCurrentmA is deprecated, use getAverageCurrentMA instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.get_average_current_mA()
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""

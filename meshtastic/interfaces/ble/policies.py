@@ -131,8 +131,8 @@ class ReconnectPolicy:
             attempt = self._attempt_count
         return self.max_retries is None or attempt < self.max_retries
 
-    def next_attempt(self) -> tuple[float, bool]:
-        """Compute the delay for the current retry attempt, advance the internal attempt counter, and indicate if further retries are permitted.
+    def nextAttempt(self) -> tuple[float, bool]:
+        """Compute delay for the current retry attempt and return whether retries remain.
 
         Delay and retry permission are computed from the current zero-based retry
         counter, then the internal counter is incremented. Therefore
@@ -149,7 +149,11 @@ class ReconnectPolicy:
         self._attempt_count += 1
         return delay, should_retry
 
-    def get_attempt_count(self) -> int:
+    def next_attempt(self) -> tuple[float, bool]:
+        """Return the backwards-compatible snake_case alias for nextAttempt."""
+        return self.nextAttempt()
+
+    def getAttemptCount(self) -> int:
         """Return the number of retry attempts performed so far.
 
         Returns
@@ -158,6 +162,10 @@ class ReconnectPolicy:
             The count of attempts that have been made.
         """
         return self._attempt_count
+
+    def get_attempt_count(self) -> int:
+        """Return the backwards-compatible snake_case alias for getAttemptCount."""
+        return self.getAttemptCount()
 
     def _sleep_with_backoff(self, attempt: int) -> None:
         """Sleep for the policy's jittered exponential-backoff delay.

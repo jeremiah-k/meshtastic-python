@@ -27,7 +27,7 @@ smoke1:
 
 # local install
 install:
-	pip install .
+	poetry install
 
 # generate the docs (for local use)
 docs:

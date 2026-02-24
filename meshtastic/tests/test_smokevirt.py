@@ -254,7 +254,7 @@ def test_smokevirt_set_owner() -> None:
 
 @pytest.mark.smokevirt
 def test_smokevirt_ch_values() -> None:
-    """Test --ch-longslow, --ch-longfast, --ch-mediumslow, --ch-medfast,
+    """Test --ch-longslow, --ch-longfast, --ch-medslow, --ch-medfast,
     --ch-shortslow, and --ch-shortfast arguments.
     """
     exp = {

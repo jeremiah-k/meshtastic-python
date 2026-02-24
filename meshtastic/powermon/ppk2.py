@@ -200,10 +200,6 @@ class PPK2PowerSupply(PowerSupply):
         """Backward-compatible camelCase wrapper for get_max_current_mA."""
         return self.get_max_current_mA()
 
-    def getAverageCurrentmA(self) -> float:
-        """Backward-compatible camelCase wrapper for get_average_current_mA."""
-        return self.get_average_current_mA()
-
     def resetMeasurements(self) -> None:
         """Backward-compatible camelCase wrapper for reset_measurements."""
         self.reset_measurements()
