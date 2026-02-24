@@ -405,15 +405,18 @@ def traverseConfig(
     Returns
     -------
     bool
-        `True` when traversal completes and all leaf values have been processed.
+        `True` when traversal completes and all leaf values are successfully
+        applied, `False` if any leaf assignment fails validation.
     """
     snake_name = meshtastic.util.camel_to_snake(config_root)
     for pref in config:
         pref_name = f"{snake_name}.{pref}"
         if isinstance(config[pref], dict):
-            traverseConfig(pref_name, config[pref], interface_config)
+            if not traverseConfig(pref_name, config[pref], interface_config):
+                return False
         else:
-            setPref(interface_config, pref_name, config[pref])
+            if not setPref(interface_config, pref_name, config[pref]):
+                return False
 
     return True
 
@@ -1089,9 +1092,13 @@ def onConnected(interface: MeshInterface) -> None:
                         args.dest, **getNode_kwargs
                     ).localConfig
                     for section in configuration["config"]:
-                        traverseConfig(
+                        applied = traverseConfig(
                             section, configuration["config"][section], localConfig
                         )
+                        if not applied:
+                            _cli_exit(
+                                f"Failed to apply config section {section!r}; check field names and values."
+                            )
                         interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                             meshtastic.util.camel_to_snake(section)
                         )
@@ -1102,11 +1109,15 @@ def onConnected(interface: MeshInterface) -> None:
                         args.dest, **getNode_kwargs
                     ).moduleConfig
                     for section in configuration["module_config"]:
-                        traverseConfig(
+                        applied = traverseConfig(
                             section,
                             configuration["module_config"][section],
                             moduleConfig,
                         )
+                        if not applied:
+                            _cli_exit(
+                                f"Failed to apply module_config section {section!r}; check field names and values."
+                            )
                         interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                             meshtastic.util.camel_to_snake(section)
                         )

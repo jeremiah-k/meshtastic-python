@@ -2,6 +2,7 @@
 
 # pylint: disable=C0302,W0613,R0917
 
+import base64
 import importlib.util
 import logging
 import os
@@ -162,6 +163,29 @@ def test_main_list_fields_prints_known_fields_and_alias(capsys) -> None:
     assert "display.units" in out
     assert "display.use_12h_clock" in out
     assert "display.use_12_hour -> display.use_12h_clock" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_list_fields_includes_all_descriptor_fields(capsys) -> None:
+    """Test --list-fields includes every top-level protobuf config field."""
+    sys.argv = ["", "--list-fields"]
+    main()
+    out, err = capsys.readouterr()
+
+    expected: list[str] = []
+    for message in (localonly_pb2.LocalConfig(), localonly_pb2.LocalModuleConfig()):
+        for section in message.DESCRIPTOR.fields:
+            if section.name == "version":
+                continue
+            if section.message_type is None:
+                continue
+            for field in section.message_type.fields:
+                expected.append(f"{section.name}.{field.name}")
+
+    missing = [field for field in expected if field not in out]
+    assert missing == []
     assert err == ""
 
 
@@ -1503,6 +1527,218 @@ def test_main_configure_with_camel_case_keys(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    ("owner_key", "expected_error"),
+    [
+        (
+            "owner",
+            "ERROR: Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "owner_short",
+            "ERROR: Short Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "ownerShort",
+            "ERROR: Short Name cannot be empty or contain only whitespace characters",
+        ),
+    ],
+)
+def test_main_configure_rejects_blank_owner_fields(
+    owner_key: str,
+    expected_error: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    """Test --configure rejects blank owner fields and exits with a clear message."""
+    config_path = tmp_path / "invalid_owner.yaml"
+    config_path.write_text(yaml.safe_dump({owner_key: "   "}), encoding="utf-8")
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert expected_error in err
+    assert excinfo.value.code == 1
+    target_node.setOwner.assert_not_called()
+    target_node.commitSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_unknown_config_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    """Test --configure fails fast for unknown fields instead of partially applying."""
+    config_path = tmp_path / "unknown_field.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"bluetooth": {"not_a_field": True}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "Failed to apply config section 'bluetooth'" in err
+    assert excinfo.value.code == 1
+    target_node.writeConfig.assert_not_called()
+    target_node.commitSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_invalid_enum_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    """Test --configure fails fast when enum values are invalid."""
+    config_path = tmp_path / "invalid_enum.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"bluetooth": {"mode": "NOT_A_MODE"}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    out, err = capsys.readouterr()
+    assert "does not have an enum called NOT_A_MODE" in out
+    assert "Failed to apply config section 'bluetooth'" in err
+    assert excinfo.value.code == 1
+    target_node.writeConfig.assert_not_called()
+    target_node.commitSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_rejects_invalid_security_base64(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    """Test --configure exits when base64-encoded security keys are malformed."""
+    config_path = tmp_path / "invalid_base64.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"security": {"privateKey": "base64:A"}}}),
+        encoding="utf-8",
+    )
+    iface, target_node = _build_configure_interface()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main_configure_file(config_path, iface, monkeypatch)
+
+    _, err = capsys.readouterr()
+    assert "Aborting due to:" in err
+    assert "base64" in err.lower()
+    assert excinfo.value.code == 1
+    target_node.commitSettingsTransaction.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_configure_applies_mixed_case_and_security_encodings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test --configure accepts mixed key casing and supported security key encodings."""
+    private_key = bytes(range(32))
+    public_key = bytes(range(32, 64))
+    admin_key_1 = bytes(range(64, 96))
+    admin_key_2 = bytes(range(96, 128))
+
+    config_path = tmp_path / "mixed_case.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config": {
+                    "bluetooth": {
+                        "enabled": True,
+                        "mode": "NO_PIN",
+                        "fixedPin": 777777,
+                    },
+                    "display": {
+                        "units": "IMPERIAL",
+                        "use12HClock": True,
+                        "screenOnSecs": 66,
+                    },
+                    "power": {"lsSecs": 222},
+                    "security": {
+                        "privateKey": f"base64:{base64.b64encode(private_key).decode()}",
+                        "public_key": "0x" + public_key.hex(),
+                        "adminKey": [
+                            f"base64:{base64.b64encode(admin_key_1).decode()}",
+                            "0x" + admin_key_2.hex(),
+                        ],
+                    },
+                },
+                "module_config": {
+                    "telemetry": {
+                        "deviceUpdateInterval": 321,
+                        "environment_display_fahrenheit": True,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    target_module = localonly_pb2.LocalModuleConfig()
+    iface, target_node = _build_configure_interface(target_local, target_module)
+    _run_main_configure_file(config_path, iface, monkeypatch)
+
+    assert target_local.bluetooth.enabled is True
+    assert target_local.bluetooth.mode == config_pb2.Config.BluetoothConfig.NO_PIN
+    assert target_local.bluetooth.fixed_pin == 777777
+    assert target_local.display.units == config_pb2.Config.DisplayConfig.IMPERIAL
+    assert target_local.display.use_12h_clock is True
+    assert target_local.display.screen_on_secs == 66
+    assert target_local.power.ls_secs == 222
+    assert target_local.security.private_key == private_key
+    assert target_local.security.public_key == public_key
+    assert list(target_local.security.admin_key) == [admin_key_1, admin_key_2]
+    assert target_module.telemetry.device_update_interval == 321
+    assert target_module.telemetry.environment_display_fahrenheit is True
+
+    write_sections = [call.args[0] for call in target_node.writeConfig.call_args_list]
+    for required in ("bluetooth", "display", "power", "security", "telemetry"):
+        assert required in write_sections
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+@pytest.mark.parametrize(
+    "alias_key",
+    ["use_12_hour", "use12Hour", "use12hClock", "use12HClock"],
+)
+def test_main_configure_accepts_display_use_12h_alias_spellings(
+    alias_key: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test --configure accepts all known alias spellings for display.use_12h_clock."""
+    config_path = tmp_path / f"display_alias_{alias_key}.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"config": {"display": {alias_key: True}}}),
+        encoding="utf-8",
+    )
+    target_local = localonly_pb2.LocalConfig()
+    iface, _ = _build_configure_interface(
+        target_local, localonly_pb2.LocalModuleConfig()
+    )
+    _run_main_configure_file(config_path, iface, monkeypatch)
+    assert target_local.display.use_12h_clock is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_main_ch_add_valid(capsys):
     """Test --ch-add with valid channel name, and that channel name does not already exist."""
     sys.argv = ["", "--ch-add", "testing"]
@@ -2261,6 +2497,54 @@ position_flags: 35"""
     assert err == ""
 
 
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_export_config_omits_empty_optional_fields() -> None:
+    """Test export_config omits optional top-level fields when values are empty/missing."""
+    iface = _build_export_interface(
+        localonly_pb2.LocalConfig(), localonly_pb2.LocalModuleConfig()
+    )
+    iface.getLongName.return_value = ""
+    iface.getShortName.return_value = ""
+    iface.localNode.getURL.return_value = ""
+    iface.getCannedMessage.return_value = ""
+    iface.getRingtone.return_value = ""
+    iface.getMyNodeInfo.return_value = {}
+
+    exported = yaml.safe_load(export_config(iface))
+
+    assert "owner" not in exported
+    assert "owner_short" not in exported
+    assert "channel_url" not in exported
+    assert "canned_messages" not in exported
+    assert "ringtone" not in exported
+    assert "location" not in exported
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_export_config_sets_missing_true_default_flags_false() -> None:
+    """Test export_config explicitly writes known true-default flags as false when missing."""
+    source_local = localonly_pb2.LocalConfig()
+    source_module = localonly_pb2.LocalModuleConfig()
+    source_local.display.units = config_pb2.Config.DisplayConfig.IMPERIAL
+    source_module.telemetry.device_update_interval = 1
+
+    exported = yaml.safe_load(
+        export_config(_build_export_interface(source_local, source_module))
+    )
+    config = exported["config"]
+    module_config = exported["module_config"]
+
+    assert config["bluetooth"]["enabled"] is False
+    assert config["lora"]["sx126xRxBoostedGain"] is False
+    assert config["lora"]["txEnabled"] is False
+    assert config["lora"]["usePreset"] is False
+    assert config["position"]["positionBroadcastSmartEnabled"] is False
+    assert config["security"]["serialEnabled"] is False
+    assert module_config["mqtt"]["encryptionEnabled"] is False
+
+
 def _build_export_interface(
     local_config: localonly_pb2.LocalConfig,
     module_config: localonly_pb2.LocalModuleConfig,
@@ -2290,6 +2574,49 @@ def _build_export_interface(
     iface.getCannedMessage.return_value = ""
     iface.getRingtone.return_value = ""
     return iface
+
+
+def _build_configure_interface(
+    target_local: localonly_pb2.LocalConfig | None = None,
+    target_module: localonly_pb2.LocalModuleConfig | None = None,
+) -> tuple[MagicMock, MagicMock]:
+    """Build a minimal interface mock compatible with --configure operations."""
+    if target_local is None:
+        target_local = localonly_pb2.LocalConfig()
+    if target_module is None:
+        target_module = localonly_pb2.LocalModuleConfig()
+
+    target_node = MagicMock()
+    target_node.localConfig = target_local
+    target_node.moduleConfig = target_module
+    target_node.beginSettingsTransaction = MagicMock()
+    target_node.commitSettingsTransaction = MagicMock()
+    target_node.setOwner = MagicMock()
+    target_node.setURL = MagicMock()
+    target_node.set_canned_message = MagicMock()
+    target_node.set_ringtone = MagicMock()
+    target_node.writeConfig = MagicMock()
+    target_node.setFixedPosition = MagicMock()
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = target_node
+    iface.localNode = target_node
+    return iface, target_node
+
+
+def _run_main_configure_file(
+    config_path: Path,
+    iface: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run main() for --configure against a supplied YAML file and interface mock."""
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    sys.argv = ["", "--configure", str(config_path)]
+    mt_config.args = sys.argv
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
+        main()
 
 
 @pytest.mark.unit
@@ -2489,6 +2816,43 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
     assert re.search(r"Exported configuration to", out, re.MULTILINE)
     assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_export_config_round_trip_with_camel_case_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test export->traverse round trip when mt_config.camel_case is enabled."""
+    source_local = localonly_pb2.LocalConfig()
+    source_module = localonly_pb2.LocalModuleConfig()
+    source_local.display.use_12h_clock = True
+    source_local.power.ls_secs = 123
+    source_local.security.serial_enabled = True
+    source_module.telemetry.device_update_interval = 77
+
+    monkeypatch.setattr(mt_config, "camel_case", True)
+    exported = yaml.safe_load(
+        export_config(_build_export_interface(source_local, source_module))
+    )
+
+    assert "channelUrl" in exported
+    assert exported["config"]["display"]["use12hClock"] is True
+    assert exported["config"]["power"]["lsSecs"] == 123
+    assert exported["config"]["security"]["serialEnabled"] is True
+    assert exported["module_config"]["telemetry"]["deviceUpdateInterval"] == 77
+
+    restored_local = localonly_pb2.LocalConfig()
+    restored_module = localonly_pb2.LocalModuleConfig()
+    for section, values in exported["config"].items():
+        assert traverseConfig(section, values, restored_local)
+    for section, values in exported["module_config"].items():
+        assert traverseConfig(section, values, restored_module)
+
+    assert restored_local.display.use_12h_clock is True
+    assert restored_local.power.ls_secs == 123
+    assert restored_local.security.serial_enabled is True
+    assert restored_module.telemetry.device_update_interval == 77
 
 
 @pytest.mark.unit

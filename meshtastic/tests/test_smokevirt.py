@@ -17,6 +17,7 @@ import platform
 import re
 import subprocess
 import time
+from pathlib import Path
 
 # Do not like using hard coded sleeps, but it probably makes
 # sense to pause for the radio at appropriate times
@@ -725,6 +726,27 @@ def test_smokevirt_configure():
     assert re.search("^Set wait_bluetooth_secs to 31536000", out, re.MULTILINE)
     assert re.search("^Writing modified preferences to device", out, re.MULTILINE)
     # pause for the radio
+    time.sleep(PAUSE_AFTER_REBOOT)
+
+
+@pytest.mark.smokevirt
+def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path):
+    """Test --export-config and --configure round-trip against the virtual device."""
+    export_path = tmp_path / "smokevirt_roundtrip.yaml"
+
+    export_return, export_out = subprocess.getstatusoutput(
+        f"meshtastic --host localhost --export-config {export_path}"
+    )
+    assert re.match(r"Connected to radio", export_out)
+    assert re.search(r"Exported configuration to", export_out, re.MULTILINE)
+    assert export_return == 0
+
+    configure_return, configure_out = subprocess.getstatusoutput(
+        f"meshtastic --host localhost --configure {export_path}"
+    )
+    assert re.match(r"Connected to radio", configure_out)
+    assert re.search(r"Writing modified configuration to device", configure_out)
+    assert configure_return == 0
     time.sleep(PAUSE_AFTER_REBOOT)
 
 
