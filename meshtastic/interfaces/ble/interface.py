@@ -758,18 +758,6 @@ class BLEInterface(MeshInterface):
         finally:
             self.thread_coordinator._set_event("read_trigger")
 
-    def from_num_handler(self, sender: Any, data: bytearray) -> None:
-        """Backward-compatibility handler for FROMNUM notifications.
-
-        Parameters
-        ----------
-        sender : Any
-            Origin of the notification (characteristic or client-specific identifier).
-        data : bytearray
-            Raw FROMNUM notification payload.
-        """
-        self._from_num_handler(sender, data)
-
     def _register_notifications(self, client: BLEClient) -> None:
         """Register BLE characteristic notification handlers on the given BLE client.
 
@@ -964,34 +952,6 @@ class BLEInterface(MeshInterface):
             logger.warning(
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
             )
-
-    async def log_radio_handler(self, sender: Any, data: bytearray) -> None:
-        """Backward-compatibility handler for protobuf LogRecord notifications.
-
-        Parameters
-        ----------
-        sender : Any
-            Origin of the notification (characteristic or client-specific identifier).
-        data : bytearray
-            Serialized mesh_pb2.LogRecord payload from the BLE notification.
-        """
-        # Safe to call the sync handler directly: this coroutine runs on the
-        # BLECoroutineRunner event loop, never blocking the calling thread.
-        self._log_radio_handler(sender, data)
-
-    async def legacy_log_radio_handler(self, sender: Any, data: bytearray) -> None:
-        """Backward-compatibility handler for legacy log notifications.
-
-        Parameters
-        ----------
-        sender : Any
-            Notification sender identifier (opaque BLE characteristic/source).
-        data : bytearray
-            Raw notification payload containing the legacy log bytes.
-        """
-        # Safe to call the sync handler directly: this coroutine runs on the
-        # BLECoroutineRunner event loop, never blocking the calling thread.
-        self._legacy_log_radio_handler(sender, data)
 
     @staticmethod
     async def _with_timeout(

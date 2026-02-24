@@ -646,40 +646,6 @@ class BLEClient:
             return
         operation(pending_futures)
 
-    def async_await(
-        self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
-    ) -> Any:
-        """Execute the given coroutine on the client's shared event loop and return its result.
-
-        Parameters
-        ----------
-        coro : Coroutine[Any, Any, Any]
-            Coroutine to execute on the shared event loop.
-        timeout : float | None
-            Maximum seconds to wait for completion; None to wait indefinitely. (Default value = None)
-
-        Returns
-        -------
-        Any
-            The value produced by the executed coroutine.
-        """
-        return self._async_await(coro, timeout=timeout)
-
-    def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
-        """Schedule a coroutine to run on the client's shared BLE event loop.
-
-        Parameters
-        ----------
-        coro : Coroutine[Any, Any, Any]
-            Coroutine to schedule for execution.
-
-        Returns
-        -------
-        Future[Any]
-            A Future that will be completed with the coroutine's result.
-        """
-        return self._async_run(coro)
-
 
 # Expose zombie tracking from runner module for backwards compatibility
 def get_zombie_thread_count() -> int:

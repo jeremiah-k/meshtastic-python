@@ -43,7 +43,7 @@ class RidenPowerSupply(PowerSupply):
         )  # my WM1110 devboard header is directly connected to the 3.3V rail
         self.r.set_output(True)
 
-    def get_average_current_mA(self) -> float:
+    def getAverageCurrentMA(self) -> float:
         """Return average current of last measurement in mA since last call to this method."""
         now = datetime.now()
         nowWattHour = self._getRawWattHour()

@@ -135,7 +135,7 @@ class PowerLogger:
         interval : float
             Time in seconds between automatic samples (default 0.002).
         """
-        self.p_meter = p_meter
+        self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
         power_schema_fields: list[pa.Field] = [
             pa.field("time", pa.timestamp("us")),
@@ -169,17 +169,27 @@ class PowerLogger:
 
     @property
     def pMeter(self) -> PowerMeter:
-        """Backward-compatible camelCase alias for `p_meter`."""
-        return self.p_meter
+        """Public access to the underlying PowerMeter."""
+        return self._p_meter
 
     @pMeter.setter
     def pMeter(self, value: PowerMeter) -> None:
-        """Backward-compatible camelCase alias for `p_meter` assignment."""
-        self.p_meter = value
+        """Set the underlying PowerMeter."""
+        self._p_meter = value
+
+    @property
+    def p_meter(self) -> PowerMeter:
+        """Legacy compatibility alias for pMeter."""
+        return self.pMeter
+
+    @p_meter.setter
+    def p_meter(self, value: PowerMeter) -> None:
+        """Legacy compatibility alias for pMeter setter."""
+        self.pMeter = value
 
     def _nominal_voltage_v(self) -> float | None:
         """Return nominal supply voltage in volts when available on the power meter."""
-        raw_v = getattr(self.p_meter, "v", None)
+        raw_v = getattr(self._p_meter, "v", None)
         if (
             isinstance(raw_v, (int, float))
             and not isinstance(raw_v, bool)
@@ -208,9 +218,9 @@ class PowerLogger:
         with self._reading_lock:
             if now is None:
                 now = datetime.now()
-            average_mA = self.p_meter.get_average_current_mA()
-            max_mA = self.p_meter.get_max_current_mA()
-            min_mA = self.p_meter.get_min_current_mA()
+            average_mA = self._p_meter.getAverageCurrentMA()
+            max_mA = self._p_meter.getMaxCurrentMA()
+            min_mA = self._p_meter.getMinCurrentMA()
             nominal_voltage = self._nominal_voltage_v()
             if nominal_voltage is None:
                 average_mW = average_mA
@@ -237,7 +247,7 @@ class PowerLogger:
                 "min_mW": min_mW,
             }
             self.writer.addRow(d)
-            self.p_meter.reset_measurements()
+            self._p_meter.resetMeasurements()
 
     def storeCurrentReading(self, now: datetime | None = None) -> None:
         """Preferred camelCase public API; see `_store_current_reading`."""
@@ -272,7 +282,7 @@ class PowerLogger:
                     POWER_LOGGER_JOIN_TIMEOUT,
                 )
             try:
-                self.p_meter.close()
+                self._p_meter.close()
             finally:
                 self.writer.close()
 

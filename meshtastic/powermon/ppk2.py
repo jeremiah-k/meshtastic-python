@@ -127,7 +127,7 @@ class PPK2PowerSupply(PowerSupply):
                 self.total_data_len += len(read_data)
                 self.max_data_len = max(self.max_data_len, len(read_data))
 
-    def get_min_current_mA(self) -> float:
+    def getMinCurrentMA(self) -> float:
         """Return the minimum current reading in milliamperes.
 
         Returns
@@ -141,7 +141,7 @@ class PPK2PowerSupply(PowerSupply):
                 self.last_reported_min = self.current_min
             return self.last_reported_min / 1000
 
-    def get_max_current_mA(self) -> float:
+    def getMaxCurrentMA(self) -> float:
         """Return the maximum current reading in milliamperes.
 
         Returns
@@ -155,7 +155,7 @@ class PPK2PowerSupply(PowerSupply):
                 self.last_reported_max = self.current_max
             return self.last_reported_max / 1000
 
-    def get_average_current_mA(self) -> float:
+    def getAverageCurrentMA(self) -> float:
         """Return the average current reading in milliamperes.
 
         Returns
@@ -173,7 +173,7 @@ class PPK2PowerSupply(PowerSupply):
             # measurements are in microamperes, divide by 1000
             return self.current_average / 1000
 
-    def reset_measurements(self) -> None:
+    def resetMeasurements(self) -> None:
         """Reset current-window accumulators while preserving last reported extrema."""
         with self._result_lock:
             if self.current_num_samples != 0:
@@ -191,18 +191,6 @@ class PPK2PowerSupply(PowerSupply):
 
         with self._want_measurement:
             self._want_measurement.notify()  # notify the measurement loop to read immediately
-
-    def getMinCurrentmA(self) -> float:
-        """Backward-compatible camelCase wrapper for get_min_current_mA."""
-        return self.get_min_current_mA()
-
-    def getMaxCurrentmA(self) -> float:
-        """Backward-compatible camelCase wrapper for get_max_current_mA."""
-        return self.get_max_current_mA()
-
-    def resetMeasurements(self) -> None:
-        """Backward-compatible camelCase wrapper for reset_measurements."""
-        self.reset_measurements()
 
     def close(self) -> None:
         """Close the power meter and release resources."""

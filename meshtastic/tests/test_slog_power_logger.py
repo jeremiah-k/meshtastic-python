@@ -89,9 +89,9 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     """store_current_reading should convert legacy *_mW aliases using nominal voltage."""
     meter = MagicMock()
     meter.v = 3.3
-    meter.get_average_current_mA.return_value = 10.0
-    meter.get_max_current_mA.return_value = 20.0
-    meter.get_min_current_mA.return_value = 5.0
+    meter.getAverageCurrentMA.return_value = 10.0
+    meter.getMaxCurrentMA.return_value = 20.0
+    meter.getMinCurrentMA.return_value = 5.0
     writer = MagicMock()
 
     power_logger = object.__new__(PowerLogger)
@@ -117,7 +117,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     assert row["average_mW"] == pytest.approx(33.0)
     assert row["max_mW"] == pytest.approx(66.0)
     assert row["min_mW"] == pytest.approx(16.5)
-    meter.reset_measurements.assert_called_once()
+    meter.resetMeasurements.assert_called_once()
 
 
 @pytest.mark.unit
@@ -127,9 +127,9 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
     """store_current_reading should preserve legacy behavior and warn once without voltage."""
     meter = MagicMock()
     meter.v = 0.0
-    meter.get_average_current_mA.return_value = 11.0
-    meter.get_max_current_mA.return_value = 21.0
-    meter.get_min_current_mA.return_value = 6.0
+    meter.getAverageCurrentMA.return_value = 11.0
+    meter.getMaxCurrentMA.return_value = 21.0
+    meter.getMinCurrentMA.return_value = 6.0
     writer = MagicMock()
 
     power_logger = object.__new__(PowerLogger)

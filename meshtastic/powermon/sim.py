@@ -9,7 +9,7 @@ from .power_supply import PowerSupply
 class SimPowerSupply(PowerSupply):
     """A simulated power supply for testing."""
 
-    def get_average_current_mA(self) -> float:
+    def getAverageCurrentMA(self) -> float:
         """Return average current of last measurement in mA (since last call to this method).
 
         Returns

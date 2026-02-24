@@ -185,39 +185,3 @@ def test_bleclient_discover_method_exists():
         assert callable(client._discover)
     finally:
         client.close()
-
-
-@pytest.mark.unit
-def test_bleclient_async_run_alias():
-    """async_run should be an alias for _async_run."""
-    client = BLEClient(address=None, log_if_no_address=False)
-    try:
-
-        async def dummy():
-            return 42
-
-        # Both methods should exist
-        assert hasattr(client, "_async_run")
-        assert hasattr(client, "async_run")
-
-        # Since client is closed, both should fail the same way
-        client.close()
-        with pytest.raises(BLEClient.BLEError, match="Cannot schedule operation"):
-            client._async_run(dummy())
-        with pytest.raises(BLEClient.BLEError, match="Cannot schedule operation"):
-            client.async_run(dummy())
-    finally:
-        if not getattr(client, "_closed", False):
-            client.close()
-
-
-@pytest.mark.unit
-def test_bleclient_async_await_alias():
-    """async_await should be a public alias for _async_await."""
-    client = BLEClient(address=None, log_if_no_address=False)
-    try:
-        assert hasattr(client, "_async_await")
-        assert hasattr(client, "async_await")
-        assert callable(client.async_await)
-    finally:
-        client.close()
