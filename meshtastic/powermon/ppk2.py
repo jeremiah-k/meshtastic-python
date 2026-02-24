@@ -258,14 +258,14 @@ class PPK2PowerSupply(PowerSupply):
 
         if not is_measuring:
             self.measuring = True
-            self.resetMeasurements()
+            self.reset_measurements()
 
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()
             time.sleep(
                 0.2
             )  # FIXME - crufty way to ensure we do one set of reads to discard bogus fake power readings in the FIFO
-            self.resetMeasurements()
+            self.reset_measurements()
 
     def powerOn(self) -> None:
         """Power on the DUT (Device Under Test)."""

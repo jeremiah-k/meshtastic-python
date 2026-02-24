@@ -30,7 +30,9 @@ def test_getattr_compat_alias_emits_deprecation_warning() -> None:
     mt_config.tunnel_instance = marker
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        assert mt_config.tunnelInstance is marker
+        assert (
+            mt_config.tunnelInstance is marker
+        )  # pyright: ignore[reportAttributeAccessIssue]
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
@@ -40,7 +42,7 @@ def test_setattr_compat_alias_sets_new_name_and_warns() -> None:
     marker = cast(Any, object())
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        mt_config.tunnelInstance = marker
+        mt_config.tunnelInstance = marker  # pyright: ignore[reportAttributeAccessIssue]
     assert mt_config.tunnel_instance is marker
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 

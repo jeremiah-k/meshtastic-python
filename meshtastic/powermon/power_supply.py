@@ -70,13 +70,15 @@ class PowerSupply(PowerMeter):
         Raises
         ------
         PowerError
-            If ``v`` is not a real number.
+            If ``v`` is not a finite real number.
         PowerError
             If ``v`` is negative.
         """
-        if not isinstance(v, Real):
+        if isinstance(v, bool) or not isinstance(v, Real):
             raise PowerError("Voltage must be a real number")  # noqa: TRY003
         voltage = float(v)
+        if not math.isfinite(voltage):
+            raise PowerError("Voltage must be finite")  # noqa: TRY003
         if voltage < 0:
             raise PowerError("Voltage cannot be negative")  # noqa: TRY003
         self._v = voltage

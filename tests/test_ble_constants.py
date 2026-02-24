@@ -83,7 +83,10 @@ def test_ble_error_message_constants():
     assert "No Meshtastic BLE peripheral" in ble_constants.ERROR_NO_PERIPHERAL_FOUND
     assert "Error writing BLE" in ble_constants.ERROR_WRITING_BLE
     assert "Connection failed" in ble_constants.ERROR_CONNECTION_FAILED
-    assert "No Meshtastic BLE peripherals found" in ble_constants.ERROR_NO_PERIPHERALS_FOUND
+    assert (
+        "No Meshtastic BLE peripherals found"
+        in ble_constants.ERROR_NO_PERIPHERALS_FOUND
+    )
 
 
 @pytest.mark.unit

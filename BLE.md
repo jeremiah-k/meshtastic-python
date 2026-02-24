@@ -82,7 +82,7 @@ from meshtastic.interfaces.ble.errors import BLEErrorHandler
 handler = BLEErrorHandler()
 
 # Execute a callable; return a fallback on any handled exception.
-result = handler.safeExecute(
+result = handler._safe_execute(
     lambda: risky_call(),
     default_return=None,
     error_msg="risky_call failed",
@@ -90,10 +90,10 @@ result = handler.safeExecute(
 )
 
 # Best-effort cleanup: suppresses all non-exit exceptions, returns bool.
-ok = handler.safeCleanup(lambda: resource.close(), "resource close")
+ok = handler._safe_cleanup(lambda: resource.close(), "resource close")
 ```
 
-`safeExecute` swallows `BleakError`, `DecodeError`, and
+`_safe_execute` swallows `BleakError`, `DecodeError`, and
 `concurrent.futures.TimeoutError`; other exceptions are also caught unless
 `reraise=True`. `SystemExit` and `KeyboardInterrupt` always propagate.
 

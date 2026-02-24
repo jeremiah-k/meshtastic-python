@@ -2054,6 +2054,8 @@ def common() -> None:
                     except MeshInterface.MeshInterfaceError as e:
                         _cli_exit(f"[BLE] {e}", 1)
                 elif args.host:
+                    tcp_hostname: str = args.host
+                    tcp_port: int = meshtastic.tcp_interface.DEFAULT_TCP_PORT
                     try:
                         tcp_hostname, tcp_port = _parse_host_port(
                             args.host,

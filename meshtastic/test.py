@@ -24,9 +24,9 @@ class _FallbackDotMap(dict):
     def __getattr__(self, key: str) -> Any:
         """Provide attribute-style access to dictionary keys.
 
-        If the key exists and its value is a dict, return a new _FallbackDotMap wrapping that dict.
+        If the key exists and its value is a dict, return a _FallbackDotMap wrapping that dict.
         If the key exists and its value is not a dict, return the value unchanged.
-        If the key is missing, return an empty _FallbackDotMap.
+        If the key is missing, create and store an empty _FallbackDotMap.
 
         Parameters
         ----------
@@ -49,10 +49,14 @@ class _FallbackDotMap(dict):
         try:
             value = self[key]
         except KeyError:
-            # Match real DotMap's permissive behavior: return empty DotMap for missing keys
-            return _FallbackDotMap()
-        if isinstance(value, dict):
-            return _FallbackDotMap(value)
+            # Match real DotMap's permissive behavior by auto-vivifying and persisting children.
+            child = _FallbackDotMap()
+            self[key] = child
+            return child
+        if isinstance(value, dict) and not isinstance(value, _FallbackDotMap):
+            wrapped = _FallbackDotMap(value)
+            self[key] = wrapped
+            return wrapped
         return value
 
     def __setattr__(self, key: str, value: Any) -> None:

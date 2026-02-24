@@ -426,7 +426,7 @@ def test_MeshInterface_sendToRadio_no_proto(caplog):
     Asserts that invoking the base implementation produces a log message containing "Subclass must provide toradio".
 
     """
-    with MeshInterface() as iface:
+    with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
             iface._send_to_radio_impl("foo")  # type: ignore[arg-type]
     assert re.search(r"Subclass must provide toradio", caplog.text, re.MULTILINE)

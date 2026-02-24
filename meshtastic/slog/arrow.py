@@ -38,6 +38,13 @@ class WriterNoneError(ArrowWriterStateError):
         )
 
 
+class WriterClosedError(ArrowWriterStateError):
+    """Raised when add_row() is called after the writer is closed."""
+
+    def __init__(self) -> None:
+        super().__init__("Cannot add rows to a closed ArrowWriter.")
+
+
 class ArrowWriter:
     """Writes an arrow file in a streaming fashion."""
 
@@ -132,7 +139,7 @@ class ArrowWriter:
         """
         with self._lock:
             if self._closed:
-                raise RuntimeError("Cannot add rows to a closed ArrowWriter.")
+                raise WriterClosedError()
             self.new_rows.append(row_dict)
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
@@ -207,4 +214,5 @@ class FeatherWriter(ArrowWriter):
                 logging.warning(
                     "Failed to remove temporary Arrow source file %s",
                     src_name,
+                    exc_info=True,
                 )

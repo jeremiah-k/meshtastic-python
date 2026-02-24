@@ -3,12 +3,14 @@
 import logging
 import math
 from datetime import datetime
-
-from riden import (  # pyright: ignore[reportMissingTypeStubs] -- riden has no py.typed stubs
-    Riden,
-)
+from typing import TYPE_CHECKING
 
 from .power_supply import PowerSupply
+
+if TYPE_CHECKING:
+    from riden.riden import Riden  # pyright: ignore[reportMissingTypeStubs]
+else:
+    from riden import Riden  # pyright: ignore[reportMissingTypeStubs]
 
 
 class RidenPowerSupply(PowerSupply):

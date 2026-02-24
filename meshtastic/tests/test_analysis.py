@@ -6,7 +6,9 @@ import sys
 from typing import NoReturn
 
 import pandas as pd
+import pyarrow as pa
 import pytest
+from pyarrow import feather
 
 try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
@@ -98,7 +100,6 @@ def test_get_board_info_requires_non_null_board_id() -> None:
         get_board_info(frame)
 
 
-
 @pytest.mark.unit
 def test_to_pmon_names_maps_valid_states() -> None:
     """to_pmon_names should convert valid power-monitor state integers to name strings."""
@@ -129,15 +130,14 @@ def test_to_pmon_names_handles_none_state() -> None:
 @pytest.mark.unit
 def test_read_pandas_preserves_nullable_dtypes(tmp_path) -> None:
     """read_pandas should map Arrow types to pandas nullable dtypes."""
-    import pyarrow as pa
-    from pyarrow import feather
-
     # Create a test DataFrame with various types
-    test_data = pd.DataFrame({
-        "int_col": pd.array([1, 2, None], dtype=pd.Int32Dtype()),
-        "bool_col": pd.array([True, False, None], dtype=pd.BooleanDtype()),
-        "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),
-    })
+    test_data = pd.DataFrame(
+        {
+            "int_col": pd.array([1, 2, None], dtype=pd.Int32Dtype()),
+            "bool_col": pd.array([True, False, None], dtype=pd.BooleanDtype()),
+            "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),
+        }
+    )
 
     # Write to feather
     test_file = tmp_path / "test.feather"
@@ -156,10 +156,12 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path) -> None:
 def test_get_pmon_raises_extracts_raise_events() -> None:
     """get_pmon_raises should extract power-monitor raise events from slog."""
     # Create test data with pm_mask transitions
-    dslog = pd.DataFrame({
-        "time": [1.0, 2.0, 3.0, 4.0],
-        "pm_mask": [0, 1, 3, 1],  # 0->1 (raise), 1->3 (raise), 3->1 (fall)
-    })
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "pm_mask": [0, 1, 3, 1],  # 0->1 (raise), 1->3 (raise), 3->1 (fall)
+        }
+    )
 
     result = get_pmon_raises(dslog)
 
@@ -212,10 +214,7 @@ def test_create_argparser_returns_parser() -> None:
 @pytest.mark.unit
 def test_choose_power_column_prefers_legacy_when_present() -> None:
     """choose_power_column should prefer legacy column when it has non-null values."""
-    frame = pd.DataFrame({
-        "average_mW": [1.0, 2.0],
-        "average_mA": [3.0, 4.0]
-    })
+    frame = pd.DataFrame({"average_mW": [1.0, 2.0], "average_mA": [3.0, 4.0]})
     assert choose_power_column(frame, "average_mW", "average_mA") == "average_mW"
 
 

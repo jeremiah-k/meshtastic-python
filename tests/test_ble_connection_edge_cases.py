@@ -2,14 +2,15 @@
 
 from threading import RLock
 from unittest.mock import MagicMock
+
 import pytest
 
 try:
     from meshtastic.interfaces.ble.connection import (
         AWAIT_TIMEOUT_BUFFER_SECONDS,
+        DIRECT_CONNECT_TIMEOUT_SECONDS,
         ClientManager,
         ConnectionValidator,
-        DIRECT_CONNECT_TIMEOUT_SECONDS,
     )
     from meshtastic.interfaces.ble.constants import BLEConfig
     from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState

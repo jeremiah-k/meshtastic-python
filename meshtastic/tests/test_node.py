@@ -185,7 +185,7 @@ def test_exitSimulator(caplog):
     Asserts that a DEBUG-level log record contains the text "in exitSimulator".
 
     """
-    with MeshInterface() as interface:
+    with MeshInterface(noProto=True) as interface:
         interface.nodesByNum = {}
         anode = Node(interface, "!ba400000", noProto=True)
         with caplog.at_level(logging.DEBUG):
@@ -196,7 +196,7 @@ def test_exitSimulator(caplog):
 @pytest.mark.unit
 def test_reboot(caplog):
     """Test reboot."""
-    with MeshInterface() as interface:
+    with MeshInterface(noProto=True) as interface:
         interface.nodesByNum = {}
         anode = Node(interface, 1234567890, noProto=True)
         with caplog.at_level(logging.DEBUG):
@@ -207,7 +207,7 @@ def test_reboot(caplog):
 @pytest.mark.unit
 def test_shutdown(caplog):
     """Test shutdown."""
-    with MeshInterface() as interface:
+    with MeshInterface(noProto=True) as interface:
         interface.nodesByNum = {}
         anode = Node(interface, 1234567890, noProto=True)
         with caplog.at_level(logging.DEBUG):

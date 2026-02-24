@@ -69,11 +69,12 @@ def test_init_on_node_info_receive(caplog, iface_with_nodes):
     assert re.search(r"in _on_node_info_receive", caplog.text, re.MULTILINE)
 
 
-
 @pytest.mark.unit
 def test_init_getattr_raises_for_unknown_attribute():
     """Verify __getattr__ raises AttributeError for unknown attributes."""
-    with pytest.raises(AttributeError, match="module 'meshtastic' has no attribute 'nonexistent'"):
+    with pytest.raises(
+        AttributeError, match="module 'meshtastic' has no attribute 'nonexistent'"
+    ):
         _ = meshtastic.nonexistent
 
 

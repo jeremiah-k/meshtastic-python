@@ -2,6 +2,7 @@
 
 from threading import RLock
 from unittest.mock import MagicMock
+
 import pytest
 
 try:
