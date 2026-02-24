@@ -5,11 +5,13 @@ import logging
 import re
 import sys
 from collections.abc import Generator
+from unittest.mock import MagicMock
 
 import pytest
 
 from meshtastic import mt_config
 
+from ..mesh_interface import MeshInterface
 from ..tcp_interface import TCPInterface
 
 try:
@@ -41,7 +43,9 @@ def reset_tunnel_mt_config_state() -> Generator[None, None, None]:
 
 
 @pytest.mark.unit
-def test_Tunnel_on_non_linux_system(platform_socket_mocks):
+def test_Tunnel_on_non_linux_system(
+    platform_socket_mocks: tuple[MagicMock, MagicMock],
+) -> None:
     """Test that we cannot instantiate a Tunnel on a non Linux system."""
     mock_platform_system, _ = platform_socket_mocks
     mock_platform_system.return_value = "notLinux"
@@ -55,7 +59,7 @@ def test_Tunnel_on_non_linux_system(platform_socket_mocks):
 
 
 @pytest.mark.unit
-def test_Tunnel_without_interface():
+def test_Tunnel_without_interface() -> None:
     """Test that we can not instantiate a Tunnel without a valid interface."""
     with pytest.raises(Tunnel.TunnelError) as pytest_wrapped_e:
         Tunnel(None)
@@ -63,9 +67,13 @@ def test_Tunnel_without_interface():
 
 
 @pytest.mark.unitslow
-def test_Tunnel_with_interface(caplog, iface_with_nodes):
+def test_Tunnel_with_interface(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test that Tunnel initializes with a valid interface and registers itself."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     with caplog.at_level(logging.WARNING):
         tun = Tunnel(iface)
@@ -78,9 +86,14 @@ def test_Tunnel_with_interface(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_onTunnelReceive_from_ourselves(caplog, iface_with_nodes, monkeypatch):
+def test_onTunnelReceive_from_ourselves(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test onTunnelReceive."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     monkeypatch.setattr(sys, "argv", [""])
     mt_config.args = argparse.Namespace()
@@ -93,9 +106,14 @@ def test_onTunnelReceive_from_ourselves(caplog, iface_with_nodes, monkeypatch):
 
 
 @pytest.mark.unit
-def test_onTunnelReceive_from_someone_else(caplog, iface_with_nodes, monkeypatch):
+def test_onTunnelReceive_from_someone_else(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test onTunnelReceive."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     monkeypatch.setattr(sys, "argv", [""])
     mt_config.args = argparse.Namespace()
@@ -107,7 +125,10 @@ def test_onTunnelReceive_from_someone_else(caplog, iface_with_nodes, monkeypatch
 
 
 @pytest.mark.unitslow
-def test_should_filter_packet_random(caplog, iface_with_nodes):
+def test_should_filter_packet_random(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -120,7 +141,10 @@ def test_should_filter_packet_random(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_should_filter_packet_in_blacklist(caplog, iface_with_nodes):
+def test_should_filter_packet_in_blacklist(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -133,7 +157,10 @@ def test_should_filter_packet_in_blacklist(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_should_filter_packet_icmp(caplog, iface_with_nodes):
+def test_should_filter_packet_icmp(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -147,7 +174,10 @@ def test_should_filter_packet_icmp(caplog, iface_with_nodes):
 
 
 @pytest.mark.unit
-def test_should_filter_packet_udp(caplog, iface_with_nodes):
+def test_should_filter_packet_udp(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -161,7 +191,10 @@ def test_should_filter_packet_udp(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_should_filter_packet_udp_blacklisted(caplog, iface_with_nodes):
+def test_should_filter_packet_udp_blacklisted(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -175,7 +208,10 @@ def test_should_filter_packet_udp_blacklisted(caplog, iface_with_nodes):
 
 
 @pytest.mark.unit
-def test_should_filter_packet_tcp(caplog, iface_with_nodes):
+def test_should_filter_packet_tcp(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -189,7 +225,10 @@ def test_should_filter_packet_tcp(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_should_filter_packet_tcp_blacklisted(caplog, iface_with_nodes):
+def test_should_filter_packet_tcp_blacklisted(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _should_filter_packet()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -203,7 +242,10 @@ def test_should_filter_packet_tcp_blacklisted(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_ip_to_node_id_none(caplog, iface_with_nodes):
+def test_ip_to_node_id_none(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _ip_to_node_id()."""
     iface = iface_with_nodes
     iface.noProto = True
@@ -214,7 +256,10 @@ def test_ip_to_node_id_none(caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_ip_to_node_id_all(caplog, iface_with_nodes):
+def test_ip_to_node_id_all(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _ip_to_node_id()."""
     iface = iface_with_nodes
     iface.noProto = True

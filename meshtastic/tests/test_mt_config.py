@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import warnings
+from typing import Any, cast
 
 import pytest
 
@@ -25,7 +26,7 @@ def test_reset_restores_module_defaults() -> None:
 @pytest.mark.unit
 def test_getattr_compat_alias_emits_deprecation_warning() -> None:
     """Accessing tunnelInstance should return tunnel_instance and warn."""
-    marker = object()
+    marker = cast(Any, object())
     mt_config.tunnel_instance = marker
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -36,7 +37,7 @@ def test_getattr_compat_alias_emits_deprecation_warning() -> None:
 @pytest.mark.unit
 def test_setattr_compat_alias_sets_new_name_and_warns() -> None:
     """Assigning tunnelInstance should route to tunnel_instance and warn."""
-    marker = object()
+    marker = cast(Any, object())
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         mt_config.tunnelInstance = marker

@@ -66,9 +66,10 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
         """
         try:
             s = powermon_pb2.PowerMon.State.Name(cast(Any, int(n)))
-            return s if s != "None" else None
         except (ValueError, TypeError):
             return None
+        else:
+            return s if s != "None" else None
 
     return [to_pmon_name(x) for x in arr]
 
@@ -390,9 +391,9 @@ def main() -> None:
     except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
         _cli_exit(f"Error loading slog data: {exc}")
 
-    port = int(args.port)
-    debug = bool(args.debug)
-    host = str(args.host)
+    port = args.port
+    debug = args.debug
+    host = args.host
 
     if not _is_loopback_host(host) and debug:
         logging.warning(

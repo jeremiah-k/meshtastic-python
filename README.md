@@ -35,6 +35,9 @@ Events are delivered using a publish-subscribe model, and you can subscribe to o
    ```bash
    git submodule update --init --recursive
    ```
+1. Prerequisites:
+   - Requires Python 3.10+.
+   - Type hints in this repo use PEP 604 unions and built-in generics (`X | Y`, `list[...]`, `dict[...]`).
 1. Install dependencies with Poetry:
    ```bash
    poetry install --all-extras --with dev,powermon

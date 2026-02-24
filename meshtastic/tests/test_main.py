@@ -10,7 +10,7 @@ import platform
 import re
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -220,7 +220,7 @@ def test_parse_host_port_with_bracketed_ipv6_port() -> None:
 def test_main_host_argument_passes_parsed_port_to_tcp_interface() -> None:
     """Test --host host:port passes parsed host and port to TCPInterface."""
     sys.argv = ["", "--host", "hostname.example:4403", "--set-time", "1"]
-    mt_config.args = sys.argv
+    mt_config.args = cast(Any, sys.argv)
     mocked_node = MagicMock()
     iface = MagicMock(autospec=TCPInterface)
     iface.__enter__ = MagicMock(return_value=iface)
@@ -731,7 +731,7 @@ def test_main_set_time_with_explicit_timestamp(capsys) -> None:
     """Test --set-time TIMESTAMP forwards the provided epoch value."""
     epoch = 1769686798
     sys.argv = ["", "--set-time", str(epoch)]
-    mt_config.args = sys.argv
+    mt_config.args = cast(Any, sys.argv)
 
     mocked_node = MagicMock()
     iface = MagicMock(autospec=SerialInterface)
@@ -753,7 +753,7 @@ def test_main_set_time_with_explicit_timestamp(capsys) -> None:
 def test_main_set_time_without_timestamp_uses_zero(capsys) -> None:
     """Test --set-time without argument forwards 0 to trigger node-side current-time behavior."""
     sys.argv = ["", "--set-time"]
-    mt_config.args = sys.argv
+    mt_config.args = cast(Any, sys.argv)
 
     mocked_node = MagicMock()
     iface = MagicMock(autospec=SerialInterface)
@@ -2728,7 +2728,7 @@ def _run_main_configure_file(
     """Run main() for --configure against a supplied YAML file and interface mock."""
     monkeypatch.setattr("time.sleep", lambda _: None)
     sys.argv = ["", "--configure", str(config_path)]
-    mt_config.args = sys.argv
+    mt_config.args = cast(Any, sys.argv)
     with patch("meshtastic.serial_interface.SerialInterface", return_value=iface):
         main()
 
@@ -2818,7 +2818,7 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     export_path = tmp_path / "roundtrip_config.yaml"
     sys.argv = ["", "--export-config", str(export_path)]
-    mt_config.args = sys.argv
+    mt_config.args = cast(Any, sys.argv)
     with patch(
         "meshtastic.serial_interface.SerialInterface", return_value=export_iface
     ):
@@ -2883,7 +2883,7 @@ def test_main_export_config_and_configure_round_trip_nonstandard(
 
     monkeypatch.setattr("time.sleep", lambda _: None)
     sys.argv = ["", "--configure", str(export_path)]
-    mt_config.args = sys.argv
+    mt_config.args = cast(Any, sys.argv)
     with patch(
         "meshtastic.serial_interface.SerialInterface", return_value=configure_iface
     ):

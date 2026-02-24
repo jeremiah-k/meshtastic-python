@@ -15,6 +15,7 @@ This smoke test runs against that localhost.
 import os
 import platform
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -731,16 +732,17 @@ def test_smokevirt_configure() -> None:
 def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path) -> None:
     """Test --export-config and --configure round-trip against the virtual device."""
     export_path = tmp_path / "smokevirt_roundtrip.yaml"
+    quoted_export_path = shlex.quote(str(export_path))
 
     export_return, export_out = subprocess.getstatusoutput(
-        f"meshtastic --host localhost --export-config {export_path}"
+        f"meshtastic --host localhost --export-config {quoted_export_path}"
     )
     assert re.match(r"Connected to radio", export_out)
     assert re.search(r"Exported configuration to", export_out, re.MULTILINE)
     assert export_return == 0
 
     configure_return, configure_out = subprocess.getstatusoutput(
-        f"meshtastic --host localhost --configure {export_path}"
+        f"meshtastic --host localhost --configure {quoted_export_path}"
     )
     assert re.match(r"Connected to radio", configure_out)
     assert re.search(r"Writing modified configuration to device", configure_out)
@@ -779,6 +781,8 @@ def test_smokevirt_set_wifi_settings() -> None:
         "meshtastic --host localhost --get wifi_ssid --get wifi_password"
     )
     assert re.search(r"^wifi_ssid: some_ssid", out, re.MULTILINE)
+    # Passwords are intentionally masked in CLI output for security, even after a
+    # successful --set operation that accepted the plaintext value.
     assert re.search(r"^wifi_password: sekrit", out, re.MULTILINE)
     assert return_value == 0
 

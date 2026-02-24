@@ -50,7 +50,7 @@ def test_main_routes_load_errors_through_cli_exit(
     """main() should emit a graceful CLI error when slog loading fails."""
     captured: dict[str, str] = {}
 
-    def _fake_create_dash(*, slog_path: str) -> None:
+    def _fake_create_dash(*, slog_path: str) -> NoReturn:
         _ = slog_path
         raise ValueError("bad slog")  # noqa: TRY003
 

@@ -135,7 +135,8 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
         # print(f"From {interface.stream.port}: {packet}")
         p = DotMap(packet)
 
-        if p.decoded.portnum == "TEXT_MESSAGE_APP":
+        portnum = getattr(p.decoded, "portnum", None)
+        if portnum == "TEXT_MESSAGE_APP":
             # We only care a about clear text packets
             if receivedPackets is not None:
                 receivedPackets.append(p)

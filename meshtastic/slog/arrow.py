@@ -105,7 +105,7 @@ class ArrowWriter:
 
         Must be called with ``self._lock`` held.
         """
-        assert self._lock._is_owned(), "_write must be called with self._lock held"  # type: ignore[attr-defined]
+        # Precondition (enforced by callers): self._lock must be held.
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
@@ -131,6 +131,8 @@ class ArrowWriter:
             Dictionary representing a single row with field names matching the schema.
         """
         with self._lock:
+            if self._closed:
+                raise RuntimeError("Cannot add rows to a closed ArrowWriter.")
             self.new_rows.append(row_dict)
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()

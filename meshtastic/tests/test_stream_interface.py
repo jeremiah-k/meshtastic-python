@@ -68,7 +68,7 @@ def test_send_to_radio_impl_frames_payload() -> None:
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_send_to_radio_impl_rejects_oversized_payload() -> None:
-    """_send_to_radio_impl should raise PayloadTooLargeError for payloads > 512 bytes."""
+    """_send_to_radio_impl should raise PayloadTooLargeError for payloads > MAX_TO_FROM_RADIO_SIZE."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         to_radio = MagicMock()
