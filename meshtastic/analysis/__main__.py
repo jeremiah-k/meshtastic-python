@@ -157,7 +157,7 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     if "time" not in pmon_events.columns:
         raise ValueError("No time column found in slog")  # noqa: TRY003
 
-    pm_masks = pd.Series(pmon_events["pm_mask"]).to_numpy()
+    pm_masks = pmon_events["pm_mask"].to_numpy()
 
     # possible to do this with pandas rolling windows if I was smarter?
     pm_changes = [
@@ -368,7 +368,12 @@ def create_dash(slog_path: str) -> Dash:
 
 
 def _is_loopback_host(host_value: str) -> bool:
-    """Return True when the provided host value resolves to a loopback address."""
+    """Return True when the provided host value is a literal loopback host/address.
+
+    This intentionally does not perform DNS lookups. Hostnames that happen to
+    resolve to loopback are treated as non-loopback so the debug guard defaults
+    to the safer behavior for non-literal host values.
+    """
     host_stripped = host_value.strip()
     if host_stripped.startswith("[") and host_stripped.endswith("]"):
         host_stripped = host_stripped[1:-1]

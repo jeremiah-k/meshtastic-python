@@ -23,6 +23,7 @@ from meshtastic.powermon import PowerMeter
 from .arrow import FeatherWriter
 
 logger = logging.getLogger(__name__)
+_warned_deprecations: set[str] = set()
 
 
 def _root_dir_impl() -> str:
@@ -45,11 +46,13 @@ def root_dir() -> str:
     str
         Filesystem path to the "slogs" directory.
     """
-    warnings.warn(
-        "root_dir() is deprecated; use rootDir() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+    if "root_dir" not in _warned_deprecations:
+        warnings.warn(
+            "root_dir() is deprecated; use rootDir() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        _warned_deprecations.add("root_dir")
     return _root_dir_impl()
 
 
@@ -156,6 +159,7 @@ class PowerLogger:
             raise
         self.interval = interval
         self._warned_legacy_mw_without_voltage = False
+        self._warned_store_current_reading_deprecation = False
         self._reading_lock = threading.Lock()
         self.is_logging = True
         self.thread = threading.Thread(
@@ -241,11 +245,13 @@ class PowerLogger:
 
     def store_current_reading(self, now: datetime | None = None) -> None:
         """Use `storeCurrentReading()` instead."""
-        warnings.warn(
-            "store_current_reading() is deprecated; use storeCurrentReading() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if not getattr(self, "_warned_store_current_reading_deprecation", False):
+            warnings.warn(
+                "store_current_reading() is deprecated; use storeCurrentReading() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._warned_store_current_reading_deprecation = True
         self._store_current_reading(now)
 
     def _logging_thread(self) -> None:
@@ -581,7 +587,9 @@ class LogSet:
 
             if slog_close_exc is not None:
                 if power_close_exc is not None:
-                    raise slog_close_exc from power_close_exc
+                    # Python 3.10 has no ExceptionGroup, so preserve slog close
+                    # as primary and attach power close as secondary context.
+                    slog_close_exc.__context__ = power_close_exc
                 raise slog_close_exc
             if power_close_exc is not None:
                 raise power_close_exc

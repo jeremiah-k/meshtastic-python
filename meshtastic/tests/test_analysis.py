@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn, cast
 
 import pandas as pd
 import pyarrow as pa
@@ -13,6 +13,7 @@ from pyarrow import feather
 
 try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
+    from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
     from meshtastic.analysis.__main__ import (
         choose_power_column,
@@ -104,13 +105,13 @@ def test_get_board_info_requires_non_null_board_id() -> None:
 @pytest.mark.unit
 def test_to_pmon_names_maps_valid_states() -> None:
     """to_pmon_names should convert valid power-monitor state integers to name strings."""
-    # Test with some valid state values (these are from the powermon_pb2 enum)
     result = to_pmon_names([1, 2, 3])
     assert isinstance(result, list)
     assert len(result) == 3
-    # All results should be strings or None
-    for item in result:
-        assert item is None or isinstance(item, str)
+    assert result[0] == powermon_pb2.PowerMon.State.Name(cast(Any, 1))
+    assert result[1] == powermon_pb2.PowerMon.State.Name(cast(Any, 2))
+    # Value 3 currently has no enum name in protobuf and should map to None.
+    assert result[2] is None
 
 
 @pytest.mark.unit
@@ -169,8 +170,13 @@ def test_get_pmon_raises_extracts_raise_events() -> None:
     # Should have time and pm_raises columns
     assert "time" in result.columns
     assert "pm_raises" in result.columns
-    # Should only include rows with raises (not falls)
-    assert len(result) > 0
+    # Should only include rows with raises (not falls): 0->1 and 1->3
+    assert len(result) == 2
+    assert result["time"].tolist() == [2.0, 3.0]
+    assert result["pm_raises"].tolist() == [
+        powermon_pb2.PowerMon.State.Name(cast(Any, 1)),
+        powermon_pb2.PowerMon.State.Name(cast(Any, 2)),
+    ]
 
 
 @pytest.mark.unit

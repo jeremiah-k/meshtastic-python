@@ -1,6 +1,7 @@
 """BLE device discovery strategies."""
 
 import time
+from types import TracebackType
 from typing import Any, Callable, cast
 
 from bleak.backends.device import BLEDevice
@@ -348,12 +349,11 @@ class DiscoveryManager:
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: object | None,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
     ) -> None:
         """Close the manager on context-manager exit."""
-        _ = exc_type, exc_value, traceback
         self.close()
 
     def __del__(self) -> None:

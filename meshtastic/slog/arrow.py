@@ -41,10 +41,10 @@ class WriterNoneError(ArrowWriterStateError):
 
 
 class WriterClosedError(ArrowWriterStateError):
-    """Raised when addRow() is called after the writer is closed."""
+    """Raised when an ArrowWriter operation is invoked after close()."""
 
     def __init__(self) -> None:
-        super().__init__("Cannot add rows to a closed ArrowWriter.")
+        super().__init__("Cannot perform operation: ArrowWriter is closed.")
 
 
 class ArrowWriter:
@@ -70,6 +70,8 @@ class ArrowWriter:
         # Re-entrant: _write() can call set_schema() while the same lock is held.
         self._lock = threading.RLock()
         self._closed = False
+        self._warned_set_schema_deprecation = False
+        self._warned_add_row_deprecation = False
 
     def __enter__(self) -> "ArrowWriter":
         """Return self for context-manager usage."""
@@ -130,11 +132,13 @@ class ArrowWriter:
 
     def set_schema(self, schema: pa.Schema) -> None:
         """Call `setSchema()` instead."""
-        warnings.warn(
-            "set_schema() is deprecated; use setSchema() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if not self._warned_set_schema_deprecation:
+            warnings.warn(
+                "set_schema() is deprecated; use setSchema() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._warned_set_schema_deprecation = True
         self._set_schema(schema)
 
     def setSchema(self, schema: pa.Schema) -> None:
@@ -180,11 +184,13 @@ class ArrowWriter:
 
     def add_row(self, row_dict: dict[str, object]) -> None:
         """Call `addRow()` instead."""
-        warnings.warn(
-            "add_row() is deprecated; use addRow() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if not self._warned_add_row_deprecation:
+            warnings.warn(
+                "add_row() is deprecated; use addRow() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._warned_add_row_deprecation = True
         self._add_row(row_dict)
 
     def addRow(self, row_dict: dict[str, object]) -> None:
