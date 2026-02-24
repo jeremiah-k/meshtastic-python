@@ -48,6 +48,7 @@ class StreamInterface(MeshInterface):
         """Raised when a serialized ToRadio payload exceeds MAX_TO_FROM_RADIO_SIZE."""
 
         def __init__(self, payload_size: int, max_size: int) -> None:
+            """Initialize with actual `payload_size` and allowed `max_size`, returning None."""
             super().__init__(f"ToRadio payload too large ({payload_size} > {max_size})")
 
     def __init__(  # pylint: disable=R0917

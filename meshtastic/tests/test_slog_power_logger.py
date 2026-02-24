@@ -104,7 +104,12 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     now = datetime(2026, 1, 1, 12, 0, 0)
     power_logger.store_current_reading(now=now)
 
-    row = writer.addRow.call_args.args[0]
+    call = writer.addRow.call_args
+    assert call is not None
+    row = call.kwargs.get("row")
+    if row is None:
+        assert call.args, "Expected addRow to include row payload"
+        row = call.args[0]
     assert row["time"] == now
     assert row["average_mA"] == 10.0
     assert row["max_mA"] == 20.0
@@ -138,7 +143,13 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
         power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 0))
         power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 1))
 
-    rows = [call.args[0] for call in writer.addRow.call_args_list]
+    rows = []
+    for call in writer.addRow.call_args_list:
+        row = call.kwargs.get("row")
+        if row is None:
+            assert call.args, "Expected addRow to include row payload"
+            row = call.args[0]
+        rows.append(row)
     assert len(rows) == 2
     for row in rows:
         assert row["average_mW"] == row["average_mA"]

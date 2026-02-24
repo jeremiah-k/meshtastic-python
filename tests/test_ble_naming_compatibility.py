@@ -35,12 +35,16 @@ def test_ble_client_naming_compatibility():
 
 
 def test_ble_diagnostic_naming_compatibility():
-    """Verify that snake_case diagnostics are available."""
+    """Verify that diagnostic helpers expose compatibility and camelCase names."""
     from meshtastic.interfaces.ble.client import get_zombie_thread_count
-    from meshtastic.interfaces.ble.runner import get_zombie_runner_count
+    from meshtastic.interfaces.ble.runner import (
+        get_zombie_runner_count,
+        getZombieRunnerCount,
+    )
 
     assert get_zombie_thread_count is not None
     assert get_zombie_runner_count is not None
+    assert getZombieRunnerCount is not None
 
 
 def test_ble_module_level_naming_compatibility():

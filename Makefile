@@ -1,4 +1,9 @@
-.PHONY: test ci lint docs cov virt smoke1 slow install examples protobufs FORCE
+.PHONY: all clean test ci lint docs cov virt smoke1 slow install examples protobufs FORCE
+
+all: test
+
+clean:
+	rm -rf htmlcov .coverage coverage.xml
 
 # only run the fast unit tests
 test:

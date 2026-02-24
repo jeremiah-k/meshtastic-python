@@ -690,6 +690,6 @@ def get_zombie_thread_count() -> int:
     int
         Number of zombie runner threads.
     """
-    from meshtastic.interfaces.ble.runner import get_zombie_runner_count
+    from meshtastic.interfaces.ble.runner import getZombieRunnerCount
 
-    return get_zombie_runner_count()
+    return getZombieRunnerCount()

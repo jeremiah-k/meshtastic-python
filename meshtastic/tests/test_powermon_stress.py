@@ -82,6 +82,33 @@ def test_sync_power_stress_wait_until_ack_timeout() -> None:
 
 
 @pytest.mark.unit
+def test_sync_power_stress_negative_duration_uses_ack_wait_path(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Negative durations should be handled via the run-until-ack timeout path."""
+    iface = MagicMock()
+    iface.myInfo.my_node_num = 1
+    client = PowerStressClient(iface)
+    sleep_mock = MagicMock()
+    monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", sleep_mock)
+    client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
+
+    with caplog.at_level("WARNING"):
+        assert (
+            client.syncPowerStress(
+                powermon_pb2.PowerStressMessage.BT_ON,
+                num_seconds=-1.0,
+                ack_timeout=0.01,
+            )
+            is False
+        )
+
+    sleep_mock.assert_not_called()
+    assert "Negative num_seconds" in caplog.text
+
+
+@pytest.mark.unit
 def test_sync_power_stress_timed_mode_without_ack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

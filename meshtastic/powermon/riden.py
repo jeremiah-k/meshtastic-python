@@ -2,6 +2,7 @@
 
 import logging
 import math
+import warnings
 from datetime import datetime
 
 from riden import (
@@ -30,7 +31,6 @@ class RidenPowerSupply(PowerSupply):
         )
         r.set_date_time(datetime.now())
         self.prevWattHour = self._getRawWattHour()
-        self.nowWattHour = self.prevWattHour
         super().__init__()  # we call this late so that the port is already open and _getRawWattHour callback works
 
     def setMaxCurrent(self, i: float) -> None:
@@ -52,6 +52,8 @@ class RidenPowerSupply(PowerSupply):
         if elapsed_s <= 0:
             return math.nan
         watts = ((nowWattHour - self.prevWattHour) / elapsed_s) * 3600
+        # Intentional: consume this measurement window even when voltage <= 0 to avoid a
+        # large energy spike after voltage recovers.
         self.prevPowerTime = now
         self.prevWattHour = nowWattHour
         if self.v <= 0:
@@ -67,7 +69,12 @@ class RidenPowerSupply(PowerSupply):
 
         Prefer getAverageCurrentMA for consistent unit capitalization.
         """
-        return self.getAverageCurrentMA()
+        warnings.warn(
+            "getAverageCurrentmA is deprecated, use getAverageCurrentMA instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_average_current_mA()
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""

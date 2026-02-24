@@ -12,7 +12,7 @@ import pytest
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.runner import (
     BLECoroutineRunner,
-    get_zombie_runner_count,
+    getZombieRunnerCount,
 )
 
 
@@ -378,7 +378,7 @@ class TestBLECoroutineRunner:
     def test_zombie_runner_count(self):
         """Verify zombie runner count is tracked."""
         # Initial count should be 0
-        initial_count = get_zombie_runner_count()
+        initial_count = getZombieRunnerCount()
 
         # Create runner and force a timeout scenario
         runner = BLECoroutineRunner()
@@ -400,7 +400,7 @@ class TestBLECoroutineRunner:
 
         # The count should still be the same since we didn't call stop() with timeout
         # (zombie count only increments when stop() times out)
-        current_count = get_zombie_runner_count()
+        current_count = getZombieRunnerCount()
 
         # Count should be >= initial (may have incremented if thread didn't exit)
         assert current_count >= initial_count
@@ -492,7 +492,7 @@ class TestBLECoroutineRunner:
         # Ensure we don't interfere with any real runner state.
         runner._stop()
 
-        initial_count = get_zombie_runner_count()
+        initial_count = getZombieRunnerCount()
         fake_thread = FakeThread()
         fake_loop = FakeLoop()
         with runner._instance_lock:
@@ -502,7 +502,7 @@ class TestBLECoroutineRunner:
 
         try:
             assert runner._stop(timeout=0.0) is False
-            assert get_zombie_runner_count() == initial_count + 1
+            assert getZombieRunnerCount() == initial_count + 1
             assert fake_thread.join_calls == [0.0]
         finally:
             # Restore singleton runner for subsequent tests.
@@ -627,7 +627,7 @@ class TestBLEClientWithRunner:
         from meshtastic.interfaces.ble.client import get_zombie_thread_count
 
         # Should return same as runner function
-        runner_count = get_zombie_runner_count()
+        runner_count = getZombieRunnerCount()
         client_count = get_zombie_thread_count()
 
         assert client_count == runner_count

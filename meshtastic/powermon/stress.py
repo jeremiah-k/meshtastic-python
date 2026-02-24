@@ -69,9 +69,9 @@ class PowerStressClient:
             The power stress command to send.
         num_seconds : float
             Duration for timed stress commands. A value of 0.0 means
-            "run-until-ack". (Default value = 0.0)
+            "run-until-ack"; values below 0.0 are treated the same. (Default value = 0.0)
         ack_timeout : float
-            Maximum seconds to wait for an ack when `num_seconds` is 0.0.
+            Maximum seconds to wait for an ack when `num_seconds` is <= 0.0.
             (Default value = 30.0)
 
         Returns
@@ -81,16 +81,21 @@ class PowerStressClient:
         """
         ack_event = threading.Event()
 
-        def onResponse(_packet: dict[str, Any]) -> None:
+        def _on_response(_packet: dict[str, Any]) -> None:
             ack_event.set()
 
         logging.info(
             "Sending power stress command %s",
             powermon_pb2.PowerStressMessage.Opcode.Name(cmd),
         )
-        self.sendPowerStress(cmd, onResponse=onResponse, num_seconds=num_seconds)
+        self.sendPowerStress(cmd, onResponse=_on_response, num_seconds=num_seconds)
 
-        if num_seconds == 0.0:
+        if num_seconds <= 0.0:
+            if num_seconds < 0.0:
+                logging.warning(
+                    "Negative num_seconds=%s is invalid; treating as run-until-ack",
+                    num_seconds,
+                )
             # Wait for the response and then continue, with a safety timeout.
             if not ack_event.wait(timeout=ack_timeout):
                 logging.error("Timed out waiting for power stress ack!")

@@ -68,6 +68,11 @@ class TCPInterface(StreamInterface):
         self.portNumber: int = portNumber
         self._connect_now: bool = connectNow
         self._connect_timeout: float = connectTimeout
+        # Pre-assign base-class attributes so __repr__ stays safe even if
+        # myConnect() raises before StreamInterface.__init__ runs.
+        self.debugOut = debugOut
+        self.noProto = noProto
+        self.noNodes = noNodes
 
         self.socket: socket.socket | None = None
         self._reconnect_attempts = 0

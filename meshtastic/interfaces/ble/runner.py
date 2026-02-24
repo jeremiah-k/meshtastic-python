@@ -35,7 +35,7 @@ _zombie_lock = threading.Lock()
 _zombie_runner_count = 0
 
 
-def get_zombie_runner_count() -> int:
+def getZombieRunnerCount() -> int:
     """Return the number of recorded zombie runner threads that failed to stop cleanly.
 
     Returns
@@ -45,6 +45,11 @@ def get_zombie_runner_count() -> int:
     """
     with _zombie_lock:
         return _zombie_runner_count
+
+
+def get_zombie_runner_count() -> int:
+    """Return the zombie runner count using the legacy snake_case name."""
+    return getZombieRunnerCount()
 
 
 class BLECoroutineRunner:

@@ -76,7 +76,8 @@ def test_get_average_current_camelcase_aliases_delegate(
     delegated = cast(MagicMock, pps.get_average_current_mA)
 
     assert pps.getAverageCurrentMA() == 123.4
-    assert pps.getAverageCurrentmA() == 123.4
+    with pytest.warns(DeprecationWarning):
+        assert pps.getAverageCurrentmA() == 123.4
     assert delegated.call_count == 2
 
 
