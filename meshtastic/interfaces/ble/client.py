@@ -106,7 +106,7 @@ class BLEClient:
         self.bleak_client: BleakRootClient | None = None
         self.address = address
         self._closed = False
-        self._pending_futures: weakref.WeakSet[Future] = weakref.WeakSet()
+        self._pending_futures: weakref.WeakSet[Future[Any]] = weakref.WeakSet()
         self._pending_futures_lock = RLock()
         self._close_lock = RLock()
 
@@ -690,6 +690,6 @@ def get_zombie_thread_count() -> int:
     int
         Number of zombie runner threads.
     """
-    from meshtastic.interfaces.ble.runner import get_zombie_runner_count
+    from meshtastic.interfaces.ble.runner import getZombieRunnerCount
 
-    return get_zombie_runner_count()
+    return getZombieRunnerCount()

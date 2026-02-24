@@ -402,7 +402,7 @@ class ReconnectWorker:
         except ReconnectPolicyMissingMethodError as err:
             policy_name = type(self.reconnect_policy).__name__
             logger.exception(
-                "Reconnect policy missing required method '%s'; aborting reconnect loop (policy=%s, policy=%r)",
+                "Reconnect policy missing required method '%s'; aborting reconnect loop (policy_name=%s, policy=%r)",
                 err.method_name,
                 policy_name,
                 self.reconnect_policy,

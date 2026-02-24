@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ..stream_interface import START1, START2, StreamInterface
+from ..stream_interface import MAX_TO_FROM_RADIO_SIZE, START1, START2, StreamInterface
 
 # import re
 
@@ -61,6 +61,21 @@ def test_sendToRadioImpl_frames_payload() -> None:
             length_low = len(payload) & 0xFF
             expected = bytes([START1, START2, length_high, length_low]) + payload
             write_bytes.assert_called_once_with(expected)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendToRadioImpl_rejects_oversized_payload() -> None:
+    """_send_to_radio_impl should raise PayloadTooLargeError for payloads > 512 bytes."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        to_radio = MagicMock()
+        to_radio.SerializeToString.return_value = b"\x00" * (MAX_TO_FROM_RADIO_SIZE + 1)
+
+        with pytest.raises(StreamInterface.PayloadTooLargeError):
+            iface._send_to_radio_impl(to_radio)
     finally:
         iface.close()
 

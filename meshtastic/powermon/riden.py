@@ -57,7 +57,7 @@ class RidenPowerSupply(PowerSupply):
         self.prevWattHour = nowWattHour
         if self.v <= 0:
             return math.nan
-        return watts / self.v * 1000
+        return (watts / self.v) * 1000
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""

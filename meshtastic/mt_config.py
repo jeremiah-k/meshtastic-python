@@ -11,13 +11,18 @@ plaster over the use of shared mt_config, but the coupling issues will be dealt
 with rather more easily once the code is simplified by this change.
 """
 
+from __future__ import annotations
+
 import argparse
 import inspect
 import os
 import sys
 import types
 import warnings
-from typing import IO, Any
+from typing import IO, TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from meshtastic.tunnel import Tunnel
 
 # NOTE: Any additional public annotated module-level constants that are not
 # reset-managed state must either be prefixed with "_" or excluded from the
@@ -53,7 +58,7 @@ args: argparse.Namespace | None
 parser: argparse.ArgumentParser | None
 channel_index: int | None
 logfile: IO[str] | None
-tunnel_instance: Any
+tunnel_instance: Tunnel | None
 camel_case: bool
 
 # Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.

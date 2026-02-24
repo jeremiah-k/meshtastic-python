@@ -394,11 +394,10 @@ def testSimulator() -> NoReturn:
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")
     try:
-        iface: TCPInterface = TCPInterface("localhost")
-        iface.showInfo()
-        iface.localNode.showInfo()
-        iface.localNode.exitSimulator()
-        iface.close()
+        with TCPInterface("localhost") as iface:
+            iface.showInfo()
+            iface.localNode.showInfo()
+            iface.localNode.exitSimulator()
         logger.info("Integration test successful!")
     except Exception:  # intentional catch-all for test exit-signaling
         logger.exception("Error while testing simulator")

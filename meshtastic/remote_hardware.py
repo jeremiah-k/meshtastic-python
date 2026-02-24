@@ -76,7 +76,8 @@ def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     # Note: proto3 omits zero-valued fields; gpioValue defaults to 0
     # See https://developers.google.com/protocol-buffers/docs/proto3#default
 
-    raw_mask = interface.mask if interface.mask is not None else hw.get("gpioMask", 0)
+    raw_mask = getattr(interface, "mask", None)
+    raw_mask = raw_mask if raw_mask is not None else hw.get("gpioMask", 0)
     try:
         mask = int(raw_mask)
         gpio_value_int = int(gpioValue)

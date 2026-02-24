@@ -88,9 +88,9 @@ poetry run pytest --cov=meshtastic --cov-report=xml
 ### Using GitHub CI actions locally
 
 - You need to have act installed. You can get it at https://nektosact.com/
-- on Linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.12"`
+- on Linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.13"`
 - on Windows:
-  - linux checks (linux docker): `act --matrix "python-version:3.12"`
-  - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:3.12"`
+  - linux checks (linux docker): `act --matrix "python-version:3.13"`
+  - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:3.13"`
 
 For more commands see [CI workflow](.github/workflows/ci.yml)

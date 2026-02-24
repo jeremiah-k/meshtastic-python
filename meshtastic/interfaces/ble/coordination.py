@@ -274,6 +274,8 @@ class ThreadCoordinator:
     def _set_event_no_lock(self, name: str) -> None:
         """Set the named tracked event without acquiring the coordinator lock.
 
+        Caller must hold self._lock.
+
         If no event with the given name is registered, this is a no-op.
 
         Parameters
@@ -287,6 +289,8 @@ class ThreadCoordinator:
 
     def _clear_event_no_lock(self, name: str) -> None:
         """Clear the tracked event named `name` without acquiring the coordinator lock.
+
+        Caller must hold self._lock.
 
         If no event is registered under `name`, this is a no-op. This method clears the event so waiting threads will block until it is set again.
 

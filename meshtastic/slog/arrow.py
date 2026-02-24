@@ -105,6 +105,7 @@ class ArrowWriter:
 
         Must be called with ``self._lock`` held.
         """
+        assert self._lock._is_owned(), "_write must be called with self._lock held"  # type: ignore[attr-defined]
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema

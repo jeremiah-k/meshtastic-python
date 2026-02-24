@@ -1,5 +1,6 @@
 """Meshtastic unit tests for tunnel.py."""
 
+import argparse
 import logging
 import re
 import sys
@@ -19,6 +20,9 @@ except ImportError:
     pytest.skip("Can't import Tunnel or onTunnelReceive", allow_module_level=True)
 
 pytestmark = pytest.mark.usefixtures("platform_socket_mocks")
+
+# Custom logging level for trace-level logs
+LOG_TRACE = 5
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +92,7 @@ def test_onTunnelReceive_from_ourselves(caplog, iface_with_nodes, monkeypatch):
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
     monkeypatch.setattr(sys, "argv", [""])
-    mt_config.args = sys.argv
+    mt_config.args = argparse.Namespace()
     packet = {"decoded": {"payload": "foo"}, "from": 2475227164}
     with caplog.at_level(logging.DEBUG):
         Tunnel(iface)
@@ -103,7 +107,7 @@ def test_onTunnelReceive_from_someone_else(caplog, iface_with_nodes, monkeypatch
     iface = iface_with_nodes
     iface.myInfo.my_node_num = 2475227164
     monkeypatch.setattr(sys, "argv", [""])
-    mt_config.args = sys.argv
+    mt_config.args = argparse.Namespace()
     packet = {"decoded": {"payload": "foo"}, "from": 123}
     with caplog.at_level(logging.DEBUG):
         Tunnel(iface)
@@ -172,8 +176,6 @@ def test_should_filter_packet_udp_blacklisted(caplog, iface_with_nodes):
     iface.noProto = True
     # faked UDP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x6c\x07\x6c\x00\x00\x00"
-    # Note: custom logging level
-    LOG_TRACE = 5
     with caplog.at_level(LOG_TRACE):
         tun = Tunnel(iface)
         ignore = tun._should_filter_packet(packet)
@@ -202,8 +204,6 @@ def test_should_filter_packet_tcp_blacklisted(caplog, iface_with_nodes):
     iface.noProto = True
     # faked TCP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x0c\x17\x0c\x00\x00\x00"
-    # Note: custom logging level
-    LOG_TRACE = 5
     with caplog.at_level(LOG_TRACE):
         tun = Tunnel(iface)
         ignore = tun._should_filter_packet(packet)
