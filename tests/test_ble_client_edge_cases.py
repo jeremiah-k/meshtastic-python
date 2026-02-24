@@ -140,8 +140,6 @@ def test_bleclient_stop_notify_alias():
 @pytest.mark.unit
 def test_bleclient_operations_fail_when_closed():
     """Operations should fail with clear error when client is closed."""
-
-
     client = BLEClient(address=None, log_if_no_address=False)
     client.close()
 
@@ -192,8 +190,6 @@ def test_bleclient_discover_method_exists():
 @pytest.mark.unit
 def test_bleclient_async_run_alias():
     """async_run should be an alias for _async_run."""
-
-
     client = BLEClient(address=None, log_if_no_address=False)
     try:
 

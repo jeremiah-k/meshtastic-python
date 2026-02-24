@@ -1,13 +1,13 @@
 """Integration scenario tests for BLE to strengthen confidence in changed code paths."""
 
-import pytest
 from threading import RLock
 from unittest.mock import MagicMock
+import pytest
 
 try:
-    from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-    from meshtastic.interfaces.ble.connection import ConnectionValidator, ClientManager
+    from meshtastic.interfaces.ble.connection import ClientManager, ConnectionValidator
     from meshtastic.interfaces.ble.constants import BLEConfig
+    from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
@@ -134,14 +134,14 @@ def test_client_manager_handles_concurrent_updates():
 @pytest.mark.unit
 def test_connection_timeout_configuration_consistency():
     """Verify timeout constants are consistent and reasonable across the stack."""
+    from meshtastic.interfaces.ble.connection import (
+        AWAIT_TIMEOUT_BUFFER_SECONDS,
+        DIRECT_CONNECT_TIMEOUT_SECONDS,
+    )
     from meshtastic.interfaces.ble.constants import (
         DISCONNECT_TIMEOUT_SECONDS,
-        RECEIVE_THREAD_JOIN_TIMEOUT,
         EVENT_THREAD_JOIN_TIMEOUT,
-    )
-    from meshtastic.interfaces.ble.connection import (
-        DIRECT_CONNECT_TIMEOUT_SECONDS,
-        AWAIT_TIMEOUT_BUFFER_SECONDS,
+        RECEIVE_THREAD_JOIN_TIMEOUT,
     )
 
     # Basic sanity checks
@@ -233,7 +233,7 @@ def test_connection_validator_with_normalized_addresses():
             variant,
         )
         # Since they all normalize to the same value, should match
-        assert result or not result  # Test doesn't fail - just validates the call works
+        assert result  # All address variants should match when normalized
 
 
 @pytest.mark.unit

@@ -1,18 +1,18 @@
 """Edge case tests for BLE connection management."""
 
-import pytest
 from threading import RLock
 from unittest.mock import MagicMock
+import pytest
 
 try:
     from meshtastic.interfaces.ble.connection import (
-        ConnectionValidator,
-        ClientManager,
-        DIRECT_CONNECT_TIMEOUT_SECONDS,
         AWAIT_TIMEOUT_BUFFER_SECONDS,
+        ClientManager,
+        ConnectionValidator,
+        DIRECT_CONNECT_TIMEOUT_SECONDS,
     )
-    from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
     from meshtastic.interfaces.ble.constants import BLEConfig
+    from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
