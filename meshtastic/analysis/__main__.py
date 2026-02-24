@@ -17,7 +17,7 @@ from dash import Dash, dcc, html  # type: ignore[import-untyped]
 from pyarrow import feather
 
 from .. import mesh_pb2, powermon_pb2, util
-from ..slog import root_dir
+from ..slog import rootDir
 
 # Configure panda options
 pd.options.mode.copy_on_write = True
@@ -184,6 +184,8 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
         HardwareModel enum name string derived from `board_id`, and `sw_version`
         is the software version string.
     """
+    if "sw_version" not in dslog.columns:
+        raise ValueError("No sw_version column found in slog")  # noqa: TRY003
     board_info = dslog[dslog["sw_version"].notnull()]
     if board_info.empty:
         raise ValueError("No board info rows found in slog")  # noqa: TRY003
@@ -384,7 +386,7 @@ def main() -> None:
     parser = create_argparser()
     args = parser.parse_args()
     if not args.slog:
-        args.slog = os.path.join(root_dir(), "latest")
+        args.slog = os.path.join(rootDir(), "latest")
 
     try:
         app = create_dash(slog_path=args.slog)

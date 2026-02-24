@@ -141,6 +141,7 @@ def test_power_stress_run_aborts_when_print_info_ack_missing() -> None:
     assert first_cmd == powermon_pb2.PowerStressMessage.PRINT_INFO
     assert second_cmd == powermon_pb2.PowerStressMessage.LED_ON
 
+
 @pytest.mark.unit
 def test_power_stress_run_stops_on_first_failed_state() -> None:
     """PowerStress.run should stop when any state command fails to receive ack."""

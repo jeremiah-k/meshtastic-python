@@ -43,6 +43,10 @@ class _FakeWriter:
         """Capture the schema configured by PowerLogger."""
         self.schema = schema
 
+    def setSchema(self, schema: Any) -> None:
+        """Backward-compatible camelCase alias used by production code."""
+        self.set_schema(schema)
+
     def close(self) -> None:
         """No-op close used by tests."""
 
@@ -96,7 +100,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     now = datetime(2026, 1, 1, 12, 0, 0)
     power_logger.store_current_reading(now=now)
 
-    row = writer.add_row.call_args.args[0]
+    row = writer.addRow.call_args.args[0]
     assert row["time"] == now
     assert row["average_mA"] == 10.0
     assert row["max_mA"] == 20.0
@@ -129,7 +133,7 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
         power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 0))
         power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 1))
 
-    rows = [call.args[0] for call in writer.add_row.call_args_list]
+    rows = [call.args[0] for call in writer.addRow.call_args_list]
     assert len(rows) == 2
     for row in rows:
         assert row["average_mW"] == row["average_mA"]

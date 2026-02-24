@@ -21,6 +21,29 @@ from meshtastic.interfaces.ble.utils import (
 class DiscoveryClientError(Exception):
     """An exception class for BLE discovery client errors."""
 
+    @classmethod
+    def factory_returned_none(
+        cls, resolved_factory: Callable[..., Any]
+    ) -> "DiscoveryClientError":
+        """Build an error for factories that returned None."""
+        return cls(
+            f"Discovery client factory returned None. Factory: {resolved_factory!r}"
+        )
+
+    @classmethod
+    def invalid_client(
+        cls,
+        resolved_factory: Callable[..., Any],
+        returned_type: type[Any],
+        missing_attrs: list[str],
+    ) -> "DiscoveryClientError":
+        """Build an error for factories returning an invalid duck-typed client."""
+        return cls(
+            "Discovery client factory returned invalid type. "
+            f"Factory: {resolved_factory!r}, returned type: {returned_type!r}, "
+            f"missing required attributes: {missing_attrs}"
+        )
+
 
 def _normalize_device_name_for_matching(name: str | None) -> str | None:
     """Normalize a Bluetooth device name for tolerant comparisons.
@@ -164,9 +187,9 @@ def _parse_scan_response(
         elif has_service:
             devices.append(device)
 
-    if target_identifier:
+    if has_whitelist:
         return _filter_devices_for_target_identifier(
-            target_candidates, target_identifier
+            target_candidates, cast(str, target_identifier)
         )
     return devices
 
@@ -174,12 +197,12 @@ def _parse_scan_response(
 class DiscoveryManager:
     """Orchestrates BLE device scanning."""
 
-    def __init__(self, client_factory: Callable[..., BLEClient] | None = None) -> None:
+    def __init__(self, client_factory: Callable[..., Any] | None = None) -> None:
         """Initialize a DiscoveryManager that orchestrates BLE scanning.
 
         Parameters
         ----------
-        client_factory : Callable[..., BLEClient] | None
+        client_factory : Callable[..., Any] | None
             Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
@@ -246,9 +269,7 @@ class DiscoveryManager:
                     raise
             # Validate factory returned a valid client (duck typing for testability)
             if self._client is None:
-                raise DiscoveryClientError(
-                    f"Discovery client factory returned None. Factory: {resolved_factory!r}"
-                )
+                raise DiscoveryClientError.factory_returned_none(resolved_factory)
             # Accept BLEClient instances or any object with the required interface
             # (duck typing allows test fixtures while still catching errors)
             if not isinstance(self._client, BLEClient):
@@ -261,10 +282,10 @@ class DiscoveryManager:
                 )
                 missing = [a for a in required_attrs if not hasattr(self._client, a)]
                 if missing:
-                    raise DiscoveryClientError(
-                        f"Discovery client factory returned invalid type. "
-                        f"Factory: {resolved_factory!r}, returned type: {type(self._client)!r}, "
-                        f"missing required attributes: {missing}"
+                    raise DiscoveryClientError.invalid_client(
+                        resolved_factory,
+                        type(self._client),
+                        missing,
                     )
 
         client = self._client

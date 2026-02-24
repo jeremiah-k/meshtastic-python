@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 import threading
+import warnings
 from typing import Literal
 
 import pyarrow as pa
@@ -100,8 +101,10 @@ class ArrowWriter:
                     if self.writer:
                         self.writer.close()
                 finally:
-                    self.sink.close()
-                    self._closed = True
+                    try:
+                        self.sink.close()
+                    finally:
+                        self._closed = True
 
     def _set_schema(self, schema: pa.Schema) -> None:
         """Set the schema for the file.
@@ -124,7 +127,12 @@ class ArrowWriter:
             self.writer = writer
 
     def set_schema(self, schema: pa.Schema) -> None:
-        """Backward-compatible snake_case wrapper for _set_schema()."""
+        """Warn and delegate to `setSchema()`."""
+        warnings.warn(
+            "set_schema() is deprecated; use setSchema() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._set_schema(schema)
 
     def setSchema(self, schema: pa.Schema) -> None:
@@ -169,7 +177,12 @@ class ArrowWriter:
                 self._write()
 
     def add_row(self, row_dict: dict) -> None:
-        """Backward-compatible snake_case wrapper for _add_row()."""
+        """Warn and delegate to `addRow()`."""
+        warnings.warn(
+            "add_row() is deprecated; use addRow() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._add_row(row_dict)
 
     def addRow(self, row_dict: dict) -> None:

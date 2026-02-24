@@ -7,9 +7,9 @@ import os
 import re
 import threading
 import time
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
-from functools import reduce
 from pathlib import Path
 
 import parse  # type: ignore[import-untyped]
@@ -25,6 +25,16 @@ from .arrow import FeatherWriter
 logger = logging.getLogger(__name__)
 
 
+def _root_dir_impl() -> str:
+    """Create (if needed) and return the application's slog root directory path."""
+    app_name = "meshtastic"
+    app_author = "meshtastic"
+    app_dir = platformdirs.user_data_dir(app_name, app_author)
+    dir_name = Path(app_dir, "slogs")
+    dir_name.mkdir(exist_ok=True, parents=True)
+    return str(dir_name)
+
+
 def root_dir() -> str:
     """Return the application's slog root directory path, creating the directory if it does not exist.
 
@@ -35,13 +45,17 @@ def root_dir() -> str:
     str
         Filesystem path to the "slogs" directory.
     """
+    warnings.warn(
+        "root_dir() is deprecated; use rootDir() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _root_dir_impl()
 
-    app_name = "meshtastic"
-    app_author = "meshtastic"
-    app_dir = platformdirs.user_data_dir(app_name, app_author)
-    dir_name = Path(app_dir, "slogs")
-    dir_name.mkdir(exist_ok=True, parents=True)
-    return str(dir_name)
+
+def rootDir() -> str:
+    """Preferred camelCase public alias for the slog root directory helper."""
+    return _root_dir_impl()
 
 
 @dataclass(init=False)
@@ -131,7 +145,7 @@ class PowerLogger:
             pa.field("min_mW", pa.float64()),
         ]
         try:
-            self.writer.set_schema(
+            self.writer.setSchema(
                 pa.schema(
                     power_schema_fields,
                     metadata=POWER_LOG_SCHEMA_METADATA,
@@ -218,7 +232,7 @@ class PowerLogger:
                 "max_mW": max_mW,
                 "min_mW": min_mW,
             }
-            self.writer.add_row(d)
+            self.writer.addRow(d)
             self.p_meter.reset_measurements()
 
     def _logging_thread(self) -> None:
@@ -283,11 +297,9 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, pa.DataType]] = reduce(
-            lambda x, y: x + y,
-            map(lambda x: x.fields, log_defs.values()),
-            [],
-        )
+        all_fields: list[tuple[str, pa.DataType]] = [
+            field for logdef in log_defs.values() for field in logdef.fields
+        ]
 
         self.include_raw = include_raw
         if self.include_raw:
@@ -320,7 +332,7 @@ class StructuredLogger:
         )
         try:
             # pass in our name->type tuples a pa.fields
-            self.writer.set_schema(
+            self.writer.setSchema(
                 pa.schema(map(lambda x: pa.field(x[0], x[1]), all_fields))
             )
             if self.include_raw:
@@ -413,7 +425,7 @@ class StructuredLogger:
             di["time"] = now
             if self.include_raw:
                 di["raw"] = line
-            self.writer.add_row(di)
+            self.writer.addRow(di)
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
             if self.power_logger and has_structured_data:
@@ -463,7 +475,7 @@ class LogSet:
         """
 
         if dir_name is None:
-            app_dir = root_dir()
+            app_dir = rootDir()
             app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S"))
             app_time_dir.mkdir(exist_ok=True)
             dir_name = str(app_time_dir)

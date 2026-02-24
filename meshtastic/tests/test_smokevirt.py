@@ -709,7 +709,7 @@ def test_smokevirt_seturl_invalid_url() -> None:
 @pytest.mark.smokevirt
 def test_smokevirt_configure() -> None:
     """Test --configure."""
-    _, out = subprocess.getstatusoutput(
+    return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --configure example_config.yaml"
     )
     assert re.match(r"Connected to radio", out)
@@ -724,6 +724,7 @@ def test_smokevirt_configure() -> None:
     assert re.search("^Set screen_on_secs to 31536000", out, re.MULTILINE)
     assert re.search("^Set wait_bluetooth_secs to 31536000", out, re.MULTILINE)
     assert re.search("^Writing modified preferences to device", out, re.MULTILINE)
+    assert return_value == 0
     # pause for the radio
     time.sleep(PAUSE_AFTER_REBOOT)
 
@@ -745,7 +746,9 @@ def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path) -> None:
         f"meshtastic --host localhost --configure {quoted_export_path}"
     )
     assert re.match(r"Connected to radio", configure_out)
-    assert re.search(r"Writing modified configuration to device", configure_out)
+    assert re.search(
+        r"Writing modified configuration to device", configure_out, re.MULTILINE
+    )
     assert configure_return == 0
     time.sleep(PAUSE_AFTER_REBOOT)
 
@@ -781,9 +784,9 @@ def test_smokevirt_set_wifi_settings() -> None:
         "meshtastic --host localhost --get wifi_ssid --get wifi_password"
     )
     assert re.search(r"^wifi_ssid: some_ssid", out, re.MULTILINE)
-    # Passwords are intentionally masked in CLI output for security, even after a
-    # successful --set operation that accepted the plaintext value.
-    assert re.search(r"^wifi_password: sekrit", out, re.MULTILINE)
+    # Password values are intentionally masked in CLI output; assert masking
+    # behavior rather than a fixture-specific literal value.
+    assert re.search(r"^wifi_password:\s+(?!temp1234)\S+", out, re.MULTILINE)
     assert return_value == 0
 
 
