@@ -1,4 +1,4 @@
-﻿"""Meshtastic unit tests for showNodes favorite column feature"""
+"""Meshtastic unit tests for showNodes favorite column feature."""
 
 from unittest.mock import MagicMock
 
@@ -105,7 +105,7 @@ def _iface_with_favorite_nodes():
 
 @pytest.mark.unit
 def test_showNodes_favorite_column_header(capsys, _iface_with_favorite_nodes):
-    """Test that 'Fav' column header appears in showNodes output"""
+    """Test that 'Fav' column header appears in showNodes output."""
     iface = _iface_with_favorite_nodes
     iface.showNodes()
     out, err = capsys.readouterr()
@@ -115,7 +115,7 @@ def test_showNodes_favorite_column_header(capsys, _iface_with_favorite_nodes):
 
 @pytest.mark.unit
 def test_showNodes_favorite_asterisk_display(capsys, _iface_with_favorite_nodes):
-    """Test that favorite nodes show asterisk and non-favorites show empty"""
+    """Test that favorite nodes show asterisk and non-favorites show empty."""
     iface = _iface_with_favorite_nodes
     iface.showNodes()
     out, err = capsys.readouterr()
@@ -124,7 +124,7 @@ def test_showNodes_favorite_asterisk_display(capsys, _iface_with_favorite_nodes)
     assert "Fav" in out
 
     # Find lines containing our nodes
-    lines = out.split('\n')
+    lines = out.split("\n")
     favorite_line = None
     regular_line = None
     legacy_line = None
@@ -148,14 +148,16 @@ def test_showNodes_favorite_asterisk_display(capsys, _iface_with_favorite_nodes)
     assert regular_line.count("*") == 0, "Non-favorite node should not have an asterisk"
 
     # Verify the legacy node (without isFavorite field) does NOT have an asterisk
-    assert legacy_line.count("*") == 0, "Legacy node without isFavorite field should not have an asterisk"
+    assert (
+        legacy_line.count("*") == 0
+    ), "Legacy node without isFavorite field should not have an asterisk"
 
     assert err == ""
 
 
 @pytest.mark.unit
 def test_showNodes_favorite_field_formatting():
-    """Test the formatting logic for isFavorite field"""
+    """Test the formatting logic for isFavorite field."""
     # Test favorite node
     raw_value = True
     formatted_value = "*" if raw_value else ""
@@ -173,8 +175,10 @@ def test_showNodes_favorite_field_formatting():
 
 
 @pytest.mark.unit
-def test_showNodes_with_custom_fields_including_favorite(capsys, _iface_with_favorite_nodes):
-    """Test that isFavorite can be specified in custom showFields"""
+def test_showNodes_with_custom_fields_including_favorite(
+    capsys, _iface_with_favorite_nodes
+):
+    """Test that isFavorite can be specified in custom showFields."""
     iface = _iface_with_favorite_nodes
     custom_fields = ["user.longName", "isFavorite"]
     iface.showNodes(showFields=custom_fields)
@@ -187,7 +191,7 @@ def test_showNodes_with_custom_fields_including_favorite(capsys, _iface_with_fav
 
 @pytest.mark.unit
 def test_showNodes_default_fields_includes_favorite(_iface_with_favorite_nodes):
-    """Test that isFavorite is included in default fields"""
+    """Test that isFavorite is included in default fields."""
     iface = _iface_with_favorite_nodes
 
     # Call showNodes which uses default fields
@@ -198,14 +202,16 @@ def test_showNodes_default_fields_includes_favorite(_iface_with_favorite_nodes):
 
 
 @pytest.mark.unit
-def test_showNodes_backward_compatibility_missing_field(capsys, _iface_with_favorite_nodes):
-    """Test that nodes without isFavorite field are handled gracefully"""
+def test_showNodes_backward_compatibility_missing_field(
+    capsys, _iface_with_favorite_nodes
+):
+    """Test that nodes without isFavorite field are handled gracefully."""
     iface = _iface_with_favorite_nodes
     iface.showNodes()
     out, err = capsys.readouterr()
 
     # Find the legacy node line
-    lines = out.split('\n')
+    lines = out.split("\n")
     legacy_line = None
     for line in lines:
         if "Legacy Node" in line or "LEG1" in line:
@@ -213,9 +219,13 @@ def test_showNodes_backward_compatibility_missing_field(capsys, _iface_with_favo
             break
 
     # Verify the legacy node appears in output
-    assert legacy_line is not None, "Legacy node without isFavorite field should appear in output"
+    assert (
+        legacy_line is not None
+    ), "Legacy node without isFavorite field should appear in output"
 
     # Verify it doesn't have an asterisk (should be treated as non-favorite)
-    assert legacy_line.count("*") == 0, "Legacy node should not have asterisk (treated as non-favorite)"
+    assert (
+        legacy_line.count("*") == 0
+    ), "Legacy node should not have asterisk (treated as non-favorite)"
 
     assert err == ""

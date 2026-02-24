@@ -1,28 +1,138 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
-from unittest.mock import MagicMock
+import shutil
+from collections.abc import Generator
+from typing import Any, Callable, ClassVar
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
 from meshtastic import mt_config
 
 from ..mesh_interface import MeshInterface
+from ..serial_interface import SerialInterface
+
+
+def _create_context_manager_mock(spec_class: type[Any]) -> MagicMock:
+    """Create a MagicMock that behaves as a context manager for the given spec class.
+
+    Parameters
+    ----------
+    spec_class : type[Any]
+        Class to use as the mock's specification (e.g., SerialInterface).
+
+    Returns
+    -------
+    MagicMock
+        A mock whose `__enter__` returns the mock itself and whose `__exit__` returns `None`.
+    """
+    mock = create_autospec(spec_class, instance=True)
+    mock.__enter__ = MagicMock(return_value=mock)
+    mock.__exit__ = MagicMock(return_value=None)
+    return mock
+
+
+class FakeTimer:
+    """Simple timer stub for heartbeat timer tests."""
+
+    created: ClassVar[list["FakeTimer"]] = []
+
+    def __init__(
+        self,
+        interval: float,
+        function: Callable[..., Any],
+        args: tuple[Any, ...] | None = None,
+        kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        """Initialize a FakeTimer and append it to the class-level `created` list for test inspection.
+
+        Parameters
+        ----------
+        interval : float
+            Time interval in seconds represented by the timer.
+        function : Callable[..., Any]
+            Callback that would be invoked when a real timer fires.
+        args : tuple[Any, ...] | None
+            Optional positional arguments for the callback; defaults to empty tuple.
+        kwargs : dict[str, Any] | None
+            Optional keyword arguments for the callback; defaults to empty dict.
+        """
+        self.interval = interval
+        self.function = function
+        self.args = args or ()
+        self.kwargs = kwargs or {}
+        self.daemon = False
+        self.started = False
+        self.cancelled = False
+        type(self).created.append(self)
+
+    def start(self) -> None:
+        """Mark the FakeTimer instance as started.
+
+        The timer's callback is not invoked automatically; to execute it in a test,
+            call the stored function directly (for example:
+            type(timer).created[i].function()).
+        """
+        self.started = True
+
+    def cancel(self) -> None:
+        """Mark the timer as cancelled by setting its `cancelled` attribute to True."""
+        self.cancelled = True
+
+
+@pytest.fixture(name="fake_timer_cls")
+def _fake_timer_cls_fixture(monkeypatch: pytest.MonkeyPatch) -> type["FakeTimer"]:
+    """Install a per-fixture FakeTimer subclass in place of meshtastic.mesh_interface.threading.Timer for use in tests.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture used to replace the real Timer with the fake subclass for the duration of the test.
+
+    Returns
+    -------
+    type['FakeTimer']
+        The FakeTimer subclass that was installed.
+    """
+
+    class FakeTimerForTest(FakeTimer):
+        """Per-fixture timer class with isolated created-state."""
+
+        created: ClassVar[list["FakeTimer"]] = []
+
+    monkeypatch.setattr("meshtastic.mesh_interface.threading.Timer", FakeTimerForTest)
+    return FakeTimerForTest
 
 
 @pytest.fixture
-def reset_mt_config():
-    """Fixture to reset mt_config."""
-    parser = None
+def reset_mt_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the global mt_config state and install a fresh ArgumentParser for tests.
+
+    Creates a new argparse.ArgumentParser with add_help=False, calls mt_config.reset(), and assigns
+    the new parser to mt_config.parser so tests start with a clean configuration.
+    """
     parser = argparse.ArgumentParser(add_help=False)
     mt_config.reset()
-    mt_config.parser = parser
+    monkeypatch.setattr(mt_config, "parser", parser)
 
 
 @pytest.fixture
-def iface_with_nodes():
-    """Fixture to setup some nodes."""
-    nodesById = {
+def iface_with_nodes() -> Generator[MeshInterface, None, None]:
+    """Provide a MeshInterface populated with a sample node and a mocked myInfo for tests.
+
+    Yields a MeshInterface whose `nodes` and `nodesByNum` each contain a single node (numeric id 2475227164)
+    and whose `myInfo.my_node_num` is set to 2475227164. Ensures the interface is closed when the fixture
+    teardown runs.
+
+    Yields
+    ------
+    MeshInterface
+        Interface instance populated with test node data and a mocked myInfo.
+    """
+    position = {"time": 1640206266}
+
+    nodes_by_id = {
         "!9388f81c": {
             "num": 2475227164,
             "user": {
@@ -32,12 +142,12 @@ def iface_with_nodes():
                 "macaddr": "RBeTiPgc",
                 "hwModel": "TBEAM",
             },
-            "position": {},
+            "position": position,
             "lastHeard": 1640204888,
         }
     }
 
-    nodesByNum = {
+    nodes_by_num = {
         2475227164: {
             "num": 2475227164,
             "user": {
@@ -47,14 +157,105 @@ def iface_with_nodes():
                 "macaddr": "RBeTiPgc",
                 "hwModel": "TBEAM",
             },
-            "position": {"time": 1640206266},
+            "position": position,
             "lastHeard": 1640206266,
         }
     }
     iface = MeshInterface(noProto=True)
-    iface.nodes = nodesById
-    iface.nodesByNum = nodesByNum
-    myInfo = MagicMock()
-    iface.myInfo = myInfo
-    iface.myInfo.my_node_num = 2475227164
+    try:
+        iface.nodes = nodes_by_id
+        iface.nodesByNum = nodes_by_num
+        myInfo = MagicMock()
+        iface.myInfo = myInfo
+        iface.myInfo.my_node_num = 2475227164
+        yield iface
+    finally:
+        iface.close()
+
+
+@pytest.fixture
+def mock_serial_interface() -> MagicMock:
+    """Create a MagicMock that mimics a SerialInterface for node-related tests.
+
+    The mock supports the context manager protocol, its localNode.getChannelByName returns None,
+    and its myInfo.max_channels is set to 8.
+
+    Returns
+    -------
+    MagicMock
+        A mock configured to act like a SerialInterface with the above behavior.
+    """
+    mock_iface = _create_context_manager_mock(SerialInterface)
+    mock_iface.localNode = MagicMock(spec=["getChannelByName"])
+    mock_iface.localNode.getChannelByName.return_value = None
+    mock_iface.myInfo = MagicMock(spec=["max_channels"])
+    mock_iface.myInfo.max_channels = 8
+    return mock_iface
+
+
+def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
+    """Create a SerialInterface mock that provides a stubbed GPIO channel."""
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.localNode = MagicMock()
+    channel = MagicMock()
+    channel.index = channel_index
+    iface.localNode.getChannelByName.return_value = channel
     return iface
+
+
+@pytest.fixture(name="mock_gpio_iface")
+def _mock_gpio_iface_fixture() -> Generator[MagicMock, None, None]:
+    """Provide a GPIO-capable mocked interface and ensure cleanup."""
+    iface = _mock_iface_with_gpio_channel()
+    try:
+        yield iface
+    finally:
+        iface.close()
+
+
+@pytest.fixture(scope="session")
+def meshtastic_bin() -> str:
+    """Resolve the meshtastic CLI binary path or skip tests if not found.
+
+    Returns
+    -------
+    str
+        The absolute path to the meshtastic CLI binary.
+
+    Raises
+    ------
+    pytest.skip
+        If the meshtastic CLI is not found in PATH.
+    """
+    exe = shutil.which("meshtastic")
+    if exe is None:
+        pytest.skip("meshtastic CLI not found in PATH")
+    return exe
+
+
+@pytest.fixture(scope="session")
+def mesh_tunnel_bin() -> str:
+    """Resolve the mesh-tunnel CLI binary path or skip tests if not found.
+
+    Returns
+    -------
+    str
+        The absolute path to the mesh-tunnel CLI binary.
+
+    Raises
+    ------
+    pytest.skip
+        If the mesh-tunnel CLI is not found in PATH.
+    """
+    exe = shutil.which("mesh-tunnel")
+    if exe is None:
+        pytest.skip("mesh-tunnel CLI not found in PATH")
+    return exe
+
+
+@pytest.fixture(name="platform_socket_mocks")
+def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, None]:
+    """Patch platform.system and socket.socket for tunnel tests."""
+    with patch("platform.system", return_value="Linux") as platform_mock:
+        with patch("socket.socket") as socket_mock:
+            yield platform_mock, socket_mock

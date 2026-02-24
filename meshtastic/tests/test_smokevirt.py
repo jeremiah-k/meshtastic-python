@@ -1,17 +1,24 @@
 """Meshtastic smoke tests with a single virtual device via localhost.
 
-   During the CI build of the Meshtastic-device, a build.zip file is created.
-   Inside that build.zip is a standalone executable meshtasticd_linux_amd64.
-   That linux executable will simulate a Meshtastic device listening on localhost.
+During the CI build of the Meshtastic-device, a build.zip file is created.
+Inside that build.zip is a standalone executable meshtasticd_linux_amd64.
+That linux executable will simulate a Meshtastic device listening on localhost.
 
-   This smoke test runs against that localhost.
+This smoke test runs against that localhost.
 
 """
+
+# ruff: noqa: S605, S607
+# File-level suppression for subprocess.getstatusoutput shell=True usage,
+# which is intentional for CLI smoke tests.
+
 import os
 import platform
 import re
+import shlex
 import subprocess
 import time
+from pathlib import Path
 
 # Do not like using hard coded sleeps, but it probably makes
 # sense to pause for the radio at appropriate times
@@ -27,7 +34,7 @@ PAUSE_AFTER_REBOOT = 0.2
 # TODO: need to fix the virtual device to have a reboot. When you issue the command
 #      below, you get "FIXME implement reboot for this platform"
 # @pytest.mark.smokevirt
-# def test_smokevirt_reboot():
+# def test_smokevirt_reboot() -> None:
 #    """Test reboot"""
 #    return_value, _ = subprocess.getstatusoutput('meshtastic --host localhost --reboot')
 #    assert return_value == 0
@@ -36,8 +43,8 @@ PAUSE_AFTER_REBOOT = 0.2
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_info():
-    """Test --info"""
+def test_smokevirt_info() -> None:
+    """Test --info."""
     return_value, out = subprocess.getstatusoutput("meshtastic --host localhost --info")
     assert re.match(r"Connected to radio", out)
     assert re.search(r"^Owner", out, re.MULTILINE)
@@ -51,7 +58,7 @@ def test_smokevirt_info():
 
 
 @pytest.mark.smokevirt
-def test_get_with_invalid_setting():
+def test_get_with_invalid_setting() -> None:
     """Test '--get a_bad_setting'."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --get a_bad_setting"
@@ -61,7 +68,7 @@ def test_get_with_invalid_setting():
 
 
 @pytest.mark.smokevirt
-def test_set_with_invalid_setting():
+def test_set_with_invalid_setting() -> None:
     """Test '--set a_bad_setting'."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --set a_bad_setting foo"
@@ -71,7 +78,7 @@ def test_set_with_invalid_setting():
 
 
 @pytest.mark.smokevirt
-def test_ch_set_with_invalid_settingpatch_find_ports():
+def test_ch_set_with_invalid_setting_patch_find_ports() -> None:
     """Test '--ch-set with a_bad_setting'."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-set invalid_setting foo --ch-index 0"
@@ -81,8 +88,8 @@ def test_ch_set_with_invalid_settingpatch_find_ports():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_pos_fields():
-    """Test --pos-fields (with some values POS_ALTITUDE POS_ALT_MSL POS_BATTERY)"""
+def test_smokevirt_pos_fields() -> None:
+    """Test --pos-fields (with some values POS_ALTITUDE POS_ALT_MSL POS_BATTERY)."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --pos-fields POS_ALTITUDE POS_ALT_MSL POS_BATTERY"
     )
@@ -102,18 +109,16 @@ def test_smokevirt_pos_fields():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_test_with_arg_but_no_hardware():
-    """Test --test
-    Note: Since only one device is connected, it will not do much.
-    """
+def test_smokevirt_test_with_arg_but_no_hardware() -> None:
+    """Test --test with one connected device (expects warning path)."""
     return_value, out = subprocess.getstatusoutput("meshtastic --host localhost --test")
     assert re.search(r"^Warning: Must have at least two devices", out, re.MULTILINE)
     assert return_value == 1
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_debug():
-    """Test --debug"""
+def test_smokevirt_debug() -> None:
+    """Test --debug."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --info --debug"
     )
@@ -123,8 +128,8 @@ def test_smokevirt_debug():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_seriallog_to_file():
-    """Test --seriallog to a file creates a file"""
+def test_smokevirt_seriallog_to_file() -> None:
+    """Test --seriallog to a file creates a file."""
     filename = "tmpoutput.txt"
     if os.path.exists(f"{filename}"):
         os.remove(f"{filename}")
@@ -137,8 +142,8 @@ def test_smokevirt_seriallog_to_file():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_qr():
-    """Test --qr"""
+def test_smokevirt_qr() -> None:
+    """Test --qr."""
     filename = "tmpqr"
     if os.path.exists(f"{filename}"):
         os.remove(f"{filename}")
@@ -154,8 +159,8 @@ def test_smokevirt_qr():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_nodes():
-    """Test --nodes"""
+def test_smokevirt_nodes() -> None:
+    """Test --nodes."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --nodes"
     )
@@ -167,8 +172,8 @@ def test_smokevirt_nodes():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_send_hello():
-    """Test --sendtext hello"""
+def test_smokevirt_send_hello() -> None:
+    """Test --sendtext hello."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --sendtext hello"
     )
@@ -178,8 +183,8 @@ def test_smokevirt_send_hello():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_port():
-    """Test --port"""
+def test_smokevirt_port() -> None:
+    """Test --port."""
     # first, get the ports
     ports = findPorts()
     # hopefully there is none
@@ -187,8 +192,8 @@ def test_smokevirt_port():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_set_location_info():
-    """Test --setlat, --setlon and --setalt"""
+def test_smokevirt_set_location_info() -> None:
+    """Test --setlat, --setlon and --setalt."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --setlat 32.7767 --setlon -96.7970 --setalt 1337"
     )
@@ -209,8 +214,8 @@ def test_smokevirt_set_location_info():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_set_owner():
-    """Test --set-owner name"""
+def test_smokevirt_set_owner() -> None:
+    """Test --set-owner name."""
     # make sure the owner is not Joe
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --set-owner Bob"
@@ -239,9 +244,9 @@ def test_smokevirt_set_owner():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_values():
+def test_smokevirt_ch_values() -> None:
     """Test --ch-longslow, --ch-longfast, --ch-mediumslow, --ch-mediumsfast,
-    --ch-shortslow, and --ch-shortfast arguments
+    --ch-shortslow, and --ch-shortfast arguments.
     """
     exp = {
         "--ch-longslow": "LongSlow",
@@ -271,8 +276,8 @@ def test_smokevirt_ch_values():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_set_name():
-    """Test --ch-set name"""
+def test_smokevirt_ch_set_name() -> None:
+    """Test --ch-set name."""
     return_value, out = subprocess.getstatusoutput("meshtastic --host localhost --info")
     assert not re.search(r"MyChannel", out, re.MULTILINE)
     assert return_value == 0
@@ -300,8 +305,8 @@ def test_smokevirt_ch_set_name():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_set_downlink_and_uplink():
-    """Test -ch-set downlink_enabled X and --ch-set uplink_enabled X"""
+def test_smokevirt_ch_set_downlink_and_uplink() -> None:
+    """Test --ch-set downlink_enabled X and --ch-set uplink_enabled X."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-set downlink_enabled false --ch-set uplink_enabled false"
     )
@@ -341,8 +346,8 @@ def test_smokevirt_ch_set_downlink_and_uplink():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_add_and_ch_del():
-    """Test --ch-add"""
+def test_smokevirt_ch_add_and_ch_del() -> None:
+    """Test --ch-add and --ch-del."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-index 1 --ch-del"
     )
@@ -380,8 +385,8 @@ def test_smokevirt_ch_add_and_ch_del():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_enable_and_disable():
-    """Test --ch-enable and --ch-disable"""
+def test_smokevirt_ch_enable_and_disable() -> None:
+    """Test --ch-enable and --ch-disable."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-index 1 --ch-del"
     )
@@ -445,7 +450,7 @@ def test_smokevirt_ch_enable_and_disable():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_del_a_disabled_non_primary_channel():
+def test_smokevirt_ch_del_a_disabled_non_primary_channel() -> None:
     """Test --ch-del will work on a disabled non-primary channel."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-index 1 --ch-del"
@@ -492,7 +497,7 @@ def test_smokevirt_ch_del_a_disabled_non_primary_channel():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_attempt_to_delete_primary_channel():
+def test_smokevirt_attempt_to_delete_primary_channel() -> None:
     """Test that we cannot delete the PRIMARY channel."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-del --ch-index 0"
@@ -504,7 +509,7 @@ def test_smokevirt_attempt_to_delete_primary_channel():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_attempt_to_disable_primary_channel():
+def test_smokevirt_attempt_to_disable_primary_channel() -> None:
     """Test that we cannot disable the PRIMARY channel."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-disable --ch-index 0"
@@ -516,7 +521,7 @@ def test_smokevirt_attempt_to_disable_primary_channel():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_attempt_to_enable_primary_channel():
+def test_smokevirt_attempt_to_enable_primary_channel() -> None:
     """Test that we cannot enable the PRIMARY channel."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-enable --ch-index 0"
@@ -528,7 +533,7 @@ def test_smokevirt_attempt_to_enable_primary_channel():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ensure_ch_del_second_of_three_channels():
+def test_smokevirt_ensure_ch_del_second_of_three_channels() -> None:
     """Test that when we delete the 2nd of 3 channels, that it deletes the correct channel."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-add testing1"
@@ -580,7 +585,7 @@ def test_smokevirt_ensure_ch_del_second_of_three_channels():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ensure_ch_del_third_of_three_channels():
+def test_smokevirt_ensure_ch_del_third_of_three_channels() -> None:
     """Test that when we delete the 3rd of 3 channels, that it deletes the correct channel."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-add testing1"
@@ -632,8 +637,8 @@ def test_smokevirt_ensure_ch_del_third_of_three_channels():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_ch_set_modem_config():
-    """Test --ch-set modem_config"""
+def test_smokevirt_ch_set_modem_config() -> None:
+    """Test --ch-set modem_config."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-set modem_config Bw31_25Cr48Sf512"
     )
@@ -660,8 +665,8 @@ def test_smokevirt_ch_set_modem_config():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_seturl_default():
-    """Test --seturl with default value"""
+def test_smokevirt_seturl_default() -> None:
+    """Test --seturl with default value."""
     # set some channel value so we no longer have a default channel
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --ch-set name foo --ch-index 0"
@@ -687,8 +692,8 @@ def test_smokevirt_seturl_default():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_seturl_invalid_url():
-    """Test --seturl with invalid url"""
+def test_smokevirt_seturl_invalid_url() -> None:
+    """Test --seturl with invalid url."""
     # Note: This url is no longer a valid url.
     url = "https://www.meshtastic.org/c/#GAMiENTxuzogKQdZ8Lz_q89Oab8qB0RlZmF1bHQ="
     return_value, out = subprocess.getstatusoutput(
@@ -702,10 +707,10 @@ def test_smokevirt_seturl_invalid_url():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_configure():
-    """Test --configure"""
+def test_smokevirt_configure() -> None:
+    """Test --configure."""
     _, out = subprocess.getstatusoutput(
-        f"meshtastic --host localhost --configure example_config.yaml"
+        "meshtastic --host localhost --configure example_config.yaml"
     )
     assert re.match(r"Connected to radio", out)
     assert re.search("^Setting device owner to Bob TBeam", out, re.MULTILINE)
@@ -724,10 +729,30 @@ def test_smokevirt_configure():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_set_ham():
-    """Test --set-ham
-    Note: Do a factory reset after this setting so it is very short-lived.
-    """
+def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path) -> None:
+    """Test --export-config and --configure round-trip against the virtual device."""
+    export_path = tmp_path / "smokevirt_roundtrip.yaml"
+    quoted_export_path = shlex.quote(str(export_path))
+
+    export_return, export_out = subprocess.getstatusoutput(
+        f"meshtastic --host localhost --export-config {quoted_export_path}"
+    )
+    assert re.match(r"Connected to radio", export_out)
+    assert re.search(r"Exported configuration to", export_out, re.MULTILINE)
+    assert export_return == 0
+
+    configure_return, configure_out = subprocess.getstatusoutput(
+        f"meshtastic --host localhost --configure {quoted_export_path}"
+    )
+    assert re.match(r"Connected to radio", configure_out)
+    assert re.search(r"Writing modified configuration to device", configure_out)
+    assert configure_return == 0
+    time.sleep(PAUSE_AFTER_REBOOT)
+
+
+@pytest.mark.smokevirt
+def test_smokevirt_set_ham() -> None:
+    """Test --set-ham (followed by factory reset in later test)."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --set-ham KI1234"
     )
@@ -741,8 +766,8 @@ def test_smokevirt_set_ham():
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_set_wifi_settings():
-    """Test --set wifi_ssid and --set wifi_password"""
+def test_smokevirt_set_wifi_settings() -> None:
+    """Test --set wifi_ssid and --set wifi_password."""
     return_value, out = subprocess.getstatusoutput(
         'meshtastic --host localhost --set wifi_ssid "some_ssid" --set wifi_password "temp1234"'
     )
@@ -756,13 +781,15 @@ def test_smokevirt_set_wifi_settings():
         "meshtastic --host localhost --get wifi_ssid --get wifi_password"
     )
     assert re.search(r"^wifi_ssid: some_ssid", out, re.MULTILINE)
+    # Passwords are intentionally masked in CLI output for security, even after a
+    # successful --set operation that accepted the plaintext value.
     assert re.search(r"^wifi_password: sekrit", out, re.MULTILINE)
     assert return_value == 0
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_factory_reset():
-    """Test factory reset"""
+def test_smokevirt_factory_reset() -> None:
+    """Test factory reset."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --host localhost --set factory_reset true"
     )

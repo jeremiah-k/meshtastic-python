@@ -1,29 +1,114 @@
-"""With two radios connected serially, send and receive test
-   messages and report back if successful.
+"""With two radios connected serially, send and receive test.
+
+messages and report back if successful.
 """
+
+import io
 import logging
 import sys
 import time
-import traceback
-import io
+from contextlib import ExitStack, suppress
+from typing import Any, NoReturn
 
-from typing import List, Optional
-
-from dotmap import DotMap # type: ignore[import-untyped]
-from pubsub import pub # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
 from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface
 
+
+class _FallbackDotMap(dict):
+    """Lightweight fallback used when dotmap is unavailable."""
+
+    def __getattr__(self, key: str) -> Any:
+        """Provide attribute-style access to dictionary keys.
+
+        If the key exists and its value is a dict, return a new _FallbackDotMap wrapping that dict.
+        If the key exists and its value is not a dict, return the value unchanged.
+        If the key is missing, return an empty _FallbackDotMap.
+
+        Parameters
+        ----------
+        key : str
+            Attribute name to retrieve as a dictionary key.
+
+        Returns
+        -------
+        Any
+            The value stored under `key`, or a `_FallbackDotMap` for nested dicts or missing keys.
+
+        Raises
+        ------
+        AttributeError
+            If the key is a double-underscore (dunder) attribute name.
+        """
+        # Guard dunder names to avoid interfering with copy, pickle, etc.
+        if key.startswith("__") and key.endswith("__"):
+            raise AttributeError(key)
+        try:
+            value = self[key]
+        except KeyError:
+            # Match real DotMap's permissive behavior: return empty DotMap for missing keys
+            return _FallbackDotMap()
+        if isinstance(value, dict):
+            return _FallbackDotMap(value)
+        return value
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        """Set an item in the mapping using attribute-style access.
+
+        Dunder (double-underscore) attribute names are delegated to object attribute
+        assignment to avoid interfering with Python internals; other names create or update
+        mapping entries.
+
+        Parameters
+        ----------
+        key : str
+            Attribute name to store as a mapping key.
+        value : Any
+            Value to assign.
+        """
+        # Guard dunder names to avoid interfering with Python internals.
+        # Note: This asymmetry with __getattr__ (which raises) is intentional
+        # to match real DotMap behavior for compatibility.
+        if key.startswith("__") and key.endswith("__"):
+            object.__setattr__(self, key, value)
+            return
+        self[key] = value
+
+    def __delattr__(self, key: str) -> None:
+        """Delete a mapping entry using attribute-style access.
+
+        Parameters
+        ----------
+        key : str
+            Name of the key to remove.
+
+        Raises
+        ------
+        AttributeError
+            If the key does not exist.
+        """
+        try:
+            del self[key]
+        except KeyError:
+            raise AttributeError(key) from None
+
+
+DotMap: type[Any]
+try:
+    from dotmap import DotMap as _ImportedDotMap  # type: ignore[import-untyped]
+except ImportError:
+    DotMap = _FallbackDotMap
+else:
+    DotMap = _ImportedDotMap
+
 """The interfaces we are using for our tests"""
-interfaces: List = []
+interfaces: list = []
 
 """A list of all packets we received while the current test was running"""
-receivedPackets: Optional[List] = None
-
-testsRunning: bool = False
+receivedPackets: list | None = None
 
 testNumber: int = 0
 
@@ -31,44 +116,78 @@ sendingInterface = None
 
 logger = logging.getLogger(__name__)
 
-def onReceive(packet, interface) -> None:
-    """Callback invoked when a packet arrives"""
-    if sendingInterface == interface:
-        pass
-        # print("Ignoring sending interface")
-    else:
+
+def onReceive(packet: dict[str, Any], interface: Any) -> None:
+    """Handle an incoming packet and record clear-text messages.
+
+    If the packet did not originate from the current sendingInterface, convert it to a DotMap.
+    If the packet's decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level
+    receivedPackets list is set, append the converted packet to receivedPackets.
+
+    Parameters
+    ----------
+    packet : dict
+        Raw packet data as received.
+    interface : Any
+        Interface object that delivered the packet.
+    """
+    if sendingInterface is not interface:
         # print(f"From {interface.stream.port}: {packet}")
         p = DotMap(packet)
 
-        if p.decoded.portnum == "TEXT_MESSAGE_APP":
+        portnum = getattr(p.decoded, "portnum", None)
+        if portnum == "TEXT_MESSAGE_APP":
             # We only care a about clear text packets
             if receivedPackets is not None:
                 receivedPackets.append(p)
 
 
-def onNode(node) -> None:
-    """Callback invoked when the node DB changes"""
-    print(f"Node changed: {node}")
+def onNode(node: Any) -> None:
+    """Log that a node database entry changed.
+
+    Parameters
+    ----------
+    node : Any
+        The node database entry or a payload describing the change.
+    """
+    logger.info("Node changed: %s", node)
 
 
 def subscribe() -> None:
-    """Subscribe to the topics the user probably wants to see, prints output to stdout"""
+    """Subscribe to meshtastic pub/sub topics to receive node update notifications.
+
+    Registers the onNode callback for the "meshtastic.node" topic so node-change events are delivered to onNode.
+    """
 
     pub.subscribe(onNode, "meshtastic.node")
 
 
 def testSend(
-    fromInterface, toInterface, isBroadcast: bool=False, asBinary: bool=False, wantAck: bool=False
+    fromInterface: Any,
+    toInterface: Any,
+    isBroadcast: bool = False,
+    asBinary: bool = False,
+    wantAck: bool = False,
 ) -> bool:
-    """
-    Sends one test packet between two nodes and then returns success or failure
+    """Send a single test packet from one interface to another.
 
-    Arguments:
-        fromInterface {[type]} -- [description]
-        toInterface {[type]} -- [description]
+    Parameters
+    ----------
+    fromInterface : Any
+        Interface used to send the packet.
+    toInterface : Any
+        Interface targeted to receive the packet (ignored for broadcasts).
+    isBroadcast : bool
+        If True, send to the broadcast address. (Default value = False)
+    asBinary : bool
+        If True, send the payload as binary data. (Default value = False)
+    wantAck : bool
+        If True, request an acknowledgment from the recipient. (Default value = False)
 
-    Returns:
-        boolean -- True for success
+    Returns
+    -------
+    bool
+        `True` if a response packet was received within 60 seconds, `False` otherwise.
     """
     # pylint: disable=W0603
     global receivedPackets
@@ -80,7 +199,9 @@ def testSend(
     else:
         toNode = toInterface.myInfo.my_node_num
 
-    logger.debug(f"Sending test wantAck={wantAck} packet from {fromNode} to {toNode}")
+    logger.debug(
+        "Sending test wantAck=%s packet from %s to %s", wantAck, fromNode, toNode
+    )
     # pylint: disable=W0603
     global sendingInterface
     sendingInterface = fromInterface
@@ -97,16 +218,31 @@ def testSend(
     return False  # Failed to send
 
 
-def runTests(numTests: int=50, wantAck: bool=False, maxFailures: int=0) -> bool:
-    """Run the tests."""
-    logger.info(f"Running {numTests} tests with wantAck={wantAck}")
+def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
+    """Execute a series of send/receive test iterations and evaluate overall success.
+
+    Parameters
+    ----------
+    numTests : int
+        Number of test iterations to run. (Default value = 50)
+    wantAck : bool
+        If True, request acknowledgments for sent test packets. (Default value = False)
+    maxFailures : int
+        Maximum allowed failed tests before overall result is considered a failure. (Default value = 0)
+
+    Returns
+    -------
+    bool
+        `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
+    """
+    logger.info("Running %s tests with wantAck=%s", numTests, wantAck)
     numFail: int = 0
     numSuccess: int = 0
     for _ in range(numTests):
         # pylint: disable=W0603
         global testNumber
         testNumber = testNumber + 1
-        isBroadcast:bool = True
+        isBroadcast: bool = True
         # asBinary=(i % 2 == 0)
         success = testSend(
             interfaces[0], interfaces[1], isBroadcast, asBinary=False, wantAck=wantAck
@@ -114,12 +250,17 @@ def runTests(numTests: int=50, wantAck: bool=False, maxFailures: int=0) -> bool:
         if not success:
             numFail = numFail + 1
             logger.error(
-                f"Test {testNumber} failed, expected packet not received ({numFail} failures so far)"
+                "Test %d failed, expected packet not received (%d failures so far)",
+                testNumber,
+                numFail,
             )
         else:
             numSuccess = numSuccess + 1
             logger.info(
-                f"Test {testNumber} succeeded {numSuccess} successes {numFail} failures so far"
+                "Test %d succeeded %d successes %d failures so far",
+                testNumber,
+                numSuccess,
+                numFail,
             )
 
         time.sleep(1)
@@ -130,8 +271,23 @@ def runTests(numTests: int=50, wantAck: bool=False, maxFailures: int=0) -> bool:
     return True
 
 
-def testThread(numTests=50) -> bool:
-    """Test thread"""
+def testThread(numTests: int = 50) -> bool:
+    """Run a two-stage test sequence across discovered devices.
+
+    First stage runs `numTests` with acknowledgments required; if that stage succeeds, a second
+    stage runs `numTests` without acknowledgments and allows up to one failure.
+
+    Parameters
+    ----------
+    numTests : int
+        Number of tests to run in each stage. (Default value = 50)
+
+    Returns
+    -------
+    bool
+        True if the overall test sequence succeeded (both stages passed as
+        required), False otherwise.
+    """
     logger.info("Found devices, starting tests...")
     result: bool = runTests(numTests, wantAck=True)
     if result:
@@ -141,72 +297,107 @@ def testThread(numTests=50) -> bool:
     return result
 
 
-def onConnection(topic=pub.AUTO_TOPIC) -> None:
-    """Callback invoked when we connect/disconnect from a radio"""
-    print(f"Connection changed: {topic.getName()}")
+def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
+    """Log that a connection's state changed using the topic name.
+
+    Parameters
+    ----------
+    interface : Any
+        The interface whose connection state changed. (Default value = None)
+    topic : Any
+        The connection topic object; if it provides a `getName()` method that name is
+        used, otherwise `str(topic)` is used. (Default value = pub.AUTO_TOPIC)
+    """
+    _ = interface
+    topic_name = topic.getName() if hasattr(topic, "getName") else str(topic)
+    logger.info("Connection changed: %s", topic_name)
 
 
-def openDebugLog(portName) -> io.TextIOWrapper:
-    """Open the debug log file"""
+def openDebugLog(portName: str) -> io.TextIOWrapper:
+    """Create a per-port debug log file and return its open file handle.
+
+    Parameters
+    ----------
+    portName : str
+        Serial port name used to derive the filename; '/' characters will be replaced with '_'.
+
+    Returns
+    -------
+    io.TextIOWrapper
+        An open text file for writing the debug log.
+    """
     debugname = "log" + portName.replace("/", "_")
-    logger.info(f"Writing serial debugging to {debugname}")
+    logger.info("Writing serial debugging to %s", debugname)
     return open(debugname, "w+", buffering=1, encoding="utf8")
 
 
-def testAll(numTests: int=5) -> bool:
-    """
-    Run a series of tests using devices we can find.
-    This is called from the cli with the "--test" option.
+def testAll(numTests: int = 5) -> bool:
+    """Discover connected Meshtastic devices, open serial interfaces for each, run integration tests, and close interfaces.
 
+    Parameters
+    ----------
+    numTests : int
+        Number of test iterations to run in the test thread. (Default value = 5)
+
+    Returns
+    -------
+    bool
+        `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
     """
-    ports: List[str] = meshtastic.util.findPorts(True)
+    ports: list[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:
-        meshtastic.util.our_exit(
-            "Warning: Must have at least two devices connected to USB."
-        )
+        logger.error("Must have at least two devices connected to USB.")
+        return False
 
-    pub.subscribe(onConnection, "meshtastic.connection")
-    pub.subscribe(onReceive, "meshtastic.receive")
+    def _safe_unsubscribe(listener: Any, topic: str) -> None:
+        """Best-effort unsubscribe helper used during teardown."""
+        with suppress(Exception):
+            pub.unsubscribe(listener, topic)
+
     # pylint: disable=W0603
     global interfaces
-    interfaces = list(
-        map(
-            lambda port: SerialInterface(
-                port, debugOut=openDebugLog(port), connectNow=True
-            ),
-            ports,
-        )
-    )
+    interfaces = []
 
-    logger.info("Ports opened, starting test")
-    result: bool = testThread(numTests)
+    with ExitStack() as stack:
+        pub.subscribe(onConnection, "meshtastic.connection")
+        pub.subscribe(onReceive, "meshtastic.receive")
+        stack.callback(_safe_unsubscribe, onReceive, "meshtastic.receive")
+        stack.callback(_safe_unsubscribe, onConnection, "meshtastic.connection")
 
-    for i in interfaces:
-        i.close()
+        # Build interfaces incrementally to ensure cleanup on failure.
+        for port in ports:
+            debug_log = stack.enter_context(openDebugLog(port))
+            iface = SerialInterface(port, debugOut=debug_log, connectNow=True)
+            stack.callback(iface.close)
+            interfaces.append(iface)
+
+        logger.info("Ports opened, starting test")
+        result: bool = testThread(numTests)
 
     return result
 
 
-def testSimulator() -> None:
-    """
-    Assume that someone has launched meshtastic-native as a simulated node.
-    Talk to that node over TCP, do some operations and if they are successful
-    exit the process with a success code, else exit with a non zero exit code.
+def testSimulator() -> NoReturn:
+    """Run a short integration check against a Meshtastic simulator on localhost.
 
-    Run with
-    python3 -c 'from meshtastic.test import testSimulator; testSimulator()'
+    Connects to the simulator over TCP, requests node information and a simulator
+    shutdown, and then exits the process; exits with status code 0 on success
+    and 1 on error.
+
+    Returns
+    -------
+    NoReturn
+        This function does not return normally; it calls sys.exit() on success or failure.
     """
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Connecting to simulator on localhost!")
     try:
-        iface: meshtastic.tcp_interface.TCPInterface = TCPInterface("localhost")
-        iface.showInfo()
-        iface.localNode.showInfo()
-        iface.localNode.exitSimulator()
-        iface.close()
+        with TCPInterface("localhost") as iface:
+            iface.showInfo()
+            iface.localNode.showInfo()
+            iface.localNode.exitSimulator()
         logger.info("Integration test successful!")
-    except:
-        print("Error while testing simulator:", sys.exc_info()[0])
-        traceback.print_exc()
+    except Exception:  # intentional catch-all for test exit-signaling
+        logger.exception("Error while testing simulator")
         sys.exit(1)
     sys.exit(0)
