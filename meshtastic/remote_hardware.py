@@ -314,7 +314,8 @@ class RemoteHardwareClient:
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS
         r.gpio_mask = mask
+        result = self._send_hardware(nodeid, r)
         node_key = _normalize_node_key(nodeid)
         if node_key is not None:
             _get_watch_masks(self.iface)[node_key] = int(mask)
-        return self._send_hardware(nodeid, r)
+        return result

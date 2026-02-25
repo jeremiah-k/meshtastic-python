@@ -123,8 +123,6 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
         iface.close()
 
 
-
-
 @pytest.mark.unit
 def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
     """Ensure reader-thread reconnect clears queued packets before _start_config().

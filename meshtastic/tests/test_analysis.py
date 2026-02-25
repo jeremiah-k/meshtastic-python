@@ -11,6 +11,8 @@ import pyarrow as pa
 import pytest
 from pyarrow import feather
 
+OPTIONAL_ANALYSIS_DEPS = {"dash", "dash_bootstrap_components", "plotly"}
+
 try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic import powermon_pb2
@@ -27,8 +29,11 @@ try:
 
     # Import private function for testing
     _is_loopback_host = analysis_main._is_loopback_host
-except ImportError:
-    pytest.skip("Can't import meshtastic.analysis", allow_module_level=True)
+except ModuleNotFoundError as exc:
+    missing = (exc.name or "").split(".")[0]
+    if missing in OPTIONAL_ANALYSIS_DEPS:
+        pytest.skip("Can't import meshtastic.analysis", allow_module_level=True)
+    raise
 
 
 @pytest.mark.unit
@@ -120,7 +125,9 @@ def test_to_pmon_names_maps_valid_states() -> None:
 @pytest.mark.unit
 def test_to_pmon_names_handles_invalid_values() -> None:
     """to_pmon_names should return None for invalid state values."""
-    result = to_pmon_names([0x1000, -1, "invalid"])
+    max_known_value = max(state.number for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values)  # type: ignore[attr-defined]
+    invalid_value = 1 << max_known_value.bit_length()
+    result = to_pmon_names([invalid_value, -1, "invalid"])
     assert result == [None, None, None]
 
 
@@ -249,6 +256,16 @@ def test_create_argparser_returns_parser() -> None:
 
     args = parser.parse_args(["--bind-host", "0.0.0.0"])  # noqa: S104
     assert args.host == "0.0.0.0"  # noqa: S104
+
+
+@pytest.mark.unit
+def test_create_argparser_rejects_invalid_port() -> None:
+    """create_argparser should reject ports outside the valid TCP range."""
+    parser = create_argparser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--port", "0"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--port", "70000"])
 
 
 @pytest.mark.unit

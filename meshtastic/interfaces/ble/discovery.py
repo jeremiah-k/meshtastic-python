@@ -239,14 +239,16 @@ class DiscoveryManager:
         if self._client is not None:
             bleak = getattr(self._client, "bleak_client", None)
             if bleak is not None:
-                is_connected = getattr(self._client, "isConnected", None)
-                if not callable(is_connected):
+                is_connected_method = getattr(self._client, "isConnected", None)
+                if not callable(is_connected_method):
                     logger.debug(
                         "Cached discovery client lacks isConnected(); discarding client."
                     )
                     self._client = None
-                elif not is_connected():
-                    self._client = None
+                else:
+                    is_connected = cast(Any, is_connected_method)
+                    if not is_connected():  # pylint: disable=not-callable
+                        self._client = None
         if self._client is None:
             # Factory resolution precedence (back-compat and testability):
             #   1. Explicit self.client_factory (injected for testing)
@@ -283,8 +285,12 @@ class DiscoveryManager:
             if not isinstance(self._client, BLEClient):
                 # Duck-typed discovery clients must support scan operations:
                 # _discover() is the only required method for device scanning.
-                required_attrs = ("_discover",)
-                missing = [a for a in required_attrs if not hasattr(self._client, a)]
+                required_callables = ("_discover",)
+                missing = [
+                    a
+                    for a in required_callables
+                    if not callable(getattr(self._client, a, None))
+                ]
                 if missing:
                     raise DiscoveryClientError.invalid_client(
                         resolved_factory,

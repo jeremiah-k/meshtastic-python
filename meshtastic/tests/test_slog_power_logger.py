@@ -39,6 +39,7 @@ class _FakeThread:
         """Return False to match threading.Thread API."""
         return False
 
+
 class _FakeWriter:
     """In-memory writer stub for schema assertions."""
 
@@ -85,12 +86,12 @@ def test_power_logger_sets_schema_metadata(monkeypatch: pytest.MonkeyPatch) -> N
         "max_mW",
         "min_mW",
     ]
-    logger.is_logging = False
+    logger.close()
 
 
 @pytest.mark.unit
 def test_store_current_reading_converts_legacy_aliases_when_voltage_present() -> None:
-    """storeCurrentReading should convert legacy *_mW aliases using nominal voltage."""
+    """StoreCurrentReading should convert legacy *_mW aliases using nominal voltage."""
     meter = MagicMock()
     meter.v = 3.3
     meter.getAverageCurrentMA.return_value = 10.0

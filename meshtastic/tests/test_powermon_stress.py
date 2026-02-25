@@ -20,6 +20,7 @@ def _fake_send(
     assert onResponse is not None
     onResponse({"decoded": {}})
 
+
 @pytest.mark.unit
 def test_on_power_stress_response_sets_flag() -> None:
     """Test that onPowerStressResponse marks interface.gotResponse as True."""
@@ -153,7 +154,9 @@ def test_sync_power_stress_timed_mode_with_ack(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.unit
-def test_power_stress_run_continues_after_print_info_failure_then_aborts_on_first_state_failure() -> None:
+def test_power_stress_run_continues_after_print_info_failure_then_aborts_on_first_state_failure() -> (
+    None
+):
     """PowerStress.run should continue after PRINT_INFO failure and abort on the first state failure."""
     iface = MagicMock()
     ps = PowerStress(iface)

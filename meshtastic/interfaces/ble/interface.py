@@ -957,6 +957,8 @@ class BLEInterface(MeshInterface):
     async def log_radio_handler(self, sender: Any, b: bytes | bytearray) -> None:
         """Backward-compatible wrapper for the legacy log callback name.
 
+        Historical API in 2.7.7 used an async signature; keep it unchanged.
+
         Parameters
         ----------
         sender : Any
@@ -990,6 +992,8 @@ class BLEInterface(MeshInterface):
     # Keep callable without deprecation warning.
     async def legacy_log_radio_handler(self, sender: Any, b: bytes | bytearray) -> None:
         """Backward-compatible wrapper for the legacy log callback name.
+
+        Historical API in 2.7.7 used an async signature; keep it unchanged.
 
         Parameters
         ----------
@@ -1780,7 +1784,7 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             client = self.client
 
-        is_disconnect_msg = hasattr(toRadio, "disconnect") and toRadio.disconnect
+        is_disconnect_msg = toRadio.WhichOneof("payload_variant") == "disconnect"
         if not client or (self._is_connection_closing and not is_disconnect_msg):
             logger.debug(
                 "Skipping TORADIO write: no BLE client or interface is closing."

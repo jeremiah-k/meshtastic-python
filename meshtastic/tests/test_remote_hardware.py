@@ -157,6 +157,19 @@ def test_watchGPIOs(caplog, mock_gpio_iface):
 
 
 @pytest.mark.unit
+def test_watchGPIOs_does_not_cache_mask_on_send_failure(mock_gpio_iface):
+    """WatchGPIOs should not persist a watch mask when sendData fails."""
+    rhw = RemoteHardwareClient(mock_gpio_iface)
+    mock_gpio_iface.sendData.side_effect = RuntimeError("send failed")
+
+    with pytest.raises(RuntimeError, match="send failed"):
+        rhw.watchGPIOs("0x10", 123)
+
+    watch_masks = getattr(mock_gpio_iface, WATCH_MASKS_ATTR, {})
+    assert "num:16" not in watch_masks
+
+
+@pytest.mark.unit
 def test_send_hardware_no_nodeid(mock_gpio_iface):
     """Test sending no nodeid to _send_hardware()."""
     rhw = RemoteHardwareClient(mock_gpio_iface)

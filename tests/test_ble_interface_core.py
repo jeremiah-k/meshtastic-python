@@ -30,6 +30,7 @@ from meshtastic.interfaces.ble import (
 )
 from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.discovery import (
+    DiscoveryClientError,
     DiscoveryManager,
     _filter_devices_for_target_identifier,
     _parse_scan_response,
@@ -839,6 +840,20 @@ def test_discovery_manager_filters_targeted_scan_to_whitelist_match(monkeypatch)
     devices = manager._discover_devices(address="AA:BB:CC:DD:EE:FF")
 
     assert devices == [target_device]
+
+
+def test_discovery_manager_rejects_non_callable_discover_method() -> None:
+    """DiscoveryManager should reject duck-typed clients whose _discover is not callable."""
+
+    class InvalidDiscoveryClient:
+        _discover = None
+
+    manager = DiscoveryManager(
+        client_factory=lambda **_kwargs: InvalidDiscoveryClient()
+    )
+
+    with pytest.raises(DiscoveryClientError, match="_discover"):
+        manager._discover_devices(address=None)
 
 
 def test_parse_scan_response_prefers_exact_name_before_normalized_match():

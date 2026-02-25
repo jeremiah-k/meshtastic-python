@@ -172,8 +172,8 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     -------
     pd.DataFrame
         Subset of rows where power-monitor raises occurred.
-        Columns are `time` and `pm_raises` (a list of raised power-monitor
-        name strings).
+        Columns are `time` and `pm_raises` (raised power-monitor name strings;
+        multi-bit raises are represented as `|`-joined names).
     """
     if "pm_mask" not in dslog.columns:
         raise ValueError("No pm_mask column found in slog")  # noqa: TRY003
@@ -275,6 +275,33 @@ def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) ->
     raise ValueError(error_msg)
 
 
+def _parse_port(value: str) -> int:
+    """Validate CLI TCP port values for Dash server binding.
+
+    Parameters
+    ----------
+    value : str
+        Port value provided on the command line.
+
+    Returns
+    -------
+    int
+        Parsed TCP port number in the inclusive range 1..65535.
+
+    Raises
+    ------
+    argparse.ArgumentTypeError
+        If the value is not an integer in the valid TCP port range.
+    """
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("port must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    return port
+
+
 def create_argparser() -> argparse.ArgumentParser:
     """Create the command-line argument parser for analysis tools.
 
@@ -309,7 +336,7 @@ def create_argparser() -> argparse.ArgumentParser:
     group.add_argument(
         "--port",
         "-p",
-        type=int,
+        type=_parse_port,
         default=8051,
         dest="port",
         help="Port for the Dash server (default: 8051).",

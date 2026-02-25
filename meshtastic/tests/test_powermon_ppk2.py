@@ -1,6 +1,5 @@
 """Unit tests for PPK2 power-meter measurement state behavior."""
 
-import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,28 +12,12 @@ except ImportError:
     pytest.skip("Can't import PPK2PowerSupply", allow_module_level=True)
 
 
-def _make_ppk2_stub() -> PPK2PowerSupply:
-    """Create a minimally initialized PPK2PowerSupply test instance."""
-    ppk = object.__new__(PPK2PowerSupply)
-    ppk._result_lock = threading.Condition()
-    ppk._want_measurement = threading.Condition()
-    ppk.current_sum = 0
-    ppk.current_num_samples = 0
-    ppk.current_min = 0
-    ppk.current_max = 0
-    ppk.current_average = 0.0
-    ppk.last_reported_min = 0
-    ppk.last_reported_max = 0
-    ppk.num_data_reads = 0
-    ppk.total_data_len = 0
-    ppk.max_data_len = 0
-    return ppk
-
-
 @pytest.mark.unit
-def test_reset_measurements_preserves_last_reported_extrema() -> None:
+def test_reset_measurements_preserves_last_reported_extrema(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
     """reset_measurements() should clear accumulators while preserving last reported min/max."""
-    ppk = _make_ppk2_stub()
+    ppk = ppk2_stub
     ppk.current_sum = 100_000
     ppk.current_num_samples = 8
     ppk.current_min = 2_100
@@ -55,9 +38,11 @@ def test_reset_measurements_preserves_last_reported_extrema() -> None:
 
 
 @pytest.mark.unit
-def test_get_min_max_update_only_when_new_samples_exist() -> None:
+def test_get_min_max_update_only_when_new_samples_exist(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
     """Min/max getters should retain prior values until a new sample window exists."""
-    ppk = _make_ppk2_stub()
+    ppk = ppk2_stub
 
     ppk.current_num_samples = 3
     ppk.current_min = 3_000
@@ -82,9 +67,11 @@ def test_get_min_max_update_only_when_new_samples_exist() -> None:
 
 
 @pytest.mark.unit
-def test_setIsSupply_starts_measurement_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_setIsSupply_starts_measurement_once(
+    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+) -> None:
     """setIsSupply() should start measurement and reader thread when not already running."""
-    ppk = _make_ppk2_stub()
+    ppk = ppk2_stub
     ppk.v = 3.3
     ppk.r = MagicMock()
     # Create a mock thread that has ident = None (never started)
@@ -104,9 +91,11 @@ def test_setIsSupply_starts_measurement_once(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.unit
-def test_setIsSupply_does_not_restart_when_already_measuring() -> None:
+def test_setIsSupply_does_not_restart_when_already_measuring(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
     """setIsSupply() should not re-issue start_measuring when reader thread is active."""
-    ppk = _make_ppk2_stub()
+    ppk = ppk2_stub
     ppk.v = 3.3
     ppk.r = MagicMock()
     ppk.measurement_thread = MagicMock()
@@ -121,10 +110,12 @@ def test_setIsSupply_does_not_restart_when_already_measuring() -> None:
 
 
 @pytest.mark.unit
-def test_average_current_camelcase_aliases_are_consistent() -> None:
+def test_average_current_camelcase_aliases_are_consistent(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
     """CamelCase average-current aliases should be consistent for PPK2."""
     power_supply_module._warned_deprecations.clear()
-    ppk = _make_ppk2_stub()
+    ppk = ppk2_stub
     ppk.getAverageCurrentMA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
 
     assert ppk.getAverageCurrentMA() == 42.0

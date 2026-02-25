@@ -121,6 +121,9 @@ receivedPackets: list[Any] | None = None
 testNumber: int = 0
 
 sendingInterface: Any = None
+expected_from_node: int | None = None
+expected_to_node: int | None = None
+expected_text: str | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +150,19 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
         else:
             portnum = getattr(decoded, "portnum", None)
         if portnum == "TEXT_MESSAGE_APP":
+            pkt_from = packet.get("from")
+            if expected_from_node is not None and pkt_from != expected_from_node:
+                return
+            pkt_to = packet.get("to")
+            if expected_to_node is not None and pkt_to != expected_to_node:
+                return
+            decoded_text = (
+                decoded.get("text")
+                if isinstance(decoded, dict)
+                else getattr(decoded, "text", None)
+            )
+            if expected_text is not None and decoded_text != expected_text:
+                return
             # We only care a about clear text packets
             if receivedPackets is not None:
                 receivedPackets.append(DotMap(packet))
@@ -203,6 +219,9 @@ def testSend(
     """
     # pylint: disable=W0603
     global receivedPackets
+    global expected_from_node
+    global expected_to_node
+    global expected_text
     receivedPackets = []
     fromNode = fromInterface.myInfo.my_node_num
 
@@ -217,17 +236,25 @@ def testSend(
     # pylint: disable=W0603
     global sendingInterface
     sendingInterface = fromInterface
-    if not asBinary:
-        fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
-    else:
-        fromInterface.sendData(
-            (f"Binary {testNumber}").encode("utf-8"), toNode, wantAck=wantAck
-        )
-    for _ in range(60):  # max of 60 secs before we timeout
-        time.sleep(1)
-        if len(receivedPackets) >= 1:
-            return True
-    return False  # Failed to send
+    expected_from_node = fromNode
+    expected_to_node = toNode
+    expected_text = None if asBinary else f"Test {testNumber}"
+    try:
+        if not asBinary:
+            fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
+        else:
+            fromInterface.sendData(
+                (f"Binary {testNumber}").encode("utf-8"), toNode, wantAck=wantAck
+            )
+        for _ in range(60):  # max of 60 secs before we timeout
+            time.sleep(1)
+            if len(receivedPackets) >= 1:
+                return True
+        return False  # Failed to send
+    finally:
+        expected_from_node = None
+        expected_to_node = None
+        expected_text = None
 
 
 def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
@@ -380,10 +407,25 @@ def testAll(numTests: int = 5) -> bool:
 
         # Build interfaces incrementally to ensure cleanup on failure.
         for port in ports:
-            debug_log = stack.enter_context(openDebugLog(port))
-            iface = SerialInterface(port, debugOut=debug_log, connectNow=True)
+            debug_log = None
+            try:
+                debug_log = openDebugLog(port)
+                iface = SerialInterface(port, debugOut=debug_log, connectNow=True)
+            except Exception:  # noqa: BLE001 - keep scanning remaining ports
+                logger.exception("Skipping unusable port: %s", port)
+                if debug_log is not None:
+                    with suppress(Exception):
+                        debug_log.close()
+                continue
+            stack.callback(debug_log.close)
             stack.callback(iface.close)
             interfaces.append(iface)
+            if len(interfaces) == 2:
+                break
+
+        if len(interfaces) < 2:
+            logger.error("Unable to open two usable Meshtastic interfaces.")
+            return False
 
         logger.info("Ports opened, starting test")
         result: bool = testThread(numTests)

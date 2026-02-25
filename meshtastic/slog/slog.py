@@ -483,7 +483,14 @@ class StructuredLogger:
         if self.include_raw:
             with self._raw_file_lock:
                 if self.raw_file:
-                    self.raw_file.write(line + "\n")  # Write the raw log
+                    try:
+                        self.raw_file.write(line + "\n")  # Write the raw log
+                    except OSError as exc:
+                        logger.warning(
+                            "Failed to write raw slog line: %s",
+                            exc,
+                            exc_info=True,
+                        )
 
 
 class LogSet:

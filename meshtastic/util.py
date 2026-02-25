@@ -367,8 +367,8 @@ class DotDict(dict):
     __delattr__ = dict.__delitem__  # type: ignore[assignment]
 
 
-# Track whether dotdict deprecation has been warned (warn-once per process)
-_dotdict_warned: bool = False
+# Track warn-once state for dotdict deprecation (process-wide).
+_warned_deprecations: set[str] = set()
 
 
 class dotdict(DotDict):  # pylint: disable=invalid-name
@@ -385,14 +385,13 @@ class dotdict(DotDict):  # pylint: disable=invalid-name
         **kwargs : Any
             Keyword arguments passed to dict constructor.
         """
-        global _dotdict_warned
-        if not _dotdict_warned:
+        if "dotdict" not in _warned_deprecations:
             warnings.warn(
                 "dotdict is deprecated; use DotDict instead",
                 DeprecationWarning,
                 stacklevel=2,
             )
-            _dotdict_warned = True
+            _warned_deprecations.add("dotdict")
         super().__init__(*args, **kwargs)
 
 

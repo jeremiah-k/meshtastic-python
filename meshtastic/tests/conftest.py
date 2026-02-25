@@ -2,6 +2,7 @@
 
 import argparse
 import shutil
+import threading
 from collections.abc import Generator
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
@@ -16,6 +17,7 @@ from ..serial_interface import SerialInterface
 
 if TYPE_CHECKING:
     from meshtastic.powermon.power_supply import PowerSupply
+    from meshtastic.powermon.ppk2 import PPK2PowerSupply
     from meshtastic.powermon.riden import RidenPowerSupply
 
 _MT_CONFIG_SENTINEL = object()
@@ -239,6 +241,27 @@ def riden_stub() -> "RidenPowerSupply":
     pps.prevWattHour = 100.0
     pps.v = 3.3
     return pps
+
+
+@pytest.fixture
+def ppk2_stub() -> "PPK2PowerSupply":
+    """Create a minimally initialized PPK2PowerSupply test instance."""
+    from meshtastic.powermon.ppk2 import PPK2PowerSupply  # pylint: disable=C0415
+
+    ppk = object.__new__(PPK2PowerSupply)
+    ppk._result_lock = threading.Condition()
+    ppk._want_measurement = threading.Condition()
+    ppk.current_sum = 0
+    ppk.current_num_samples = 0
+    ppk.current_min = 0
+    ppk.current_max = 0
+    ppk.current_average = 0.0
+    ppk.last_reported_min = 0
+    ppk.last_reported_max = 0
+    ppk.num_data_reads = 0
+    ppk.total_data_len = 0
+    ppk.max_data_len = 0
+    return ppk
 
 
 def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:

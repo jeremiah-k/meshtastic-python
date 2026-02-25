@@ -5,8 +5,8 @@ import contextlib
 import sys
 import types
 import weakref
-from concurrent.futures import Future
 from concurrent.futures import CancelledError as FutureCancelledError
+from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import RLock
 from typing import Any, Awaitable, Callable, Coroutine, TypeVar
@@ -525,11 +525,10 @@ class BLEClient:
         Raises
         ------
         BLEError
-            If the client is closed, the wait times out, or the async operation fails.
+            If the client is closed, the wait times out, the operation is cancelled,
+            or the async operation fails.
         RuntimeError
             If the event loop is closed or cannot be accessed.
-        asyncio.CancelledError
-            If the coroutine is cancelled during execution.
         """
         # Check if client is closed before scheduling work
         if self._closed:
@@ -539,6 +538,8 @@ class BLEClient:
 
         # Exception mapping contract:
         #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
+        #   - FutureCancelledError / asyncio.CancelledError ->
+        #       self.BLEError(BLECLIENT_ERROR_CANCELLED)
         #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
         future = self._async_run(coro)
         self._with_pending_futures(lambda pending_futures: pending_futures.add(future))
@@ -615,8 +616,7 @@ class BLEClient:
                 )
             raise self.BLEError(f"Async operation failed: {e}") from e
         except asyncio.CancelledError as e:
-            # Propagate as timeout-style BLEError so callers handle uniformly
-            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+            raise self.BLEError(BLECLIENT_ERROR_CANCELLED) from e
         finally:
             self._with_pending_futures(
                 lambda pending_futures: pending_futures.discard(future)

@@ -33,14 +33,19 @@ When in doubt, treat the pinned baseline below as normative for BLE compatibilit
 - Tag: `2.7.7`
 - Commit: `b26d80f1866ffa765467e5cb7688c59dee7f2bb2`
 - Baseline file: `meshtastic/ble_interface.py`
-- Methods requiring BLE compatibility treatment:
-  - `BLEClient.async_await`
-  - `BLEClient.async_run`
-  - `BLEInterface.from_num_handler`
-  - `BLEInterface.log_radio_handler`
-  - `BLEInterface.legacy_log_radio_handler`
+- Canonical compatibility list: use the matrix below as the single source of truth.
+
+### Historical BLE compatibility treatment matrix (2.7.7 baseline)
 
 These names are kept as compatibility wrappers over canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`, `_log_radio_handler`, `_legacy_log_radio_handler`).
+
+| Symbol                                  | Status                        | Warning policy | Notes                                  |
+| --------------------------------------- | ----------------------------- | -------------- | -------------------------------------- |
+| `BLEClient.async_await`                 | Required callable compat shim | Silent         | Keep historical argument behavior.     |
+| `BLEClient.async_run`                   | Required callable compat shim | Silent         | Keep historical argument behavior.     |
+| `BLEInterface.from_num_handler`         | Required callable compat shim | Silent         | Delegates to `_from_num_handler`.      |
+| `BLEInterface.log_radio_handler`        | Required callable compat shim | Silent         | Keep historical `async def` signature. |
+| `BLEInterface.legacy_log_radio_handler` | Required callable compat shim | Silent         | Keep historical `async def` signature. |
 
 Any BLE methods introduced only in the refactored `meshtastic/interfaces/ble/*`
 package are not historical compatibility surface by default and should not get
@@ -80,7 +85,8 @@ the maintained public surface. Do not use these markers for new internal helpers
 - Prefer warnings for semantic/behavioral migrations.
 - For deprecated APIs that may be called in loops, use warn-once behavior (per process or per instance) to avoid warning spam and overhead.
 - All naming-only deprecation warnings MUST be warn-once (not every call).
-  Quick inventory command:
+
+Quick inventory command:
 
 - `rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic`
 

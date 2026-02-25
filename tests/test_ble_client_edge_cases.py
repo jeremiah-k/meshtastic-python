@@ -1,10 +1,15 @@
 """Additional edge case tests for BLE client functionality."""
 
+import asyncio
+
 import pytest
 
 try:
     from meshtastic.interfaces.ble.client import BLEClient
-    from meshtastic.interfaces.ble.constants import BLECLIENT_ERROR_ASYNC_TIMEOUT
+    from meshtastic.interfaces.ble.constants import (
+        BLECLIENT_ERROR_ASYNC_TIMEOUT,
+        BLECLIENT_ERROR_CANCELLED,
+    )
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
@@ -175,5 +180,32 @@ def test_bleclient_discover_method_exists():
         assert hasattr(client, "_discover")
         assert callable(client.discover)
         assert callable(client._discover)
+    finally:
+        client.close()
+
+
+@pytest.mark.unit
+def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_async_await should map asyncio cancellation to BLE cancelled error."""
+
+    class _CancelledFuture:
+        def result(self, _timeout=None):
+            raise asyncio.CancelledError()
+
+    async def _dummy_coro():
+        return None
+
+    client = BLEClient(address=None, log_if_no_address=False)
+    try:
+
+        def _fake_async_run(coro):
+            coro.close()
+            return _CancelledFuture()
+
+        monkeypatch.setattr(client, "_async_run", _fake_async_run)
+        with pytest.raises(BLEClient.BLEError, match=BLECLIENT_ERROR_CANCELLED):
+            client._async_await(_dummy_coro())
     finally:
         client.close()

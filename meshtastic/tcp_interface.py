@@ -80,18 +80,31 @@ class TCPInterface(StreamInterface):
         self._reconnect_backoff = self.DEFAULT_RECONNECT_BACKOFF
         self._reconnect_base_delay = self.DEFAULT_RECONNECT_BASE_DELAY
         self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
+        self._reconnect_lock = threading.Lock()
         self._fatal_disconnect = False
 
         if connectNow:
             self.myConnect()
 
-        super().__init__(
-            debugOut=debugOut,
-            noProto=noProto,
-            connectNow=connectNow,
-            noNodes=noNodes,
-            timeout=timeout,
-        )
+        try:
+            super().__init__(
+                debugOut=debugOut,
+                noProto=noProto,
+                connectNow=connectNow,
+                noNodes=noNodes,
+                timeout=timeout,
+            )
+        except Exception:
+            # myConnect() runs before base init so ensure we don't leak socket
+            # resources if StreamInterface setup fails.
+            sock = self.socket
+            if sock is not None:
+                with contextlib.suppress(Exception):
+                    self._socket_shutdown(sock)
+                with contextlib.suppress(Exception):
+                    sock.close()
+                self.socket = None
+            raise
 
     def __repr__(self) -> str:
         """Return a concise string representation of the TCPInterface instance including hostname and relevant flags.
@@ -246,91 +259,101 @@ class TCPInterface(StreamInterface):
         bool
             `True` if reconnect and post-connect startup succeeded, `False` otherwise.
         """
-        if (
-            self._wantExit
-            or self._fatal_disconnect
-            or self._reconnect_attempts >= self._max_reconnect_attempts
+        if not self._reconnect_lock.acquire(  # pylint: disable=consider-using-with
+            blocking=False
         ):
-            if self._reconnect_attempts >= self._max_reconnect_attempts:
-                self._on_fatal_disconnect("reconnect retry limit reached")
+            logger.debug("Reconnect already in progress for %s", self.hostname)
             return False
-
-        self._reconnect_attempts += 1
-        delay = (
-            0.0 if self._reconnect_attempts == 1 else self._compute_reconnect_delay()
-        )
-        logger.debug(
-            "Reconnect attempt %d/%d for %s in %.1fs",
-            self._reconnect_attempts,
-            self._max_reconnect_attempts,
-            self.hostname,
-            delay,
-        )
-        if delay > 0.0 and not self._sleep_reconnect_delay(delay):
-            return False
-        reconnect_ok = False
-
         try:
-            self.myConnect()
-        except OSError as connect_ex:
-            logger.warning("Reconnect to %s failed: %s", self.hostname, connect_ex)
-            return reconnect_ok
+            if (
+                self._wantExit
+                or self._fatal_disconnect
+                or self._reconnect_attempts >= self._max_reconnect_attempts
+            ):
+                if self._reconnect_attempts >= self._max_reconnect_attempts:
+                    self._on_fatal_disconnect("reconnect retry limit reached")
+                return False
 
-        if self.socket is None:
-            logger.warning(
-                "myConnect() returned without setting socket for %s",
-                self.hostname,
+            self._reconnect_attempts += 1
+            delay = (
+                0.0
+                if self._reconnect_attempts == 1
+                else self._compute_reconnect_delay()
             )
-            return reconnect_ok
-
-        if self._wantExit:
-            # close() may race while we reconnect; tear down the new socket.
-            reconnect_sock = self.socket
-            with contextlib.suppress(Exception):
-                self._socket_shutdown(reconnect_sock)
-            with contextlib.suppress(Exception):
-                if reconnect_sock is not None:
-                    reconnect_sock.close()
-            if self.socket is reconnect_sock:
-                self.socket = None
-            return reconnect_ok
-
-        # _start_config() can call _send_to_radio(), which drains self.queue and may
-        # block on queue space. During reader-thread reconnect this can deadlock
-        # because queue updates are also processed by the reader thread.
-        if threading.current_thread() is getattr(self, "_rxThread", None):
-            pending_queue = getattr(self, "queue", None)
-            if isinstance(pending_queue, dict) and pending_queue:
-                dropped = len(pending_queue)
-                pending_queue.clear()
-                logger.warning(
-                    "Dropped %d queued packet(s) before reconnect config on %s",
-                    dropped,
-                    self.hostname,
-                )
-
-        try:
-            self._start_config()
-        except Exception as config_ex:  # noqa: BLE001 - preserve reader thread survival
-            logger.warning(
-                "Post-reconnect config for %s failed: %s",
+            logger.debug(
+                "Reconnect attempt %d/%d for %s in %.1fs",
+                self._reconnect_attempts,
+                self._max_reconnect_attempts,
                 self.hostname,
-                config_ex,
+                delay,
             )
-            reconnect_sock = self.socket
-            with contextlib.suppress(Exception):
-                self._socket_shutdown(reconnect_sock)
-            with contextlib.suppress(Exception):
-                if reconnect_sock is not None:
-                    reconnect_sock.close()
-            if self.socket is reconnect_sock:
-                self.socket = None
-        else:
-            self._reconnect_attempts = 0
-            self._fatal_disconnect = False
-            reconnect_ok = True
+            if delay > 0.0 and not self._sleep_reconnect_delay(delay):
+                return False
+            reconnect_ok = False
+            connect_failed = False
+            try:
+                self.myConnect()
+            except OSError as connect_ex:
+                logger.warning("Reconnect to %s failed: %s", self.hostname, connect_ex)
+                connect_failed = True
 
-        return reconnect_ok
+            if not connect_failed:
+                if self.socket is None:
+                    logger.warning(
+                        "myConnect() returned without setting socket for %s",
+                        self.hostname,
+                    )
+                elif self._wantExit:
+                    # close() may race while we reconnect; tear down the new socket.
+                    reconnect_sock = self.socket
+                    with contextlib.suppress(Exception):
+                        self._socket_shutdown(reconnect_sock)
+                    with contextlib.suppress(Exception):
+                        if reconnect_sock is not None:
+                            reconnect_sock.close()
+                    if self.socket is reconnect_sock:
+                        self.socket = None
+                else:
+                    # _start_config() can call _send_to_radio(), which drains self.queue and may
+                    # block on queue space. During reader-thread reconnect this can deadlock
+                    # because queue updates are also processed by the reader thread.
+                    if threading.current_thread() is getattr(self, "_rxThread", None):
+                        pending_queue = getattr(self, "queue", None)
+                        if isinstance(pending_queue, dict) and pending_queue:
+                            dropped = len(pending_queue)
+                            pending_queue.clear()
+                            logger.warning(
+                                "Dropped %d queued packet(s) before reconnect config on %s",
+                                dropped,
+                                self.hostname,
+                            )
+
+                    try:
+                        self._start_config()
+                    except (
+                        Exception
+                    ) as config_ex:  # noqa: BLE001 - preserve reader thread survival
+                        logger.warning(
+                            "Post-reconnect config for %s failed: %s",
+                            self.hostname,
+                            config_ex,
+                        )
+                        reconnect_sock = self.socket
+                        with contextlib.suppress(Exception):
+                            self._socket_shutdown(reconnect_sock)
+                        with contextlib.suppress(Exception):
+                            if reconnect_sock is not None:
+                                reconnect_sock.close()
+                        if self.socket is reconnect_sock:
+                            self.socket = None
+                    else:
+                        self._reconnect_attempts = 0
+                        self._fatal_disconnect = False
+                        reconnect_ok = True
+
+            return reconnect_ok
+        finally:
+            self._reconnect_lock.release()
 
     # pylint: disable=too-many-return-statements
     # Multiple early returns are intentional here for clear handling of each
