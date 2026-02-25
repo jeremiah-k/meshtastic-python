@@ -267,7 +267,10 @@ class PowerLogger:
     def _logging_thread(self) -> None:
         """Background thread for logging periodic current readings."""
         while not self._stop_event.is_set():
-            self._store_current_reading()
+            try:
+                self._store_current_reading()
+            except Exception as exc:  # noqa: BLE001 - keep sampler alive
+                logger.warning("PowerLogger sample failed: %s", exc, exc_info=True)
             self._stop_event.wait(self.interval)
 
     def close(self) -> None:

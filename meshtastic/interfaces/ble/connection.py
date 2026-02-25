@@ -99,9 +99,13 @@ class ConnectionValidator:
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
-            last_connection_request,
-            sanitize_address(address),
-            sanitize_address(bleak_address),
+            t
+            for t in (
+                last_connection_request,
+                sanitize_address(address),
+                sanitize_address(bleak_address),
+            )
+            if t is not None
         }
         return (
             normalized_request is None or normalized_request in normalized_known_targets

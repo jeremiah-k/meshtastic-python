@@ -94,6 +94,10 @@ class _FallbackDotMap(dict):
         AttributeError
             If the key does not exist.
         """
+        # Guard dunder names to match __setattr__ behavior.
+        if key.startswith("__") and key.endswith("__"):
+            object.__delattr__(self, key)
+            return
         try:
             del self[key]
         except KeyError:

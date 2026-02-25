@@ -110,7 +110,11 @@ class ReconnectPolicy:
         """
         if attempt is None:
             attempt = self._attempt_count
-        delay = min(self.initial_delay * (self.backoff**attempt), self.max_delay)
+        try:
+            exp_delay = self.initial_delay * (self.backoff**attempt)
+        except OverflowError:
+            exp_delay = self.max_delay
+        delay = min(exp_delay, self.max_delay)
         jitter = delay * self.jitter_ratio * (self._random.random() * 2.0 - 1.0)
         return min(
             self.max_delay, max(0.001, delay + jitter)

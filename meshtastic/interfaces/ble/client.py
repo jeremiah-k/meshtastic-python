@@ -17,6 +17,7 @@ from bleak import BleakScanner
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
+    BLECLIENT_ERROR_CANCELLED,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     logger,
@@ -602,7 +603,7 @@ class BLEClient:
                     "Skipping callback registration after cancellation",
                     exc_info=True,
                 )
-            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+            raise self.BLEError(BLECLIENT_ERROR_CANCELLED) from e
         except RuntimeError as e:
             # RuntimeError here typically indicates loop shutdown/closure, not a timeout.
             try:

@@ -124,22 +124,6 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
         iface.close()
 
 
-@pytest.mark.unit
-def test_TCPInterface_read_timeout_keeps_socket_without_reconnect() -> None:
-    """socket.timeout reads should not be treated as disconnects."""
-    with patch("socket.socket"):
-        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        mock_socket = MagicMock()
-        mock_socket.recv.side_effect = socket.timeout()
-        iface.socket = mock_socket
-
-        with patch.object(iface, "_attempt_reconnect") as mock_reconnect:
-            data = iface._read_bytes(1)
-
-        assert data is None
-        mock_reconnect.assert_not_called()
-        assert iface.socket is mock_socket
-        iface.close()
 
 
 @pytest.mark.unit

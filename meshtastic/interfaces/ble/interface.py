@@ -524,12 +524,18 @@ class BLEInterface(MeshInterface):
             # Another disconnect handler is active; this is expected during concurrent
             # disconnect callbacks. The active handler will process the disconnect,
             # including deciding whether to keep running and schedule reconnect.
-            # Return True so callers like the read loop do not stop prematurely.
+            # Mirror current shutdown/reconnect intent so callers can stop when
+            # reconnect is not expected.
             logger.debug(
                 "Disconnect from %s skipped: another disconnect handler is active.",
                 source,
             )
-            return True
+            with self._state_lock:
+                return (
+                    self.auto_reconnect
+                    and not self._closed
+                    and not self._state_manager._is_closing
+                )
         disconnect_lock_released = False
         target_client = client
         previous_client: BLEClient | None = None

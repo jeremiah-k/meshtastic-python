@@ -88,14 +88,19 @@ class PowerStressClient:
             "Sending power stress command %s",
             powermon_pb2.PowerStressMessage.Opcode.Name(cmd),
         )
-        self.sendPowerStress(cmd, onResponse=_on_response, num_seconds=num_seconds)
+        effective_num_seconds = num_seconds
+        if num_seconds < 0.0:
+            logging.warning(
+                "Negative num_seconds=%s is invalid; treating as run-until-ack",
+                num_seconds,
+            )
+            effective_num_seconds = 0.0
 
-        if num_seconds <= 0.0:
-            if num_seconds < 0.0:
-                logging.warning(
-                    "Negative num_seconds=%s is invalid; treating as run-until-ack",
-                    num_seconds,
-                )
+        self.sendPowerStress(
+            cmd, onResponse=_on_response, num_seconds=effective_num_seconds
+        )
+
+        if effective_num_seconds <= 0.0:
             # Wait for the response and then continue, with a safety timeout.
             if not ack_event.wait(timeout=ack_timeout):
                 logging.error("Timed out waiting for power stress ack!")
@@ -103,7 +108,7 @@ class PowerStressClient:
         else:
             # we wait a little bit longer than the time the UUT would be waiting (to make sure all of its messages are handled first)
             time.sleep(
-                num_seconds + 0.2
+                effective_num_seconds + 0.2
             )  # completely block our thread for the duration of the test
             if not ack_event.is_set():
                 logging.error("Did not receive ack for power stress command!")

@@ -1,6 +1,7 @@
 """Unit tests for powermon stress helpers and client behavior."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +9,16 @@ import pytest
 from ..powermon.stress import PowerStress, PowerStressClient, onPowerStressResponse
 from ..protobuf import powermon_pb2
 
+
+def _fake_send(
+    cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
+    num_seconds: float = 0.0,
+    onResponse: Callable[[dict[str, Any]], None] | None = None,
+) -> None:
+    """Shared fake sendPowerStress helper for sync tests."""
+    _ = cmd, num_seconds
+    assert onResponse is not None
+    onResponse({"decoded": {}})
 
 @pytest.mark.unit
 def test_on_power_stress_response_sets_flag() -> None:
@@ -53,15 +64,6 @@ def test_sync_power_stress_wait_until_ack_success() -> None:
     iface = MagicMock()
     iface.myInfo.my_node_num = 1
     client = PowerStressClient(iface)
-
-    def _fake_send(
-        cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
-        num_seconds: float = 0.0,
-        onResponse: Callable[[dict[str, Any]], None] | None = None,
-    ) -> None:
-        _ = cmd, num_seconds
-        assert onResponse is not None
-        onResponse({"decoded": {}})
 
     client.sendPowerStress = _fake_send  # type: ignore[method-assign]
     assert client.syncPowerStress(powermon_pb2.PowerStressMessage.BT_ON) is True
@@ -140,15 +142,6 @@ def test_sync_power_stress_timed_mode_with_ack(monkeypatch: pytest.MonkeyPatch) 
     client = PowerStressClient(iface)
     monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", lambda _: None)
 
-    def _fake_send(
-        cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
-        num_seconds: float = 0.0,
-        onResponse: Callable[[dict[str, Any]], None] | None = None,
-    ) -> None:
-        _ = cmd, num_seconds
-        assert onResponse is not None
-        onResponse({"decoded": {}})
-
     client.sendPowerStress = _fake_send  # type: ignore[method-assign]
     assert (
         client.syncPowerStress(
@@ -160,8 +153,8 @@ def test_sync_power_stress_timed_mode_with_ack(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.unit
-def test_power_stress_run_aborts_when_print_info_ack_missing() -> None:
-    """PowerStress.run should continue on PRINT_INFO failure but abort on first state failure."""
+def test_power_stress_run_continues_after_print_info_failure_then_aborts_on_first_state_failure() -> None:
+    """PowerStress.run should continue after PRINT_INFO failure and abort on the first state failure."""
     iface = MagicMock()
     ps = PowerStress(iface)
     ps.client = MagicMock()

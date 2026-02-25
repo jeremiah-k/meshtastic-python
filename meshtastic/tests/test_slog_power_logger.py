@@ -35,6 +35,9 @@ class _FakeThread:
     def join(self, timeout: float | None = None) -> None:
         """No-op join for compatibility with the production thread API."""
 
+    def is_alive(self) -> bool:
+        """Return False to match threading.Thread API."""
+        return False
 
 class _FakeWriter:
     """In-memory writer stub for schema assertions."""

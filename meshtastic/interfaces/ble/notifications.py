@@ -67,21 +67,16 @@ class NotificationManager:
             self._subscription_counter = (
                 self._subscription_counter + 1
             ) & self._MAX_SUBSCRIPTION_TOKEN
-            # Handle wraparound collision with iteration guard to prevent infinite loop
-            # (extremely unlikely in practice - would require 2^31 active subscriptions)
-            collision_iterations = 0
+            # Detect a full cycle through the token space instead of using a fixed
+            # iteration cap, which can raise prematurely under wraparound collisions.
+            start_token = token
             while token in self._active_subscriptions:
-                collision_iterations += 1
-                if collision_iterations >= self._MAX_COLLISION_ITERATIONS:
-                    raise RuntimeError(
-                        f"Failed to allocate unique subscription token after "
-                        f"{self._MAX_COLLISION_ITERATIONS} attempts. Subscription registry "
-                        f"may be corrupted or exhausted."
-                    )
                 token = self._subscription_counter
                 self._subscription_counter = (
                     self._subscription_counter + 1
                 ) & self._MAX_SUBSCRIPTION_TOKEN
+                if token == start_token:
+                    raise RuntimeError("Subscription token space exhausted.")
             self._active_subscriptions[token] = (characteristic, callback)
             self._characteristic_to_callback[characteristic] = callback
             return token

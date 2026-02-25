@@ -107,6 +107,10 @@ def resolve_ble_module() -> ModuleType | None:
     ):
         try:
             return importlib.import_module(module_name)
-        except ImportError:
+        except ImportError as exc:
+            # Only continue when the target module itself is missing.
+            # Re-raise transitive import failures from inside the module.
+            if getattr(exc, "name", None) != module_name:
+                raise
             continue
     return None

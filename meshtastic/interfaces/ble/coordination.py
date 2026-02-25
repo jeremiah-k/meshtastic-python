@@ -403,6 +403,8 @@ class ThreadCoordinator:
         Marks the coordinator as cleaned to prevent new runnable threads, sets all tracked events to wake any waiters, joins all currently live tracked threads except the calling thread (joining each with EVENT_THREAD_JOIN_TIMEOUT), and clears internal thread, event, and pending-start registries.
         """
         with self._lock:
+            if self._cleaned_up:
+                return
             # Mark as cleaned up to prevent new thread creation
             self._cleaned_up = True
 

@@ -219,6 +219,7 @@ class FeatherWriter(ArrowWriter):
         """
         super().__init__(file_name + ".arrow")
         self.base_file_name = file_name
+        self._conversion_done = False
 
     def close(self) -> None:
         """Close the writer and convert the temporary Arrow file to Feather format.
@@ -226,15 +227,20 @@ class FeatherWriter(ArrowWriter):
         Converts the temporary .arrow file to a compressed .feather file and
         removes the temporary file. Empty Arrow files are discarded.
         """
-        super().close()
-        src_name = self.base_file_name + ".arrow"
-        dest_name = self.base_file_name + ".feather"
-        if not os.path.exists(src_name):
-            return
-        if os.path.getsize(src_name) == 0:
-            logger.warning("Discarding empty file: %s", src_name)
-            os.remove(src_name)
-        else:
+        with self._lock:
+            if self._conversion_done:
+                return
+            self._conversion_done = True
+            super().close()
+            src_name = self.base_file_name + ".arrow"
+            dest_name = self.base_file_name + ".feather"
+            if not os.path.exists(src_name):
+                return
+            if os.path.getsize(src_name) == 0:
+                logger.warning("Discarding empty file: %s", src_name)
+                os.remove(src_name)
+                return
+
             logger.info("Compressing log data into %s", dest_name)
 
             # note: must use open_stream, not open_file/read_table because the streaming layout is different
@@ -242,6 +248,12 @@ class FeatherWriter(ArrowWriter):
             with pa.memory_map(src_name) as source:
                 with pa.ipc.open_stream(source) as reader:
                     array = reader.read_all()
+
+            # Check for zero-row streams and discard them
+            if array.num_rows == 0:
+                logger.warning("Discarding empty Arrow file: %s", src_name)
+                os.remove(src_name)
+                return
 
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
             temp_name: str | None = None
@@ -263,7 +275,14 @@ class FeatherWriter(ArrowWriter):
                 temp_name = None
             except Exception:
                 if temp_name and os.path.exists(temp_name):
-                    os.remove(temp_name)
+                    try:
+                        os.remove(temp_name)
+                    except OSError:
+                        logger.warning(
+                            "Failed to remove temporary Feather file %s",
+                            temp_name,
+                            exc_info=True,
+                        )
                 raise
             try:
                 os.remove(src_name)

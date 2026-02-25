@@ -238,8 +238,15 @@ class DiscoveryManager:
         # disconnected. A discovery-only client (never connected) should be reused.
         if self._client is not None:
             bleak = getattr(self._client, "bleak_client", None)
-            if bleak is not None and not self._client.isConnected():
-                self._client = None
+            if bleak is not None:
+                is_connected = getattr(self._client, "isConnected", None)
+                if not callable(is_connected):
+                    logger.debug(
+                        "Cached discovery client lacks isConnected(); discarding client."
+                    )
+                    self._client = None
+                elif not is_connected():
+                    self._client = None
         if self._client is None:
             # Factory resolution precedence (back-compat and testability):
             #   1. Explicit self.client_factory (injected for testing)

@@ -6,9 +6,6 @@ import meshtastic
 import meshtastic.serial_interface
 
 with meshtastic.serial_interface.SerialInterface() as iface:
-    # call showInfo() just to ensure values are populated
-    # info = iface.showInfo()
-
     my_info = iface.myInfo
     if my_info is not None and iface.nodes:
         for n in iface.nodes.values():

@@ -200,6 +200,7 @@ class TCPInterface(StreamInterface):
                 sock.close()
             if self.socket is sock:
                 self.socket = None
+                self._attempt_reconnect()
 
     def _compute_reconnect_delay(self) -> float:
         """Compute exponential reconnect backoff delay in seconds."""
@@ -359,9 +360,6 @@ class TCPInterface(StreamInterface):
         if sock is not None:
             try:
                 data = sock.recv(length)
-            except socket.timeout:
-                logger.debug("Socket read timed out for %s; retaining connection", sock)
-                return None
             except OSError as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""

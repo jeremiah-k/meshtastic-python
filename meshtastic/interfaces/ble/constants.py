@@ -99,6 +99,7 @@ ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
 # Alias preserves legacy access while sourcing value from BLEConfig
 BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
+BLECLIENT_ERROR_CANCELLED = "Async operation was cancelled"
 
 
 def __getattr__(name: str) -> object:
@@ -107,6 +108,6 @@ def __getattr__(name: str) -> object:
     This preserves backward-compatible module-level constant access when new
     BLEConfig attributes are introduced without requiring an explicit alias.
     """
-    if hasattr(BLEConfig, name):
+    if name in vars(BLEConfig):
         return getattr(BLEConfig, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

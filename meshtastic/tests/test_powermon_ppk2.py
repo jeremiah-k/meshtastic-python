@@ -87,8 +87,11 @@ def test_setIsSupply_starts_measurement_once(monkeypatch: pytest.MonkeyPatch) ->
     ppk = _make_ppk2_stub()
     ppk.v = 3.3
     ppk.r = MagicMock()
-    ppk.measurement_thread = MagicMock()
-    ppk.measurement_thread.is_alive.return_value = False
+    # Create a mock thread that has ident = None (never started)
+    mock_thread = MagicMock()
+    mock_thread.is_alive.return_value = False
+    mock_thread.ident = None
+    ppk.measurement_thread = mock_thread
     monkeypatch.setattr("meshtastic.powermon.ppk2.time.sleep", lambda _: None)
 
     ppk.setIsSupply(is_supply=True)
@@ -96,7 +99,8 @@ def test_setIsSupply_starts_measurement_once(monkeypatch: pytest.MonkeyPatch) ->
     ppk.r.set_source_voltage.assert_called_once_with(3300)
     ppk.r.start_measuring.assert_called_once()
     ppk.r.use_source_meter.assert_called_once()
-    ppk.measurement_thread.start.assert_called_once()
+    # The original mock_thread.start() should be called (not a new thread created)
+    mock_thread.start.assert_called_once()
 
 
 @pytest.mark.unit

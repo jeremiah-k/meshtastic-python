@@ -257,6 +257,12 @@ class PPK2PowerSupply(PowerSupply):
             self.measuring = True
             self.resetMeasurements()
 
+            # Thread objects are single-use; create a fresh one if the previous
+            # thread has already been started (and possibly joined via close()).
+            if self.measurement_thread.ident is not None:
+                self.measurement_thread = threading.Thread(
+                    target=self.measurement_loop, daemon=True, name="ppk2 measurement"
+                )
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()
             time.sleep(

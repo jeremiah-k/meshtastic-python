@@ -38,12 +38,19 @@ jobs:
 
       - name: Commit updated version.
         id: commit_updated
+      - name: Commit updated version.
+        id: commit_updated
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'bot@noreply.github.com'
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git add pyproject.toml
-          git commit -m "bump version to ${{ steps.get_version.outputs.version }}" && git push || echo "No changes to commit"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "bump version to ${{ steps.get_version.outputs.version }}"
+            git push
+          fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
