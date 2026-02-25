@@ -1,7 +1,6 @@
 """Meshtastic unit tests for tcp_interface.py."""
 
 import re
-import socket
 import threading
 from unittest.mock import MagicMock, patch
 

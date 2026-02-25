@@ -227,9 +227,10 @@ class RemoteHardwareClient:
         MeshInterface.MeshInterfaceError
             If no destination node ID is provided.
         """
-        if nodeid is None or nodeid == "" or (
-            isinstance(nodeid, str) and nodeid.strip() == ""
-        ) or (isinstance(nodeid, int) and nodeid == 0):
+        # Reject None, empty string, whitespace-only string, or integer 0
+        is_invalid_str = isinstance(nodeid, str) and nodeid.strip() == ""
+        is_invalid_int = isinstance(nodeid, int) and nodeid == 0
+        if nodeid is None or nodeid == "" or is_invalid_str or is_invalid_int:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         return self.iface.sendData(
