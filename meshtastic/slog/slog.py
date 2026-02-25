@@ -464,6 +464,9 @@ class StructuredLogger:
 
             # If we have a sibling power logger, make sure we have a power measurement with the EXACT same timestamp
             if self.power_logger and has_structured_data:
+                # Intentional best-effort behavior: keep power samples flowing even
+                # when addRow fails so timing correlation remains usable (see
+                # test_on_log_message_keeps_raw_and_power_on_add_row_failure).
                 try:
                     self.power_logger.storeCurrentReading(now)
                 except Exception as exc:  # noqa: BLE001 - best-effort logging path

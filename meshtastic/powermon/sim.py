@@ -18,5 +18,5 @@ class SimPowerSupply(PowerSupply):
             The average current in mA.
         """
 
-        # Sim a 20mW load that varies sinusoidally
+        # Sim an approximately 20mA load that varies sinusoidally
         return 20.0 + 5 * math.sin(time.time())

@@ -6,6 +6,7 @@ import sys
 import types
 import weakref
 from concurrent.futures import Future
+from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import RLock
 from typing import Any, Awaitable, Callable, Coroutine, TypeVar
@@ -579,6 +580,26 @@ class BLEClient:
                 # Event loop may be closing; ignore best-effort callback registration
                 logger.debug(
                     "Skipping callback registration after timeout",
+                    exc_info=True,
+                )
+            raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
+        except FutureCancelledError as e:
+            try:
+                future.cancel()  # Best effort cancellation cleanup
+            except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
+                logger.debug(
+                    "Failed to cancel BLE future after cancellation",
+                    exc_info=True,
+                )
+            try:
+                future.add_done_callback(
+                    lambda f: (
+                        f.exception() if not f.cancelled() else None
+                    )  # pragma: no cover - best effort suppression
+                )
+            except Exception:  # noqa: BLE001 - best effort
+                logger.debug(
+                    "Skipping callback registration after cancellation",
                     exc_info=True,
                 )
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e

@@ -112,5 +112,7 @@ Current `COMPAT_DEPRECATE` methods:
 | ------------- | ----------------------- | ---------------------- |
 | `PowerLogger` | `_p_meter`              | Internal attribute     |
 | `PowerLogger` | `pMeter`                | Public property        |
+| `PowerLogger` | `rootDir`               | Public property        |
+| `PowerLogger` | `root_dir`              | Compatibility shim     |
 | `PowerLogger` | `storeCurrentReading`   | Primary implementation |
 | `PowerLogger` | `store_current_reading` | Compatibility shim     |

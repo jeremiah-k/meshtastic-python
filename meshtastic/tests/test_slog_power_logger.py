@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import warnings
 from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock
@@ -86,7 +87,7 @@ def test_power_logger_sets_schema_metadata(monkeypatch: pytest.MonkeyPatch) -> N
 
 @pytest.mark.unit
 def test_store_current_reading_converts_legacy_aliases_when_voltage_present() -> None:
-    """store_current_reading should convert legacy *_mW aliases using nominal voltage."""
+    """storeCurrentReading should convert legacy *_mW aliases using nominal voltage."""
     meter = MagicMock()
     meter.v = 3.3
     meter.getAverageCurrentMA.return_value = 10.0
@@ -102,7 +103,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     power_logger._reading_lock = threading.Lock()
 
     now = datetime(2026, 1, 1, 12, 0, 0)
-    power_logger.store_current_reading(now=now)
+    power_logger.storeCurrentReading(now=now)
 
     call = writer.addRow.call_args
     assert call is not None
@@ -140,8 +141,17 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
     power_logger._reading_lock = threading.Lock()
 
     with caplog.at_level(logging.WARNING):
-        power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 0))
-        power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 1))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", DeprecationWarning)
+            power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 0))
+            power_logger.store_current_reading(now=datetime(2026, 1, 1, 12, 0, 1))
+        deprecations = [
+            warning
+            for warning in caught
+            if issubclass(warning.category, DeprecationWarning)
+        ]
+        assert len(deprecations) == 1
+        assert "store_current_reading()" in str(deprecations[0].message)
 
     rows = []
     for call in writer.addRow.call_args_list:

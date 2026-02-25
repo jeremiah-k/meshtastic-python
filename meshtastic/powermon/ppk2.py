@@ -228,9 +228,9 @@ class PPK2PowerSupply(PowerSupply):
             If the supply voltage has not been set to at least 0.8V before calling this method.
         """
 
-        if self.v <= 0.8:
+        if self.v < 0.8:
             raise PowerError(  # noqa: TRY003
-                "Supply voltage must be set above 0.8V before calling setIsSupply "
+                "Supply voltage must be set to at least 0.8V before calling setIsSupply "
                 f"(current v={self.v!r})"
             )
 
@@ -255,14 +255,14 @@ class PPK2PowerSupply(PowerSupply):
 
         if not is_measuring:
             self.measuring = True
-            self.reset_measurements()
+            self.resetMeasurements()
 
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()
             time.sleep(
                 0.2
             )  # FIXME - crufty way to ensure we do one set of reads to discard bogus fake power readings in the FIFO
-            self.reset_measurements()
+            self.resetMeasurements()
 
     def powerOn(self) -> None:
         """Power on the DUT (Device Under Test)."""

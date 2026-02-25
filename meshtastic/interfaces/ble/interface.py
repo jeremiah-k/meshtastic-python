@@ -1464,16 +1464,16 @@ class BLEInterface(MeshInterface):
                 ) = self._establish_and_update_client(
                     address, normalized_request, address_registry_key
                 )
+                if connected_client is None:
+                    raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
 
-        if connected_client is None:
-            raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
+                # Finalize gate ownership before releasing the per-address gate
+                # held by this ExitStack scope to minimize duplicate-connect races.
+                self._finalize_connection_gates(
+                    connected_client, connected_device_key, connection_alias_key
+                )
 
-        # Mark connected keys with deterministic lock ordering
-        self._finalize_connection_gates(
-            connected_client, connected_device_key, connection_alias_key
-        )
-
-        return connected_client
+                return connected_client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: BLEClient
