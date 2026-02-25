@@ -17,8 +17,20 @@ from bleak import BleakScanner
 from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.constants import (
+    BLECLIENT_ERROR_ASYNC_OPERATION_FAILED,
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
     BLECLIENT_ERROR_CANCELLED,
+    BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED,
+    BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED,
+    BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
+    BLECLIENT_ERROR_FAILED_TO_SCHEDULE,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     logger,
@@ -177,7 +189,7 @@ class BLEClient:
             If the BLE client is not initialized or the pairing operation fails.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot pair: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
         return self._async_await(self.bleak_client.pair(**kwargs))
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
@@ -201,7 +213,7 @@ class BLEClient:
             If the BLE client is not initialized or the connection operation fails.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot connect: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED)
         return self._async_await(
             self.bleak_client.connect(**kwargs), timeout=await_timeout
         )
@@ -269,7 +281,7 @@ class BLEClient:
             If the BLE client is not initialized or if the underlying disconnect fails.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot disconnect: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED)
         self._async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(
@@ -299,7 +311,7 @@ class BLEClient:
             If the read operation fails for any other reason.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot read: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED)
         return self._async_await(
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
         )
@@ -326,7 +338,7 @@ class BLEClient:
             If the write operation fails for any other reason.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot write: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED)
         self._async_await(
             self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
@@ -353,14 +365,14 @@ class BLEClient:
             retrieved from Bleak (for example, if discovery has not completed).
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot get services: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED)
         # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed
         # as a property, but the property can still raise during discovery.
         try:
             return self.bleak_client.services
         except BleakError as exc:
             raise self.BLEError(
-                "Cannot get services: service discovery not completed"
+                BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED
             ) from exc
 
     def has_characteristic(self, specifier: str | UUID) -> bool:
@@ -414,7 +426,7 @@ class BLEClient:
             If the BLE client is not initialized, the registration fails, or the operation times out.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot start notify: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED)
         self._async_await(
             self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
         )
@@ -439,7 +451,7 @@ class BLEClient:
             If no BLE client is initialized or if the operation times out or fails.
         """
         if self.bleak_client is None:
-            raise self.BLEError("Cannot stop notify: BLE client not initialized")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED)
         self._async_await(
             self.bleak_client.stop_notify(*args, **kwargs), timeout=timeout
         )
@@ -538,19 +550,23 @@ class BLEClient:
         RuntimeError
             If the event loop is closed or cannot be accessed.
         """
-        # Check if client is closed before scheduling work
-        if self._closed:
-            with contextlib.suppress(Exception):
-                coro.close()
-            raise self.BLEError("Cannot schedule operation: BLE client is closed")
+        # Hold close lock so close() cannot interleave between closed-check,
+        # scheduling, and pending-future registration.
+        with self._close_lock:
+            if self._closed:
+                with contextlib.suppress(Exception):
+                    coro.close()
+                raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
 
-        # Exception mapping contract:
-        #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
-        #   - FutureCancelledError / asyncio.CancelledError ->
-        #       self.BLEError(BLECLIENT_ERROR_CANCELLED)
-        #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
-        future = self._async_run(coro)
-        self._with_pending_futures(lambda pending_futures: pending_futures.add(future))
+            # Exception mapping contract:
+            #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
+            #   - FutureCancelledError / asyncio.CancelledError ->
+            #       self.BLEError(BLECLIENT_ERROR_CANCELLED)
+            #   - Bleak* exceptions propagate so interface wrappers can convert them consistently.
+            future = self._async_run(coro)
+            self._with_pending_futures(
+                lambda pending_futures: pending_futures.add(future)
+            )
         try:
             # On macOS, CoreBluetooth requires occasional I/O operations for
             # callbacks to be properly delivered. Without debug logging, no I/O
@@ -622,8 +638,11 @@ class BLEClient:
                     "Failed to cancel BLE future after runtime error",
                     exc_info=True,
                 )
-            raise self.BLEError(f"Async operation failed: {e}") from e
+            raise self.BLEError(BLECLIENT_ERROR_ASYNC_OPERATION_FAILED.format(e)) from e
         except asyncio.CancelledError as e:
+            # Defensive coverage: Future.result() typically raises
+            # concurrent.futures.CancelledError (handled above), but this keeps
+            # direct coroutine cancellation mapping consistent.
             raise self.BLEError(BLECLIENT_ERROR_CANCELLED) from e
         finally:
             self._with_pending_futures(
@@ -675,14 +694,14 @@ class BLEClient:
         if self._closed:
             with contextlib.suppress(Exception):
                 coro.close()
-            raise self.BLEError("Cannot schedule operation: BLE client is closed")
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
         try:
             return self._runner._run_coroutine_threadsafe(coro)
         except RuntimeError as e:
             # Close the coroutine to prevent "coroutine was never awaited" warning
             with contextlib.suppress(Exception):
                 coro.close()
-            raise self.BLEError(f"Failed to schedule operation: {e}") from e
+            raise self.BLEError(BLECLIENT_ERROR_FAILED_TO_SCHEDULE.format(e)) from e
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEClient API.
     # Keep callable without deprecation warning.

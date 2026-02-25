@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, call
 import pytest
 
 from ..powermon.stress import PowerStress, PowerStressClient, onPowerStressResponse
-from ..protobuf import powermon_pb2
+from ..protobuf import portnums_pb2, powermon_pb2
 
 
 def _fake_send(
@@ -54,6 +54,7 @@ def test_send_power_stress_calls_send_data_with_expected_args() -> None:
     assert msg.cmd == powermon_pb2.PowerStressMessage.CPU_IDLE
     assert msg.num_seconds == pytest.approx(2.5)
     assert args[1] == 123
+    assert args[2] == portnums_pb2.POWERSTRESS_APP
     assert kwargs["wantAck"] is True
     assert kwargs["wantResponse"] is True
     assert kwargs["onResponseAckPermitted"] is True

@@ -73,7 +73,6 @@ from pubsub import pub  # type: ignore[import-untyped]
 from meshtastic.node import Node
 from meshtastic.util import (
     DeferredExecution,
-    FixmeError,
     Timeout,
     catchAndIgnore,
     stripnl,
@@ -111,7 +110,6 @@ __all__ = [
     "channel_pb2",
     "config_pb2",
     "DeferredExecution",
-    "FixmeError",
     "KnownProtocol",
     "LOCAL_ADDR",
     "mesh_pb2",
@@ -308,7 +306,9 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
             n = iface._get_or_create_by_num(as_dict["from"])
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
-            iface.nodes[p["id"]] = n
+            node_id = p.get("id") if isinstance(p, dict) else None
+            if isinstance(node_id, str) and node_id:
+                iface.nodes[node_id] = n
             _receive_info_update(iface, as_dict)
 
 

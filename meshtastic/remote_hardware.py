@@ -229,15 +229,22 @@ class RemoteHardwareClient:
         """
         # Reject None, empty/whitespace-only string, integer 0, and string
         # values that parse as numeric zero (e.g., "0", "0x0", "0b0").
+        is_invalid_bool = isinstance(nodeid, bool)
         is_invalid_str = isinstance(nodeid, str) and nodeid.strip() == ""
-        is_invalid_int = isinstance(nodeid, int) and nodeid == 0
+        is_invalid_int = isinstance(nodeid, int) and not is_invalid_bool and nodeid == 0
         is_zero_numeric_str = False
         if isinstance(nodeid, str) and not is_invalid_str:
             try:
                 is_zero_numeric_str = int(nodeid.strip().lower(), 0) == 0
             except ValueError:
                 is_zero_numeric_str = False
-        if nodeid is None or is_invalid_str or is_invalid_int or is_zero_numeric_str:
+        if (
+            nodeid is None
+            or is_invalid_bool
+            or is_invalid_str
+            or is_invalid_int
+            or is_zero_numeric_str
+        ):
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         return self.iface.sendData(

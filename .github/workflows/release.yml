@@ -59,10 +59,11 @@ jobs:
         run: >-
           poetry build
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+      - name: Upload Python distribution artifacts
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          name: python-dist
+          path: dist/*
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
@@ -114,3 +115,20 @@ jobs:
             dist/readme.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-pypi:
+    runs-on: ubuntu-latest
+    needs:
+      - release_create
+      - build-and-publish-ubuntu
+    steps:
+      - name: Download Python distribution artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

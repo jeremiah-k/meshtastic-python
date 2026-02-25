@@ -20,9 +20,9 @@ def test_RemoteHardwareClient(mock_gpio_iface):
 
 
 @pytest.mark.unit
-def test_onGPIOreceive(caplog):
+def test_onGPIOreceive(caplog, mock_gpio_iface):
     """Test onGPIOreceive."""
-    iface = create_autospec(SerialInterface, instance=True)
+    iface = mock_gpio_iface
     packet = {
         "decoded": {"remotehw": {"type": "foo", "gpioValue": "4096", "gpioMask": -1}}
     }
@@ -34,9 +34,9 @@ def test_onGPIOreceive(caplog):
 
 
 @pytest.mark.unit
-def test_onGPIOreceive_mask_fallback(caplog):
+def test_onGPIOreceive_mask_fallback(caplog, mock_gpio_iface):
     """Test onGPIOreceive uses packet gpioMask when no tracked mask is available."""
-    iface = create_autospec(SerialInterface, instance=True)
+    iface = mock_gpio_iface
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
     with caplog.at_level(logging.DEBUG):
         onGPIOreceive(packet, iface)
@@ -47,9 +47,9 @@ def test_onGPIOreceive_mask_fallback(caplog):
 
 
 @pytest.mark.unit
-def test_onGPIOreceive_uses_node_watch_mask(caplog):
+def test_onGPIOreceive_uses_node_watch_mask(caplog, mock_gpio_iface):
     """Test onGPIOreceive falls back to tracked per-node watch mask when needed."""
-    iface = create_autospec(SerialInterface, instance=True)
+    iface = mock_gpio_iface
     setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
     packet = {"from": 16, "decoded": {"remotehw": {"gpioValue": "7"}}}
     with caplog.at_level(logging.DEBUG):
@@ -173,10 +173,11 @@ def test_watchGPIOs_does_not_cache_mask_on_send_failure(mock_gpio_iface):
 
 
 @pytest.mark.unit
-def test_send_hardware_no_nodeid(mock_gpio_iface):
-    """Test sending no nodeid to _send_hardware()."""
+@pytest.mark.parametrize("nodeid", [None, False, True, "0", "0x0", "0b0", "   "])
+def test_send_hardware_no_nodeid(mock_gpio_iface, nodeid):
+    """Reject missing or zero-equivalent destination node IDs in _send_hardware()."""
     rhw = RemoteHardwareClient(mock_gpio_iface)
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Must use a destination node ID"
     ):
-        rhw._send_hardware(None, None)  # type: ignore[arg-type]
+        rhw._send_hardware(nodeid, None)  # type: ignore[arg-type]

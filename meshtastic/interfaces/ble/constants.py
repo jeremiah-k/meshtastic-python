@@ -100,6 +100,34 @@ ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
 BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
 BLECLIENT_ERROR_ASYNC_TIMEOUT = "Async operation timed out"
 BLECLIENT_ERROR_CANCELLED = "Async operation was cancelled"
+BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED = "Cannot pair: BLE client not initialized"
+BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED = (
+    "Cannot connect: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED = (
+    "Cannot disconnect: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED = "Cannot read: BLE client not initialized"
+BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED = (
+    "Cannot write: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED = (
+    "Cannot get services: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED = (
+    "Cannot get services: service discovery not completed"
+)
+BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED = (
+    "Cannot start notify: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED = (
+    "Cannot stop notify: BLE client not initialized"
+)
+BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED = (
+    "Cannot schedule operation: BLE client is closed"
+)
+BLECLIENT_ERROR_ASYNC_OPERATION_FAILED = "Async operation failed: {0}"
+BLECLIENT_ERROR_FAILED_TO_SCHEDULE = "Failed to schedule operation: {0}"
 
 
 def __getattr__(name: str) -> object:

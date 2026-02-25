@@ -6,14 +6,22 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
-import pandas as pd
-import pyarrow as pa
 import pytest
-from pyarrow import feather
 
-OPTIONAL_ANALYSIS_DEPS = {"dash", "dash_bootstrap_components", "plotly"}
+OPTIONAL_ANALYSIS_DEPS = {
+    "dash",
+    "dash_bootstrap_components",
+    "numpy",
+    "pandas",
+    "plotly",
+    "pyarrow",
+}
 
 try:
+    import pandas as pd
+    import pyarrow as pa
+    from pyarrow import feather
+
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main

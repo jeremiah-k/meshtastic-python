@@ -80,6 +80,7 @@ class TCPInterface(StreamInterface):
         self._reconnect_backoff = self.DEFAULT_RECONNECT_BACKOFF
         self._reconnect_base_delay = self.DEFAULT_RECONNECT_BASE_DELAY
         self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
+        self._reconnect_sleep_slice = self.DEFAULT_RECONNECT_SLEEP_SLICE
         self._reconnect_lock = threading.Lock()
         self._fatal_disconnect = False
 
@@ -236,7 +237,7 @@ class TCPInterface(StreamInterface):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return True
-            time.sleep(min(self.DEFAULT_RECONNECT_SLEEP_SLICE, remaining))
+            time.sleep(min(self._reconnect_sleep_slice, remaining))
 
     def _on_fatal_disconnect(self, reason: str) -> None:
         """Mark the interface as fatally disconnected and stop reconnect attempts."""
