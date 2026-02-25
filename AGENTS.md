@@ -18,6 +18,7 @@ This document tracks coding standards and API refactoring decisions for the Mesh
 - Powermon `snake_case` shims: `get_average_current_mA`, `get_min_current_mA`, `get_max_current_mA`, `reset_measurements`.
 - Powermon deprecated camelCase: `getAverageCurrentmA`, `getMinCurrentmA`, `getMaxCurrentmA`.
 - Slog `snake_case` shims: `root_dir`, `store_current_reading`.
+- Util `snake_case` shim: `message_to_json`.
 
 ### Internal Helpers (\_snake_case)
 
@@ -92,6 +93,9 @@ Quick inventory command:
 
 Current `COMPAT_DEPRECATE` methods:
 
+- mt_config: `tunnelInstance` (module attribute alias to `tunnel_instance`, warn-once)
+- util: `dotdict` (class alias to `DotDict`, warn-once)
+- Slog: `root_dir`, `PowerLogger.store_current_reading` (warn-once)
 - Powermon: `PowerMeter.getAverageCurrentmA`, `PowerMeter.getMinCurrentmA`, `PowerMeter.getMaxCurrentmA`
 
 ## Powermon API Refactoring Decisions
@@ -141,6 +145,8 @@ Current `COMPAT_DEPRECATE` methods:
 | --------- | --------- | ------------------------------ |
 | `DotDict` | `DotDict` | Primary implementation         |
 | `dotdict` | `dotdict` | Compatibility shim (warn-once) |
+| `util`    | `messageToJson` | Primary implementation   |
+| `util`    | `message_to_json` | Compatibility shim (silent) |
 
 ### util warning policy (explicit)
 
