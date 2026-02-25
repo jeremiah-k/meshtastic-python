@@ -3,7 +3,7 @@
 import pytest
 
 try:
-    from meshtastic.interfaces.ble.client import BLEClient, get_zombie_thread_count
+    from meshtastic.interfaces.ble.client import BLEClient
     from meshtastic.interfaces.ble.constants import BLECLIENT_ERROR_ASYNC_TIMEOUT
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
@@ -151,14 +151,6 @@ def test_bleclient_operations_fail_when_closed():
         BLEClient.BLEError, match="Cannot schedule operation: BLE client is closed"
     ):
         client._async_await(dummy_coro())
-
-
-@pytest.mark.unit
-def test_get_zombie_thread_count_function_exists():
-    """get_zombie_thread_count should be accessible from client module."""
-    count = get_zombie_thread_count()
-    assert isinstance(count, int)
-    assert count >= 0
 
 
 @pytest.mark.unit

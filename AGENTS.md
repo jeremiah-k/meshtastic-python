@@ -49,10 +49,14 @@ Source of truth for BLE compatibility is `master`'s historical `meshtastic/ble_i
 
 These names are kept as compatibility wrappers over canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`, `_log_radio_handler`, `_legacy_log_radio_handler`).
 
+Any BLE methods introduced only in the refactored `meshtastic/interfaces/ble/*`
+package are not historical compatibility surface by default and should not get
+"backwards compatibility" wrappers across files unless explicitly approved.
+
 ### BLE warning policy (explicit)
 
 - **No deprecation warnings** for historical BLE public methods listed above.
-- `find_device` is a compatibility shim to `findDevice` and may emit a deprecation warning.
+- `find_device` is a historical compatibility shim to `findDevice` and should remain silent.
 - Do not add deprecation warnings to other BLE compatibility entrypoints unless explicitly approved.
 
 ### BLE internal orchestration naming
@@ -74,7 +78,6 @@ Quick inventory command:
 
 Current `COMPAT_DEPRECATE` methods:
 
-- BLE: `BLEInterface.find_device`
 - Powermon: `PowerMeter.getAverageCurrentmA`, `PowerMeter.getMinCurrentmA`, `PowerMeter.getMaxCurrentmA`
 
 ## Powermon API Refactoring Decisions

@@ -40,19 +40,6 @@ def test_ble_client_naming_compatibility():
     assert hasattr(BLEClient, "stop_notify")
 
 
-def test_ble_diagnostic_naming_compatibility():
-    """Verify that diagnostic helpers expose compatibility and camelCase names."""
-    from meshtastic.interfaces.ble.client import get_zombie_thread_count
-    from meshtastic.interfaces.ble.runner import (
-        get_zombie_runner_count,
-        getZombieRunnerCount,
-    )
-
-    assert get_zombie_thread_count is not None
-    assert get_zombie_runner_count is not None
-    assert getZombieRunnerCount is not None
-
-
 def test_ble_module_level_naming_compatibility():
     """Verify internal gating helpers are not leaked as interface module aliases."""
     from meshtastic.interfaces.ble import interface
@@ -120,8 +107,8 @@ def test_ble_interface_legacy_handler_aliases_delegate() -> None:
     legacy_log_mock.assert_called_once_with(sender, payload)
 
 
-def test_ble_find_device_shim_warns_and_delegates() -> None:
-    """find_device should remain callable, delegate to findDevice, and emit deprecation warning."""
+def test_ble_find_device_shim_is_silent_and_delegates() -> None:
+    """find_device should remain callable, delegate to findDevice, and stay silent."""
     iface = object.__new__(BLEInterface)
     delegate = MagicMock(return_value=object())
     iface.findDevice = delegate  # type: ignore[attr-defined]
@@ -132,4 +119,4 @@ def test_ble_find_device_shim_warns_and_delegates() -> None:
 
     delegate.assert_called_once_with("abc")
     assert result is delegate.return_value
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    assert not any(issubclass(w.category, DeprecationWarning) for w in caught)

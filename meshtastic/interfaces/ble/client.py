@@ -684,17 +684,3 @@ class BLEClient:
                 operation(pending_futures)
             return
         operation(pending_futures)
-
-
-# Expose zombie tracking from runner module for backwards compatibility
-def get_zombie_thread_count() -> int:
-    """Get the current count of zombie BLE runner threads that failed to stop cleanly.
-
-    Returns
-    -------
-    int
-        Number of zombie runner threads.
-    """
-    from meshtastic.interfaces.ble.runner import getZombieRunnerCount
-
-    return getZombieRunnerCount()

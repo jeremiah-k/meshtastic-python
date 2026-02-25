@@ -27,7 +27,6 @@ import contextlib
 import struct
 import threading
 import time
-import warnings
 from queue import Empty
 from threading import Event
 from typing import (
@@ -1129,13 +1128,10 @@ class BLEInterface(MeshInterface):
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
 
-    # COMPAT_DEPRECATE: legacy snake_case alias for public findDevice().
+    # COMPAT_STABLE_SHIM: historical public BLEInterface API.
+    # Keep callable without deprecation warning.
     def find_device(self, address: str | None) -> BLEDevice:
         """Compatibility wrapper for legacy snake_case callers; delegates to findDevice().
-
-        .. deprecated::
-            Use :meth:`findDevice` instead. The snake_case method name is retained
-            for backward compatibility only.
 
         Parameters
         ----------
@@ -1147,11 +1143,6 @@ class BLEInterface(MeshInterface):
         BLEDevice
             The resolved BLEDevice matching the address or discovered selection.
         """
-        warnings.warn(
-            "find_device is deprecated; use findDevice",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return self.findDevice(address)
 
     def _sanitize_address(self, address: str | None) -> str | None:
