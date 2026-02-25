@@ -39,6 +39,7 @@ class PowerMeter:
         """Shim for getAverageCurrentMA."""
         return self.getAverageCurrentMA()
 
+    # COMPAT_DEPRECATE: legacy camelCase alias with unit-style typo.
     def getAverageCurrentmA(self) -> float:
         """Return average current via a deprecated camelCase alias.
 
@@ -72,6 +73,7 @@ class PowerMeter:
         """
         return self.getMinCurrentMA()
 
+    # COMPAT_DEPRECATE: legacy camelCase alias with unit-style typo.
     def getMinCurrentmA(self) -> float:
         """Return the minimum current using a deprecated alias.
 
@@ -108,6 +110,7 @@ class PowerMeter:
         """
         return self.getMaxCurrentMA()
 
+    # COMPAT_DEPRECATE: legacy camelCase alias with unit-style typo.
     def getMaxCurrentmA(self) -> float:
         """Return the maximum current using a deprecated alias.
 

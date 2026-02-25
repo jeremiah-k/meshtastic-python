@@ -600,6 +600,8 @@ class BLEClient:
                 lambda pending_futures: pending_futures.discard(future)
             )
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical public BLEClient API.
+    # Keep callable without deprecation warning.
     def async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
     ) -> Any:
@@ -652,6 +654,8 @@ class BLEClient:
                 coro.close()
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical public BLEClient API.
+    # Keep callable without deprecation warning.
     def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """Backward-compatible wrapper for legacy BLEClient async_run().
 

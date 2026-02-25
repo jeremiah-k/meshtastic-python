@@ -758,6 +758,8 @@ class BLEInterface(MeshInterface):
         finally:
             self.thread_coordinator._set_event("read_trigger")
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
+    # Keep callable without deprecation warning.
     def from_num_handler(self, sender: Any, b: bytes | bytearray) -> None:
         """Backward-compatible wrapper for the legacy FROMNUM callback name.
 
@@ -945,6 +947,8 @@ class BLEInterface(MeshInterface):
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
+    # Keep callable without deprecation warning.
     async def log_radio_handler(self, sender: Any, b: bytes | bytearray) -> None:
         """Backward-compatible wrapper for the legacy log callback name.
 
@@ -977,6 +981,8 @@ class BLEInterface(MeshInterface):
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
             )
 
+    # COMPAT_STABLE_SHIM (2.7.7): historical public BLEInterface callback.
+    # Keep callable without deprecation warning.
     async def legacy_log_radio_handler(self, sender: Any, b: bytes | bytearray) -> None:
         """Backward-compatible wrapper for the legacy log callback name.
 
@@ -1123,6 +1129,7 @@ class BLEInterface(MeshInterface):
         # No specific address provided and multiple devices found, return the first one
         return addressed_devices[0]
 
+    # COMPAT_DEPRECATE: legacy snake_case alias for public findDevice().
     def find_device(self, address: str | None) -> BLEDevice:
         """Compatibility wrapper for legacy snake_case callers; delegates to findDevice().
 
