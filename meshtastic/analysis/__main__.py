@@ -37,7 +37,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
 
 
 def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
-    """Map a sequence of power-monitor state integers to their enum name strings.
+    """Map power-monitor state values (including bitmasks) to enum name strings.
 
     Parameters
     ----------
@@ -47,12 +47,13 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
     Returns
     -------
     list[str | None]
-        List of corresponding enum names; elements are `None`
-        when a value cannot be mapped or represents the "None" state.
+        List of corresponding enum names. For combined bitmasks, names are
+        joined by ``|`` in ascending bit order. Elements are `None` when a
+        value cannot be mapped or represents the "None" state.
     """
 
     def to_pmon_name(n: Any) -> str | None:
-        """Map a power-monitor state numeric value to its corresponding enum name.
+        """Map a power-monitor state numeric value to enum name(s).
 
         Parameters
         ----------
@@ -62,14 +63,37 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
         Returns
         -------
         str | None
-            The enum name string for the given state, or `None` if the value does not map to a known state.
+            The enum name string for the given state. For combined bitmasks,
+            returns ``|``-joined names for recognized bits. Returns `None` if
+            the value does not map to a known state.
         """
         try:
-            s = powermon_pb2.PowerMon.State.Name(cast(Any, int(n)))
+            value = int(n)
         except (ValueError, TypeError):
             return None
-        else:
+
+        try:
+            s = powermon_pb2.PowerMon.State.Name(cast(Any, value))
             return s if s != "None" else None
+        except ValueError:
+            # Combined bitmask: decode known single-bit states.
+            if value <= 0:
+                return None
+            names: list[str] = []
+            unknown_bits = value
+            for i in range(value.bit_length()):
+                bit = 1 << i
+                if value & bit:
+                    try:
+                        bit_name = powermon_pb2.PowerMon.State.Name(cast(Any, bit))
+                    except ValueError:
+                        continue
+                    if bit_name != "None":
+                        names.append(bit_name)
+                        unknown_bits &= ~bit
+            if unknown_bits != 0:
+                return None
+            return "|".join(names) if names else None
 
     return [to_pmon_name(x) for x in arr]
 

@@ -110,14 +110,17 @@ def test_to_pmon_names_maps_valid_states() -> None:
     assert len(result) == 3
     assert result[0] == powermon_pb2.PowerMon.State.Name(cast(Any, 1))
     assert result[1] == powermon_pb2.PowerMon.State.Name(cast(Any, 2))
-    # Value 3 currently has no enum name in protobuf and should map to None.
-    assert result[2] is None
+    # Value 3 is a combined bitmask (1|2) and should decode both bits.
+    assert result[2] == (
+        f"{powermon_pb2.PowerMon.State.Name(cast(Any, 1))}"
+        f"|{powermon_pb2.PowerMon.State.Name(cast(Any, 2))}"
+    )
 
 
 @pytest.mark.unit
 def test_to_pmon_names_handles_invalid_values() -> None:
     """to_pmon_names should return None for invalid state values."""
-    result = to_pmon_names([999, -1, "invalid"])
+    result = to_pmon_names([0x1000, -1, "invalid"])
     assert result == [None, None, None]
 
 
@@ -189,7 +192,7 @@ def test_get_pmon_raises_requires_time_column() -> None:
 
 @pytest.mark.unit
 def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
-    """get_pmon_raises should preserve current multi-bit mask mapping behavior."""
+    """get_pmon_raises should decode simultaneous multi-bit raise masks."""
     dslog = pd.DataFrame(
         {
             "time": [1.0, 2.0],
@@ -199,8 +202,14 @@ def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
 
     result = get_pmon_raises(dslog)
 
-    # Multi-bit raises currently map to None and are filtered out by get_pmon_raises.
-    assert result.empty
+    assert len(result) == 1
+    assert result["time"].tolist() == [2.0]
+    assert result["pm_raises"].tolist() == [
+        (
+            f"{powermon_pb2.PowerMon.State.Name(cast(Any, 1))}"
+            f"|{powermon_pb2.PowerMon.State.Name(cast(Any, 2))}"
+        )
+    ]
 
 
 @pytest.mark.unit
