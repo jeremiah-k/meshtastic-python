@@ -1152,6 +1152,7 @@ class Node:
             self.cannedPluginMessageMessages = None
         return send_result
 
+    # COMPAT_STABLE_SHIM: historical public Node API.
     def get_ringtone(self) -> str | None:
         """Compatibility wrapper that returns the node's ringtone.
 
@@ -1164,6 +1165,7 @@ class Node:
         """
         return self.getRingtone()
 
+    # COMPAT_STABLE_SHIM: historical public Node API.
     def set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's ringtone.
 
@@ -1181,6 +1183,7 @@ class Node:
         """
         return self.setRingtone(ringtone)
 
+    # COMPAT_STABLE_SHIM: historical public Node API.
     def get_canned_message(self) -> str | None:
         """Return the device's canned message.
 
@@ -1193,6 +1196,7 @@ class Node:
         """
         return self.getCannedMessage()
 
+    # COMPAT_STABLE_SHIM: historical public Node API.
     def set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
         """Set the device's canned message using a backward-compatible snake_case wrapper.
 
@@ -2047,6 +2051,7 @@ class Node:
                 )
         return result
 
+    # COMPAT_STABLE_SHIM: historical public Node API.
     def get_channels_with_hash(self) -> list[dict[str, Any]]:
         """Get channel entries with computed per-channel hashes.
 

@@ -1,5 +1,5 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/pub_sub_example.py
+To run: python examples/pub_sub_example.py.
 """
 
 import sys
@@ -16,7 +16,7 @@ if len(sys.argv) < 2:
 
 
 def onConnection(interface, topic=pub.AUTO_TOPIC):  # pylint: disable=unused-argument
-    """This is called when we (re)connect to the radio."""
+    """Handle (re)connection to the radio."""
     print(interface.myInfo)
     interface.close()
 
@@ -25,6 +25,6 @@ pub.subscribe(onConnection, "meshtastic.connection.established")
 
 try:
     iface = meshtastic.tcp_interface.TCPInterface(sys.argv[1])
-except:
+except Exception:
     print(f"Error: Could not connect to {sys.argv[1]}")
     sys.exit(1)

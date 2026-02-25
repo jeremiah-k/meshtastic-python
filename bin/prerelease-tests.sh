@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 
 # You may consider running: "pytest -m smoke1" instead of this test.
@@ -11,7 +12,8 @@ poetry run mypy meshtastic/
 echo "Running (crude) prerelease tests to verify sanity"
 
 # Use the python environment created by poetry
-source $(poetry env info --path)/bin/activate
+VENV_PATH=$(poetry env info --path)
+source "${VENV_PATH}/bin/activate"
 
 echo running hello
 python3 tests/hello_world.py
