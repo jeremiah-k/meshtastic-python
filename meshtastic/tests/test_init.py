@@ -1,47 +1,67 @@
-"""Meshtastic unit tests for __init__.py"""
+"""Meshtastic unit tests for __init__.py."""
 
 import logging
 import re
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from meshtastic import _onNodeInfoReceive, _onPositionReceive, _onTextReceive, mt_config
+import meshtastic
+from meshtastic import (
+    _on_node_info_receive,
+    _on_position_receive,
+    _on_text_receive,
+    mt_config,
+    serial_interface,
+)
 
+from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
 
 
 @pytest.mark.unit
-def test_init_onTextReceive_with_exception(caplog):
-    """Test _onTextReceive"""
+def test_init_serial_alias_points_to_internal_module() -> None:
+    """Verify meshtastic.serial resolves to the internal serial_interface module."""
+    assert meshtastic.serial is serial_interface
+
+
+@pytest.mark.unit
+def test_init_on_text_receive_with_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test _on_text_receive."""
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
-    packet = {}
+    packet: dict[str, Any] = {}
     with caplog.at_level(logging.DEBUG):
-        _onTextReceive(iface, packet)
-    assert re.search(r"in _onTextReceive", caplog.text, re.MULTILINE)
+        _on_text_receive(iface, packet)
+    assert re.search(r"in _on_text_receive", caplog.text, re.MULTILINE)
     assert re.search(r"Malformatted", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_init_onPositionReceive(caplog):
-    """Test _onPositionReceive"""
+def test_init_on_position_receive(caplog: pytest.LogCaptureFixture) -> None:
+    """Test _on_position_receive."""
     args = MagicMock()
     mt_config.args = args
     iface = MagicMock(autospec=SerialInterface)
     packet = {"from": "foo", "decoded": {"position": {}}}
     with caplog.at_level(logging.DEBUG):
-        _onPositionReceive(iface, packet)
-    assert re.search(r"in _onPositionReceive", caplog.text, re.MULTILINE)
+        _on_position_receive(iface, packet)
+    assert re.search(r"in _on_position_receive", caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit
-def test_init_onNodeInfoReceive(caplog, iface_with_nodes):
-    """Test _onNodeInfoReceive"""
+def test_init_on_node_info_receive(
+    caplog: pytest.LogCaptureFixture, iface_with_nodes: MeshInterface
+) -> None:
+    """Test _on_node_info_receive."""
     args = MagicMock()
     mt_config.args = args
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     packet = {
         "from": 4808675309,
@@ -52,5 +72,39 @@ def test_init_onNodeInfoReceive(caplog, iface_with_nodes):
         },
     }
     with caplog.at_level(logging.DEBUG):
-        _onNodeInfoReceive(iface, packet)
-    assert re.search(r"in _onNodeInfoReceive", caplog.text, re.MULTILINE)
+        _on_node_info_receive(iface, packet)
+    assert re.search(r"in _on_node_info_receive", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_init_getattr_raises_for_unknown_attribute() -> None:
+    """Verify __getattr__ raises AttributeError for unknown attributes."""
+    with pytest.raises(
+        AttributeError, match="module 'meshtastic' has no attribute 'nonexistent'"
+    ):
+        _ = meshtastic.nonexistent
+
+
+@pytest.mark.unit
+def test_init_getattr_caches_serial_on_first_access() -> None:
+    """Verify __getattr__ caches serial module on first access."""
+    sentinel = object()
+    original = getattr(meshtastic, "serial", sentinel)
+
+    if original is not sentinel:
+        delattr(meshtastic, "serial")
+    try:
+        # First access should trigger lazy load
+        serial = meshtastic.serial
+        assert serial is serial_interface
+
+        # Second access should use cached value
+        serial2 = meshtastic.serial
+        assert serial2 is serial
+        assert serial2 is serial_interface
+    finally:
+        if original is sentinel:
+            if hasattr(meshtastic, "serial"):
+                delattr(meshtastic, "serial")
+        else:
+            meshtastic.serial = original  # pyright: ignore[reportAttributeAccessIssue]

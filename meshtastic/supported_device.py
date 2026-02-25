@@ -1,6 +1,7 @@
-""" Supported Meshtastic Devices - This is a class and collection of Meshtastic devices.
-    It is used for auto detection as to which device might be connected.
+"""Supported Meshtastic Devices - This is a class and collection of Meshtastic devices.
+It is used for auto detection as to which device might be connected.
 """
+
 # pylint: disable=R0917
 
 # Goal is to detect which device and port to use from the supported devices
@@ -8,21 +9,43 @@
 
 
 class SupportedDevice:
-    """Devices supported on Meshtastic"""
+    """Devices supported on Meshtastic."""
 
     def __init__(
         self,
-        name,
-        version=None,
-        for_firmware=None,
-        device_class="esp32",
-        baseport_on_linux=None,
-        baseport_on_mac=None,
-        baseport_on_windows="COM",
-        usb_vendor_id_in_hex=None,
-        usb_product_id_in_hex=None,
-    ):
-        """constructor"""
+        name: str,
+        version: str | None = None,
+        for_firmware: str | None = None,
+        device_class: str = "esp32",
+        baseport_on_linux: str | None = None,
+        baseport_on_mac: str | None = None,
+        baseport_on_windows: str = "COM",
+        usb_vendor_id_in_hex: str | None = None,
+        usb_product_id_in_hex: str | None = None,
+    ) -> None:
+        """Initialize a SupportedDevice instance.
+
+        Parameters
+        ----------
+        name : str
+            The name of the device.
+        version : str or None, optional
+            The version of the device.
+        for_firmware : str or None, optional
+            The firmware identifier for the device.
+        device_class : str, optional
+            The class of the device (e.g., "esp32", "nrf52").
+        baseport_on_linux : str or None, optional
+            The base port name on Linux (e.g., "ttyUSB", "ttyACM").
+        baseport_on_mac : str or None, optional
+            The base port name on macOS (e.g., "cu.usbserial", "cu.usbmodem").
+        baseport_on_windows : str, optional
+            The base port name on Windows (default "COM").
+        usb_vendor_id_in_hex : str or None, optional
+            The USB vendor ID in hexadecimal.
+        usb_product_id_in_hex : str or None, optional
+            The USB product ID in hexadecimal.
+        """
         self.name = name
         self.version = version
         self.for_firmware = for_firmware
@@ -208,8 +231,8 @@ nano_g1 = SupportedDevice(
 )
 
 seeed_xiao_s3 = SupportedDevice(
-    name = "Seeed Xiao ESP32-S3",
-    version = "",
+    name="Seeed Xiao ESP32-S3",
+    version="",
     for_firmware="seeed-xiao-esp32s3",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
@@ -226,9 +249,8 @@ tdeck = SupportedDevice(
     baseport_on_mac="cu.usbmodem",
     baseport_on_windows="COM",
     usb_vendor_id_in_hex="303a",  # Espressif Systems (VERIFIED)
-    usb_product_id_in_hex="1001", # VERIFIED from actual device
+    usb_product_id_in_hex="1001",  # VERIFIED from actual device
 )
-
 
 
 supported_devices = [

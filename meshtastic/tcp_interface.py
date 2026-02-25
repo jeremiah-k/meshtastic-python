@@ -1,59 +1,117 @@
-"""TCPInterface class for interfacing with http endpoint
+"""TCPInterface class for communicating with Meshtastic devices over TCP connections.
+
+This module provides the TCPInterface class which handles communication with
+Meshtastic devices via TCP/IP network connections.
 """
+
 # pylint: disable=R0917
 import contextlib
 import logging
 import socket
+import threading
 import time
-from typing import Optional
+from typing import IO, Any, Callable
 
 from meshtastic.stream_interface import StreamInterface
 
 DEFAULT_TCP_PORT = 4403
 logger = logging.getLogger(__name__)
 
+
 class TCPInterface(StreamInterface):
-    """Interface class for meshtastic devices over a TCP link"""
+    """Interface class for meshtastic devices over a TCP link."""
+
+    DEFAULT_CONNECT_TIMEOUT = 10.0
+    DEFAULT_MAX_RECONNECT_ATTEMPTS = 8
+    DEFAULT_RECONNECT_BACKOFF = 1.6
+    DEFAULT_RECONNECT_BASE_DELAY = 1.0
+    DEFAULT_RECONNECT_MAX_DELAY = 30.0
+    DEFAULT_RECONNECT_SLEEP_SLICE = 0.25
 
     def __init__(
         self,
         hostname: str,
-        debugOut=None,
-        noProto: bool=False,
-        connectNow: bool=True,
-        portNumber: int=DEFAULT_TCP_PORT,
-        noNodes:bool=False,
-        timeout: int = 300,
-    ):
-        """Constructor, opens a connection to a specified IP address/hostname
+        debugOut: IO[str] | Callable[[str], Any] | None = None,
+        noProto: bool = False,
+        connectNow: bool = True,
+        portNumber: int = DEFAULT_TCP_PORT,
+        noNodes: bool = False,
+        timeout: float = 300.0,
+        connectTimeout: float = DEFAULT_CONNECT_TIMEOUT,
+    ) -> None:
+        """Initialize a TCPInterface for a meshtastic device and optionally establish a TCP connection.
 
-        Keyword Arguments:
-            hostname {string} -- Hostname/IP address of the device to connect to
-            timeout -- How long to wait for replies (default: 300 seconds)
+        Parameters
+        ----------
+        hostname : str
+            Hostname or IP address of the device to connect to.
+        debugOut : IO[str] | Callable[[str], Any] | None
+            Optional debug output stream or callable; passed to the base class. (Default value = None)
+        noProto : bool
+            If True, disable protocol handling. (Default value = False)
+        connectNow : bool
+            If True, attempt to open the TCP connection during initialization. (Default value = True)
+        portNumber : int
+            TCP port to connect to (default: DEFAULT_TCP_PORT).
+        noNodes : bool
+            If True, do not populate node state. (Default value = False)
+        timeout : float
+            Request/response timeout in seconds (default: 300.0).
+        connectTimeout : float
+            Timeout in seconds for socket connect attempts (default: 10.0).
         """
 
         self.stream = None
+        self._provides_own_stream = True
 
         self.hostname: str = hostname
         self.portNumber: int = portNumber
+        self._connect_now: bool = connectNow
+        self._connect_timeout: float = connectTimeout
+        # Pre-assign base-class attributes so __repr__ stays safe even if
+        # myConnect() raises before StreamInterface.__init__ runs.
+        self.debugOut = debugOut
+        self.noProto = noProto
+        self.noNodes = noNodes
 
-        self.socket: Optional[socket.socket] = None
+        self.socket: socket.socket | None = None
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = self.DEFAULT_MAX_RECONNECT_ATTEMPTS
+        self._reconnect_backoff = self.DEFAULT_RECONNECT_BACKOFF
+        self._reconnect_base_delay = self.DEFAULT_RECONNECT_BASE_DELAY
+        self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
+        self._fatal_disconnect = False
 
         if connectNow:
             self.myConnect()
-        else:
-            self.socket = None
 
-        super().__init__(debugOut=debugOut, noProto=noProto, connectNow=connectNow, noNodes=noNodes, timeout=timeout)
+        super().__init__(
+            debugOut=debugOut,
+            noProto=noProto,
+            connectNow=connectNow,
+            noNodes=noNodes,
+            timeout=timeout,
+        )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Return a concise string representation of the TCPInterface instance including hostname and relevant flags.
+
+        Returns
+        -------
+        str
+            A representation showing the hostname and any active options:
+            `debugOut`, `noProto`, `connectNow=False` (when configured), socket
+            state, a non-default `portNumber`, and `noNodes`.
+        """
         rep = f"TCPInterface({self.hostname!r}"
         if self.debugOut is not None:
             rep += f", debugOut={self.debugOut!r}"
         if self.noProto:
             rep += ", noProto=True"
-        if self.socket is None:
+        if not self._connect_now:
             rep += ", connectNow=False"
+        if self.socket is None:
+            rep += ", socket=None"
         if self.portNumber != DEFAULT_TCP_PORT:
             rep += f", portNumber={self.portNumber!r}"
         if self.noNodes:
@@ -61,57 +119,277 @@ class TCPInterface(StreamInterface):
         rep += ")"
         return rep
 
-    def _socket_shutdown(self) -> None:
-        """Shutdown the socket.
-        Note: Broke out this line so the exception could be unit tested.
+    def _socket_shutdown(self, sock: socket.socket | None = None) -> None:
+        """Initiate a bidirectional shutdown of the specified socket if one exists.
+
+        When ``sock`` is omitted, operates on ``self.socket``.
         """
-        if self.socket is not None:
-            self.socket.shutdown(socket.SHUT_RDWR)
+        sock_to_shutdown = self.socket if sock is None else sock
+        if sock_to_shutdown is not None:
+            sock_to_shutdown.shutdown(socket.SHUT_RDWR)
 
     def myConnect(self) -> None:
-        """Connect to socket"""
-        logger.debug(f"Connecting to {self.hostname}") # type: ignore[str-bytes-safe]
+        """Establish a TCP connection to the instance hostname and port.
+
+        Stores the resulting connected socket on self.socket.
+        """
+        logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
-        self.socket = socket.create_connection(server_address)
+        connected_socket = socket.create_connection(
+            server_address, timeout=self._connect_timeout
+        )
+        connected_socket.settimeout(None)
+        self.socket = connected_socket
+        self._fatal_disconnect = False
 
     def close(self) -> None:
-        """Close a connection to the device"""
+        """Close the TCP connection and stop the reader thread.
+
+        Requests reader shutdown, calls the base-class close logic, and tears down the
+        underlying socket (ignoring shutdown/close errors). After socket teardown,
+        attempts to join the reader thread for up to 2.0 seconds and logs a
+        warning if the thread does not exit in time.
+        """
         logger.debug("Closing TCP stream")
-        super().close()
+        # Request shutdown using StreamInterface shared cleanup and then perform
+        # TCP-specific socket teardown before joining the reader thread.
+        self._shared_close()
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
-        self._wantExit = True
-        if self.socket is not None:
-            with contextlib.suppress(Exception):  # Ignore errors in shutdown, because we might have a race with the server
-                self._socket_shutdown()
-            self.socket.close()
+        sock = self.socket
+        if sock is not None:
+            with contextlib.suppress(
+                Exception
+            ):  # Ignore errors in shutdown, because we might have a race with the server
+                self._socket_shutdown(sock)
+            with contextlib.suppress(
+                Exception
+            ):  # Ignore close races if the socket is already torn down
+                sock.close()
 
         self.socket = None
 
-    def _writeBytes(self, b: bytes) -> None:
-        """Write an array of bytes to our stream and flush"""
-        if self.socket is not None:
-            self.socket.send(b)
+        # Join after socket teardown so a blocking recv() can exit promptly.
+        self._join_reader_thread()
 
-    def _readBytes(self, length) -> Optional[bytes]:
-        """Read an array of bytes from our stream"""
-        if self.socket is not None:
-            data = self.socket.recv(length)
+    def _write_bytes(self, b: bytes) -> None:
+        """Send the full byte sequence over the TCP socket.
+
+        Attempts to transmit all bytes; if an OSError occurs, logs a warning, shuts
+        down and closes the socket, and clears the stored socket reference.
+
+        Parameters
+        ----------
+        b : bytes
+            Bytes to send.
+        """
+        sock = self.socket
+        if sock is None:
+            return
+        try:
+            # sendall() guarantees full payload transmission or raises.
+            sock.sendall(b)
+        except OSError as ex:
+            logger.warning(
+                "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
+            )
+            with contextlib.suppress(Exception):
+                if self.socket is sock:
+                    self._socket_shutdown(sock)
+            with contextlib.suppress(Exception):
+                sock.close()
+            if self.socket is sock:
+                self.socket = None
+
+    def _compute_reconnect_delay(self) -> float:
+        """Compute exponential reconnect backoff delay in seconds."""
+        exponent = max(0, self._reconnect_attempts - 1)
+        delay = self._reconnect_base_delay * (self._reconnect_backoff**exponent)
+        return min(self._reconnect_max_delay, delay)
+
+    def _sleep_reconnect_delay(self, delay: float) -> bool:
+        """Sleep reconnect delay with frequent shutdown checks.
+
+        Returns
+        -------
+        bool
+            `True` if the full delay elapsed, `False` if interrupted by shutdown.
+        """
+        deadline = time.monotonic() + delay
+        while True:
+            if self._wantExit or self._fatal_disconnect:
+                return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(self.DEFAULT_RECONNECT_SLEEP_SLICE, remaining))
+
+    def _on_fatal_disconnect(self, reason: str) -> None:
+        """Mark the interface as fatally disconnected and stop reconnect attempts."""
+        if self._fatal_disconnect:
+            return
+        self._fatal_disconnect = True
+        self._wantExit = True
+        logger.error(
+            "Stopping TCP reconnect for %s after %d attempts: %s",
+            self.hostname,
+            self._reconnect_attempts,
+            reason,
+        )
+
+    def _attempt_reconnect(self) -> bool:
+        """Attempt to re-establish the TCP socket and rerun protocol startup.
+
+        Returns
+        -------
+        bool
+            `True` if reconnect and post-connect startup succeeded, `False` otherwise.
+        """
+        if (
+            self._wantExit
+            or self._fatal_disconnect
+            or self._reconnect_attempts >= self._max_reconnect_attempts
+        ):
+            if self._reconnect_attempts >= self._max_reconnect_attempts:
+                self._on_fatal_disconnect("reconnect retry limit reached")
+            return False
+
+        self._reconnect_attempts += 1
+        delay = (
+            0.0 if self._reconnect_attempts == 1 else self._compute_reconnect_delay()
+        )
+        logger.debug(
+            "Reconnect attempt %d/%d for %s in %.1fs",
+            self._reconnect_attempts,
+            self._max_reconnect_attempts,
+            self.hostname,
+            delay,
+        )
+        if delay > 0.0 and not self._sleep_reconnect_delay(delay):
+            return False
+        reconnect_ok = False
+
+        try:
+            self.myConnect()
+        except OSError as connect_ex:
+            logger.warning("Reconnect to %s failed: %s", self.hostname, connect_ex)
+            return reconnect_ok
+
+        if self.socket is None:
+            logger.warning(
+                "myConnect() returned without setting socket for %s",
+                self.hostname,
+            )
+            return reconnect_ok
+
+        if self._wantExit:
+            # close() may race while we reconnect; tear down the new socket.
+            reconnect_sock = self.socket
+            with contextlib.suppress(Exception):
+                self._socket_shutdown(reconnect_sock)
+            with contextlib.suppress(Exception):
+                if reconnect_sock is not None:
+                    reconnect_sock.close()
+            if self.socket is reconnect_sock:
+                self.socket = None
+            return reconnect_ok
+
+        # _start_config() can call _send_to_radio(), which drains self.queue and may
+        # block on queue space. During reader-thread reconnect this can deadlock
+        # because queue updates are also processed by the reader thread.
+        if threading.current_thread() is getattr(self, "_rxThread", None):
+            pending_queue = getattr(self, "queue", None)
+            if isinstance(pending_queue, dict) and pending_queue:
+                dropped = len(pending_queue)
+                pending_queue.clear()
+                logger.warning(
+                    "Dropped %d queued packet(s) before reconnect config on %s",
+                    dropped,
+                    self.hostname,
+                )
+
+        try:
+            self._start_config()
+        except Exception as config_ex:  # noqa: BLE001 - preserve reader thread survival
+            logger.warning(
+                "Post-reconnect config for %s failed: %s",
+                self.hostname,
+                config_ex,
+            )
+            reconnect_sock = self.socket
+            with contextlib.suppress(Exception):
+                self._socket_shutdown(reconnect_sock)
+            with contextlib.suppress(Exception):
+                if reconnect_sock is not None:
+                    reconnect_sock.close()
+            if self.socket is reconnect_sock:
+                self.socket = None
+        else:
+            self._reconnect_attempts = 0
+            self._fatal_disconnect = False
+            reconnect_ok = True
+
+        return reconnect_ok
+
+    # pylint: disable=too-many-return-statements
+    # Multiple early returns are intentional here for clear handling of each
+    # exit condition: no socket, shutdown requested (checked twice during
+    # reconnect wait), reconnect failure, socket not set after reconnect,
+    # shutdown during reconnect, successful reconnect, and normal data return.
+    def _read_bytes(self, length: int) -> bytes | None:
+        """Read up to `length` bytes from the TCP socket, handling dead connections and automatic reconnection.
+
+        If a socket is present and data is available, returns the received bytes. If the
+        socket is detected as disconnected, the method initiates a reconnect sequence and
+        returns `None`. If no socket is available, the method attempts reconnect unless a
+        shutdown is already requested.
+
+        Parameters
+        ----------
+        length : int
+            Maximum number of bytes to read.
+
+        Returns
+        -------
+        bytes | None
+            The received bytes, or `None` if no data was returned
+            because the socket is absent, a reconnect was started, or shutdown was requested.
+        """
+        sock = self.socket
+        if sock is not None:
+            try:
+                data = sock.recv(length)
+            except socket.timeout:
+                logger.debug("Socket read timed out for %s; retaining connection", sock)
+                return None
+            except OSError as ex:
+                logger.debug("Socket read error, treating as dead socket: %s", ex)
+                data = b""
             # empty byte indicates a disconnected socket,
             # we need to handle it to avoid an infinite loop reading from null socket
-            if data == b'':
+            if data == b"":
                 logger.debug("dead socket, re-connecting")
                 # cleanup and reconnect socket without breaking reader thread
                 with contextlib.suppress(Exception):
-                    self._socket_shutdown()
-                self.socket.close()
-                self.socket = None
-                time.sleep(1)
-                self.myConnect()
-                self._startConfig()
+                    if self.socket is sock:
+                        self._socket_shutdown(sock)
+                with contextlib.suppress(Exception):
+                    sock.close()
+                if self.socket is sock:
+                    self.socket = None
+                    self._attempt_reconnect()
+                else:
+                    logger.debug(
+                        "Socket changed during read cleanup, skipping reconnect"
+                    )
                 return None
+            self._reconnect_attempts = 0
+            self._fatal_disconnect = False
             return data
 
-        # no socket, break reader thread
-        self._wantExit = True
+        # Socket may be briefly nulled by a concurrent writer failure; try to
+        # recover unless shutdown was explicitly requested.
+        if not self._wantExit and not self._fatal_disconnect:
+            logger.debug("Socket unavailable, attempting reconnect")
+            self._attempt_reconnect()
         return None
