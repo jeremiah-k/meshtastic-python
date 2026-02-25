@@ -5,6 +5,20 @@ import warnings
 from datetime import datetime
 from numbers import Real
 
+_warned_deprecations: set[str] = set()
+
+
+def _warn_deprecated_once(key: str, message: str) -> None:
+    """Emit a deprecation warning once per process for a given key."""
+    if key in _warned_deprecations:
+        return
+    warnings.warn(
+        message,
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    _warned_deprecations.add(key)
+
 
 class PowerError(Exception):
     """An exception class for powermon errors."""
@@ -45,10 +59,9 @@ class PowerMeter:
 
         Prefer getAverageCurrentMA for consistent unit capitalization.
         """
-        warnings.warn(
+        _warn_deprecated_once(
+            "getAverageCurrentmA",
             "getAverageCurrentmA is deprecated, use getAverageCurrentMA instead.",
-            DeprecationWarning,
-            stacklevel=2,
         )
         return self.getAverageCurrentMA()
 
@@ -82,10 +95,9 @@ class PowerMeter:
         float
             Minimum current in milliamperes.
         """
-        warnings.warn(
+        _warn_deprecated_once(
+            "getMinCurrentmA",
             "getMinCurrentmA is deprecated, use getMinCurrentMA instead.",
-            DeprecationWarning,
-            stacklevel=2,
         )
         return self.getMinCurrentMA()
 
@@ -119,10 +131,9 @@ class PowerMeter:
         float
             Maximum current in milliamperes.
         """
-        warnings.warn(
+        _warn_deprecated_once(
+            "getMaxCurrentmA",
             "getMaxCurrentmA is deprecated, use getMaxCurrentMA instead.",
-            DeprecationWarning,
-            stacklevel=2,
         )
         return self.getMaxCurrentMA()
 

@@ -51,12 +51,18 @@ package are not historical compatibility surface by default and should not get
 - **No deprecation warnings** for historical BLE public methods listed above.
 - `find_device` is a historical compatibility shim to `findDevice` and should remain silent.
 - Do not add deprecation warnings to other BLE compatibility entrypoints unless explicitly approved.
+- Current approved BLE deprecation: `BLECoroutineRunner.run_coroutine_threadsafe(timeout=...)` as alias for `startup_timeout=...` (semantic API migration, not naming-only).
 
 ### BLE internal orchestration naming
 
 - Internal handlers and helpers stay `_snake_case`.
 - `ReconnectPolicy` is internal orchestration: canonical methods are `next_attempt` and `get_attempt_count` (snake_case).
 - Do not treat internal orchestration method names as public compatibility surface.
+
+### BLE export boundary
+
+- Keep BLE public exports explicit and narrow (`meshtastic/ble_interface.py` and `meshtastic/interfaces/ble/__init__.py`).
+- Do not leak internal modules/symbols (`runner`, `policies`, `coordination`, etc.) via package exports.
 
 ## Deprecation Tracking (lightweight)
 
@@ -67,6 +73,12 @@ Use grep-friendly code comments for compatibility wrappers so future cleanup is 
 
 Apply these markers only to compatibility methods that are intentionally part of
 the maintained public surface. Do not use these markers for new internal helpers.
+
+### Warning discipline
+
+- Prefer **silent** wrappers for naming-only compatibility aliases unless a removal timeline is explicitly approved.
+- Prefer warnings for semantic/behavioral migrations.
+- For deprecated APIs that may be called in loops, use warn-once behavior (per process or per instance) to avoid warning spam and overhead.
 
 Quick inventory command:
 

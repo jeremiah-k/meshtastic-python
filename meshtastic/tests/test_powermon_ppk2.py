@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ..powermon import power_supply as power_supply_module
+
 try:
     from ..powermon.ppk2 import PPK2PowerSupply
 except ImportError:
@@ -117,6 +119,7 @@ def test_setIsSupply_does_not_restart_when_already_measuring() -> None:
 @pytest.mark.unit
 def test_average_current_camelcase_aliases_are_consistent() -> None:
     """CamelCase average-current aliases should be consistent for PPK2."""
+    power_supply_module._warned_deprecations.clear()
     ppk = _make_ppk2_stub()
     ppk.getAverageCurrentMA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
 

@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ..powermon import power_supply as power_supply_module
+
 try:
     from ..powermon.riden import RidenPowerSupply
 except ImportError:
@@ -71,6 +73,7 @@ def test_get_average_current_camelcase_aliases_delegate(
     riden_stub: RidenPowerSupply,
 ) -> None:
     """CamelCase aliases should delegate to getAverageCurrentMA."""
+    power_supply_module._warned_deprecations.clear()
     pps = riden_stub
     pps.getAverageCurrentMA = MagicMock(return_value=123.4)  # type: ignore[method-assign]
     delegated = cast(MagicMock, pps.getAverageCurrentMA)
