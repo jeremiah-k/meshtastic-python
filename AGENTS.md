@@ -26,26 +26,19 @@ This document tracks coding standards and API refactoring decisions for the Mesh
 ## BLE API Refactoring Decisions
 
 Source of truth for BLE compatibility is `master`'s historical `meshtastic/ble_interface.py` public surface.
+When in doubt, treat the pinned baseline below as normative for BLE compatibility.
 
 ### Historical API Baseline (pinned)
 
 - Tag: `2.7.7`
 - Commit: `b26d80f1866ffa765467e5cb7688c59dee7f2bb2`
 - Baseline file: `meshtastic/ble_interface.py`
-- Baseline methods requiring BLE compatibility treatment:
+- Methods requiring BLE compatibility treatment:
   - `BLEClient.async_await`
   - `BLEClient.async_run`
   - `BLEInterface.from_num_handler`
   - `BLEInterface.log_radio_handler`
   - `BLEInterface.legacy_log_radio_handler`
-
-### Historical BLE public methods from `master` that MUST remain callable
-
-- `BLEClient.async_await`
-- `BLEClient.async_run`
-- `BLEInterface.from_num_handler`
-- `BLEInterface.log_radio_handler`
-- `BLEInterface.legacy_log_radio_handler`
 
 These names are kept as compatibility wrappers over canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`, `_log_radio_handler`, `_legacy_log_radio_handler`).
 
@@ -71,6 +64,9 @@ Use grep-friendly code comments for compatibility wrappers so future cleanup is 
 
 - `COMPAT_STABLE_SHIM`: historical/public compatibility shim that should remain callable and should not warn.
 - `COMPAT_DEPRECATE`: compatibility shim that should emit `DeprecationWarning` and is a removal candidate in a future major release.
+
+Apply these markers only to compatibility methods that are intentionally part of
+the maintained public surface. Do not use these markers for new internal helpers.
 
 Quick inventory command:
 
