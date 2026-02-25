@@ -1,6 +1,7 @@
 """Additional edge case tests for BLE client functionality."""
 
 import asyncio
+import threading
 
 import pytest
 
@@ -9,6 +10,7 @@ try:
     from meshtastic.interfaces.ble.constants import (
         BLECLIENT_ERROR_ASYNC_TIMEOUT,
         BLECLIENT_ERROR_CANCELLED,
+        BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
     )
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
@@ -206,6 +208,39 @@ def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
 
         monkeypatch.setattr(client, "_async_run", _fake_async_run)
         with pytest.raises(BLEClient.BLEError, match=BLECLIENT_ERROR_CANCELLED):
+            client._async_await(_dummy_coro())
+    finally:
+        client.close()
+
+
+@pytest.mark.unit
+def test_bleclient_async_await_rejects_wait_from_runner_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_async_await should fail fast when invoked from the runner thread."""
+
+    class _FutureLike:
+        def cancel(self) -> None:
+            """Support best-effort cancellation in guarded path."""
+
+    async def _dummy_coro() -> None:
+        return None
+
+    client = BLEClient(address=None, log_if_no_address=False)
+    try:
+
+        def _fake_async_run(coro):
+            coro.close()
+            return _FutureLike()
+
+        monkeypatch.setattr(client, "_async_run", _fake_async_run)
+
+        fake_runner = type("_Runner", (), {"_thread": threading.current_thread()})()
+        monkeypatch.setattr(client, "_runner", fake_runner)
+
+        with pytest.raises(
+            BLEClient.BLEError, match=BLECLIENT_ERROR_RUNNER_THREAD_WAIT
+        ):
             client._async_await(_dummy_coro())
     finally:
         client.close()

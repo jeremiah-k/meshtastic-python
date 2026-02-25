@@ -103,7 +103,6 @@ class BLEStateManager:
         """
         return self._state_lock
 
-
     # COMPAT_STABLE_SHIM: alias for lock property
     @property
     def _lock(self) -> RLock:

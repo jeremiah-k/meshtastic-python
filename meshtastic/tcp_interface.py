@@ -60,6 +60,10 @@ class TCPInterface(StreamInterface):
         connectTimeout : float
             Timeout in seconds for socket connect attempts (default: 10.0).
         """
+        if connectTimeout is None or connectTimeout <= 0:
+            raise ValueError(
+                f"connectTimeout must be a positive number, got {connectTimeout!r}"
+            )
 
         self.stream = None
         self._provides_own_stream = True
@@ -328,9 +332,8 @@ class TCPInterface(StreamInterface):
 
                     try:
                         self._start_config()
-                    except (
-                        Exception
-                    ) as config_ex:  # noqa: BLE001 - preserve reader thread survival
+                    # Keep reader thread alive on unexpected post-reconnect errors.
+                    except Exception as config_ex:  # noqa: BLE001
                         logger.warning(
                             "Post-reconnect config for %s failed: %s",
                             self.hostname,

@@ -213,6 +213,24 @@ def _packet_debug_summary(as_dict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
+    """Return a node-cache-safe packet copy for ``node['lastReceived']``.
+
+    Keeps historical packet structure for compatibility while redacting only
+    admin payload bodies that may carry sensitive session material.
+    """
+    decoded = as_dict.get("decoded")
+    if not isinstance(decoded, dict):
+        return as_dict
+    if "admin" not in decoded:
+        return as_dict
+    sanitized = dict(as_dict)
+    decoded_sanitized = dict(decoded)
+    decoded_sanitized["admin"] = "<redacted>"
+    sanitized["decoded"] = decoded_sanitized
+    return sanitized
+
+
 def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Decode text payloads from a received packet and update per-node metadata.
 
@@ -262,9 +280,9 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         if "position" in as_dict["decoded"] and "from" in as_dict:
             _receive_info_update(iface, as_dict)
             p = as_dict["decoded"]["position"]
-            logger.debug("p:%s", p)
+            logger.debug("position payload received from=%s", as_dict.get("from"))
             p = iface._fixup_position(p)
-            logger.debug("after fixup p:%s", p)
+            logger.debug("position payload normalized from=%s", as_dict.get("from"))
             # update node DB as needed
             iface._get_or_create_by_num(as_dict["from"])["position"] = p
 
@@ -360,14 +378,14 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
     as_dict : dict[str, Any]
         Parsed packet dictionary; if it contains a "from"
         key, the node identified by that value will have these fields set:
-        - lastReceived: the full packet dictionary
+        - lastReceived: packet dictionary copy with admin body redacted
         - lastHeard: value of `rxTime` from the packet (or None)
         - snr: value of `rxSnr` from the packet (or None)
         - hopLimit: value of `hopLimit` from the packet (or None)
     """
     if "from" in as_dict:
         node = iface._get_or_create_by_num(as_dict["from"])
-        node["lastReceived"] = as_dict
+        node["lastReceived"] = _sanitize_last_received(as_dict)
         node["lastHeard"] = as_dict.get("rxTime")
         node["snr"] = as_dict.get("rxSnr")
         node["hopLimit"] = as_dict.get("hopLimit")

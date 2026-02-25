@@ -84,6 +84,24 @@ def test_TCPInterface_without_connecting() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("connect_timeout", [0.0, -1.0])
+def test_TCPInterface_rejects_non_positive_connect_timeout(
+    connect_timeout: float,
+) -> None:
+    """Constructor should fail fast for invalid connectTimeout values."""
+    with pytest.raises(
+        ValueError,
+        match=r"connectTimeout must be a positive number",
+    ):
+        TCPInterface(
+            hostname="localhost",
+            noProto=True,
+            connectNow=False,
+            connectTimeout=connect_timeout,
+        )
+
+
+@pytest.mark.unit
 def test_TCPInterface_write_uses_sendall() -> None:
     """Test that _write_bytes uses sendall to avoid partial writes."""
     with patch("socket.socket"):

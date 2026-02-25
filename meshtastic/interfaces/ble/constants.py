@@ -126,6 +126,9 @@ BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED = (
 BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED = (
     "Cannot schedule operation: BLE client is closed"
 )
+BLECLIENT_ERROR_RUNNER_THREAD_WAIT = (
+    "Cannot wait on async operation from the runner thread"
+)
 BLECLIENT_ERROR_ASYNC_OPERATION_FAILED = "Async operation failed: {0}"
 BLECLIENT_ERROR_FAILED_TO_SCHEDULE = "Failed to schedule operation: {0}"
 BLECLIENT_ERROR_LOOP_START_FAILED = "BLE event loop failed to start"

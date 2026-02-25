@@ -8,7 +8,7 @@ import weakref
 from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from threading import RLock
+from threading import RLock, current_thread
 from typing import Any, Awaitable, Callable, Coroutine, TypeVar
 from uuid import UUID
 
@@ -31,6 +31,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
     BLECLIENT_ERROR_FAILED_TO_SCHEDULE,
+    BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     logger,
@@ -253,7 +254,6 @@ class BLEClient:
         )
         return bool(result)  # type: ignore[arg-type]
 
-
     # COMPAT_STABLE_SHIM: snake_case alias for isConnected
     def is_connected(self) -> bool:
         """Return whether the BLE client is currently connected.
@@ -401,36 +401,36 @@ class BLEClient:
             except BleakError:
                 return None
 
+        def _refresh_services(error_msg: str) -> Any:
+            """Refresh services via _get_services() and fallback property read."""
+            services = self.error_handler._safe_execute(
+                lambda: self._get_services(),
+                error_msg=error_msg,
+                reraise=False,
+            )
+            return services if services else _read_services_property()
+
+        def _has_get_characteristic(services: Any) -> bool:
+            """Return True if services object has a characteristic lookup callable."""
+            return bool(services and getattr(services, "get_characteristic", None))
+
         services = _read_services_property()
-        if not services or not getattr(services, "get_characteristic", None):
-            services = self.error_handler._safe_execute(
-                lambda: self._get_services(),
-                error_msg="Unable to populate services before has_characteristic",
-                reraise=False,
+        if not _has_get_characteristic(services):
+            services = _refresh_services(
+                "Unable to populate services before has_characteristic"
             )
-            if not services:
-                services = _read_services_property()
-        if not services or not getattr(services, "get_characteristic", None):
-            return False
-        try:
-            return bool(services.get_characteristic(specifier))
-        except BleakError:
-            services = self.error_handler._safe_execute(
-                lambda: self._get_services(),
-                error_msg=(
-                    "Unable to populate services before has_characteristic after "
-                    "BleakError from get_characteristic"
-                ),
-                reraise=False,
-            )
-            if not services:
-                services = _read_services_property()
-            if not services or not getattr(services, "get_characteristic", None):
+
+        for _ in range(2):
+            if not _has_get_characteristic(services):
                 return False
             try:
                 return bool(services.get_characteristic(specifier))
             except BleakError:
-                return False
+                services = _refresh_services(
+                    "Unable to populate services before has_characteristic after "
+                    "BleakError from get_characteristic"
+                )
+        return False
 
     def start_notify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
@@ -483,7 +483,6 @@ class BLEClient:
         self._async_await(
             self.bleak_client.stop_notify(*args, **kwargs), timeout=timeout
         )
-
 
     # COMPAT_STABLE_SHIM: snake_case alias for stopNotify
     def stop_notify(
@@ -613,6 +612,12 @@ class BLEClient:
                     with contextlib.suppress(ValueError, OSError, AttributeError):
                         if not getattr(stdout, "closed", False):
                             stdout.flush()
+
+            runner_thread = getattr(self._runner, "_thread", None)
+            if runner_thread is current_thread():
+                with contextlib.suppress(Exception):
+                    future.cancel()
+                raise self.BLEError(BLECLIENT_ERROR_RUNNER_THREAD_WAIT)
             return future.result(timeout)
         except SystemExit:  # pylint: disable=W0706
             raise

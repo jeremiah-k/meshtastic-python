@@ -371,7 +371,6 @@ class DotDict(dict):
 _warned_deprecations: set[str] = set()
 
 
-
 # COMPAT_DEPRECATE: snake_case alias for DotDict (warns once)
 class dotdict(DotDict):  # pylint: disable=invalid-name
     """Backward-compatible deprecated alias for DotDict."""

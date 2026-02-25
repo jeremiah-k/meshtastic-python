@@ -132,7 +132,6 @@ class Node:
             config_pb2.Config.PositionConfig.PositionFlags, position_flags
         )
 
-
     # COMPAT_STABLE_SHIM: alias for positionFlagsList
     @staticmethod
     def position_flags_list(position_flags: int) -> list[str]:
@@ -154,7 +153,6 @@ class Node:
             Names of modules whose bits are set in the bitfield.
         """
         return flagsToList(mesh_pb2.ExcludedModules, excluded_modules)
-
 
     # COMPAT_STABLE_SHIM: alias for excludedModulesList
     @staticmethod
@@ -184,7 +182,6 @@ class Node:
         except Exception as ex:  # noqa: BLE001 - defensive metadata compatibility
             logger.debug("Unable to evaluate module availability: %s", ex)
             return True
-
 
     # COMPAT_STABLE_SHIM: alias for moduleAvailable
     def module_available(self, excluded_bit: int) -> bool:
@@ -1158,7 +1155,6 @@ class Node:
             self.cannedPluginMessageMessages = None
         return send_result
 
-
     # COMPAT_STABLE_SHIM: alias for getRingtone
     def get_ringtone(self) -> str | None:
         """Compatibility wrapper that returns the node's ringtone.
@@ -1171,7 +1167,6 @@ class Node:
             The ringtone string if available, or None if unavailable or unsupported.
         """
         return self.getRingtone()
-
 
     # COMPAT_STABLE_SHIM: alias for setRingtone
     def set_ringtone(self, ringtone: str) -> mesh_pb2.MeshPacket | None:
@@ -1191,7 +1186,6 @@ class Node:
         """
         return self.setRingtone(ringtone)
 
-
     # COMPAT_STABLE_SHIM: alias for getCannedMessage
     def get_canned_message(self) -> str | None:
         """Return the device's canned message.
@@ -1204,7 +1198,6 @@ class Node:
             The canned message string if available, `None` otherwise.
         """
         return self.getCannedMessage()
-
 
     # COMPAT_STABLE_SHIM: alias for setCannedMessage
     def set_canned_message(self, message: str) -> mesh_pb2.MeshPacket | None:
@@ -2060,7 +2053,6 @@ class Node:
                     }
                 )
         return result
-
 
     # COMPAT_STABLE_SHIM: alias for getChannelsWithHash
     def get_channels_with_hash(self) -> list[dict[str, Any]]:

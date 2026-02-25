@@ -49,7 +49,6 @@ class PowerMeter:
         """Return average current of last measurement in mA (since last call to this method)."""
         return math.nan
 
-
     # COMPAT_STABLE_SHIM: alias for getAverageCurrentMA
     def get_average_current_mA(self) -> float:
         """Shim for getAverageCurrentMA."""
@@ -77,7 +76,6 @@ class PowerMeter:
         """
         # Subclasses must override for a better implementation
         return self.getAverageCurrentMA()
-
 
     # COMPAT_STABLE_SHIM: alias for getMinCurrentMA
     def get_min_current_mA(self) -> float:
@@ -116,7 +114,6 @@ class PowerMeter:
         # Subclasses must override for a better implementation
         return self.getAverageCurrentMA()
 
-
     # COMPAT_STABLE_SHIM: alias for getMaxCurrentMA
     def get_max_current_mA(self) -> float:
         """Shim for getMaxCurrentMA.
@@ -145,7 +142,6 @@ class PowerMeter:
 
     def resetMeasurements(self) -> None:
         """Reset current measurements."""
-
 
     # COMPAT_STABLE_SHIM: alias for resetMeasurements
     def reset_measurements(self) -> None:

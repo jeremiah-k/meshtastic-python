@@ -2,6 +2,7 @@
 
 import logging
 import re
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -9,6 +10,7 @@ import pytest
 
 import meshtastic
 from meshtastic import (
+    _on_admin_receive,
     _on_node_info_receive,
     _on_position_receive,
     _on_text_receive,
@@ -74,6 +76,33 @@ def test_init_on_node_info_receive(
     with caplog.at_level(logging.DEBUG):
         _on_node_info_receive(iface, packet)
     assert re.search(r"in _on_node_info_receive", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_redacts_last_received(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin packets should store redacted lastReceived while keeping passkey state."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {
+            "admin": {
+                "raw": SimpleNamespace(session_passkey=b"abc123"),
+            }
+        },
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["adminSessionPassKey"] == b"abc123"
+    assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
+    # Input packet should remain unchanged for callback consumers.
+    assert packet["decoded"]["admin"]["raw"].session_passkey == b"abc123"
 
 
 @pytest.mark.unit

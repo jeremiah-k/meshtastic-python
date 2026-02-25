@@ -35,7 +35,6 @@ def _root_dir_impl() -> str:
     return str(dir_name)
 
 
-
 # COMPAT_DEPRECATE: snake_case alias for rootDir (warns once)
 def root_dir() -> str:
     """Return the application's slog root directory path, creating the directory if it does not exist.
@@ -55,7 +54,6 @@ def root_dir() -> str:
         )
         _warned_deprecations.add("root_dir")
     return _root_dir_impl()
-
 
 
 def rootDir() -> str:
@@ -181,7 +179,6 @@ class PowerLogger:
         """Set the underlying PowerMeter."""
         self._p_meter = value
 
-
     # COMPAT_STABLE_SHIM: alias for pMeter property
     @property
     def p_meter(self) -> PowerMeter:
@@ -259,7 +256,6 @@ class PowerLogger:
     def storeCurrentReading(self, now: datetime | None = None) -> None:
         """Preferred camelCase public API; see `_store_current_reading`."""
         self._store_current_reading(now)
-
 
     # COMPAT_DEPRECATE: snake_case alias for storeCurrentReading (warns once)
     def store_current_reading(self, now: datetime | None = None) -> None:
