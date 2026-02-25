@@ -58,12 +58,12 @@ def root_dir() -> str:
 
 
 
-# COMPAT_STABLE_SHIM: canonical camelCase public API for root directory
 def rootDir() -> str:
     """Preferred camelCase public alias for the slog root directory helper."""
     return _root_dir_impl()
 
 
+@dataclass(init=False)
 @dataclass(init=False)
 class LogDef:
     """Log definition."""

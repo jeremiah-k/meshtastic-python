@@ -103,11 +103,14 @@ class BLEStateManager:
         """
         return self._state_lock
 
+
+    # COMPAT_STABLE_SHIM: alias for lock property
     @property
     def _lock(self) -> RLock:
         """Backward-compatible alias for :attr:`lock`."""
         return self.lock
 
+    @property
     @property
     def _current_state(self) -> ConnectionState:
         """Get the current BLE connection state.
