@@ -130,12 +130,15 @@ BLECLIENT_ERROR_ASYNC_OPERATION_FAILED = "Async operation failed: {0}"
 BLECLIENT_ERROR_FAILED_TO_SCHEDULE = "Failed to schedule operation: {0}"
 
 
+_MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"
+
+
 def __getattr__(name: str) -> object:
     """Dynamically delegate unknown module attributes to BLEConfig.
 
     This preserves backward-compatible module-level constant access when new
     BLEConfig attributes are introduced without requiring an explicit alias.
     """
-    if name in vars(BLEConfig):
+    if not name.startswith("__") and name in vars(BLEConfig):
         return getattr(BLEConfig, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    raise AttributeError(_MISSING_ATTR_MSG.format(__name__, name))

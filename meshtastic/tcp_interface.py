@@ -332,8 +332,8 @@ class TCPInterface(StreamInterface):
                     try:
                         self._start_config()
                     except (
-                        Exception
-                    ) as config_ex:  # noqa: BLE001 - preserve reader thread survival
+                        Exception  # noqa: BLE001 - preserve reader thread survival
+                    ) as config_ex:
                         logger.warning(
                             "Post-reconnect config for %s failed: %s",
                             self.hostname,

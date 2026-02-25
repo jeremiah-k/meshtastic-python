@@ -131,8 +131,6 @@ class BLEClient:
         if address is None:
             if log_if_no_address:
                 logger.debug("No address provided - only discover method will work.")
-            # Discovery-only instances won't have a connected bleak_client
-            self.bleak_client = None
             return
 
         # Create underlying Bleak client for actual BLE communication
@@ -691,17 +689,18 @@ class BLEClient:
         BLEError
             If the event loop is not running or scheduling fails.
         """
-        if self._closed:
-            with contextlib.suppress(Exception):
-                coro.close()
-            raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
-        try:
-            return self._runner._run_coroutine_threadsafe(coro)
-        except RuntimeError as e:
-            # Close the coroutine to prevent "coroutine was never awaited" warning
-            with contextlib.suppress(Exception):
-                coro.close()
-            raise self.BLEError(BLECLIENT_ERROR_FAILED_TO_SCHEDULE.format(e)) from e
+        with self._close_lock:
+            if self._closed:
+                with contextlib.suppress(Exception):
+                    coro.close()
+                raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
+            try:
+                return self._runner._run_coroutine_threadsafe(coro)
+            except RuntimeError as e:
+                # Close the coroutine to prevent "coroutine was never awaited" warning
+                with contextlib.suppress(Exception):
+                    coro.close()
+                raise self.BLEError(BLECLIENT_ERROR_FAILED_TO_SCHEDULE.format(e)) from e
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEClient API.
     # Keep callable without deprecation warning.

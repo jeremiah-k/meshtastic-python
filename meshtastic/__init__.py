@@ -334,32 +334,32 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
 
     _receive_info_update(iface, as_dict)
 
-    toUpdate = None
+    to_update = None
 
     telemetry = (as_dict.get("decoded") or {}).get("telemetry") or {}
     if "deviceMetrics" in telemetry:
-        toUpdate = "deviceMetrics"
+        to_update = "deviceMetrics"
     elif "environmentMetrics" in telemetry:
-        toUpdate = "environmentMetrics"
+        to_update = "environmentMetrics"
     elif "airQualityMetrics" in telemetry:
-        toUpdate = "airQualityMetrics"
+        to_update = "airQualityMetrics"
     elif "powerMetrics" in telemetry:
-        toUpdate = "powerMetrics"
+        to_update = "powerMetrics"
     elif "localStats" in telemetry:
-        toUpdate = "localStats"
+        to_update = "localStats"
     else:
         return
 
-    updateObj = telemetry.get(toUpdate)
-    if updateObj is None:
+    update_obj = telemetry.get(to_update)
+    if update_obj is None:
         return
     node = iface._get_or_create_by_num(as_dict["from"])
-    newMetrics = node.get(toUpdate, {})
-    newMetrics.update(updateObj)
+    new_metrics = node.get(to_update, {})
+    new_metrics.update(update_obj)
     logger.debug(
-        "updating %s metrics for %s to %s", toUpdate, as_dict["from"], newMetrics
+        "updating %s metrics for %s to %s", to_update, as_dict["from"], new_metrics
     )
-    node[toUpdate] = newMetrics
+    node[to_update] = new_metrics
 
 
 def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
