@@ -129,6 +129,8 @@ def mt_config_state() -> Generator[None, None, None]:
     """Snapshot and restore mt_config module state mutated by tests."""
     state_keys = tuple(mt_config.MODULE_STATE_DEFAULTS.keys())
     snapshot = {key: getattr(mt_config, key, _MT_CONFIG_SENTINEL) for key in state_keys}
+    # Also snapshot and restore warn-once tracking for deprecation warnings
+    warned_snapshot = set(mt_config._warned_deprecations)
     try:
         yield
     finally:
@@ -138,6 +140,8 @@ def mt_config_state() -> Generator[None, None, None]:
                     delattr(mt_config, key)
             else:
                 setattr(mt_config, key, value)
+        mt_config._warned_deprecations.clear()
+        mt_config._warned_deprecations.update(warned_snapshot)
 
 
 @pytest.fixture

@@ -105,16 +105,21 @@ _COMPAT_ALIASES: dict[str, str] = {
     "tunnelInstance": "tunnel_instance",
 }
 
+# Track which deprecation warnings have been emitted (warn-once per process)
+_warned_deprecations: set[str] = set()
+
 
 def __getattr__(name: str) -> Any:
     """Provide backwards-compatible access to renamed module attributes."""
     if name in _COMPAT_ALIASES:
         new_name = _COMPAT_ALIASES[name]
-        warnings.warn(
-            f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if name not in _warned_deprecations:
+            warnings.warn(
+                f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            _warned_deprecations.add(name)
         try:
             return globals()[new_name]
         except KeyError:
@@ -132,11 +137,13 @@ class _MtConfigModule(types.ModuleType):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in _COMPAT_ALIASES:
             new_name = _COMPAT_ALIASES[name]
-            warnings.warn(
-                f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if name not in _warned_deprecations:
+                warnings.warn(
+                    f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                _warned_deprecations.add(name)
             super().__setattr__(new_name, value)
             return
         super().__setattr__(name, value)

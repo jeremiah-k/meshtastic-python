@@ -79,8 +79,8 @@ the maintained public surface. Do not use these markers for new internal helpers
 - Prefer **silent** wrappers for naming-only compatibility aliases unless a removal timeline is explicitly approved.
 - Prefer warnings for semantic/behavioral migrations.
 - For deprecated APIs that may be called in loops, use warn-once behavior (per process or per instance) to avoid warning spam and overhead.
-
-Quick inventory command:
+- All naming-only deprecation warnings MUST be warn-once (not every call).
+  Quick inventory command:
 
 - `rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic`
 
@@ -116,3 +116,36 @@ Current `COMPAT_DEPRECATE` methods:
 | `PowerLogger` | `root_dir`              | Compatibility shim     |
 | `PowerLogger` | `storeCurrentReading`   | Primary implementation |
 | `PowerLogger` | `store_current_reading` | Compatibility shim     |
+
+## mt_config API Refactoring Decisions
+
+| Module Attribute  | Refactor Action                |
+| ----------------- | ------------------------------ |
+| `tunnel_instance` | Primary implementation         |
+| `tunnelInstance`  | Compatibility shim (warn-once) |
+
+### mt_config warning policy (explicit)
+
+- `tunnelInstance` emits a warn-once `DeprecationWarning` per process.
+- Both `__getattr__` (read) and `__setattr__` (write) paths use the same warn-once tracking.
+
+## util API Refactoring Decisions
+
+| Class     | Name      | Refactor Action                |
+| --------- | --------- | ------------------------------ |
+| `DotDict` | `DotDict` | Primary implementation         |
+| `dotdict` | `dotdict` | Compatibility shim (warn-once) |
+
+### util warning policy (explicit)
+
+- `dotdict` emits a warn-once `DeprecationWarning` per process on first instantiation.
+
+## mesh_interface API Refactoring Decisions
+
+| Method                | Refactor Action      |
+| --------------------- | -------------------- |
+| `telemetryType` param | Semantic deprecation |
+
+### mesh_interface warning policy (semantic)
+
+- The `telemetryType` fallback warning in `sendTelemetry` is a **semantic** deprecation (behavioral change, not naming-only). This warning should emit on every unsupported value to alert callers their input is being silently converted.

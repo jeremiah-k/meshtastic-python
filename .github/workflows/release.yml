@@ -38,8 +38,6 @@ jobs:
 
       - name: Commit updated version.
         id: commit_updated
-      - name: Commit updated version.
-        id: commit_updated
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'bot@noreply.github.com'
