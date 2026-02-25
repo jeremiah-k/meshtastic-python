@@ -1,14 +1,12 @@
-"""With two radios connected serially, send and receive test.
-
-messages and report back if successful.
-"""
+"""Send and receive test messages between two serially connected radios."""
 
 import io
 import logging
 import sys
+import threading
 import time
 from contextlib import ExitStack, suppress
-from typing import Any, Callable, NoReturn
+from typing import Any, NoReturn
 
 from pubsub import pub  # type: ignore[import-untyped]
 
@@ -104,13 +102,15 @@ class _FallbackDotMap(dict):
             raise AttributeError(key) from None
 
 
-DotMap: Callable[..., Any]
+DotMap: type[Any]
 try:
     from dotmap import DotMap as _ImportedDotMap  # type: ignore[import-untyped]
 except ImportError:
     DotMap = _FallbackDotMap
 else:
     DotMap = _ImportedDotMap
+
+TEXT_MESSAGE_APP_PORTNUM = "TEXT_MESSAGE_APP"
 
 """The interfaces we are using for our tests"""
 interfaces: list[Any] = []
@@ -124,6 +124,7 @@ sendingInterface: Any = None
 expected_from_node: int | None = None
 expected_to_node: int | None = None
 expected_text: str | None = None
+guards_lock = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -142,14 +143,16 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
     interface : Any
         Interface object that delivered the packet.
     """
-    if sendingInterface is not interface:
+    with guards_lock:
+        if sendingInterface is interface:
+            return
         # print(f"From {interface.stream.port}: {packet}")
         decoded = packet.get("decoded", {})
         if isinstance(decoded, dict):
             portnum = decoded.get("portnum")
         else:
             portnum = getattr(decoded, "portnum", None)
-        if portnum == "TEXT_MESSAGE_APP":
+        if portnum == TEXT_MESSAGE_APP_PORTNUM:
             pkt_from = packet.get("from")
             if expected_from_node is not None and pkt_from != expected_from_node:
                 return
@@ -163,7 +166,7 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
             )
             if expected_text is not None and decoded_text != expected_text:
                 return
-            # We only care a about clear text packets
+            # We only care about clear text packets.
             if receivedPackets is not None:
                 receivedPackets.append(DotMap(packet))
 
@@ -222,7 +225,6 @@ def testSend(
     global expected_from_node
     global expected_to_node
     global expected_text
-    receivedPackets = []
     fromNode = fromInterface.myInfo.my_node_num
 
     if isBroadcast:
@@ -235,10 +237,12 @@ def testSend(
     )
     # pylint: disable=W0603
     global sendingInterface
-    sendingInterface = fromInterface
-    expected_from_node = fromNode
-    expected_to_node = toNode
-    expected_text = None if asBinary else f"Test {testNumber}"
+    with guards_lock:
+        receivedPackets = []
+        sendingInterface = fromInterface
+        expected_from_node = fromNode
+        expected_to_node = toNode
+        expected_text = None if asBinary else f"Test {testNumber}"
     try:
         if not asBinary:
             fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
@@ -248,13 +252,20 @@ def testSend(
             )
         for _ in range(60):  # max of 60 secs before we timeout
             time.sleep(1)
-            if len(receivedPackets) >= 1:
+            with guards_lock:
+                packet_count = (
+                    len(receivedPackets) if receivedPackets is not None else 0
+                )
+            if packet_count >= 1:
                 return True
         return False  # Failed to send
     finally:
-        expected_from_node = None
-        expected_to_node = None
-        expected_text = None
+        with guards_lock:
+            expected_from_node = None
+            expected_to_node = None
+            expected_text = None
+            sendingInterface = None
+            receivedPackets = None
 
 
 def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
@@ -401,9 +412,9 @@ def testAll(numTests: int = 5) -> bool:
 
     with ExitStack() as stack:
         pub.subscribe(onConnection, "meshtastic.connection")
+        stack.callback(_safe_unsubscribe, onConnection, "meshtastic.connection")
         pub.subscribe(onReceive, "meshtastic.receive")
         stack.callback(_safe_unsubscribe, onReceive, "meshtastic.receive")
-        stack.callback(_safe_unsubscribe, onConnection, "meshtastic.connection")
 
         # Build interfaces incrementally to ensure cleanup on failure.
         for port in ports:

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -111,6 +111,10 @@ def test_sync_power_stress_negative_duration_uses_ack_wait_path(
             is False
         )
 
+    client.sendPowerStress.assert_called_once()
+    sent_args, sent_kwargs = client.sendPowerStress.call_args
+    assert sent_args[0] == powermon_pb2.PowerStressMessage.BT_ON
+    assert sent_kwargs["num_seconds"] == 0.0
     sleep_mock.assert_not_called()
     assert "Negative num_seconds" in caplog.text
 
@@ -203,3 +207,7 @@ def test_power_stress_run_completes_all_states() -> None:
 
     expected_call_count = 1 + len(ps.states)
     assert ps.client.syncPowerStress.call_count == expected_call_count
+    expected_calls = [call(powermon_pb2.PowerStressMessage.PRINT_INFO)] + [
+        call(state, 5.0) for state in ps.states
+    ]
+    ps.client.syncPowerStress.assert_has_calls(expected_calls, any_order=False)

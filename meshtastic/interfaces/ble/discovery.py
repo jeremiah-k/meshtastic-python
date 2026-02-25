@@ -268,7 +268,7 @@ class DiscoveryManager:
             try:
                 self._client = resolved_factory(log_if_no_address=False)
             except TypeError as exc:
-                if exc.args and "log_if_no_address" in exc.args[0]:
+                if any("log_if_no_address" in str(arg) for arg in exc.args):
                     logger.debug(
                         "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
                         exc,

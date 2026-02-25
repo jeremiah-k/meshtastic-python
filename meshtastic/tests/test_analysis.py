@@ -125,8 +125,14 @@ def test_to_pmon_names_maps_valid_states() -> None:
 @pytest.mark.unit
 def test_to_pmon_names_handles_invalid_values() -> None:
     """to_pmon_names should return None for invalid state values."""
-    max_known_value = max(state.number for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values)  # type: ignore[attr-defined]
-    invalid_value = 1 << max_known_value.bit_length()
+    known_values = {
+        state.number for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values  # type: ignore[attr-defined]
+    }
+    invalid_value = next(
+        (1 << i for i in range(63) if (1 << i) not in known_values),
+        0xFFFFFFFF,
+    )
+    assert invalid_value not in known_values
     result = to_pmon_names([invalid_value, -1, "invalid"])
     assert result == [None, None, None]
 

@@ -74,7 +74,6 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
 
         try:
             s = powermon_pb2.PowerMon.State.Name(cast(Any, value))
-            return s if s != "None" else None
         except ValueError:
             # Combined bitmask: decode known single-bit states.
             if value <= 0:
@@ -94,6 +93,8 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
             if unknown_bits != 0:
                 return None
             return "|".join(names) if names else None
+        else:
+            return s if s != "None" else None
 
     return [to_pmon_name(x) for x in arr]
 

@@ -30,6 +30,7 @@ def test_onGPIOreceive(caplog):
         onGPIOreceive(packet, iface)
         assert re.search(r"Received RemoteHardware", caplog.text)
         assert re.search(r"value=4096", caplog.text)
+    assert iface.gotResponse is True
 
 
 @pytest.mark.unit
@@ -42,6 +43,7 @@ def test_onGPIOreceive_mask_fallback(caplog):
         assert re.search(r"Received RemoteHardware", caplog.text)
         assert re.search(r"\bmask[=:\s]+7\b", caplog.text)
         assert re.search(r"value=7", caplog.text)
+    assert iface.gotResponse is True
 
 
 @pytest.mark.unit
@@ -55,6 +57,7 @@ def test_onGPIOreceive_uses_node_watch_mask(caplog):
         assert re.search(r"Received RemoteHardware", caplog.text)
         assert re.search(r"\bmask[=:\s]+7\b", caplog.text)
         assert re.search(r"value=7", caplog.text)
+    assert iface.gotResponse is True
 
 
 @pytest.mark.unit

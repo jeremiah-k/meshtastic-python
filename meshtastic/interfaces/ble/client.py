@@ -14,6 +14,7 @@ from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
 from bleak import BleakScanner
+from bleak.exc import BleakError
 
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_ASYNC_TIMEOUT,
@@ -348,12 +349,19 @@ class BLEClient:
         Raises
         ------
         BLEError
-            If the BLE client has not been initialized.
+            If the BLE client has not been initialized or services cannot be
+            retrieved from Bleak (for example, if discovery has not completed).
         """
         if self.bleak_client is None:
             raise self.BLEError("Cannot get services: BLE client not initialized")
-        # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed as a property.
-        return self.bleak_client.services
+        # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed
+        # as a property, but the property can still raise during discovery.
+        try:
+            return self.bleak_client.services
+        except BleakError as exc:
+            raise self.BLEError(
+                "Cannot get services: service discovery not completed"
+            ) from exc
 
     def has_characteristic(self, specifier: str | UUID) -> bool:
         """Return whether the connected device exposes the GATT characteristic identified by specifier.

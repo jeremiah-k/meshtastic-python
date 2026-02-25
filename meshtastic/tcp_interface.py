@@ -404,8 +404,9 @@ class TCPInterface(StreamInterface):
                         "Socket changed during read cleanup, skipping reconnect"
                     )
                 return None
-            self._reconnect_attempts = 0
-            self._fatal_disconnect = False
+            with self._reconnect_lock:
+                self._reconnect_attempts = 0
+                self._fatal_disconnect = False
             return data
 
         # Socket may be briefly nulled by a concurrent writer failure; try to
