@@ -97,11 +97,11 @@ from .protobuf import (
     telemetry_pb2,
 )
 
-# Keep exports sorted for lint stability and easier scanning.
-# ruff: noqa: RUF022 -- sorted case-insensitively for readability.
+# Explicit export list for stable star-import behavior.
+# Includes historical symbols (such as publishingThread) for backwards
+# compatibility with existing external callers.
 #
-# Note: publishingThread is exported for backwards compatibility with external
-# callers that may import it directly. It is an internal pub/sub thread helper.
+# ruff: noqa: RUF022 -- sorted case-insensitively for readability.
 __all__ = [
     "admin_pb2",
     "apponly_pb2",
