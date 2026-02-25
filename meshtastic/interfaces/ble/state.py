@@ -110,7 +110,6 @@ class BLEStateManager:
         return self.lock
 
     @property
-    @property
     def _current_state(self) -> ConnectionState:
         """Get the current BLE connection state.
 
