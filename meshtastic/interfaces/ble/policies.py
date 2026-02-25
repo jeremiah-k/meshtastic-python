@@ -133,7 +133,7 @@ class ReconnectPolicy:
             attempt = self._attempt_count
         return self.max_retries is None or attempt < self.max_retries
 
-    def nextAttempt(self) -> tuple[float, bool]:
+    def next_attempt(self) -> tuple[float, bool]:
         """Compute delay for the current retry attempt and return whether retries remain.
 
         Delay and retry permission are computed from the current zero-based retry
@@ -151,7 +151,7 @@ class ReconnectPolicy:
         self._attempt_count += 1
         return delay, should_retry
 
-    def getAttemptCount(self) -> int:
+    def get_attempt_count(self) -> int:
         """Return the number of retry attempts performed so far.
 
         Returns

@@ -600,6 +600,26 @@ class BLEClient:
                 lambda pending_futures: pending_futures.discard(future)
             )
 
+    def async_await(
+        self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
+    ) -> Any:
+        """Backward-compatible wrapper for legacy BLEClient async_await().
+
+        Parameters
+        ----------
+        coro : Coroutine[Any, Any, Any]
+            Coroutine to run on the shared BLE event loop.
+        timeout : float | None
+            Maximum seconds to wait for completion; `None` means wait indefinitely.
+            (Default value = None)
+
+        Returns
+        -------
+        Any
+            The value produced by the completed coroutine.
+        """
+        return self._async_await(coro, timeout=timeout)
+
     def _async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
         """Schedule a coroutine to run on the shared BLE event loop.
 
@@ -631,6 +651,21 @@ class BLEClient:
             with contextlib.suppress(Exception):
                 coro.close()
             raise self.BLEError(f"Failed to schedule operation: {e}") from e
+
+    def async_run(self, coro: Coroutine[Any, Any, Any]) -> Future[Any]:
+        """Backward-compatible wrapper for legacy BLEClient async_run().
+
+        Parameters
+        ----------
+        coro : Coroutine[Any, Any, Any]
+            Coroutine to schedule on the shared BLE event loop.
+
+        Returns
+        -------
+        Future[Any]
+            Future representing the scheduled coroutine.
+        """
+        return self._async_run(coro)
 
     def _with_pending_futures(
         self, operation: Callable[[weakref.WeakSet[Future[Any]]], None]

@@ -727,7 +727,7 @@ class BLEInterface(MeshInterface):
                 )
                 self._malformed_notification_count = 0
 
-    def _from_num_handler(self, _: Any, b: bytearray) -> None:
+    def _from_num_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Process a FROMNUM characteristic notification and wake the receive loop.
 
         Parses a 4-byte little-endian unsigned 32-bit integer from the notification payload. On successful parse the internal malformed-notification counter is reset and the parsed value is logged. On parse failure or unexpected length the malformed-notification counter is incremented via _handle_malformed_fromnum and a warning may be emitted when a threshold is reached. Always triggers the thread coordinator's "read_trigger" event to wake the read loop.
@@ -736,7 +736,7 @@ class BLEInterface(MeshInterface):
         ----------
         _ : Any
             Unused sender parameter provided by the BLE library.
-        b : bytearray
+        b : bytes | bytearray
             Notification payload expected to contain a 4-byte little-endian unsigned 32-bit integer.
         """
         try:
@@ -757,6 +757,18 @@ class BLEInterface(MeshInterface):
             return
         finally:
             self.thread_coordinator._set_event("read_trigger")
+
+    def from_num_handler(self, sender: Any, b: bytes | bytearray) -> None:
+        """Backward-compatible wrapper for the legacy FROMNUM callback name.
+
+        Parameters
+        ----------
+        sender : Any
+            Notification sender/handle value provided by Bleak.
+        b : bytes | bytearray
+            FROMNUM payload.
+        """
+        self._from_num_handler(sender, b)
 
     def _register_notifications(self, client: BLEClient) -> None:
         """Register BLE characteristic notification handlers on the given BLE client.
@@ -908,7 +920,7 @@ class BLEInterface(MeshInterface):
             timeout=NOTIFICATION_START_TIMEOUT,
         )
 
-    def _log_radio_handler(self, _: Any, b: bytearray) -> None:
+    def _log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
 
         Parses the notification payload as a mesh_pb2.LogRecord and forwards its message to self._handle_log_line. If the record includes a `source` the message is prefixed with "[source] ". Malformed records are logged and ignored.
@@ -917,7 +929,7 @@ class BLEInterface(MeshInterface):
         ----------
         _ : Any
             Unused sender/handle value provided by the BLE library.
-        b : bytearray
+        b : bytes | bytearray
             Serialized mesh_pb2.LogRecord payload from the BLE notification.
         """
         log_record = mesh_pb2.LogRecord()  # type: ignore[attr-defined]
@@ -933,7 +945,19 @@ class BLEInterface(MeshInterface):
         except DecodeError:
             logger.warning("Malformed LogRecord received. Skipping.")
 
-    def _legacy_log_radio_handler(self, _: Any, b: bytearray) -> None:
+    async def log_radio_handler(self, sender: Any, b: bytes | bytearray) -> None:
+        """Backward-compatible wrapper for the legacy log callback name.
+
+        Parameters
+        ----------
+        sender : Any
+            Notification sender/handle value provided by Bleak.
+        b : bytes | bytearray
+            Serialized mesh_pb2.LogRecord payload.
+        """
+        self._log_radio_handler(sender, b)
+
+    def _legacy_log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Deliver a legacy UTF-8 log notification payload to the log handler.
 
         Decodes the notification payload as UTF-8, strips newline characters, and forwards the resulting string to self._handle_log_line. If decoding fails, the payload is ignored and a warning is logged.
@@ -942,7 +966,7 @@ class BLEInterface(MeshInterface):
         ----------
         _ : Any
             Sender or handle value provided by the BLE library (unused).
-        b : bytearray
+        b : bytes | bytearray
             Raw notification payload expected to contain a UTF-8 encoded log line.
         """
         try:
@@ -952,6 +976,18 @@ class BLEInterface(MeshInterface):
             logger.warning(
                 "Malformed legacy LogRecord received (not valid utf-8). Skipping."
             )
+
+    async def legacy_log_radio_handler(self, sender: Any, b: bytes | bytearray) -> None:
+        """Backward-compatible wrapper for the legacy log callback name.
+
+        Parameters
+        ----------
+        sender : Any
+            Notification sender/handle value provided by Bleak.
+        b : bytes | bytearray
+            Raw UTF-8 legacy log payload.
+        """
+        self._legacy_log_radio_handler(sender, b)
 
     @staticmethod
     async def _with_timeout(

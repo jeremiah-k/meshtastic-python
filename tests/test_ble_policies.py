@@ -6,8 +6,8 @@ from meshtastic.interfaces.ble.policies import ReconnectPolicy
 
 
 @pytest.mark.unit
-def test_reconnect_policy_camelcase_methods_work() -> None:
-    """ReconnectPolicy camelCase accessors should expose attempt progression."""
+def test_reconnect_policy_snake_case_methods_work() -> None:
+    """ReconnectPolicy snake_case accessors should expose attempt progression."""
     policy = ReconnectPolicy(
         initial_delay=1.0,
         max_delay=10.0,
@@ -16,7 +16,7 @@ def test_reconnect_policy_camelcase_methods_work() -> None:
         max_retries=2,
     )
 
-    delay, should_retry = policy.nextAttempt()
+    delay, should_retry = policy.next_attempt()
     assert delay == pytest.approx(1.0)
     assert should_retry is True
-    assert policy.getAttemptCount() == 1
+    assert policy.get_attempt_count() == 1

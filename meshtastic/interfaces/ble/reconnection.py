@@ -310,7 +310,7 @@ class ReconnectWorker:
                     return
                 attempt_num = 0
                 try:
-                    attempt_num = cast(int, self._call_policy("getAttemptCount")) + 1
+                    attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
                     if interface._is_connection_connected:
                         return
                     device_addr = _addr_key(getattr(interface, "address", None))
@@ -395,7 +395,7 @@ class ReconnectWorker:
                 if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
                     return
                 try:
-                    next_attempt = self._call_policy("nextAttempt")
+                    next_attempt = self._call_policy("next_attempt")
                 except ReconnectPolicyMissingMethodError as err:
                     logger.exception(
                         "Reconnect policy missing required method '%s'",

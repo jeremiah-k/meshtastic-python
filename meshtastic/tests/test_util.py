@@ -680,9 +680,18 @@ def test_fuzz_camel_to_snake(a_string: str) -> None:
     """Test that camel_to_snake lowercases output and preserves non-uppercase characters."""
     result = camel_to_snake(a_string)
     assert result == result.lower()  # output is always lowercase
-    lowered = a_string.lower()
-    src_counts = Counter(c for c in lowered if c != "_")
-    res_counts = Counter(c for c in result if c != "_")
+    # Use casefold for unicode-stable comparisons. Some characters (e.g., Greek
+    # sigma) have context-sensitive lowercase forms, while camel_to_snake lowers
+    # character-by-character.
+    src_counts = Counter(
+        folded_char
+        for char in a_string
+        if char != "_"
+        for folded_char in char.casefold()
+    )
+    res_counts = Counter(
+        folded_char for char in result if char != "_" for folded_char in char.casefold()
+    )
     assert res_counts == src_counts  # no chars dropped or multiplied
 
 
