@@ -390,8 +390,16 @@ class BLEClient:
         """
         if self.bleak_client is None:
             return False
+        bleak_client = self.bleak_client
 
-        services = getattr(self.bleak_client, "services", None)
+        def _read_services_property() -> Any:
+            """Read Bleak services property, treating BleakError as unavailable."""
+            try:
+                return bleak_client.services
+            except BleakError:
+                return None
+
+        services = _read_services_property()
         if not services or not getattr(services, "get_characteristic", None):
             services = self.error_handler._safe_execute(
                 lambda: self._get_services(),
@@ -399,8 +407,28 @@ class BLEClient:
                 reraise=False,
             )
             if not services:
-                services = getattr(self.bleak_client, "services", None)
-        return bool(services and services.get_characteristic(specifier))
+                services = _read_services_property()
+        if not services or not getattr(services, "get_characteristic", None):
+            return False
+        try:
+            return bool(services.get_characteristic(specifier))
+        except BleakError:
+            services = self.error_handler._safe_execute(
+                lambda: self._get_services(),
+                error_msg=(
+                    "Unable to populate services before has_characteristic after "
+                    "BleakError from get_characteristic"
+                ),
+                reraise=False,
+            )
+            if not services:
+                services = _read_services_property()
+            if not services or not getattr(services, "get_characteristic", None):
+                return False
+            try:
+                return bool(services.get_characteristic(specifier))
+            except BleakError:
+                return False
 
     def start_notify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any

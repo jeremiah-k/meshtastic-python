@@ -142,6 +142,26 @@ class TCPInterface(StreamInterface):
         if sock_to_shutdown is not None:
             sock_to_shutdown.shutdown(socket.SHUT_RDWR)
 
+    def _close_socket_if_current(self, sock: socket.socket | None) -> bool:
+        """Best-effort socket teardown and conditional state clear.
+
+        Returns
+        -------
+        bool
+            `True` if this call cleared `self.socket` (because it still matched
+            `sock`), otherwise `False`.
+        """
+        if sock is None:
+            return False
+        with contextlib.suppress(Exception):
+            self._socket_shutdown(sock)
+        with contextlib.suppress(Exception):
+            sock.close()
+        if self.socket is sock:
+            self.socket = None
+            return True
+        return False
+
     def myConnect(self) -> None:
         """Establish a TCP connection to the instance hostname and port.
 
@@ -170,18 +190,7 @@ class TCPInterface(StreamInterface):
         self._shared_close()
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
-        sock = self.socket
-        if sock is not None:
-            with contextlib.suppress(
-                Exception
-            ):  # Ignore errors in shutdown, because we might have a race with the server
-                self._socket_shutdown(sock)
-            with contextlib.suppress(
-                Exception
-            ):  # Ignore close races if the socket is already torn down
-                sock.close()
-
-        self.socket = None
+        self._close_socket_if_current(self.socket)
 
         # Join after socket teardown so a blocking recv() can exit promptly.
         self._join_reader_thread()
@@ -207,13 +216,7 @@ class TCPInterface(StreamInterface):
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
-            with contextlib.suppress(Exception):
-                if self.socket is sock:
-                    self._socket_shutdown(sock)
-            with contextlib.suppress(Exception):
-                sock.close()
-            if self.socket is sock:
-                self.socket = None
+            if self._close_socket_if_current(sock):
                 self._attempt_reconnect()
 
     def _compute_reconnect_delay(self) -> float:
@@ -307,13 +310,7 @@ class TCPInterface(StreamInterface):
                 elif self._wantExit:
                     # close() may race while we reconnect; tear down the new socket.
                     reconnect_sock = self.socket
-                    with contextlib.suppress(Exception):
-                        self._socket_shutdown(reconnect_sock)
-                    with contextlib.suppress(Exception):
-                        if reconnect_sock is not None:
-                            reconnect_sock.close()
-                    if self.socket is reconnect_sock:
-                        self.socket = None
+                    self._close_socket_if_current(reconnect_sock)
                 else:
                     # _start_config() can call _send_to_radio(), which drains self.queue and may
                     # block on queue space. During reader-thread reconnect this can deadlock
@@ -331,20 +328,16 @@ class TCPInterface(StreamInterface):
 
                     try:
                         self._start_config()
-                    except Exception as config_ex:  # noqa: BLE001 - preserve reader thread survival
+                    except (
+                        Exception
+                    ) as config_ex:  # noqa: BLE001 - preserve reader thread survival
                         logger.warning(
                             "Post-reconnect config for %s failed: %s",
                             self.hostname,
                             config_ex,
                         )
                         reconnect_sock = self.socket
-                        with contextlib.suppress(Exception):
-                            self._socket_shutdown(reconnect_sock)
-                        with contextlib.suppress(Exception):
-                            if reconnect_sock is not None:
-                                reconnect_sock.close()
-                        if self.socket is reconnect_sock:
-                            self.socket = None
+                        self._close_socket_if_current(reconnect_sock)
                     else:
                         self._reconnect_attempts = 0
                         self._fatal_disconnect = False
@@ -390,13 +383,7 @@ class TCPInterface(StreamInterface):
             if data == b"":
                 logger.debug("dead socket, re-connecting")
                 # cleanup and reconnect socket without breaking reader thread
-                with contextlib.suppress(Exception):
-                    if self.socket is sock:
-                        self._socket_shutdown(sock)
-                with contextlib.suppress(Exception):
-                    sock.close()
-                if self.socket is sock:
-                    self.socket = None
+                if self._close_socket_if_current(sock):
                     self._attempt_reconnect()
                 else:
                     logger.debug(

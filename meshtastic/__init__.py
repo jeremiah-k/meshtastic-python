@@ -190,6 +190,29 @@ class KnownProtocol(NamedTuple):
     onReceive: OnReceive | None = None
 
 
+def _packet_debug_summary(as_dict: dict[str, Any]) -> dict[str, Any]:
+    """Return a sanitized packet summary for debug logging.
+
+    The summary intentionally omits sensitive payload/body fields while retaining
+    enough context for troubleshooting receive-handler flows.
+    """
+    decoded = as_dict.get("decoded")
+    decoded_dict = decoded if isinstance(decoded, dict) else {}
+    payload = decoded_dict.get("payload")
+    payload_len = (
+        len(payload)
+        if isinstance(payload, (bytes, bytearray, memoryview, str))
+        else None
+    )
+    return {
+        "from": as_dict.get("from"),
+        "to": as_dict.get("to"),
+        "portnum": decoded_dict.get("portnum"),
+        "decoded_keys": sorted(decoded_dict.keys()),
+        "payload_len": payload_len,
+    }
+
+
 def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Decode text payloads from a received packet and update per-node metadata.
 
@@ -211,7 +234,7 @@ def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     #
     # Usually btw this problem is caused by apps sending binary data but setting the payload type to
     # text.
-    logger.debug("in _on_text_receive() as_dict:%s", as_dict)
+    logger.debug("in _on_text_receive() %s", _packet_debug_summary(as_dict))
     try:
         as_bytes = as_dict["decoded"]["payload"]
         as_dict["decoded"]["text"] = as_bytes.decode("utf-8")
@@ -234,7 +257,7 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         Packet dictionary expected to contain
         "from" and "decoded"->"position".
     """
-    logger.debug("in _on_position_receive() as_dict:%s", as_dict)
+    logger.debug("in _on_position_receive() %s", _packet_debug_summary(as_dict))
     if "decoded" in as_dict:
         if "position" in as_dict["decoded"] and "from" in as_dict:
             _receive_info_update(iface, as_dict)
@@ -262,7 +285,7 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         Received packet dictionary; expected to contain
         `"decoded" -> "user"` and `"from"`.
     """
-    logger.debug("in _on_node_info_receive() as_dict:%s", as_dict)
+    logger.debug("in _on_node_info_receive() %s", _packet_debug_summary(as_dict))
     if "decoded" in as_dict:
         if "user" in as_dict["decoded"] and "from" in as_dict:
             p = as_dict["decoded"]["user"]
@@ -293,7 +316,7 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         Received packet dictionary; expected to include
         a `from` key and may include `decoded.telemetry`.
     """
-    logger.debug("in _on_telemetry_receive() as_dict:%s", as_dict)
+    logger.debug("in _on_telemetry_receive() %s", _packet_debug_summary(as_dict))
     if "from" not in as_dict:
         return
 
