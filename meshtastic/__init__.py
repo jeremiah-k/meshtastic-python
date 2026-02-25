@@ -63,37 +63,39 @@ interface = meshtastic.serial_interface.SerialInterface()
 ```
 """
 
+# ruff: noqa: F401
+
 import logging
 from importlib import import_module
 from typing import Any, Callable, NamedTuple
 
-from google.protobuf.json_format import MessageToJson as MessageToJson
-from pubsub import pub as pub  # type: ignore[import-untyped]
+from google.protobuf.json_format import MessageToJson
+from pubsub import pub  # type: ignore[import-untyped]
 
-from meshtastic.node import Node as Node
+from meshtastic.node import Node
 from meshtastic.util import (
     DeferredExecution,
-    Timeout as Timeout,
-    catchAndIgnore as catchAndIgnore,
-    stripnl as stripnl,
+    Timeout,
+    catchAndIgnore,
+    stripnl,
 )
 
 from . import (
-    util as util,
+    util,
 )
 from .protobuf import (
     admin_pb2,
-    apponly_pb2 as apponly_pb2,
-    channel_pb2 as channel_pb2,
-    config_pb2 as config_pb2,
-    mesh_pb2 as mesh_pb2,
-    mqtt_pb2 as mqtt_pb2,
-    paxcount_pb2 as paxcount_pb2,
-    portnums_pb2 as portnums_pb2,
-    powermon_pb2 as powermon_pb2,
-    remote_hardware_pb2 as remote_hardware_pb2,
-    storeforward_pb2 as storeforward_pb2,
-    telemetry_pb2 as telemetry_pb2,
+    apponly_pb2,
+    channel_pb2,
+    config_pb2,
+    mesh_pb2,
+    mqtt_pb2,
+    paxcount_pb2,
+    portnums_pb2,
+    powermon_pb2,
+    remote_hardware_pb2,
+    storeforward_pb2,
+    telemetry_pb2,
 )
 
 # Keep this module aligned with historical master behavior by intentionally not
