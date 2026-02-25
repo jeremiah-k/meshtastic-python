@@ -575,11 +575,12 @@ class BLEClient:
             # Limitation: this only helps when stdout exists and supports flush();
             # redirected/non-flushable outputs (e.g., /dev/null wrappers) may not
             # provide the I/O nudge needed for callback progress.
-            stdout = getattr(sys, "stdout", None)
-            if stdout is not None and hasattr(stdout, "flush"):
-                with contextlib.suppress(ValueError, OSError, AttributeError):
-                    if not getattr(stdout, "closed", False):
-                        stdout.flush()
+            if sys.platform == "darwin":
+                stdout = getattr(sys, "stdout", None)
+                if stdout is not None and hasattr(stdout, "flush"):
+                    with contextlib.suppress(ValueError, OSError, AttributeError):
+                        if not getattr(stdout, "closed", False):
+                            stdout.flush()
             return future.result(timeout)
         except SystemExit:  # pylint: disable=W0706
             raise

@@ -24,7 +24,12 @@ from typing import Any, Callable, Coroutine, TypeVar
 
 from bleak.exc import BleakDBusError
 
-from meshtastic.interfaces.ble.constants import BLEConfig
+from meshtastic.interfaces.ble.constants import (
+    BLECLIENT_ERROR_LOOP_NOT_AVAILABLE,
+    BLECLIENT_ERROR_LOOP_RESTART_FAILED,
+    BLECLIENT_ERROR_LOOP_START_FAILED,
+    BLEConfig,
+)
 
 T = TypeVar("T")
 
@@ -224,7 +229,7 @@ class BLECoroutineRunner:
                 "BLECoroutineRunner loop failed to start within %.1fs",
                 timeout,
             )
-            raise RuntimeError("BLE event loop failed to start")
+            raise RuntimeError(BLECLIENT_ERROR_LOOP_START_FAILED)
 
     def _start_locked(self) -> threading.Event | None:
         """Ensure the background event loop thread is started and provide a readiness event when a new startup is initiated.
@@ -394,7 +399,7 @@ class BLECoroutineRunner:
 
     def _run_coroutine_threadsafe(
         self,
-        coro: Coroutine[None, None, T],
+        coro: Coroutine[Any, Any, T],
         timeout: float | None = None,
         *,
         startup_timeout: float | None = None,
@@ -403,7 +408,7 @@ class BLECoroutineRunner:
 
         Parameters
         ----------
-        coro : Coroutine[None, None, T]
+        coro : Coroutine[Any, Any, T]
             Coroutine to execute on the runner loop.
         timeout : float | None
             Deprecated alias for `startup_timeout`; if provided a DeprecationWarning is emitted. (Default value = None)
@@ -453,7 +458,7 @@ class BLECoroutineRunner:
             # Close the coroutine to prevent "coroutine was never awaited" warning
             with contextlib.suppress(Exception):
                 coro.close()
-            raise RuntimeError("BLECoroutineRunner loop is not available")
+            raise RuntimeError(BLECLIENT_ERROR_LOOP_NOT_AVAILABLE)
 
         try:
             future = asyncio.run_coroutine_threadsafe(coro, loop)
@@ -677,5 +682,5 @@ class BLECoroutineRunner:
                 "BLECoroutineRunner restart timed out waiting for loop readiness after %.1fs",
                 BLEConfig.RUNNER_LOOP_READY_TIMEOUT_SECONDS,
             )
-            raise RuntimeError("BLE event loop failed to restart")
+            raise RuntimeError(BLECLIENT_ERROR_LOOP_RESTART_FAILED)
         return True

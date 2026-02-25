@@ -364,11 +364,9 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         Received packet dictionary; expected to contain
         `decoded.admin.raw.session_passkey` and a `from` sender field.
     """
-    logger.debug("in _on_admin_receive() as_dict:%s", as_dict)
+    logger.debug("in _on_admin_receive() from=%s", as_dict.get("from"))
     if "from" not in as_dict:
-        logger.debug(
-            "Dropping admin packet because 'from' field is missing: %s", as_dict
-        )
+        logger.debug("Dropping admin packet because 'from' field is missing")
         return
 
     _receive_info_update(iface, as_dict)
@@ -381,8 +379,8 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     except (KeyError, AttributeError):
         # Expected fields not present - this is normal for non-admin packets
         logger.debug(
-            "Admin session passkey not extracted from packet (expected for non-admin packets): %s",
-            as_dict,
+            "Admin session passkey not extracted from admin packet from=%s",
+            as_dict.get("from"),
             exc_info=True,
         )
 

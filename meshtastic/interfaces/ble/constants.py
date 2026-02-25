@@ -128,6 +128,9 @@ BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED = (
 )
 BLECLIENT_ERROR_ASYNC_OPERATION_FAILED = "Async operation failed: {0}"
 BLECLIENT_ERROR_FAILED_TO_SCHEDULE = "Failed to schedule operation: {0}"
+BLECLIENT_ERROR_LOOP_START_FAILED = "BLE event loop failed to start"
+BLECLIENT_ERROR_LOOP_NOT_AVAILABLE = "BLECoroutineRunner loop is not available"
+BLECLIENT_ERROR_LOOP_RESTART_FAILED = "BLE event loop failed to restart"
 
 
 _MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"
