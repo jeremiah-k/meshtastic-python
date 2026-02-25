@@ -101,6 +101,7 @@ reset()
 # Backwards compatibility aliases for renamed module state
 # ---------------------------------------------------------------------------
 
+# COMPAT_DEPRECATE: camelCase alias for tunnel_instance (warns once)
 _COMPAT_ALIASES: dict[str, str] = {
     "tunnelInstance": "tunnel_instance",
 }

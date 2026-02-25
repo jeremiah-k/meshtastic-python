@@ -1769,7 +1769,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
     return config_txt
 
 
-# Snake_case alias for backward compatibility
+# COMPAT_STABLE_SHIM: snake_case alias for exportConfig
 export_config = exportConfig
 
 

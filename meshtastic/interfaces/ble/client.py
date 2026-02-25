@@ -253,6 +253,8 @@ class BLEClient:
         )
         return bool(result)  # type: ignore[arg-type]
 
+
+    # COMPAT_STABLE_SHIM: snake_case alias for isConnected
     def is_connected(self) -> bool:
         """Return whether the BLE client is currently connected.
 
@@ -482,6 +484,8 @@ class BLEClient:
             self.bleak_client.stop_notify(*args, **kwargs), timeout=timeout
         )
 
+
+    # COMPAT_STABLE_SHIM: snake_case alias for stopNotify
     def stop_notify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
     ) -> None:
