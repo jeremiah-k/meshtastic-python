@@ -14,6 +14,7 @@ from meshtastic import (
     _on_node_info_receive,
     _on_position_receive,
     _on_text_receive,
+    _receive_info_update,
     mt_config,
     serial_interface,
 )
@@ -103,6 +104,24 @@ def test_init_on_admin_receive_redacts_last_received(
     assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
     # Input packet should remain unchanged for callback consumers.
     assert packet["decoded"]["admin"]["raw"].session_passkey == b"abc123"
+
+
+@pytest.mark.unit
+def test_init_receive_info_update_keeps_non_admin_packet_object(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Non-admin lastReceived cache should preserve master-like object semantics."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"text": "hello"},
+        "rxTime": 101,
+    }
+
+    _receive_info_update(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["lastReceived"] is packet
 
 
 @pytest.mark.unit

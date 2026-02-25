@@ -35,6 +35,7 @@ from meshtastic.util import (
     ipstr,
     is_windows11,
     messageToJson,
+    message_to_json,
     pskToString,
     quoteBooleans,
     readnet_u16,
@@ -630,6 +631,16 @@ def test_messageToJson_shows_all() -> None:
         ), f"Key {key}: expected {value}, got {actual.get(key)}"
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
+
+
+@pytest.mark.unit
+def test_message_to_json_alias_matches_messageToJson() -> None:
+    """snake_case message_to_json shim should behave exactly like messageToJson."""
+    message = mesh_pb2.MyNodeInfo()
+    assert message_to_json(message) == messageToJson(message)
+    assert message_to_json(message, multiline=True) == messageToJson(
+        message, multiline=True
+    )
 
 
 @pytest.mark.unit

@@ -1261,6 +1261,12 @@ def messageToJson(message: Message, multiline: bool = False) -> str:
     return _message_to_json(message, multiline=multiline)
 
 
+# COMPAT_STABLE_SHIM: historical public snake_case alias.
+def message_to_json(message: Message, multiline: bool = False) -> str:
+    """Backward-compatible snake_case alias for messageToJson."""
+    return messageToJson(message, multiline=multiline)
+
+
 def _to_node_num(node_id: int | str) -> int:
     """Normalize a node identifier to its integer node number.
 

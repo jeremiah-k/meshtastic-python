@@ -102,6 +102,26 @@ def test_TCPInterface_rejects_non_positive_connect_timeout(
 
 
 @pytest.mark.unit
+def test_TCPInterface_accepts_none_connect_timeout() -> None:
+    """None connectTimeout should defer to socket's default timeout behavior."""
+    with patch("meshtastic.tcp_interface.socket.create_connection") as mock_connect:
+        connected_socket = MagicMock()
+        mock_connect.return_value = connected_socket
+        iface = TCPInterface(
+            hostname="localhost",
+            noProto=True,
+            connectNow=False,
+            connectTimeout=None,
+        )
+
+        iface.myConnect()
+
+        mock_connect.assert_called_once_with(("localhost", 4403), timeout=None)
+        connected_socket.settimeout.assert_called_once_with(None)
+        iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_write_uses_sendall() -> None:
     """Test that _write_bytes uses sendall to avoid partial writes."""
     with patch("socket.socket"):

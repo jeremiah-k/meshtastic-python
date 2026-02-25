@@ -37,7 +37,7 @@ class TCPInterface(StreamInterface):
         portNumber: int = DEFAULT_TCP_PORT,
         noNodes: bool = False,
         timeout: float = 300.0,
-        connectTimeout: float = DEFAULT_CONNECT_TIMEOUT,
+        connectTimeout: float | None = DEFAULT_CONNECT_TIMEOUT,
     ) -> None:
         """Initialize a TCPInterface for a meshtastic device and optionally establish a TCP connection.
 
@@ -57,10 +57,11 @@ class TCPInterface(StreamInterface):
             If True, do not populate node state. (Default value = False)
         timeout : float
             Request/response timeout in seconds (default: 300.0).
-        connectTimeout : float
+        connectTimeout : float | None
             Timeout in seconds for socket connect attempts (default: 10.0).
+            ``None`` uses the platform socket default timeout behavior.
         """
-        if connectTimeout is None or connectTimeout <= 0:
+        if connectTimeout is not None and connectTimeout <= 0:
             raise ValueError(
                 f"connectTimeout must be a positive number, got {connectTimeout!r}"
             )
@@ -71,7 +72,7 @@ class TCPInterface(StreamInterface):
         self.hostname: str = hostname
         self.portNumber: int = portNumber
         self._connect_now: bool = connectNow
-        self._connect_timeout: float = connectTimeout
+        self._connect_timeout: float | None = connectTimeout
         # Pre-assign base-class attributes so __repr__ stays safe even if
         # myConnect() raises before StreamInterface.__init__ runs.
         self.debugOut = debugOut
