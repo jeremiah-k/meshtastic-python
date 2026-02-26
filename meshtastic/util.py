@@ -362,12 +362,12 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
     return ports
 
 
-class DotDict(dict):
+class DotDict(dict[str, Any]):
     """dot.notation access to dictionary attributes."""
 
     __getattr__ = dict.get
-    __setattr__ = dict.__setitem__  # type: ignore[assignment]
-    __delattr__ = dict.__delitem__  # type: ignore[assignment]
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
 
 
 # Track warn-once state for dotdict deprecation (process-wide).
@@ -630,7 +630,7 @@ class DeferredExecution:
         name : str
             Name assigned to the worker thread.
         """
-        self.queue: Queue = Queue()
+        self.queue: Queue[Any] = Queue()
         # this thread must be marked as daemon, otherwise it will prevent clients from exiting
         self.thread = threading.Thread(
             target=self._run, args=(), name=name, daemon=True
@@ -1127,7 +1127,7 @@ def active_ports_on_supported_devices(
             for com_port in com_ports:
                 ports.add(com_port)
     if eliminate_duplicates:
-        portlist: list = eliminate_duplicate_port(list(ports))
+        portlist: list[str] = eliminate_duplicate_port(list(ports))
         portlist.sort()
         ports = set(portlist)
     return ports

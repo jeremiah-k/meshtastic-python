@@ -8,7 +8,7 @@ import time
 from contextlib import ExitStack, suppress
 from typing import Any, NoReturn
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
@@ -17,7 +17,7 @@ from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface
 
 
-class _FallbackDotMap(dict):
+class _FallbackDotMap(dict[str, Any]):
     """Lightweight fallback used when dotmap is unavailable."""
 
     def __getattr__(self, key: str) -> Any:

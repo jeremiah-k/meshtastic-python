@@ -4,6 +4,7 @@ import logging
 import re
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -18,6 +19,9 @@ from ..protobuf import config_pb2, mesh_pb2, portnums_pb2
 # TODO
 # from ..config import Config
 from ..util import Timeout
+
+if TYPE_CHECKING:
+    from .conftest import FakeTimer
 
 
 @pytest.mark.unit
@@ -79,9 +83,10 @@ def test_MeshInterface(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getMyUser(iface_with_nodes):
+def test_getMyUser(iface_with_nodes: MeshInterface) -> None:
     """Test getMyUser()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     myuser = iface.getMyUser()
     assert myuser is not None
@@ -90,9 +95,10 @@ def test_getMyUser(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getLongName(iface_with_nodes):
+def test_getLongName(iface_with_nodes: MeshInterface) -> None:
     """Test getLongName()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     mylongname = iface.getLongName()
     assert mylongname == "Unknown f81c"
@@ -100,9 +106,10 @@ def test_getLongName(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getShortName(iface_with_nodes):
+def test_getShortName(iface_with_nodes: MeshInterface) -> None:
     """Test getShortName()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     myshortname = iface.getShortName()
     assert myshortname == "?1C"
@@ -110,7 +117,7 @@ def test_getShortName(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handlePacketFromRadio_no_from(caplog):
+def test_handlePacketFromRadio_no_from(caplog: pytest.LogCaptureFixture) -> None:
     """Test _handle_packet_from_radio with no 'from' in the mesh packet."""
     with MeshInterface(noProto=True) as iface:
         meshPacket = mesh_pb2.MeshPacket()
@@ -123,7 +130,7 @@ def test_handlePacketFromRadio_no_from(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handlePacketFromRadio_with_a_portnum(caplog):
+def test_handlePacketFromRadio_with_a_portnum(caplog: pytest.LogCaptureFixture) -> None:
     """Test _handle_packet_from_radio with a portnum.
 
     Since we have an attribute called 'from', we cannot simply 'set' it.
@@ -141,7 +148,7 @@ def test_handlePacketFromRadio_with_a_portnum(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handlePacketFromRadio_no_portnum(caplog):
+def test_handlePacketFromRadio_no_portnum(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that _handle_packet_from_radio logs a warning about not populating fromId when a MeshPacket has no portnum."""
     with MeshInterface(noProto=True) as iface:
         meshPacket = mesh_pb2.MeshPacket()
@@ -211,7 +218,7 @@ def test_getNode_not_local_timeout(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPosition(caplog):
+def test_sendPosition(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that MeshInterface.sendPosition() executes without error and emits position-related debug logs.
 
     Creates a MeshInterface(noProto=True), calls sendPosition() while capturing DEBUG logs, and then closes the interface.
@@ -225,7 +232,10 @@ def test_sendPosition(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch, fake_timer_cls):
+def test_heartbeat_timer_is_daemon_and_cancelled_on_close(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_timer_cls: type["FakeTimer"],
+) -> None:
     """Heartbeat timer should be daemonized and cancelled during close()."""
 
     with MeshInterface(noProto=True) as iface:
@@ -243,8 +253,9 @@ def test_heartbeat_timer_is_daemon_and_cancelled_on_close(monkeypatch, fake_time
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_heartbeat_callback_does_not_reschedule_after_close(
-    monkeypatch, fake_timer_cls
-):
+    monkeypatch: pytest.MonkeyPatch,
+    fake_timer_cls: type["FakeTimer"],
+) -> None:
     """A heartbeat callback firing after close() must not create a new timer."""
 
     with MeshInterface(noProto=True) as iface:
@@ -263,7 +274,8 @@ def test_heartbeat_callback_does_not_reschedule_after_close(
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_close_waits_for_inflight_heartbeat_send(
-    monkeypatch: pytest.MonkeyPatch, fake_timer_cls
+    monkeypatch: pytest.MonkeyPatch,
+    fake_timer_cls: type["FakeTimer"],
 ) -> None:
     """close() should wait for an in-flight heartbeat send to finish."""
 
@@ -308,7 +320,7 @@ def test_close_waits_for_inflight_heartbeat_send(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_connected_noop_when_closing():
+def test_connected_noop_when_closing() -> None:
     """_connected() should not set connection state while shutdown is in progress."""
     with MeshInterface(noProto=True) as iface:
         iface._closing = True
@@ -350,7 +362,7 @@ def test_connected_noop_when_closing():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handleFromRadio_with_my_info(caplog):
+def test_handleFromRadio_with_my_info(caplog: pytest.LogCaptureFixture) -> None:
     """Test _handle_from_radio with my_info."""
     # Note: I captured the '--debug --info' for the bytes below.
     # It "translates" to this:
@@ -374,7 +386,10 @@ def test_handleFromRadio_with_my_info(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handleFromRadio_with_node_info(caplog, capsys):
+def test_handleFromRadio_with_node_info(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test _handle_from_radio with node_info."""
     # Note: I captured the '--debug --info' for the bytes below.
     # It "translates" to this:
@@ -411,7 +426,10 @@ def test_handleFromRadio_with_node_info(caplog, capsys):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handleFromRadio_with_node_info_tbeam1(caplog, capsys):
+def test_handleFromRadio_with_node_info_tbeam1(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test _handle_from_radio with node_info."""
     # Note: Captured the '--debug --info' for the bytes below.
     # pylint: disable=C0301
@@ -437,7 +455,7 @@ def test_handleFromRadio_with_node_info_tbeam1(caplog, capsys):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog):
+def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog: pytest.LogCaptureFixture) -> None:
     """Test _handle_from_radio with node_info with some bad data (issue#172) - ensure we do not throw exception."""
     # Note: Captured the '--debug --info' for the bytes below.
     from_radio_bytes = b'"\x17\x08\xdc\x8a\x8a\xae\x02\x12\x08"\x06\x00\x00\x00\x00\x00\x00\x1a\x00=\x00\x00\xb8@'
@@ -449,7 +467,7 @@ def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_MeshInterface_sendToRadio_no_proto(caplog):
+def test_MeshInterface_sendToRadio_no_proto(caplog: pytest.LogCaptureFixture) -> None:
     """Verify the default MeshInterface._send_to_radio_impl logs that subclasses must implement radio sending.
 
     Asserts that invoking the base implementation produces a log message containing "Subclass must provide toradio".
@@ -463,7 +481,7 @@ def test_MeshInterface_sendToRadio_no_proto(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendData_too_long(caplog):
+def test_sendData_too_long(caplog: pytest.LogCaptureFixture) -> None:
     """Test when data payload is too big."""
     with MeshInterface(noProto=True) as iface:
         some_large_text = (
@@ -478,7 +496,7 @@ def test_sendData_too_long(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendData_unknown_app():
+def test_sendData_unknown_app() -> None:
     """Verify that calling sendData with PortNum.UNKNOWN_APP raises MeshInterface.MeshInterfaceError.
 
     and the error message contains "A non-zero port number must be specified".
@@ -492,7 +510,7 @@ def test_sendData_unknown_app():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPosition_with_a_position(caplog):
+def test_sendPosition_with_a_position(caplog: pytest.LogCaptureFixture) -> None:
     """Test sendPosition when lat/long/alt."""
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -504,7 +522,7 @@ def test_sendPosition_with_a_position(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_no_destination():
+def test_sendPacket_with_no_destination() -> None:
     """Test _send_packet() raises MeshInterfaceError when destinationId is None."""
     with MeshInterface(noProto=True) as iface:
         with pytest.raises(
@@ -512,12 +530,12 @@ def test_sendPacket_with_no_destination():
             match="destinationId must not be None",
         ):
             mesh_packet = mesh_pb2.MeshPacket()
-            iface._send_packet(mesh_packet, destinationId=None)
+            iface._send_packet(mesh_packet, destinationId=None)  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_int(caplog):
+def test_sendPacket_with_destination_as_int(caplog: pytest.LogCaptureFixture) -> None:
     """Test _send_packet() with int as a destination."""
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -528,7 +546,7 @@ def test_sendPacket_with_destination_as_int(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_starting_with_a_bang(caplog):
+def test_sendPacket_with_destination_starting_with_a_bang(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that _send_packet ignores destination IDs that begin with '!' and logs the action.
 
     Asserts that calling _send_packet with a destinationId starting with "!" results in a log entry containing "Not sending packet".
@@ -543,7 +561,7 @@ def test_sendPacket_with_destination_starting_with_a_bang(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_BROADCAST_ADDR(caplog):
+def test_sendPacket_with_destination_as_BROADCAST_ADDR(caplog: pytest.LogCaptureFixture) -> None:
     """Test _send_packet() with BROADCAST_ADDR as a destination."""
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -554,7 +572,7 @@ def test_sendPacket_with_destination_as_BROADCAST_ADDR(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo():
+def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo() -> None:
     """Test _send_packet() with LOCAL_ADDR raises MeshInterfaceError when myInfo is missing."""
     with MeshInterface(noProto=True) as iface:
         with pytest.raises(
@@ -567,7 +585,7 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog):
+def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog: pytest.LogCaptureFixture) -> None:
     """Test _send_packet() with LOCAL_ADDR as a destination with myInfo."""
     with MeshInterface(noProto=True) as iface:
         myInfo = MagicMock()
@@ -581,7 +599,7 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes):
+def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes: MeshInterface) -> None:
     """Test _send_packet() with '' as a destination raises MeshInterfaceError when node not found."""
     iface = iface_with_nodes
     meshPacket = mesh_pb2.MeshPacket()
@@ -594,7 +612,10 @@ def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_is_blank_without_nodes(caplog, iface_with_nodes):
+def test_sendPacket_with_destination_is_blank_without_nodes(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _send_packet() with '' as a destination with myInfo."""
     iface = iface_with_nodes
     iface.nodes = None
@@ -606,22 +627,22 @@ def test_sendPacket_with_destination_is_blank_without_nodes(caplog, iface_with_n
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getMyNodeInfo():
+def test_getMyNodeInfo() -> None:
     """Test getMyNodeInfo()."""
     with MeshInterface(noProto=True) as iface:
         anode = iface.getNode(LOCAL_ADDR)
-        iface.nodesByNum = {1: anode}  # type: ignore[assignment]
-        assert iface.nodesByNum.get(1) == anode  # type: ignore[union-attr]
+        iface.nodesByNum = {1: anode}  # type: ignore[dict-item]
+        assert iface.nodesByNum.get(1) == anode  # type: ignore[comparison-overlap]
         myInfo = MagicMock()
         iface.myInfo = myInfo
         iface.myInfo.my_node_num = 1
         myinfo = iface.getMyNodeInfo()
-    assert myinfo == anode
+    assert myinfo == anode  # type: ignore[comparison-overlap]
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getCannedMessage():
+def test_getCannedMessage() -> None:
     """Test MeshInterface.getCannedMessage()."""
     with MeshInterface(noProto=True) as iface:
         node = MagicMock()
@@ -633,7 +654,7 @@ def test_getCannedMessage():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getRingtone():
+def test_getRingtone() -> None:
     """Ensure MeshInterface.getRingtone delegates to the local node and returns its ringtone string.
 
     The local node's get_ringtone() return value is forwarded unchanged.
@@ -648,7 +669,7 @@ def test_getRingtone():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_generatePacketId():
+def test_generatePacketId() -> None:
     """Test _generate_packet_id() when no currentPacketId (not connected)."""
     with MeshInterface(noProto=True) as iface:
         # not sure when this condition would ever happen... but we can simulate it
@@ -661,17 +682,17 @@ def test_generatePacketId():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_fixupPosition_empty_pos():
+def test_fixupPosition_empty_pos() -> None:
     """Test _fixup_position()."""
     with MeshInterface(noProto=True) as iface:
-        pos = {}
+        pos: dict[str, Any] = {}
         newpos = iface._fixup_position(pos)
     assert newpos == pos
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_fixupPosition_no_changes_needed():
+def test_fixupPosition_no_changes_needed() -> None:
     """Test _fixup_position()."""
     with MeshInterface(noProto=True) as iface:
         pos = {"latitude": 101, "longitude": 102}
@@ -681,7 +702,7 @@ def test_fixupPosition_no_changes_needed():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_fixupPosition():
+def test_fixupPosition() -> None:
     """Test _fixup_position()."""
     with MeshInterface(noProto=True) as iface:
         pos = {"latitudeI": 1010000000, "longitudeI": 1020000000}
@@ -696,9 +717,10 @@ def test_fixupPosition():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_nodeNumToId(iface_with_nodes):
+def test_nodeNumToId(iface_with_nodes: MeshInterface) -> None:
     """Test _node_num_to_id()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     someid = iface._node_num_to_id(2475227164)
     assert someid == "!9388f81c"
@@ -706,9 +728,10 @@ def test_nodeNumToId(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_nodeNumToId_not_found(iface_with_nodes):
+def test_nodeNumToId_not_found(iface_with_nodes: MeshInterface) -> None:
     """Test _node_num_to_id()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     someid = iface._node_num_to_id(123)
     assert someid is None
@@ -716,9 +739,10 @@ def test_nodeNumToId_not_found(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_nodeNumToId_to_all(iface_with_nodes):
+def test_nodeNumToId_to_all(iface_with_nodes: MeshInterface) -> None:
     """Test _node_num_to_id()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     someid = iface._node_num_to_id(0xFFFFFFFF)
     assert someid == "^all"
@@ -726,9 +750,10 @@ def test_nodeNumToId_to_all(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getOrCreateByNum_minimal(iface_with_nodes):
+def test_getOrCreateByNum_minimal(iface_with_nodes: MeshInterface) -> None:
     """Test _get_or_create_by_num()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     tmp = iface._get_or_create_by_num(123)
     assert tmp == {
@@ -744,9 +769,10 @@ def test_getOrCreateByNum_minimal(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getOrCreateByNum_not_found(iface_with_nodes):
+def test_getOrCreateByNum_not_found(iface_with_nodes: MeshInterface) -> None:
     """Test _get_or_create_by_num()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     with pytest.raises(MeshInterface.MeshInterfaceError) as pytest_wrapped_e:
         iface._get_or_create_by_num(0xFFFFFFFF)
@@ -755,9 +781,10 @@ def test_getOrCreateByNum_not_found(iface_with_nodes):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getOrCreateByNum(iface_with_nodes):
+def test_getOrCreateByNum(iface_with_nodes: MeshInterface) -> None:
     """Test _get_or_create_by_num()."""
     iface = iface_with_nodes
+    assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     tmp = iface._get_or_create_by_num(2475227164)
     assert tmp["num"] == 2475227164
@@ -797,7 +824,11 @@ def test_exit_with_exception(caplog: pytest.LogCaptureFixture) -> None:
 
 
 @pytest.mark.unit
-def test_showNodes_exclude_self(capsys, caplog, iface_with_nodes):
+def test_showNodes_exclude_self(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test that we hit that continue statement."""
     with caplog.at_level(logging.DEBUG):
         iface = iface_with_nodes
@@ -808,7 +839,7 @@ def test_showNodes_exclude_self(capsys, caplog, iface_with_nodes):
 
 
 @pytest.mark.unitslow
-def test_waitForConfig():
+def test_waitForConfig() -> None:
     """Verify that waitForConfig raises MeshInterface.MeshInterfaceError when the interface times out waiting for configuration."""
     with MeshInterface(noProto=True) as iface:
         # override how long to wait
@@ -820,7 +851,7 @@ def test_waitForConfig():
 
 
 @pytest.mark.unit
-def test_waitConnected_raises_an_exception():
+def test_waitConnected_raises_an_exception() -> None:
     """Test waitConnected()."""
     with MeshInterface(noProto=True) as iface:
         iface.failure = MeshInterface.MeshInterfaceError("warn about something")
@@ -843,7 +874,7 @@ def test_waitConnected_isConnected_timeout() -> None:
 
 
 @pytest.mark.unit
-def test_timeago():
+def test_timeago() -> None:
     """Test that the _timeago function returns sane values."""
     assert _timeago(0) == "now"
     assert _timeago(1) == "1 sec ago"
@@ -855,7 +886,7 @@ def test_timeago():
 
 
 @given(seconds=st.integers())
-def test_timeago_fuzz(seconds):
+def test_timeago_fuzz(seconds: int) -> None:
     """Fuzz _timeago to ensure it works with any integer."""
     val = _timeago(seconds)
     assert re.fullmatch(r"now|\d+ (secs?|mins?|hours?|days?|months?|years?) ago", val)

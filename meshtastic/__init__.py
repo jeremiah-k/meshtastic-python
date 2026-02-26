@@ -70,7 +70,7 @@ from importlib import import_module
 from typing import Any, Callable, NamedTuple
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 from meshtastic.node import Node
 from meshtastic.util import (

@@ -944,7 +944,7 @@ class BLEInterface(MeshInterface):
         b : bytes | bytearray
             Serialized mesh_pb2.LogRecord payload from the BLE notification.
         """
-        log_record = mesh_pb2.LogRecord()  # type: ignore[attr-defined]
+        log_record = mesh_pb2.LogRecord()
         try:
             log_record.ParseFromString(bytes(b))
 
@@ -2031,11 +2031,8 @@ class BLEInterface(MeshInterface):
         connected : bool
             True when the interface is connected, False when disconnected.
         """
-        # Lazy import avoids circular dependency with mesh_interface; `pub` is
-        # module-level/runtime-injected there and not exposed in type stubs.
-        from meshtastic.mesh_interface import (
-            pub as mesh_pub,  # type: ignore[attr-defined]
-        )
+        # Lazy import avoids circular dependency with mesh_interface
+        from pubsub import pub as mesh_pub
 
         def _publish_status() -> None:
             """Publish the legacy "meshtastic.connection.status" message reflecting the interface's current connection state.

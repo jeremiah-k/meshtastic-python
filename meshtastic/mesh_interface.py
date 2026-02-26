@@ -24,7 +24,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 from tabulate import tabulate
 
 import meshtastic.node
@@ -298,13 +298,13 @@ class MeshInterface:  # pylint: disable=R0902
         if print_color is not None and interface.debugOut == sys.stdout:
             # this isn't quite correct (could cause false positives), but currently our formatting differs between different log representations
             if "DEBUG" in line:
-                print_color.print(line, color="cyan")  # type: ignore[arg-type]
+                print_color.print(line, color="cyan")
             elif "INFO" in line:
-                print_color.print(line, color="white")  # type: ignore[arg-type]
+                print_color.print(line, color="white")
             elif "WARN" in line:
-                print_color.print(line, color="yellow")  # type: ignore[arg-type]
+                print_color.print(line, color="yellow")
             elif "ERR" in line:
-                print_color.print(line, color="red")  # type: ignore[arg-type]
+                print_color.print(line, color="red")
             else:
                 print_color.print(line)
         elif callable(interface.debugOut):

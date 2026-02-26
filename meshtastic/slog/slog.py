@@ -10,11 +10,12 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
 import pyarrow as pa
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter
@@ -145,7 +146,7 @@ class PowerLogger:
             raise ValueError("interval must be > 0 seconds")
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
-        power_schema_fields: list[pa.Field] = [
+        power_schema_fields: list[Any] = [
             pa.field("time", pa.timestamp("us")),
             pa.field("average_mA", pa.float64()),
             pa.field("max_mA", pa.float64()),
@@ -449,7 +450,7 @@ class StructuredLogger:
 
                 r = d.format.parse(args)  # get the values with the correct types
                 if r:
-                    di = r.named  # type: ignore[union-attr] # pyright: ignore[reportAttributeAccessIssue]
+                    di = r.named  # pyright: ignore[reportAttributeAccessIssue]
                     if last_is_str:
                         di[last_field[0]] = di[
                             last_field[0]

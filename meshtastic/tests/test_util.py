@@ -78,7 +78,7 @@ def test_genPSK256() -> None:
 
 
 @pytest.mark.unit
-def test_fromStr():
+def test_fromStr() -> None:
     """Test fromStr."""
     assert fromStr("") == b""
     assert fromStr("0x12") == b"\x12"
@@ -102,7 +102,7 @@ def test_fromStr():
 
 
 @pytest.mark.unitslow
-def test_quoteBooleans():
+def test_quoteBooleans() -> None:
     """Test quoteBooleans."""
     assert quoteBooleans("") == ""
     assert quoteBooleans("foo") == "foo"
@@ -129,7 +129,7 @@ def test_fromPSK() -> None:
 
 
 @pytest.mark.unit
-def test_stripnl():
+def test_stripnl() -> None:
     """Test stripnl."""
     assert stripnl("") == ""
     assert stripnl("a\n") == "a"
@@ -138,43 +138,43 @@ def test_stripnl():
 
 
 @pytest.mark.unit
-def test_pskToString_empty_string():
+def test_pskToString_empty_string() -> None:
     """Test pskToString empty string."""
     assert pskToString(b"") == "unencrypted"
 
 
 @pytest.mark.unit
-def test_pskToString_string():
+def test_pskToString_string() -> None:
     """Test pskToString string."""
     assert pskToString(b"hunter123") == "secret"
 
 
 @pytest.mark.unit
-def test_pskToString_one_byte_zero_value():
+def test_pskToString_one_byte_zero_value() -> None:
     """Test pskToString one byte that is value of 0."""
     assert pskToString(bytes([0x00])) == "unencrypted"
 
 
 @pytest.mark.unitslow
-def test_pskToString_one_byte_non_zero_value():
+def test_pskToString_one_byte_non_zero_value() -> None:
     """Test pskToString one byte that is non-zero."""
     assert pskToString(bytes([0x01])) == "default"
 
 
 @pytest.mark.unitslow
-def test_pskToString_many_bytes():
+def test_pskToString_many_bytes() -> None:
     """Test pskToString many bytes."""
     assert pskToString(bytes([0x02, 0x01])) == "secret"
 
 
 @pytest.mark.unit
-def test_pskToString_simple():
+def test_pskToString_simple() -> None:
     """Test pskToString simple."""
     assert pskToString(bytes([0x03])) == "simple2"
 
 
 @pytest.mark.unitslow
-def test_fixme():
+def test_fixme() -> None:
     """Test fixme()."""
     with pytest.raises(FixmeError) as pytest_wrapped_e:
         fixme("some exception")
@@ -207,31 +207,31 @@ def test_catchAndIgnore(caplog: pytest.LogCaptureFixture) -> None:
 
 
 @pytest.mark.unitslow
-def test_remove_keys_from_dict_empty_keys_empty_dict():
+def test_remove_keys_from_dict_empty_keys_empty_dict() -> None:
     """Test when keys and dict both are empty."""
     assert not remove_keys_from_dict((), {})
 
 
 @pytest.mark.unitslow
-def test_remove_keys_from_dict_empty_dict():
+def test_remove_keys_from_dict_empty_dict() -> None:
     """Test when dict is empty."""
     assert not remove_keys_from_dict(("a",), {})
 
 
 @pytest.mark.unit
-def test_remove_keys_from_dict_empty_keys():
+def test_remove_keys_from_dict_empty_keys() -> None:
     """Test when keys is empty."""
     assert remove_keys_from_dict((), {"a": 1}) == {"a": 1}
 
 
 @pytest.mark.unitslow
-def test_remove_keys_from_dict():
+def test_remove_keys_from_dict() -> None:
     """Test remove_keys_from_dict()."""
     assert remove_keys_from_dict(("b",), {"a": 1, "b": 2}) == {"a": 1}
 
 
 @pytest.mark.unitslow
-def test_remove_keys_from_dict_multiple_keys():
+def test_remove_keys_from_dict_multiple_keys() -> None:
     """Test remove_keys_from_dict()."""
     keys = ("a", "b")
     adict = {"a": 1, "b": 2, "c": 3}
@@ -239,7 +239,7 @@ def test_remove_keys_from_dict_multiple_keys():
 
 
 @pytest.mark.unit
-def test_remove_keys_from_dict_nested():
+def test_remove_keys_from_dict_nested() -> None:
     """Test remove_keys_from_dict()."""
     keys = ("b",)
     adict = {"a": {"b": 1}, "b": 2, "c": 3}
@@ -248,7 +248,7 @@ def test_remove_keys_from_dict_nested():
 
 
 @pytest.mark.unitslow
-def test_Timeout_not_found():
+def test_Timeout_not_found() -> None:
     """Test Timeout()."""
     to = Timeout(1)
     attrs = "foo"
@@ -256,7 +256,7 @@ def test_Timeout_not_found():
 
 
 @pytest.mark.unitslow
-def test_Timeout_found():
+def test_Timeout_found() -> None:
     """Test Timeout()."""
     to = Timeout(1)
     attrs = ()
@@ -264,21 +264,21 @@ def test_Timeout_found():
 
 
 @pytest.mark.unitslow
-def test_hexstr():
+def test_hexstr() -> None:
     """Test hexstr()."""
     assert hexstr(b"123") == "31:32:33"
     assert hexstr(b"") == ""
 
 
 @pytest.mark.unitslow
-def test_ipstr():
+def test_ipstr() -> None:
     """Test ipstr()."""
     assert ipstr(b"1234") == "49.50.51.52"
     assert ipstr(b"") == ""
 
 
 @pytest.mark.unitslow
-def test_readnet_u16():
+def test_readnet_u16() -> None:
     """Test readnet_u16()."""
     assert readnet_u16(b"123456", 2) == 13108
 
@@ -352,7 +352,7 @@ def test_findPorts_when_duplicate_found_and_duplicate_option_not_used(
 
 
 @pytest.mark.unitslow
-def test_convert_mac_addr():
+def test_convert_mac_addr() -> None:
     """Test convert_mac_addr()."""
     assert convert_mac_addr("/c0gFyhb") == "fd:cd:20:17:28:5b"
     assert convert_mac_addr("fd:cd:20:17:28:5b") == "fd:cd:20:17:28:5b"
@@ -360,7 +360,7 @@ def test_convert_mac_addr():
 
 
 @pytest.mark.unit
-def test_snake_to_camel():
+def test_snake_to_camel() -> None:
     """Test snake_to_camel."""
     assert snake_to_camel("") == ""
     assert snake_to_camel("foo") == "foo"
@@ -369,7 +369,7 @@ def test_snake_to_camel():
 
 
 @pytest.mark.unit
-def test_camel_to_snake():
+def test_camel_to_snake() -> None:
     """Test camel_to_snake."""
     assert camel_to_snake("") == ""
     assert camel_to_snake("foo") == "foo"
@@ -379,7 +379,7 @@ def test_camel_to_snake():
 
 
 @pytest.mark.unit
-def test_eliminate_duplicate_port():
+def test_eliminate_duplicate_port() -> None:
     """Test eliminate_duplicate_port()."""
     assert not eliminate_duplicate_port([])
     assert eliminate_duplicate_port(["/dev/fake"]) == ["/dev/fake"]
@@ -644,7 +644,7 @@ def test_message_to_json_alias_matches_messageToJson() -> None:
 
 
 @pytest.mark.unit
-def test_acknowledgement_reset():
+def test_acknowledgement_reset() -> None:
     """Test that the reset method can set all fields back to False."""
     test_ack_obj = Acknowledgment()
     # everything's set to False; let's set it to True to get a good test
@@ -861,7 +861,7 @@ def test_fuzz_fromStr_base64_invalid_chars_raises(base64_payload: str) -> None:
 
 
 @pytest.mark.unit
-def test_shorthex():
+def test_shorthex() -> None:
     """Test the shortest hex string representations."""
     result = fromStr("0x0")
     assert result == b"\x00"
@@ -874,7 +874,7 @@ def test_shorthex():
 
 
 @pytest.mark.unit
-def test_channel_hash_basics():
+def test_channel_hash_basics() -> None:
     """Test the default key and LongFast with channel_hash."""
     assert channel_hash(DEFAULT_KEY) == 2
     assert channel_hash("LongFast".encode("utf-8")) == 10
@@ -889,7 +889,7 @@ def test_channel_hash_fuzz(channel_name: str) -> None:
 
 
 @pytest.mark.unit
-def test_generate_channel_hash_basics():
+def test_generate_channel_hash_basics() -> None:
     """Test the default key and LongFast/MediumFast with generate_channel_hash."""
     assert generate_channel_hash("LongFast", "AQ==") == 8
     assert generate_channel_hash("LongFast", bytes([1])) == 8

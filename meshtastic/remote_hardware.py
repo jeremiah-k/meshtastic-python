@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 from meshtastic.protobuf import portnums_pb2, remote_hardware_pb2
 

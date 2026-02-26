@@ -273,7 +273,7 @@ def _configure_immediate_admin_timeout(anode: Node) -> None:
     timeout_mock = MagicMock()
     timeout_mock.waitForSet.return_value = False
     timeout_mock.expireTimeout = 0
-    anode._timeout = timeout_mock  # type: ignore[assignment]
+    anode._timeout = timeout_mock
     anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
 
@@ -642,7 +642,7 @@ def test_waitForConfig_timeout(
     anode = Node(iface, 123, noProto=True)
     # Mock timeout to simulate immediate timeout (waitForSet returns False)
     anode._timeout = MagicMock()
-    anode._timeout.waitForSet.return_value = False  # type: ignore[union-attr]
+    anode._timeout.waitForSet.return_value = False
 
     result = anode.waitForConfig()
     assert result is False

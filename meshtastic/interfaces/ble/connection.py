@@ -20,6 +20,7 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import sanitize_address
 
 if TYPE_CHECKING:
+    from bleak import BleakClient as BleakRootClient
     from meshtastic.interfaces.ble.discovery import DiscoveryManager
     from meshtastic.interfaces.ble.interface import BLEInterface
 
@@ -136,8 +137,8 @@ class ClientManager:
         self.error_handler = error_handler
 
     def _create_client(
-        self, device_address: str, disconnect_callback: "Callable"
-    ) -> "BLEClient":
+        self, device_address: str, disconnect_callback: Callable[["BleakRootClient"], None]
+    ) -> BLEClient:
         """Create a BLEClient bound to the given device address and register a disconnect callback.
 
         Parameters
@@ -294,8 +295,8 @@ class ConnectionOrchestrator:
         self,
         client: BLEClient,
         device_address: str,
-        register_notifications_func: Callable,
-        on_connected_func: Callable,
+        register_notifications_func: Callable[[BLEClient], None],
+        on_connected_func: Callable[[], None],
     ) -> None:
         """Finalize a successful BLE connection by registering notification handlers, validating the client and orchestrator state, transitioning to CONNECTED, and invoking post-connection callbacks.
 
@@ -396,9 +397,9 @@ class ConnectionOrchestrator:
         self,
         address: str | None,
         current_address: str | None,
-        register_notifications_func: Callable,
-        on_connected_func: Callable,
-        on_disconnect_func: Callable,
+        register_notifications_func: Callable[[BLEClient], None],
+        on_connected_func: Callable[[], None],
+        on_disconnect_func: Callable[["BleakRootClient"], None],
     ) -> BLEClient:
         """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
 

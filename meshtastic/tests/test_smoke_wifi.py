@@ -11,7 +11,7 @@ import pytest
 
 
 @pytest.mark.smokewifi
-def test_smokewifi_info():
+def test_smokewifi_info() -> None:
     """Test --info."""
     return_value, out = subprocess.getstatusoutput(
         "meshtastic --info --host meshtastic.local"

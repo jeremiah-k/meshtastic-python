@@ -178,7 +178,7 @@ class Node:
         if meta is None:
             return True
         try:
-            return (meta.excluded_modules & excluded_bit) == 0
+            return bool((meta.excluded_modules & excluded_bit) == 0)
         except Exception as ex:  # noqa: BLE001 - defensive metadata compatibility
             logger.debug("Unable to evaluate module availability: %s", ex)
             return True
@@ -363,9 +363,9 @@ class Node:
         else:
             msgIndex = configType.index
             if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = msgIndex  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
+                p.get_config_request = msgIndex  # pyright: ignore[reportAttributeAccessIssue]
             else:
-                p.get_module_config_request = msgIndex  # type: ignore[assignment] # pyright: ignore[reportAttributeAccessIssue]
+                p.get_module_config_request = msgIndex  # pyright: ignore[reportAttributeAccessIssue]
 
         self._send_admin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:

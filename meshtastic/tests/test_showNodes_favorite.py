@@ -8,7 +8,7 @@ from ..mesh_interface import MeshInterface
 
 
 @pytest.fixture
-def _iface_with_favorite_nodes():
+def _iface_with_favorite_nodes() -> MeshInterface:
     """Fixture to setup nodes with favorite flags."""
     nodesById = {
         "!9388f81c": {
@@ -104,7 +104,7 @@ def _iface_with_favorite_nodes():
 
 
 @pytest.mark.unit
-def test_showNodes_favorite_column_header(capsys, _iface_with_favorite_nodes):
+def test_showNodes_favorite_column_header(capsys: pytest.CaptureFixture[str], _iface_with_favorite_nodes: MeshInterface) -> None:
     """Test that 'Fav' column header appears in showNodes output."""
     iface = _iface_with_favorite_nodes
     iface.showNodes()
@@ -114,7 +114,7 @@ def test_showNodes_favorite_column_header(capsys, _iface_with_favorite_nodes):
 
 
 @pytest.mark.unit
-def test_showNodes_favorite_asterisk_display(capsys, _iface_with_favorite_nodes):
+def test_showNodes_favorite_asterisk_display(capsys: pytest.CaptureFixture[str], _iface_with_favorite_nodes: MeshInterface) -> None:
     """Test that favorite nodes show asterisk and non-favorites show empty."""
     iface = _iface_with_favorite_nodes
     iface.showNodes()
@@ -156,10 +156,10 @@ def test_showNodes_favorite_asterisk_display(capsys, _iface_with_favorite_nodes)
 
 
 @pytest.mark.unit
-def test_showNodes_favorite_field_formatting():
+def test_showNodes_favorite_field_formatting() -> None:
     """Test the formatting logic for isFavorite field."""
     # Test favorite node
-    raw_value = True
+    raw_value: bool | None = True
     formatted_value = "*" if raw_value else ""
     assert formatted_value == "*"
 
@@ -176,8 +176,8 @@ def test_showNodes_favorite_field_formatting():
 
 @pytest.mark.unit
 def test_showNodes_with_custom_fields_including_favorite(
-    capsys, _iface_with_favorite_nodes
-):
+    capsys: pytest.CaptureFixture[str], _iface_with_favorite_nodes: MeshInterface
+) -> None:
     """Test that isFavorite can be specified in custom showFields."""
     iface = _iface_with_favorite_nodes
     custom_fields = ["user.longName", "isFavorite"]
@@ -190,7 +190,7 @@ def test_showNodes_with_custom_fields_including_favorite(
 
 
 @pytest.mark.unit
-def test_showNodes_default_fields_includes_favorite(_iface_with_favorite_nodes):
+def test_showNodes_default_fields_includes_favorite(_iface_with_favorite_nodes: MeshInterface) -> None:
     """Test that isFavorite is included in default fields."""
     iface = _iface_with_favorite_nodes
 
@@ -203,8 +203,8 @@ def test_showNodes_default_fields_includes_favorite(_iface_with_favorite_nodes):
 
 @pytest.mark.unit
 def test_showNodes_backward_compatibility_missing_field(
-    capsys, _iface_with_favorite_nodes
-):
+    capsys: pytest.CaptureFixture[str], _iface_with_favorite_nodes: MeshInterface
+) -> None:
     """Test that nodes without isFavorite field are handled gracefully."""
     iface = _iface_with_favorite_nodes
     iface.showNodes()

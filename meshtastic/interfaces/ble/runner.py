@@ -81,7 +81,7 @@ class BLECoroutineRunner:
     _thread: threading.Thread | None
     _loop_ready: threading.Event
     _stop_requested: bool
-    _pending_futures: weakref.WeakSet[Future]
+    _pending_futures: weakref.WeakSet[Future[Any]]
     _atexit_handler: Callable[[], None]
     _atexit_registered: bool
 
@@ -384,7 +384,7 @@ class BLECoroutineRunner:
             if tasks:
                 # Use wait_for with timeout to prevent hanging indefinitely
                 # on tasks that don't respond to cancellation
-                async def _cancel_with_timeout():
+                async def _cancel_with_timeout() -> None:
                     """Wait for tracked pending tasks to finish cancellation up to the configured shutdown timeout.
 
                     Gathers all pending tasks and awaits their completion (exceptions are collected) for up to BLEConfig.RUNNER_SHUTDOWN_TIMEOUT_SECONDS. If the wait times out, a debug-level message is logged.
@@ -484,7 +484,7 @@ class BLECoroutineRunner:
         future.add_done_callback(self._discard_tracked_future)
         return future
 
-    def _discard_tracked_future(self, future: Future) -> None:
+    def _discard_tracked_future(self, future: Future[Any]) -> None:
         """Remove a completed Future from the runner's tracked pending futures.
 
         Parameters

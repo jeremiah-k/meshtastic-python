@@ -9,7 +9,7 @@ from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from threading import RLock, current_thread
-from typing import Any, Awaitable, Callable, Coroutine, TypeVar
+from typing import Any, Awaitable, Callable, Coroutine, TypeVar, cast
 from uuid import UUID
 
 from bleak import BleakClient as BleakRootClient
@@ -232,7 +232,7 @@ class BLEClient:
         if bleak_client is None:
             return False
 
-        def _check_connection():
+        def _check_connection() -> bool:
             """Return whether the configured Bleak client reports an active connection.
 
             This interprets either a boolean `is_connected` attribute or an `is_connected()` method on the client and coerces the result to a boolean.
@@ -253,7 +253,7 @@ class BLEClient:
             error_msg="Unable to read bleak connection state",
             reraise=False,
         )
-        return bool(result)  # type: ignore[arg-type]
+        return bool(result)
 
     # COMPAT_STABLE_SHIM: snake_case alias for isConnected
     def is_connected(self) -> bool:
@@ -313,9 +313,9 @@ class BLEClient:
         """
         if self.bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED)
-        return self._async_await(
+        return cast(bytes, self._async_await(
             self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
-        )
+        ))
 
     def write_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any

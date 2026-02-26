@@ -155,10 +155,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
             return mapped
         return pd.ArrowDtype(data_type)
 
-    return cast(
-        pd.DataFrame,
-        feather.read_table(filepath).to_pandas(types_mapper=cast(Any, _types_mapper)),
-    )
+    return feather.read_table(filepath).to_pandas(types_mapper=cast(Any, _types_mapper))
 
 
 def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:

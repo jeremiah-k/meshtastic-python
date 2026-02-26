@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
@@ -37,7 +37,7 @@ from meshtastic.version import get_active_version
 
 argcomplete: ModuleType | None = None
 try:
-    import argcomplete as _argcomplete  # type: ignore
+    import argcomplete as _argcomplete
 
     argcomplete = _argcomplete
 except ImportError:
@@ -308,7 +308,7 @@ def getPref(node: Any, comp_name: str) -> bool:
         config request was issued, `False` if the preference was not found.
     """
 
-    def _print_setting(config_type, uni_name, pref_value, repeated):
+    def _print_setting(config_type: Any, uni_name: str, pref_value: Any, repeated: bool) -> None:
         """Print a configuration preference and its value to stdout and the debug log.
 
         When `repeated` is True, `pref_value` is treated as an iterable and
@@ -1290,7 +1290,7 @@ def onConnected(interface: MeshInterface) -> None:
                         ch_del_idx
                     )
 
-        def _set_simple_config(modem_preset):
+        def _set_simple_config(modem_preset: int) -> None:
             """Set and persist the LORA modem preset on the device's primary channel.
 
             If the configured channel is not the primary channel, the function exits
@@ -1312,7 +1312,7 @@ def onConnected(interface: MeshInterface) -> None:
                 node.requestConfig(
                     node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
                 )
-            node.localConfig.lora.modem_preset = modem_preset
+            node.localConfig.lora.modem_preset = modem_preset  # type: ignore[assignment]
             node.writeConfig("lora")
 
         # handle the simple radio set commands
@@ -1402,7 +1402,7 @@ def onConnected(interface: MeshInterface) -> None:
                 ch.role = channel_pb2.Channel.Role.DISABLED
 
             print("Writing modified channels to device")
-            node.writeChannel(_idx)  # type: ignore[index]
+            node.writeChannel(_idx)
 
         if args.get_canned_message:
             closeNow = True
@@ -1559,7 +1559,7 @@ def printConfig(config: Any) -> None:
             section_field = objDesc.fields_by_name.get(config_section.name)
             print(f"{config_section.name}:")
             names = []
-            for field in section_field.message_type.fields:  # type: ignore[union-attr]
+            for field in section_field.message_type.fields:
                 tmp_name = f"{config_section.name}.{field.name}"
                 if mt_config.camel_case:
                     tmp_name = meshtastic.util.snake_to_camel(tmp_name)

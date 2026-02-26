@@ -63,7 +63,7 @@ class ArrowWriter:
         file_name : str
             Path to the output file to write Arrow stream data to.
         """
-        self.sink = pa.OSFile(file_name, "wb")  # type: ignore
+        self.sink = pa.OSFile(file_name, "wb")
         self.new_rows: list[dict[str, object]] = []
         self.schema: pa.Schema | None = None  # haven't yet learned the schema
         self.writer: pa.RecordBatchStreamWriter | None = None
@@ -203,7 +203,7 @@ class ArrowWriter:
             if self.writer is None:
                 raise WriterNoneError()
             self.writer.write_batch(
-                pa.RecordBatch.from_pylist(  # type: ignore[attr-defined]
+                pa.RecordBatch.from_pylist(
                     self.new_rows, schema=self.schema
                 )
             )
@@ -330,7 +330,7 @@ class FeatherWriter(ArrowWriter):
                 ) as temp_file:
                     temp_name = temp_file.name
 
-                feather.write_feather(array, temp_name, compression="zstd")  # type: ignore[arg-type]
+                feather.write_feather(array, temp_name, compression="zstd")
                 os.replace(temp_name, dest_name)
                 temp_name = None
             except Exception:

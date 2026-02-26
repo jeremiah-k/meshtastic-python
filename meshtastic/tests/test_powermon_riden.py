@@ -96,7 +96,7 @@ def test_get_average_current_camelcase_aliases_delegate(
     power_supply_module._warned_deprecations.clear()
     pps = riden_stub
     pps.getAverageCurrentMA = MagicMock(return_value=123.4)  # type: ignore[method-assign]
-    delegated = cast(MagicMock, pps.getAverageCurrentMA)
+    delegated = pps.getAverageCurrentMA
 
     assert pps.get_average_current_mA() == 123.4
     with pytest.warns(DeprecationWarning):

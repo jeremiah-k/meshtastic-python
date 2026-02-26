@@ -4,8 +4,8 @@ import logging
 import math
 from datetime import datetime
 
-from riden import (
-    Riden,  # type: ignore[import-untyped]  # pyright: ignore[reportMissingTypeStubs]
+from riden import (  # type: ignore[attr-defined]
+    Riden,  # pyright: ignore[reportMissingTypeStubs]
 )
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR

@@ -135,7 +135,7 @@ def test_to_pmon_names_maps_valid_states() -> None:
 def test_to_pmon_names_handles_invalid_values() -> None:
     """to_pmon_names should return None for invalid state values."""
     known_values = {
-        state.number for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values  # type: ignore[attr-defined]
+        state.number for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values
     }
     invalid_value = next(
         (1 << i for i in range(63) if (1 << i) not in known_values),
@@ -162,7 +162,7 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path: Path) -> None:
         {
             "int_col": pd.array([1, 2, None], dtype=pd.Int32Dtype()),
             "bool_col": pd.array([True, False, None], dtype=pd.BooleanDtype()),
-            "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),  # type: ignore[call-overload]
+            "str_col": pd.array(["a", "b", None], dtype=pd.ArrowDtype(pa.string())),
         }
     )
 

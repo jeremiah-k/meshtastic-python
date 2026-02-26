@@ -21,7 +21,7 @@ import threading
 from contextlib import suppress
 from typing import Any
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 from pytap2 import TapDevice
 
 from meshtastic import mt_config
@@ -366,7 +366,7 @@ class Tunnel:
             node_num = node["num"] & NODE_NUM_MASK
             # logger.debug(f"Considering nodenum 0x{node_num:x} for ipBits 0x{ip_bits:x}")
             if node_num == ip_bits:
-                return node["user"]["id"]
+                return str(node["user"]["id"])
         return None
 
     def _node_num_to_ip(self, nodeNum: int) -> str:

@@ -46,7 +46,7 @@ def test_set_voltage_rejects_bool_nonfinite_and_negative(
 ) -> None:
     """SetVoltage should reject bool, non-finite, and negative values."""
     with pytest.raises(PowerError):
-        power_supply.setVoltage(value)  # type: ignore[arg-type]
+        power_supply.setVoltage(value)
 
 
 @pytest.mark.unit

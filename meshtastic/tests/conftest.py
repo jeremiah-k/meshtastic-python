@@ -6,7 +6,7 @@ import shutil
 import threading
 from collections.abc import Generator
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -41,7 +41,7 @@ def _create_context_manager_mock(spec_class: type[Any]) -> MagicMock:
     mock = create_autospec(spec_class, instance=True)
     mock.__enter__ = MagicMock(return_value=mock)
     mock.__exit__ = MagicMock(return_value=None)
-    return mock
+    return cast(MagicMock, mock)
 
 
 class FakeTimer:
@@ -259,7 +259,7 @@ def autospec_local_node_iface() -> Callable[[type[Any]], MagicMock]:
         local_node = MagicMock(spec=["_get_admin_channel_index"])
         local_node._get_admin_channel_index.return_value = 0
         iface.localNode = local_node
-        return iface
+        return cast(MagicMock, iface)
 
     return _factory
 
@@ -325,7 +325,7 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
     channel = MagicMock()
     channel.index = channel_index
     iface.localNode.getChannelByName.return_value = channel
-    return iface
+    return cast(MagicMock, iface)
 
 
 def _resolve_cli_binary_or_skip(binary_name: str) -> str:

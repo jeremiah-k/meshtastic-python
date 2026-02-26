@@ -55,4 +55,4 @@ def test_setattr_compat_alias_sets_new_name_and_warns() -> None:
 def test_getattr_unknown_name_raises_attribute_error() -> None:
     """Unknown mt_config attributes should raise AttributeError."""
     with pytest.raises(AttributeError):
-        _ = mt_config.this_attribute_does_not_exist  # type: ignore[attr-defined]
+        _ = mt_config.this_attribute_does_not_exist

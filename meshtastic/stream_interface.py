@@ -110,10 +110,7 @@ class StreamInterface(MeshInterface):
         local_stream = getattr(self, "stream", None)
         if local_stream is None and not noProto and not _provides_own_stream:
             raise StreamInterface.StreamInterfaceError()
-        self.stream: serial.Serial | None = cast(
-            serial.Serial | None,
-            local_stream,
-        )  # only serial uses this, TCPInterface overrides the relevant methods instead
+        self.stream: serial.Serial | None = local_stream
         self._rxBuf = bytearray()
         self._wantExit = False
         # Serialize reader-thread creation/start across concurrent connect() calls.
@@ -251,7 +248,7 @@ class StreamInterface(MeshInterface):
         # Default is_open to True for stream types that don't expose this attribute,
         # treating them as open for backward compatibility (e.g., mock streams, test doubles).
         if s is not None and getattr(s, "is_open", True):
-            return s.read(length)
+            return s.read(length)  # type: ignore[no-any-return]
         else:
             return None
 
