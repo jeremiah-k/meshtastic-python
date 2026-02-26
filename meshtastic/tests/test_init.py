@@ -116,7 +116,7 @@ def test_init_on_admin_receive_redacts_last_received(
 def test_init_receive_info_update_keeps_non_admin_packet_object(
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Non-admin lastReceived cache should preserve master-like object semantics."""
+    """Non-admin lastReceived cache should be a shallow copy of the packet."""
     iface = iface_with_nodes
     packet: dict[str, Any] = {
         "from": 4808675309,
@@ -127,7 +127,9 @@ def test_init_receive_info_update_keeps_non_admin_packet_object(
     _receive_info_update(iface, packet)
 
     node = iface._get_or_create_by_num(4808675309)
-    assert node["lastReceived"] is packet
+    # lastReceived is always a shallow copy (not the same object) to avoid aliasing
+    assert node["lastReceived"] == packet
+    assert node["lastReceived"] is not packet
 
 
 @pytest.mark.unit
