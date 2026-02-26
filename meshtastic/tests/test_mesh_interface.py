@@ -166,12 +166,12 @@ def test_getNode_not_local(caplog):
     """Test getNode not local."""
     with MeshInterface(noProto=True) as iface:
         anode = create_autospec(Node, instance=True)
+        anode.partialChannels = []
         with caplog.at_level(logging.DEBUG):
             with patch("meshtastic.node.Node", return_value=anode):
                 another_node = iface.getNode("bar2")
                 assert another_node != iface.localNode
     assert re.search(r"About to requestChannels", caplog.text, re.MULTILINE)
-
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")

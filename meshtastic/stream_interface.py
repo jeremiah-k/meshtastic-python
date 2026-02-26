@@ -159,9 +159,14 @@ class StreamInterface(MeshInterface):
         protocol — waits for the protocol/database download to complete.
         """
 
+        _provides_own_stream = getattr(self, "_provides_own_stream", False)
         # Check if thread has already been started (threads can only be started once)
         # If ident is not None, the thread was started before and needs recreation.
         with self._connect_lock:
+            if self.stream is None and not _provides_own_stream:
+                raise StreamInterface.StreamInterfaceError(
+                    "connect() called without an active stream"
+                )
             if self._rxThread.is_alive():
                 logger.warning(
                     "connect() called while reader thread is still alive; ignoring request"
@@ -292,10 +297,15 @@ class StreamInterface(MeshInterface):
         disconnect. Then proactively closes the underlying stream (if present)
         to unblock any pending reads and ensure resources are released even when
         no reader thread was started (e.g. connectNow=False tests).
+
+        All shutdown state transitions are synchronized with connect() via
+        _connect_lock to prevent a concurrent connect() from clearing the
+        shutdown intent and restarting the reader against a closed stream.
         """
-        self._wantExit = True
+        with self._connect_lock:
+            self._wantExit = True
+            self._close_stream_safely()
         MeshInterface.close(self)
-        self._close_stream_safely()
 
     def _join_reader_thread(self) -> None:
         """Join the reader thread when it is alive and not the current thread."""
