@@ -7,11 +7,13 @@ recovery control because these paths share state transitions and lock-sensitive
 invariants.
 
 When multiple locks are required, acquire in this order:
-1. `_REGISTRY_LOCK` (global address registry)
-2. per-address locks from gating (`_addr_lock_context`)
-3. `_connect_lock`
-4. `_state_lock`
-5. `_disconnect_lock`
+1. per-address locks from gating (`_addr_lock_context`)
+2. `_connect_lock`
+3. `_state_lock`
+4. `_disconnect_lock`
+
+`_REGISTRY_LOCK` is only held for short registry updates and must never be held
+while waiting to acquire a per-address lock.
 
 Threading model summary
 -----------------------
@@ -86,7 +88,6 @@ from meshtastic.interfaces.ble.discovery import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
 from meshtastic.interfaces.ble.gating import (
-    _REGISTRY_LOCK,
     _addr_key,
     _addr_lock_context,
     _is_currently_connected_elsewhere,
@@ -178,12 +179,12 @@ class BLEInterface(MeshInterface):
         # Unified state-based lock system replacing multiple locks and boolean flags
         #
         # Lock Ordering (to prevent deadlocks):
-        #     When acquiring multiple locks, always acquire in this order:
-        #     1. Global registry lock (_REGISTRY_LOCK in gating.py)
-        #     2. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
-        #     3. Interface connect lock (_connect_lock)
-        #     4. Interface state lock (_state_lock)
-        #     5. Interface disconnect lock (_disconnect_lock)
+        #     - Never hold _REGISTRY_LOCK while waiting on a per-address lock.
+        #     - For interface-level coordination, acquire in this order:
+        #       1. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
+        #       2. Interface connect lock (_connect_lock)
+        #       3. Interface state lock (_state_lock)
+        #       4. Interface disconnect lock (_disconnect_lock)
         #
         # EXCEPTION: In _handle_disconnect, _disconnect_lock is acquired FIRST
         # (non-blocking) before _state_lock. This intentional inversion enables
@@ -471,12 +472,13 @@ class BLEInterface(MeshInterface):
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
             return
-        # Acquire registry lock first to maintain consistent lock ordering
-        # (registry -> per-address -> interface locks)
-        with _REGISTRY_LOCK:
-            with self._lock_ordered_address_keys(ordered_keys):
-                for key in ordered_keys:
-                    _mark_connected(key, owner=self)
+        # Do not hold _REGISTRY_LOCK while waiting on per-address locks.
+        # _mark_connected() acquires _REGISTRY_LOCK internally after the
+        # address locks are held, which avoids registry<->address deadlocks
+        # with concurrent connect/disconnect paths.
+        with self._lock_ordered_address_keys(ordered_keys):
+            for key in ordered_keys:
+                _mark_connected(key, owner=self)
 
     def _mark_address_keys_disconnected(self, *keys: str | None) -> None:
         """Mark one or more address registry keys as disconnected.
@@ -491,12 +493,13 @@ class BLEInterface(MeshInterface):
         ordered_keys = self._sorted_address_keys(*keys)
         if not ordered_keys:
             return
-        # Acquire registry lock first to maintain consistent lock ordering
-        # (registry -> per-address -> interface locks)
-        with _REGISTRY_LOCK:
-            with self._lock_ordered_address_keys(ordered_keys):
-                for key in ordered_keys:
-                    _mark_disconnected(key, owner=self)
+        # Do not hold _REGISTRY_LOCK while waiting on per-address locks.
+        # _mark_disconnected() acquires _REGISTRY_LOCK internally after the
+        # address locks are held, which avoids registry<->address deadlocks
+        # with concurrent connect/disconnect paths.
+        with self._lock_ordered_address_keys(ordered_keys):
+            for key in ordered_keys:
+                _mark_disconnected(key, owner=self)
 
     def _handle_disconnect(
         self,

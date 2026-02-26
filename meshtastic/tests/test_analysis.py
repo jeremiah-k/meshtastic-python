@@ -11,6 +11,7 @@ import pytest
 OPTIONAL_ANALYSIS_DEPS = {
     "dash",
     "dash_bootstrap_components",
+    "matplotlib",
     "numpy",
     "pandas",
     "plotly",

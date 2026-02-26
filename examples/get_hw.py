@@ -18,7 +18,10 @@ with meshtastic.serial_interface.SerialInterface() as iface:
     if my_info is not None and iface.nodes:
         for n in iface.nodes.values():
             if n.get("num") == my_info.my_node_num:
-                hw_model = n.get("user", {}).get("hwModel", "unknown")
+                user = n.get("user")
+                if not isinstance(user, dict):
+                    user = {}
+                hw_model = user.get("hwModel", "unknown")
                 print(hw_model)
                 break
         else:

@@ -1,23 +1,26 @@
 """code logging power consumption of meshtastic devices."""
 
 import math
+import threading
 import warnings
 from datetime import datetime
 from numbers import Real
 
 _warned_deprecations: set[str] = set()
+_warned_deprecations_lock = threading.Lock()
 
 
 def _warn_deprecated_once(key: str, message: str) -> None:
     """Emit a deprecation warning once per process for a given key."""
-    if key in _warned_deprecations:
-        return
+    with _warned_deprecations_lock:
+        if key in _warned_deprecations:
+            return
+        _warned_deprecations.add(key)
     warnings.warn(
         message,
         DeprecationWarning,
         stacklevel=3,
     )
-    _warned_deprecations.add(key)
 
 
 class PowerError(Exception):

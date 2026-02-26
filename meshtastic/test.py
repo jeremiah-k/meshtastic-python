@@ -12,6 +12,7 @@ from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
+from meshtastic.protobuf import portnums_pb2
 from meshtastic.serial_interface import SerialInterface
 from meshtastic.tcp_interface import TCPInterface
 
@@ -247,7 +248,10 @@ def testSend(
             fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
         else:
             fromInterface.sendData(
-                (f"Binary {testNumber}").encode("utf-8"), toNode, wantAck=wantAck
+                (f"Binary {testNumber}").encode("utf-8"),
+                toNode,
+                portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP,
+                wantAck=wantAck,
             )
         for _ in range(60):  # max of 60 secs before we timeout
             time.sleep(1)

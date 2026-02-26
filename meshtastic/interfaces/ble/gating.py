@@ -1,14 +1,12 @@
 """Process-wide BLE connection gating utilities.
 
 Lock Ordering Note:
-    When acquiring multiple locks, always acquire in this order:
-    1. _REGISTRY_LOCK (global registry lock)
-    2. Per-address locks from _ADDR_LOCKS (via _addr_lock_context)
-    3. Interface connect lock (_connect_lock)
-    4. Interface state lock (_state_lock)
-    5. Interface disconnect lock (_disconnect_lock)
-
-    This ordering prevents deadlocks in concurrent connection scenarios.
+    - Never hold `_REGISTRY_LOCK` while waiting to acquire a per-address lock.
+    - `_REGISTRY_LOCK` is for short registry updates only.
+    - Per-address locks may be held while calling `_mark_connected()` /
+      `_mark_disconnected()`, which each acquire `_REGISTRY_LOCK` internally.
+      This prevents registry<->address lock inversion in concurrent
+      connect/disconnect paths.
 
 Context Manager Usage:
     Prefer using _addr_lock_context() over manual _get_addr_lock()/_release_addr_lock()

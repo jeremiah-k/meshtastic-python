@@ -385,6 +385,8 @@ def create_dash(slog_path: str) -> Dash:
         plotly.graph_objects.Figure
             The modified figure with updated legend settings.
         """
+        if not f.data:
+            return f
         f["data"][0]["showlegend"] = True
         f["data"][0]["name"] = name
         return f

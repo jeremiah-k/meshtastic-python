@@ -236,6 +236,30 @@ def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def _extract_sender_and_decoded(
+    as_dict: dict[str, Any],
+) -> tuple[int, dict[str, Any]] | None:
+    """Return validated packet sender and decoded payload dictionary.
+
+    Parameters
+    ----------
+    as_dict : dict[str, Any]
+        Packet dictionary expected to contain an integer ``from`` and dict
+        ``decoded`` payload.
+
+    Returns
+    -------
+    tuple[int, dict[str, Any]] | None
+        ``(sender, decoded)`` when both fields are present with expected types;
+        otherwise ``None``.
+    """
+    sender = as_dict.get("from")
+    decoded = as_dict.get("decoded")
+    if not isinstance(sender, int) or not isinstance(decoded, dict):
+        return None
+    return sender, decoded
+
+
 def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     """Decode text payloads from a received packet and update per-node metadata.
 
@@ -281,12 +305,10 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         "from" and "decoded"->"position".
     """
     logger.debug("in _on_position_receive() %s", _packet_debug_summary(as_dict))
-    decoded = as_dict.get("decoded")
-    if not isinstance(decoded, dict):
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
         return
-    sender = as_dict.get("from")
-    if not isinstance(sender, int):
-        return
+    sender, decoded = packet_guard
     if "position" in decoded:
         _receive_info_update(iface, as_dict)
         p = decoded["position"]
@@ -314,12 +336,10 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         `"decoded" -> "user"` and `"from"`.
     """
     logger.debug("in _on_node_info_receive() %s", _packet_debug_summary(as_dict))
-    decoded = as_dict.get("decoded")
-    if not isinstance(decoded, dict):
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
         return
-    sender = as_dict.get("from")
-    if not isinstance(sender, int):
-        return
+    sender, decoded = packet_guard
     if "user" in decoded:
         p = decoded["user"]
         # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
@@ -350,13 +370,10 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         a `from` key and may include `decoded.telemetry`.
     """
     logger.debug("in _on_telemetry_receive() %s", _packet_debug_summary(as_dict))
-    sender = as_dict.get("from")
-    if not isinstance(sender, int):
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
         return
-
-    decoded = as_dict.get("decoded")
-    if not isinstance(decoded, dict):
-        return
+    sender, decoded = packet_guard
     _receive_info_update(iface, as_dict)
 
     to_update = None
@@ -438,21 +455,22 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         `decoded.admin.raw.session_passkey` and a `from` sender field.
     """
     logger.debug("in _on_admin_receive() from=%s", as_dict.get("from"))
-    if "from" not in as_dict:
-        logger.debug("Dropping admin packet because 'from' field is missing")
+    packet_guard = _extract_sender_and_decoded(as_dict)
+    if packet_guard is None:
+        sender = as_dict.get("from")
+        decoded = as_dict.get("decoded")
+        if sender is None:
+            logger.debug("Dropping admin packet because 'from' field is missing")
+        elif not isinstance(sender, int):
+            logger.debug(
+                "Admin packet has invalid 'from' field type: %r", type(sender)
+            )
+        elif not isinstance(decoded, dict):
+            logger.debug("Admin packet missing decoded dict from=%s", sender)
         return
 
-    sender = as_dict.get("from")
-    if not isinstance(sender, int):
-        logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
-        return
-
+    sender, decoded = packet_guard
     _receive_info_update(iface, as_dict)
-
-    decoded = as_dict.get("decoded")
-    if not isinstance(decoded, dict):
-        logger.debug("Admin packet missing decoded dict from=%s", sender)
-        return
 
     admin_payload = decoded.get("admin")
     if not isinstance(admin_payload, dict):

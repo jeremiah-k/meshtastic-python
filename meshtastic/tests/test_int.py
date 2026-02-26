@@ -17,7 +17,8 @@ def _run_cli_with_timeout(cmd: list[str]) -> subprocess.CompletedProcess[str]:
             timeout=30,
         )
     except subprocess.TimeoutExpired as e:
-        pytest.fail(f"meshtastic command timed out: {e}")
+        cmd_name = cmd[0] if cmd else "<unknown>"
+        pytest.fail(f"CLI command timed out ({cmd_name!r}): {e}")
         raise  # pragma: no cover - pytest.fail always raises
 
 

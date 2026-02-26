@@ -175,13 +175,14 @@ class ArrowWriter:
 
     def set_schema(self, schema: pa.Schema) -> None:
         """Call `setSchema()` instead."""
-        if not self._warned_set_schema_deprecation:
-            warnings.warn(
-                "set_schema() is deprecated; use setSchema() instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._warned_set_schema_deprecation = True
+        with self._lock:
+            if not self._warned_set_schema_deprecation:
+                warnings.warn(
+                    "set_schema() is deprecated; use setSchema() instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self._warned_set_schema_deprecation = True
         self._set_schema(schema)
 
     def setSchema(self, schema: pa.Schema) -> None:
@@ -227,13 +228,14 @@ class ArrowWriter:
 
     def add_row(self, row_dict: dict[str, object]) -> None:
         """Call `addRow()` instead."""
-        if not self._warned_add_row_deprecation:
-            warnings.warn(
-                "add_row() is deprecated; use addRow() instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._warned_add_row_deprecation = True
+        with self._lock:
+            if not self._warned_add_row_deprecation:
+                warnings.warn(
+                    "add_row() is deprecated; use addRow() instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self._warned_add_row_deprecation = True
         self._add_row(row_dict)
 
     def addRow(self, row_dict: dict[str, object]) -> None:
