@@ -133,7 +133,7 @@ def mt_config_state() -> Generator[None, None, None]:
     state_keys = tuple(mt_config.MODULE_STATE_DEFAULTS.keys())
     snapshot = {key: getattr(mt_config, key, _MT_CONFIG_SENTINEL) for key in state_keys}
     # Also snapshot and restore warn-once tracking for deprecation warnings
-    warned_deprecations = getattr(mt_config, "_warned_deprecations", set())
+    warned_deprecations: set[str] = getattr(mt_config, "_warned_deprecations", set())
     warned_snapshot = (
         set(warned_deprecations) if isinstance(warned_deprecations, set) else set()
     )
@@ -146,10 +146,10 @@ def mt_config_state() -> Generator[None, None, None]:
                     delattr(mt_config, key)
             else:
                 setattr(mt_config, key, value)
-        warned_deprecations = getattr(mt_config, "_warned_deprecations", None)
-        if isinstance(warned_deprecations, set):
-            warned_deprecations.clear()
-            warned_deprecations.update(warned_snapshot)
+        warned_deprecations_restore = getattr(mt_config, "_warned_deprecations", None)
+        if isinstance(warned_deprecations_restore, set):
+            warned_deprecations_restore.clear()
+            warned_deprecations_restore.update(warned_snapshot)
         else:
             mt_config._warned_deprecations = set(warned_snapshot)
 

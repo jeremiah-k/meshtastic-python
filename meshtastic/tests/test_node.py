@@ -582,7 +582,7 @@ def test_setOwner_rejects_empty_or_whitespace_names(
     anode = Node(iface, 123, noProto=True)
 
     with pytest.raises(MeshInterface.MeshInterfaceError, match=expected_error):
-        anode.setOwner(**{param_name: value})
+        anode.setOwner(**{param_name: value})  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
