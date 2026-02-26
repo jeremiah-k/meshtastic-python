@@ -47,15 +47,16 @@ on stable architecture and behavior.
 - No large behavior changes in user-facing paths unless justified by safety or
   correctness and backed by tests.
 
-## 5) Source-of-Truth Compatibility Baselines
+## 5) Source-of-Truth Compatibility Baseline (Pinned)
 
-## 5.1 BLE baseline
-
-BLE compatibility requirements are pinned to historical `meshtastic/ble_interface.py`
-surface from:
+To avoid a moving compatibility target, this refactor uses one pinned baseline
+for the entire API surface in this PR:
 
 - Tag: `2.7.7`
 - Commit: `b26d80f1866ffa765467e5cb7688c59dee7f2bb2`
+
+All compatibility decisions in this PR (BLE and non-BLE) are evaluated against
+that same baseline.
 
 Required historical BLE methods remain callable:
 
@@ -67,11 +68,6 @@ Required historical BLE methods remain callable:
 
 These are implemented as stable compatibility shims over canonical internal
 helpers and are intentionally silent (no deprecation warnings).
-
-## 5.2 General library baseline
-
-For non-BLE API compatibility, `master` remains the practical baseline for
-what callers might already be using.
 
 Examples where compatibility was explicitly preserved or restored:
 
@@ -176,6 +172,15 @@ Tests were expanded and modernized to cover:
 - reconnect and cleanup edge cases,
 - regression cases found during refactor.
 
+Special focus area: `--export-config` / `--configure` round-trip correctness.
+This path had prior instability and now has dedicated coverage in both unit and
+smoke-virtual tests, including:
+
+- exported security key encoding/decoding invariants,
+- mixed snake_case/camelCase configuration key handling,
+- full export->configure->export round-trip parity,
+- device-facing configure flows against the virtual target.
+
 The goal was to convert review findings into executable regression coverage,
 not only local code fixes.
 
@@ -228,6 +233,23 @@ Why:
 - Reduce accidental retention of sensitive admin/session material.
 - Preserve runtime packet semantics for handlers/callbacks.
 
+## 8.4 Localhost-by-default web binding
+
+Direction:
+
+- Default analysis web-server bind changed from `0.0.0.0` to `127.0.0.1`.
+
+Why:
+
+- Safer default for local development and diagnostics.
+- Avoids unintentionally exposing analysis endpoints on all interfaces.
+- Still preserves explicit remote-use behavior via `--bind-host 0.0.0.0`.
+
+Impact:
+
+- Existing workflows expecting remote-by-default must now pass
+  `--bind-host 0.0.0.0` (or another explicit interface address).
+
 ## 9) Backward Compatibility Strategy by Category
 
 ## 9.1 Stable compatibility (no warnings)
@@ -267,6 +289,8 @@ Work was continuously validated with project gates:
 
 During iterative review cycles, targeted tests were run for touched areas to
 reduce cycle time while keeping confidence high.
+
+Security signal from trunk was also monitored with `osv-scanner`.
 
 ## 11) Documentation and Policy Artifacts
 
@@ -317,3 +341,30 @@ The outcome is not a BLE-only rewrite but a coordinated codebase quality pass:
 That expanded scope is the reason the resulting PR is larger than a subsystem
 refactor, and also the reason it can be maintained coherently after merge.
 
+## 15) Planned Follow-Up: Dependency Refresh and Security Updates
+
+This refactor intentionally focused first on architecture, correctness,
+compatibility, and test stability. A follow-up PR is planned to update the rest
+of the dependency set and handle any resulting regressions.
+
+Current security advisories reported by:
+
+- `.trunk/trunk check --filter=osv-scanner --show-existing`
+
+At the time of this document update, `poetry.lock` reports:
+
+- `flask 3.0.3`: `GHSA-68rp-wp8r-4726` (low)
+  - Patch guidance: upgrade to `>=3.1.3`
+- `werkzeug 3.0.6`: `GHSA-29vq-49wr-vm6x` (medium)
+  - Patch guidance: upgrade to `>=3.1.6`
+- `werkzeug 3.0.6`: `GHSA-87hc-h4r5-73f7` (medium)
+  - Patch guidance: upgrade to `>=3.1.5`
+- `werkzeug 3.0.6`: `GHSA-hgf8-39gv-g3f2` (medium)
+  - Patch guidance: upgrade to `>=3.1.4`
+
+The follow-up dependency PR will:
+
+- align packages to current supported releases,
+- clear the above advisories,
+- run full lint/type/test gates,
+- and include regression fixes needed by dependency behavior changes.
