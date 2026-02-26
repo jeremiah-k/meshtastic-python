@@ -2,6 +2,7 @@
 
 import logging
 import re
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -252,6 +253,47 @@ def test_heartbeat_callback_does_not_reschedule_after_close(
         old_timer.function()
 
         assert len(fake_timer_cls.created) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_waits_for_inflight_heartbeat_send(
+    monkeypatch: pytest.MonkeyPatch, fake_timer_cls
+) -> None:
+    """close() should wait for an in-flight heartbeat send to finish."""
+
+    with MeshInterface(noProto=True) as iface:
+        send_started = threading.Event()
+        release_send = threading.Event()
+        close_done = threading.Event()
+
+        def blocking_send_heartbeat() -> None:
+            send_started.set()
+            release_send.wait(timeout=2.0)
+
+        def close_interface() -> None:
+            iface.close()
+            close_done.set()
+
+        monkeypatch.setattr(iface, "sendHeartbeat", blocking_send_heartbeat)
+
+        start_thread = threading.Thread(target=iface._start_heartbeat, daemon=True)
+        start_thread.start()
+        assert send_started.wait(timeout=1.0)
+        assert len(fake_timer_cls.created) == 1
+
+        close_thread = threading.Thread(target=close_interface, daemon=True)
+        close_thread.start()
+        # close() should block until the in-flight heartbeat send completes.
+        assert not close_done.wait(timeout=0.05)
+
+        release_send.set()
+        close_thread.join(timeout=1.0)
+        start_thread.join(timeout=1.0)
+
+        assert close_done.is_set()
+        assert not close_thread.is_alive()
+        assert not start_thread.is_alive()
 
 
 @pytest.mark.unit

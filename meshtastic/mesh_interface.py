@@ -165,6 +165,10 @@ class MeshInterface:  # pylint: disable=R0902
         self._acknowledgment: Acknowledgment = Acknowledgment()
         self.heartbeatTimer: threading.Timer | None = None
         self._heartbeat_lock = threading.RLock()
+        # Track heartbeat sends that have passed the _closing gate but have not
+        # finished I/O yet. close() waits on this to avoid post-close sends.
+        self._heartbeat_inflight = 0
+        self._heartbeat_idle_condition = threading.Condition(self._heartbeat_lock)
         self._packet_id_lock = threading.Lock()
         self._queue_lock = threading.RLock()
         # Guard node DB plus configuration state updated by the receive thread:
@@ -191,9 +195,15 @@ class MeshInterface:  # pylint: disable=R0902
             pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
 
     def close(self) -> None:
-        """Shut down the interface, cancel any pending heartbeat, mark the interface as closing, and send a disconnect to the radio."""
+        """Shut down the interface and send a disconnect to the radio.
+
+        Marks the interface as closing, cancels any scheduled heartbeat timer,
+        waits for any in-flight heartbeat send to finish, then emits a
+        disconnect message to the radio transport.
+        """
         # Handle case where __init__ returned early before parent initialization
         heartbeat_lock = getattr(self, "_heartbeat_lock", None)
+        heartbeat_idle_condition = getattr(self, "_heartbeat_idle_condition", None)
         if heartbeat_lock is not None:
             with heartbeat_lock:
                 if self._closing:
@@ -203,6 +213,14 @@ class MeshInterface:  # pylint: disable=R0902
                 self.heartbeatTimer = None
             if timer:
                 timer.cancel()
+            # Extra complexity is intentional: a callback can pass the _closing
+            # check and begin sendHeartbeat() just before close() starts. Wait
+            # until any such in-flight send completes so close() provides a
+            # strong "no heartbeat after close returns" guarantee.
+            if isinstance(heartbeat_idle_condition, threading.Condition):
+                with heartbeat_lock:
+                    while self._heartbeat_inflight > 0:
+                        heartbeat_idle_condition.wait()
             self._send_disconnect()
         # debugOut is caller-owned (often shared via outer context managers);
         # do not close it here. Only clear our reference on shutdown.
@@ -1891,8 +1909,9 @@ class MeshInterface:  # pylint: disable=R0902
         Schedules and runs the first heartbeat immediately and then re-schedules a daemon
         threading.Timer to invoke subsequent heartbeats at a fixed 300-second interval. The
         scheduler respects shutdown by checking self._closing and uses self._heartbeat_lock to
-        avoid scheduling or storing timers after shutdown begins; the actual call to
-        self.sendHeartbeat() is performed outside the lock.
+        avoid scheduling or storing timers after shutdown begins. Heartbeat sends are tracked
+        as in-flight so close() can wait for quiescence and guarantee no post-close sends. The
+        actual call to self.sendHeartbeat() is still performed outside the lock.
         """
 
         def callback() -> None:
@@ -1914,9 +1933,18 @@ class MeshInterface:  # pylint: disable=R0902
                 timer.daemon = True
                 self.heartbeatTimer = timer
                 timer.start()
+                # Mark this send as in-flight before releasing the lock so
+                # close() cannot miss it when establishing shutdown quiescence.
+                self._heartbeat_inflight += 1
             # sendHeartbeat() is intentionally outside the lock to avoid
             # holding the lock during I/O. close() handles timer cancellation.
-            self.sendHeartbeat()
+            try:
+                self.sendHeartbeat()
+            finally:
+                with self._heartbeat_lock:
+                    self._heartbeat_inflight -= 1
+                    if self._heartbeat_inflight == 0:
+                        self._heartbeat_idle_condition.notify_all()
 
         callback()  # run our periodic callback now, it will make another timer if necessary
 
