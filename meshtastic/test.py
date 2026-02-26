@@ -130,6 +130,24 @@ guards_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
 
+def _normalize_portnum(portnum: Any) -> str | None:
+    """Normalize a port number value to its protobuf enum-name representation."""
+    if isinstance(portnum, int):
+        with suppress(ValueError):
+            return portnums_pb2.PortNum.Name(portnum)
+        return None
+    return str(portnum) if portnum is not None else None
+
+
+def _normalize_node_id(node_id: Any) -> int | None:
+    """Normalize a node id value to integer when coercible."""
+    if node_id is None:
+        return None
+    with suppress(TypeError, ValueError):
+        return int(node_id)
+    return None
+
+
 def onReceive(packet: dict[str, Any], interface: Any) -> None:
     """Handle an incoming packet and record clear-text messages.
 
@@ -152,11 +170,11 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
             portnum = decoded.get("portnum")
         else:
             portnum = getattr(decoded, "portnum", None)
-        if portnum == TEXT_MESSAGE_APP_PORTNUM:
-            pkt_from = packet.get("from")
+        if _normalize_portnum(portnum) == TEXT_MESSAGE_APP_PORTNUM:
+            pkt_from = _normalize_node_id(packet.get("from"))
             if expected_from_node is not None and pkt_from != expected_from_node:
                 return
-            pkt_to = packet.get("to")
+            pkt_to = _normalize_node_id(packet.get("to"))
             if expected_to_node is not None and pkt_to != expected_to_node:
                 return
             decoded_text = (

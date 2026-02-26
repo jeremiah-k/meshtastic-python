@@ -1257,6 +1257,26 @@ class BLEInterface(MeshInterface):
             and not self._state_manager._is_connected
         )
 
+    def _raise_if_duplicate_connect(self, connection_key: str | None) -> None:
+        """Raise BLEError when connect should be suppressed for a duplicate address claim.
+
+        Parameters
+        ----------
+        connection_key : str | None
+            Address registry key for this connect attempt.
+
+        Raises
+        ------
+        BLEInterface.BLEError
+            If this address is currently connected elsewhere.
+        """
+        if self._should_suppress_duplicate_connect(connection_key):
+            logger.info(
+                "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                connection_key or "unknown",
+            )
+            raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+
     def _get_existing_client_if_valid(
         self, normalized_request: str | None
     ) -> BLEClient | None:
@@ -1451,12 +1471,7 @@ class BLEInterface(MeshInterface):
         # global registry lock during long-running scan/discovery operations.
         with contextlib.ExitStack() as stack:
             if address_registry_key is not None:
-                if self._should_suppress_duplicate_connect(address_registry_key):
-                    logger.info(
-                        "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                        address_registry_key or "unknown",
-                    )
-                    raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+                self._raise_if_duplicate_connect(address_registry_key)
                 # Acquire the per-address lock without holding _REGISTRY_LOCK to
                 # avoid lock-order inversion with paths that hold address locks
                 # and then take registry lock to mark ownership.
@@ -1465,12 +1480,7 @@ class BLEInterface(MeshInterface):
                 )
                 stack.enter_context(addr_lock)
                 # Re-check after waiting for the address gate to close the TOCTOU window.
-                if self._should_suppress_duplicate_connect(address_registry_key):
-                    logger.info(
-                        "Suppressing duplicate connect to %s: recently connected elsewhere.",
-                        address_registry_key or "unknown",
-                    )
-                    raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
+                self._raise_if_duplicate_connect(address_registry_key)
 
             with self._connect_lock:
                 # Re-check closing state inside connect_lock for extra safety

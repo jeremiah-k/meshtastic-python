@@ -272,6 +272,9 @@ def test_create_argparser_returns_parser() -> None:
     args = parser.parse_args(["--bind-host", "0.0.0.0"])  # noqa: S104
     assert args.host == "0.0.0.0"  # noqa: S104
 
+    args = parser.parse_args(["--host", "::1"])
+    assert args.host == "::1"
+
 
 @pytest.mark.unit
 def test_create_argparser_rejects_invalid_port() -> None:
@@ -281,6 +284,8 @@ def test_create_argparser_rejects_invalid_port() -> None:
         parser.parse_args(["--port", "0"])
     with pytest.raises(SystemExit):
         parser.parse_args(["--port", "70000"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--port", "not-a-number"])
 
 
 @pytest.mark.unit
