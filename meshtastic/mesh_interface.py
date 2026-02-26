@@ -153,6 +153,9 @@ class MeshInterface:  # pylint: disable=R0902
         self._acknowledgment: Acknowledgment = Acknowledgment()
         self.heartbeatTimer: threading.Timer | None = None
         self._heartbeat_lock = threading.RLock()
+        self._packet_id_lock = threading.Lock()
+        self._queue_lock = threading.RLock()
+        self._node_db_lock = threading.RLock()
         self._closing = False
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
         self.currentPacketId: int = random.randint(0, 0xFFFFFFFF)
@@ -313,24 +316,25 @@ class MeshInterface:  # pylint: disable=R0902
         if self.metadata:
             metadata = f"\nMetadata: {messageToJson(self.metadata)}"
         mesh = "\n\nNodes in mesh: "
-        nodes = {}
-        if self.nodes:
-            for n in self.nodes.values():
-                # when the TBeam is first booted, it sometimes shows the raw data
-                # so, we will just remove any raw keys
-                keys_to_remove = ("raw", "decoded", "payload")
-                n2 = remove_keys_from_dict(keys_to_remove, n)
+        nodes: dict[str, dict[str, Any]] = {}
+        with self._node_db_lock:
+            nodes_snapshot = list(self.nodes.values()) if self.nodes else []
+        for n in nodes_snapshot:
+            # when the TBeam is first booted, it sometimes shows the raw data
+            # so, we will just remove any raw keys
+            keys_to_remove = ("raw", "decoded", "payload")
+            n2 = remove_keys_from_dict(keys_to_remove, n)
 
-                # if we have 'macaddr', re-format it
-                if "macaddr" in n2["user"]:
-                    val = n2["user"]["macaddr"]
-                    # decode the base64 value
-                    addr = convert_mac_addr(val)
-                    n2["user"]["macaddr"] = addr
+            # if we have 'macaddr', re-format it
+            if "macaddr" in n2["user"]:
+                val = n2["user"]["macaddr"]
+                # decode the base64 value
+                addr = convert_mac_addr(val)
+                n2["user"]["macaddr"] = addr
 
-                # use id as dictionary key for correct json format in list of nodes
-                nodeid = n2["user"]["id"]
-                nodes[nodeid] = n2
+            # use id as dictionary key for correct json format in list of nodes
+            nodeid = n2["user"]["id"]
+            nodes[nodeid] = n2
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
         if file is None:
             file = sys.stdout
@@ -522,9 +526,12 @@ class MeshInterface:  # pylint: disable=R0902
             )
 
         rows: list[dict[str, Any]] = []
-        if self.nodesByNum:
-            logger.debug("self.nodes:%s", self.nodes)
-            for node in self.nodesByNum.values():
+        with self._node_db_lock:
+            nodes_snapshot = list(self.nodesByNum.values()) if self.nodesByNum else []
+            nodes_log_snapshot = dict(self.nodes) if self.nodes else {}
+        if nodes_snapshot:
+            logger.debug("self.nodes:%s", nodes_log_snapshot)
+            for node in nodes_snapshot:
                 if not includeSelf and node["num"] == self.localNode.nodeNum:
                     continue
 
@@ -1036,7 +1043,8 @@ class MeshInterface:  # pylint: disable=R0902
             hopLimit=hopLimit,
         )
         # extend timeout based on number of nodes, limit by configured hopLimit
-        nodeCount = len(self.nodes) if self.nodes else 0
+        with self._node_db_lock:
+            nodeCount = len(self.nodes) if self.nodes else 0
         waitFactor = min(max(nodeCount - 1, 0), hopLimit)
         self.waitForTraceRoute(waitFactor)
 
@@ -1195,8 +1203,12 @@ class MeshInterface:  # pylint: disable=R0902
         elif telemetryType == "local_stats":
             r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
         elif telemetryType == "device_metrics":
-            if self.nodesByNum is not None:
-                node = self.nodesByNum.get(self.localNode.nodeNum)
+            with self._node_db_lock:
+                node = (
+                    self.nodesByNum.get(self.localNode.nodeNum)
+                    if self.nodesByNum is not None
+                    else None
+                )
                 if node is not None:
                     metrics = node.get("deviceMetrics")
                     if metrics:
@@ -1557,14 +1569,15 @@ class MeshInterface:  # pylint: disable=R0902
             # always grab the last 8 items of the hexadecimal id str and parse to integer
             nodeNum = int(destinationId[-8:], 16)
         else:
-            if self.nodes:
-                node = self.nodes.get(destinationId)
-                if node is None:
-                    raise MeshInterface.MeshInterfaceError(
-                        f"NodeId {destinationId} not found in DB"
-                    )
-                else:
-                    nodeNum = node["num"]
+            with self._node_db_lock:
+                node = self.nodes.get(destinationId) if self.nodes else None
+                has_nodes = self.nodes is not None
+            if node is not None:
+                nodeNum = node["num"]
+            elif has_nodes:
+                raise MeshInterface.MeshInterfaceError(
+                    f"NodeId {destinationId} not found in DB"
+                )
             else:
                 logger.warning("Warning: There were no self.nodes.")
 
@@ -1695,10 +1708,11 @@ class MeshInterface:  # pylint: disable=R0902
             The local node's node-info entry from `nodesByNum`, or `None` if `myInfo`
             or `nodesByNum` is unset or the local node entry is missing.
         """
-        if self.myInfo is None or self.nodesByNum is None:
-            return None
-        logger.debug("self.nodesByNum:%s", self.nodesByNum)
-        return self.nodesByNum.get(self.myInfo.my_node_num)
+        with self._node_db_lock:
+            if self.myInfo is None or self.nodesByNum is None:
+                return None
+            logger.debug("self.nodesByNum:%s", self.nodesByNum)
+            return self.nodesByNum.get(self.myInfo.my_node_num)
 
     def getMyUser(self) -> dict[str, Any] | None:
         """Get the user information for the local node.
@@ -1816,11 +1830,11 @@ class MeshInterface:  # pylint: disable=R0902
         MeshInterface.MeshInterfaceError
             If `currentPacketId` is None and a packet id cannot be generated.
         """
-        if self.currentPacketId is None:
-            raise MeshInterface.MeshInterfaceError(
-                "Not connected yet, can not generate packet"
-            )
-        else:
+        with self._packet_id_lock:
+            if self.currentPacketId is None:
+                raise MeshInterface.MeshInterfaceError(
+                    "Not connected yet, can not generate packet"
+                )
             nextPacketId = (self.currentPacketId + 1) & 0xFFFFFFFF
             nextPacketId = (
                 nextPacketId & 0x3FF
@@ -1922,11 +1936,12 @@ class MeshInterface:  # pylint: disable=R0902
         requesting configuration using the chosen configId.
         """
         self.myInfo = None
-        self.nodes = {}  # nodes keyed by ID
-        self.nodesByNum = {}  # nodes keyed by nodenum
-        self._localChannels = (
-            []
-        )  # empty until we start getting channels pushed from the device (during config)
+        with self._node_db_lock:
+            self.nodes = {}  # nodes keyed by ID
+            self.nodesByNum = {}  # nodes keyed by nodenum
+            self._localChannels = (
+                []
+            )  # empty until we start getting channels pushed from the device (during config)
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
@@ -1951,18 +1966,20 @@ class MeshInterface:  # pylint: disable=R0902
         bool
             `True` if at least one free slot is available or the queue status is unknown, `False` otherwise.
         """
-        if self.queueStatus is None:
-            return True
-        return self.queueStatus.free > 0
+        with self._queue_lock:
+            if self.queueStatus is None:
+                return True
+            return self.queueStatus.free > 0
 
     def _queue_claim(self) -> None:
         """Decrement the cached transmit-queue free-slot counter when a packet is claimed.
 
         Does nothing if queue status information is not available.
         """
-        if self.queueStatus is None:
-            return
-        self.queueStatus.free -= 1
+        with self._queue_lock:
+            if self.queueStatus is None:
+                return
+            self.queueStatus.free -= 1
 
     def _send_to_radio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Queue and transmit a ToRadio protobuf to the radio device.
@@ -1991,17 +2008,23 @@ class MeshInterface:  # pylint: disable=R0902
                 self._send_to_radio_impl(toRadio)
             else:
                 # meshpacket -- queue
-                self.queue[toRadio.packet.id] = toRadio
+                with self._queue_lock:
+                    self.queue[toRadio.packet.id] = toRadio
 
             resentQueue = collections.OrderedDict()
 
-            while self.queue:
+            while True:
+                with self._queue_lock:
+                    queue_has_items = bool(self.queue)
+                if not queue_has_items:
+                    break
                 # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
                 while not self._queue_has_free_space():
                     logger.debug("Waiting for free space in TX Queue")
                     time.sleep(0.5)
                 try:
-                    toResend = self.queue.popitem(last=False)
+                    with self._queue_lock:
+                        toResend = self.queue.popitem(last=False)
                 except KeyError:
                     break
                 packetId, packet = toResend
@@ -2016,13 +2039,14 @@ class MeshInterface:  # pylint: disable=R0902
 
             # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
             for packetId, packet in resentQueue.items():
-                if (
-                    self.queue.pop(packetId, False) is False
-                ):  # Packet got acked under us
+                with self._queue_lock:
+                    acked = self.queue.pop(packetId, False) is False
+                if acked:  # Packet got acked under us
                     logger.debug("packet %08x got acked under us", packetId)
                     continue
                 if packet:
-                    self.queue[packetId] = packet
+                    with self._queue_lock:
+                        self.queue[packetId] = packet
             # logger.warn("queue + resentQueue: " + " ".join(f'{k:08x}' for k in self.queue))
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
@@ -2047,7 +2071,9 @@ class MeshInterface:  # pylint: disable=R0902
         """
         # This is no longer necessary because the current protocol statemachine has already proactively sent us the locally visible channels
         # self.localNode.requestChannels()
-        self.localNode.setChannels(self._localChannels)
+        with self._node_db_lock:
+            local_channels = list(self._localChannels)
+        self.localNode.setChannels(local_channels)
 
         # the following should only be called after we have settings and channels
         self._connected()  # Tell everyone else we are ready to go
@@ -2068,7 +2094,8 @@ class MeshInterface:  # pylint: disable=R0902
             An object (protobuf-like) with attributes `free`, `maxlen`,
             `res`, and `mesh_packet_id` describing the radio's transmit-queue state.
         """
-        self.queueStatus = queueStatus
+        with self._queue_lock:
+            self.queueStatus = queueStatus
         logger.debug(
             f"TX QUEUE free {queueStatus.free} of {queueStatus.maxlen}, res = {queueStatus.res}, id = {queueStatus.mesh_packet_id:08x} "
         )
@@ -2077,10 +2104,12 @@ class MeshInterface:  # pylint: disable=R0902
             return
 
         # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
-        justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
+        with self._queue_lock:
+            justQueued = self.queue.pop(queueStatus.mesh_packet_id, None)
 
         if justQueued is None and queueStatus.mesh_packet_id != 0:
-            self.queue[queueStatus.mesh_packet_id] = False
+            with self._queue_lock:
+                self.queue[queueStatus.mesh_packet_id] = False
             logger.debug(
                 f"Reply for unexpected packet ID {queueStatus.mesh_packet_id:08x}"
             )
@@ -2127,20 +2156,21 @@ class MeshInterface:  # pylint: disable=R0902
         elif fromRadio.HasField("node_info"):
             logger.debug("Received nodeinfo: %s", asDict["nodeInfo"])
 
-            node = self._get_or_create_by_num(asDict["nodeInfo"]["num"])
-            node.update(asDict["nodeInfo"])
-            try:
-                newpos = self._fixup_position(node["position"])
-                node["position"] = newpos
-            except KeyError:
-                logger.debug("Node has no position key")
+            with self._node_db_lock:
+                node = self._get_or_create_by_num(asDict["nodeInfo"]["num"])
+                node.update(asDict["nodeInfo"])
+                try:
+                    newpos = self._fixup_position(node["position"])
+                    node["position"] = newpos
+                except KeyError:
+                    logger.debug("Node has no position key")
 
-            # no longer necessary since we're mutating directly in nodesByNum via _get_or_create_by_num
-            # self.nodesByNum[node["num"]] = node
-            if "user" in node:  # Some nodes might not have user/ids assigned yet
-                if "id" in node["user"]:
-                    if self.nodes is not None:
-                        self.nodes[node["user"]["id"]] = node
+                # no longer necessary since we're mutating directly in nodesByNum via _get_or_create_by_num
+                # self.nodesByNum[node["num"]] = node
+                if "user" in node:  # Some nodes might not have user/ids assigned yet
+                    if "id" in node["user"]:
+                        if self.nodes is not None:
+                            self.nodes[node["user"]["id"]] = node
             publishingThread.queueWork(
                 lambda: pub.sendMessage(
                     "meshtastic.node.updated", node=node, interface=self
@@ -2310,25 +2340,26 @@ class MeshInterface:  # pylint: disable=R0902
         if num == BROADCAST_NUM:
             return BROADCAST_ADDR if isDest else "Unknown"
 
-        nodes = self.nodesByNum
-        if nodes is None:
-            logger.debug(
-                "Node database not initialized while resolving node id for %s", num
-            )
-            return None
-        node = nodes.get(num)
-        if not isinstance(node, dict):
-            logger.debug("Node %s not found for fromId", num)
-            return None
-        user = node.get("user")
-        if not isinstance(user, dict):
-            logger.debug("Node %s has no user payload for fromId", num)
-            return None
-        node_id = user.get("id")
-        if not isinstance(node_id, str):
-            logger.debug("Node %s user payload has no valid id", num)
-            return None
-        return node_id
+        with self._node_db_lock:
+            nodes = self.nodesByNum
+            if nodes is None:
+                logger.debug(
+                    "Node database not initialized while resolving node id for %s", num
+                )
+                return None
+            node = nodes.get(num)
+            if not isinstance(node, dict):
+                logger.debug("Node %s not found for fromId", num)
+                return None
+            user = node.get("user")
+            if not isinstance(user, dict):
+                logger.debug("Node %s has no user payload for fromId", num)
+                return None
+            node_id = user.get("id")
+            if not isinstance(node_id, str):
+                logger.debug("Node %s user payload has no valid id", num)
+                return None
+            return node_id
 
     def _get_or_create_by_num(self, nodeNum: int) -> dict[str, Any]:
         """Retrieve the node record for a numeric node ID, creating a minimal placeholder if none exists.
@@ -2353,12 +2384,12 @@ class MeshInterface:  # pylint: disable=R0902
                 "Can not create/find nodenum by the broadcast num"
             )
 
-        if self.nodesByNum is None:
-            raise MeshInterface.MeshInterfaceError("Node database not initialized")
+        with self._node_db_lock:
+            if self.nodesByNum is None:
+                raise MeshInterface.MeshInterfaceError("Node database not initialized")
 
-        if nodeNum in self.nodesByNum:
-            return self.nodesByNum[nodeNum]
-        else:
+            if nodeNum in self.nodesByNum:
+                return self.nodesByNum[nodeNum]
             presumptive_id = f"!{nodeNum:08x}"
             n = {
                 "num": nodeNum,
@@ -2380,7 +2411,8 @@ class MeshInterface:  # pylint: disable=R0902
         channel : channel_pb2.Channel
             Channel descriptor to append to the internal _localChannels list.
         """
-        self._localChannels.append(channel)
+        with self._node_db_lock:
+            self._localChannels.append(channel)
 
     def _handle_packet_from_radio(
         self, meshPacket: mesh_pb2.MeshPacket, hack: bool = False
@@ -2500,30 +2532,26 @@ class MeshInterface:  # pylint: disable=R0902
                 isAck = routing is not None and (
                     "errorReason" not in routing or routing["errorReason"] == "NONE"
                 )
-                # we keep the responseHandler in dict until we actually call it
+                response_handler: ResponseHandler | None = None
+                # Keep lookup/eligibility/pop atomic under the response-handler lock
+                # so a competing thread cannot remove the handler between checks.
                 with self._response_handlers_lock:
-                    response_handler = self.responseHandlers.get(requestId, None)
-                if response_handler is not None:
-                    if (
+                    candidate = self.responseHandlers.get(requestId, None)
+                    if candidate is not None and (
                         (not isAck)
-                        or response_handler.callback.__name__ == "onAckNak"
-                        or response_handler.ackPermitted
+                        or candidate.callback.__name__ == "onAckNak"
+                        or candidate.ackPermitted
                     ):
-                        with self._response_handlers_lock:
-                            response_handler = self.responseHandlers.pop(
-                                requestId, None
-                            )
-                        if response_handler is not None:
-                            logger.debug(
-                                "Calling response handler for requestId %s", requestId
-                            )
-                            try:
-                                response_handler.callback(asDict)
-                            except Exception:
-                                logger.exception(
-                                    "Error in response handler for requestId %s",
-                                    requestId,
-                                )
+                        response_handler = self.responseHandlers.pop(requestId, None)
+                if response_handler is not None:
+                    logger.debug("Calling response handler for requestId %s", requestId)
+                    try:
+                        response_handler.callback(asDict)
+                    except Exception:
+                        logger.exception(
+                            "Error in response handler for requestId %s",
+                            requestId,
+                        )
 
         logger.debug("Publishing %s: packet=%s", topic, stripnl(asDict))
         publishingThread.queueWork(
