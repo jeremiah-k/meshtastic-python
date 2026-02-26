@@ -455,7 +455,9 @@ def test_handleFromRadio_with_node_info_tbeam1(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_handleFromRadio_with_node_info_tbeam_with_bad_data(caplog: pytest.LogCaptureFixture) -> None:
+def test_handleFromRadio_with_node_info_tbeam_with_bad_data(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test _handle_from_radio with node_info with some bad data (issue#172) - ensure we do not throw exception."""
     # Note: Captured the '--debug --info' for the bytes below.
     from_radio_bytes = b'"\x17\x08\xdc\x8a\x8a\xae\x02\x12\x08"\x06\x00\x00\x00\x00\x00\x00\x1a\x00=\x00\x00\xb8@'
@@ -546,7 +548,9 @@ def test_sendPacket_with_destination_as_int(caplog: pytest.LogCaptureFixture) ->
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_starting_with_a_bang(caplog: pytest.LogCaptureFixture) -> None:
+def test_sendPacket_with_destination_starting_with_a_bang(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Verify that _send_packet ignores destination IDs that begin with '!' and logs the action.
 
     Asserts that calling _send_packet with a destinationId starting with "!" results in a log entry containing "Not sending packet".
@@ -561,7 +565,9 @@ def test_sendPacket_with_destination_starting_with_a_bang(caplog: pytest.LogCapt
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_BROADCAST_ADDR(caplog: pytest.LogCaptureFixture) -> None:
+def test_sendPacket_with_destination_as_BROADCAST_ADDR(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test _send_packet() with BROADCAST_ADDR as a destination."""
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
@@ -585,7 +591,9 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_no_myInfo() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog: pytest.LogCaptureFixture) -> None:
+def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test _send_packet() with LOCAL_ADDR as a destination with myInfo."""
     with MeshInterface(noProto=True) as iface:
         myInfo = MagicMock()
@@ -599,7 +607,9 @@ def test_sendPacket_with_destination_as_LOCAL_ADDR_with_myInfo(caplog: pytest.Lo
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_sendPacket_with_destination_is_blank_with_nodes(iface_with_nodes: MeshInterface) -> None:
+def test_sendPacket_with_destination_is_blank_with_nodes(
+    iface_with_nodes: MeshInterface,
+) -> None:
     """Test _send_packet() with '' as a destination raises MeshInterfaceError when node not found."""
     iface = iface_with_nodes
     meshPacket = mesh_pb2.MeshPacket()

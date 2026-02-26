@@ -20,7 +20,9 @@ def test_RemoteHardwareClient(mock_gpio_iface: MagicMock) -> None:
 
 
 @pytest.mark.unit
-def test_onGPIOreceive(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock) -> None:
+def test_onGPIOreceive(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
     """Test onGPIOreceive."""
     iface = mock_gpio_iface
     packet = {
@@ -34,7 +36,9 @@ def test_onGPIOreceive(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicM
 
 
 @pytest.mark.unit
-def test_onGPIOreceive_mask_fallback(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock) -> None:
+def test_onGPIOreceive_mask_fallback(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
     """Test onGPIOreceive uses packet gpioMask when no tracked mask is available."""
     iface = mock_gpio_iface
     packet = {"decoded": {"remotehw": {"gpioValue": "7", "gpioMask": 7}}}
@@ -47,7 +51,9 @@ def test_onGPIOreceive_mask_fallback(caplog: pytest.LogCaptureFixture, mock_gpio
 
 
 @pytest.mark.unit
-def test_onGPIOreceive_uses_node_watch_mask(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock) -> None:
+def test_onGPIOreceive_uses_node_watch_mask(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
     """Test onGPIOreceive falls back to tracked per-node watch mask when needed."""
     iface = mock_gpio_iface
     setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
@@ -96,7 +102,9 @@ def test_RemoteHardwareClient_no_gpio_channel() -> None:
 
 
 @pytest.mark.unit
-def test_readGPIOs(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock) -> None:
+def test_readGPIOs(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
     """Test readGPIOs."""
     rhw = RemoteHardwareClient(mock_gpio_iface)
     with caplog.at_level(logging.DEBUG):
@@ -117,7 +125,9 @@ def test_readGPIOs(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock)
 
 
 @pytest.mark.unit
-def test_writeGPIOs(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock) -> None:
+def test_writeGPIOs(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
     """Test writeGPIOs."""
     rhw = RemoteHardwareClient(mock_gpio_iface)
     with caplog.at_level(logging.DEBUG):
@@ -138,7 +148,9 @@ def test_writeGPIOs(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
 
 
 @pytest.mark.unit
-def test_watchGPIOs(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock) -> None:
+def test_watchGPIOs(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
     """Test watchGPIOs."""
 
     rhw = RemoteHardwareClient(mock_gpio_iface)
@@ -160,7 +172,9 @@ def test_watchGPIOs(caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
 
 
 @pytest.mark.unit
-def test_watchGPIOs_does_not_cache_mask_on_send_failure(mock_gpio_iface: MagicMock) -> None:
+def test_watchGPIOs_does_not_cache_mask_on_send_failure(
+    mock_gpio_iface: MagicMock,
+) -> None:
     """WatchGPIOs should not persist a watch mask when sendData fails."""
     rhw = RemoteHardwareClient(mock_gpio_iface)
     mock_gpio_iface.sendData.side_effect = RuntimeError("send failed")

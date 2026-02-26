@@ -313,9 +313,12 @@ class BLEClient:
         """
         if self.bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED)
-        return cast(bytes, self._async_await(
-            self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
-        ))
+        return cast(
+            bytes,
+            self._async_await(
+                self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
+            ),
+        )
 
     def write_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any

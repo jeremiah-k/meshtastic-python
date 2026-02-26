@@ -4,7 +4,7 @@ import contextlib
 import logging
 import threading
 import time
-from typing import IO, Any, Callable, cast
+from typing import IO, Any, Callable
 
 import serial  # type: ignore[import-untyped]
 

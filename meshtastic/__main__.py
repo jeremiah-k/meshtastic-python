@@ -308,7 +308,9 @@ def getPref(node: Any, comp_name: str) -> bool:
         config request was issued, `False` if the preference was not found.
     """
 
-    def _print_setting(config_type: Any, uni_name: str, pref_value: Any, repeated: bool) -> None:
+    def _print_setting(
+        config_type: Any, uni_name: str, pref_value: Any, repeated: bool
+    ) -> None:
         """Print a configuration preference and its value to stdout and the debug log.
 
         When `repeated` is True, `pref_value` is treated as an iterable and

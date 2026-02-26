@@ -363,9 +363,13 @@ class Node:
         else:
             msgIndex = configType.index
             if configType.containing_type.name == "LocalConfig":
-                p.get_config_request = msgIndex  # pyright: ignore[reportAttributeAccessIssue]
+                p.get_config_request = (
+                    msgIndex  # pyright: ignore[reportAttributeAccessIssue]
+                )
             else:
-                p.get_module_config_request = msgIndex  # pyright: ignore[reportAttributeAccessIssue]
+                p.get_module_config_request = (
+                    msgIndex  # pyright: ignore[reportAttributeAccessIssue]
+                )
 
         self._send_admin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:

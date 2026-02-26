@@ -121,7 +121,9 @@ def test_main_init_parser_version(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_init_parser_help_mentions_list_fields(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_init_parser_help_mentions_list_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --help mentions dynamic config field discovery."""
     sys.argv = ["", "--help"]
     with pytest.raises(SystemExit) as pytest_wrapped_e:
@@ -152,7 +154,9 @@ def test_main_main_version(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_list_fields_prints_known_fields_and_alias(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_list_fields_prints_known_fields_and_alias(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --list-fields prints dynamic protobuf fields and compatibility aliases."""
     sys.argv = ["", "--list-fields"]
     main()
@@ -169,7 +173,9 @@ def test_main_list_fields_prints_known_fields_and_alias(capsys: pytest.CaptureFi
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_list_fields_includes_all_descriptor_fields(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_list_fields_includes_all_descriptor_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --list-fields includes every top-level protobuf config field."""
     sys.argv = ["", "--list-fields"]
     main()
@@ -279,7 +285,9 @@ def test_main_support(capsys: pytest.CaptureFixture[str]) -> None:
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.tcp_interface.TCPInterface", side_effect=OSError("no tcp"))
 @patch("meshtastic.util.findPorts", return_value=[])
-def test_main_ch_index_no_devices(patched_find_ports: Any, _patched_tcp: Any, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_ch_index_no_devices(
+    patched_find_ports: Any, _patched_tcp: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify CLI handles --ch-index 1 when no devices are available.
 
     Asserts that the global channel_index is set to 1, main() exits with SystemExit
@@ -304,7 +312,9 @@ def test_main_ch_index_no_devices(patched_find_ports: Any, _patched_tcp: Any, ca
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.util.findPorts", return_value=[])
-def test_main_test_no_ports(patched_find_ports: Any, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_test_no_ports(
+    patched_find_ports: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test --test with no hardware."""
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -326,7 +336,9 @@ def test_main_test_no_ports(patched_find_ports: Any, capsys: pytest.CaptureFixtu
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyFake1"])
-def test_main_test_one_port(patched_find_ports: Any, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_test_one_port(
+    patched_find_ports: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test --test with one fake port."""
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -348,7 +360,9 @@ def test_main_test_one_port(patched_find_ports: Any, capsys: pytest.CaptureFixtu
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.test.testAll", return_value=True)
-def test_main_test_two_ports_success(patched_test_all: Any, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_test_two_ports_success(
+    patched_test_all: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test --test two fake ports and testAll() is a simulated success."""
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -366,7 +380,9 @@ def test_main_test_two_ports_success(patched_test_all: Any, capsys: pytest.Captu
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.test.testAll", return_value=False)
-def test_main_test_two_ports_fails(patched_test_all: Any, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_test_two_ports_fails(
+    patched_test_all: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test --test two fake ports and testAll() is a simulated failure."""
     sys.argv = ["", "--test"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -384,7 +400,9 @@ def test_main_test_two_ports_fails(patched_test_all: Any, capsys: pytest.Capture
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_info(capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture) -> None:
+def test_main_info(
+    capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
     """Tests that invoking the CLI with `--info` connects to a radio and calls SerialInterface.showInfo.
 
     Patches SerialInterface with a mock that prints a recognizable marker from showInfo, then
@@ -422,7 +440,11 @@ def test_main_info(capsys: pytest.CaptureFixture[str], caplog: pytest.LogCapture
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("os.getlogin")
-def test_main_info_with_permission_error(patched_getlogin: Any, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture) -> None:
+def test_main_info_with_permission_error(
+    patched_getlogin: Any,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Verify that invoking the CLI with --info exits with code 1 and prints a permission-related.
 
     message when the serial interface cannot be opened due to a PermissionError.
@@ -555,7 +577,9 @@ def test_main_info_with_seriallog_stdout(capsys: pytest.CaptureFixture[str]) -> 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_info_with_seriallog_output_txt(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_info_with_seriallog_output_txt(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --info."""
     sys.argv = ["", "--info", "--seriallog", "output.txt"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -727,7 +751,9 @@ def test_main_set_owner_short_to_bob(capsys: pytest.CaptureFixture[str]) -> None
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_set_time_with_explicit_timestamp(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_set_time_with_explicit_timestamp(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --set-time TIMESTAMP forwards the provided epoch value."""
     epoch = 1769686798
     sys.argv = ["", "--set-time", str(epoch)]
@@ -750,7 +776,9 @@ def test_main_set_time_with_explicit_timestamp(capsys: pytest.CaptureFixture[str
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_set_time_without_timestamp_uses_zero(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_set_time_without_timestamp_uses_zero(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --set-time without argument forwards 0 to trigger node-side current-time behavior."""
     sys.argv = ["", "--set-time"]
     mt_config.args = cast(Any, sys.argv)
@@ -833,7 +861,11 @@ def test_main_set_canned_messages(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_get_canned_messages(capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture, iface_with_nodes: Any) -> None:
+def test_main_get_canned_messages(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: Any,
+) -> None:
     """Test --get-canned-message."""
     sys.argv = ["", "--get-canned-message"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -882,7 +914,11 @@ def test_main_set_ringtone(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_get_ringtone(capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture, iface_with_nodes: Any) -> None:
+def test_main_get_ringtone(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: Any,
+) -> None:
     """Test --get-ringtone."""
     sys.argv = ["", "--get-ringtone"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -1073,7 +1109,9 @@ def test_main_sendtext_with_channel(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_sendtext_with_invalid_channel(caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_sendtext_with_invalid_channel(
+    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test --sendtext."""
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "-1"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -1099,7 +1137,9 @@ def test_main_sendtext_with_invalid_channel(caplog: pytest.LogCaptureFixture, ca
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_sendtext_with_invalid_channel_nine(caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_sendtext_with_invalid_channel_nine(
+    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test --sendtext."""
     sys.argv = ["", "--sendtext", "hello", "--ch-index", "9"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -1954,7 +1994,9 @@ def test_main_ch_add_invalid_name_too_long(capsys: pytest.CaptureFixture[str]) -
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_ch_add_but_name_already_exists(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_ch_add_but_name_already_exists(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --ch-add with a channel name that already exists."""
     sys.argv = ["", "--ch-add", "testing"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -2092,7 +2134,9 @@ def test_main_ch_del_primary_channel(capsys: pytest.CaptureFixture[str]) -> None
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_ch_enable_valid_secondary_channel(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_ch_enable_valid_secondary_channel(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --ch-enable with --ch-index."""
     sys.argv = ["", "--ch-enable", "--ch-index", "1"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -2116,7 +2160,9 @@ def test_main_ch_enable_valid_secondary_channel(capsys: pytest.CaptureFixture[st
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_ch_disable_valid_secondary_channel(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_ch_disable_valid_secondary_channel(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --ch-disable with --ch-index."""
     sys.argv = ["", "--ch-disable", "--ch-index", "1"]
     mt_config.args = sys.argv  # type: ignore[assignment]
@@ -2221,7 +2267,9 @@ def test_main_ch_enable_primary_channel(capsys: pytest.CaptureFixture[str]) -> N
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_ch_longfast_on_non_primary_channel(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_ch_longfast_on_non_primary_channel(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Verify that invoking the CLI with --ch-longfast and a non-primary.
 
     --ch-index exits with code 1 and prints a warning that the modem preset
@@ -2448,7 +2496,9 @@ def test_main_get_with_invalid(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_onReceive_empty(caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_onReceive_empty(
+    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test onReceive with empty packet - should handle gracefully without error."""
     args = MagicMock()
     mt_config.args = args
@@ -2480,7 +2530,9 @@ def test_main_onReceive_empty(caplog: pytest.LogCaptureFixture, capsys: pytest.C
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_onReceive_with_sendtext(caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_onReceive_with_sendtext(
+    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test onReceive with sendtext.
 
     The entire point of this test is to make sure the interface.close() call
@@ -2517,7 +2569,9 @@ def test_main_onReceive_with_sendtext(caplog: pytest.LogCaptureFixture, capsys: 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_onReceive_with_text(caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_onReceive_with_text(
+    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test onReceive with text."""
     args = MagicMock()
     args.sendtext.return_value = "foo"
@@ -2771,7 +2825,9 @@ def _run_main_configure_file(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_export_config_configure_round_trip_security_keys(capsys: pytest.CaptureFixture[str]) -> None:
+def test_export_config_configure_round_trip_security_keys(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Ensure export->configure->export preserves security keys and structure."""
     source_local = localonly_pb2.LocalConfig()
     source_module = localonly_pb2.LocalModuleConfig()
@@ -3880,7 +3936,11 @@ def test_tunnel_no_args(capsys: pytest.CaptureFixture[str]) -> None:
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.util.findPorts", return_value=[])
 @patch("platform.system")
-def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system: Any, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_tunnel_tunnel_arg_with_no_devices(
+    mock_platform_system: Any,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test tunnel with tunnel arg (act like we are on a linux system)."""
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
@@ -3902,7 +3962,11 @@ def test_tunnel_tunnel_arg_with_no_devices(mock_platform_system: Any, caplog: py
 @pytest.mark.usefixtures("reset_mt_config")
 @patch("meshtastic.util.findPorts", return_value=[])
 @patch("platform.system")
-def test_tunnel_subnet_arg_with_no_devices(mock_platform_system: Any, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_tunnel_subnet_arg_with_no_devices(
+    mock_platform_system: Any,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test tunnel with subnet arg (act like we are on a linux system)."""
     a_mock = MagicMock()
     a_mock.return_value = "Linux"
@@ -4095,7 +4159,9 @@ def test_main_set_owner_empty_string(capsys: pytest.CaptureFixture[str]) -> None
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_main_set_owner_short_whitespace_only(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_set_owner_short_whitespace_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test --set-owner-short with whitespace-only name."""
     sys.argv = ["", "--set-owner-short", "   "]
     mt_config.args = sys.argv  # type: ignore[assignment]

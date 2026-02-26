@@ -21,6 +21,7 @@ from meshtastic.interfaces.ble.utils import sanitize_address
 
 if TYPE_CHECKING:
     from bleak import BleakClient as BleakRootClient
+
     from meshtastic.interfaces.ble.discovery import DiscoveryManager
     from meshtastic.interfaces.ble.interface import BLEInterface
 
@@ -137,7 +138,9 @@ class ClientManager:
         self.error_handler = error_handler
 
     def _create_client(
-        self, device_address: str, disconnect_callback: Callable[["BleakRootClient"], None]
+        self,
+        device_address: str,
+        disconnect_callback: Callable[["BleakRootClient"], None],
     ) -> BLEClient:
         """Create a BLEClient bound to the given device address and register a disconnect callback.
 

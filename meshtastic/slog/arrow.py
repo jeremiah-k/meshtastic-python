@@ -203,9 +203,7 @@ class ArrowWriter:
             if self.writer is None:
                 raise WriterNoneError()
             self.writer.write_batch(
-                pa.RecordBatch.from_pylist(
-                    self.new_rows, schema=self.schema
-                )
+                pa.RecordBatch.from_pylist(self.new_rows, schema=self.schema)
             )
             self.new_rows = []
 
