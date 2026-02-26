@@ -31,6 +31,16 @@ from meshtastic.util import ipstr, readnet_u16
 logger = logging.getLogger(__name__)
 TUNNEL_TOPIC = "meshtastic.receive.data.IP_TUNNEL_APP"
 
+# IP Protocol numbers (RFC 790)
+IP_PROTOCOL_ICMP = 0x01
+IP_PROTOCOL_IGMP = 0x02
+IP_PROTOCOL_TCP = 0x06
+IP_PROTOCOL_UDP = 0x11
+IP_PROTOCOL_SCCOPMCE = 0x80  # Service-Specific Connection-Oriented Protocol
+
+# Bitmask for IP address octet extraction
+IP_OCTET_MASK = 0xFF
+
 
 def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
     """Handle received tunneled messages from mesh.
@@ -148,8 +158,8 @@ class Tunnel:
 
         """A list of protocols we ignore"""
         self.protocolBlacklist = {
-            0x02,  # IGMP
-            0x80,  # Service-Specific Connection-Oriented Protocol in a Multilink and Connectionless Environment
+            IP_PROTOCOL_IGMP,
+            IP_PROTOCOL_SCCOPMCE,
         }
 
         # A new non standard log level that is lower level than DEBUG
@@ -254,7 +264,7 @@ class Tunnel:
         if protocol in self.protocolBlacklist:
             ignore = True
             logger.log(self.LOG_TRACE, "Ignoring blacklisted protocol 0x%02x", protocol)
-        elif protocol == 0x01:  # ICMP
+        elif protocol == IP_PROTOCOL_ICMP:
             icmpType = p[20]
             icmpCode = p[21]
             checksum = p[22:24]
@@ -270,7 +280,7 @@ class Tunnel:
             # reply to pings (swap src and dest but keep rest of packet unchanged)
             # pingback = p[:12]+p[16:20]+p[12:16]+p[20:]
             # tap.write(pingback)
-        elif protocol == 0x11:  # UDP
+        elif protocol == IP_PROTOCOL_UDP:
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
             if destport in self.udpBlacklist:
@@ -280,7 +290,7 @@ class Tunnel:
                 logger.debug(
                     "forwarding udp srcport=%s, destport=%s", srcport, destport
                 )
-        elif protocol == 0x06:  # TCP
+        elif protocol == IP_PROTOCOL_TCP:
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
             if destport in self.tcpBlacklist:
@@ -367,7 +377,7 @@ class Tunnel:
         str
             IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
         """
-        return f"{self.subnetPrefix}.{(nodeNum >> 8) & 0xff}.{nodeNum & 0xff}"
+        return f"{self.subnetPrefix}.{(nodeNum >> 8) & IP_OCTET_MASK}.{nodeNum & IP_OCTET_MASK}"
 
     def _send_packet(self, destAddr: bytes, p: bytes) -> None:
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.

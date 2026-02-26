@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
 
+# Timeout for HTTP requests (e.g., PyPI version checks)
+HTTP_REQUEST_TIMEOUT_SECONDS = 5.0
+
 
 _PSK_SIMPLE_MSG = 'Invalid PSK format: expected "simpleN" with N in 0..254'
 
@@ -1191,7 +1194,7 @@ def check_if_newer_version() -> str | None:
     pypi_version: str | None = None
     try:
         url: str = "https://pypi.org/pypi/meshtastic/json"
-        data = requests.get(url, timeout=5).json()
+        data = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECONDS).json()
         pypi_version = data["info"]["version"]
     except Exception:
         pass

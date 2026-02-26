@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Callable
 from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
-from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS, BLEConfig
+from meshtastic.interfaces.ble.constants import (
+    AWAIT_TIMEOUT_BUFFER_SECONDS,
+    DIRECT_CONNECT_TIMEOUT_SECONDS,
+    DISCONNECT_TIMEOUT_SECONDS,
+    BLEConfig,
+)
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
@@ -19,16 +24,6 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
-
-# Direct connect timeout for known device addresses.
-# Kept shorter than full CONNECTION_TIMEOUT to allow quick fallback to discovery
-# if the device has moved to a different adapter or requires fresh discovery.
-# This prevents long waits on stale connection attempts.
-DIRECT_CONNECT_TIMEOUT_SECONDS: float = 12.0
-
-# Extra margin added to await_timeout so the BLE-level timeout fires first and
-# surfaces clearer context before the outer future wait times out.
-AWAIT_TIMEOUT_BUFFER_SECONDS: float = 5.0
 
 
 class ConnectionValidator:

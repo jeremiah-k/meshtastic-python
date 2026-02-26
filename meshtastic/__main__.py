@@ -84,6 +84,26 @@ except (ImportError, AttributeError) as exc:
 
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+# CLI Timing Constants
+# ==============================================================================
+
+# Delay after applying configuration changes (owner, channel, etc.)
+CONFIG_APPLY_DELAY_SECONDS = 0.5
+
+# Delay between GPIO watch iterations
+GPIO_WATCH_INTERVAL_SECONDS = 1.0
+
+# Maximum wait time for GPIO read response (each iteration)
+GPIO_READ_POLL_INTERVAL_SECONDS = 1.0
+
+# Time to wait for device boot after power-on
+POWER_ON_BOOT_DELAY_SECONDS = 5.0
+
+# Keep-alive sleep interval for main loop (effectively infinite wait)
+MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
+
+
 # Backward-compatible aliases for renamed config fields.
 _PREFERENCE_FIELD_ALIASES: dict[str, str] = {
     "display.use_12_hour": "display.use_12h_clock",
@@ -943,7 +963,7 @@ def onConnected(interface: MeshInterface) -> None:
                     rhc.readGPIOs(args.dest, bitmask, None)
                     # wait up to X seconds for a response
                     for _ in range(10):
-                        time.sleep(1)
+                        time.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
                         if interface.gotResponse:
                             break
                     logger.debug("end of gpio_rd")
@@ -955,7 +975,7 @@ def onConnected(interface: MeshInterface) -> None:
                     )
                     while True:
                         rhc.watchGPIOs(args.dest, bitmask)
-                        time.sleep(1)
+                        time.sleep(GPIO_WATCH_INTERVAL_SECONDS)
 
         # handle settings
         if args.set:
@@ -1026,7 +1046,7 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
                         configuration["owner"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "owner_short" in configuration:
                     # Validate owner short name before setting
@@ -1042,7 +1062,7 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
                         long_name=None, short_name=configuration["owner_short"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "ownerShort" in configuration:
                     # Validate owner short name before setting
@@ -1058,21 +1078,21 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.getNode(args.dest, False, **getNode_kwargs).setOwner(
                         long_name=None, short_name=configuration["ownerShort"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "channel_url" in configuration:
                     print("Setting channel url to", configuration["channel_url"])
                     interface.getNode(args.dest, **getNode_kwargs).setURL(
                         configuration["channel_url"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "channelUrl" in configuration:
                     print("Setting channel url to", configuration["channelUrl"])
                     interface.getNode(args.dest, **getNode_kwargs).setURL(
                         configuration["channelUrl"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "canned_messages" in configuration:
                     print(
@@ -1082,14 +1102,14 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.getNode(args.dest, **getNode_kwargs).set_canned_message(
                         configuration["canned_messages"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "ringtone" in configuration:
                     print("Setting ringtone to", configuration["ringtone"])
                     interface.getNode(args.dest, **getNode_kwargs).set_ringtone(
                         configuration["ringtone"]
                     )
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "location" in configuration:
                     alt = 0
@@ -1108,7 +1128,7 @@ def onConnected(interface: MeshInterface) -> None:
                         print(f"Fixing longitude at {lon} degrees")
                     print("Setting device position")
                     interface.localNode.setFixedPosition(lat, lon, alt)
-                    time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "config" in configuration:
                     localConfig = interface.getNode(
@@ -1144,7 +1164,7 @@ def onConnected(interface: MeshInterface) -> None:
                         interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                             meshtastic.util.camel_to_snake(section)
                         )
-                        time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 if "module_config" in configuration:
                     moduleConfig = interface.getNode(
@@ -1180,7 +1200,7 @@ def onConnected(interface: MeshInterface) -> None:
                         interface.getNode(args.dest, **getNode_kwargs).writeConfig(
                             meshtastic.util.camel_to_snake(section)
                         )
-                        time.sleep(0.5)
+                    time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
                 interface.getNode(
                     args.dest, False, **getNode_kwargs
@@ -1832,7 +1852,7 @@ def create_power_meter() -> None:
             input("Powered on, press enter to continue...")
         else:
             logger.info("Powered-on, waiting for device to boot")
-            time.sleep(5)
+            time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
 
 
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
@@ -2172,7 +2192,7 @@ def common() -> None:
                 ):  # loop until someone presses ctrlc
                     try:
                         while True:
-                            time.sleep(1000)
+                            time.sleep(MAIN_LOOP_IDLE_SLEEP_SECONDS)
                     except KeyboardInterrupt:
                         logger.info("Exiting due to keyboard interrupt")
 

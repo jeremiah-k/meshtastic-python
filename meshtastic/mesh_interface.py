@@ -49,6 +49,9 @@ from meshtastic.util import (
 
 logger = logging.getLogger(__name__)
 
+# Heartbeat interval for keeping the interface alive (5 minutes)
+HEARTBEAT_INTERVAL_SECONDS = 300
+
 
 def _timeago(delta_secs: int) -> str:
     """Produce a short human-readable relative time string for a past interval.
@@ -1879,7 +1882,7 @@ class MeshInterface:  # pylint: disable=R0902
             Schedules a daemon timer to re-run this callback after a fixed interval and then calls
             self.sendHeartbeat(). If self._closing is set, no timer is scheduled and no heartbeat is sent.
             """
-            interval = 300
+            interval = HEARTBEAT_INTERVAL_SECONDS
             logger.debug("Sending heartbeat, interval %s seconds", interval)
             with self._heartbeat_lock:
                 # Keep timer update/start in one critical section for simpler
