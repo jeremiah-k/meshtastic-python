@@ -134,8 +134,15 @@ class PowerLogger:
         file_path : str
             Path to the output Feather file where readings will be written.
         interval : float
-            Time in seconds between automatic samples (default 0.002).
+            Time in seconds between automatic samples. Must be > 0 (default 0.002).
+
+        Raises
+        ------
+        ValueError
+            If interval is not a positive number.
         """
+        if interval <= 0:
+            raise ValueError("interval must be > 0 seconds")
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
         power_schema_fields: list[pa.Field] = [
