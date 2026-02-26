@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from meshtastic.powermon.power_supply import PowerSupply
     from meshtastic.powermon.ppk2 import PPK2PowerSupply
     from meshtastic.powermon.riden import RidenPowerSupply
+    from meshtastic.powermon.stress import PowerStressClient
 
 _MT_CONFIG_SENTINEL = object()
 
@@ -262,6 +263,18 @@ def ppk2_stub() -> "PPK2PowerSupply":
     ppk.total_data_len = 0
     ppk.max_data_len = 0
     return ppk
+
+
+@pytest.fixture
+def power_stress_client() -> tuple[MagicMock, "PowerStressClient"]:
+    """Create a PowerStressClient with a default mocked interface."""
+    from meshtastic.powermon.stress import PowerStressClient  # pylint: disable=C0415
+
+    iface = MagicMock()
+    iface.myInfo = MagicMock()
+    iface.myInfo.my_node_num = 1
+    client = PowerStressClient(iface)
+    return iface, client
 
 
 def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:

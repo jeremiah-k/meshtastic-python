@@ -20,3 +20,8 @@ class SimPowerSupply(PowerSupply):
 
         # Sim an approximately 20mA load that varies sinusoidally
         return 20.0 + 5 * math.sin(time.time())
+
+    # COMPAT_STABLE_SHIM: alias for getAverageCurrentMA
+    def get_average_current_mA(self) -> float:
+        """Shim for getAverageCurrentMA."""
+        return self.getAverageCurrentMA()

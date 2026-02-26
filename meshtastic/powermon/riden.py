@@ -49,6 +49,9 @@ class RidenPowerSupply(PowerSupply):
         nowWattHour = self._getRawWattHour()
         elapsed_s = (now - self.prevPowerTime).total_seconds()
         if elapsed_s <= 0:
+            # Consume the window to avoid stale deltas on subsequent reads.
+            self.prevPowerTime = now
+            self.prevWattHour = nowWattHour
             return math.nan
         watts = ((nowWattHour - self.prevWattHour) / elapsed_s) * 3600
         # Intentional: consume this measurement window even when voltage <= 0 to avoid a

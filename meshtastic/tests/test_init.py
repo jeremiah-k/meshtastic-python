@@ -140,25 +140,18 @@ def test_init_getattr_raises_for_unknown_attribute() -> None:
 
 
 @pytest.mark.unit
-def test_init_getattr_caches_serial_on_first_access() -> None:
+def test_init_getattr_caches_serial_on_first_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify __getattr__ caches serial module on first access."""
-    sentinel = object()
-    original = getattr(meshtastic, "serial", sentinel)
+    # Isolate module-level cache mutation to this test and auto-restore afterwards.
+    monkeypatch.delattr(meshtastic, "serial", raising=False)
 
-    if original is not sentinel:
-        delattr(meshtastic, "serial")
-    try:
-        # First access should trigger lazy load
-        serial = meshtastic.serial
-        assert serial is serial_interface
+    # First access should trigger lazy load.
+    serial = meshtastic.serial
+    assert serial is serial_interface
 
-        # Second access should use cached value
-        serial2 = meshtastic.serial
-        assert serial2 is serial
-        assert serial2 is serial_interface
-    finally:
-        if original is sentinel:
-            if hasattr(meshtastic, "serial"):
-                delattr(meshtastic, "serial")
-        else:
-            meshtastic.serial = original  # pyright: ignore[reportAttributeAccessIssue]
+    # Second access should use cached value.
+    serial2 = meshtastic.serial
+    assert serial2 is serial
+    assert serial2 is serial_interface

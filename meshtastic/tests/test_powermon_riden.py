@@ -69,6 +69,24 @@ def test_get_average_current_ma_returns_nan_for_nonpositive_voltage(
 
 
 @pytest.mark.unit
+def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
+    riden_stub: RidenPowerSupply,
+) -> None:
+    """Non-positive elapsed windows should return NaN and advance previous window state."""
+    pps = riden_stub
+    start = datetime.now()
+    pps.prevPowerTime = start + timedelta(seconds=1)
+    pps.prevWattHour = 10.0
+    pps._getRawWattHour = MagicMock(return_value=12.0)  # type: ignore[method-assign]
+
+    result = pps.get_average_current_mA()
+
+    assert math.isnan(result)
+    assert pps.prevWattHour == pytest.approx(12.0)
+    assert pps.prevPowerTime != start + timedelta(seconds=1)
+
+
+@pytest.mark.unit
 def test_get_average_current_camelcase_aliases_delegate(
     riden_stub: RidenPowerSupply,
 ) -> None:

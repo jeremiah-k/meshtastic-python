@@ -349,6 +349,13 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
 
     to_update = None
     telemetry = decoded.get("telemetry") or {}
+    if not isinstance(telemetry, dict):
+        logger.debug(
+            "Skipping telemetry update from=%s: unexpected telemetry payload type %s",
+            as_dict.get("from"),
+            type(telemetry).__name__,
+        )
+        return
     if "deviceMetrics" in telemetry:
         to_update = "deviceMetrics"
     elif "environmentMetrics" in telemetry:
@@ -363,10 +370,12 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         return
 
     update_obj = telemetry.get(to_update)
-    if update_obj is None:
+    if not isinstance(update_obj, dict):
         return
     node = iface._get_or_create_by_num(as_dict["from"])
     new_metrics = node.get(to_update, {})
+    if not isinstance(new_metrics, dict):
+        new_metrics = {}
     new_metrics.update(update_obj)
     logger.debug(
         "updating %s metrics for %s to %s", to_update, as_dict["from"], new_metrics

@@ -552,7 +552,7 @@ class BLECoroutineRunner:
                     except Exception as e:  # noqa: BLE001 - cancellation is best-effort
                         logger.debug("Exception cancelling future: %s", e)
 
-    def _stop(self, timeout: float = 2.0) -> bool:
+    def _stop(self, timeout: float = BLEConfig.RUNNER_SHUTDOWN_TIMEOUT_SECONDS) -> bool:
         """Stop the runner's background event loop thread and perform cleanup.
 
         Requests shutdown of the background asyncio loop, cancels any tracked pending futures, and waits up to `timeout` seconds for the runner thread to exit. If called from the runner thread, joining is skipped to avoid deadlock. If the thread fails to exit within `timeout`, it is recorded as a zombie for diagnostics. Final internal references and the atexit handler are cleared only if they still refer to the stopped thread/loop to avoid interfering with concurrent restarts.
@@ -560,7 +560,8 @@ class BLECoroutineRunner:
         Parameters
         ----------
         timeout : float
-            Maximum number of seconds to wait for the background thread to join. (Default value = 2.0)
+            Maximum number of seconds to wait for the background thread to join.
+            (Default value = BLEConfig.RUNNER_SHUTDOWN_TIMEOUT_SECONDS)
 
         Returns
         -------

@@ -133,6 +133,17 @@ class ReconnectScheduler:
         # schedulers will see a non-None _reconnect_thread and exit early.
         try:
             self.thread_coordinator._start_thread(thread)
+            thread_ident = getattr(thread, "ident", None)
+            thread_started = bool(getattr(thread, "started", False))
+            thread_is_alive = bool(
+                callable(getattr(thread, "is_alive", None)) and thread.is_alive()
+            )
+            if thread_ident is None and not thread_started and not thread_is_alive:
+                logger.debug(
+                    "Auto-reconnect thread did not start; clearing stale thread reference."
+                )
+                self._clear_thread_reference()
+                return False
         except Exception:
             self._clear_thread_reference()
             raise

@@ -7,6 +7,7 @@ import pytest
 
 from meshtastic.powermon import power_supply as power_supply_module
 from meshtastic.powermon.power_supply import PowerError, PowerSupply
+from meshtastic.powermon.sim import SimPowerSupply
 
 
 @pytest.mark.unit
@@ -84,3 +85,23 @@ def test_deprecated_current_aliases_warn_once_per_method(
         messages.count("getMaxCurrentmA is deprecated, use getMaxCurrentMA instead.")
         == 1
     )
+
+
+@pytest.mark.unit
+def test_sim_power_supply_snake_case_alias_is_stable_shim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SimPowerSupply snake_case alias should delegate without emitting deprecation warnings."""
+    monkeypatch.setattr("meshtastic.powermon.sim.time.time", lambda: 0.0)
+    supply = SimPowerSupply()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        value = supply.get_average_current_mA()
+
+    assert value == pytest.approx(supply.getAverageCurrentMA())
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]

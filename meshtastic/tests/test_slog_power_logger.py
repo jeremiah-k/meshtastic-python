@@ -102,6 +102,7 @@ def test_power_logger_rejects_non_positive_interval(
     with pytest.raises(ValueError, match="interval must be > 0 seconds"):
         PowerLogger(meter, "unused-path", interval=interval)
 
+
 @pytest.mark.unit
 def test_store_current_reading_converts_legacy_aliases_when_voltage_present() -> None:
     """StoreCurrentReading should convert legacy *_mW aliases using nominal voltage."""

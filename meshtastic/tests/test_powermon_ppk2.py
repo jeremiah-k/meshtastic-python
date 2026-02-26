@@ -121,3 +121,21 @@ def test_average_current_camelcase_aliases_are_consistent(
     assert ppk.getAverageCurrentMA() == 42.0
     with pytest.warns(DeprecationWarning):
         assert ppk.getAverageCurrentmA() == 42.0
+
+
+@pytest.mark.unit
+def test_close_always_attempts_transport_cleanup(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
+    """close() should always attempt device transport cleanup, even on normal thread exit."""
+    ppk = ppk2_stub
+    ppk.r = MagicMock()
+    ppk.r.ser = MagicMock()
+    ppk.measurement_thread = MagicMock()
+    ppk.measurement_thread.is_alive.return_value = False
+
+    ppk.close()
+
+    ppk.r.stop_measuring.assert_called_once()
+    ppk.r.close.assert_called_once()
+    ppk.r.ser.close.assert_called_once()

@@ -195,21 +195,23 @@ class PPK2PowerSupply(PowerSupply):
     def close(self) -> None:
         """Close the power meter and release resources."""
         self.measuring = False
-        self.r.stop_measuring()  # send command to ppk2
+        with suppress(Exception):
+            self.r.stop_measuring()  # send command to ppk2
         if self.measurement_thread.is_alive():
             self.measurement_thread.join(timeout=5.0)
             if self.measurement_thread.is_alive():
                 logging.warning(
                     "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
                 )
-                close_method = getattr(self.r, "close", None)
-                if close_method is not None:
-                    with suppress(Exception):
-                        close_method()  # pylint: disable=not-callable
-                serial_handle = getattr(self.r, "ser", None)
-                if serial_handle is not None:
-                    with suppress(Exception):
-                        serial_handle.close()
+        close_method = getattr(self.r, "close", None)
+        if callable(close_method):
+            with suppress(Exception):
+                close_method()  # pylint: disable=not-callable
+
+        serial_handle = getattr(self.r, "ser", None)
+        if serial_handle is not None:
+            with suppress(Exception):
+                serial_handle.close()
         super().close()
 
     def setIsSupply(self, is_supply: bool) -> None:

@@ -5,7 +5,7 @@ import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable
 
-from bleak.exc import BleakDBusError
+from bleak.exc import BleakDBusError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import DISCONNECT_TIMEOUT_SECONDS, BLEConfig
@@ -180,7 +180,14 @@ class ClientManager:
             await_timeout=await_timeout,
             timeout=connect_timeout,
         )
-        services = getattr(client.bleak_client, "services", None)
+        try:
+            services = getattr(client.bleak_client, "services", None)
+        except BleakError as exc:
+            logger.debug(
+                "BLE services property raised right after connect; forcing discovery: %s",
+                exc,
+            )
+            services = None
         if not services or not getattr(services, "get_characteristic", None):
             logger.debug(
                 "BLE services not available immediately after connect; getting services"

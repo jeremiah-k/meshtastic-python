@@ -61,22 +61,22 @@ def test_send_power_stress_calls_send_data_with_expected_args() -> None:
 
 
 @pytest.mark.unit
-def test_sync_power_stress_wait_until_ack_success() -> None:
+def test_sync_power_stress_wait_until_ack_success(
+    power_stress_client: tuple[MagicMock, PowerStressClient],
+) -> None:
     """Test that syncPowerStress returns True when ack fires in run-until-ack mode."""
-    iface = MagicMock()
-    iface.myInfo.my_node_num = 1
-    client = PowerStressClient(iface)
+    _, client = power_stress_client
 
     client.sendPowerStress = _fake_send  # type: ignore[method-assign]
     assert client.syncPowerStress(powermon_pb2.PowerStressMessage.BT_ON) is True
 
 
 @pytest.mark.unit
-def test_sync_power_stress_wait_until_ack_timeout() -> None:
+def test_sync_power_stress_wait_until_ack_timeout(
+    power_stress_client: tuple[MagicMock, PowerStressClient],
+) -> None:
     """Test that syncPowerStress returns False when ack is not received in time."""
-    iface = MagicMock()
-    iface.myInfo.my_node_num = 1
-    client = PowerStressClient(iface)
+    _, client = power_stress_client
 
     client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
     assert (
@@ -93,11 +93,10 @@ def test_sync_power_stress_wait_until_ack_timeout() -> None:
 def test_sync_power_stress_negative_duration_uses_ack_wait_path(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
+    power_stress_client: tuple[MagicMock, PowerStressClient],
 ) -> None:
     """Negative durations should be handled via the run-until-ack timeout path."""
-    iface = MagicMock()
-    iface.myInfo.my_node_num = 1
-    client = PowerStressClient(iface)
+    _, client = power_stress_client
     sleep_mock = MagicMock()
     monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", sleep_mock)
     client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
@@ -123,11 +122,10 @@ def test_sync_power_stress_negative_duration_uses_ack_wait_path(
 @pytest.mark.unit
 def test_sync_power_stress_timed_mode_without_ack(
     monkeypatch: pytest.MonkeyPatch,
+    power_stress_client: tuple[MagicMock, PowerStressClient],
 ) -> None:
     """Test that syncPowerStress fails timed mode when ack callback never fires."""
-    iface = MagicMock()
-    iface.myInfo.my_node_num = 1
-    client = PowerStressClient(iface)
+    _, client = power_stress_client
     monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", lambda _: None)
 
     client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
@@ -141,11 +139,12 @@ def test_sync_power_stress_timed_mode_without_ack(
 
 
 @pytest.mark.unit
-def test_sync_power_stress_timed_mode_with_ack(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sync_power_stress_timed_mode_with_ack(
+    monkeypatch: pytest.MonkeyPatch,
+    power_stress_client: tuple[MagicMock, PowerStressClient],
+) -> None:
     """Test that syncPowerStress succeeds timed mode when ack callback fires."""
-    iface = MagicMock()
-    iface.myInfo.my_node_num = 1
-    client = PowerStressClient(iface)
+    _, client = power_stress_client
     monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", lambda _: None)
 
     client.sendPowerStress = _fake_send  # type: ignore[method-assign]

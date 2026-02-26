@@ -12,8 +12,8 @@
 
 # Add files or directories matching the regex patterns to the blacklist. The
 # regex matches against base names, not paths.
-# NOTE: CI overrides this with --ignore-patterns ".*_pb2.pyi?$"
-ignore-patterns=.*_pb2.py,.*_pb2.pyi
+# NOTE: CI overrides this with --ignore-patterns ".*_pb2\.pyi?$"
+ignore-patterns=.*_pb2\.pyi?$
 
 
 
