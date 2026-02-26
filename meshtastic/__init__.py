@@ -462,9 +462,7 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         if sender is None:
             logger.debug("Dropping admin packet because 'from' field is missing")
         elif not isinstance(sender, int):
-            logger.debug(
-                "Admin packet has invalid 'from' field type: %r", type(sender)
-            )
+            logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
         elif not isinstance(decoded, dict):
             logger.debug("Admin packet missing decoded dict from=%s", sender)
         return

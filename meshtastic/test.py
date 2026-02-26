@@ -134,7 +134,7 @@ def _normalize_portnum(portnum: Any) -> str | None:
     """Normalize a port number value to its protobuf enum-name representation."""
     if isinstance(portnum, int):
         with suppress(ValueError):
-            return portnums_pb2.PortNum.Name(portnum)
+            return portnums_pb2.PortNum.Name(portnum)  # type: ignore[arg-type]
         return None
     return str(portnum) if portnum is not None else None
 
