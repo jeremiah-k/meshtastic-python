@@ -4,7 +4,7 @@ import logging
 import re
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -37,7 +37,7 @@ def test_init_on_text_receive_with_exception(
     """Test _on_text_receive."""
     args = MagicMock()
     monkeypatch.setattr(mt_config, "args", args)
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
     packet: dict[str, Any] = {}
     with caplog.at_level(logging.DEBUG):
         _on_text_receive(iface, packet)
@@ -53,7 +53,7 @@ def test_init_on_position_receive(
     """Test _on_position_receive."""
     args = MagicMock()
     monkeypatch.setattr(mt_config, "args", args)
-    iface = MagicMock(autospec=SerialInterface)
+    iface = create_autospec(SerialInterface, instance=True)
     packet = {"from": "foo", "decoded": {"position": {}}}
     with caplog.at_level(logging.DEBUG):
         _on_position_receive(iface, packet)

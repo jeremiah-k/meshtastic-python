@@ -26,8 +26,8 @@ Context Manager Usage:
 import logging
 import time
 import weakref
-from contextlib import contextmanager
 from collections.abc import Generator
+from contextlib import contextmanager
 from threading import RLock
 from typing import Any
 
@@ -247,7 +247,7 @@ def _owner_connected_state(owner: Any) -> bool | None:
     if callable(connection_state):
         try:
             connection_state = connection_state()
-        except (AttributeError, TypeError, RuntimeError):
+        except Exception:  # noqa: BLE001 - defensive gate-state probe
             logger.debug(
                 "Failed to read owner connection state; preserving gate claim.",
                 exc_info=True,

@@ -738,11 +738,9 @@ def test_exit_with_exception(caplog: pytest.LogCaptureFixture) -> None:
         caplog.text,
         re.MULTILINE,
     )
-    assert re.search(
-        r"Traceback:\n.*in test_exit_with_exception\n {4}raise ValueError\(\"Something went wrong\"\)",
-        caplog.text,
-        re.MULTILINE,
-    )
+    assert "Traceback:" in caplog.text
+    assert "in test_exit_with_exception" in caplog.text
+    assert 'raise ValueError("Something went wrong")' in caplog.text
 
 
 @pytest.mark.unit

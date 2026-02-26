@@ -114,13 +114,18 @@ def test_average_current_camelcase_aliases_are_consistent(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:
     """CamelCase average-current aliases should be consistent for PPK2."""
+    previous_warned = set(power_supply_module._warned_deprecations)
     power_supply_module._warned_deprecations.clear()
-    ppk = ppk2_stub
-    ppk.getAverageCurrentMA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
+    try:
+        ppk = ppk2_stub
+        ppk.getAverageCurrentMA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
 
-    assert ppk.getAverageCurrentMA() == 42.0
-    with pytest.warns(DeprecationWarning):
-        assert ppk.getAverageCurrentmA() == 42.0
+        assert ppk.getAverageCurrentMA() == 42.0
+        with pytest.warns(DeprecationWarning):
+            assert ppk.getAverageCurrentmA() == 42.0
+    finally:
+        power_supply_module._warned_deprecations.clear()
+        power_supply_module._warned_deprecations.update(previous_warned)
 
 
 @pytest.mark.unit

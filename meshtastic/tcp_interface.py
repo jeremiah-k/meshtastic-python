@@ -320,10 +320,20 @@ class TCPInterface(StreamInterface):
                     # block on queue space. During reader-thread reconnect this can deadlock
                     # because queue updates are also processed by the reader thread.
                     if threading.current_thread() is getattr(self, "_rxThread", None):
-                        pending_queue = getattr(self, "queue", None)
-                        if isinstance(pending_queue, dict) and pending_queue:
-                            dropped = len(pending_queue)
-                            pending_queue.clear()
+                        dropped = 0
+                        queue_lock = getattr(self, "_queue_lock", None)
+                        if queue_lock is not None:
+                            with queue_lock:
+                                pending_queue = getattr(self, "queue", None)
+                                if isinstance(pending_queue, dict) and pending_queue:
+                                    dropped = len(pending_queue)
+                                    pending_queue.clear()
+                        else:
+                            pending_queue = getattr(self, "queue", None)
+                            if isinstance(pending_queue, dict) and pending_queue:
+                                dropped = len(pending_queue)
+                                pending_queue.clear()
+                        if dropped > 0:
                             logger.warning(
                                 "Dropped %d queued packet(s) before reconnect config on %s",
                                 dropped,

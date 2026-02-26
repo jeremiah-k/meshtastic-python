@@ -51,6 +51,9 @@ def reset() -> None:
     module_globals = globals()
     for name, default in MODULE_STATE_DEFAULTS.items():
         module_globals[name] = default
+    warned_deprecations = module_globals.get("_warned_deprecations")
+    if isinstance(warned_deprecations, set):
+        warned_deprecations.clear()
 
 
 # Declared module state managed via reset().

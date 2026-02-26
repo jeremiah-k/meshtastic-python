@@ -54,16 +54,20 @@ def test_deprecated_current_aliases_warn_once_per_method(
     power_supply: PowerSupply,
 ) -> None:
     """Deprecated camelCase aliases should emit one deprecation warning per method."""
+    previous_warned = set(power_supply_module._warned_deprecations)
     power_supply_module._warned_deprecations.clear()
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        power_supply.getAverageCurrentmA()
-        power_supply.getAverageCurrentmA()
-        power_supply.getMinCurrentmA()
-        power_supply.getMinCurrentmA()
-        power_supply.getMaxCurrentmA()
-        power_supply.getMaxCurrentmA()
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            power_supply.getAverageCurrentmA()
+            power_supply.getAverageCurrentmA()
+            power_supply.getMinCurrentmA()
+            power_supply.getMinCurrentmA()
+            power_supply.getMaxCurrentmA()
+            power_supply.getMaxCurrentmA()
+    finally:
+        power_supply_module._warned_deprecations.clear()
+        power_supply_module._warned_deprecations.update(previous_warned)
 
     deprecations = [
         warning

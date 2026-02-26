@@ -247,7 +247,14 @@ class DiscoveryManager:
                     self._client = None
                 else:
                     is_connected = cast(Any, is_connected_method)
-                    if not is_connected():  # pylint: disable=not-callable
+                    try:
+                        if not is_connected():  # pylint: disable=not-callable
+                            self._client = None
+                    except Exception:  # noqa: BLE001 - defensive path for flaky clients
+                        logger.debug(
+                            "Cached discovery client isConnected() failed; discarding client.",
+                            exc_info=True,
+                        )
                         self._client = None
         if self._client is None:
             # Factory resolution precedence (back-compat and testability):

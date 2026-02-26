@@ -112,10 +112,10 @@ else:
 
 TEXT_MESSAGE_APP_PORTNUM = "TEXT_MESSAGE_APP"
 
-"""The interfaces we are using for our tests"""
+# The interfaces we are using for our tests.
 interfaces: list[Any] = []
 
-"""A list of all packets we received while the current test was running"""
+# A list of all packets we received while the current test was running.
 receivedPackets: list[Any] | None = None
 
 testNumber: int = 0
@@ -146,7 +146,6 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
     with guards_lock:
         if sendingInterface is interface:
             return
-        # print(f"From {interface.stream.port}: {packet}")
         decoded = packet.get("decoded", {})
         if isinstance(decoded, dict):
             portnum = decoded.get("portnum")
