@@ -83,10 +83,11 @@ class SerialInterface(StreamInterface):
                     "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
                 )
                 # Ensure base classes are initialized so close() is safe
+                # Use noProto=True for fallback since no stream is available
                 StreamInterface.__init__(
                     self,
                     debugOut=debugOut,
-                    noProto=noProto,
+                    noProto=True,
                     connectNow=False,
                     noNodes=noNodes,
                     timeout=timeout,

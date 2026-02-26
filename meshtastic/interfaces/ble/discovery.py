@@ -269,7 +269,9 @@ class DiscoveryManager:
                         try:
                             if not is_connected():  # pylint: disable=not-callable
                                 self._client = None
-                        except Exception:  # noqa: BLE001 - defensive path for flaky clients
+                        except (
+                            Exception
+                        ):  # noqa: BLE001 - defensive path for flaky clients
                             logger.debug(
                                 "Cached discovery client isConnected() failed; discarding client.",
                                 exc_info=True,
