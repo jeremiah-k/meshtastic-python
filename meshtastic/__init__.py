@@ -432,18 +432,34 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
 
     _receive_info_update(iface, as_dict)
 
-    try:
-        adminMessage = as_dict["decoded"]["admin"]["raw"]
-        iface._get_or_create_by_num(as_dict["from"])[
-            "adminSessionPassKey"
-        ] = adminMessage.session_passkey
-    except (KeyError, AttributeError):
-        # Expected fields not present - this is normal for non-admin packets
+    sender = as_dict.get("from")
+    if not isinstance(sender, (int, str)):
+        logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
+        return
+
+    decoded = as_dict.get("decoded")
+    if not isinstance(decoded, dict):
+        logger.debug("Admin packet missing decoded dict from=%s", sender)
+        return
+
+    admin_payload = decoded.get("admin")
+    if not isinstance(admin_payload, dict):
+        logger.debug("Admin packet missing admin payload dict from=%s", sender)
+        return
+
+    raw_admin = admin_payload.get("raw")
+    session_passkey = getattr(raw_admin, "session_passkey", None)
+    if session_passkey is None and isinstance(raw_admin, dict):
+        session_passkey = raw_admin.get("session_passkey")
+
+    if session_passkey is None:
         logger.debug(
             "Admin session passkey not extracted from admin packet from=%s",
-            as_dict.get("from"),
-            exc_info=True,
+            sender,
         )
+        return
+
+    iface._get_or_create_by_num(sender)["adminSessionPassKey"] = session_passkey
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

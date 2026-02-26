@@ -230,15 +230,16 @@ class FeatherWriter(ArrowWriter):
         with self._lock:
             if self._conversion_done:
                 return
-            self._conversion_done = True
             super().close()
             src_name = self.base_file_name + ".arrow"
             dest_name = self.base_file_name + ".feather"
             if not os.path.exists(src_name):
+                self._conversion_done = True
                 return
             if os.path.getsize(src_name) == 0:
                 logger.warning("Discarding empty file: %s", src_name)
                 os.remove(src_name)
+                self._conversion_done = True
                 return
 
             logger.info("Compressing log data into %s", dest_name)
@@ -253,6 +254,7 @@ class FeatherWriter(ArrowWriter):
             if array.num_rows == 0:
                 logger.warning("Discarding empty Arrow file: %s", src_name)
                 os.remove(src_name)
+                self._conversion_done = True
                 return
 
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
@@ -292,3 +294,4 @@ class FeatherWriter(ArrowWriter):
                     src_name,
                     exc_info=True,
                 )
+            self._conversion_done = True

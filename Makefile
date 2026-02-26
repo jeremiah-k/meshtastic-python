@@ -1,4 +1,4 @@
-.PHONY: all clean test ci lint docs cov virt smoke1 slow install examples protobufs FORCE
+.PHONY: all clean test ci lint docs cov virt smoke1 slow install examples protobufs protobufs-update FORCE
 
 all: test
 
@@ -43,7 +43,10 @@ slow:
 
 protobufs: FORCE
 	git submodule update --init --recursive
+	./bin/regen-protobufs.sh
 
+protobufs-update: FORCE
+	git submodule update --init --recursive
 	git submodule update --remote --merge
 	./bin/regen-protobufs.sh
 

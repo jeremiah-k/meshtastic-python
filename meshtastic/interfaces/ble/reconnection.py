@@ -348,6 +348,14 @@ class ReconnectWorker:
                             timeout=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
                         ):
                             return
+                        try:
+                            self._call_policy("next_attempt")
+                        except ReconnectPolicyMissingMethodError as err:
+                            logger.exception(
+                                "Reconnect policy missing required method '%s'",
+                                err.method_name,
+                            )
+                            return
                         continue
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).",

@@ -557,6 +557,8 @@ class LogSet:
                 logger.debug("Unable to update latest slog symlink: %s", ex)
         elif dir_name == "":
             raise ValueError(DIR_NAME_REQUIRED_MESSAGE)
+        else:
+            Path(dir_name).mkdir(exist_ok=True, parents=True)
 
         self.dir_name = dir_name
 

@@ -120,8 +120,6 @@ jobs:
     runs-on: ubuntu-latest
     # Require protected-environment approval before publishing.
     environment: pypi-release
-    # Skip draft release events if this workflow is ever reused outside manual dispatch.
-    if: ${{ github.event_name != 'release' || github.event.release.draft == false }}
     needs:
       - release_create
       - build-and-publish-ubuntu
