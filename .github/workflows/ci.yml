@@ -58,7 +58,7 @@ jobs:
             poetry run pytest --cov=meshtastic
           fi
       - name: Upload coverage to Codecov
-        if: ${{ matrix.python-version == '3.13' && secrets.CODECOV_TOKEN != '' }}
+        if: ${{ matrix.python-version == '3.13' }}
         uses: codecov/codecov-action@v5.5.2
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -189,12 +189,10 @@ def test_getNode_not_local_timeout(
                 with pytest.raises(
                     MeshInterface.MeshInterfaceError
                 ) as pytest_wrapped_e:
-                    kwargs = (
-                        {}
-                        if request_channel_attempts is None
-                        else {"requestChannelAttempts": request_channel_attempts}
-                    )
-                    iface.getNode("bar2", **kwargs)
+                    if request_channel_attempts is None:
+                        iface.getNode("bar2")
+                    else:
+                        iface.getNode("bar2", requestChannelAttempts=request_channel_attempts)
                 assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
                 assert "Timed out waiting for channels, giving up" in str(
                     pytest_wrapped_e.value
