@@ -224,12 +224,12 @@ def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
     Keeps historical packet structure for compatibility while redacting only
     admin payload bodies that may carry sensitive session material.
     """
-    decoded = as_dict.get("decoded")
-    if not isinstance(decoded, dict):
-        return as_dict
-    if "admin" not in decoded:
-        return as_dict
     sanitized = dict(as_dict)
+    decoded = sanitized.get("decoded")
+    if not isinstance(decoded, dict):
+        return sanitized
+    if "admin" not in decoded:
+        return sanitized
     decoded_sanitized = dict(decoded)
     decoded_sanitized["admin"] = "<redacted>"
     sanitized["decoded"] = decoded_sanitized
@@ -396,19 +396,26 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
     iface : Any
         The interface instance whose node store will be updated.
     as_dict : dict[str, Any]
-        Parsed packet dictionary; if it contains a "from"
-        key, the node identified by that value will have these fields set:
+        Parsed packet dictionary; if it contains an integer "from" key, the
+        node identified by that value will have these fields set:
         - lastReceived: packet dictionary copy with admin body redacted
         - lastHeard: value of `rxTime` from the packet (or None)
         - snr: value of `rxSnr` from the packet (or None)
         - hopLimit: value of `hopLimit` from the packet (or None)
     """
-    if "from" in as_dict:
-        node = iface._get_or_create_by_num(as_dict["from"])
-        node["lastReceived"] = _sanitize_last_received(as_dict)
-        node["lastHeard"] = as_dict.get("rxTime")
-        node["snr"] = as_dict.get("rxSnr")
-        node["hopLimit"] = as_dict.get("hopLimit")
+    sender = as_dict.get("from")
+    if not isinstance(sender, int):
+        if sender is not None:
+            logger.debug(
+                "Skipping receive info update due to non-integer sender type: %s",
+                type(sender).__name__,
+            )
+        return
+    node = iface._get_or_create_by_num(sender)
+    node["lastReceived"] = _sanitize_last_received(as_dict)
+    node["lastHeard"] = as_dict.get("rxTime")
+    node["snr"] = as_dict.get("rxSnr")
+    node["hopLimit"] = as_dict.get("hopLimit")
 
 
 def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -430,12 +437,12 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         logger.debug("Dropping admin packet because 'from' field is missing")
         return
 
-    _receive_info_update(iface, as_dict)
-
     sender = as_dict.get("from")
-    if not isinstance(sender, (int, str)):
+    if not isinstance(sender, int):
         logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
         return
+
+    _receive_info_update(iface, as_dict)
 
     decoded = as_dict.get("decoded")
     if not isinstance(decoded, dict):

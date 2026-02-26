@@ -238,7 +238,14 @@ class FeatherWriter(ArrowWriter):
                 return
             if os.path.getsize(src_name) == 0:
                 logger.warning("Discarding empty file: %s", src_name)
-                os.remove(src_name)
+                try:
+                    os.remove(src_name)
+                except OSError:
+                    logger.warning(
+                        "Failed to remove empty Arrow source file %s",
+                        src_name,
+                        exc_info=True,
+                    )
                 self._conversion_done = True
                 return
 
@@ -253,7 +260,14 @@ class FeatherWriter(ArrowWriter):
             # Check for zero-row streams and discard them
             if array.num_rows == 0:
                 logger.warning("Discarding empty Arrow file: %s", src_name)
-                os.remove(src_name)
+                try:
+                    os.remove(src_name)
+                except OSError:
+                    logger.warning(
+                        "Failed to remove empty Arrow source file %s",
+                        src_name,
+                        exc_info=True,
+                    )
                 self._conversion_done = True
                 return
 

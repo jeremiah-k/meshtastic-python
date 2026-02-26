@@ -33,6 +33,9 @@ WINDOWS11_WRITE_DELAY = 1.0
 READER_THREAD_JOIN_TIMEOUT = 2.0
 """Timeout for joining reader thread on shutdown (seconds)."""
 
+READER_IDLE_BACKOFF_SECONDS = 0.01
+"""Small sleep used when the reader loop has no bytes to process."""
+
 logger = logging.getLogger(__name__)
 
 
@@ -392,8 +395,8 @@ class StreamInterface(MeshInterface):
                                 )
                             self._rxBuf.clear()
                 else:
-                    # logger.debug(f"timeout")
-                    pass
+                    # Avoid tight busy-spin when read() returns no bytes.
+                    time.sleep(READER_IDLE_BACKOFF_SECONDS)
         except serial.SerialException as ex:
             if (
                 not self._wantExit

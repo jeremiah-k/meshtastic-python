@@ -150,9 +150,21 @@ High-impact fixes were applied in `mesh_interface.py`:
 - Added lock protection for queue/queueStatus operations.
 - Added lock protection for node database access paths.
 - Removed response-handler TOCTOU window by making lookup/eligibility/pop atomic.
+- Added heartbeat shutdown quiescence tracking (`_heartbeat_inflight` + condition)
+  so `close()` waits for in-flight heartbeat sends and avoids post-close sends.
+- Aligned `showNodes()` self-filtering to snapshot `localNode.nodeNum` under
+  the same node/config lock as the node snapshot.
 
 Additional race-hardening was applied in transport and BLE paths where reconnect
 and shutdown can overlap.
+
+Recent closeout fixes in those paths include:
+
+- TCP reconnect queue purge now always runs under `_queue_lock` in the reader
+  reconnect path, preserving queue lock discipline and avoiding reconnect races.
+- BLE reconnect "connected elsewhere" gate now consumes and validates
+  `next_attempt()` policy output (including `should_retry`) instead of ignoring
+  it, so retry limits and policy semantics are preserved.
 
 ## 7.4 Correctness and guard improvements
 
@@ -161,6 +173,11 @@ Examples of guard hardening added during this cycle:
 - Improved invalid input checks in several interfaces.
 - Protected callback paths from inconsistent state transitions.
 - Added safer cleanup semantics where failures previously leaked state.
+- Admin packet sender validation now occurs before state mutation in
+  `_on_admin_receive`, preventing malformed sender values from mutating node
+  state.
+- `lastReceived` cache sanitization now always returns a shallow copy, avoiding
+  aliasing the live packet dictionary in node state.
 
 ## 7.5 Test suite expansion and tightening
 

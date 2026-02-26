@@ -343,18 +343,29 @@ class ReconnectWorker:
                             attempt_num,
                             device_addr,
                         )
-                        # Avoid spinning; wait before re-checking the gate.
-                        if shutdown_event.wait(
-                            timeout=BLEConfig.AUTO_RECONNECT_INITIAL_DELAY
-                        ):
-                            return
                         try:
-                            self._call_policy("next_attempt")
+                            next_attempt = self._call_policy("next_attempt")
                         except ReconnectPolicyMissingMethodError as err:
                             logger.exception(
                                 "Reconnect policy missing required method '%s'",
                                 err.method_name,
                             )
+                            return
+                        validated_next_attempt = self._validate_next_attempt(
+                            next_attempt
+                        )
+                        if validated_next_attempt is None:
+                            return
+                        if not validated_next_attempt.should_retry:
+                            logger.info("Auto-reconnect reached maximum retry limit.")
+                            return
+                        # Keep a minimum delay for the connected-elsewhere gate while
+                        # still honoring policy-provided backoff.
+                        sleep_delay = max(
+                            validated_next_attempt.delay,
+                            BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
+                        )
+                        if shutdown_event.wait(timeout=sleep_delay):
                             return
                         continue
                     logger.info(
