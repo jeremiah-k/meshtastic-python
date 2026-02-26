@@ -294,15 +294,16 @@ important to prevent silent misuse.
 
 ## 10) Quality Gates and Validation Process
 
-Work was continuously validated with project gates:
+Work was continuously validated with read-only project gates:
 
-- Linting and formatting via trunk:
-  - `.trunk/trunk check --fix --show-existing`
-- CI parity checks:
+- CI/read-only validation:
+  - `.trunk/trunk check --show-existing`
   - `make ci`
   - `pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"`
   - `mypy meshtastic/`
   - `pytest --cov=meshtastic --cov-report=xml`
+- Local autofix workflow (developer convenience):
+  - `.trunk/trunk check --fix --show-existing`
 
 During iterative review cycles, targeted tests were run for touched areas to
 reduce cycle time while keeping confidence high.
@@ -368,16 +369,19 @@ Current security advisories reported by:
 
 - `.trunk/trunk check --filter=osv-scanner --show-existing`
 
-At the time of this document update, `poetry.lock` reports:
+As of 2026-02-26, `poetry.lock` reports:
 
 - `flask 3.0.3`: `GHSA-68rp-wp8r-4726` (low)
-  - Patch guidance: upgrade to `>=3.1.3`
+  - Live advisory: <https://github.com/advisories/GHSA-68rp-wp8r-4726>
 - `werkzeug 3.0.6`: `GHSA-29vq-49wr-vm6x` (medium)
-  - Patch guidance: upgrade to `>=3.1.6`
+  - Live advisory: <https://github.com/advisories/GHSA-29vq-49wr-vm6x>
 - `werkzeug 3.0.6`: `GHSA-87hc-h4r5-73f7` (medium)
-  - Patch guidance: upgrade to `>=3.1.5`
+  - Live advisory: <https://github.com/advisories/GHSA-87hc-h4r5-73f7>
 - `werkzeug 3.0.6`: `GHSA-hgf8-39gv-g3f2` (medium)
-  - Patch guidance: upgrade to `>=3.1.4`
+  - Live advisory: <https://github.com/advisories/GHSA-hgf8-39gv-g3f2>
+
+Use the latest `osv-scanner` output and the advisory links above to fetch
+current remediation versions at update time.
 
 The follow-up dependency PR will:
 

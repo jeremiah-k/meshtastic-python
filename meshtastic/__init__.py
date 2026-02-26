@@ -284,14 +284,17 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     decoded = as_dict.get("decoded")
     if not isinstance(decoded, dict):
         return
-    if "position" in decoded and "from" in as_dict:
+    sender = as_dict.get("from")
+    if not isinstance(sender, int):
+        return
+    if "position" in decoded:
         _receive_info_update(iface, as_dict)
         p = decoded["position"]
-        logger.debug("position payload received from=%s", as_dict.get("from"))
+        logger.debug("position payload received from=%s", sender)
         p = iface._fixup_position(p)
-        logger.debug("position payload normalized from=%s", as_dict.get("from"))
+        logger.debug("position payload normalized from=%s", sender)
         # update node DB as needed
-        iface._get_or_create_by_num(as_dict["from"])["position"] = p
+        iface._get_or_create_by_num(sender)["position"] = p
 
 
 def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -314,11 +317,14 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     decoded = as_dict.get("decoded")
     if not isinstance(decoded, dict):
         return
-    if "user" in decoded and "from" in as_dict:
+    sender = as_dict.get("from")
+    if not isinstance(sender, int):
+        return
+    if "user" in decoded:
         p = decoded["user"]
         # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
         # update node DB as needed
-        n = iface._get_or_create_by_num(as_dict["from"])
+        n = iface._get_or_create_by_num(sender)
         n["user"] = p
         # We now have a node ID, make sure it is up-to-date in that table
         node_id = p.get("id") if isinstance(p, dict) else None
@@ -344,7 +350,8 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         a `from` key and may include `decoded.telemetry`.
     """
     logger.debug("in _on_telemetry_receive() %s", _packet_debug_summary(as_dict))
-    if "from" not in as_dict:
+    sender = as_dict.get("from")
+    if not isinstance(sender, int):
         return
 
     decoded = as_dict.get("decoded")
@@ -377,14 +384,12 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     update_obj = telemetry.get(to_update)
     if not isinstance(update_obj, dict):
         return
-    node = iface._get_or_create_by_num(as_dict["from"])
+    node = iface._get_or_create_by_num(sender)
     new_metrics = node.get(to_update, {})
     if not isinstance(new_metrics, dict):
         new_metrics = {}
     new_metrics.update(update_obj)
-    logger.debug(
-        "updating %s metrics for %s to %s", to_update, as_dict["from"], new_metrics
-    )
+    logger.debug("updating %s metrics for %s to %s", to_update, sender, new_metrics)
     node[to_update] = new_metrics
 
 

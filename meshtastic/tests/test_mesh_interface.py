@@ -15,13 +15,6 @@ from ..mesh_interface import MeshInterface, _timeago
 from ..node import Node
 from ..protobuf import config_pb2, mesh_pb2, portnums_pb2
 
-try:
-    # Depends upon the powermon group, not installed by default
-    from ..powermon import SimPowerSupply
-    from ..slog import LogSet
-except ImportError:
-    pytest.skip("Can't import LogSet or SimPowerSupply", allow_module_level=True)
-
 # TODO
 # from ..config import Config
 from ..util import Timeout
@@ -35,6 +28,12 @@ def test_MeshInterface(
     tmp_path: Path,
 ) -> None:
     """Test that we can instantiate a MeshInterface."""
+    # Optional dependencies used only by this test path.
+    powermon_module = pytest.importorskip("meshtastic.powermon")
+    slog_module = pytest.importorskip("meshtastic.slog")
+    SimPowerSupply = powermon_module.SimPowerSupply
+    LogSet = slog_module.LogSet
+
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     with MeshInterface(noProto=True) as iface:
         NODE_ID = "!9388f81c"
@@ -177,7 +176,10 @@ def test_getNode_not_local(caplog):
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 @pytest.mark.parametrize("request_channel_attempts", [None, 2])
-def test_getNode_not_local_timeout(caplog, request_channel_attempts):
+def test_getNode_not_local_timeout(
+    caplog: pytest.LogCaptureFixture,
+    request_channel_attempts: int | None,
+) -> None:
     """Test getNode timeout behavior with default and explicit request-channel attempts."""
     with MeshInterface(noProto=True) as iface:
         anode = MagicMock(autospec=Node)

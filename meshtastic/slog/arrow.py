@@ -97,17 +97,46 @@ class ArrowWriter:
         with self._lock:
             if self._closed:
                 return
+            write_exc: Exception | None = None
+            cleanup_exc: Exception | None = None
+
             try:
                 self._write()
+            except Exception as exc:  # noqa: BLE001 - preserve primary write failure
+                write_exc = exc
+
+            try:
+                if self.writer:
+                    self.writer.close()
+            except Exception as exc:  # noqa: BLE001 - cleanup should still continue
+                cleanup_exc = exc
+                logger.warning(
+                    "Failed to close Arrow stream writer cleanly.",
+                    exc_info=True,
+                )
+
+            try:
+                self.sink.close()
+            except Exception as exc:  # noqa: BLE001 - cleanup should still continue
+                if cleanup_exc is None:
+                    cleanup_exc = exc
+                else:
+                    logger.warning(
+                        "Additional sink close failure while cleaning up Arrow writer.",
+                        exc_info=True,
+                    )
             finally:
-                try:
-                    if self.writer:
-                        self.writer.close()
-                finally:
-                    try:
-                        self.sink.close()
-                    finally:
-                        self._closed = True
+                self._closed = True
+
+            if write_exc is not None:
+                if cleanup_exc is not None:
+                    logger.warning(
+                        "Suppressed close() cleanup failure after write error: %s",
+                        cleanup_exc,
+                    )
+                raise write_exc
+            if cleanup_exc is not None:
+                raise cleanup_exc
 
     def _set_schema(self, schema: pa.Schema) -> None:
         """Set the schema for the file.

@@ -116,6 +116,8 @@ class StreamInterface(MeshInterface):
         )  # only serial uses this, TCPInterface overrides the relevant methods instead
         self._rxBuf = bytearray()
         self._wantExit = False
+        # Serialize reader-thread creation/start across concurrent connect() calls.
+        self._connect_lock = threading.Lock()
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
@@ -165,17 +167,18 @@ class StreamInterface(MeshInterface):
         self._wantExit = False
 
         # Check if thread has already been started (threads can only be started once)
-        # If ident is not None, the thread was started before and needs recreation
-        if self._rxThread.is_alive():
-            logger.warning(
-                "connect() called while reader thread is still alive; ignoring request"
-            )
-            return
-        if self._rxThread.ident is not None:
-            self._rxThread = threading.Thread(
-                target=self.__reader, args=(), daemon=True, name="stream reader"
-            )
-        self._rxThread.start()
+        # If ident is not None, the thread was started before and needs recreation.
+        with self._connect_lock:
+            if self._rxThread.is_alive():
+                logger.warning(
+                    "connect() called while reader thread is still alive; ignoring request"
+                )
+                return
+            if self._rxThread.ident is not None:
+                self._rxThread = threading.Thread(
+                    target=self.__reader, args=(), daemon=True, name="stream reader"
+                )
+            self._rxThread.start()
 
         self._start_config()
 
