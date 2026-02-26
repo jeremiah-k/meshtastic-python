@@ -83,7 +83,9 @@ def test_node(capsys: CaptureFixture[str], mock_serial_interface: MagicMock) -> 
 
 
 @pytest.mark.unit
-def test_get_canned_message_returns_cached_value(mock_serial_interface: Any) -> None:
+def test_get_canned_message_returns_cached_value(
+    mock_serial_interface: MagicMock,
+) -> None:
     """get_canned_message should return the cached message without sending."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     anode.cannedPluginMessage = "cached message"
@@ -97,7 +99,7 @@ def test_get_canned_message_returns_cached_value(mock_serial_interface: Any) -> 
 
 @pytest.mark.unit
 def test_get_canned_message_requests_and_caches_value(
-    mock_serial_interface: Any,
+    mock_serial_interface: MagicMock,
 ) -> None:
     """get_canned_message should request, cache, and return the response payload."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
@@ -126,7 +128,7 @@ def test_get_canned_message_requests_and_caches_value(
 
 @pytest.mark.unit
 def test_set_canned_message_sends_payload_and_invalidates_cache(
-    mock_serial_interface: Any,
+    mock_serial_interface: MagicMock,
 ) -> None:
     """set_canned_message should send payload and clear cached message values."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)

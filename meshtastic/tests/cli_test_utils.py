@@ -1,5 +1,6 @@
 """Helpers for invoking CLI commands in tests with bounded execution time."""
 
+import shlex
 import subprocess
 
 import pytest
@@ -37,6 +38,11 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        pytest.fail(f"CLI command timed out after {timeout}s: {command!r} ({exc})")
+        try:
+            executable = shlex.split(command)[0]
+        except (ValueError, IndexError):
+            executable = command.split(" ", 1)[0] if command else "<unknown>"
+        masked = f"{executable!r} +REDACTED_ARGS"
+        pytest.fail(f"CLI command timed out after {timeout}s: {masked} ({exc})")
         raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout

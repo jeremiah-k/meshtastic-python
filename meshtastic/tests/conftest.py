@@ -1,6 +1,7 @@
 """Common pytest code (place for fixtures)."""
 
 import argparse
+import copy
 import shutil
 import threading
 from collections.abc import Generator
@@ -131,12 +132,25 @@ def reset_mt_config(monkeypatch: pytest.MonkeyPatch) -> None:
 def mt_config_state() -> Generator[None, None, None]:
     """Snapshot and restore mt_config module state mutated by tests."""
     state_keys = tuple(mt_config.MODULE_STATE_DEFAULTS.keys())
-    snapshot = {key: getattr(mt_config, key, _MT_CONFIG_SENTINEL) for key in state_keys}
+    snapshot: dict[str, Any] = {}
+    for key in state_keys:
+        value = getattr(mt_config, key, _MT_CONFIG_SENTINEL)
+        if value is _MT_CONFIG_SENTINEL:
+            snapshot[key] = value
+            continue
+        try:
+            snapshot[key] = copy.deepcopy(value)
+        except Exception:  # noqa: BLE001 - fallback for non-copyable objects
+            snapshot[key] = value
     # Also snapshot and restore warn-once tracking for deprecation warnings
-    warned_deprecations: set[str] = getattr(mt_config, "_warned_deprecations", set())
-    warned_snapshot = (
-        set(warned_deprecations) if isinstance(warned_deprecations, set) else set()
-    )
+    warned_deprecations: Any = getattr(mt_config, "_warned_deprecations", set())
+    if isinstance(warned_deprecations, set):
+        try:
+            warned_snapshot: set[str] = copy.deepcopy(warned_deprecations)
+        except Exception:  # noqa: BLE001 - deepcopy may fail for unusual set items
+            warned_snapshot = set(warned_deprecations)
+    else:
+        warned_snapshot = set()
     try:
         yield
     finally:
@@ -314,6 +328,14 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
     return iface
 
 
+def _resolve_cli_binary_or_skip(binary_name: str) -> str:
+    """Resolve a CLI binary path or skip tests when it is unavailable."""
+    exe = shutil.which(binary_name)
+    if exe is None:
+        pytest.skip(f"{binary_name} CLI not found in PATH")
+    return exe
+
+
 @pytest.fixture(name="mock_gpio_iface")
 def _mock_gpio_iface_fixture() -> Generator[MagicMock, None, None]:
     """Provide a GPIO-capable mocked interface for GPIO tests."""
@@ -334,10 +356,7 @@ def meshtastic_bin() -> str:
     pytest.skip
         If the meshtastic CLI is not found in PATH.
     """
-    exe = shutil.which("meshtastic")
-    if exe is None:
-        pytest.skip("meshtastic CLI not found in PATH")
-    return exe
+    return _resolve_cli_binary_or_skip("meshtastic")
 
 
 @pytest.fixture(scope="session")
@@ -354,10 +373,7 @@ def mesh_tunnel_bin() -> str:
     pytest.skip
         If the mesh-tunnel CLI is not found in PATH.
     """
-    exe = shutil.which("mesh-tunnel")
-    if exe is None:
-        pytest.skip("mesh-tunnel CLI not found in PATH")
-    return exe
+    return _resolve_cli_binary_or_skip("mesh-tunnel")
 
 
 @pytest.fixture(name="platform_socket_mocks")
