@@ -5,14 +5,14 @@ Lock Ordering Note:
     1. Global registry lock (_REGISTRY_LOCK in gating.py)
     2. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
     3. Interface connect lock (_connect_lock)
-    4. Interface state lock (_state_lock)
-    5. Interface disconnect lock (_disconnect_lock)
+    4. Interface disconnect lock (_disconnect_lock) for non-blocking pre-check
+    5. Interface state lock (_state_lock)
 
     This ordering prevents deadlocks in concurrent connection scenarios.
 
-    Note: _disconnect_lock is acquired non-blocking first for early-return
-    optimization, then _state_lock is acquired. This is intentional for
-    handling concurrent disconnect callbacks.
+    Note: The disconnect path acquires _disconnect_lock in non-blocking mode
+    first for early-return/concurrent-callback handling, then acquires
+    _state_lock for transition logic.
 """
 
 from enum import Enum

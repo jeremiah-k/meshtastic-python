@@ -32,10 +32,11 @@ def test_init_serial_alias_points_to_internal_module() -> None:
 @pytest.mark.unit
 def test_init_on_text_receive_with_exception(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test _on_text_receive."""
     args = MagicMock()
-    mt_config.args = args
+    monkeypatch.setattr(mt_config, "args", args)
     iface = MagicMock(autospec=SerialInterface)
     packet: dict[str, Any] = {}
     with caplog.at_level(logging.DEBUG):
@@ -45,10 +46,13 @@ def test_init_on_text_receive_with_exception(
 
 
 @pytest.mark.unit
-def test_init_on_position_receive(caplog: pytest.LogCaptureFixture) -> None:
+def test_init_on_position_receive(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test _on_position_receive."""
     args = MagicMock()
-    mt_config.args = args
+    monkeypatch.setattr(mt_config, "args", args)
     iface = MagicMock(autospec=SerialInterface)
     packet = {"from": "foo", "decoded": {"position": {}}}
     with caplog.at_level(logging.DEBUG):
@@ -58,11 +62,13 @@ def test_init_on_position_receive(caplog: pytest.LogCaptureFixture) -> None:
 
 @pytest.mark.unit
 def test_init_on_node_info_receive(
-    caplog: pytest.LogCaptureFixture, iface_with_nodes: MeshInterface
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test _on_node_info_receive."""
     args = MagicMock()
-    mt_config.args = args
+    monkeypatch.setattr(mt_config, "args", args)
     iface = iface_with_nodes
     assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164

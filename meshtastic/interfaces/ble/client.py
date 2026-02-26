@@ -586,6 +586,11 @@ class BLEClient:
                 with contextlib.suppress(Exception):
                     coro.close()
                 raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
+            runner_thread = getattr(self._runner, "_thread", None)
+            if runner_thread is current_thread():
+                with contextlib.suppress(Exception):
+                    coro.close()
+                raise self.BLEError(BLECLIENT_ERROR_RUNNER_THREAD_WAIT)
 
             # Exception mapping contract:
             #   - FutureTimeoutError -> self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT)
@@ -612,12 +617,6 @@ class BLEClient:
                     with contextlib.suppress(ValueError, OSError, AttributeError):
                         if not getattr(stdout, "closed", False):
                             stdout.flush()
-
-            runner_thread = getattr(self._runner, "_thread", None)
-            if runner_thread is current_thread():
-                with contextlib.suppress(Exception):
-                    future.cancel()
-                raise self.BLEError(BLECLIENT_ERROR_RUNNER_THREAD_WAIT)
             return future.result(timeout)
         except SystemExit:  # pylint: disable=W0706
             raise

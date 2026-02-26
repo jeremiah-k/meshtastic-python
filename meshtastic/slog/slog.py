@@ -62,7 +62,6 @@ def rootDir() -> str:
 
 
 @dataclass(init=False)
-@dataclass(init=False)
 class LogDef:
     """Log definition."""
 

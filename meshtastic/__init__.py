@@ -276,15 +276,17 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         "from" and "decoded"->"position".
     """
     logger.debug("in _on_position_receive() %s", _packet_debug_summary(as_dict))
-    if "decoded" in as_dict:
-        if "position" in as_dict["decoded"] and "from" in as_dict:
-            _receive_info_update(iface, as_dict)
-            p = as_dict["decoded"]["position"]
-            logger.debug("position payload received from=%s", as_dict.get("from"))
-            p = iface._fixup_position(p)
-            logger.debug("position payload normalized from=%s", as_dict.get("from"))
-            # update node DB as needed
-            iface._get_or_create_by_num(as_dict["from"])["position"] = p
+    decoded = as_dict.get("decoded")
+    if not isinstance(decoded, dict):
+        return
+    if "position" in decoded and "from" in as_dict:
+        _receive_info_update(iface, as_dict)
+        p = decoded["position"]
+        logger.debug("position payload received from=%s", as_dict.get("from"))
+        p = iface._fixup_position(p)
+        logger.debug("position payload normalized from=%s", as_dict.get("from"))
+        # update node DB as needed
+        iface._get_or_create_by_num(as_dict["from"])["position"] = p
 
 
 def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -304,18 +306,20 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         `"decoded" -> "user"` and `"from"`.
     """
     logger.debug("in _on_node_info_receive() %s", _packet_debug_summary(as_dict))
-    if "decoded" in as_dict:
-        if "user" in as_dict["decoded"] and "from" in as_dict:
-            p = as_dict["decoded"]["user"]
-            # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
-            # update node DB as needed
-            n = iface._get_or_create_by_num(as_dict["from"])
-            n["user"] = p
-            # We now have a node ID, make sure it is up-to-date in that table
-            node_id = p.get("id") if isinstance(p, dict) else None
-            if isinstance(node_id, str) and node_id:
-                iface.nodes[node_id] = n
-            _receive_info_update(iface, as_dict)
+    decoded = as_dict.get("decoded")
+    if not isinstance(decoded, dict):
+        return
+    if "user" in decoded and "from" in as_dict:
+        p = decoded["user"]
+        # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
+        # update node DB as needed
+        n = iface._get_or_create_by_num(as_dict["from"])
+        n["user"] = p
+        # We now have a node ID, make sure it is up-to-date in that table
+        node_id = p.get("id") if isinstance(p, dict) else None
+        if isinstance(node_id, str) and node_id:
+            iface.nodes[node_id] = n
+        _receive_info_update(iface, as_dict)
 
 
 def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -338,11 +342,13 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     if "from" not in as_dict:
         return
 
+    decoded = as_dict.get("decoded")
+    if not isinstance(decoded, dict):
+        return
     _receive_info_update(iface, as_dict)
 
     to_update = None
-
-    telemetry = (as_dict.get("decoded") or {}).get("telemetry") or {}
+    telemetry = decoded.get("telemetry") or {}
     if "deviceMetrics" in telemetry:
         to_update = "deviceMetrics"
     elif "environmentMetrics" in telemetry:

@@ -22,6 +22,7 @@ class TCPInterface(StreamInterface):
     """Interface class for meshtastic devices over a TCP link."""
 
     DEFAULT_CONNECT_TIMEOUT = 10.0
+    CONNECT_TIMEOUT_ERROR = "connectTimeout must be a positive number, got {!r}"
     DEFAULT_MAX_RECONNECT_ATTEMPTS = 8
     DEFAULT_RECONNECT_BACKOFF = 1.6
     DEFAULT_RECONNECT_BASE_DELAY = 1.0
@@ -62,9 +63,7 @@ class TCPInterface(StreamInterface):
             ``None`` uses the platform socket default timeout behavior.
         """
         if connectTimeout is not None and connectTimeout <= 0:
-            raise ValueError(
-                f"connectTimeout must be a positive number, got {connectTimeout!r}"
-            )
+            raise ValueError(self.CONNECT_TIMEOUT_ERROR.format(connectTimeout))
 
         self.stream = None
         self._provides_own_stream = True
