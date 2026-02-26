@@ -1,5 +1,6 @@
 """BLE device discovery strategies."""
 
+import contextlib
 import re
 import threading
 import time
@@ -419,8 +420,9 @@ class DiscoveryManager:
         Explicit lifecycle owners should call `close()`.
         """
         # Only set attributes; avoid calling methods as __init__ may not have completed.
-        if hasattr(self, "_client_lock"):
-            with self._client_lock:
+        with contextlib.suppress(Exception):
+            if hasattr(self, "_client_lock"):
+                with self._client_lock:
+                    self._client = None
+            elif hasattr(self, "_client"):
                 self._client = None
-        elif hasattr(self, "_client"):
-            self._client = None

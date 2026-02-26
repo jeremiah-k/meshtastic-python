@@ -81,7 +81,7 @@ Alternatively, run each check individually:
 
 ```bash
 poetry run pytest --cov=meshtastic --cov-report=xml
-poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
+poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
 poetry run mypy meshtastic/
 ```
 

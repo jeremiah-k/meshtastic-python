@@ -108,19 +108,19 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 mgr = NotificationManager()
 
 # Register a callback for a characteristic UUID; returns an opaque token.
-token = mgr.subscribe(uuid, callback)
+token = mgr._subscribe(uuid, callback)
 
 # Retrieve the most-recently-registered callback for a UUID.
-cb = mgr.getCallback(uuid)
+cb = mgr._get_callback(uuid)
 
 # Stop all notifications through a BLEClient (e.g. during shutdown).
-mgr.unsubscribeAll(client, timeout=5.0)
+mgr._unsubscribe_all(client, timeout=5.0)
 
 # Re-register all subscriptions on a new client (e.g. after reconnect).
-mgr.resubscribeAll(client, timeout=5.0)
+mgr._resubscribe_all(client, timeout=5.0)
 
 # Clear internal subscription state (called after full disconnect + cleanup).
-mgr.cleanupAll()
+mgr._cleanup_all()
 ```
 
 ### `RetryPolicy` / `ReconnectPolicy`
@@ -278,7 +278,7 @@ with BLEInterface(address="DD:DD:13:27:74:29") as iface:
 | Multiple `BLEInterface` instances per address | Reuse one instance; multiple instances collide on the address gate.                                                               |
 | Layered reconnect loops                       | Use either the library's `auto_reconnect=True` **or** your own loop, never both.                                                  |
 | Aggressive retry cadence                      | Include exponential backoff; long `scan + connect` calls during rapid retries exhaust BlueZ.                                      |
-| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `resubscribeAll()` automatically after reconnects.                        |
+| Forgetting to resubscribe notifications       | Use the same instance so `NotificationManager` can call `_resubscribe_all()` automatically after reconnects.                      |
 | Not closing the interface                     | Always call `close()` or use the context-manager pattern; unclosed BLE handles on Linux prevent future connections (BlueZ quirk). |
 
 ---

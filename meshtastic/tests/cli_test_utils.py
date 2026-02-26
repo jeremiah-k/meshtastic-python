@@ -11,7 +11,10 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
     Parameters
     ----------
     command : str
-        Full shell command to execute.
+        Full shell command to execute. This helper intentionally accepts
+        a command string (rather than argv tokens) for compatibility with
+        existing test call sites; use `_quote_shell_path` for path quoting
+        when constructing commands that may include spaces.
     timeout : int
         Maximum time to allow command execution before failing the test.
         (Default value = 120)
@@ -22,6 +25,8 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
         Exit code and combined stdout/stderr output.
     """
     try:
+        # Intentional shell=True for legacy string-based test commands.
+        # For argv + shell=False patterns, see _run_cli_with_timeout in test_int.py.
         result = subprocess.run(  # noqa: S602
             command,
             shell=True,

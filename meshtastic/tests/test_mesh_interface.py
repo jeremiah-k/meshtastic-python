@@ -153,7 +153,7 @@ def test_handlePacketFromRadio_no_portnum(caplog):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getNode_with_local():
+def test_getNode_with_local() -> None:
     """Test getNode."""
     with MeshInterface(noProto=True) as iface:
         anode = iface.getNode(LOCAL_ADDR)
@@ -162,7 +162,7 @@ def test_getNode_with_local():
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_getNode_not_local(caplog):
+def test_getNode_not_local(caplog: pytest.LogCaptureFixture) -> None:
     """Test getNode not local."""
     with MeshInterface(noProto=True) as iface:
         anode = create_autospec(Node, instance=True)
@@ -172,6 +172,7 @@ def test_getNode_not_local(caplog):
                 another_node = iface.getNode("bar2")
                 assert another_node != iface.localNode
     assert re.search(r"About to requestChannels", caplog.text, re.MULTILINE)
+
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
@@ -270,12 +271,14 @@ def test_close_waits_for_inflight_heartbeat_send(
         send_started = threading.Event()
         release_send = threading.Event()
         close_done = threading.Event()
+        close_started = threading.Event()
 
         def blocking_send_heartbeat() -> None:
             send_started.set()
             release_send.wait(timeout=2.0)
 
         def close_interface() -> None:
+            close_started.set()
             iface.close()
             close_done.set()
 
@@ -288,6 +291,7 @@ def test_close_waits_for_inflight_heartbeat_send(
 
         close_thread = threading.Thread(target=close_interface, daemon=True)
         close_thread.start()
+        assert close_started.wait(timeout=1.0)
         # close() should block until the in-flight heartbeat send completes.
         # Use a generous timeout (0.2s) to avoid flakiness on slow CI runners.
         assert not close_done.wait(timeout=0.2)
@@ -776,7 +780,7 @@ def test_exit_with_exception(caplog: pytest.LogCaptureFixture) -> None:
     Raises
     ------
     ValueError
-        If MeshInterface raises ValueError during construction with noProto=True.
+        Raised intentionally inside the context body to verify __exit__ logging.
     """
     with caplog.at_level(logging.ERROR):
         with pytest.raises(ValueError):

@@ -35,7 +35,7 @@ docs:
 
 # lint the codebase (same command as CI)
 lint:
-	poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$$"
+	poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
 
 # show the slowest unit tests
 slow:

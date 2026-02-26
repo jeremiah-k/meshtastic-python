@@ -1,6 +1,7 @@
 """Remote hardware."""
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any, Callable
 
 from pubsub import pub  # type: ignore[import-untyped]
@@ -24,6 +25,7 @@ MISSING_DEST_NODE_ID_ERROR = (
     "Must use a destination node ID for this operation (use --dest)."
 )
 WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
+WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
 
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
 
@@ -83,6 +85,15 @@ def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
     return watch_masks
 
 
+def _get_watch_masks_lock(interface: "MeshInterface") -> threading.Lock:
+    """Return the per-interface lock guarding watch-mask state."""
+    lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
+    if lock is None:
+        lock = threading.Lock()
+        setattr(interface, WATCH_MASKS_LOCK_ATTR, lock)
+    return lock
+
+
 def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     """Handle an incoming remote hardware (GPIO) response packet, log its summary, and mark the interface as having received a response.
 
@@ -120,15 +131,16 @@ def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
 
     raw_mask = hw.get("gpioMask")
     if raw_mask is None:
-        watch_masks = _get_watch_masks(interface)
-        for lookup_value in (packet.get("from"), packet.get("fromId")):
-            key = _normalize_node_key(lookup_value)
-            if key is not None and key in watch_masks:
-                raw_mask = watch_masks[key]
-                break
-        if raw_mask is None and len(watch_masks) == 1:
-            # Legacy fallback for packets that omit sender identity.
-            raw_mask = next(iter(watch_masks.values()))
+        with _get_watch_masks_lock(interface):
+            watch_masks = _get_watch_masks(interface)
+            for lookup_value in (packet.get("from"), packet.get("fromId")):
+                key = _normalize_node_key(lookup_value)
+                if key is not None and key in watch_masks:
+                    raw_mask = watch_masks[key]
+                    break
+            if raw_mask is None and len(watch_masks) == 1:
+                # Legacy fallback for packets that omit sender identity.
+                raw_mask = next(iter(watch_masks.values()))
     if raw_mask is None:
         raw_mask = getattr(interface, "mask", None)
     if raw_mask is None:
@@ -187,7 +199,8 @@ class RemoteHardwareClient:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
-        _get_watch_masks(self.iface)
+        with _get_watch_masks_lock(self.iface):
+            _get_watch_masks(self.iface)
 
         already_subscribed = False
         try:
@@ -253,9 +266,10 @@ class RemoteHardwareClient:
         ):
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+        dest_nodeid: int | str = nodeid.strip() if isinstance(nodeid, str) else nodeid
         return self.iface.sendData(
             r,
-            nodeid,
+            dest_nodeid,
             portnums_pb2.REMOTE_HARDWARE_APP,
             wantAck=True,
             channelIndex=self.channelIndex,
@@ -337,5 +351,6 @@ class RemoteHardwareClient:
         result = self._send_hardware(nodeid, r)
         node_key = _normalize_node_key(nodeid)
         if node_key is not None:
-            _get_watch_masks(self.iface)[node_key] = int(mask)
+            with _get_watch_masks_lock(self.iface):
+                _get_watch_masks(self.iface)[node_key] = int(mask)
         return result

@@ -314,7 +314,7 @@ Work was continuously validated with read-only project gates:
 - CI/read-only validation:
   - `.trunk/trunk check --show-existing`
   - `make ci`
-  - `pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"`
+  - `pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"`
   - `mypy meshtastic/`
   - `pytest --cov=meshtastic --cov-report=xml`
 - Local autofix workflow (developer convenience):

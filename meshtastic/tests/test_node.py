@@ -265,6 +265,16 @@ def test_setURL_ignores_channels_over_device_limit(
     assert anode.channels[7].settings.name == "ch7"
 
 
+def _configure_immediate_admin_timeout(anode: Node) -> None:
+    """Configure admin timeout mocks so wait-based admin reads fail immediately."""
+    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
+    timeout_mock = MagicMock()
+    timeout_mock.waitForSet.return_value = False
+    timeout_mock.expireTimeout = 0
+    anode._timeout = timeout_mock  # type: ignore[assignment]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+
 @pytest.mark.unit
 def test_get_ringtone_times_out_without_response(
     caplog: LogCaptureFixture,
@@ -272,12 +282,7 @@ def test_get_ringtone_times_out_without_response(
 ) -> None:
     """Verify get_ringtone times out when no response callback is invoked."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
-    # Mock timeout to simulate immediate timeout (waitForSet returns False, expireTimeout is 0)
-    anode._timeout = MagicMock()  # type: ignore[assignment]
-    anode._timeout.waitForSet.return_value = False  # type: ignore[union-attr]
-    anode._timeout.expireTimeout = 0  # type: ignore[union-attr]
-    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+    _configure_immediate_admin_timeout(anode)
 
     with caplog.at_level(logging.WARNING):
         result = anode.get_ringtone()
@@ -295,12 +300,7 @@ def test_get_canned_message_times_out_without_response(
 ) -> None:
     """Test get_canned_message returns None if the response callback is never invoked."""
     anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
-    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
-    # Mock timeout to simulate immediate timeout (waitForSet returns False, expireTimeout is 0)
-    anode._timeout = MagicMock()  # type: ignore[assignment]
-    anode._timeout.waitForSet.return_value = False  # type: ignore[union-attr]
-    anode._timeout.expireTimeout = 0  # type: ignore[union-attr]
-    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+    _configure_immediate_admin_timeout(anode)
 
     with caplog.at_level(logging.WARNING):
         result = anode.get_canned_message()
@@ -546,142 +546,89 @@ def test_remove_ignored(
 
 
 @pytest.mark.unit
-def test_setOwner_whitespace_only_long_name(
+@pytest.mark.parametrize(
+    ("param_name", "value", "expected_error"),
+    [
+        (
+            "long_name",
+            "   ",
+            "Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "long_name",
+            "",
+            "Long Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "short_name",
+            "   ",
+            "Short Name cannot be empty or contain only whitespace characters",
+        ),
+        (
+            "short_name",
+            "",
+            "Short Name cannot be empty or contain only whitespace characters",
+        ),
+    ],
+)
+def test_setOwner_rejects_empty_or_whitespace_names(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    param_name: str,
+    value: str,
+    expected_error: str,
 ) -> None:
-    """Test setOwner with whitespace-only long name."""
+    """Test setOwner rejects empty or whitespace-only names."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match="Long Name cannot be empty or contain only whitespace characters",
-    ):
-        anode.setOwner(long_name="   ")
+    with pytest.raises(MeshInterface.MeshInterfaceError, match=expected_error):
+        anode.setOwner(**{param_name: value})
 
 
 @pytest.mark.unit
-def test_setOwner_empty_long_name(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner with empty long name."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match="Long Name cannot be empty or contain only whitespace characters",
-    ):
-        anode.setOwner(long_name="")
-
-
-@pytest.mark.unit
-def test_setOwner_whitespace_only_short_name(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner with whitespace-only short name."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match="Short Name cannot be empty or contain only whitespace characters",
-    ):
-        anode.setOwner(short_name="   ")
-
-
-@pytest.mark.unit
-def test_setOwner_empty_short_name(
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner with empty short name."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError,
-        match="Short Name cannot be empty or contain only whitespace characters",
-    ):
-        anode.setOwner(short_name="")
-
-
-@pytest.mark.unit
-def test_setOwner_valid_names(
+@pytest.mark.parametrize(
+    ("owner_kwargs", "expected_patterns"),
+    [
+        (
+            {"long_name": "ValidName", "short_name": "VN"},
+            (
+                r"p\.set_owner\.long_name:ValidName:",
+                r"p\.set_owner\.short_name:VN:",
+            ),
+        ),
+        (
+            {"short_name": "TST"},
+            (r"p\.set_owner\.short_name:TST:",),
+        ),
+        (
+            {"long_name": "TestUser", "short_name": "TOOLONG"},
+            (r"p\.set_owner\.short_name:TOOL:",),
+        ),
+        (
+            {"long_name": "LicensedUser", "is_licensed": True},
+            (r"p\.set_owner\.is_licensed:True:",),
+        ),
+        (
+            {"long_name": "TestUser", "is_unmessagable": True},
+            (r"p\.set_owner\.is_unmessagable:True:",),
+        ),
+    ],
+)
+def test_setOwner_logs_expected_fields_for_variants(
     caplog: LogCaptureFixture,
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    owner_kwargs: dict[str, Any],
+    expected_patterns: tuple[str, ...],
 ) -> None:
-    """Test setOwner with valid names."""
+    """Test setOwner variants log the expected fields."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, 123, noProto=True)
 
     with caplog.at_level(logging.DEBUG):
-        anode.setOwner(long_name="ValidName", short_name="VN")
+        anode.setOwner(**owner_kwargs)
 
-    # Should not raise any exceptions
-    # Note: When noProto=True, _send_admin is not called as the method returns early
-    assert re.search(r"p\.set_owner\.long_name:ValidName:", caplog.text, re.MULTILINE)
-    assert re.search(r"p\.set_owner\.short_name:VN:", caplog.text, re.MULTILINE)
-
-
-@pytest.mark.unit
-def test_setOwner_short_name_only(
-    caplog: LogCaptureFixture,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner with only short name provided."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with caplog.at_level(logging.DEBUG):
-        anode.setOwner(short_name="TST")
-
-    assert re.search(r"p\.set_owner\.short_name:TST:", caplog.text, re.MULTILINE)
-
-
-@pytest.mark.unit
-def test_setOwner_long_name_truncates_short_name(
-    caplog: LogCaptureFixture,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner truncates long short names to 4 characters."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with caplog.at_level(logging.DEBUG):
-        anode.setOwner(long_name="TestUser", short_name="TOOLONG")
-
-    # Short name should be truncated to 4 chars
-    assert re.search(r"p\.set_owner\.short_name:TOOL:", caplog.text, re.MULTILINE)
-
-
-@pytest.mark.unit
-def test_setOwner_with_is_licensed(
-    caplog: LogCaptureFixture,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner sets is_licensed flag when long_name is provided."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with caplog.at_level(logging.DEBUG):
-        anode.setOwner(long_name="LicensedUser", is_licensed=True)
-
-    assert re.search(r"p\.set_owner\.is_licensed:True:", caplog.text, re.MULTILINE)
-
-
-@pytest.mark.unit
-def test_setOwner_with_is_unmessagable(
-    caplog: LogCaptureFixture,
-    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
-) -> None:
-    """Test setOwner sets is_unmessagable flag."""
-    iface = autospec_local_node_iface(MeshInterface)
-    anode = Node(iface, 123, noProto=True)
-
-    with caplog.at_level(logging.DEBUG):
-        anode.setOwner(long_name="TestUser", is_unmessagable=True)
-
-    assert re.search(r"p\.set_owner\.is_unmessagable:True:", caplog.text, re.MULTILINE)
+    for pattern in expected_patterns:
+        assert re.search(pattern, caplog.text, re.MULTILINE)
 
 
 @pytest.mark.unit

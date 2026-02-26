@@ -1315,7 +1315,9 @@ class BLEInterface(MeshInterface):
             self._on_ble_disconnect,
         )
 
-        device_address = getattr(getattr(client, "bleak_client", None), "address", None)
+        device_address = getattr(
+            getattr(client, "bleak_client", None), "address", None
+        ) or getattr(client, "address", None)
         previous_client = None
         with self._state_lock:
             previous_client = self.client
