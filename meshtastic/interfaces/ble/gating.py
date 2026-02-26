@@ -419,6 +419,11 @@ def _is_currently_connected_elsewhere(
         return False
 
     owner_to_check: Any | None = None
+    # Intentional two-phase TOCTOU trade-off:
+    # we must not hold _REGISTRY_LOCK while calling into owner state because
+    # owner callbacks can touch interface locks. We therefore sample owner
+    # state outside the registry lock and then re-check ownership/claim under
+    # _REGISTRY_LOCK before applying that sample.
     # Phase 1: Check under registry lock.
     with _REGISTRY_LOCK:
         if key not in _CONNECTED_ADDRS:

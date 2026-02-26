@@ -2259,6 +2259,8 @@ class MeshInterface:  # pylint: disable=R0902
                 # self.nodesByNum[node["num"]] = node
                 if "user" in node:  # Some nodes might not have user/ids assigned yet
                     if "id" in node["user"]:
+                        # Keep nodes and nodesByNum mutation under the same lock
+                        # so readers never observe partially-updated node mappings.
                         if self.nodes is not None:
                             self.nodes[node["user"]["id"]] = node
             publishingThread.queueWork(

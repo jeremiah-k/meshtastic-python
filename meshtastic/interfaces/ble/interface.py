@@ -697,14 +697,16 @@ class BLEInterface(MeshInterface):
 
         if not self.auto_reconnect:
             return
-        # Never schedule reconnect once shutdown has started
-        if self._closed:
+        with self._state_lock:
+            is_closed = self._closed
+            is_closing = self._state_manager._is_closing
+        # Snapshot close state under _state_lock to avoid reconnect TOCTOU.
+        if is_closed:
             logger.debug(
                 "Skipping auto-reconnect scheduling because interface is closed."
             )
             return
-        # Use state manager instead of boolean flag
-        if self._state_manager._is_closing:
+        if is_closing:
             logger.debug(
                 "Skipping auto-reconnect scheduling because interface is closing."
             )
@@ -1204,7 +1206,8 @@ class BLEInterface(MeshInterface):
         bool
             True if the interface is closing or closed, False otherwise.
         """
-        return self._state_manager._is_closing or self._closed
+        with self._state_lock:
+            return self._state_manager._is_closing or self._closed
 
     @property
     def _can_initiate_connection(self) -> bool:
@@ -1217,7 +1220,8 @@ class BLEInterface(MeshInterface):
         bool
             True if a new connection can be initiated, False otherwise.
         """
-        return self._state_manager._can_connect and not self._closed
+        with self._state_lock:
+            return self._state_manager._can_connect and not self._closed
 
     # ---------------------------------------------------------------------
     # Connection helper methods (extracted from connect() for readability)
@@ -1231,7 +1235,7 @@ class BLEInterface(MeshInterface):
         BLEError
             with ERROR_INTERFACE_CLOSING when the interface is closing or already closed.
         """
-        if self._closed or self._is_connection_closing:
+        if self._is_connection_closing:
             raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
     def _should_suppress_duplicate_connect(self, connection_key: str | None) -> bool:

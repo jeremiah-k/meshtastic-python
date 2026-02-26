@@ -1,14 +1,13 @@
 """BLE connection state management.
 
 Lock Ordering Note:
-    When acquiring multiple locks in the BLE subsystem, always acquire in this order:
-    1. Global registry lock (_REGISTRY_LOCK in gating.py)
-    2. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
-    3. Interface connect lock (_connect_lock)
-    4. Interface disconnect lock (_disconnect_lock) for non-blocking pre-check
-    5. Interface state lock (_state_lock)
-
-    This ordering prevents deadlocks in concurrent connection scenarios.
+    - Never hold _REGISTRY_LOCK while waiting to acquire per-address locks.
+    - _REGISTRY_LOCK is reserved for short registry updates in gating.py.
+    - Interface-level lock order is:
+      1. Per-address locks (_ADDR_LOCKS in gating.py, via _addr_lock_context)
+      2. Interface connect lock (_connect_lock)
+      3. Interface disconnect lock (_disconnect_lock) for non-blocking pre-check
+      4. Interface state lock (_state_lock)
 
     Note: The disconnect path acquires _disconnect_lock in non-blocking mode
     first for early-return/concurrent-callback handling, then acquires
