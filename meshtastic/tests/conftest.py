@@ -160,8 +160,6 @@ def iface_with_nodes() -> Generator[MeshInterface, None, None]:
     MeshInterface
         Interface instance populated with test node data and a mocked myInfo.
     """
-    position = {"time": 1640206266}
-
     nodes_by_id = {
         "!9388f81c": {
             "num": 2475227164,
@@ -172,7 +170,7 @@ def iface_with_nodes() -> Generator[MeshInterface, None, None]:
                 "macaddr": "RBeTiPgc",
                 "hwModel": "TBEAM",
             },
-            "position": position,
+            "position": {"time": 1640206266},
             "lastHeard": 1640204888,
         }
     }
@@ -187,7 +185,7 @@ def iface_with_nodes() -> Generator[MeshInterface, None, None]:
                 "macaddr": "RBeTiPgc",
                 "hwModel": "TBEAM",
             },
-            "position": position,
+            "position": {"time": 1640206266},
             "lastHeard": 1640206266,
         }
     }

@@ -17,10 +17,8 @@ logger = logging.getLogger("meshtastic.ble")
 class NotificationManager:
     """Manage BLE notification subscriptions so we can resubscribe cleanly after reconnects."""
 
-    # Maximum subscription token value (2^31 - 1) to prevent unbounded counter growth
     _MAX_SUBSCRIPTION_TOKEN = 0x7FFFFFFF
-    # Maximum attempts to find a non-colliding token after wraparound
-    _MAX_COLLISION_ITERATIONS = 1000
+
 
     def __init__(self) -> None:
         """Initialize a NotificationManager and its thread-safe subscription state.
