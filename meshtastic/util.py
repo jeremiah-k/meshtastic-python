@@ -1316,6 +1316,7 @@ def toNodeNum(node_id: int | str) -> int:
     return _to_node_num(node_id)
 
 
+# COMPAT_STABLE_SHIM: historical public snake_case alias.
 def to_node_num(node_id: int | str) -> int:
     """Backward-compatible wrapper for :func:`toNodeNum`."""
     return toNodeNum(node_id)
@@ -1368,6 +1369,7 @@ def flagsToList(flag_type: Any, flags: int) -> list[str]:
     return _flags_to_list(flag_type, flags)
 
 
+# COMPAT_STABLE_SHIM: historical public snake_case alias.
 def flags_to_list(flag_type: Any, flags: int) -> list[str]:
     """Backward-compatible wrapper for :func:`flagsToList`."""
     return flagsToList(flag_type, flags)

@@ -27,8 +27,9 @@ import logging
 import time
 import weakref
 from contextlib import contextmanager
+from collections.abc import Generator
 from threading import RLock
-from typing import Any, Generator
+from typing import Any
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.utils import sanitize_address
