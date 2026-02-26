@@ -1,6 +1,7 @@
 """Power stress testing support."""
 
 import logging
+import math
 import threading
 import time
 from typing import Any, Callable
@@ -99,7 +100,13 @@ class PowerStressClient:
             powermon_pb2.PowerStressMessage.Opcode.Name(cmd),
         )
         effective_num_seconds = num_seconds
-        if num_seconds < 0.0:
+        if not math.isfinite(num_seconds):
+            logging.warning(
+                "Non-finite num_seconds=%s is invalid; treating as run-until-ack",
+                num_seconds,
+            )
+            effective_num_seconds = 0.0
+        elif num_seconds < 0.0:
             logging.warning(
                 "Negative num_seconds=%s is invalid; treating as run-until-ack",
                 num_seconds,

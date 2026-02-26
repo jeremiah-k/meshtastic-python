@@ -224,6 +224,27 @@ def mock_serial_interface() -> MagicMock:
 
 
 @pytest.fixture
+def autospec_local_node_iface() -> Callable[[type[Any]], MagicMock]:
+    """Provide a factory for creating autospecced interface mocks with localNode.
+
+    Returns
+    -------
+    Callable[[type[Any]], MagicMock]
+        A factory function that takes a spec class (e.g., MeshInterface, SerialInterface)
+        and returns an autospecced mock with a localNode attribute configured with
+        _get_admin_channel_index returning 0.
+    """
+
+    def _factory(spec_class: type[Any]) -> MagicMock:
+        iface = create_autospec(spec_class, instance=True)
+        local_node = MagicMock(spec=["_get_admin_channel_index"])
+        local_node._get_admin_channel_index.return_value = 0
+        iface.localNode = local_node
+        return iface
+
+    return _factory
+
+@pytest.fixture
 def power_supply() -> "PowerSupply":
     """Provide a fresh PowerSupply instance for voltage-validation tests."""
     from meshtastic.powermon.power_supply import PowerSupply  # pylint: disable=C0415

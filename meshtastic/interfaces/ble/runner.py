@@ -626,10 +626,12 @@ class BLECoroutineRunner:
             ):
                 self._thread = None
             # Only clear _loop if it still references the original loop.
-            # This avoids clearing a newer loop installed by a concurrent restart.
             if self._loop is loop:
                 self._loop = None
-            self._unregister_atexit_handler_locked()
+            # Keep process-exit cleanup registered if a concurrent restart already
+            # installed a new active runner.
+            if self._thread is None and self._loop is None:
+                self._unregister_atexit_handler_locked()
         return True
 
     def _atexit_shutdown(self) -> None:

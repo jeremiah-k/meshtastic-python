@@ -1455,6 +1455,13 @@ class BLEInterface(MeshInterface):
                         _addr_lock_context(address_registry_key)
                     )
                     stack.enter_context(addr_lock)
+                # Re-check after waiting for the address gate to close the TOCTOU window.
+                if self._should_suppress_duplicate_connect(address_registry_key):
+                    logger.info(
+                        "Suppressing duplicate connect to %s: recently connected elsewhere.",
+                        address_registry_key or "unknown",
+                    )
+                    raise self.BLEError(ERROR_CONNECTION_SUPPRESSED)
 
             with self._connect_lock:
                 # Re-check closing state inside connect_lock for extra safety

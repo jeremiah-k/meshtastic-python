@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
+from pytest import CaptureFixture, LogCaptureFixture
 
 from ..mesh_interface import MeshInterface
 from ..node import Node
@@ -73,7 +74,7 @@ def _make_fake_send_admin(
 
 
 @pytest.mark.unit
-def test_node(capsys, mock_serial_interface):
+def test_node(capsys: CaptureFixture[str], mock_serial_interface: MagicMock) -> None:
     """Test that we can instantiate a Node."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     lc = localonly_pb2.LocalConfig()
@@ -171,7 +172,7 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
 
 
 @pytest.mark.unit
-def test_set_canned_message_over_limit_raises(mock_serial_interface):
+def test_set_canned_message_over_limit_raises(mock_serial_interface: MagicMock) -> None:
     """set_canned_message should reject messages longer than 200 chars."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     with pytest.raises(
@@ -182,7 +183,7 @@ def test_set_canned_message_over_limit_raises(mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_exitSimulator(caplog):
+def test_exitSimulator(caplog: LogCaptureFixture) -> None:
     """Verify that calling exitSimulator logs an indicative debug message.
 
     Asserts that a DEBUG-level log record contains the text "in exitSimulator".
@@ -197,7 +198,7 @@ def test_exitSimulator(caplog):
 
 
 @pytest.mark.unit
-def test_reboot(caplog):
+def test_reboot(caplog: LogCaptureFixture) -> None:
     """Test reboot."""
     with MeshInterface(noProto=True) as interface:
         interface.nodesByNum = {}
@@ -208,7 +209,7 @@ def test_reboot(caplog):
 
 
 @pytest.mark.unit
-def test_shutdown(caplog):
+def test_shutdown(caplog: LogCaptureFixture) -> None:
     """Test shutdown."""
     with MeshInterface(noProto=True) as interface:
         interface.nodesByNum = {}
@@ -229,7 +230,7 @@ def test_setURL_raises_when_channels_not_loaded() -> None:
 
 
 @pytest.mark.unit
-def test_setURL_valid_URL_but_no_settings():
+def test_setURL_valid_URL_but_no_settings() -> None:
     """Test setURL."""
     iface = _autospec_with_local_node(SerialInterface)
     url = "https://www.meshtastic.org/d/#"
@@ -241,7 +242,7 @@ def test_setURL_valid_URL_but_no_settings():
 
 
 @pytest.mark.unit
-def test_setURL_ignores_channels_over_device_limit(caplog):
+def test_setURL_ignores_channels_over_device_limit(caplog: LogCaptureFixture) -> None:
     """Test that setURL ignores channels beyond the fixed device channel limit."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
@@ -267,7 +268,7 @@ def test_setURL_ignores_channels_over_device_limit(caplog):
 
 
 @pytest.mark.unit
-def test_get_ringtone_times_out_without_response(caplog):
+def test_get_ringtone_times_out_without_response(caplog: LogCaptureFixture) -> None:
     """Verify get_ringtone times out when no response callback is invoked."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
@@ -284,7 +285,7 @@ def test_get_ringtone_times_out_without_response(caplog):
 
 
 @pytest.mark.unit
-def test_get_canned_message_times_out_without_response(caplog):
+def test_get_canned_message_times_out_without_response(caplog: LogCaptureFixture) -> None:
     """Test get_canned_message returns None if the response callback is never invoked."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
@@ -301,7 +302,7 @@ def test_get_canned_message_times_out_without_response(caplog):
 
 
 @pytest.mark.unit
-def test_getChannelByChannelIndex():
+def test_getChannelByChannelIndex() -> None:
     """Test getChannelByChannelIndex()."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
 
@@ -339,7 +340,7 @@ def test_getChannelByChannelIndex():
 
 
 @pytest.mark.unit
-def test_writeConfig_with_no_radioConfig():
+def test_writeConfig_with_no_radioConfig() -> None:
     """Test writeConfig raises MeshInterfaceError for invalid config name."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
 
@@ -351,7 +352,7 @@ def test_writeConfig_with_no_radioConfig():
 
 
 @pytest.mark.unit
-def test_writeChannel_with_no_channels_raises_mesh_error():
+def test_writeChannel_with_no_channels_raises_mesh_error() -> None:
     """Test writeChannel raises when channels have not been loaded."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
     anode.channels = None
@@ -363,7 +364,9 @@ def test_writeChannel_with_no_channels_raises_mesh_error():
 
 
 @pytest.mark.unit
-def test_requestChannel_not_localNode(caplog, mock_serial_interface):
+def test_requestChannel_not_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
     """Verify that requesting channel 0 on a non-local node logs a remote channel info request.
 
     Sets up a mocked SerialInterface and a Node that is not the local node, configures max channels,
@@ -380,7 +383,9 @@ def test_requestChannel_not_localNode(caplog, mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_requestChannel_localNode(caplog, mock_serial_interface):
+def test_requestChannel_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
     """Verify that a local node logs a local channel request when _request_channel is called.
 
     Checks that the log contains "Requesting channel 0" and does not include "from remote node".
@@ -397,7 +402,9 @@ def test_requestChannel_localNode(caplog, mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_requestChannels_non_localNode(caplog, mock_serial_interface):
+def test_requestChannels_non_localNode(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
     """Test requestChannels() with a starting index of 0."""
     iface = mock_serial_interface
     anode = Node(iface, "!12345678", noProto=True)
@@ -412,7 +419,9 @@ def test_requestChannels_non_localNode(caplog, mock_serial_interface):
 
 
 @pytest.mark.unit
-def test_requestChannels_non_localNode_starting_index(caplog, mock_serial_interface):
+def test_requestChannels_non_localNode_starting_index(
+    caplog: LogCaptureFixture, mock_serial_interface: MagicMock
+) -> None:
     """Test requestChannels() with a starting index of non-0."""
     iface = mock_serial_interface
     anode = Node(iface, "!12345678", noProto=True)
@@ -432,7 +441,7 @@ def test_requestChannels_non_localNode_starting_index(caplog, mock_serial_interf
 
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
-def test_set_favorite(favorite):
+def test_set_favorite(favorite: str | int) -> None:
     """Verify setFavorite sends an admin message marking the given node as a favorite and transmits it.
 
     Parameters
@@ -451,7 +460,7 @@ def test_set_favorite(favorite):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("favorite", ["!1dec0ded", 502009325])
-def test_remove_favorite(favorite):
+def test_remove_favorite(favorite: str | int) -> None:
     """Verify that removing a favorite node creates an AdminMessage with the expected node ID and sends it via the interface.
 
     Parameters
@@ -471,7 +480,7 @@ def test_remove_favorite(favorite):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
-def test_set_ignored(ignored):
+def test_set_ignored(ignored: str | int) -> None:
     """Verify that Node.setIgnored constructs an AdminMessage marking the given node ID as ignored and sends it.
 
     Parameters
@@ -490,7 +499,7 @@ def test_set_ignored(ignored):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("ignored", ["!1dec0ded", 502009325])
-def test_remove_ignored(ignored):
+def test_remove_ignored(ignored: str | int) -> None:
     """Verify that calling removeIgnored sends an admin message to remove a node from the ignored list and transmits it.
 
     Parameters
@@ -509,7 +518,7 @@ def test_remove_ignored(ignored):
 
 
 @pytest.mark.unit
-def test_setOwner_whitespace_only_long_name():
+def test_setOwner_whitespace_only_long_name() -> None:
     """Test setOwner with whitespace-only long name."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -522,7 +531,7 @@ def test_setOwner_whitespace_only_long_name():
 
 
 @pytest.mark.unit
-def test_setOwner_empty_long_name():
+def test_setOwner_empty_long_name() -> None:
     """Test setOwner with empty long name."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -535,7 +544,7 @@ def test_setOwner_empty_long_name():
 
 
 @pytest.mark.unit
-def test_setOwner_whitespace_only_short_name():
+def test_setOwner_whitespace_only_short_name() -> None:
     """Test setOwner with whitespace-only short name."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -548,7 +557,7 @@ def test_setOwner_whitespace_only_short_name():
 
 
 @pytest.mark.unit
-def test_setOwner_empty_short_name():
+def test_setOwner_empty_short_name() -> None:
     """Test setOwner with empty short name."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -561,7 +570,7 @@ def test_setOwner_empty_short_name():
 
 
 @pytest.mark.unit
-def test_setOwner_valid_names(caplog):
+def test_setOwner_valid_names(caplog: LogCaptureFixture) -> None:
     """Test setOwner with valid names."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -576,7 +585,7 @@ def test_setOwner_valid_names(caplog):
 
 
 @pytest.mark.unit
-def test_setOwner_short_name_only(caplog):
+def test_setOwner_short_name_only(caplog: LogCaptureFixture) -> None:
     """Test setOwner with only short name provided."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -588,7 +597,7 @@ def test_setOwner_short_name_only(caplog):
 
 
 @pytest.mark.unit
-def test_setOwner_long_name_truncates_short_name(caplog):
+def test_setOwner_long_name_truncates_short_name(caplog: LogCaptureFixture) -> None:
     """Test setOwner truncates long short names to 4 characters."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -601,7 +610,7 @@ def test_setOwner_long_name_truncates_short_name(caplog):
 
 
 @pytest.mark.unit
-def test_setOwner_with_is_licensed(caplog):
+def test_setOwner_with_is_licensed(caplog: LogCaptureFixture) -> None:
     """Test setOwner sets is_licensed flag when long_name is provided."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -613,7 +622,7 @@ def test_setOwner_with_is_licensed(caplog):
 
 
 @pytest.mark.unit
-def test_setOwner_with_is_unmessagable(caplog):
+def test_setOwner_with_is_unmessagable(caplog: LogCaptureFixture) -> None:
     """Test setOwner sets is_unmessagable flag."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -625,7 +634,7 @@ def test_setOwner_with_is_unmessagable(caplog):
 
 
 @pytest.mark.unit
-def test_waitForConfig_timeout():
+def test_waitForConfig_timeout() -> None:
     """Test waitForConfig returns False on timeout."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
@@ -636,7 +645,7 @@ def test_waitForConfig_timeout():
 
 
 @pytest.mark.unit
-def test_waitForConfig_success():
+def test_waitForConfig_success() -> None:
     """Test waitForConfig returns True when config is available."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
