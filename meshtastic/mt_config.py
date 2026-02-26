@@ -1,5 +1,4 @@
-"""
-Globals singleton class.
+"""Module-level singleton namespace.
 
 The Global object is gone, as are all its setters and getters. Instead the
 module itself is the singleton namespace, which can be imported into
@@ -8,32 +7,139 @@ since we now rely on built in Python mechanisms.
 
 This is intended to make the Python read more naturally, and to make the
 intention of the code clearer and more compact. It is merely a sticking
-plaster over the use of shared mt_config, but the coupling issues wil be dealt
+plaster over the use of shared mt_config, but the coupling issues will be dealt
 with rather more easily once the code is simplified by this change.
-
 """
 
-from typing import Any, Optional
+from __future__ import annotations
 
-def reset():
-    """
-    Restore the namespace to pristine condition.
-    """
-    # pylint: disable=W0603
-    global args, parser, channel_index, logfile, tunnelInstance, camel_case
-    args = None
-    parser = None
-    channel_index = None
-    logfile = None
-    tunnelInstance = None
+import argparse
+import inspect
+import os
+import sys
+import types
+import warnings
+from typing import IO, TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from meshtastic.tunnel import Tunnel
+
+# NOTE: Any additional public annotated module-level constants that are not
+# reset-managed state must either be prefixed with "_" or excluded from the
+# _annotated_state filter below.
+MODULE_STATE_DEFAULTS: dict[str, Any] = {
+    "args": None,
+    "parser": None,
+    "channel_index": None,
+    "logfile": None,
+    "tunnel_instance": None,
     # TODO: to migrate to camel_case for v1.3 change this value to True
-    camel_case = False
+    "camel_case": False,
+}
 
-# These assignments are used instead of calling reset()
-# purely to shut pylint up.
-args = None
-parser = None
-channel_index = None
-logfile = None
-tunnelInstance: Optional[Any] = None
-camel_case = False
+
+def reset() -> None:
+    """Reset module-level state variables to their defined default values.
+
+    Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to its initial pristine state.
+
+    Returns
+    -------
+    None
+        This function does not return a value.
+    """
+    module_globals = globals()
+    for name, default in MODULE_STATE_DEFAULTS.items():
+        module_globals[name] = default
+
+
+# Declared module state managed via reset().
+args: argparse.Namespace | None = None
+parser: argparse.ArgumentParser | None = None
+channel_index: int | None = None
+logfile: IO[str] | None = None
+tunnel_instance: Tunnel | None = None
+camel_case: bool = False
+
+# Sanity-check: keep MODULE_STATE_DEFAULTS keys and annotations in sync.
+# Python 3.14+ can defer module annotations; inspect.get_annotations() handles
+# eager and deferred annotation models consistently.
+_state_keys: frozenset[str] = frozenset(MODULE_STATE_DEFAULTS)
+_module_annotations: dict[str, Any] = inspect.get_annotations(
+    sys.modules[__name__], eval_str=False
+)
+_annotated_state: frozenset[str] = frozenset(
+    key
+    for key in _module_annotations
+    if not key.startswith("_") and key != "MODULE_STATE_DEFAULTS"
+)
+if not _module_annotations:
+    warnings.warn(
+        "inspect.get_annotations() returned no module annotations; skipping "
+        "mt_config state drift validation.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+elif _state_keys != _annotated_state:
+    drift_message = (
+        "Drift between MODULE_STATE_DEFAULTS and type annotations — "
+        f"missing annotations: {_state_keys - _annotated_state}, "
+        f"missing defaults: {_annotated_state - _state_keys}"
+    )
+    if os.getenv("CI_ASSERT_MODULE_STATE_DRIFT", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        raise AssertionError(drift_message)
+    warnings.warn(drift_message, RuntimeWarning, stacklevel=1)
+
+reset()
+
+
+# ---------------------------------------------------------------------------
+# Backwards compatibility aliases for renamed module state
+# ---------------------------------------------------------------------------
+
+_COMPAT_ALIASES: dict[str, str] = {
+    "tunnelInstance": "tunnel_instance",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Provide backwards-compatible access to renamed module attributes."""
+    if name in _COMPAT_ALIASES:
+        new_name = _COMPAT_ALIASES[name]
+        warnings.warn(
+            f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        try:
+            return globals()[new_name]
+        except KeyError:
+            raise AttributeError(  # noqa: TRY003
+                f"module {__name__!r} has no attribute {new_name!r}"
+            ) from None
+    raise AttributeError(  # noqa: TRY003
+        f"module {__name__!r} has no attribute {name!r}"
+    )
+
+
+class _MtConfigModule(types.ModuleType):
+    """Module subclass used to intercept deprecated compatibility assignments."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _COMPAT_ALIASES:
+            new_name = _COMPAT_ALIASES[name]
+            warnings.warn(
+                f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            super().__setattr__(new_name, value)
+            return
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _MtConfigModule
