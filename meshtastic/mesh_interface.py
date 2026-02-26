@@ -167,6 +167,8 @@ class MeshInterface:  # pylint: disable=R0902
         self._heartbeat_lock = threading.RLock()
         self._packet_id_lock = threading.Lock()
         self._queue_lock = threading.RLock()
+        # Guard node DB plus configuration state updated by the receive thread:
+        # nodes/nodesByNum/_localChannels and myInfo/metadata/configId/localNode config copies.
         self._node_db_lock = threading.RLock()
         self._closing = False
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
@@ -321,12 +323,15 @@ class MeshInterface:  # pylint: disable=R0902
             The formatted summary text that was written to `file`.
         """
         owner = f"Owner: {self.getLongName()} ({self.getShortName()})"
+        with self._node_db_lock:
+            my_info = self.myInfo
+            metadata_info = self.metadata
         myinfo = ""
-        if self.myInfo:
-            myinfo = f"\nMy info: {messageToJson(self.myInfo)}"
+        if my_info:
+            myinfo = f"\nMy info: {messageToJson(my_info)}"
         metadata = ""
-        if self.metadata:
-            metadata = f"\nMetadata: {messageToJson(self.metadata)}"
+        if metadata_info:
+            metadata = f"\nMetadata: {messageToJson(metadata_info)}"
         mesh = "\n\nNodes in mesh: "
         nodes: dict[str, dict[str, Any]] = {}
         with self._node_db_lock:
@@ -1557,8 +1562,11 @@ class MeshInterface:  # pylint: disable=R0902
             If the destination node is not found in the node database or if no info is available.
         """
 
+        with self._node_db_lock:
+            my_node_num = self.myInfo.my_node_num if self.myInfo is not None else None
+
         # We allow users to talk to the local node before we've completed the full connection flow...
-        if self.myInfo is not None and destinationId != self.myInfo.my_node_num:
+        if my_node_num is not None and destinationId != my_node_num:
             self._wait_connected()
 
         toRadio = mesh_pb2.ToRadio()
@@ -1571,8 +1579,8 @@ class MeshInterface:  # pylint: disable=R0902
         elif destinationId == BROADCAST_ADDR:
             nodeNum = BROADCAST_NUM
         elif destinationId == LOCAL_ADDR:
-            if self.myInfo:
-                nodeNum = self.myInfo.my_node_num
+            if my_node_num is not None:
+                nodeNum = my_node_num
             else:
                 raise MeshInterface.MeshInterfaceError("No myInfo found.")
         # A simple hex style nodeid - we can parse this without needing the DB
@@ -1948,20 +1956,22 @@ class MeshInterface:  # pylint: disable=R0902
         allocates a new non-conflicting configId when appropriate, and sends a ToRadio message
         requesting configuration using the chosen configId.
         """
-        self.myInfo = None
         with self._node_db_lock:
+            self.myInfo = None
             self.nodes = {}  # nodes keyed by ID
             self.nodesByNum = {}  # nodes keyed by nodenum
             self._localChannels = (
                 []
             )  # empty until we start getting channels pushed from the device (during config)
+            config_id = self.configId
+            if config_id is None or not self.noNodes:
+                config_id = random.randint(0, PACKET_ID_MASK)
+                if config_id == NODELESS_WANT_CONFIG_ID:
+                    config_id = config_id + 1
+                self.configId = config_id
 
         startConfig = mesh_pb2.ToRadio()
-        if self.configId is None or not self.noNodes:
-            self.configId = random.randint(0, PACKET_ID_MASK)
-            if self.configId == NODELESS_WANT_CONFIG_ID:
-                self.configId = self.configId + 1
-        startConfig.want_config_id = self.configId
+        startConfig.want_config_id = config_id
         self._send_to_radio(startConfig)
 
     def _send_disconnect(self) -> None:
@@ -1993,6 +2003,25 @@ class MeshInterface:  # pylint: disable=R0902
             if self.queueStatus is None:
                 return
             self.queueStatus.free -= 1
+
+    def _queue_pop_for_send(self) -> tuple[int, mesh_pb2.ToRadio | bool] | None:
+        """Atomically pop the next queued packet if TX queue state permits sending.
+
+        Returns
+        -------
+        tuple[int, mesh_pb2.ToRadio | bool] | None
+            The popped queue entry `(packet_id, payload)` when available and sendable,
+            otherwise `None`.
+        """
+        with self._queue_lock:
+            if not self.queue:
+                return None
+            if self.queueStatus is not None and self.queueStatus.free <= 0:
+                return None
+            to_resend = self.queue.popitem(last=False)
+            if self.queueStatus is not None:
+                self.queueStatus.free -= 1
+            return to_resend
 
     def _send_to_radio(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Queue and transmit a ToRadio protobuf to the radio device.
@@ -2027,25 +2056,21 @@ class MeshInterface:  # pylint: disable=R0902
             resentQueue = collections.OrderedDict()
 
             while True:
-                with self._queue_lock:
-                    queue_has_items = bool(self.queue)
-                if not queue_has_items:
-                    break
-                # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
-                while not self._queue_has_free_space():
+                toResend = self._queue_pop_for_send()
+                if toResend is None:
+                    with self._queue_lock:
+                        queue_has_items = bool(self.queue)
+                    if not queue_has_items:
+                        break
                     logger.debug("Waiting for free space in TX Queue")
                     time.sleep(QUEUE_WAIT_DELAY_SECONDS)
-                try:
-                    with self._queue_lock:
-                        toResend = self.queue.popitem(last=False)
-                except KeyError:
-                    break
+                    continue
+
                 packetId, packet = toResend
                 # logger.warn(f"packet: {packetId:08x} {packet}")
                 resentQueue[packetId] = packet
                 if not isinstance(packet, mesh_pb2.ToRadio):
                     continue
-                self._queue_claim()
                 if packet != toRadio:
                     logger.debug("Resending packet ID %08x %s", packetId, packet)
                 self._send_to_radio_impl(packet)
@@ -2157,13 +2182,21 @@ class MeshInterface:  # pylint: disable=R0902
             raise
         asDict = google.protobuf.json_format.MessageToDict(fromRadio)
         logger.debug("Received from radio: %s", fromRadio)
+        with self._node_db_lock:
+            config_id = self.configId
         if fromRadio.HasField("my_info"):
-            self.myInfo = fromRadio.my_info
-            self.localNode.nodeNum = self.myInfo.my_node_num
+            with self._node_db_lock:
+                my_info = mesh_pb2.MyNodeInfo()
+                my_info.CopyFrom(fromRadio.my_info)
+                self.myInfo = my_info
+                self.localNode.nodeNum = my_info.my_node_num
             logger.debug("Received myinfo: %s", stripnl(fromRadio.my_info))
 
         elif fromRadio.HasField("metadata"):
-            self.metadata = fromRadio.metadata
+            with self._node_db_lock:
+                metadata = mesh_pb2.DeviceMetadata()
+                metadata.CopyFrom(fromRadio.metadata)
+                self.metadata = metadata
             logger.debug("Received device metadata: %s", stripnl(fromRadio.metadata))
 
         elif fromRadio.HasField("node_info"):
@@ -2189,10 +2222,10 @@ class MeshInterface:  # pylint: disable=R0902
                     "meshtastic.node.updated", node=node, interface=self
                 )
             )
-        elif fromRadio.config_complete_id == self.configId:
+        elif fromRadio.config_complete_id == config_id:
             # we ignore the config_complete_id, it is unneeded for our
             # stream API fromRadio.config_complete_id
-            logger.debug("Config complete ID %s", self.configId)
+            logger.debug("Config complete ID %s", config_id)
             self._handle_config_complete()
         elif fromRadio.HasField("channel"):
             self._handle_channel(fromRadio.channel)
@@ -2237,72 +2270,81 @@ class MeshInterface:  # pylint: disable=R0902
             self._start_config()  # redownload the node db etc...
 
         elif fromRadio.HasField("config") or fromRadio.HasField("moduleConfig"):
-            if fromRadio.config.HasField("device"):
-                self.localNode.localConfig.device.CopyFrom(fromRadio.config.device)
-            elif fromRadio.config.HasField("position"):
-                self.localNode.localConfig.position.CopyFrom(fromRadio.config.position)
-            elif fromRadio.config.HasField("power"):
-                self.localNode.localConfig.power.CopyFrom(fromRadio.config.power)
-            elif fromRadio.config.HasField("network"):
-                self.localNode.localConfig.network.CopyFrom(fromRadio.config.network)
-            elif fromRadio.config.HasField("display"):
-                self.localNode.localConfig.display.CopyFrom(fromRadio.config.display)
-            elif fromRadio.config.HasField("lora"):
-                self.localNode.localConfig.lora.CopyFrom(fromRadio.config.lora)
-            elif fromRadio.config.HasField("bluetooth"):
-                self.localNode.localConfig.bluetooth.CopyFrom(
-                    fromRadio.config.bluetooth
-                )
-            elif fromRadio.config.HasField("security"):
-                self.localNode.localConfig.security.CopyFrom(fromRadio.config.security)
-            elif fromRadio.moduleConfig.HasField("mqtt"):
-                self.localNode.moduleConfig.mqtt.CopyFrom(fromRadio.moduleConfig.mqtt)
-            elif fromRadio.moduleConfig.HasField("serial"):
-                self.localNode.moduleConfig.serial.CopyFrom(
-                    fromRadio.moduleConfig.serial
-                )
-            elif fromRadio.moduleConfig.HasField("external_notification"):
-                self.localNode.moduleConfig.external_notification.CopyFrom(
-                    fromRadio.moduleConfig.external_notification
-                )
-            elif fromRadio.moduleConfig.HasField("store_forward"):
-                self.localNode.moduleConfig.store_forward.CopyFrom(
-                    fromRadio.moduleConfig.store_forward
-                )
-            elif fromRadio.moduleConfig.HasField("range_test"):
-                self.localNode.moduleConfig.range_test.CopyFrom(
-                    fromRadio.moduleConfig.range_test
-                )
-            elif fromRadio.moduleConfig.HasField("telemetry"):
-                self.localNode.moduleConfig.telemetry.CopyFrom(
-                    fromRadio.moduleConfig.telemetry
-                )
-            elif fromRadio.moduleConfig.HasField("canned_message"):
-                self.localNode.moduleConfig.canned_message.CopyFrom(
-                    fromRadio.moduleConfig.canned_message
-                )
-            elif fromRadio.moduleConfig.HasField("audio"):
-                self.localNode.moduleConfig.audio.CopyFrom(fromRadio.moduleConfig.audio)
-            elif fromRadio.moduleConfig.HasField("remote_hardware"):
-                self.localNode.moduleConfig.remote_hardware.CopyFrom(
-                    fromRadio.moduleConfig.remote_hardware
-                )
-            elif fromRadio.moduleConfig.HasField("neighbor_info"):
-                self.localNode.moduleConfig.neighbor_info.CopyFrom(
-                    fromRadio.moduleConfig.neighbor_info
-                )
-            elif fromRadio.moduleConfig.HasField("detection_sensor"):
-                self.localNode.moduleConfig.detection_sensor.CopyFrom(
-                    fromRadio.moduleConfig.detection_sensor
-                )
-            elif fromRadio.moduleConfig.HasField("ambient_lighting"):
-                self.localNode.moduleConfig.ambient_lighting.CopyFrom(
-                    fromRadio.moduleConfig.ambient_lighting
-                )
-            elif fromRadio.moduleConfig.HasField("paxcounter"):
-                self.localNode.moduleConfig.paxcounter.CopyFrom(
-                    fromRadio.moduleConfig.paxcounter
-                )
+            with self._node_db_lock:
+                if fromRadio.config.HasField("device"):
+                    self.localNode.localConfig.device.CopyFrom(fromRadio.config.device)
+                elif fromRadio.config.HasField("position"):
+                    self.localNode.localConfig.position.CopyFrom(
+                        fromRadio.config.position
+                    )
+                elif fromRadio.config.HasField("power"):
+                    self.localNode.localConfig.power.CopyFrom(fromRadio.config.power)
+                elif fromRadio.config.HasField("network"):
+                    self.localNode.localConfig.network.CopyFrom(fromRadio.config.network)
+                elif fromRadio.config.HasField("display"):
+                    self.localNode.localConfig.display.CopyFrom(fromRadio.config.display)
+                elif fromRadio.config.HasField("lora"):
+                    self.localNode.localConfig.lora.CopyFrom(fromRadio.config.lora)
+                elif fromRadio.config.HasField("bluetooth"):
+                    self.localNode.localConfig.bluetooth.CopyFrom(
+                        fromRadio.config.bluetooth
+                    )
+                elif fromRadio.config.HasField("security"):
+                    self.localNode.localConfig.security.CopyFrom(
+                        fromRadio.config.security
+                    )
+                elif fromRadio.moduleConfig.HasField("mqtt"):
+                    self.localNode.moduleConfig.mqtt.CopyFrom(
+                        fromRadio.moduleConfig.mqtt
+                    )
+                elif fromRadio.moduleConfig.HasField("serial"):
+                    self.localNode.moduleConfig.serial.CopyFrom(
+                        fromRadio.moduleConfig.serial
+                    )
+                elif fromRadio.moduleConfig.HasField("external_notification"):
+                    self.localNode.moduleConfig.external_notification.CopyFrom(
+                        fromRadio.moduleConfig.external_notification
+                    )
+                elif fromRadio.moduleConfig.HasField("store_forward"):
+                    self.localNode.moduleConfig.store_forward.CopyFrom(
+                        fromRadio.moduleConfig.store_forward
+                    )
+                elif fromRadio.moduleConfig.HasField("range_test"):
+                    self.localNode.moduleConfig.range_test.CopyFrom(
+                        fromRadio.moduleConfig.range_test
+                    )
+                elif fromRadio.moduleConfig.HasField("telemetry"):
+                    self.localNode.moduleConfig.telemetry.CopyFrom(
+                        fromRadio.moduleConfig.telemetry
+                    )
+                elif fromRadio.moduleConfig.HasField("canned_message"):
+                    self.localNode.moduleConfig.canned_message.CopyFrom(
+                        fromRadio.moduleConfig.canned_message
+                    )
+                elif fromRadio.moduleConfig.HasField("audio"):
+                    self.localNode.moduleConfig.audio.CopyFrom(
+                        fromRadio.moduleConfig.audio
+                    )
+                elif fromRadio.moduleConfig.HasField("remote_hardware"):
+                    self.localNode.moduleConfig.remote_hardware.CopyFrom(
+                        fromRadio.moduleConfig.remote_hardware
+                    )
+                elif fromRadio.moduleConfig.HasField("neighbor_info"):
+                    self.localNode.moduleConfig.neighbor_info.CopyFrom(
+                        fromRadio.moduleConfig.neighbor_info
+                    )
+                elif fromRadio.moduleConfig.HasField("detection_sensor"):
+                    self.localNode.moduleConfig.detection_sensor.CopyFrom(
+                        fromRadio.moduleConfig.detection_sensor
+                    )
+                elif fromRadio.moduleConfig.HasField("ambient_lighting"):
+                    self.localNode.moduleConfig.ambient_lighting.CopyFrom(
+                        fromRadio.moduleConfig.ambient_lighting
+                    )
+                elif fromRadio.moduleConfig.HasField("paxcounter"):
+                    self.localNode.moduleConfig.paxcounter.CopyFrom(
+                        fromRadio.moduleConfig.paxcounter
+                    )
 
         else:
             logger.debug("Unexpected FromRadio payload")

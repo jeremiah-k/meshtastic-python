@@ -159,6 +159,11 @@ NODELESS_WANT_CONFIG_ID = 69420
 """A special thing to pass for want_config_id that instructs nodes to skip sending nodeinfos other than its own."""
 
 publishingThread = DeferredExecution("publishing")
+"""Process-wide deferred publisher worker.
+
+`DeferredExecution.queueWork()` is thread-safe (backed by Queue) and all
+callbacks are serialized on the worker thread.
+"""
 
 logger = logging.getLogger(__name__)
 
