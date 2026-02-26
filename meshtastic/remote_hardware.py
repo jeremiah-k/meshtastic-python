@@ -26,6 +26,7 @@ MISSING_DEST_NODE_ID_ERROR = (
 )
 WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
 WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
+WATCH_MASKS_INIT_LOCK = threading.Lock()
 
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
 
@@ -89,8 +90,11 @@ def _get_watch_masks_lock(interface: "MeshInterface") -> threading.Lock:
     """Return the per-interface lock guarding watch-mask state."""
     lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
     if lock is None:
-        lock = threading.Lock()
-        setattr(interface, WATCH_MASKS_LOCK_ATTR, lock)
+        with WATCH_MASKS_INIT_LOCK:
+            lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
+            if lock is None:
+                lock = threading.Lock()
+                setattr(interface, WATCH_MASKS_LOCK_ATTR, lock)
     return lock
 
 
