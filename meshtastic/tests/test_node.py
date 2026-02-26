@@ -285,7 +285,9 @@ def test_get_ringtone_times_out_without_response(caplog: LogCaptureFixture) -> N
 
 
 @pytest.mark.unit
-def test_get_canned_message_times_out_without_response(caplog: LogCaptureFixture) -> None:
+def test_get_canned_message_times_out_without_response(
+    caplog: LogCaptureFixture,
+) -> None:
     """Test get_canned_message returns None if the response callback is never invoked."""
     anode = Node(_autospec_with_local_node(MeshInterface), "!12345678", noProto=True)
     anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]

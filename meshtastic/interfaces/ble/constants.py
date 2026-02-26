@@ -45,6 +45,7 @@ class BLEConfig:
     RUNNER_LOOP_READY_TIMEOUT_SECONDS = 5.0
     RUNNER_ZOMBIE_WARN_THRESHOLD = 3
     RUNNER_SHUTDOWN_TIMEOUT_SECONDS = 2.0
+    RUNNER_ATEXIT_SHUTDOWN_TIMEOUT_SECONDS = 1.0
     # Wake the runner loop periodically so queued thread-safe callbacks are
     # serviced even if OS wakeup signaling is delayed or unavailable.
     RUNNER_IDLE_WAKE_INTERVAL_SECONDS = 0.1
@@ -152,6 +153,10 @@ BLECLIENT_ERROR_FAILED_TO_SCHEDULE = "Failed to schedule operation: {0}"
 BLECLIENT_ERROR_LOOP_START_FAILED = "BLE event loop failed to start"
 BLECLIENT_ERROR_LOOP_NOT_AVAILABLE = "BLECoroutineRunner loop is not available"
 BLECLIENT_ERROR_LOOP_RESTART_FAILED = "BLE event loop failed to restart"
+BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT = (
+    "Specify only one of timeout or startup_timeout"
+)
+BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED = "Subscription token space exhausted."
 
 
 _MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"

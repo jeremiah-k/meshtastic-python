@@ -28,6 +28,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_LOOP_NOT_AVAILABLE,
     BLECLIENT_ERROR_LOOP_RESTART_FAILED,
     BLECLIENT_ERROR_LOOP_START_FAILED,
+    BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT,
     BLEConfig,
 )
 
@@ -428,7 +429,7 @@ class BLECoroutineRunner:
             If the runner loop cannot be started or is not available.
         """
         if timeout is not None and startup_timeout is not None:
-            raise ValueError("Specify only one of timeout or startup_timeout")
+            raise ValueError(BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT)
         if timeout is not None and startup_timeout is None:
             warnings.warn(
                 "run_coroutine_threadsafe(timeout=...) is deprecated; "
@@ -646,7 +647,7 @@ class BLECoroutineRunner:
         try:
             # Keep a short timeout at process exit so interpreter shutdown is not delayed
             # by BLE thread teardown best-effort cleanup.
-            self._stop(timeout=1.0)
+            self._stop(timeout=BLEConfig.RUNNER_ATEXIT_SHUTDOWN_TIMEOUT_SECONDS)
         except Exception as e:  # noqa: BLE001 - process-exit cleanup must not raise
             logger.debug("Exception during atexit shutdown: %s", e)
 

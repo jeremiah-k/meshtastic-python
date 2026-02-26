@@ -244,6 +244,7 @@ def autospec_local_node_iface() -> Callable[[type[Any]], MagicMock]:
 
     return _factory
 
+
 @pytest.fixture
 def power_supply() -> "PowerSupply":
     """Provide a fresh PowerSupply instance for voltage-validation tests."""
@@ -310,12 +311,8 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
 
 @pytest.fixture(name="mock_gpio_iface")
 def _mock_gpio_iface_fixture() -> Generator[MagicMock, None, None]:
-    """Provide a GPIO-capable mocked interface and ensure cleanup."""
-    iface = _mock_iface_with_gpio_channel()
-    try:
-        yield iface
-    finally:
-        iface.close()
+    """Provide a GPIO-capable mocked interface for GPIO tests."""
+    yield _mock_iface_with_gpio_channel()
 
 
 @pytest.fixture(scope="session")
@@ -361,6 +358,8 @@ def mesh_tunnel_bin() -> str:
 @pytest.fixture(name="platform_socket_mocks")
 def _platform_socket_mocks() -> Generator[tuple[MagicMock, MagicMock], None, None]:
     """Patch platform.system and socket.socket for tunnel tests."""
-    with patch("platform.system", return_value="Linux") as platform_mock:
-        with patch("socket.socket") as socket_mock:
-            yield platform_mock, socket_mock
+    with (
+        patch("platform.system", return_value="Linux") as platform_mock,
+        patch("socket.socket") as socket_mock,
+    ):
+        yield platform_mock, socket_mock

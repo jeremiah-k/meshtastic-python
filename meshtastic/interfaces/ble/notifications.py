@@ -4,6 +4,10 @@ import logging
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable
 
+from meshtastic.interfaces.ble.constants import (
+    BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED,
+)
+
 if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
 
@@ -76,7 +80,7 @@ class NotificationManager:
                     self._subscription_counter + 1
                 ) & self._MAX_SUBSCRIPTION_TOKEN
                 if token == start_token:
-                    raise RuntimeError("Subscription token space exhausted.")
+                    raise RuntimeError(BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED)
             self._active_subscriptions[token] = (characteristic, callback)
             self._characteristic_to_callback[characteristic] = callback
             return token
