@@ -1,5 +1,7 @@
 """BLE device discovery strategies."""
 
+import re
+import threading
 import time
 from types import TracebackType
 from typing import Any, Callable, cast
@@ -17,6 +19,19 @@ from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
     sanitize_address,
 )
+
+_BLE_ADDRESS_KEY_RE = re.compile(r"^[0-9a-f]{12}$")
+_BLE_ADDRESS_SHAPE_RE = re.compile(
+    r"^[0-9A-Fa-f]{12}$|^[0-9A-Fa-f]{2}(?:[:\-_ ][0-9A-Fa-f]{2}){5}$"
+)
+
+
+def _looks_like_ble_address(identifier: str) -> bool:
+    """Return True when an identifier is plausibly a BLE address string."""
+    stripped = identifier.strip()
+    if not stripped:
+        return False
+    return bool(_BLE_ADDRESS_SHAPE_RE.fullmatch(stripped))
 
 
 class DiscoveryClientError(Exception):
@@ -89,8 +104,10 @@ def _filter_devices_for_target_identifier(
     list[BLEDevice]
         Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
     """
-    target_key = sanitize_address(target_identifier)
-    if target_key:
+    target_key: str | None = None
+    if _looks_like_ble_address(target_identifier):
+        target_key = sanitize_address(target_identifier)
+    if target_key and _BLE_ADDRESS_KEY_RE.fullmatch(target_key):
         address_matches = [
             device
             for device in devices
@@ -209,6 +226,7 @@ class DiscoveryManager:
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
         self._client: Any | None = None
+        self._client_lock = threading.RLock()
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
         """Discover BLE devices advertising the configured service UUID.
@@ -234,78 +252,79 @@ class DiscoveryManager:
         DiscoveryClientError
             If the discovery client factory returns an invalid type.
         """
-        # Only discard the client if it was previously connected and has since
-        # disconnected. A discovery-only client (never connected) should be reused.
-        if self._client is not None:
-            bleak = getattr(self._client, "bleak_client", None)
-            if bleak is not None:
-                is_connected_method = getattr(self._client, "isConnected", None)
-                if not callable(is_connected_method):
-                    logger.debug(
-                        "Cached discovery client lacks isConnected(); discarding client."
-                    )
-                    self._client = None
-                else:
-                    is_connected = cast(Any, is_connected_method)
-                    try:
-                        if not is_connected():  # pylint: disable=not-callable
-                            self._client = None
-                    except Exception:  # noqa: BLE001 - defensive path for flaky clients
+        with self._client_lock:
+            # Only discard the client if it was previously connected and has since
+            # disconnected. A discovery-only client (never connected) should be reused.
+            if self._client is not None:
+                bleak = getattr(self._client, "bleak_client", None)
+                if bleak is not None:
+                    is_connected_method = getattr(self._client, "isConnected", None)
+                    if not callable(is_connected_method):
                         logger.debug(
-                            "Cached discovery client isConnected() failed; discarding client.",
-                            exc_info=True,
+                            "Cached discovery client lacks isConnected(); discarding client."
                         )
                         self._client = None
-        if self._client is None:
-            # Factory resolution precedence (back-compat and testability):
-            #   1. Explicit self.client_factory (injected for testing)
-            #   2. Monkeypatched ble_mod.BLEClient (legacy/back-compat shim)
-            #   3. Directly imported BLEClient (default)
-            ble_mod = resolve_ble_module()
-            if ble_mod is None:
-                logger.debug("No BLE module found; using default BLEClient")
-            resolved_factory: Callable[..., Any] = cast(
-                Callable[..., Any],
-                self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
-            )
-            # Attempt to create client with log_if_no_address=False; fall back
-            # for custom factories that don't accept this kwarg. This broad
-            # TypeError catch can hide internal factory TypeErrors, but we keep
-            # it for compatibility with older/custom factory signatures.
-            try:
-                self._client = resolved_factory(log_if_no_address=False)
-            except TypeError as exc:
-                if any("log_if_no_address" in str(arg) for arg in exc.args):
-                    logger.debug(
-                        "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
-                        exc,
-                        exc_info=True,
-                    )
-                    self._client = resolved_factory()
-                else:
-                    raise
-            # Validate factory returned a valid client (duck typing for testability)
+                    else:
+                        is_connected = cast(Any, is_connected_method)
+                        try:
+                            if not is_connected():  # pylint: disable=not-callable
+                                self._client = None
+                        except Exception:  # noqa: BLE001 - defensive path for flaky clients
+                            logger.debug(
+                                "Cached discovery client isConnected() failed; discarding client.",
+                                exc_info=True,
+                            )
+                            self._client = None
             if self._client is None:
-                raise DiscoveryClientError.factory_returned_none(resolved_factory)
-            # Accept BLEClient instances or any object with the required interface
-            # (duck typing allows test fixtures while still catching errors)
-            if not isinstance(self._client, BLEClient):
-                # Duck-typed discovery clients must support scan operations:
-                # _discover() is the only required method for device scanning.
-                required_callables = ("_discover",)
-                missing = [
-                    a
-                    for a in required_callables
-                    if not callable(getattr(self._client, a, None))
-                ]
-                if missing:
-                    raise DiscoveryClientError.invalid_client(
-                        resolved_factory,
-                        type(self._client),
-                        missing,
-                    )
+                # Factory resolution precedence (back-compat and testability):
+                #   1. Explicit self.client_factory (injected for testing)
+                #   2. Monkeypatched ble_mod.BLEClient (legacy/back-compat shim)
+                #   3. Directly imported BLEClient (default)
+                ble_mod = resolve_ble_module()
+                if ble_mod is None:
+                    logger.debug("No BLE module found; using default BLEClient")
+                resolved_factory: Callable[..., Any] = cast(
+                    Callable[..., Any],
+                    self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
+                )
+                # Attempt to create client with log_if_no_address=False; fall back
+                # for custom factories that don't accept this kwarg. This broad
+                # TypeError catch can hide internal factory TypeErrors, but we keep
+                # it for compatibility with older/custom factory signatures.
+                try:
+                    self._client = resolved_factory(log_if_no_address=False)
+                except TypeError as exc:
+                    if any("log_if_no_address" in str(arg) for arg in exc.args):
+                        logger.debug(
+                            "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
+                            exc,
+                            exc_info=True,
+                        )
+                        self._client = resolved_factory()
+                    else:
+                        raise
+                # Validate factory returned a valid client (duck typing for testability)
+                if self._client is None:
+                    raise DiscoveryClientError.factory_returned_none(resolved_factory)
+                # Accept BLEClient instances or any object with the required interface
+                # (duck typing allows test fixtures while still catching errors)
+                if not isinstance(self._client, BLEClient):
+                    # Duck-typed discovery clients must support scan operations:
+                    # _discover() is the only required method for device scanning.
+                    required_callables = ("_discover",)
+                    missing = [
+                        a
+                        for a in required_callables
+                        if not callable(getattr(self._client, a, None))
+                    ]
+                    if missing:
+                        raise DiscoveryClientError.invalid_client(
+                            resolved_factory,
+                            type(self._client),
+                            missing,
+                        )
 
-        client = self._client
+            client = self._client
         devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:
@@ -355,13 +374,13 @@ class DiscoveryManager:
 
         If a persistent client exists with a close method, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
         """
-        if self._client is not None:
-            try:
-                close = getattr(self._client, "close", None)
-                if callable(close):
-                    close()
-            finally:
-                self._client = None
+        with self._client_lock:
+            client = self._client
+            self._client = None
+        if client is not None:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
 
     def __enter__(self) -> "DiscoveryManager":
         """Return self for context-manager usage."""
@@ -398,5 +417,8 @@ class DiscoveryManager:
         Explicit lifecycle owners should call `close()`.
         """
         # Only set attributes; avoid calling methods as __init__ may not have completed.
-        if hasattr(self, "_client"):
+        if hasattr(self, "_client_lock"):
+            with self._client_lock:
+                self._client = None
+        elif hasattr(self, "_client"):
             self._client = None

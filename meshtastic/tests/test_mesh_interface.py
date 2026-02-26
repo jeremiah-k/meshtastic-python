@@ -506,7 +506,8 @@ def test_sendPacket_with_no_destination():
             MeshInterface.MeshInterfaceError,
             match="destinationId must not be None",
         ):
-            iface._send_packet(b"", destinationId=None)  # type: ignore[arg-type]
+            mesh_packet = mesh_pb2.MeshPacket()
+            iface._send_packet(mesh_packet, destinationId=None)
 
 
 @pytest.mark.unit

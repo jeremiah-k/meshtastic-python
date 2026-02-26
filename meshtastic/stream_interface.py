@@ -107,9 +107,9 @@ class StreamInterface(MeshInterface):
         self._last_disconnect_source = "stream.initialized"
 
         _provides_own_stream = getattr(self, "_provides_own_stream", False)
-        if not hasattr(self, "stream") and not noProto and not _provides_own_stream:
-            raise StreamInterface.StreamInterfaceError()
         local_stream = getattr(self, "stream", None)
+        if local_stream is None and not noProto and not _provides_own_stream:
+            raise StreamInterface.StreamInterfaceError()
         self.stream: serial.Serial | None = cast(
             serial.Serial | None,
             local_stream,
@@ -137,10 +137,13 @@ class StreamInterface(MeshInterface):
             # Use a sentinel attribute to detect if subclass provides its own stream I/O.
             # This is more robust than method identity checks which break with decorators.
             if self.stream is None and not _provides_own_stream:
-                logger.debug(
-                    "No stream configured for %s; deferring connect()",
-                    self.__class__.__name__,
-                )
+                if noProto:
+                    logger.debug(
+                        "No stream configured for %s; deferring connect()",
+                        self.__class__.__name__,
+                    )
+                else:
+                    raise StreamInterface.StreamInterfaceError()
             else:
                 self.connect()
                 if not noProto:
@@ -185,6 +188,14 @@ class StreamInterface(MeshInterface):
         if not self.noProto:  # Wait for the db download if using the protocol
             self._wait_connected()
 
+    def _close_stream_safely(self) -> None:
+        """Best-effort close and clear of the underlying stream handle."""
+        s = self.stream
+        if s is not None:
+            with contextlib.suppress(OSError, ValueError, serial.SerialException):
+                s.close()
+            self.stream = None
+
     def _disconnected(self) -> None:
         """Perform superclass disconnection cleanup, close the underlying stream if present, and clear the stream reference.
 
@@ -193,12 +204,7 @@ class StreamInterface(MeshInterface):
         MeshInterface._disconnected(self)
 
         logger.debug("Closing our port")
-        # pylint: disable=E0203
-        if self.stream is not None:
-            with contextlib.suppress(OSError, ValueError, serial.SerialException):
-                self.stream.close()
-            # pylint: disable=W0201
-            self.stream = None
+        self._close_stream_safely()
 
     def _write_bytes(self, b: bytes) -> None:
         """Write bytes to the underlying stream and pause briefly to allow the device to process them.
@@ -291,11 +297,7 @@ class StreamInterface(MeshInterface):
         """
         self._wantExit = True
         MeshInterface.close(self)
-        s = self.stream
-        if s is not None:
-            with contextlib.suppress(OSError, ValueError, serial.SerialException):
-                s.close()
-            self.stream = None
+        self._close_stream_safely()
 
     def _join_reader_thread(self) -> None:
         """Join the reader thread when it is alive and not the current thread."""

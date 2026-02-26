@@ -148,6 +148,8 @@ High-impact fixes were applied in `mesh_interface.py`:
 
 - Added lock protection for packet ID generation.
 - Added lock protection for queue/queueStatus operations.
+- Removed queue-space TOCTOU risk by making queue eligibility check + pop
+  atomic under `_queue_lock` (`_queue_pop_for_send`).
 - Added lock protection for node database access paths.
 - Removed response-handler TOCTOU window by making lookup/eligibility/pop atomic.
 - Added heartbeat shutdown quiescence tracking (`_heartbeat_inflight` + condition)
@@ -165,6 +167,17 @@ Recent closeout fixes in those paths include:
 - BLE reconnect "connected elsewhere" gate now consumes and validates
   `next_attempt()` policy output (including `should_retry`) instead of ignoring
   it, so retry limits and policy semantics are preserved.
+- `StreamInterface.connect()` now serializes reader-thread recreation/start with
+  a dedicated lock to prevent concurrent reconnect callers from racing thread
+  lifecycle transitions.
+- Stream close/disconnect now share one best-effort stream-close helper so
+  shutdown semantics stay identical across code paths and do not drift over time.
+- `DiscoveryManager` now guards persistent `_client` lifecycle reads/writes with
+  a dedicated lock, keeping discover/close interleavings deterministic while
+  keeping scan I/O outside the critical section.
+- Discovery target matching now gates address matching by address-shaped input
+  before normalization, preventing name-like identifiers from taking the address
+  branch accidentally.
 
 ## 7.4 Correctness and guard improvements
 

@@ -413,7 +413,9 @@ class BLEClient:
 
         def _has_get_characteristic(services: Any) -> bool:
             """Return True if services object has a characteristic lookup callable."""
-            return bool(services and getattr(services, "get_characteristic", None))
+            return bool(
+                services and callable(getattr(services, "get_characteristic", None))
+            )
 
         services = _read_services_property()
         if not _has_get_characteristic(services):
@@ -523,6 +525,9 @@ class BLEClient:
                     "client disconnect during close",
                 )
 
+            # Explicitly clear the transport reference to make closed-state semantics
+            # unambiguous and prevent accidental reuse after close().
+            self.bleak_client = None
             self._closed = True
 
             # Cancel any pending futures to unblock waiting threads immediately.
