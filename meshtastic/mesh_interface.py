@@ -2280,9 +2280,13 @@ class MeshInterface:  # pylint: disable=R0902
                 elif fromRadio.config.HasField("power"):
                     self.localNode.localConfig.power.CopyFrom(fromRadio.config.power)
                 elif fromRadio.config.HasField("network"):
-                    self.localNode.localConfig.network.CopyFrom(fromRadio.config.network)
+                    self.localNode.localConfig.network.CopyFrom(
+                        fromRadio.config.network
+                    )
                 elif fromRadio.config.HasField("display"):
-                    self.localNode.localConfig.display.CopyFrom(fromRadio.config.display)
+                    self.localNode.localConfig.display.CopyFrom(
+                        fromRadio.config.display
+                    )
                 elif fromRadio.config.HasField("lora"):
                     self.localNode.localConfig.lora.CopyFrom(fromRadio.config.lora)
                 elif fromRadio.config.HasField("bluetooth"):

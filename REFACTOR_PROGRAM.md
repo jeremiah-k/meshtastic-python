@@ -6,7 +6,7 @@ This document explains the full refactor program for the Meshtastic Python
 library, including why scope expanded beyond BLE, what policy decisions were
 made, and how backward compatibility was preserved while improving correctness.
 
-This is an engineering rationale document, not a release announcement.
+This is an engineering rationale document, not an announcement.
 
 ## 2) Background and Scope Expansion
 
