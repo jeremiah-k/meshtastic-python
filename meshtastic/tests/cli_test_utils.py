@@ -43,6 +43,6 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
         except (ValueError, IndexError):
             executable = command.split(" ", 1)[0] if command else "<unknown>"
         masked = f"{executable!r} +REDACTED_ARGS"
-        pytest.fail(f"CLI command timed out after {timeout}s: {masked} ({exc})")
+        pytest.fail(f"CLI command timed out after {timeout}s: {masked}")
         raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout
