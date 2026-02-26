@@ -184,6 +184,7 @@ def test_getNode_not_local_timeout(
     with MeshInterface(noProto=True) as iface:
         anode = create_autospec(Node, instance=True)
         anode.waitForConfig.return_value = False
+        anode.partialChannels = []
         with caplog.at_level(logging.WARNING):
             with patch("meshtastic.node.Node", return_value=anode):
                 with pytest.raises(
