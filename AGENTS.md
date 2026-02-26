@@ -141,12 +141,12 @@ Current `COMPAT_DEPRECATE` methods:
 
 ## util API Refactoring Decisions
 
-| Class     | Name      | Refactor Action                |
-| --------- | --------- | ------------------------------ |
-| `DotDict` | `DotDict` | Primary implementation         |
-| `dotdict` | `dotdict` | Compatibility shim (warn-once) |
-| `util`    | `messageToJson` | Primary implementation   |
-| `util`    | `message_to_json` | Compatibility shim (silent) |
+| Class     | Name              | Refactor Action                |
+| --------- | ----------------- | ------------------------------ |
+| `DotDict` | `DotDict`         | Primary implementation         |
+| `dotdict` | `dotdict`         | Compatibility shim (warn-once) |
+| `util`    | `messageToJson`   | Primary implementation         |
+| `util`    | `message_to_json` | Compatibility shim (silent)    |
 
 ### util warning policy (explicit)
 
