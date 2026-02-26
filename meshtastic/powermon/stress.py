@@ -17,6 +17,7 @@ STRESS_DURATION_BUFFER_S = 0.2
 DEFAULT_STRESS_STATE_DURATION_S = 5.0
 """Default duration for each stress state in seconds."""
 
+
 def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     """Handle power stress responses and mark interface as having received a response."""
     logging.debug("packet:%s interface:%s", packet, interface)

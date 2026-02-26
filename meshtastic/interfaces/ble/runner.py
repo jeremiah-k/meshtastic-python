@@ -642,6 +642,8 @@ class BLECoroutineRunner:
         None
         """
         try:
+            # Keep a short timeout at process exit so interpreter shutdown is not delayed
+            # by BLE thread teardown best-effort cleanup.
             self._stop(timeout=1.0)
         except Exception as e:  # noqa: BLE001 - process-exit cleanup must not raise
             logger.debug("Exception during atexit shutdown: %s", e)

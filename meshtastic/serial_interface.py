@@ -30,6 +30,8 @@ SERIAL_WRITE_TIMEOUT = 0
 
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
+
+
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 

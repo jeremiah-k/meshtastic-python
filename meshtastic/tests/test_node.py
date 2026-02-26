@@ -14,7 +14,7 @@ from ..node import Node
 from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2, mesh_pb2
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
-from ..util import Timeout
+from ..util import Acknowledgment, Timeout
 
 
 class _FakeSendAdminProtocol(Protocol):
@@ -158,10 +158,13 @@ def test_set_canned_message_sends_payload_and_invalidates_cache(
     sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
     assert sent_msg.set_canned_message_module_messages == "fresh"
     assert captured["wantResponse"] is False
-    on_response = captured["onResponse"]
+    on_response = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
     assert callable(on_response)
-    assert getattr(on_response, "__self__", None) is anode
-    assert getattr(on_response, "__func__", None) is Node.onAckNak
+    acknowledgment = Acknowledgment()
+    anode.iface._acknowledgment = acknowledgment
+    anode.iface.localNode.nodeNum = 999
+    on_response({"decoded": {"routing": {"errorReason": "NONE"}}, "from": 123})
+    assert acknowledgment.receivedAck is True
     assert captured["adminIndex"] == 0
     assert anode.cannedPluginMessage is None
     assert anode.cannedPluginMessageMessages is None
@@ -626,7 +629,7 @@ def test_waitForConfig_timeout():
     """Test waitForConfig returns False on timeout."""
     iface = _autospec_with_local_node(MeshInterface)
     anode = Node(iface, 123, noProto=True)
-    anode._timeout = Timeout(maxSecs=0.01)
+    anode._timeout = Timeout(maxSecs=0.05)
 
     result = anode.waitForConfig()
     assert result is False

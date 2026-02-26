@@ -12,6 +12,7 @@ SIM_BASE_CURRENT_MA = 20.0
 SIM_CURRENT_VARIATION_MA = 5.0
 """Amplitude of sinusoidal current variation in milliamperes."""
 
+
 class SimPowerSupply(PowerSupply):
     """A simulated power supply for testing."""
 

@@ -1,6 +1,7 @@
 """BLE reconnection logic and scheduling."""
 
 import logging
+import math
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, NamedTuple, cast
 
@@ -278,6 +279,12 @@ class ReconnectWorker:
             )
             return None
         sleep_delay = float(sleep_delay)
+        if not math.isfinite(sleep_delay):
+            logger.error(
+                "Reconnect policy next_attempt returned non-finite delay: %r",
+                value,
+            )
+            return None
         if sleep_delay < 0.0:
             logger.error(
                 "Reconnect policy next_attempt returned negative delay: %r",

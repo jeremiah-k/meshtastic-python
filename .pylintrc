@@ -2,11 +2,11 @@
 #
 # Note: "pylint --generate-rcfile" is helpful to see what values to add to this file
 #
-# IMPORTANT: The CI workflow runs: pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
+# IMPORTANT: The CI workflow runs: pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
 # This --ignore-patterns flag OVERRIDES the ignore-patterns setting here.
 # To keep local and CI in sync, either:
 # 1. Run locally: make lint (uses this file without override)
-# 2. Or run the exact CI command: pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
+# 2. Or run the exact CI command: pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
 
 [MASTER]
 

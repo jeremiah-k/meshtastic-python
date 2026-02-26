@@ -7,7 +7,7 @@ from contextlib import suppress
 
 from ppk2_api import ppk2_api  # type: ignore[import-untyped]
 
-from .constants import MILLIVOLTS_PER_VOLT, MICROAMPS_PER_MILLIAMP, MIN_SUPPLY_VOLTAGE_V
+from .constants import MICROAMPS_PER_MILLIAMP, MILLIVOLTS_PER_VOLT, MIN_SUPPLY_VOLTAGE_V
 from .power_supply import PowerError, PowerSupply
 
 # PPK2-specific timing constants
@@ -22,6 +22,7 @@ THREAD_JOIN_TIMEOUT_S = 5.0
 
 STABILIZATION_DELAY_S = 0.2
 """Delay to discard bogus initial power readings in FIFO."""
+
 
 class PPK2PowerSupply(PowerSupply):
     """Interface for talking with the NRF PPK2 high-resolution micro-power supply.
@@ -106,7 +107,9 @@ class PPK2PowerSupply(PowerSupply):
         while self.measuring:
             with self._want_measurement:
                 self._want_measurement.wait(
-                    INITIAL_POLL_TIMEOUT_S if self.num_data_reads == 0 else SUBSEQUENT_POLL_TIMEOUT_S
+                    INITIAL_POLL_TIMEOUT_S
+                    if self.num_data_reads == 0
+                    else SUBSEQUENT_POLL_TIMEOUT_S
                 )
                 # normally we poll using this timeout, but sometimes
                 # reset_measurement() will notify us to read immediately

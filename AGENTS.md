@@ -161,3 +161,28 @@ Current `COMPAT_DEPRECATE` methods:
 ### mesh_interface warning policy (semantic)
 
 - The `telemetryType` fallback warning in `sendTelemetry` is a **semantic** deprecation (behavioral change, not naming-only). This warning should emit on every unsupported value to alert callers their input is being silently converted.
+
+## Release Workflow Modernization Policy
+
+- Release workflow behavior should stay functionally aligned with the historical
+  manual release flow on `master`/`2.7.7`:
+  - manual dispatch,
+  - patch-version bump and commit,
+  - draft prerelease creation,
+  - packaged artifacts upload,
+  - PyPI publish.
+- Modernization is allowed and encouraged when tooling is unmaintained or EOL:
+  - upgrade deprecated GitHub actions to maintained pinned versions,
+  - move Python runtime from 3.9 (EOL) to supported 3.10+.
+- Keep release semantics stable while modernizing implementation details.
+
+## Constant Extraction Policy
+
+- Prefer named module-level constants (`UPPER_SNAKE_CASE`) for repeated
+  literals (magic numbers/strings), especially for:
+  - timeouts and retry/backoff values,
+  - protocol/default payload values,
+  - repeated warning/error text.
+- Avoid mass churn; extract constants in touched code paths or when repetition
+  materially impacts readability/maintenance.
+- Constant extraction must not change behavior.
