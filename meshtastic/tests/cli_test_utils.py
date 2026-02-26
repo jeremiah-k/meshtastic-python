@@ -37,7 +37,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
             check=False,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         try:
             executable = shlex.split(command)[0]
         except (ValueError, IndexError):
