@@ -41,6 +41,11 @@ IP_PROTOCOL_SCCOPMCE = 0x80  # Service-Specific Connection-Oriented Protocol
 # Bitmask for IP address octet extraction
 IP_OCTET_MASK = 0xFF
 
+# Tunnel node mapping constants
+OCTET_MULTIPLIER = 256
+NODE_NUM_MASK = 0xFFFF
+RX_THREAD_JOIN_TIMEOUT = 2.0
+
 
 def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
     """Handle received tunneled messages from mesh.
@@ -352,15 +357,15 @@ class Tunnel:
             The mesh node ID string if a matching node is found, "^all" for
             broadcast address 255.255, or None if no matching node exists.
         """
-        ipBits = ipAddr[2] * 256 + ipAddr[3]
+        ip_bits = ipAddr[2] * OCTET_MULTIPLIER + ipAddr[3]
 
-        if ipBits == 0xFFFF:
+        if ip_bits == NODE_NUM_MASK:
             return "^all"
 
         for node in self.iface.nodes.values():
-            nodeNum = node["num"] & 0xFFFF
-            # logger.debug(f"Considering nodenum 0x{nodeNum:x} for ipBits 0x{ipBits:x}")
-            if (nodeNum) == ipBits:
+            node_num = node["num"] & NODE_NUM_MASK
+            # logger.debug(f"Considering nodenum 0x{node_num:x} for ipBits 0x{ip_bits:x}")
+            if node_num == ip_bits:
                 return node["user"]["id"]
         return None
 
@@ -422,7 +427,7 @@ class Tunnel:
             and self._rx_thread is not threading.current_thread()
             and self._rx_thread.is_alive()
         ):
-            self._rx_thread.join(timeout=2.0)
+            self._rx_thread.join(timeout=RX_THREAD_JOIN_TIMEOUT)
         self._rx_thread = None
         self.tun = None
         if mt_config.tunnel_instance is self:

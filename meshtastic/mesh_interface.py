@@ -52,6 +52,15 @@ logger = logging.getLogger(__name__)
 # Heartbeat interval for keeping the interface alive (5 minutes)
 HEARTBEAT_INTERVAL_SECONDS = 300
 
+# Packet-id generation constants
+PACKET_ID_MASK = 0xFFFFFFFF
+PACKET_ID_COUNTER_MASK = 0x3FF
+PACKET_ID_RANDOM_MAX = 0x3FFFFF
+PACKET_ID_RANDOM_SHIFT_BITS = 10
+
+# Queue backoff while waiting for TX slots to free
+QUEUE_WAIT_DELAY_SECONDS = 0.5
+
 
 def _timeago(delta_secs: int) -> str:
     """Produce a short human-readable relative time string for a past interval.
@@ -161,7 +170,7 @@ class MeshInterface:  # pylint: disable=R0902
         self._node_db_lock = threading.RLock()
         self._closing = False
         random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
-        self.currentPacketId: int = random.randint(0, 0xFFFFFFFF)
+        self.currentPacketId: int = random.randint(0, PACKET_ID_MASK)
         self.nodesByNum: dict[int, dict[str, Any]] | None = None
         self.noNodes: bool = noNodes
         self.configId: int | None = NODELESS_WANT_CONFIG_ID if noNodes else None
@@ -1838,14 +1847,15 @@ class MeshInterface:  # pylint: disable=R0902
                 raise MeshInterface.MeshInterfaceError(
                     "Not connected yet, can not generate packet"
                 )
-            nextPacketId = (self.currentPacketId + 1) & 0xFFFFFFFF
-            nextPacketId = (
-                nextPacketId & 0x3FF
+            next_packet_id = (self.currentPacketId + 1) & PACKET_ID_MASK
+            next_packet_id = (
+                next_packet_id & PACKET_ID_COUNTER_MASK
             )  # Keep only low 10-bit counter (clear upper 22 bits)
-            randomPart = (
-                random.randint(0, 0x3FFFFF) << 10  # noqa: S311
-            ) & 0xFFFFFFFF  # generate number with 10 zeros at end
-            self.currentPacketId = nextPacketId | randomPart  # combine
+            random_part = (
+                random.randint(0, PACKET_ID_RANDOM_MAX)
+                << PACKET_ID_RANDOM_SHIFT_BITS  # noqa: S311
+            ) & PACKET_ID_MASK  # generate number with 10 zeros at end
+            self.currentPacketId = next_packet_id | random_part  # combine
             return self.currentPacketId
 
     def _disconnected(self) -> None:
@@ -1948,7 +1958,7 @@ class MeshInterface:  # pylint: disable=R0902
 
         startConfig = mesh_pb2.ToRadio()
         if self.configId is None or not self.noNodes:
-            self.configId = random.randint(0, 0xFFFFFFFF)
+            self.configId = random.randint(0, PACKET_ID_MASK)
             if self.configId == NODELESS_WANT_CONFIG_ID:
                 self.configId = self.configId + 1
         startConfig.want_config_id = self.configId
@@ -2024,7 +2034,7 @@ class MeshInterface:  # pylint: disable=R0902
                 # logger.warn("queue: " + " ".join(f'{k:08x}' for k in self.queue))
                 while not self._queue_has_free_space():
                     logger.debug("Waiting for free space in TX Queue")
-                    time.sleep(0.5)
+                    time.sleep(QUEUE_WAIT_DELAY_SECONDS)
                 try:
                     with self._queue_lock:
                         toResend = self.queue.popitem(last=False)

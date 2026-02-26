@@ -362,6 +362,7 @@ class BLECoroutineRunner:
                     # Unregister atexit handler if we cleared both references
                     if self._thread is None and self._loop is None:
                         self._unregister_atexit_handler_locked()
+
     def _cancel_all_tasks(self, loop: asyncio.AbstractEventLoop) -> None:
         """Cancel all non-completed tasks on the given event loop and wait for their cancellation to finish.
 
@@ -623,9 +624,7 @@ class BLECoroutineRunner:
         with self._instance_lock:
             # Only clear _thread if it still references the original thread we stopped
             # AND the thread has actually exited (not just because we're the current thread)
-            if self._thread is thread and (
-                thread is None or not thread.is_alive()
-            ):
+            if self._thread is thread and (thread is None or not thread.is_alive()):
                 self._thread = None
             # Only clear _loop if it still references the original loop.
             if self._loop is loop:

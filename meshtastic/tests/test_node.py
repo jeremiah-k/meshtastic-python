@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import Any, Protocol, cast
 from unittest.mock import MagicMock, patch
 
-
 import pytest
 from pytest import CaptureFixture, LogCaptureFixture
 
@@ -17,7 +16,6 @@ from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2, mesh_p
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Acknowledgment
-
 
 
 class _FakeSendAdminProtocol(Protocol):
@@ -30,9 +28,6 @@ class _FakeSendAdminProtocol(Protocol):
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int = 0,
     ) -> mesh_pb2.MeshPacket | None: ...
-
-
-
 
 
 def _make_fake_send_admin(
@@ -226,6 +221,7 @@ def test_setURL_raises_when_channels_not_loaded(
     ):
         anode.setURL("")
 
+
 @pytest.mark.unit
 def test_setURL_valid_URL_but_no_settings(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -381,6 +377,7 @@ def test_writeChannel_with_no_channels_raises_mesh_error(
         MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
     ):
         anode.writeChannel(0)
+
 
 @pytest.mark.unit
 def test_requestChannel_not_localNode(

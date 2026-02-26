@@ -95,7 +95,7 @@ class PPK2PowerSupply(PowerSupply):
             target=self.measurement_loop, daemon=True, name="ppk2 measurement"
         )
         logging.info("Connected to Power Profiler Kit II (PPK2)")
-        super().__init__()  # we call this late so that the port is already open and _getRawWattHour callback works
+        super().__init__()  # we call this late so that the serial port is already open
 
     def measurement_loop(self) -> None:
         """Endless measurement loop that runs in a background thread.

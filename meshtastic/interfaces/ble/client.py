@@ -34,6 +34,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
+    SERVICE_CHARACTERISTIC_RETRY_COUNT,
     logger,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
@@ -420,7 +421,7 @@ class BLEClient:
                 "Unable to populate services before has_characteristic"
             )
 
-        for _ in range(2):
+        for _ in range(SERVICE_CHARACTERISTIC_RETRY_COUNT):
             if not _has_get_characteristic(services):
                 return False
             try:

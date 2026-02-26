@@ -19,7 +19,6 @@ class NotificationManager:
 
     _MAX_SUBSCRIPTION_TOKEN = 0x7FFFFFFF
 
-
     def __init__(self) -> None:
         """Initialize a NotificationManager and its thread-safe subscription state.
 

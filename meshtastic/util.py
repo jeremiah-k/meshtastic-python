@@ -1197,7 +1197,7 @@ def check_if_newer_version() -> str | None:
         data = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECONDS).json()
         pypi_version = data["info"]["version"]
     except Exception:
-        pass
+        logger.debug("PyPI version check failed", exc_info=True)
     act_version = get_active_version()
 
     if pypi_version is None:

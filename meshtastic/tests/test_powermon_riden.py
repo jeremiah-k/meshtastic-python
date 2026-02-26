@@ -47,7 +47,7 @@ def test_get_average_current_ma_converts_watts_to_ma(
     pps = riden_stub
     pps.prevPowerTime = datetime.now() - timedelta(seconds=3600)
     pps.prevWattHour = 10.0
-    pps._getRawWattHour = MagicMock(return_value=11.0)  # type: ignore[method-assign]
+    pps._get_raw_watt_hour = MagicMock(return_value=11.0)  # type: ignore[method-assign]
     pps.v = 2.0
 
     current_ma = pps.get_average_current_mA()
@@ -63,7 +63,9 @@ def test_get_average_current_ma_returns_nan_for_nonpositive_voltage(
 ) -> None:
     """Test that get_average_current_mA returns NaN when voltage is not positive."""
     pps = riden_stub
-    pps._getRawWattHour = MagicMock(return_value=pps.prevWattHour)  # type: ignore[method-assign]
+    pps._get_raw_watt_hour = MagicMock(  # type: ignore[method-assign]
+        return_value=pps.prevWattHour
+    )
     pps.v = 0.0
     assert math.isnan(pps.get_average_current_mA())
 
@@ -77,7 +79,7 @@ def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
     start = datetime.now()
     pps.prevPowerTime = start + timedelta(seconds=1)
     pps.prevWattHour = 10.0
-    pps._getRawWattHour = MagicMock(return_value=12.0)  # type: ignore[method-assign]
+    pps._get_raw_watt_hour = MagicMock(return_value=12.0)  # type: ignore[method-assign]
 
     result = pps.get_average_current_mA()
 
@@ -106,10 +108,10 @@ def test_get_average_current_camelcase_aliases_delegate(
 def test_get_raw_watt_hour_updates_and_returns_wh(
     riden_stub: RidenPowerSupply,
 ) -> None:
-    """_getRawWattHour should call update() and return r.wh."""
+    """_get_raw_watt_hour should call update() and return r.wh."""
     pps = riden_stub
     r_mock = cast(MagicMock, pps.r)
     r_mock.wh = 42.5
-    value = pps._getRawWattHour()
+    value = pps._get_raw_watt_hour()
     r_mock.update.assert_called_once()
     assert value == 42.5

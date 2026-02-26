@@ -96,6 +96,7 @@ GPIO_WATCH_INTERVAL_SECONDS = 1.0
 
 # Maximum wait time for GPIO read response (each iteration)
 GPIO_READ_POLL_INTERVAL_SECONDS = 1.0
+GPIO_READ_MAX_POLLS = 10
 
 # Time to wait for device boot after power-on
 POWER_ON_BOOT_DELAY_SECONDS = 5.0
@@ -307,7 +308,7 @@ def getPref(node: Any, comp_name: str) -> bool:
         config request was issued, `False` if the preference was not found.
     """
 
-    def _printSetting(config_type, uni_name, pref_value, repeated):
+    def _print_setting(config_type, uni_name, pref_value, repeated):
         """Print a configuration preference and its value to stdout and the debug log.
 
         When `repeated` is True, `pref_value` is treated as an iterable and
@@ -379,11 +380,11 @@ def getPref(node: Any, comp_name: str) -> bool:
         if not wholeField:
             pref_value = getattr(config_values, pref.name)
             repeated = pref.label == pref.LABEL_REPEATED
-            _printSetting(config_type, uni_name, pref_value, repeated)
+            _print_setting(config_type, uni_name, pref_value, repeated)
         else:
             for field in config_values.ListFields():
                 repeated = field[0].label == field[0].LABEL_REPEATED
-                _printSetting(config_type, field[0].name, field[1], repeated)
+                _print_setting(config_type, field[0].name, field[1], repeated)
     else:
         # Always show whole field for remote node
         node.requestConfig(config_type)
@@ -962,7 +963,7 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.mask = bitmask
                     rhc.readGPIOs(args.dest, bitmask, None)
                     # wait up to X seconds for a response
-                    for _ in range(10):
+                    for _ in range(GPIO_READ_MAX_POLLS):
                         time.sleep(GPIO_READ_POLL_INTERVAL_SECONDS)
                         if interface.gotResponse:
                             break

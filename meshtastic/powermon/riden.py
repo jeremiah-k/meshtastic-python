@@ -30,8 +30,8 @@ class RidenPowerSupply(PowerSupply):
             r.fw,
         )
         r.set_date_time(datetime.now())
-        self.prevWattHour = self._getRawWattHour()
-        super().__init__()  # we call this late so that the port is already open and _getRawWattHour callback works
+        self.prevWattHour = self._get_raw_watt_hour()
+        super().__init__()  # we call this late so that the port is already open and _get_raw_watt_hour callback works
 
     def setMaxCurrent(self, i: float) -> None:
         """Set the maximum current the supply will provide."""
@@ -47,7 +47,7 @@ class RidenPowerSupply(PowerSupply):
     def getAverageCurrentMA(self) -> float:
         """Return average current of last measurement in mA since last call to this method."""
         now = datetime.now()
-        nowWattHour = self._getRawWattHour()
+        nowWattHour = self._get_raw_watt_hour()
         elapsed_s = (now - self.prevPowerTime).total_seconds()
         if elapsed_s <= 0:
             # Consume the window to avoid stale deltas on subsequent reads.
@@ -63,7 +63,7 @@ class RidenPowerSupply(PowerSupply):
             return math.nan
         return (watts / self.v) * MILLIAMPS_PER_AMP
 
-    def _getRawWattHour(self) -> float:
+    def _get_raw_watt_hour(self) -> float:
         """Get the current watt-hour reading."""
         self.r.update()
         return self.r.wh
