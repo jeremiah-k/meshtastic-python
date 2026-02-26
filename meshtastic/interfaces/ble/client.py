@@ -551,9 +551,20 @@ class BLEClient:
     ) -> None:
         """Close the BLEClient when exiting a context manager.
 
-        Calls close() to release resources; any context-exit exception details are ignored and exceptions are not suppressed.
+        If an exception occurred within the with-block, any exception raised by
+        close() is logged and suppressed so the original exception propagates.
+        If no with-block exception occurred, close() exceptions propagate normally.
         """
-        self.close()
+        try:
+            self.close()
+        except Exception:
+            if _type is not None:
+                logger.warning(
+                    "close() failed while unwinding an existing exception.",
+                    exc_info=True,
+                )
+            else:
+                raise
 
     def _async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: float | None = None

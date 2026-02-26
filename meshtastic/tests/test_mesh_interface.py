@@ -192,7 +192,10 @@ def test_getNode_not_local_timeout(
                     if request_channel_attempts is None:
                         iface.getNode("bar2")
                     else:
-                        iface.getNode("bar2", requestChannelAttempts=request_channel_attempts)
+                        iface.getNode(
+                            "bar2",
+                            requestChannelAttempts=request_channel_attempts,
+                        )
                 assert pytest_wrapped_e.type is MeshInterface.MeshInterfaceError
                 assert "Timed out waiting for channels, giving up" in str(
                     pytest_wrapped_e.value
@@ -285,6 +288,8 @@ def test_close_waits_for_inflight_heartbeat_send(
         close_thread = threading.Thread(target=close_interface, daemon=True)
         close_thread.start()
         # close() should block until the in-flight heartbeat send completes.
+        # Use a generous timeout (0.2s) to avoid flakiness on slow CI runners.
+        assert not close_done.wait(timeout=0.2)
         assert not close_done.wait(timeout=0.05)
 
         release_send.set()

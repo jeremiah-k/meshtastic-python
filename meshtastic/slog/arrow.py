@@ -5,7 +5,6 @@ import os
 import tempfile
 import threading
 import warnings
-from typing import Literal
 
 import pyarrow as pa
 from pyarrow import feather
@@ -83,11 +82,25 @@ class ArrowWriter:
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: object | None,
-    ) -> Literal[False]:
-        """Close the writer on context-manager exit and propagate exceptions."""
-        _ = exc_type, exc_value, traceback
-        self.close()
-        return False
+    ) -> None:
+        """Close the writer on context-manager exit and propagate exceptions.
+
+        If an exception occurred within the with-block (exc_type is not None),
+        any exception raised by close() is logged and suppressed so the original
+        exception propagates. If no with-block exception occurred, close() exceptions
+        are allowed to propagate normally.
+        """
+        _ = traceback
+        try:
+            self.close()
+        except Exception:
+            if exc_type is not None:
+                logger.warning(
+                    "close() failed while unwinding an existing exception.",
+                    exc_info=True,
+                )
+            else:
+                raise
 
     def close(self) -> None:
         """Close the writer, flush any buffered rows, and close the underlying sink.

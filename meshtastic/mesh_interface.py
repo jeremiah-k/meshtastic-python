@@ -245,6 +245,11 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> None:
         """Handle context-manager exit: log any exception information and close the interface.
 
+        If an exception occurred within the with-block (exc_type is not None),
+        any exception raised by close() is logged and suppressed so the original
+        exception propagates. If no with-block exception occurred, close() exceptions
+        are allowed to propagate normally.
+
         Parameters
         ----------
         exc_type : type[BaseException] | None
@@ -254,13 +259,23 @@ class MeshInterface:  # pylint: disable=R0902
         trace : TracebackType | None
             The traceback object for the exception if present, otherwise None.
         """
+        _ = trace
         if exc_type is not None and exc_value is not None:
             logger.error(
                 f"An exception of type {exc_type} with value {exc_value} has occurred"
             )
-        if trace is not None:
-            logger.error(f"Traceback:\n{''.join(traceback.format_tb(trace))}")
-        self.close()
+            if trace is not None:
+                logger.error(f"Traceback:\n{''.join(traceback.format_tb(trace))}")
+        try:
+            self.close()
+        except Exception:
+            if exc_type is not None:
+                logger.warning(
+                    "close() failed while unwinding an existing exception.",
+                    exc_info=True,
+                )
+            else:
+                raise
 
     @staticmethod
     def _print_log_line(line: str, interface: Any) -> None:

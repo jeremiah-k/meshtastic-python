@@ -373,8 +373,22 @@ class DiscoveryManager:
         _exc_value: BaseException | None,
         _traceback: TracebackType | None,
     ) -> None:
-        """Close the manager on context-manager exit."""
-        self.close()
+        """Close the manager on context-manager exit.
+
+        If an exception occurred within the with-block, any exception raised by
+        close() is logged and suppressed so the original exception propagates.
+        If no with-block exception occurred, close() exceptions propagate normally.
+        """
+        try:
+            self.close()
+        except Exception:
+            if _exc_type is not None:
+                logger.warning(
+                    "close() failed while unwinding an existing exception.",
+                    exc_info=True,
+                )
+            else:
+                raise
 
     def __del__(self) -> None:
         """Drop the internal client reference during garbage collection.

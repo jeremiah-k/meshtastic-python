@@ -239,6 +239,8 @@ class StreamInterface(MeshInterface):
             Up to `length` bytes read from the stream, or `None` when no stream is present.
         """
         s = self.stream
+        # Default is_open to True for stream types that don't expose this attribute,
+        # treating them as open for backward compatibility (e.g., mock streams, test doubles).
         if s is not None and getattr(s, "is_open", True):
             return s.read(length)
         else:
