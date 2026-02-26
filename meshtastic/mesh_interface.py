@@ -546,10 +546,11 @@ class MeshInterface:  # pylint: disable=R0902
         with self._node_db_lock:
             nodes_snapshot = list(self.nodesByNum.values()) if self.nodesByNum else []
             nodes_log_snapshot = dict(self.nodes) if self.nodes else {}
+            local_node_num = self.localNode.nodeNum
         if nodes_snapshot:
             logger.debug("self.nodes:%s", nodes_log_snapshot)
             for node in nodes_snapshot:
-                if not includeSelf and node["num"] == self.localNode.nodeNum:
+                if not includeSelf and node["num"] == local_node_num:
                     continue
 
                 presumptive_id = f"!{node['num']:08x}"

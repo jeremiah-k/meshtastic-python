@@ -118,6 +118,7 @@ jobs:
 
   publish-pypi:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'release' || github.event.release.draft == false }}
     # Require protected-environment approval before publishing.
     environment: pypi-release
     needs:

@@ -139,6 +139,8 @@ class StreamInterface(MeshInterface):
             else:
                 self.connect()
                 if not noProto:
+                    # connect() waits only for transport-connected state; constructor
+                    # still waits for full config materialization for legacy behavior.
                     self.waitForConfig()
 
     def connect(self) -> None:
