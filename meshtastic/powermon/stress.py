@@ -7,6 +7,15 @@ from typing import Any, Callable
 
 from ..protobuf import portnums_pb2, powermon_pb2
 
+# Stress test timing constants
+DEFAULT_ACK_TIMEOUT_S = 30.0
+"""Default acknowledgment timeout in seconds."""
+
+STRESS_DURATION_BUFFER_S = 0.2
+"""Additional time to wait beyond the stress duration (seconds)."""
+
+DEFAULT_STRESS_STATE_DURATION_S = 5.0
+"""Default duration for each stress state in seconds."""
 
 def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     """Handle power stress responses and mark interface as having received a response."""
@@ -59,7 +68,7 @@ class PowerStressClient:
         self,
         cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
         num_seconds: float = 0.0,
-        ack_timeout: float = 30.0,
+        ack_timeout: float = DEFAULT_ACK_TIMEOUT_S,
     ) -> bool:
         """Send a power stress command and wait for the ack.
 
@@ -108,7 +117,7 @@ class PowerStressClient:
         else:
             # we wait a little bit longer than the time the UUT would be waiting (to make sure all of its messages are handled first)
             time.sleep(
-                effective_num_seconds + 0.2
+                effective_num_seconds + STRESS_DURATION_BUFFER_S
             )  # completely block our thread for the duration of the test
             if not ack_event.is_set():
                 logging.error("Did not receive ack for power stress command!")
@@ -143,7 +152,7 @@ class PowerStress:
                     "Ack not received for PRINT_INFO; continuing with stress sequence."
                 )
 
-            num_seconds = 5.0
+            num_seconds = DEFAULT_STRESS_STATE_DURATION_S
             for s in self.states:
                 s_name = powermon_pb2.PowerStressMessage.Opcode.Name(s)
                 logging.info(

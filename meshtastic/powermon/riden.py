@@ -7,7 +7,7 @@ from datetime import datetime
 from riden import (
     Riden,  # type: ignore[import-untyped]  # pyright: ignore[reportMissingTypeStubs]
 )
-
+from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
 from .power_supply import PowerSupply
 
 
@@ -53,14 +53,14 @@ class RidenPowerSupply(PowerSupply):
             self.prevPowerTime = now
             self.prevWattHour = nowWattHour
             return math.nan
-        watts = ((nowWattHour - self.prevWattHour) / elapsed_s) * 3600
+        watts = ((nowWattHour - self.prevWattHour) / elapsed_s) * SECONDS_PER_HOUR
         # Intentional: consume this measurement window even when voltage <= 0 to avoid a
         # large energy spike after voltage recovers.
         self.prevPowerTime = now
         self.prevWattHour = nowWattHour
         if self.v <= 0:
             return math.nan
-        return (watts / self.v) * 1000
+        return (watts / self.v) * MILLIAMPS_PER_AMP
 
     def _getRawWattHour(self) -> float:
         """Get the current watt-hour reading."""

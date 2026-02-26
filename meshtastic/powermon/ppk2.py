@@ -7,8 +7,21 @@ from contextlib import suppress
 
 from ppk2_api import ppk2_api  # type: ignore[import-untyped]
 
+from .constants import MILLIVOLTS_PER_VOLT, MICROAMPS_PER_MILLIAMP, MIN_SUPPLY_VOLTAGE_V
 from .power_supply import PowerError, PowerSupply
 
+# PPK2-specific timing constants
+INITIAL_POLL_TIMEOUT_S = 0.0001
+"""Initial wait timeout for measurement polling (100μs)."""
+
+SUBSEQUENT_POLL_TIMEOUT_S = 0.001
+"""Subsequent wait timeout for measurement polling (1ms)."""
+
+THREAD_JOIN_TIMEOUT_S = 5.0
+"""Timeout for joining the measurement thread on close."""
+
+STABILIZATION_DELAY_S = 0.2
+"""Delay to discard bogus initial power readings in FIFO."""
 
 class PPK2PowerSupply(PowerSupply):
     """Interface for talking with the NRF PPK2 high-resolution micro-power supply.
@@ -93,7 +106,7 @@ class PPK2PowerSupply(PowerSupply):
         while self.measuring:
             with self._want_measurement:
                 self._want_measurement.wait(
-                    0.0001 if self.num_data_reads == 0 else 0.001
+                    INITIAL_POLL_TIMEOUT_S if self.num_data_reads == 0 else SUBSEQUENT_POLL_TIMEOUT_S
                 )
                 # normally we poll using this timeout, but sometimes
                 # reset_measurement() will notify us to read immediately
@@ -139,7 +152,7 @@ class PPK2PowerSupply(PowerSupply):
         with self._result_lock:
             if self.current_num_samples != 0:
                 self.last_reported_min = self.current_min
-            return self.last_reported_min / 1000
+            return self.last_reported_min / MICROAMPS_PER_MILLIAMP
 
     def getMaxCurrentMA(self) -> float:
         """Return the maximum current reading in milliamperes.
@@ -153,7 +166,7 @@ class PPK2PowerSupply(PowerSupply):
         with self._result_lock:
             if self.current_num_samples != 0:
                 self.last_reported_max = self.current_max
-            return self.last_reported_max / 1000
+            return self.last_reported_max / MICROAMPS_PER_MILLIAMP
 
     def getAverageCurrentMA(self) -> float:
         """Return the average current reading in milliamperes.
@@ -171,7 +184,7 @@ class PPK2PowerSupply(PowerSupply):
 
             # Even if we don't have new samples, return the last calculated average
             # measurements are in microamperes, divide by 1000
-            return self.current_average / 1000
+            return self.current_average / MICROAMPS_PER_MILLIAMP
 
     def resetMeasurements(self) -> None:
         """Reset current-window accumulators while preserving last reported extrema."""
@@ -198,7 +211,7 @@ class PPK2PowerSupply(PowerSupply):
         with suppress(Exception):
             self.r.stop_measuring()  # send command to ppk2
         if self.measurement_thread.is_alive():
-            self.measurement_thread.join(timeout=5.0)
+            self.measurement_thread.join(timeout=THREAD_JOIN_TIMEOUT_S)
             if self.measurement_thread.is_alive():
                 logging.warning(
                     "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
@@ -227,17 +240,17 @@ class PPK2PowerSupply(PowerSupply):
         Raises
         ------
         PowerError
-            If the supply voltage has not been set to at least 0.8V before calling this method.
+            If the supply voltage has not been set to at least MIN_SUPPLY_VOLTAGE_V before calling this method.
         """
 
-        if self.v < 0.8:
+        if self.v < MIN_SUPPLY_VOLTAGE_V:
             raise PowerError(  # noqa: TRY003
-                "Supply voltage must be set to at least 0.8V before calling setIsSupply "
+                f"Supply voltage must be set to at least {MIN_SUPPLY_VOLTAGE_V}V before calling setIsSupply "
                 f"(current v={self.v!r})"
             )
 
         self.r.set_source_voltage(
-            int(self.v * 1000)
+            int(self.v * MILLIVOLTS_PER_VOLT)
         )  # set source voltage in mV BEFORE setting source mode
         # Note: source voltage must be set even if we are using the amp meter mode
 
@@ -268,8 +281,8 @@ class PPK2PowerSupply(PowerSupply):
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()
             time.sleep(
-                0.2
-            )  # FIXME - crufty way to ensure we do one set of reads to discard bogus fake power readings in the FIFO
+                STABILIZATION_DELAY_S
+            )  # discard bogus initial power readings in the FIFO
             self.resetMeasurements()
 
     def powerOn(self) -> None:

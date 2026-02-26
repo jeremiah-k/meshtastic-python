@@ -18,7 +18,18 @@ from meshtastic.stream_interface import StreamInterface
 
 logger = logging.getLogger(__name__)
 
+# Serial interface constants
+DEFAULT_BAUD_RATE = 115200
+"""Default baud rate for serial communication."""
 
+SERIAL_READ_TIMEOUT = 0.5
+"""Default read timeout for serial operations (seconds)."""
+
+SERIAL_WRITE_TIMEOUT = 0
+"""Default write timeout for serial operations (0 = non-blocking)."""
+
+SERIAL_SETTLING_DELAY = 0.1
+"""Delay for serial port operations to settle (seconds)."""
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
@@ -93,15 +104,19 @@ class SerialInterface(StreamInterface):
         if sys.platform != "win32":
             with open(self.devPath, encoding="utf8") as f:
                 self._set_hupcl_with_termios(f)
-            time.sleep(0.1)
+            time.sleep(SERIAL_SETTLING_DELAY)
 
         self.stream = serial.Serial(
-            self.devPath, 115200, exclusive=True, timeout=0.5, write_timeout=0
+            self.devPath,
+            DEFAULT_BAUD_RATE,
+            exclusive=True,
+            timeout=SERIAL_READ_TIMEOUT,
+            write_timeout=SERIAL_WRITE_TIMEOUT,
         )
         initialized = False
         try:
             self.stream.flush()
-            time.sleep(0.1)
+            time.sleep(SERIAL_SETTLING_DELAY)
             StreamInterface.__init__(
                 self,
                 debugOut=debugOut,
@@ -171,9 +186,9 @@ class SerialInterface(StreamInterface):
             # adapters and hardware configurations.
             with contextlib.suppress(OSError, ValueError, serial.SerialException):
                 stream.flush()
-                time.sleep(0.1)
+                time.sleep(SERIAL_SETTLING_DELAY)
                 stream.flush()
-                time.sleep(0.1)
+                time.sleep(SERIAL_SETTLING_DELAY)
         logger.debug("Closing Serial stream")
         StreamInterface.close(self)
 

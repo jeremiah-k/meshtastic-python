@@ -16,6 +16,23 @@ START1 = 0x94
 START2 = 0xC3
 HEADER_LEN = 4
 MAX_TO_FROM_RADIO_SIZE = 512
+
+# Stream timing constants
+DEVICE_WAKE_DELAY = 0.1
+"""Delay after sending wake bytes to allow device to start (seconds)."""
+
+WAKE_BYTE_COUNT = 32
+"""Number of wake bytes to send to resync device state machine."""
+
+STANDARD_WRITE_DELAY = 0.1
+"""Standard delay after write operations (seconds)."""
+
+WINDOWS11_WRITE_DELAY = 1.0
+"""Extended delay after write operations on Windows 11 (seconds)."""
+
+READER_THREAD_JOIN_TIMEOUT = 2.0
+"""Timeout for joining reader thread on shutdown (seconds)."""
+
 logger = logging.getLogger(__name__)
 
 
@@ -136,9 +153,9 @@ class StreamInterface(MeshInterface):
         # if the reading statemachine was parsing a bad packet make sure
         # we write enough start bytes to force it to resync (we don't use START1
         # because we want to ensure it is looking for START1)
-        p: bytes = bytes([START2] * 32)
+        p: bytes = bytes([START2] * WAKE_BYTE_COUNT)
         self._write_bytes(p)
-        time.sleep(0.1)  # wait 100ms to give device time to start running
+        time.sleep(DEVICE_WAKE_DELAY)  # give device time to start running
         # Reset shutdown flag so reconnect works after close()
         self._wantExit = False
 
@@ -180,7 +197,7 @@ class StreamInterface(MeshInterface):
 
         If no stream is configured this call is ignored. When a stream exists the bytes are written
         and flushed; after flushing the method sleeps to allow the device time to handle the data:
-        1.0 second on Windows 11, 0.1 second otherwise.
+        WINDOWS11_WRITE_DELAY seconds on Windows 11, STANDARD_WRITE_DELAY seconds otherwise.
 
         Parameters
         ----------
@@ -195,10 +212,10 @@ class StreamInterface(MeshInterface):
             s.flush()
             # win11 might need a bit more time, too
             if self.is_windows11:
-                time.sleep(1.0)
+                time.sleep(WINDOWS11_WRITE_DELAY)
             else:
                 # we sleep here to give the TBeam a chance to work
-                time.sleep(0.1)
+                time.sleep(STANDARD_WRITE_DELAY)
 
     def _read_bytes(self, length: int) -> bytes | None:
         """Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
@@ -283,7 +300,7 @@ class StreamInterface(MeshInterface):
             and rx_thread is not threading.current_thread()
             and rx_thread.is_alive()
         ):
-            rx_thread.join(timeout=2.0)
+            rx_thread.join(timeout=READER_THREAD_JOIN_TIMEOUT)
             if rx_thread.is_alive():
                 logger.warning("Reader thread did not exit within shutdown timeout")
 

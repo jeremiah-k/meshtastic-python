@@ -66,6 +66,9 @@ try:
     RidenPowerSupply = powermon_module.RidenPowerSupply
     SimPowerSupply = powermon_module.SimPowerSupply
     LogSet = slog_module.LogSet
+    powermon_constants = importlib.import_module("meshtastic.powermon.constants")
+    MIN_SUPPLY_VOLTAGE_V = powermon_constants.MIN_SUPPLY_VOLTAGE_V
+    MAX_SUPPLY_VOLTAGE_V = powermon_constants.MAX_SUPPLY_VOLTAGE_V
 
     have_powermon = True
     powermon_exception = None
@@ -74,6 +77,9 @@ except (ImportError, AttributeError) as exc:
     have_powermon = False
     powermon_exception = exc
     meter = None
+    # Provide fallback constants if powermon is not available
+    MIN_SUPPLY_VOLTAGE_V = 0.8
+    MAX_SUPPLY_VOLTAGE_V = 5.0
     logging.getLogger(__name__).debug("powermon/slog not available: %s", exc)
 
 logger = logging.getLogger(__name__)
@@ -1776,7 +1782,7 @@ export_config = exportConfig
 def create_power_meter() -> None:
     """Initialize and configure the global power meter from parsed CLI arguments.
 
-    Validates an optional voltage (must be between 0.8 and 5.0), instantiates the
+    Validates an optional voltage (must be between MIN_SUPPLY_VOLTAGE_V and MAX_SUPPLY_VOLTAGE_V), instantiates the
     selected power meter implementation based on power-related CLI flags, assigns it to the
     module-global `meter`, and, if a voltage is provided, sets the meter voltage and
     powers it on. When powering on, optionally waits for user confirmation or sleeps
@@ -1799,8 +1805,10 @@ def create_power_meter() -> None:
     v = 0.0
     if args.power_voltage:
         v = float(args.power_voltage)
-        if v < 0.8 or v > 5.0:
-            _cli_exit("Voltage must be between 0.8 and 5.0")
+        if v < MIN_SUPPLY_VOLTAGE_V or v > MAX_SUPPLY_VOLTAGE_V:
+            _cli_exit(
+                f"Voltage must be between {MIN_SUPPLY_VOLTAGE_V}V and {MAX_SUPPLY_VOLTAGE_V}V"
+            )
 
     if args.power_riden:
         meter = RidenPowerSupply(args.power_riden)
