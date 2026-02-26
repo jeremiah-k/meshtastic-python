@@ -4,7 +4,7 @@ import logging
 import re
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 from hypothesis import given
@@ -165,7 +165,7 @@ def test_getNode_with_local():
 def test_getNode_not_local(caplog):
     """Test getNode not local."""
     with MeshInterface(noProto=True) as iface:
-        anode = MagicMock(autospec=Node)
+        anode = create_autospec(Node, instance=True)
         with caplog.at_level(logging.DEBUG):
             with patch("meshtastic.node.Node", return_value=anode):
                 another_node = iface.getNode("bar2")
@@ -182,7 +182,7 @@ def test_getNode_not_local_timeout(
 ) -> None:
     """Test getNode timeout behavior with default and explicit request-channel attempts."""
     with MeshInterface(noProto=True) as iface:
-        anode = MagicMock(autospec=Node)
+        anode = create_autospec(Node, instance=True)
         anode.waitForConfig.return_value = False
         with caplog.at_level(logging.WARNING):
             with patch("meshtastic.node.Node", return_value=anode):
@@ -452,7 +452,7 @@ def test_MeshInterface_sendToRadio_no_proto(caplog):
     """
     with MeshInterface(noProto=True) as iface:
         with caplog.at_level(logging.DEBUG):
-            iface._send_to_radio_impl("foo")  # type: ignore[arg-type]
+            iface._send_to_radio_impl(mesh_pb2.ToRadio())
     assert re.search(r"Subclass must provide toradio", caplog.text, re.MULTILINE)
 
 

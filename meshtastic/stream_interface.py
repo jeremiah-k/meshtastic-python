@@ -159,16 +159,6 @@ class StreamInterface(MeshInterface):
         protocol — waits for the protocol/database download to complete.
         """
 
-        # Send some bogus UART characters to force a sleeping device to wake, and
-        # if the reading statemachine was parsing a bad packet make sure
-        # we write enough start bytes to force it to resync (we don't use START1
-        # because we want to ensure it is looking for START1)
-        p: bytes = bytes([START2] * WAKE_BYTE_COUNT)
-        self._write_bytes(p)
-        time.sleep(DEVICE_WAKE_DELAY)  # give device time to start running
-        # Reset shutdown flag so reconnect works after close()
-        self._wantExit = False
-
         # Check if thread has already been started (threads can only be started once)
         # If ident is not None, the thread was started before and needs recreation.
         with self._connect_lock:
@@ -177,6 +167,14 @@ class StreamInterface(MeshInterface):
                     "connect() called while reader thread is still alive; ignoring request"
                 )
                 return
+            # All reconnect side effects happen under the same lock so a concurrent
+            # close() intent is not accidentally cleared by an early-return connect().
+            self._wantExit = False
+            # Send bogus UART characters to wake sleeping devices and force parser
+            # resynchronization before starting a new reader thread.
+            p: bytes = bytes([START2] * WAKE_BYTE_COUNT)
+            self._write_bytes(p)
+            time.sleep(DEVICE_WAKE_DELAY)  # give device time to start running
             if self._rxThread.ident is not None:
                 self._rxThread = threading.Thread(
                     target=self.__reader, args=(), daemon=True, name="stream reader"

@@ -42,10 +42,12 @@ on stable architecture and behavior.
 
 ## 4) Non-Goals
 
-- No Python 3.9 compatibility work.
-- No broad API removals from historical public surfaces without explicit policy.
-- No large behavior changes in user-facing paths unless justified by safety or
-  correctness and backed by tests.
+- Maintaining Python 3.9 compatibility is intentionally not supported in this
+  refactor; support was actively removed because Python 3.9 is EOL.
+- Broad API removals from historical public surfaces are out of scope without
+  explicit policy.
+- Large behavior changes in user-facing paths are only introduced when
+  justified by safety/correctness and backed by tests.
 
 ## 5) Source-of-Truth Compatibility Baseline (Pinned)
 
@@ -378,27 +380,15 @@ This refactor intentionally focused first on architecture, correctness,
 compatibility, and test stability. A follow-up PR is planned to update the rest
 of the dependency set and handle any resulting regressions.
 
-Current security advisories reported by:
+Do not treat this document as a vulnerability snapshot. For current remediation
+targets, use fresh `osv-scanner` output from trunk/CI and update guidance from
+live advisories at update time. Regenerate current findings with:
 
 - `.trunk/trunk check --filter=osv-scanner --show-existing`
-
-As of 2026-02-26, `poetry.lock` reports:
-
-- `flask 3.0.3`: `GHSA-68rp-wp8r-4726` (low)
-  - Live advisory: <https://github.com/advisories/GHSA-68rp-wp8r-4726>
-- `werkzeug 3.0.6`: `GHSA-29vq-49wr-vm6x` (medium)
-  - Live advisory: <https://github.com/advisories/GHSA-29vq-49wr-vm6x>
-- `werkzeug 3.0.6`: `GHSA-87hc-h4r5-73f7` (medium)
-  - Live advisory: <https://github.com/advisories/GHSA-87hc-h4r5-73f7>
-- `werkzeug 3.0.6`: `GHSA-hgf8-39gv-g3f2` (medium)
-  - Live advisory: <https://github.com/advisories/GHSA-hgf8-39gv-g3f2>
-
-Use the latest `osv-scanner` output and the advisory links above to fetch
-current remediation versions at update time.
 
 The follow-up dependency PR will:
 
 - align packages to current supported releases,
-- clear the above advisories,
+- clear active advisories,
 - run full lint/type/test gates,
 - and include regression fixes needed by dependency behavior changes.
