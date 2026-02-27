@@ -20,7 +20,7 @@ from typing import IO, Any, Callable, Literal, TypeAlias
 import google.protobuf.json_format
 
 try:
-    import print_color  # type: ignore[import-untyped,import-not-found]
+    import print_color  # type: ignore[import-untyped]
 except ImportError:
     print_color = None
 
