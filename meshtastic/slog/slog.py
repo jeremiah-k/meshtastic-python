@@ -231,35 +231,35 @@ class PowerLogger:
         with self._reading_lock:
             if now is None:
                 now = datetime.now()
-            average_mA = self._p_meter.getAverageCurrentMA()
-            max_mA = self._p_meter.getMaxCurrentMA()
-            min_mA = self._p_meter.getMinCurrentMA()
-            nominal_voltage = self._nominal_voltage_v()
-            if nominal_voltage is None:
-                average_mW = average_mA
-                max_mW = max_mA
-                min_mW = min_mA
-                if not self._warned_legacy_mw_without_voltage:
-                    logger.warning(
-                        "Power meter does not expose nominal voltage; storing legacy *_mW aliases with mA-equivalent values."
-                    )
-                    self._warned_legacy_mw_without_voltage = True
-            else:
-                average_mW = average_mA * nominal_voltage
-                max_mW = max_mA * nominal_voltage
-                min_mW = min_mA * nominal_voltage
-            d = {
-                "time": now,
-                "average_mA": average_mA,
-                "max_mA": max_mA,
-                "min_mA": min_mA,
-                # Historical field names kept as aliases to avoid schema breakage.
-                # Prefer *_mA for current values in new consumers.
-                "average_mW": average_mW,
-                "max_mW": max_mW,
-                "min_mW": min_mW,
-            }
             try:
+                average_mA = self._p_meter.getAverageCurrentMA()
+                max_mA = self._p_meter.getMaxCurrentMA()
+                min_mA = self._p_meter.getMinCurrentMA()
+                nominal_voltage = self._nominal_voltage_v()
+                if nominal_voltage is None:
+                    average_mW = average_mA
+                    max_mW = max_mA
+                    min_mW = min_mA
+                    if not self._warned_legacy_mw_without_voltage:
+                        logger.warning(
+                            "Power meter does not expose nominal voltage; storing legacy *_mW aliases with mA-equivalent values."
+                        )
+                        self._warned_legacy_mw_without_voltage = True
+                else:
+                    average_mW = average_mA * nominal_voltage
+                    max_mW = max_mA * nominal_voltage
+                    min_mW = min_mA * nominal_voltage
+                d = {
+                    "time": now,
+                    "average_mA": average_mA,
+                    "max_mA": max_mA,
+                    "min_mA": min_mA,
+                    # Historical field names kept as aliases to avoid schema breakage.
+                    # Prefer *_mA for current values in new consumers.
+                    "average_mW": average_mW,
+                    "max_mW": max_mW,
+                    "min_mW": min_mW,
+                }
                 self.writer.addRow(d)
             finally:
                 self._p_meter.resetMeasurements()
