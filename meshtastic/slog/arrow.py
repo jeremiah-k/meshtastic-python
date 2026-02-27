@@ -144,8 +144,8 @@ class ArrowWriter:
             if write_exc is not None:
                 if cleanup_exc is not None:
                     logger.warning(
-                        "Suppressed close() cleanup failure after write error: %s",
-                        cleanup_exc,
+                        "Suppressed close() cleanup failure after write error.",
+                        exc_info=cleanup_exc,
                     )
                 raise write_exc
             if cleanup_exc is not None:

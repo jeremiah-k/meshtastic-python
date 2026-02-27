@@ -603,6 +603,12 @@ class BLEClient:
                 exc_info=True,
             )
 
+    @staticmethod
+    def _close_coroutine_safely(coro: Coroutine[Any, Any, Any]) -> None:
+        """Best-effort close to suppress never-awaited coroutine warnings."""
+        with contextlib.suppress(Exception):
+            coro.close()
+
     def _async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
     ) -> Any:
@@ -632,13 +638,11 @@ class BLEClient:
         # scheduling, and pending-future registration.
         with self._close_lock:
             if self._closed:
-                with contextlib.suppress(Exception):
-                    coro.close()
+                self._close_coroutine_safely(coro)
                 raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
             runner_thread = getattr(self._runner, "_thread", None)
             if runner_thread is current_thread():
-                with contextlib.suppress(Exception):
-                    coro.close()
+                self._close_coroutine_safely(coro)
                 raise self.BLEError(BLECLIENT_ERROR_RUNNER_THREAD_WAIT)
 
             # Exception mapping contract:
@@ -735,15 +739,12 @@ class BLEClient:
         """
         with self._close_lock:
             if self._closed:
-                with contextlib.suppress(Exception):
-                    coro.close()
+                self._close_coroutine_safely(coro)
                 raise self.BLEError(BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED)
             try:
                 return self._runner._run_coroutine_threadsafe(coro)
             except RuntimeError as e:
-                # Close the coroutine to prevent "coroutine was never awaited" warning
-                with contextlib.suppress(Exception):
-                    coro.close()
+                self._close_coroutine_safely(coro)
                 raise self.BLEError(BLECLIENT_ERROR_FAILED_TO_SCHEDULE.format(e)) from e
 
     # COMPAT_STABLE_SHIM (2.7.7): historical public BLEClient API.

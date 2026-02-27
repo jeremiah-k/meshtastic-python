@@ -117,6 +117,7 @@ POWER_LOG_SCHEMA_METADATA: dict[bytes | str, bytes | str] = {
     ),
 }
 POWER_LOGGER_JOIN_TIMEOUT = 1.0
+INTERVAL_REQUIRED_MESSAGE = "interval must be > 0 seconds"
 DIR_NAME_REQUIRED_MESSAGE = "dir_name must be a non-empty path when provided"
 
 
@@ -143,7 +144,7 @@ class PowerLogger:
             If interval is not a positive number.
         """
         if interval <= 0:
-            raise ValueError("interval must be > 0 seconds")
+            raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
         power_schema_fields: list[Any] = [

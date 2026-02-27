@@ -99,4 +99,10 @@ poetry run mypy meshtastic/ --strict
   - linux checks (linux docker): `act --matrix "python-version:3.13"`
   - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:3.13"`
 
+The `-P ...=-self-hosted` mapping is optional. It tells `act` to run that job on
+your host machine instead of in a container, which can be useful for
+performance and for checks that need host-specific behavior. If you prefer
+containerized runs, omit the `-P` mapping (as in the Linux-on-Windows example
+above).
+
 For more commands see [CI workflow](.github/workflows/ci.yml)

@@ -11,7 +11,7 @@ from pubsub import pub
 import meshtastic.tcp_interface
 
 
-def onConnection(interface, topic=pub.AUTO_TOPIC):  # pylint: disable=unused-argument
+def onConnection(interface, _topic=pub.AUTO_TOPIC):  # pylint: disable=unused-argument
     """Handle (re)connection to the radio."""
     print(interface.myInfo)
 

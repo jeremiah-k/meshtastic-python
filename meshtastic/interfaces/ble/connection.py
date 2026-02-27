@@ -468,7 +468,7 @@ class ConnectionOrchestrator:
                     self.client_manager._connect_client(client, timeout=direct_timeout)
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise
-                except (BleakError, OSError, TimeoutError) as direct_err:
+                except (BleakError, BLEClient.BLEError, OSError, TimeoutError) as direct_err:
                     logger.debug(
                         "Direct connect to %s failed; falling back to discovery: %s",
                         normalized_target,

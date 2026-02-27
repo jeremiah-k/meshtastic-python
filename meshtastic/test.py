@@ -262,15 +262,19 @@ def testSend(
         expected_to_node = toNode
         expected_text = None if asBinary else f"Test {testNumber}"
     try:
-        if not asBinary:
-            fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
-        else:
-            fromInterface.sendData(
-                (f"Binary {testNumber}").encode("utf-8"),
-                toNode,
-                portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP,
-                wantAck=wantAck,
-            )
+        try:
+            if not asBinary:
+                fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
+            else:
+                fromInterface.sendData(
+                    (f"Binary {testNumber}").encode("utf-8"),
+                    toNode,
+                    portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP,
+                    wantAck=wantAck,
+                )
+        except Exception:  # noqa: BLE001 - convert send failures into test failures
+            logger.exception("Send failed for test %s", testNumber)
+            return False
         for _ in range(60):  # max of 60 secs before we timeout
             time.sleep(1)
             with guards_lock:

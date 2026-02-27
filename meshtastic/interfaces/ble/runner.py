@@ -401,6 +401,12 @@ class BLECoroutineRunner:
         except Exception as e:  # noqa: BLE001 - task cancellation is best-effort
             logger.debug("Exception during task cancellation: %s", e)
 
+    @staticmethod
+    def _close_coroutine_safely(coro: Coroutine[Any, Any, Any]) -> None:
+        """Best-effort close to suppress never-awaited coroutine warnings."""
+        with contextlib.suppress(Exception):
+            coro.close()
+
     def _run_coroutine_threadsafe(
         self,
         coro: Coroutine[Any, Any, T],
@@ -450,26 +456,20 @@ class BLECoroutineRunner:
         try:
             self._ensure_running(timeout=effective_startup_timeout)
         except Exception:  # noqa: BLE001 - ensure coroutine is closed before re-raise
-            # Close the coroutine to prevent "coroutine was never awaited" warning
-            with contextlib.suppress(Exception):
-                coro.close()
+            self._close_coroutine_safely(coro)
             raise
 
         with self._instance_lock:
             loop = self._loop
 
         if loop is None or not loop.is_running():
-            # Close the coroutine to prevent "coroutine was never awaited" warning
-            with contextlib.suppress(Exception):
-                coro.close()
+            self._close_coroutine_safely(coro)
             raise RuntimeError(BLECLIENT_ERROR_LOOP_NOT_AVAILABLE)
 
         try:
             future = asyncio.run_coroutine_threadsafe(coro, loop)
         except Exception:  # noqa: BLE001 - ensure coroutine is closed before re-raise
-            # Close the coroutine to prevent "coroutine was never awaited" warning
-            with contextlib.suppress(Exception):
-                coro.close()
+            self._close_coroutine_safely(coro)
             raise
         # Protect concurrent access to _pending_futures WeakSet
         with self._instance_lock:

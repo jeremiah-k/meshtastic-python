@@ -52,7 +52,14 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
-            expire_unix = int(datetime.datetime.fromisoformat(args.expire).timestamp())
+            try:
+                expire_unix = int(
+                    datetime.datetime.fromisoformat(args.expire).timestamp()
+                )
+            except ValueError:
+                raise SystemExit(
+                    f"Invalid --expire: {args.expire!r}; expected ISO8601 format."
+                ) from None
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,
