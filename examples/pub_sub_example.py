@@ -1,5 +1,6 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/pub_sub_example.py
+
+To run: `python examples/pub_sub_example.py host`.
 """
 
 import sys
@@ -11,7 +12,7 @@ import meshtastic.tcp_interface
 
 
 def onConnection(interface, topic=pub.AUTO_TOPIC):  # pylint: disable=unused-argument
-    """This is called when we (re)connect to the radio."""
+    """Handle (re)connection to the radio."""
     print(interface.myInfo)
 
 
@@ -28,7 +29,7 @@ def main() -> None:
             time.sleep(5)
     except OSError as exc:
         print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

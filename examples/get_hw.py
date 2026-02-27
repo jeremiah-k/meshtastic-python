@@ -1,5 +1,6 @@
 """Print the local node's hardware model.
-To run: python examples/get_hw.py
+
+To run: `python examples/get_hw.py`.
 """
 
 import sys

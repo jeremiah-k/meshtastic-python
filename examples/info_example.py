@@ -1,5 +1,6 @@
 """List known mesh nodes with their hardware model information.
-To run: python examples/info_example.py.
+
+To run: `python examples/info_example.py`.
 """
 
 import meshtastic.serial_interface

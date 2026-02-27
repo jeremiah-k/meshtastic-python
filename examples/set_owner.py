@@ -1,5 +1,6 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/set_owner.py Bobby 333
+
+To run: `python examples/set_owner.py Bobby 333`.
 """
 
 import sys

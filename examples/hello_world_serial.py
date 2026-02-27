@@ -1,5 +1,6 @@
 """Simple program to demo how to use meshtastic library.
-   To run: python examples/hello_world_serial.py
+
+To run: `python examples/hello_world_serial.py`.
 """
 
 import sys

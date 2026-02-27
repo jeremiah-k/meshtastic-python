@@ -1,5 +1,6 @@
-"""Program to scan for hardware
-   To run: python examples/scan_for_devices.py
+"""Program to scan for hardware.
+
+To run: `python examples/scan_for_devices.py`.
 """
 
 import sys
