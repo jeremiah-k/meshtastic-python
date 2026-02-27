@@ -20,6 +20,7 @@ OPTIONAL_ANALYSIS_DEPS = {
 ADDRESS_IN_USE_ERROR = "address already in use"
 
 try:
+    import numpy as np
     import pandas as pd
     from pyarrow import feather
 
@@ -164,6 +165,14 @@ def test_get_board_info_rejects_non_integral_float_board_id() -> None:
 def test_get_board_info_rejects_decimal_string_board_id() -> None:
     """get_board_info should reject non-integer string board_id values."""
     frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": ["1.5"]})
+    with pytest.raises(ValueError, match="Invalid board_id value in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_rejects_numpy_bool_board_id() -> None:
+    """get_board_info should reject numpy boolean board_id values."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [np.bool_(True)]})
     with pytest.raises(ValueError, match="Invalid board_id value in dslog"):
         get_board_info(frame)
 

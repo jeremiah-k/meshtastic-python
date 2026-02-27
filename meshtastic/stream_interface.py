@@ -75,6 +75,12 @@ class StreamInterface(MeshInterface):
     class StreamClosedError(StreamInterfaceError, ConnectionError):
         """Raised when stream I/O is attempted without an active stream."""
 
+        DEFAULT_MSG = "stream is not available"
+
+        def __init__(self, message: str = DEFAULT_MSG) -> None:
+            """Initialize with a provided or default stream-closed message."""
+            super().__init__(message)
+
     def __init__(  # pylint: disable=R0917
         self,
         debugOut: IO[str] | Callable[[str], Any] | None = None,
@@ -237,7 +243,7 @@ class StreamInterface(MeshInterface):
         """
         s = self.stream
         if s is None or not getattr(s, "is_open", True):
-            raise StreamInterface.StreamClosedError("stream is not available")
+            raise StreamInterface.StreamClosedError()
         s.write(b)
         s.flush()
         # win11 might need a bit more time, too
@@ -269,7 +275,7 @@ class StreamInterface(MeshInterface):
         # Default is_open to True for stream types that don't expose this attribute,
         # treating them as open for backward compatibility (e.g., mock streams, test doubles).
         if s is None or not getattr(s, "is_open", True):
-            raise StreamInterface.StreamClosedError("stream is not available")
+            raise StreamInterface.StreamClosedError()
         return s.read(length)  # type: ignore[no-any-return]
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:

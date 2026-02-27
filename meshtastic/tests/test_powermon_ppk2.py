@@ -79,6 +79,7 @@ def test_setIsSupply_starts_measurement_once(
     mock_thread.is_alive.return_value = False
     mock_thread.ident = None
     ppk.measurement_thread = mock_thread
+    ppk.resetMeasurements = MagicMock()  # type: ignore[method-assign]
     monkeypatch.setattr("meshtastic.powermon.ppk2.time.sleep", lambda _: None)
 
     ppk.setIsSupply(is_supply=True)
@@ -88,11 +89,12 @@ def test_setIsSupply_starts_measurement_once(
     ppk.r.use_source_meter.assert_called_once()
     # The original mock_thread.start() should be called (not a new thread created)
     mock_thread.start.assert_called_once()
+    assert ppk.resetMeasurements.call_count == 2
 
 
 @pytest.mark.unit
 def test_setIsSupply_does_not_restart_when_already_measuring(
-    ppk2_stub: "PPK2PowerSupply",
+    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
     """setIsSupply() should not re-issue start_measuring when reader thread is active."""
     ppk = ppk2_stub
@@ -100,6 +102,8 @@ def test_setIsSupply_does_not_restart_when_already_measuring(
     ppk.r = MagicMock()
     ppk.measurement_thread = MagicMock()
     ppk.measurement_thread.is_alive.return_value = True
+    ppk.resetMeasurements = MagicMock()  # type: ignore[method-assign]
+    monkeypatch.setattr("meshtastic.powermon.ppk2.time.sleep", lambda _: None)
 
     ppk.setIsSupply(is_supply=False)
 
@@ -107,6 +111,7 @@ def test_setIsSupply_does_not_restart_when_already_measuring(
     ppk.r.start_measuring.assert_not_called()
     ppk.r.use_ampere_meter.assert_called_once()
     ppk.measurement_thread.start.assert_not_called()
+    assert ppk.resetMeasurements.call_count == 2
 
 
 @pytest.mark.unit

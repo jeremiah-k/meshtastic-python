@@ -2,7 +2,7 @@
 
 import logging
 import math
-from threading import Event, RLock
+from threading import TIMEOUT_MAX, Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, NamedTuple, cast
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
@@ -289,6 +289,13 @@ class ReconnectWorker:
                 value,
             )
             return None
+        if sleep_delay > TIMEOUT_MAX:
+            logger.warning(
+                "Reconnect policy next_attempt delay %r exceeded threading.TIMEOUT_MAX (%s); capping to maximum.",
+                sleep_delay,
+                TIMEOUT_MAX,
+            )
+            sleep_delay = TIMEOUT_MAX
         if sleep_delay < 0.0:
             logger.error(
                 "Reconnect policy next_attempt returned negative delay: %r",

@@ -173,6 +173,7 @@ class PowerLogger:
         self.interval = interval
         self._warned_legacy_mw_without_voltage = False
         self._warned_store_current_reading_deprecation = False
+        self._deprecation_warning_lock = threading.Lock()
         self._reading_lock = threading.Lock()
         self._stop_event = threading.Event()
         self.is_logging = True
@@ -274,13 +275,18 @@ class PowerLogger:
     # COMPAT_DEPRECATE: snake_case alias for storeCurrentReading (warns once)
     def store_current_reading(self, now: datetime | None = None) -> None:
         """Use `storeCurrentReading()` instead."""
-        if not self._warned_store_current_reading_deprecation:
-            warnings.warn(
-                "store_current_reading() is deprecated; use storeCurrentReading() instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._warned_store_current_reading_deprecation = True
+        deprecation_warning_lock = getattr(self, "_deprecation_warning_lock", None)
+        if deprecation_warning_lock is None:
+            deprecation_warning_lock = threading.Lock()
+            self._deprecation_warning_lock = deprecation_warning_lock
+        with deprecation_warning_lock:
+            if not self._warned_store_current_reading_deprecation:
+                warnings.warn(
+                    "store_current_reading() is deprecated; use storeCurrentReading() instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self._warned_store_current_reading_deprecation = True
         self._store_current_reading(now)
 
     def _logging_thread(self) -> None:

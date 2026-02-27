@@ -58,6 +58,7 @@ def test_init_on_position_receive(
     with caplog.at_level(logging.DEBUG):
         _on_position_receive(iface, packet)
     assert re.search(r"in _on_position_receive", caplog.text, re.MULTILINE)
+    iface._get_or_create_by_num.assert_not_called()
 
 
 @pytest.mark.unit

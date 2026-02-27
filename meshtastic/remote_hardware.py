@@ -132,7 +132,7 @@ def _get_watch_masks_lock(interface: "MeshInterface") -> LockLike:
     return cast(LockLike, lock)
 
 
-def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
+def onGPIOReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     """Handle an incoming remote hardware (GPIO) response packet, log its summary, and mark the interface as having received a response.
 
     Extracts `gpioValue` from packet["decoded"]["remotehw"] (defaults to 0 if
@@ -205,10 +205,16 @@ def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     interface.gotResponse = True
 
 
-# COMPAT_STABLE_SHIM: alias for onGpioReceive
+# COMPAT_STABLE_SHIM: alias for onGPIOReceive
+def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
+    """Backward-compatible alias for onGPIOReceive."""
+    onGPIOReceive(packet, interface)
+
+
+# COMPAT_STABLE_SHIM: alias for onGPIOReceive
 def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
-    """Backward-compatible alias for onGpioReceive."""
-    onGpioReceive(packet, interface)
+    """Backward-compatible alias for onGPIOReceive."""
+    onGPIOReceive(packet, interface)
 
 
 class RemoteHardwareClient:
@@ -244,7 +250,7 @@ class RemoteHardwareClient:
             already_subscribed = False
             try:
                 already_subscribed = pub.isSubscribed(
-                    onGpioReceive, REMOTE_HARDWARE_TOPIC
+                    onGPIOReceive, REMOTE_HARDWARE_TOPIC
                 )
             except pub.TopicNameError:
                 # Topic may not exist yet; subscribe below to create/register it.
@@ -255,7 +261,7 @@ class RemoteHardwareClient:
                 )
                 already_subscribed = False
             if not already_subscribed:
-                pub.subscribe(onGpioReceive, REMOTE_HARDWARE_TOPIC)
+                pub.subscribe(onGPIOReceive, REMOTE_HARDWARE_TOPIC)
 
     def _send_hardware(
         self,

@@ -398,9 +398,9 @@ class BLEClient:
         bool
             `true` if the characteristic is present, `false` otherwise.
         """
-        if self.bleak_client is None:
-            return False
         bleak_client = self.bleak_client
+        if bleak_client is None:
+            return False
 
         def _read_services_property() -> Any:
             """Read Bleak services property, treating BleakError as unavailable."""

@@ -24,7 +24,14 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
     -------
     tuple[int, str]
         Exit code and combined stdout/stderr output.
+
+    Raises
+    ------
+    ValueError
+        If command is empty or whitespace-only.
     """
+    if not command.strip():
+        raise ValueError("Empty command passed to CLI shell helper")
     try:
         # Intentional shell=True for legacy string-based test commands.
         # For argv + shell=False patterns, use run_cli_argv_with_timeout.

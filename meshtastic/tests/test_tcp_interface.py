@@ -146,6 +146,21 @@ def test_TCPInterface_write_raises_when_socket_missing() -> None:
 
 
 @pytest.mark.unit
+def test_TCPInterface_write_reraises_socket_errors() -> None:
+    """_write_bytes should propagate socket write failures after cleanup."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        mock_socket = MagicMock()
+        mock_socket.sendall.side_effect = OSError("boom")
+        iface.socket = mock_socket
+
+        with pytest.raises(OSError, match="boom"):
+            iface._write_bytes(b"abc")
+
+        assert iface.socket is None
+
+
+@pytest.mark.unit
 def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
     """Test that _read_bytes avoids reconnect attempts during intentional shutdown."""
     with patch("socket.socket"):

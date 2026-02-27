@@ -10,7 +10,8 @@ Lock Ordering Note:
 
 Context Manager Usage:
     Prefer using _addr_lock_context() over manual _get_addr_lock()/_release_addr_lock()
-    calls to ensure proper holder count management:
+    or _get_addr_lock_by_key()/_release_addr_lock_by_key() calls to ensure
+    proper holder-count management:
 
         with _addr_lock_context(address) as lock:
             with lock:
@@ -19,6 +20,9 @@ Context Manager Usage:
                 # (it does not touch _LOCK_HOLDERS), which prevents _release_addr_lock_by_key
                 # from removing the lock entry when the context exits.
                 # On failure/exception: context manager releases holder count
+
+    Note: _addr_lock_context() yields the per-address RLock handle but does not
+    acquire it; callers must explicitly acquire it with `with lock:`.
 """
 
 import logging
@@ -290,7 +294,10 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
 
     Notes
     -----
-    Must be called while holding `_REGISTRY_LOCK`.
+    Must be called while holding the reentrant `_REGISTRY_LOCK` (`RLock`).
+    This function may call `_cleanup_addr_lock()`, which also acquires
+    `_REGISTRY_LOCK`; nested acquisition is intentional and safe because the
+    lock is reentrant.
     """
     marked_at = _CONNECTED_MARKED_AT.get(key)
     if marked_at is None or (

@@ -274,7 +274,6 @@ class PPK2PowerSupply(PowerSupply):
 
         if not is_measuring:
             self.measuring = True
-            self.resetMeasurements()
 
             # Thread objects are single-use; create a fresh one if the previous
             # thread has already been started (and possibly joined via close()).
@@ -284,10 +283,15 @@ class PPK2PowerSupply(PowerSupply):
                 )
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()
-            time.sleep(
-                STABILIZATION_DELAY_S
-            )  # discard bogus initial power readings in the FIFO
-            self.resetMeasurements()
+        else:
+            # Preserve measuring intent when switching mode on a running thread.
+            self.measuring = True
+
+        # Mode switches can produce transient FIFO samples. Clear windows, allow
+        # stabilization, then reset again so post-switch stats start clean.
+        self.resetMeasurements()
+        time.sleep(STABILIZATION_DELAY_S)
+        self.resetMeasurements()
 
     def powerOn(self) -> None:
         """Power on the DUT (Device Under Test)."""

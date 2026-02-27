@@ -68,7 +68,9 @@ class ReconnectPolicy:
         max_delay : float
             Maximum delay in seconds; must be greater than or equal to initial_delay. (Default value = 30.0)
         backoff : float
-            Multiplicative factor applied to the delay between attempts; must be greater than 1.0. (Default value = 2.0)
+            Multiplicative factor applied to the delay between attempts; must be
+            greater than 1.0 (backoff == 1.0 is rejected because it yields
+            constant retry delay with no exponential growth). (Default value = 2.0)
         jitter_ratio : float
             Fractional symmetric jitter applied to the computed delay, between 0.0 and 1.0. (Default value = 0.1)
         max_retries : int | None

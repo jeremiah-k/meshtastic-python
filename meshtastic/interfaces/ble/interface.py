@@ -23,7 +23,6 @@ Threading model summary
   idempotent and synchronized through the shared state manager lock.
 """
 
-import asyncio
 import atexit
 import contextlib
 import struct
@@ -99,7 +98,7 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-from meshtastic.interfaces.ble.utils import _sleep, sanitize_address
+from meshtastic.interfaces.ble.utils import _sleep, sanitize_address, with_timeout
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
@@ -1030,12 +1029,14 @@ class BLEInterface(MeshInterface):
         BLEInterface.BLEError
             If the awaitable does not finish before the timeout elapses.
         """
-        if timeout is None:
-            return await awaitable
-        try:
-            return await asyncio.wait_for(awaitable, timeout=timeout)
-        except asyncio.TimeoutError as exc:
-            raise BLEInterface.BLEError(ERROR_TIMEOUT.format(label, timeout)) from exc
+        return await with_timeout(
+            awaitable,
+            timeout,
+            label,
+            timeout_error_factory=lambda timeout_label, timeout_seconds: BLEInterface.BLEError(
+                ERROR_TIMEOUT.format(timeout_label, timeout_seconds)
+            ),
+        )
 
     @staticmethod
     def scan() -> list[BLEDevice]:
