@@ -392,3 +392,18 @@ The follow-up dependency PR will:
 - clear active advisories,
 - run full lint/type/test gates,
 - and include regression fixes needed by dependency behavior changes.
+
+## 16) Current Status Snapshot
+
+The following items are complete in this PR branch:
+
+- BLE compatibility layer remains explicit and narrow, with historical BLE entrypoints preserved.
+- `meshtastic.ble_interface` keeps compatibility imports for common legacy Bleak symbols used by downstream callers.
+- `MeshInterface` shared-state locking now includes an explicit lock contract and deadlock-avoidance guidance.
+- Library-level RNG reseeding in `MeshInterface.__init__` was removed (`random.seed()` no longer clobbers caller RNG state).
+- Disconnect publication behavior was tightened so `meshtastic.connection.lost` is emitted once per connected session.
+- Strict type-check compatibility is currently green (`mypy meshtastic/ --strict`).
+
+Still intentionally pending as follow-up work:
+
+- full dependency refresh and advisory remediation workstream described above.

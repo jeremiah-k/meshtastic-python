@@ -169,6 +169,26 @@ class MeshInterface:  # pylint: disable=R0902
         self.metadata: mesh_pb2.DeviceMetadata | None = (
             None  # We don't have device metadata yet
         )
+        # ------------------------------------------------------------------
+        # Locking contract for MeshInterface shared state.
+        #
+        # Shared mutable state is intentionally split by concern:
+        # - _response_handlers_lock: responseHandlers map
+        # - _heartbeat_lock: _closing, heartbeatTimer, _heartbeat_inflight
+        # - _packet_id_lock: currentPacketId generation
+        # - _queue_lock: queue + queueStatus
+        # - _node_db_lock: nodes/nodesByNum/_localChannels plus myInfo/metadata
+        #   and local config/module config copies that are updated from RX thread.
+        #
+        # Deadlock-avoidance rule:
+        # - Do not hold more than one MeshInterface lock at a time.
+        # - If a future change must nest locks, establish and document a single
+        #   global order in this block before introducing nested acquisition.
+        #
+        # Current implementation follows the no-nesting rule by acquiring one
+        # lock, copying/snapshotting needed state, and doing I/O/callbacks after
+        # releasing the lock.
+        # ------------------------------------------------------------------
         # responseHandlers is shared by _add_response_handler (sendData path) and
         # _handle_packet_from_radio (receive thread). Use this lock to serialize
         # responseHandlers access across those call sites.
@@ -193,7 +213,6 @@ class MeshInterface:  # pylint: disable=R0902
         # nodes/nodesByNum/_localChannels and myInfo/metadata/configId/localNode config copies.
         self._node_db_lock = threading.RLock()
         self._closing = False
-        random.seed()  # FIXME, we should not clobber the random seedval here, instead tell user they must call it
         self.currentPacketId: int = random.randint(0, PACKET_ID_MASK)
         self.nodesByNum: dict[int, dict[str, Any]] | None = None
         self.noNodes: bool = noNodes
@@ -1916,16 +1935,18 @@ class MeshInterface:  # pylint: disable=R0902
             return self.currentPacketId
 
     def _disconnected(self) -> None:
-        """Mark the interface as disconnected and publish a meshtastic.connection.lost event.
+        """Mark the interface as disconnected and publish meshtastic.connection.lost once per connection.
 
-        This clears the internal connected flag and schedules a published
-        notification (via the publishing thread) so external listeners are
-        informed that the interface has lost its connection.
+        Clears the internal connected flag and publishes a lost-connection
+        notification only if the interface was previously connected. This keeps
+        shutdown/retry paths from publishing duplicate "lost" events.
         """
+        was_connected = self.isConnected.is_set()
         self.isConnected.clear()
-        publishingThread.queueWork(
-            lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
-        )
+        if was_connected:
+            publishingThread.queueWork(
+                lambda: pub.sendMessage("meshtastic.connection.lost", interface=self)
+            )
 
     def sendHeartbeat(self) -> None:
         """Send a heartbeat message to the radio to indicate the interface is alive."""

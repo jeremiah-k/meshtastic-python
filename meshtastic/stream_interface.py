@@ -114,6 +114,12 @@ class StreamInterface(MeshInterface):
         self.stream: serial.Serial | None = local_stream
         self._rxBuf = bytearray()
         self._wantExit = False
+        # Locking contract:
+        # - _connect_lock serializes connect()/close() transitions that mutate
+        #   _wantExit, stream lifecycle, and reader-thread start.
+        # - Never hold _connect_lock while waiting on thread join or while
+        #   performing MeshInterface callback publication; those paths can call
+        #   back into higher-level code and must remain lock-free.
         # Serialize reader-thread creation/start across concurrent connect() calls.
         self._connect_lock = threading.Lock()
 

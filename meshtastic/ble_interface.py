@@ -7,6 +7,16 @@ Internal implementation classes are available from meshtastic.interfaces.ble
 but should not be considered part of the stable public API.
 """
 
+# Historical module-level imports retained for compatibility with code that
+# imported Bleak symbols from meshtastic.ble_interface in the pre-refactor API.
+# COMPAT_STABLE_SHIM
+from bleak import (  # type: ignore[attr-defined]  # noqa: F401  # pylint: disable=unused-import
+    BLEDevice,
+    BleakClient,
+    BleakScanner,
+)
+from bleak.exc import BleakDBusError, BleakError  # noqa: F401  # pylint: disable=unused-import
+
 # Public API - only export what users actually need
 from meshtastic.interfaces.ble import (  # Main classes; UUID constants (for custom operations); Error messages (for error handling); Utility
     BLECLIENT_ERROR_ASYNC_TIMEOUT,

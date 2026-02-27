@@ -2,7 +2,7 @@
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
 from pubsub import pub
 
@@ -29,6 +29,27 @@ WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
 WATCH_MASKS_INIT_LOCK = threading.Lock()
 
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
+
+
+class LockLike(Protocol):
+    """Minimal lock protocol used for per-interface watch-mask synchronization."""
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        """Acquire the lock."""
+
+    def release(self) -> None:
+        """Release the lock."""
+
+    def __enter__(self) -> "LockLike":
+        """Enter context manager and acquire lock."""
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> None:
+        """Exit context manager and release lock."""
 
 
 def _get_mesh_interface_error() -> type[Exception]:
@@ -86,7 +107,7 @@ def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
     return watch_masks
 
 
-def _get_watch_masks_lock(interface: "MeshInterface") -> threading.Lock:
+def _get_watch_masks_lock(interface: "MeshInterface") -> LockLike:
     """Return the per-interface lock guarding watch-mask state."""
     lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
     if lock is None:
@@ -95,7 +116,7 @@ def _get_watch_masks_lock(interface: "MeshInterface") -> threading.Lock:
             if lock is None:
                 lock = threading.Lock()
                 setattr(interface, WATCH_MASKS_LOCK_ATTR, lock)
-    return lock
+    return cast(LockLike, lock)
 
 
 def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:

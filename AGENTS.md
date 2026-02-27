@@ -70,6 +70,11 @@ package are not historical compatibility surface by default and should not get
 - Keep BLE public exports explicit and narrow (`meshtastic/ble_interface.py` and `meshtastic/interfaces/ble/__init__.py`).
 - Do not leak internal modules/symbols (`runner`, `policies`, `coordination`, etc.) via package exports.
 
+### BLE legacy import compatibility
+
+- `meshtastic.ble_interface` remains a compatibility layer and should keep common historical module-level imports callable for existing callers.
+- Preserve silent compatibility for legacy Bleak imports from `meshtastic.ble_interface` (for example `BleakClient`, `BleakScanner`, `BLEDevice`, `BleakError`, `BleakDBusError`) unless removal is explicitly approved.
+
 ## Deprecation Tracking (lightweight)
 
 Use grep-friendly code comments for compatibility wrappers so future cleanup is one pass:
@@ -161,6 +166,13 @@ Current `COMPAT_DEPRECATE` methods:
 ### mesh_interface warning policy (semantic)
 
 - The `telemetryType` fallback warning in `sendTelemetry` is a **semantic** deprecation (behavioral change, not naming-only). This warning should emit on every unsupported value to alert callers their input is being silently converted.
+
+### mesh_interface concurrency and shutdown policy
+
+- Keep shared state partitioned by lock responsibility (`_node_db_lock`, `_queue_lock`, `_response_handlers_lock`, `_packet_id_lock`, `_heartbeat_lock`).
+- Current contract is **no nested MeshInterface lock acquisition**; snapshot state under one lock and perform I/O/callback publication after releasing it.
+- `MeshInterface` must not call `random.seed()` during initialization; library code should not mutate global RNG seeding.
+- `_disconnected()` should publish `meshtastic.connection.lost` once per connected session (no duplicate lost events from repeated shutdown paths).
 
 ## Release Workflow Modernization Policy
 

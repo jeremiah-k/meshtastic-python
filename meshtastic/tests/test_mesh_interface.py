@@ -330,6 +330,36 @@ def test_connected_noop_when_closing() -> None:
         assert iface.isConnected.is_set() is False
 
 
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_disconnected_publishes_lost_once_per_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_disconnected() should publish at most once for each connected session."""
+    queued_callbacks: list[Any] = []
+
+    def _queue_work(callback: Any) -> None:
+        queued_callbacks.append(callback)
+
+    monkeypatch.setattr(
+        "meshtastic.mesh_interface.publishingThread.queueWork", _queue_work
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        iface.isConnected.set()
+        iface._disconnected()
+        assert len(queued_callbacks) == 1
+
+        # Idempotent while already disconnected.
+        iface._disconnected()
+        assert len(queued_callbacks) == 1
+
+        # A new connection should allow one new lost notification.
+        iface.isConnected.set()
+        iface._disconnected()
+        assert len(queued_callbacks) == 2
+
+
 # TODO
 # @pytest.mark.unit
 # @pytest.mark.usefixtures("reset_mt_config")
