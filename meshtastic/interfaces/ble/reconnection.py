@@ -135,11 +135,10 @@ class ReconnectScheduler:
         try:
             self.thread_coordinator._start_thread(thread)
             thread_ident = getattr(thread, "ident", None)
-            thread_started = bool(getattr(thread, "started", False))
             thread_is_alive = bool(
                 callable(getattr(thread, "is_alive", None)) and thread.is_alive()
             )
-            if thread_ident is None and not thread_started and not thread_is_alive:
+            if thread_ident is None and not thread_is_alive:
                 logger.debug(
                     "Auto-reconnect thread did not start; clearing stale thread reference."
                 )
@@ -379,6 +378,11 @@ class ReconnectWorker:
                         "Attempting BLE auto-reconnect (attempt %d).",
                         attempt_num,
                     )
+                    if not interface.address:
+                        logger.warning(
+                            "Cannot attempt auto-reconnect: interface address is not set."
+                        )
+                        return
                     interface.connect(interface.address)
                 except ReconnectPolicyMissingMethodError as err:
                     logger.exception(

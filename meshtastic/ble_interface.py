@@ -11,11 +11,14 @@ but should not be considered part of the stable public API.
 # imported Bleak symbols from meshtastic.ble_interface in the pre-refactor API.
 # COMPAT_STABLE_SHIM
 from bleak import (  # type: ignore[attr-defined]  # noqa: F401  # pylint: disable=unused-import
-    BLEDevice,
     BleakClient,
     BleakScanner,
+    BLEDevice,
 )
-from bleak.exc import BleakDBusError, BleakError  # noqa: F401  # pylint: disable=unused-import
+from bleak.exc import (  # noqa: F401  # pylint: disable=unused-import
+    BleakDBusError,
+    BleakError,
+)
 
 # Public API - only export what users actually need
 from meshtastic.interfaces.ble import (  # Main classes; UUID constants (for custom operations); Error messages (for error handling); Utility

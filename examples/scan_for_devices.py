@@ -27,9 +27,7 @@ def main() -> None:
         print("Detected possible devices:")
         for device in supported_devices:
             version_suffix = f" {device.version}" if device.version else ""
-            print(
-                f" name:{device.name}{version_suffix} firmware:{device.for_firmware}"
-            )
+            print(f" name:{device.name}{version_suffix} firmware:{device.for_firmware}")
     else:
         print("No supported devices detected.")
 

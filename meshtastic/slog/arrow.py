@@ -174,7 +174,16 @@ class ArrowWriter:
             self.writer = writer
 
     def set_schema(self, schema: pa.Schema) -> None:
-        """Call `setSchema()` instead."""
+        """Wrap _set_schema() for backwards compatibility.
+
+        Delegates to ``_set_schema()`` and preserves previous behavior. Use
+        ``setSchema()`` instead.
+
+        Parameters
+        ----------
+        schema : pa.Schema
+            Schema to set for the Arrow stream.
+        """
         with self._lock:
             if not self._warned_set_schema_deprecation:
                 warnings.warn(
@@ -195,9 +204,9 @@ class ArrowWriter:
         Must be called with ``self._lock`` held.
         """
         is_owned = getattr(self._lock, "_is_owned", None)
-        assert callable(is_owned) and bool(is_owned()), (
-            "_write() called without holding _lock"
-        )
+        assert callable(is_owned) and bool(
+            is_owned()
+        ), "_write() called without holding _lock"
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
@@ -228,7 +237,16 @@ class ArrowWriter:
                 self._write()
 
     def add_row(self, row_dict: dict[str, object]) -> None:
-        """Call `addRow()` instead."""
+        """Wrap _add_row() for backwards compatibility.
+
+        Delegates to ``_add_row()`` and preserves previous behavior. Use
+        ``addRow()`` instead.
+
+        Parameters
+        ----------
+        row_dict : dict[str, object]
+            Row payload to append to the buffered Arrow writer.
+        """
         with self._lock:
             if not self._warned_add_row_deprecation:
                 warnings.warn(

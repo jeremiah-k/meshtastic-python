@@ -28,6 +28,7 @@ WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
 WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
 WATCH_MASKS_INIT_LOCK = threading.Lock()
 
+_MESH_INTERFACE_ERROR_LOCK = threading.Lock()
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
 
 
@@ -62,11 +63,13 @@ def _get_mesh_interface_error() -> type[Exception]:
     """
     global _MESH_INTERFACE_ERROR  # pylint: disable=global-statement
     if _MESH_INTERFACE_ERROR is None:
-        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
-            MeshInterface,
-        )
+        with _MESH_INTERFACE_ERROR_LOCK:
+            if _MESH_INTERFACE_ERROR is None:
+                from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+                    MeshInterface,
+                )
 
-        _MESH_INTERFACE_ERROR = MeshInterface.MeshInterfaceError
+                _MESH_INTERFACE_ERROR = MeshInterface.MeshInterfaceError
     return _MESH_INTERFACE_ERROR
 
 

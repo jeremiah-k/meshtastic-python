@@ -44,6 +44,19 @@ except ModuleNotFoundError as exc:
     raise
 
 
+def _patch_cli_exit_capture(
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, str]
+) -> None:
+    """Patch analysis_main._cli_exit to capture message and raise SystemExit."""
+
+    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
+        _ = return_value
+        captured["message"] = message
+        raise SystemExit(1)
+
+    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+
+
 @pytest.mark.unit
 def test_analysis(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
@@ -82,13 +95,8 @@ def test_main_routes_load_errors_through_cli_exit(
         _ = slog_path
         raise ValueError("bad slog")  # noqa: TRY003
 
-    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
-        _ = return_value
-        captured["message"] = message
-        raise SystemExit(1)
-
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
-    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+    _patch_cli_exit_capture(monkeypatch, captured)
     monkeypatch.setattr(
         sys, "argv", ["fakescriptname", "--no-server", "--slog", os.devnull]
     )
@@ -116,13 +124,8 @@ def test_main_routes_server_startup_errors_through_cli_exit(
         _ = slog_path
         return _FailingApp()
 
-    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
-        _ = return_value
-        captured["message"] = message
-        raise SystemExit(1)
-
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
-    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+    _patch_cli_exit_capture(monkeypatch, captured)
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
