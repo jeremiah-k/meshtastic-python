@@ -228,6 +228,12 @@ class TCPInterface(StreamInterface):
         # Join after socket teardown so a blocking recv() can exit promptly.
         self._join_reader_thread()
 
+    def connect(self) -> None:
+        """Ensure socket availability, then run shared StreamInterface startup."""
+        if self.socket is None and not self._wantExit and not self._fatal_disconnect:
+            self.myConnect()
+        super().connect()
+
     def _write_bytes(self, b: bytes) -> None:
         """Send the full byte sequence over the TCP socket.
 
@@ -238,10 +244,15 @@ class TCPInterface(StreamInterface):
         ----------
         b : bytes
             Bytes to send.
+
+        Raises
+        ------
+        ConnectionError
+            If the TCP socket is missing or disconnected.
         """
         sock = self.socket
         if sock is None:
-            return
+            raise ConnectionError("TCP socket is closed or not connected")
         try:
             # sendall() guarantees full payload transmission or raises.
             sock.sendall(b)

@@ -84,6 +84,7 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator, ThreadLike
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryManager,
+    _looks_like_ble_address,
     _parse_scan_response,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler, DecodeError
@@ -697,21 +698,17 @@ class BLEInterface(MeshInterface):
         if not self.auto_reconnect:
             return
         with self._state_lock:
-            is_closed = self._closed
-            is_closing = self._state_manager._is_closing
-        # Snapshot close state under _state_lock to avoid reconnect TOCTOU.
-        if is_closed:
-            logger.debug(
-                "Skipping auto-reconnect scheduling because interface is closed."
-            )
-            return
-        if is_closing:
-            logger.debug(
-                "Skipping auto-reconnect scheduling because interface is closing."
-            )
-            return
-
-        self._shutdown_event.clear()
+            if self._closed:
+                logger.debug(
+                    "Skipping auto-reconnect scheduling because interface is closed."
+                )
+                return
+            if self._state_manager._is_closing:
+                logger.debug(
+                    "Skipping auto-reconnect scheduling because interface is closing."
+                )
+                return
+            self._shutdown_event.clear()
         self._reconnect_scheduler._schedule_reconnect(
             self.auto_reconnect, self._shutdown_event
         )
@@ -1115,6 +1112,8 @@ class BLEInterface(MeshInterface):
 
         if len(addressed_devices) == 0:
             if address:
+                if not _looks_like_ble_address(address):
+                    raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
                 logger.warning(
                     "No peripherals found for %s via scan; attempting direct address connect",
                     address,

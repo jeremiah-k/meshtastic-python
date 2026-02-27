@@ -4,6 +4,7 @@ import argparse
 import ipaddress
 import logging
 import os
+import re
 from collections.abc import Iterable
 from typing import Any, NoReturn, cast
 
@@ -21,6 +22,8 @@ from ..slog import rootDir
 
 # Configure panda options
 pd.options.mode.copy_on_write = True
+
+BOARD_ID_INTEGER_RE = re.compile(r"^[+-]?[0-9]+$")
 
 
 def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
@@ -239,11 +242,24 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     board_info = board_info[board_info["board_id"].notnull()]
     first_row = board_info.iloc[0]
     sw_version = str(first_row["sw_version"])
+    raw_board_id = first_row["board_id"]
     try:
-        board_id_value = int(first_row["board_id"])
+        if isinstance(raw_board_id, bool):
+            raise ValueError(raw_board_id)  # noqa: TRY301
+        if isinstance(raw_board_id, (float, np.floating)):
+            if not float(raw_board_id).is_integer():
+                raise ValueError(raw_board_id)  # noqa: TRY301
+            board_id_value = int(raw_board_id)
+        elif isinstance(raw_board_id, str):
+            normalized_board_id = raw_board_id.strip()
+            if not BOARD_ID_INTEGER_RE.fullmatch(normalized_board_id):
+                raise ValueError(raw_board_id)  # noqa: TRY301
+            board_id_value = int(normalized_board_id)
+        else:
+            board_id_value = int(raw_board_id)
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"Invalid board_id value in dslog: {first_row['board_id']!r}"
+            f"Invalid board_id value in dslog: {raw_board_id!r}"
         ) from exc  # noqa: TRY003
     try:
         board_model_name = mesh_pb2.HardwareModel.Name(cast(Any, board_id_value))

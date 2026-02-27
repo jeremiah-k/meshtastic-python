@@ -357,7 +357,10 @@ class ConnectionOrchestrator:
                     "Connection invalidated: client disconnected during finalization"
                 )
 
-            self.state_manager._transition_to(ConnectionState.CONNECTED)
+            if not self.state_manager._transition_to(ConnectionState.CONNECTED):
+                raise self.interface.BLEError(
+                    "Connection invalidated during state transition to connected"
+                )
 
         on_connected_func()
         if getattr(self.interface, "_ever_connected", False):

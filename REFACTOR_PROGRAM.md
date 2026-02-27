@@ -79,14 +79,14 @@ Examples where compatibility was explicitly preserved or restored:
 
 ## 6) Standards Adopted Across the Refactor
 
-## 6.1 Typing and Python version
+### 6.1 Typing and Python version
 
 - Target runtime: Python 3.10+.
 - PEP 604 union syntax (`X | None`) and modern annotations used consistently.
 - Type hints expanded in core paths, tests, and callback signatures.
 - Removed stale compatibility patterns that only existed for older runtimes.
 
-## 6.2 Naming policy
+### 6.2 Naming policy
 
 - Public API methods: camelCase.
 - Internal helpers: underscore-prefixed snake_case.
@@ -95,7 +95,7 @@ Examples where compatibility was explicitly preserved or restored:
 
 Detailed naming policy is tracked in `AGENTS.md`.
 
-## 6.3 Compatibility markers
+### 6.3 Compatibility markers
 
 Compatibility wrappers are tagged with grep-friendly comments:
 
@@ -104,7 +104,7 @@ Compatibility wrappers are tagged with grep-friendly comments:
 
 This allows one-pass inventorying and future cleanup planning.
 
-## 6.4 Deprecation discipline
+### 6.4 Deprecation discipline
 
 - Naming-only compatibility wrappers are generally silent unless explicit
   deprecation policy exists.
@@ -114,7 +114,7 @@ This allows one-pass inventorying and future cleanup planning.
 
 ## 7) Major Technical Workstreams
 
-## 7.1 BLE architecture rewrite and stabilization
+### 7.1 BLE architecture rewrite and stabilization
 
 BLE moved from monolithic logic to focused modules for:
 
@@ -135,7 +135,7 @@ Key properties achieved:
 
 The dedicated BLE document (`BLE.md`) captures lower-level BLE internals.
 
-## 7.2 Cross-codebase type and API normalization
+### 7.2 Cross-codebase type and API normalization
 
 Applied the same standards outside BLE:
 
@@ -143,7 +143,7 @@ Applied the same standards outside BLE:
 - Consistent naming and aliasing patterns in powermon/slog/util/mt_config.
 - Reduced mixed-style APIs where no compatibility requirement existed.
 
-## 7.3 Concurrency and race-condition hardening
+### 7.3 Concurrency and race-condition hardening
 
 Refactor work and new tests exposed thread-safety gaps in shared-state paths.
 High-impact fixes were applied in `mesh_interface.py`:
@@ -181,7 +181,7 @@ Recent closeout fixes in those paths include:
   before normalization, preventing name-like identifiers from taking the address
   branch accidentally.
 
-## 7.4 Correctness and guard improvements
+### 7.4 Correctness and guard improvements
 
 Examples of guard hardening added during this cycle:
 
@@ -194,7 +194,7 @@ Examples of guard hardening added during this cycle:
 - `lastReceived` cache sanitization now always returns a shallow copy, avoiding
   aliasing the live packet dictionary in node state.
 
-## 7.5 Test suite expansion and tightening
+### 7.5 Test suite expansion and tightening
 
 Tests were expanded and modernized to cover:
 
@@ -221,7 +221,7 @@ not only local code fixes.
 Some behavior changes were intentionally accepted because they improve library
 quality and embedding safety.
 
-## 8.1 Process exits to exceptions
+### 8.1 Process exits to exceptions
 
 Direction:
 
@@ -237,7 +237,7 @@ Impact:
 
 - Callers that relied on process exit must now handle exceptions explicitly.
 
-## 8.2 `print` to structured logging in library internals
+### 8.2 `print` to structured logging in library internals
 
 Direction:
 
@@ -253,7 +253,7 @@ Impact:
 
 - Consumers scraping stdout for internal events should migrate to log handling.
 
-## 8.3 Sensitive payload handling
+### 8.3 Sensitive payload handling
 
 Direction:
 
@@ -265,7 +265,7 @@ Why:
 - Reduce accidental retention of sensitive admin/session material.
 - Preserve runtime packet semantics for handlers/callbacks.
 
-## 8.4 Localhost-by-default web binding
+### 8.4 Localhost-by-default web binding
 
 Direction:
 
@@ -284,7 +284,7 @@ Impact:
 
 ## 9) Backward Compatibility Strategy by Category
 
-## 9.1 Stable compatibility (no warnings)
+### 9.1 Stable compatibility (no warnings)
 
 Used for historical public APIs that should remain callable and predictable.
 
@@ -293,7 +293,7 @@ Examples:
 - Historical BLE public methods from 2.7.7 baseline.
 - Stable snake_case wrappers required by existing callers.
 
-## 9.2 Deprecated compatibility (warn-once where applicable)
+### 9.2 Deprecated compatibility (warn-once where applicable)
 
 Used for legacy spellings or transitional APIs with a clear migration path.
 
@@ -302,7 +302,7 @@ Examples:
 - Legacy unit-suffix typo method variants in powermon.
 - Selected module-level legacy aliases in utility/config modules.
 
-## 9.3 Semantic migration warnings
+### 9.3 Semantic migration warnings
 
 Used where caller input changes behavior in a meaningful way and warning is
 important to prevent silent misuse.

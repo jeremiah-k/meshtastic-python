@@ -144,13 +144,27 @@ def mt_config_state() -> Generator[None, None, None]:
             snapshot[key] = value
     # Also snapshot and restore warn-once tracking for deprecation warnings
     # Clear before yield so each test starts with fresh warn-once state
+    warned_deprecations_lock = getattr(mt_config, "_warned_deprecations_lock", None)
     warned_deprecations: Any = getattr(mt_config, "_warned_deprecations", set())
-    if isinstance(warned_deprecations, set):
+    if warned_deprecations_lock is not None:
+        with cast(Any, warned_deprecations_lock):
+            if isinstance(warned_deprecations, set):
+                try:
+                    warned_snapshot: set[str] = copy.deepcopy(warned_deprecations)
+                except (
+                    Exception
+                ):  # noqa: BLE001 - deepcopy may fail for unusual set items
+                    warned_snapshot = set(warned_deprecations)
+                # Ensure each test starts from a clean warn-once registry
+                warned_deprecations.clear()
+            else:
+                warned_snapshot = set()
+                mt_config._warned_deprecations = set()
+    elif isinstance(warned_deprecations, set):
         try:
-            warned_snapshot: set[str] = copy.deepcopy(warned_deprecations)
+            warned_snapshot = copy.deepcopy(warned_deprecations)
         except Exception:  # noqa: BLE001 - deepcopy may fail for unusual set items
             warned_snapshot = set(warned_deprecations)
-        # Ensure each test starts from a clean warn-once registry
         warned_deprecations.clear()
     else:
         warned_snapshot = set()
@@ -165,7 +179,17 @@ def mt_config_state() -> Generator[None, None, None]:
             else:
                 setattr(mt_config, key, value)
         warned_deprecations_restore = getattr(mt_config, "_warned_deprecations", None)
-        if isinstance(warned_deprecations_restore, set):
+        warned_deprecations_lock_restore = getattr(
+            mt_config, "_warned_deprecations_lock", None
+        )
+        if warned_deprecations_lock_restore is not None:
+            with cast(Any, warned_deprecations_lock_restore):
+                if isinstance(warned_deprecations_restore, set):
+                    warned_deprecations_restore.clear()
+                    warned_deprecations_restore.update(warned_snapshot)
+                else:
+                    mt_config._warned_deprecations = set(warned_snapshot)
+        elif isinstance(warned_deprecations_restore, set):
             warned_deprecations_restore.clear()
             warned_deprecations_restore.update(warned_snapshot)
         else:

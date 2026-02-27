@@ -136,6 +136,16 @@ def test_TCPInterface_write_uses_sendall() -> None:
 
 
 @pytest.mark.unit
+def test_TCPInterface_write_raises_when_socket_missing() -> None:
+    """_write_bytes should fail fast when no TCP socket is connected."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        iface.socket = None
+        with pytest.raises(ConnectionError, match="closed or not connected"):
+            iface._write_bytes(b"abc")
+
+
+@pytest.mark.unit
 def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
     """Test that _read_bytes avoids reconnect attempts during intentional shutdown."""
     with patch("socket.socket"):

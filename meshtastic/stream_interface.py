@@ -439,6 +439,13 @@ class StreamInterface(MeshInterface):
                 )
             else:
                 disconnect_source = "stream.close_requested"
+        except StreamInterface.StreamClosedError as ex:
+            if self._wantExit:
+                disconnect_source = "stream.close_requested"
+                logger.debug("Stream closed during shutdown: %s", ex)
+            else:
+                disconnect_source = "stream.closed"
+                logger.warning("Stream closed unexpectedly: %s", ex)
         except OSError:
             if (
                 not self._wantExit

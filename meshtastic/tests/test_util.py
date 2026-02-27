@@ -31,6 +31,8 @@ from meshtastic.util import (
     fromStr,
     generate_channel_hash,
     genPSK256,
+    get_devices_with_vendor_id,
+    get_unique_vendor_ids,
     hexstr,
     ipstr,
     is_windows11,
@@ -946,3 +948,41 @@ def test_tdeck_vid_pid_mapping() -> None:
     assert (
         tdeck_devices[0].for_firmware == "t-deck"
     ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+
+
+@pytest.mark.unit
+def test_supported_device_usb_ids_include_aliases() -> None:
+    """T-Deck and Seeed Xiao should include alternate USB VID/PID modes."""
+    tdeck_devices = [d for d in supported_devices if d.name == "T-Deck"]
+    assert len(tdeck_devices) == 1
+    assert ("303a", "1001") in tdeck_devices[0].usb_ids
+    assert ("1a86", "55d4") in tdeck_devices[0].usb_ids
+
+    xiao_devices = [d for d in supported_devices if d.name == "Seeed Xiao ESP32-S3"]
+    assert len(xiao_devices) == 1
+    assert ("2886", "0059") in xiao_devices[0].usb_ids
+    assert ("303a", "1001") in xiao_devices[0].usb_ids
+
+
+@pytest.mark.unit
+def test_supported_device_post_init_normalizes_usb_ids() -> None:
+    """SupportedDevice should normalize USB IDs and drop empty values."""
+    device = SupportedDevice(
+        name="Test Device",
+        usb_vendor_id_in_hex="ABCD",
+        usb_product_id_in_hex="EF01",
+        usb_id_aliases=(("303A", "1001"), ("", "1234")),
+    )
+    assert device.usb_vendor_id_in_hex == "abcd"
+    assert device.usb_product_id_in_hex == "ef01"
+    assert device.usb_id_aliases == (("303a", "1001"),)
+    assert ("abcd", "ef01") in device.usb_ids
+
+
+@pytest.mark.unit
+def test_vendor_lookup_uses_alias_vids() -> None:
+    """Vendor-based lookup should include devices matched through alias VID/PID pairs."""
+    vids = get_unique_vendor_ids()
+    assert "303a" in vids
+    alias_devices = get_devices_with_vendor_id("303a")
+    assert any(device.name == "Seeed Xiao ESP32-S3" for device in alias_devices)

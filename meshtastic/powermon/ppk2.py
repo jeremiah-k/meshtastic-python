@@ -105,6 +105,8 @@ class PPK2PowerSupply(PowerSupply):
                     if self.num_data_reads == 0
                     else SUBSEQUENT_POLL_TIMEOUT_S
                 )
+                if not self.measuring:
+                    break
                 # normally we poll using this timeout, but sometimes
                 # reset_measurement() will notify us to read immediately
 
