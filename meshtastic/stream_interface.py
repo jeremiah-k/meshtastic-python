@@ -51,6 +51,7 @@ class StreamInterface(MeshInterface):
         """Raised when StreamInterface is instantiated without a concrete stream."""
 
         DEFAULT_MSG = "StreamInterface is now abstract (to update existing code create SerialInterface instead)"
+        CONNECT_WITHOUT_STREAM_MSG = "connect() called without an active stream"
 
         def __init__(self, message: str = DEFAULT_MSG) -> None:
             """Initialize the StreamInterfaceError with a provided or default message.
@@ -162,7 +163,7 @@ class StreamInterface(MeshInterface):
         with self._connect_lock:
             if self.stream is None and not _provides_own_stream:
                 raise StreamInterface.StreamInterfaceError(
-                    "connect() called without an active stream"
+                    StreamInterface.StreamInterfaceError.CONNECT_WITHOUT_STREAM_MSG
                 )
             if self._rxThread.is_alive():
                 logger.warning(

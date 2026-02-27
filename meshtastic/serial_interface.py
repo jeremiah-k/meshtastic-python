@@ -186,7 +186,10 @@ class SerialInterface(StreamInterface):
             # Flush and sleep to ensure all pending data is transmitted before closing.
             # This workaround ensures the device receives all data before the serial
             # connection is terminated, particularly important for some USB-serial
-            # adapters and hardware configurations.
+            # adapters and hardware configurations. SERIAL_SETTLING_DELAY (100 ms)
+            # is an empirically chosen compromise that gives common USB serial
+            # stacks time to drain host-side buffers; running the cycle twice has
+            # proven more reliable for delivering trailing bytes before close().
             with contextlib.suppress(OSError, ValueError, serial.SerialException):
                 stream.flush()
                 time.sleep(SERIAL_SETTLING_DELAY)

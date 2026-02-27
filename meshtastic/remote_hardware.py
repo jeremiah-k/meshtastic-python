@@ -86,7 +86,7 @@ def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
     return watch_masks
 
 
-def _get_watch_masks_lock(interface: "MeshInterface") -> threading.Lock:
+def _get_watch_masks_lock(interface: "MeshInterface") -> Any:
     """Return the per-interface lock guarding watch-mask state."""
     lock = getattr(interface, WATCH_MASKS_LOCK_ATTR, None)
     if lock is None:

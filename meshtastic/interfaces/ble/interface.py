@@ -1184,7 +1184,8 @@ class BLEInterface(MeshInterface):
         ConnectionState
             The current connection state of the interface.
         """
-        return self._state_manager._current_state
+        with self._state_lock:
+            return self._state_manager._current_state
 
     @property
     def _is_connection_connected(self) -> bool:
@@ -1195,7 +1196,8 @@ class BLEInterface(MeshInterface):
         bool
             `true` if a BLE connection is active, `false` otherwise.
         """
-        return self._state_manager._is_connected
+        with self._state_lock:
+            return self._state_manager._is_connected
 
     @property
     def _is_connection_closing(self) -> bool:
@@ -1251,10 +1253,12 @@ class BLEInterface(MeshInterface):
         bool
             `True` if the connection should be suppressed because the key is connected elsewhere and this interface is not the active connection, `False` otherwise.
         """
+        with self._state_lock:
+            is_self_connected = self._state_manager._is_connected
         return bool(
             connection_key
             and _is_currently_connected_elsewhere(connection_key, owner=self)
-            and not self._state_manager._is_connected
+            and not is_self_connected
         )
 
     def _raise_if_duplicate_connect(self, connection_key: str | None) -> None:
@@ -1300,7 +1304,6 @@ class BLEInterface(MeshInterface):
                 existing_client,
                 normalized_request,
                 self._last_connection_request,
-                self.address,
             )
         ):
             return existing_client

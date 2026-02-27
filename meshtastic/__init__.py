@@ -285,7 +285,7 @@ def _on_text_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     try:
         as_bytes = as_dict["decoded"]["payload"]
         as_dict["decoded"]["text"] = as_bytes.decode("utf-8")
-    except (UnicodeDecodeError, KeyError, AttributeError):
+    except (UnicodeDecodeError, KeyError, AttributeError, TypeError):
         logger.exception("Malformatted utf8 in text message")
     _receive_info_update(iface, as_dict)
 

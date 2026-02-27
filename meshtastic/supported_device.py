@@ -2,62 +2,26 @@
 It is used for auto detection as to which device might be connected.
 """
 
-# pylint: disable=R0917
+from dataclasses import dataclass
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
 
 
+@dataclass
 class SupportedDevice:
     """Devices supported on Meshtastic."""
 
-    def __init__(
-        self,
-        name: str,
-        version: str | None = None,
-        for_firmware: str | None = None,
-        device_class: str = "esp32",
-        baseport_on_linux: str | None = None,
-        baseport_on_mac: str | None = None,
-        baseport_on_windows: str = "COM",
-        usb_vendor_id_in_hex: str | None = None,
-        usb_product_id_in_hex: str | None = None,
-    ) -> None:
-        """Initialize a SupportedDevice instance.
-
-        Parameters
-        ----------
-        name : str
-            The name of the device.
-        version : str or None, optional
-            The version of the device.
-        for_firmware : str or None, optional
-            The firmware identifier for the device.
-        device_class : str, optional
-            The class of the device (e.g., "esp32", "nrf52").
-        baseport_on_linux : str or None, optional
-            The base port name on Linux (e.g., "ttyUSB", "ttyACM").
-        baseport_on_mac : str or None, optional
-            The base port name on macOS (e.g., "cu.usbserial", "cu.usbmodem").
-        baseport_on_windows : str, optional
-            The base port name on Windows (default "COM").
-        usb_vendor_id_in_hex : str or None, optional
-            The USB vendor ID in hexadecimal.
-        usb_product_id_in_hex : str or None, optional
-            The USB product ID in hexadecimal.
-        """
-        self.name = name
-        self.version = version
-        self.for_firmware = for_firmware
-        self.device_class = device_class  # could be "nrf52"
-
-        # when you run "lsusb -d xxxx:" in linux
-        self.usb_vendor_id_in_hex = usb_vendor_id_in_hex  # store in lower case
-        self.usb_product_id_in_hex = usb_product_id_in_hex  # store in lower case
-
-        self.baseport_on_linux = baseport_on_linux  # ex: ttyUSB or ttyACM
-        self.baseport_on_mac = baseport_on_mac
-        self.baseport_on_windows = baseport_on_windows
+    name: str
+    version: str | None = None
+    for_firmware: str | None = None
+    device_class: str = "esp32"  # could be "nrf52"
+    baseport_on_linux: str | None = None  # ex: ttyUSB or ttyACM
+    baseport_on_mac: str | None = None
+    baseport_on_windows: str = "COM"
+    # when you run "lsusb -d xxxx:" in linux
+    usb_vendor_id_in_hex: str | None = None  # store in lower case
+    usb_product_id_in_hex: str | None = None  # store in lower case
 
 
 # supported devices

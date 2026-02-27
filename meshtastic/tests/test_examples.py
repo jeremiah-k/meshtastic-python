@@ -39,7 +39,9 @@ def test_examples_hello_world_serial_with_arg(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test hello_world_serial with arg in a mocked no-device environment."""
-    monkeypatch.setattr(serial.tools.list_ports, "comports", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        serial.tools.list_ports, "comports", lambda *_args, **_kwargs: []
+    )
     with caplog.at_level(logging.WARNING):
         _run_hello_world_serial(monkeypatch, "hello")
 
