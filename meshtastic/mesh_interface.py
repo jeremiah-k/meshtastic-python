@@ -15,12 +15,12 @@ import traceback
 import warnings
 from datetime import datetime
 from types import TracebackType
-from typing import IO, Any, Callable
+from typing import IO, Any, Callable, Literal, TypeAlias
 
 import google.protobuf.json_format
 
 try:
-    import print_color  # type: ignore[import-untyped]
+    import print_color  # type: ignore[import-untyped,import-not-found]
 except ImportError:
     print_color = None
 
@@ -60,6 +60,24 @@ PACKET_ID_RANDOM_SHIFT_BITS = 10
 
 # Queue backoff while waiting for TX slots to free
 QUEUE_WAIT_DELAY_SECONDS = 0.5
+
+# Accepted sendTelemetry payload kinds.
+TelemetryType: TypeAlias = Literal[
+    "environment_metrics",
+    "air_quality_metrics",
+    "power_metrics",
+    "local_stats",
+    "device_metrics",
+]
+DEFAULT_TELEMETRY_TYPE: TelemetryType = "device_metrics"
+VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
+    "environment_metrics",
+    "air_quality_metrics",
+    "power_metrics",
+    "local_stats",
+    "device_metrics",
+)
+VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
 
 
 def _timeago(delta_secs: int) -> str:
@@ -657,7 +675,9 @@ class MeshInterface:  # pylint: disable=R0902
         for i, row in enumerate(rows):
             row["N"] = i + 1
 
-        table = tabulate(rows, headers="keys", missingval="N/A", tablefmt="fancy_grid")
+        table = str(
+            tabulate(rows, headers="keys", missingval="N/A", tablefmt="fancy_grid")
+        )
         print(table)
         return table
 
@@ -1208,7 +1228,7 @@ class MeshInterface:  # pylint: disable=R0902
         destinationId: int | str = BROADCAST_ADDR,
         wantResponse: bool = False,
         channelIndex: int = 0,
-        telemetryType: str = "device_metrics",
+        telemetryType: TelemetryType | str = DEFAULT_TELEMETRY_TYPE,
     ) -> None:
         """Send a telemetry message to a node or broadcast and optionally wait for a telemetry response.
 
@@ -1225,35 +1245,30 @@ class MeshInterface:  # pylint: disable=R0902
             "power_metrics", "local_stats", and "device_metrics". When "device_metrics" is selected and local device
             metrics are available, the payload is populated from the local node's cached device metrics. (Default value = 'device_metrics')
         """
-        valid_types = {
-            "environment_metrics",
-            "air_quality_metrics",
-            "power_metrics",
-            "local_stats",
-            "device_metrics",
-        }
-        if telemetryType not in valid_types:
+        telemetry_type = telemetryType
+        if telemetry_type not in VALID_TELEMETRY_TYPE_SET:
             # Backwards compatibility: unknown types fall back to device_metrics with deprecation warning
             warnings.warn(
-                f"Unsupported telemetryType '{telemetryType}' is deprecated. "
-                f"Supported values: {sorted(valid_types)}. Falling back to 'device_metrics'. "
+                f"Unsupported telemetryType '{telemetry_type}' is deprecated. "
+                f"Supported values: {sorted(VALID_TELEMETRY_TYPES)}. "
+                f"Falling back to '{DEFAULT_TELEMETRY_TYPE}'. "
                 "This will raise an error in a future version.",
                 DeprecationWarning,
                 stacklevel=2,
             )
-            telemetryType = "device_metrics"
+            telemetry_type = DEFAULT_TELEMETRY_TYPE
 
         r = telemetry_pb2.Telemetry()
 
-        if telemetryType == "environment_metrics":
+        if telemetry_type == "environment_metrics":
             r.environment_metrics.CopyFrom(telemetry_pb2.EnvironmentMetrics())
-        elif telemetryType == "air_quality_metrics":
+        elif telemetry_type == "air_quality_metrics":
             r.air_quality_metrics.CopyFrom(telemetry_pb2.AirQualityMetrics())
-        elif telemetryType == "power_metrics":
+        elif telemetry_type == "power_metrics":
             r.power_metrics.CopyFrom(telemetry_pb2.PowerMetrics())
-        elif telemetryType == "local_stats":
+        elif telemetry_type == "local_stats":
             r.local_stats.CopyFrom(telemetry_pb2.LocalStats())
-        elif telemetryType == "device_metrics":
+        elif telemetry_type == DEFAULT_TELEMETRY_TYPE:
             with self._node_db_lock:
                 node = (
                     self.nodesByNum.get(self.localNode.nodeNum)

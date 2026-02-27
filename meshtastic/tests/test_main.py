@@ -3638,7 +3638,9 @@ def test_main_gpio_rd_no_dest(capsys: pytest.CaptureFixture[str]) -> None:
 # TODO
 # @pytest.mark.unit
 # @pytest.mark.usefixtures("reset_mt_config")
-# def test_main_setPref_valid_field_invalid_enum_where_enums_are_camel_cased_values(capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture) -> None:
+# def test_main_setPref_valid_field_invalid_enum_where_enums_are_camel_cased_values(
+#    capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+# ) -> None:
 #    """Test setPref() with a valid field but invalid enum value"""
 #
 #    radioConfig = RadioConfig()

@@ -17,6 +17,7 @@ import argparse
 import inspect
 import os
 import sys
+import threading
 import types
 import warnings
 from typing import IO, TYPE_CHECKING, Any
@@ -111,19 +112,27 @@ _COMPAT_ALIASES: dict[str, str] = {
 
 # Track which deprecation warnings have been emitted (warn-once per process)
 _warned_deprecations: set[str] = set()
+_warned_deprecations_lock = threading.Lock()
+
+
+def _warn_compat_alias_once(old_name: str, new_name: str) -> None:
+    """Emit the mt_config compatibility deprecation warning once per alias."""
+    with _warned_deprecations_lock:
+        if old_name in _warned_deprecations:
+            return
+        _warned_deprecations.add(old_name)
+    warnings.warn(
+        f"mt_config.{old_name} is deprecated, use mt_config.{new_name} instead",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def __getattr__(name: str) -> Any:
     """Provide backwards-compatible access to renamed module attributes."""
     if name in _COMPAT_ALIASES:
         new_name = _COMPAT_ALIASES[name]
-        if name not in _warned_deprecations:
-            warnings.warn(
-                f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            _warned_deprecations.add(name)
+        _warn_compat_alias_once(name, new_name)
         try:
             return globals()[new_name]
         except KeyError:
@@ -141,13 +150,7 @@ class _MtConfigModule(types.ModuleType):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in _COMPAT_ALIASES:
             new_name = _COMPAT_ALIASES[name]
-            if name not in _warned_deprecations:
-                warnings.warn(
-                    f"mt_config.{name} is deprecated, use mt_config.{new_name} instead",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                _warned_deprecations.add(name)
+            _warn_compat_alias_once(name, new_name)
             super().__setattr__(new_name, value)
             return
         super().__setattr__(name, value)
