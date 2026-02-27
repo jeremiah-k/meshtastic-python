@@ -69,11 +69,12 @@ class ConnectionValidator:
         client: BLEClient | None,
         normalized_request: str | None,
         last_connection_request: str | None,
+        original_address: str | None = None,
     ) -> bool:
         """Return whether the given BLE client corresponds to the requested or a known device address.
 
-        Considers the provided normalized_request, last_connection_request, and the
-        client's bleak address. If `normalized_request` is `None`, any connected
+        Considers the provided normalized_request, last_connection_request, original_address,
+        and the client's bleak address. If `normalized_request` is `None`, any connected
         client is treated as acceptable.
 
         Parameters
@@ -84,6 +85,8 @@ class ConnectionValidator:
             Sanitized identifier for the desired target; when `None` any connected client matches.
         last_connection_request : str | None
             The last sanitized connection request to include among known targets.
+        original_address : str | None
+            The original unsanitized address provided by the caller, included among known targets.
 
         Returns
         -------
@@ -99,13 +102,13 @@ class ConnectionValidator:
             for t in (
                 last_connection_request,
                 sanitize_address(bleak_address),
+                sanitize_address(original_address),
             )
             if t is not None
         }
         return (
             normalized_request is None or normalized_request in normalized_known_targets
         )
-
 
 class ClientManager:
     """Helper for creating, connecting, and closing BLEClient instances."""
