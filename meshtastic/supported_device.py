@@ -1,40 +1,27 @@
-""" Supported Meshtastic Devices - This is a class and collection of Meshtastic devices.
-    It is used for auto detection as to which device might be connected.
+"""Supported Meshtastic Devices - This is a class and collection of Meshtastic devices.
+It is used for auto detection as to which device might be connected.
 """
-# pylint: disable=R0917
+
+from dataclasses import dataclass
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
 
 
+@dataclass(eq=False)
 class SupportedDevice:
-    """Devices supported on Meshtastic"""
+    """Devices supported on Meshtastic."""
 
-    def __init__(
-        self,
-        name,
-        version=None,
-        for_firmware=None,
-        device_class="esp32",
-        baseport_on_linux=None,
-        baseport_on_mac=None,
-        baseport_on_windows="COM",
-        usb_vendor_id_in_hex=None,
-        usb_product_id_in_hex=None,
-    ):
-        """constructor"""
-        self.name = name
-        self.version = version
-        self.for_firmware = for_firmware
-        self.device_class = device_class  # could be "nrf52"
-
-        # when you run "lsusb -d xxxx:" in linux
-        self.usb_vendor_id_in_hex = usb_vendor_id_in_hex  # store in lower case
-        self.usb_product_id_in_hex = usb_product_id_in_hex  # store in lower case
-
-        self.baseport_on_linux = baseport_on_linux  # ex: ttyUSB or ttyACM
-        self.baseport_on_mac = baseport_on_mac
-        self.baseport_on_windows = baseport_on_windows
+    name: str
+    version: str | None = None
+    for_firmware: str | None = None
+    device_class: str = "esp32"  # could be "nrf52"
+    baseport_on_linux: str | None = None  # ex: ttyUSB or ttyACM
+    baseport_on_mac: str | None = None
+    baseport_on_windows: str = "COM"
+    # when you run "lsusb -d xxxx:" in linux
+    usb_vendor_id_in_hex: str | None = None  # store in lower case
+    usb_product_id_in_hex: str | None = None  # store in lower case
 
 
 # supported devices
@@ -139,7 +126,7 @@ heltec_v2_1 = SupportedDevice(
 )
 rak11200 = SupportedDevice(
     name="RAK 11200",
-    version="",
+    version=None,
     for_firmware="rak11200",
     baseport_on_linux="ttyUSB",
     baseport_on_mac="cu.usbserial-",
@@ -168,7 +155,7 @@ techo_1 = SupportedDevice(
 )
 rak4631_5005 = SupportedDevice(
     name="RAK 4631 5005",
-    version="",
+    version=None,
     for_firmware="rak4631_5005",
     device_class="nrf52",
     baseport_on_linux="ttyACM",
@@ -178,7 +165,7 @@ rak4631_5005 = SupportedDevice(
 )
 rak4631_5005_epaper = SupportedDevice(
     name="RAK 4631 5005 14000 epaper",
-    version="",
+    version=None,
     for_firmware="rak4631_5005_epaper",
     device_class="nrf52",
     baseport_on_linux="ttyACM",
@@ -189,7 +176,7 @@ rak4631_5005_epaper = SupportedDevice(
 # Note: The 19003 reports same product id as 5005 in boot mode
 rak4631_19003 = SupportedDevice(
     name="RAK 4631 19003",
-    version="",
+    version=None,
     for_firmware="rak4631_19003",
     device_class="nrf52",
     baseport_on_linux="ttyACM",
@@ -199,7 +186,7 @@ rak4631_19003 = SupportedDevice(
 )
 nano_g1 = SupportedDevice(
     name="Nano G1",
-    version="",
+    version=None,
     for_firmware="nano-g1",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
@@ -208,8 +195,8 @@ nano_g1 = SupportedDevice(
 )
 
 seeed_xiao_s3 = SupportedDevice(
-    name = "Seeed Xiao ESP32-S3",
-    version = "",
+    name="Seeed Xiao ESP32-S3",
+    version=None,
     for_firmware="seeed-xiao-esp32s3",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
@@ -219,16 +206,15 @@ seeed_xiao_s3 = SupportedDevice(
 
 tdeck = SupportedDevice(
     name="T-Deck",
-    version="",
+    version=None,
     for_firmware="t-deck",  # Confirmed firmware identifier
     device_class="esp32",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
     baseport_on_windows="COM",
     usb_vendor_id_in_hex="303a",  # Espressif Systems (VERIFIED)
-    usb_product_id_in_hex="1001", # VERIFIED from actual device
+    usb_product_id_in_hex="1001",  # VERIFIED from actual device
 )
-
 
 
 supported_devices = [

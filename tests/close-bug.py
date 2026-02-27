@@ -1,8 +1,5 @@
 import datetime
-import logging
 import sys
-
-from pubsub import pub
 
 import meshtastic
 

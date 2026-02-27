@@ -5,12 +5,30 @@ import time
 
 from .power_supply import PowerSupply
 
+# Simulation constants
+SIM_BASE_CURRENT_MA = 20.0
+"""Base simulated current in milliamperes."""
+
+SIM_CURRENT_VARIATION_MA = 5.0
+"""Amplitude of sinusoidal current variation in milliamperes."""
+
 
 class SimPowerSupply(PowerSupply):
     """A simulated power supply for testing."""
 
-    def get_average_current_mA(self) -> float:
-        """Returns average current of last measurement in mA (since last call to this method)"""
+    def getAverageCurrentMA(self) -> float:
+        """Return average current of last measurement in mA (since last call to this method).
 
-        # Sim a 20mW load that varies sinusoidally
-        return (20.0 + 5 * math.sin(time.time()))
+        Returns
+        -------
+        float
+            The average current in mA.
+        """
+
+        # Sim an approximately 20mA load that varies sinusoidally
+        return SIM_BASE_CURRENT_MA + SIM_CURRENT_VARIATION_MA * math.sin(time.time())
+
+    # COMPAT_STABLE_SHIM: alias for getAverageCurrentMA
+    def get_average_current_mA(self) -> float:
+        """Shim for getAverageCurrentMA."""
+        return self.getAverageCurrentMA()

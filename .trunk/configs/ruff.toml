@@ -1,5 +1,14 @@
 # Generic, formatter-friendly config.
+[lint]
 select = ["B", "D3", "D4", "E", "F"]
 
 # Never enforce `E501` (line length violations). This should be handled by formatters.
 ignore = ["E501"]
+
+[lint.pydocstyle]
+convention = "numpy"
+
+# Generated protobuf modules rely on import side effects during descriptor loading.
+[lint.per-file-ignores]
+"meshtastic/protobuf/*_pb2.py" = ["F401"]
+"meshtastic/__init__.py" = ["F401"]

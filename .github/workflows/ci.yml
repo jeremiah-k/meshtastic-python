@@ -3,72 +3,110 @@ on:
   push:
     branches:
       - master
+      - "**-review"
   pull_request:
     branches:
       - master
-      - '**/*-review'
-  workflow_dispatch:
+      - "**-review"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.python-version == '3.14' }}
     strategy:
+      fail-fast: false
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
       - uses: actions/checkout@v4
       - name: Install Python 3
         uses: actions/setup-python@v5
-      - name: Uninstall meshtastic
-        run: |
-          pip3 uninstall -y meshtastic
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Cache Poetry artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pip
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
+            ${{ runner.os }}-poetry-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip3 install poetry
+          pip3 install "poetry==2.3.2"
       - name: Install meshtastic from local
         run: |
           poetry install --all-extras --with dev,powermon
           poetry run meshtastic --version
-      - name: Run pylint
-        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
-      - name: Check types with mypy
-        run: poetry run mypy meshtastic/
       - name: Run tests with pytest
-        run: poetry run pytest --cov=meshtastic
-      - name: Generate coverage report
         run: |
-          poetry run pytest --cov=meshtastic --cov-report=xml
+          if [ "${{ matrix.python-version }}" = "3.13" ]; then
+            poetry run pytest --cov=meshtastic --cov-report=xml
+          else
+            poetry run pytest --cov=meshtastic
+          fi
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        if: ${{ matrix.python-version == '3.13' }}
+        uses: codecov/codecov-action@v5.5.2
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           env_vars: OS, PYTHON
           files: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
+      - name: Run pylint
+        if: ${{ matrix.python-version == '3.13' }}
+        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
+      - name: Check types with mypy
+        if: ${{ matrix.python-version == '3.13' }}
+        run: poetry run mypy meshtastic/
   validate:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.python-version == '3.14' }}
     strategy:
+      fail-fast: false
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
       - uses: actions/checkout@v4
       - name: Install Python 3
         uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Cache Poetry artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pip
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
+            ${{ runner.os }}-poetry-
       - name: Install meshtastic from local
         run: |
           python -m pip install --upgrade pip
-          pip3 install poetry
+          pip3 install "poetry==2.3.2"
           poetry install
           poetry run meshtastic --version
