@@ -98,7 +98,13 @@ def _normalize_node_key(nodeid: Any) -> str | None:
 
 
 def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
-    """Return per-interface watch masks, creating storage if needed."""
+    """Return per-interface watch masks, creating storage if needed.
+
+    This helper mutates ``WATCH_MASKS_ATTR`` on ``interface`` when missing and
+    is not thread-safe by itself. Callers of ``_get_watch_masks`` must hold the
+    lock returned by ``_get_watch_masks_lock(interface)`` when reading or
+    mutating the returned dictionary.
+    """
     watch_masks = getattr(interface, WATCH_MASKS_ATTR, None)
     if isinstance(watch_masks, dict):
         return watch_masks

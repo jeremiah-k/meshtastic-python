@@ -194,7 +194,10 @@ class ArrowWriter:
 
         Must be called with ``self._lock`` held.
         """
-        # Precondition (enforced by callers): self._lock must be held.
+        is_owned = getattr(self._lock, "_is_owned", None)
+        assert callable(is_owned) and bool(is_owned()), (
+            "_write() called without holding _lock"
+        )
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
