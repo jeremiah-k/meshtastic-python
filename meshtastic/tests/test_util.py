@@ -13,7 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from meshtastic.protobuf import mesh_pb2
-from meshtastic.supported_device import SupportedDevice
+from meshtastic.supported_device import SupportedDevice, supported_devices
 from meshtastic.util import (
     DEFAULT_KEY,
     Acknowledgment,
@@ -927,3 +927,22 @@ def test_generate_channel_hash_fuzz_aes256(channel_name: str, key_bytes: bytes) 
     """Test generate_channel_hash with fuzzed channel names and 256-bit keys, ensuring it produces single-byte values."""
     hashed = generate_channel_hash(channel_name, key_bytes)
     assert _HASH_BYTE_MIN <= hashed <= _HASH_BYTE_MAX
+
+
+@pytest.mark.unit
+def test_tdeck_vid_pid_mapping() -> None:
+    """Verify T-Deck device resolves correctly from VID 303a and PID 1001."""
+    tdeck_devices = [
+        d
+        for d in supported_devices
+        if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
+    ]
+    assert (
+        len(tdeck_devices) == 1
+    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    assert (
+        tdeck_devices[0].name == "T-Deck"
+    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    assert (
+        tdeck_devices[0].for_firmware == "t-deck"
+    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
