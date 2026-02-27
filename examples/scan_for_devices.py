@@ -25,14 +25,18 @@ def main() -> None:
     supported_devices = detect_supported_devices()
     if supported_devices:
         print("Detected possible devices:")
-        for device in supported_devices:
+        sorted_devices = sorted(
+            supported_devices,
+            key=lambda d: (d.name, d.version or "", d.for_firmware or ""),
+        )
+        for device in sorted_devices:
             version_suffix = f" {device.version}" if device.version else ""
             print(f" name:{device.name}{version_suffix} firmware:{device.for_firmware}")
     else:
         print("No supported devices detected.")
 
     ports = active_ports_on_supported_devices(supported_devices)
-    print(f"ports:{ports}")
+    print(f"ports:{sorted(ports)}")
 
 
 if __name__ == "__main__":

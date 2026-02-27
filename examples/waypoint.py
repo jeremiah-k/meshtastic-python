@@ -51,7 +51,10 @@ def main() -> None:
     expire_unix: int | None = None
     if args.cmd == "create":
         try:
-            expire_unix = int(datetime.datetime.fromisoformat(args.expire).timestamp())
+            parsed_expire = datetime.datetime.fromisoformat(args.expire)
+            if parsed_expire.tzinfo is None:
+                parsed_expire = parsed_expire.replace(tzinfo=datetime.timezone.utc)
+            expire_unix = int(parsed_expire.timestamp())
         except ValueError:
             raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire)) from None
 

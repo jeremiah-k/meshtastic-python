@@ -210,8 +210,9 @@ class StreamInterface(MeshInterface):
         """
         MeshInterface._disconnected(self)
 
-        logger.debug("Closing our port")
-        self._close_stream_safely()
+        with self._connect_lock:
+            logger.debug("Closing our port")
+            self._close_stream_safely()
 
     def _write_bytes(self, b: bytes) -> None:
         """Write bytes to the underlying stream and pause briefly to allow the device to process them.

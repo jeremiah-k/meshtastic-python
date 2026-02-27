@@ -314,12 +314,12 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
     bool
         `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
     """
+    # pylint: disable=W0603
+    global testNumber
     logger.info("Running %s tests with wantAck=%s", numTests, wantAck)
     numFail: int = 0
     numSuccess: int = 0
     for _ in range(numTests):
-        # pylint: disable=W0603
-        global testNumber
         with guards_lock:
             testNumber = testNumber + 1
         isBroadcast: bool = True

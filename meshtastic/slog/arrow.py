@@ -203,10 +203,11 @@ class ArrowWriter:
 
         Must be called with ``self._lock`` held.
         """
+        # _is_owned() is a private CPython RLock detail; enforce this
+        # precondition only when that probe is available.
         is_owned = getattr(self._lock, "_is_owned", None)
-        assert callable(is_owned) and bool(
-            is_owned()
-        ), "_write() called without holding _lock"
+        if callable(is_owned):
+            assert bool(is_owned()), "_write() called without holding _lock"
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema

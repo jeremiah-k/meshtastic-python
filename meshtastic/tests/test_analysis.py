@@ -45,14 +45,14 @@ except ModuleNotFoundError as exc:
 
 
 def _patch_cli_exit_capture(
-    monkeypatch: pytest.MonkeyPatch, captured: dict[str, str]
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
 ) -> None:
     """Patch analysis_main._cli_exit to capture message and raise SystemExit."""
 
     def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
-        _ = return_value
         captured["message"] = message
-        raise SystemExit(1)
+        captured["code"] = return_value
+        raise SystemExit(return_value)
 
     monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
 
@@ -89,7 +89,7 @@ def test_main_routes_load_errors_through_cli_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """main() should emit a graceful CLI error when slog loading fails."""
-    captured: dict[str, str] = {}
+    captured: dict[str, Any] = {}
 
     def _fake_create_dash(*, slog_path: str) -> NoReturn:
         _ = slog_path
@@ -105,6 +105,7 @@ def test_main_routes_load_errors_through_cli_exit(
         main()
 
     assert "Error loading slog data: bad slog" in captured["message"]
+    assert captured["code"] == 1
 
 
 @pytest.mark.unit
@@ -112,7 +113,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """main() should emit a graceful CLI error when Dash server startup fails."""
-    captured: dict[str, str] = {}
+    captured: dict[str, Any] = {}
 
     class _FailingApp:
         def run(self, *, debug: bool, host: str, port: int) -> NoReturn:
@@ -133,6 +134,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
 
     assert "Error starting Dash server on 127.0.0.1:" in captured["message"]
     assert "address already in use" in captured["message"]
+    assert captured["code"] == 1
 
 
 @pytest.mark.unit

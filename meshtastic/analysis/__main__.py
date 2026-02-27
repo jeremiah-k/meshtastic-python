@@ -183,10 +183,8 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         pm_mask_series = pd.to_numeric(pmon_events["pm_mask"], errors="raise")
     except (TypeError, ValueError) as exc:
         raise ValueError("pm_mask contains non-numeric values") from exc  # noqa: TRY003
-    pm_mask_array = pm_mask_series.to_numpy(dtype=np.float64, copy=False)
-    is_integral = np.isfinite(pm_mask_array) & np.equal(
-        pm_mask_array, np.floor(pm_mask_array)
-    )
+    pm_mask_array = pm_mask_series.to_numpy(copy=False)
+    is_integral = np.equal(np.mod(pm_mask_array, 1), 0)
     if not bool(np.all(is_integral)):
         bad_rows = pmon_events.index[~is_integral].tolist()
         bad_rows_preview = bad_rows[:5]
@@ -194,7 +192,15 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(  # noqa: TRY003
             f"pm_mask contains non-integer values at rows {bad_rows_preview}{suffix}"
         )
-    pm_masks = pm_mask_array.astype(np.int64, copy=False)
+    is_non_negative = np.greater_equal(pm_mask_array, 0)
+    if not bool(np.all(is_non_negative)):
+        bad_rows = pmon_events.index[~is_non_negative].tolist()
+        bad_rows_preview = bad_rows[:5]
+        suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
+        raise ValueError(  # noqa: TRY003
+            f"pm_mask contains negative values at rows {bad_rows_preview}{suffix}"
+        )
+    pm_masks = pm_mask_series.astype(np.uint64, copy=False).to_numpy(copy=False)
 
     # possible to do this with pandas rolling windows if I was smarter?
     pm_changes = [

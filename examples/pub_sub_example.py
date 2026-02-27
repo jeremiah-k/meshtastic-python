@@ -29,7 +29,8 @@ def main() -> None:
         raise SystemExit(1)
 
     _connected.clear()
-    pub.subscribe(onConnection, "meshtastic.connection.established")
+    topic = "meshtastic.connection.established"
+    pub.subscribe(onConnection, topic)
     try:
         # Wait until the connection callback runs, then exit.
         with meshtastic.tcp_interface.TCPInterface(sys.argv[1]):
@@ -39,6 +40,8 @@ def main() -> None:
     except OSError as exc:
         print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
         raise SystemExit(1) from None
+    finally:
+        pub.unsubscribe(onConnection, topic)
 
 
 if __name__ == "__main__":

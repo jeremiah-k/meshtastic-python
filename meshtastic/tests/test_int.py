@@ -7,47 +7,48 @@ import pytest
 from .cli_test_utils import run_cli_argv_with_timeout
 
 
+def _run_and_collect(cmd: list[str]) -> tuple[int, str]:
+    """Run CLI argv command and return (returncode, combined output)."""
+    result = run_cli_argv_with_timeout(cmd)
+    return result.returncode, result.stdout + result.stderr
+
+
 @pytest.mark.int
 def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
     """Test meshtastic without any args."""
-    result = run_cli_argv_with_timeout([meshtastic_bin])
-    output = result.stdout + result.stderr
+    returncode, output = _run_and_collect([meshtastic_bin])
     assert re.match(r"usage: meshtastic", output)
-    assert result.returncode == 1
+    assert returncode == 1
 
 
 @pytest.mark.int
 def test_int_mesh_tunnel_no_args(mesh_tunnel_bin: str) -> None:
     """Test mesh-tunnel without any args."""
-    result = run_cli_argv_with_timeout([mesh_tunnel_bin])
-    output = result.stdout + result.stderr
+    returncode, output = _run_and_collect([mesh_tunnel_bin])
     assert re.match(r"usage: mesh-tunnel", output)
-    assert result.returncode == 1
+    assert returncode == 1
 
 
 @pytest.mark.int
 def test_int_version(meshtastic_bin: str) -> None:
     """Test '--version'."""
-    result = run_cli_argv_with_timeout([meshtastic_bin, "--version"])
-    output = result.stdout + result.stderr
+    returncode, output = _run_and_collect([meshtastic_bin, "--version"])
     assert re.match(r"[0-9]+\.[0-9]+\.[0-9]", output)
-    assert result.returncode == 0
+    assert returncode == 0
 
 
 @pytest.mark.int
 def test_int_help(meshtastic_bin: str) -> None:
     """Test '--help'."""
-    result = run_cli_argv_with_timeout([meshtastic_bin, "--help"])
-    output = result.stdout + result.stderr
+    returncode, output = _run_and_collect([meshtastic_bin, "--help"])
     assert re.match(r"usage: meshtastic ", output)
-    assert result.returncode == 0
+    assert returncode == 0
 
 
 @pytest.mark.int
 def test_int_support(meshtastic_bin: str) -> None:
     """Test '--support'."""
-    result = run_cli_argv_with_timeout([meshtastic_bin, "--support"])
-    output = result.stdout + result.stderr
+    returncode, output = _run_and_collect([meshtastic_bin, "--support"])
     assert re.search(r"System", output)
     assert re.search(r"Python", output)
-    assert result.returncode == 0
+    assert returncode == 0

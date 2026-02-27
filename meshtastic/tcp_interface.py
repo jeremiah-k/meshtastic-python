@@ -225,7 +225,10 @@ class TCPInterface(StreamInterface):
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
             if self._close_socket_if_current(sock):
-                self._attempt_reconnect()
+                logger.debug(
+                    "Reconnect deferred to reader/reconnect path for %s",
+                    self.hostname,
+                )
 
     def _compute_reconnect_delay(self) -> float:
         """Compute exponential reconnect backoff delay in seconds."""
