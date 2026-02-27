@@ -297,6 +297,56 @@ class ReconnectWorker:
             return None
         return NextAttempt(delay=sleep_delay, should_retry=should_retry)
 
+    def _get_validated_next_attempt(self) -> NextAttempt | None:
+        """Call and validate reconnect policy `next_attempt()` output."""
+        try:
+            next_attempt = self._call_policy("next_attempt")
+        except ReconnectPolicyMissingMethodError as err:
+            logger.exception(
+                "Reconnect policy missing required method '%s'",
+                err.method_name,
+            )
+            return None
+        return self._validate_next_attempt(next_attempt)
+
+    def _handle_connected_elsewhere_gate(
+        self, interface: "BLEInterface", attempt_num: int, shutdown_event: Event
+    ) -> bool | None:
+        """Handle reconnect gate when the device address is currently connected elsewhere.
+
+        Returns
+        -------
+        bool | None
+            `True` when handled and caller should continue loop, `False` when
+            reconnect loop should abort, `None` when gate does not apply.
+        """
+        device_addr = _addr_key(getattr(interface, "address", None))
+        if not device_addr or not _is_currently_connected_elsewhere(
+            device_addr, owner=interface
+        ):
+            return None
+
+        logger.info(
+            "Skipping reconnect attempt %d: address %s already connected elsewhere",
+            attempt_num,
+            device_addr,
+        )
+        validated_next_attempt = self._get_validated_next_attempt()
+        if validated_next_attempt is None:
+            return False
+        if not validated_next_attempt.should_retry:
+            logger.info("Auto-reconnect reached maximum retry limit.")
+            return False
+        # Keep a minimum delay for the connected-elsewhere gate while
+        # still honoring policy-provided backoff.
+        sleep_delay = max(
+            validated_next_attempt.delay,
+            BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
+        )
+        if shutdown_event.wait(timeout=sleep_delay):
+            return False
+        return True
+
     def _attempt_reconnect_loop(  # pylint: disable=R0911
         self,
         auto_reconnect: bool,
@@ -337,42 +387,12 @@ class ReconnectWorker:
                     attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
                     if interface._is_connection_connected:
                         return
-                    device_addr = _addr_key(getattr(interface, "address", None))
-                    # Check if already connected elsewhere before attempting.
-                    # connect() enforces this gate as well; this early check avoids
-                    # scheduling a full connect path when we already know it will fail.
-                    if device_addr and _is_currently_connected_elsewhere(
-                        device_addr, owner=interface
-                    ):
-                        logger.info(
-                            "Skipping reconnect attempt %d: address %s already connected elsewhere",
-                            attempt_num,
-                            device_addr,
-                        )
-                        try:
-                            next_attempt = self._call_policy("next_attempt")
-                        except ReconnectPolicyMissingMethodError as err:
-                            logger.exception(
-                                "Reconnect policy missing required method '%s'",
-                                err.method_name,
-                            )
-                            return
-                        validated_next_attempt = self._validate_next_attempt(
-                            next_attempt
-                        )
-                        if validated_next_attempt is None:
-                            return
-                        if not validated_next_attempt.should_retry:
-                            logger.info("Auto-reconnect reached maximum retry limit.")
-                            return
-                        # Keep a minimum delay for the connected-elsewhere gate while
-                        # still honoring policy-provided backoff.
-                        sleep_delay = max(
-                            validated_next_attempt.delay,
-                            BLEConfig.AUTO_RECONNECT_INITIAL_DELAY,
-                        )
-                        if shutdown_event.wait(timeout=sleep_delay):
-                            return
+                    gate_result = self._handle_connected_elsewhere_gate(
+                        interface, attempt_num, shutdown_event
+                    )
+                    if gate_result is False:
+                        return
+                    if gate_result is True:
                         continue
                     logger.info(
                         "Attempting BLE auto-reconnect (attempt %d).",
@@ -442,15 +462,7 @@ class ReconnectWorker:
 
                 if self._should_abort_reconnect(context="pre-sleep"):
                     return
-                try:
-                    next_attempt = self._call_policy("next_attempt")
-                except ReconnectPolicyMissingMethodError as err:
-                    logger.exception(
-                        "Reconnect policy missing required method '%s'",
-                        err.method_name,
-                    )
-                    return
-                validated_next_attempt = self._validate_next_attempt(next_attempt)
+                validated_next_attempt = self._get_validated_next_attempt()
                 if validated_next_attempt is None:
                     return
                 sleep_delay = validated_next_attempt.delay

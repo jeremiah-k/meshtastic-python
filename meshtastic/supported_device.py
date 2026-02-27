@@ -2,7 +2,7 @@
 It is used for auto detection as to which device might be connected.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
@@ -22,6 +22,33 @@ class SupportedDevice:
     # when you run "lsusb -d xxxx:" in linux
     usb_vendor_id_in_hex: str | None = None  # store in lower case
     usb_product_id_in_hex: str | None = None  # store in lower case
+    usb_id_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    """Alternate VID/PID pairs for known USB enumeration modes."""
+
+    def __post_init__(self) -> None:
+        """Normalize USB ID fields to lowercase and canonical tuple form."""
+        self.usb_vendor_id_in_hex = (
+            self.usb_vendor_id_in_hex.lower() if self.usb_vendor_id_in_hex else None
+        )
+        self.usb_product_id_in_hex = (
+            self.usb_product_id_in_hex.lower() if self.usb_product_id_in_hex else None
+        )
+        normalized_aliases: list[tuple[str, str]] = []
+        for vendor_id, product_id in self.usb_id_aliases:
+            normalized_vendor_id = vendor_id.lower().strip() if vendor_id else ""
+            normalized_product_id = product_id.lower().strip() if product_id else ""
+            if normalized_vendor_id and normalized_product_id:
+                normalized_aliases.append((normalized_vendor_id, normalized_product_id))
+        self.usb_id_aliases = tuple(normalized_aliases)
+
+    @property
+    def usb_ids(self) -> tuple[tuple[str, str], ...]:
+        """Return primary and alternate normalized VID/PID pairs for detection."""
+        usb_ids: list[tuple[str, str]] = []
+        if self.usb_vendor_id_in_hex and self.usb_product_id_in_hex:
+            usb_ids.append((self.usb_vendor_id_in_hex, self.usb_product_id_in_hex))
+        usb_ids.extend(self.usb_id_aliases)
+        return tuple(dict.fromkeys(usb_ids))
 
 
 # supported devices
@@ -202,6 +229,8 @@ seeed_xiao_s3 = SupportedDevice(
     baseport_on_mac="cu.usbmodem",
     usb_vendor_id_in_hex="2886",
     usb_product_id_in_hex="0059",
+    # Alternate enumeration mode: native Espressif USB Serial/JTAG.
+    usb_id_aliases=(("303a", "1001"),),
 )
 
 tdeck = SupportedDevice(
@@ -214,6 +243,8 @@ tdeck = SupportedDevice(
     baseport_on_windows="COM",
     usb_vendor_id_in_hex="303a",  # Espressif Systems (VERIFIED)
     usb_product_id_in_hex="1001",  # VERIFIED from actual device
+    # Alternate enumeration mode observed with CH9102 USB-UART bridge variants.
+    usb_id_aliases=(("1a86", "55d4"),),
 )
 
 

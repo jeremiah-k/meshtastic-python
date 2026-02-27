@@ -1036,11 +1036,15 @@ def get_unique_vendor_ids() -> set[str]:
     Returns
     -------
     set[str]
-        A set of vendor ID strings in hex form (for example, "0x239A").
+        A set of normalized lowercase USB vendor IDs from all known VID/PID
+        tuples (primary IDs and aliases).
     """
-    vids = set()
+    vids: set[str] = set()
     for d in supported_devices:
-        if d.usb_vendor_id_in_hex:
+        usb_ids = d.usb_ids
+        if usb_ids:
+            vids.update(vendor_id for vendor_id, _ in usb_ids)
+        elif d.usb_vendor_id_in_hex:
             vids.add(d.usb_vendor_id_in_hex)
     return vids
 
@@ -1056,11 +1060,16 @@ def get_devices_with_vendor_id(vid: str) -> set[SupportedDevice]:
     Returns
     -------
     set[SupportedDevice]
-        Set of SupportedDevice entries whose `usb_vendor_id_in_hex` equals `vid`.
+        Set of SupportedDevice entries whose primary or aliased VID/PID tuples
+        include the provided vendor id.
     """
-    sd = set()
+    normalized_vid = vid.lower()
+    sd: set[SupportedDevice] = set()
     for d in supported_devices:
-        if d.usb_vendor_id_in_hex == vid:
+        if any(vendor_id == normalized_vid for vendor_id, _ in d.usb_ids):
+            sd.add(d)
+            continue
+        if d.usb_vendor_id_in_hex == normalized_vid:
             sd.add(d)
     return sd
 
@@ -1159,23 +1168,27 @@ def detect_windows_port(
 
     if sd:
         system = platform.system()
-        vendor_id = sd.usb_vendor_id_in_hex
-
-        if system == "Windows" and vendor_id is not None:
-            command = (
-                'powershell.exe "[Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;'
-                "Get-PnpDevice -PresentOnly | Where-Object{ ($_.DeviceId -like "
-            )
-            command += f"'*{vendor_id.upper()}*'"
-            command += ')} | Format-List"'
-
-            # print(f'command:{command}')
-            _, sp_output = subprocess.getstatusoutput(command)
-            # print(f'sp_output:{sp_output}')
-            p = re.compile(r"\(COM(.*)\)")
-            for x in p.findall(sp_output):
-                # print(f'x:{x}')
-                ports.add(f"COM{x}")
+        if system == "Windows":
+            usb_ids = sd.usb_ids
+            if (
+                not usb_ids
+                and sd.usb_vendor_id_in_hex is not None
+                and sd.usb_product_id_in_hex is not None
+            ):
+                usb_ids = ((sd.usb_vendor_id_in_hex, sd.usb_product_id_in_hex),)
+            for vendor_id, product_id in usb_ids:
+                filters = [f"($_.DeviceId -like '*{vendor_id.upper()}*')"]
+                if product_id:
+                    filters.append(f"($_.DeviceId -like '*{product_id.upper()}*')")
+                where_clause = " -and ".join(filters)
+                command = (
+                    'powershell.exe "[Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;'
+                    f'Get-PnpDevice -PresentOnly | Where-Object{{ {where_clause} }} | Format-List"'
+                )
+                _, sp_output = subprocess.getstatusoutput(command)
+                p = re.compile(r"\(COM(.*)\)")
+                for x in p.findall(sp_output):
+                    ports.add(f"COM{x}")
     return ports
 
 

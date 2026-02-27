@@ -188,9 +188,10 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or the pairing operation fails.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
-        return self._async_await(self.bleak_client.pair(**kwargs))
+        return self._async_await(bleak_client.pair(**kwargs))
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
         """Connect to the remote BLE device.
@@ -212,11 +213,10 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or the connection operation fails.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED)
-        return self._async_await(
-            self.bleak_client.connect(**kwargs), timeout=await_timeout
-        )
+        return self._async_await(bleak_client.connect(**kwargs), timeout=await_timeout)
 
     def isConnected(self) -> bool:
         """Return whether the underlying Bleak client currently has an active connection.
@@ -281,9 +281,10 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or if the underlying disconnect fails.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED)
-        self._async_await(self.bleak_client.disconnect(**kwargs), timeout=await_timeout)
+        self._async_await(bleak_client.disconnect(**kwargs), timeout=await_timeout)
 
     def read_gatt_char(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
@@ -311,12 +312,13 @@ class BLEClient:
         BLEError
             If the read operation fails for any other reason.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED)
         return cast(
             bytes,
             self._async_await(
-                self.bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
+                bleak_client.read_gatt_char(*args, **kwargs), timeout=timeout
             ),
         )
 
@@ -341,10 +343,11 @@ class BLEClient:
         BLEError
             If the write operation fails for any other reason.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED)
         self._async_await(
-            self.bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
+            bleak_client.write_gatt_char(*args, **kwargs), timeout=timeout
         )
 
     def _get_services(self, **_kwargs: Any) -> Any:
@@ -368,12 +371,13 @@ class BLEClient:
             If the BLE client has not been initialized or services cannot be
             retrieved from Bleak (for example, if discovery has not completed).
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED)
         # In Bleak 2.1.1+, services are auto-enumerated on connect and exposed
         # as a property, but the property can still raise during discovery.
         try:
-            return self.bleak_client.services
+            return bleak_client.services
         except BleakError as exc:
             raise self.BLEError(
                 BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED
@@ -459,11 +463,10 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized, the registration fails, or the operation times out.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED)
-        self._async_await(
-            self.bleak_client.start_notify(*args, **kwargs), timeout=timeout
-        )
+        self._async_await(bleak_client.start_notify(*args, **kwargs), timeout=timeout)
 
     def stopNotify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
@@ -484,11 +487,10 @@ class BLEClient:
         BLEError
             If no BLE client is initialized or if the operation times out or fails.
         """
-        if self.bleak_client is None:
+        bleak_client = self.bleak_client
+        if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED)
-        self._async_await(
-            self.bleak_client.stop_notify(*args, **kwargs), timeout=timeout
-        )
+        self._async_await(bleak_client.stop_notify(*args, **kwargs), timeout=timeout)
 
     # COMPAT_STABLE_SHIM: snake_case alias for stopNotify
     def stop_notify(

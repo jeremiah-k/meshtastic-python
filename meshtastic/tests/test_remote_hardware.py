@@ -195,3 +195,39 @@ def test_send_hardware_no_nodeid(mock_gpio_iface: MagicMock, nodeid: object) -> 
         MeshInterface.MeshInterfaceError, match="Must use a destination node ID"
     ):
         rhw._send_hardware(nodeid, None)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("mask", [-1, True, False, "1"])
+def test_gpio_operations_reject_invalid_mask(
+    mock_gpio_iface: MagicMock, mask: object
+) -> None:
+    """GPIO APIs should reject invalid masks with clear errors."""
+    rhw = RemoteHardwareClient(mock_gpio_iface)
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="mask must be"):
+        rhw.readGPIOs("0x10", mask)  # type: ignore[arg-type]
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="mask must be"):
+        rhw.watchGPIOs("0x10", mask)  # type: ignore[arg-type]
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="mask must be"):
+        rhw.writeGPIOs("0x10", mask, 0)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("vals", [-1, True, False, "1"])
+def test_write_gpios_rejects_invalid_vals(
+    mock_gpio_iface: MagicMock, vals: object
+) -> None:
+    """WriteGPIOs should reject invalid vals with clear errors."""
+    rhw = RemoteHardwareClient(mock_gpio_iface)
+    with pytest.raises(MeshInterface.MeshInterfaceError, match="vals must be"):
+        rhw.writeGPIOs("0x10", 0x0F, vals)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_write_gpios_rejects_vals_outside_mask(mock_gpio_iface: MagicMock) -> None:
+    """WriteGPIOs should reject vals bits that are outside mask bits."""
+    rhw = RemoteHardwareClient(mock_gpio_iface)
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="vals contains bits outside mask"
+    ):
+        rhw.writeGPIOs("0x10", 0b0011, 0b0100)

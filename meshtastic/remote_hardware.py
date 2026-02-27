@@ -24,6 +24,9 @@ NO_GPIO_CHANNEL_ERROR = (
 MISSING_DEST_NODE_ID_ERROR = (
     "Must use a destination node ID for this operation (use --dest)."
 )
+INVALID_GPIO_MASK_ERROR = "mask must be a non-negative int"
+INVALID_GPIO_VALS_ERROR = "vals must be a non-negative int"
+INVALID_GPIO_VALS_MASK_ERROR = "vals contains bits outside mask"
 WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
 WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
 WATCH_MASKS_INIT_LOCK = threading.Lock()
@@ -326,6 +329,14 @@ class RemoteHardwareClient:
             onResponse=onResponse,
         )
 
+    @staticmethod
+    def _validate_non_negative_int(value: Any, error_message: str) -> int:
+        """Validate integer GPIO arguments and return normalized int."""
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(error_message)
+        return int(value)
+
     def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
         """Set specified GPIO pins on a remote device according to the provided mask and values.
 
@@ -343,6 +354,11 @@ class RemoteHardwareClient:
         Any
             Result of the underlying send operation.
         """
+        mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
+        vals = self._validate_non_negative_int(vals, INVALID_GPIO_VALS_ERROR)
+        if vals & ~mask:
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(INVALID_GPIO_VALS_MASK_ERROR)
         logger.debug("writeGPIOs nodeid:%s mask:%s vals:%s", nodeid, mask, vals)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WRITE_GPIOS
@@ -372,6 +388,7 @@ class RemoteHardwareClient:
         Any
             The result of the underlying send operation (may be the callback's return value or the send call result).
         """
+        mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
         logger.debug("readGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.READ_GPIOS
@@ -393,6 +410,7 @@ class RemoteHardwareClient:
         Any
             Result of sending the watch request; may contain a send/response token or interface-specific response.
         """
+        mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
         logger.debug("watchGPIOs nodeid:%s mask:%s", nodeid, mask)
         r = remote_hardware_pb2.HardwareMessage()
         r.type = remote_hardware_pb2.HardwareMessage.Type.WATCH_GPIOS

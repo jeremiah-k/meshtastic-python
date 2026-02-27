@@ -17,6 +17,7 @@ OPTIONAL_ANALYSIS_DEPS = {
     "plotly",
     "pyarrow",
 }
+ADDRESS_IN_USE_ERROR = "address already in use"
 
 try:
     import pandas as pd
@@ -117,7 +118,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
         def run(self, *, debug: bool, host: str, port: int) -> NoReturn:
             """Simulate Dash server startup failure."""
             _ = (debug, host, port)
-            raise OSError("address already in use")
+            raise OSError(ADDRESS_IN_USE_ERROR)
 
     def _fake_create_dash(*, slog_path: str) -> _FailingApp:
         _ = slog_path
@@ -148,6 +149,22 @@ def test_get_board_info_requires_non_null_board_id() -> None:
     """get_board_info should fail with a clear error when board_id is all null."""
     frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [None]})
     with pytest.raises(ValueError, match="No board_id rows found in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_rejects_non_integral_float_board_id() -> None:
+    """get_board_info should reject non-integral float board_id values."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": [1.5]})
+    with pytest.raises(ValueError, match="Invalid board_id value in dslog"):
+        get_board_info(frame)
+
+
+@pytest.mark.unit
+def test_get_board_info_rejects_decimal_string_board_id() -> None:
+    """get_board_info should reject non-integer string board_id values."""
+    frame = pd.DataFrame({"sw_version": ["2.5.0"], "board_id": ["1.5"]})
+    with pytest.raises(ValueError, match="Invalid board_id value in dslog"):
         get_board_info(frame)
 
 
