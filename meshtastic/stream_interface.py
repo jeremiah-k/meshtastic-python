@@ -72,6 +72,9 @@ class StreamInterface(MeshInterface):
             """Initialize with actual `payload_size` and allowed `max_size`."""
             super().__init__(f"ToRadio payload too large ({payload_size} > {max_size})")
 
+    class StreamClosedError(StreamInterfaceError, ConnectionError):
+        """Raised when stream I/O is attempted without an active stream."""
+
     def __init__(  # pylint: disable=R0917
         self,
         debugOut: IO[str] | Callable[[str], Any] | None = None,
@@ -217,30 +220,35 @@ class StreamInterface(MeshInterface):
     def _write_bytes(self, b: bytes) -> None:
         """Write bytes to the underlying stream and pause briefly to allow the device to process them.
 
-        If no stream is configured this call is ignored. When a stream exists the bytes are written
-        and flushed; after flushing the method sleeps to allow the device time to handle the data:
-        WINDOWS11_WRITE_DELAY seconds on Windows 11, STANDARD_WRITE_DELAY seconds otherwise.
+        When a stream exists and is open, bytes are written and flushed; after
+        flushing the method sleeps to allow the device time to handle the data:
+        WINDOWS11_WRITE_DELAY seconds on Windows 11, STANDARD_WRITE_DELAY
+        seconds otherwise.
 
         Parameters
         ----------
         b : bytes
             Bytes to write to the stream.
+
+        Raises
+        ------
+        StreamClosedError
+            If no stream is configured or the configured stream is closed.
         """
         s = self.stream
-        if s is not None and getattr(s, "is_open", True):
-            # Ignore writes when stream is None or not open. Note: _disconnected()
-            # sets self.stream to None for the common shutdown path.
-            s.write(b)
-            s.flush()
-            # win11 might need a bit more time, too
-            if self.is_windows11:
-                time.sleep(WINDOWS11_WRITE_DELAY)
-            else:
-                # we sleep here to give the TBeam a chance to work
-                time.sleep(STANDARD_WRITE_DELAY)
+        if s is None or not getattr(s, "is_open", True):
+            raise StreamInterface.StreamClosedError("stream is not available")
+        s.write(b)
+        s.flush()
+        # win11 might need a bit more time, too
+        if self.is_windows11:
+            time.sleep(WINDOWS11_WRITE_DELAY)
+        else:
+            # we sleep here to give the TBeam a chance to work
+            time.sleep(STANDARD_WRITE_DELAY)
 
-    def _read_bytes(self, length: int) -> bytes | None:
-        """Read up to the specified number of bytes from the configured underlying stream, or return None if no stream is configured.
+    def _read_bytes(self, length: int) -> bytes:
+        """Read up to the specified number of bytes from the configured underlying stream.
 
         Parameters
         ----------
@@ -249,16 +257,20 @@ class StreamInterface(MeshInterface):
 
         Returns
         -------
-        bytes | None
-            Up to `length` bytes read from the stream, or `None` when no stream is present.
+        bytes
+            Up to `length` bytes read from the stream.
+
+        Raises
+        ------
+        StreamClosedError
+            If no stream is configured or the configured stream is closed.
         """
         s = self.stream
         # Default is_open to True for stream types that don't expose this attribute,
         # treating them as open for backward compatibility (e.g., mock streams, test doubles).
-        if s is not None and getattr(s, "is_open", True):
-            return s.read(length)  # type: ignore[no-any-return]
-        else:
-            return None
+        if s is None or not getattr(s, "is_open", True):
+            raise StreamInterface.StreamClosedError("stream is not available")
+        return s.read(length)  # type: ignore[no-any-return]
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Frame and send a ToRadio protobuf to the underlying stream.
@@ -371,7 +383,7 @@ class StreamInterface(MeshInterface):
         try:
             while not self._wantExit:
                 # logger.debug("reading character")
-                b: bytes | None = self._read_bytes(1)
+                b = self._read_bytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")
                 if b:

@@ -478,6 +478,10 @@ def main() -> None:
     if not args.slog:
         args.slog = os.path.join(rootDir(), "latest")
 
+    if args.no_server:
+        logging.info("Exiting without running visualization server")
+        return
+
     try:
         app = create_dash(slog_path=args.slog)
     except (ValueError, FileNotFoundError, OSError, pa.ArrowException) as exc:
@@ -501,13 +505,10 @@ def main() -> None:
         debug,
     )
 
-    if not args.no_server:
-        try:
-            app.run(debug=debug, host=host, port=port)
-        except Exception as exc:  # noqa: BLE001
-            _cli_exit(f"Error starting Dash server on {host}:{port}: {exc}")
-    else:
-        logging.info("Exiting without running visualization server")
+    try:
+        app.run(debug=debug, host=host, port=port)
+    except Exception as exc:  # noqa: BLE001
+        _cli_exit(f"Error starting Dash server on {host}:{port}: {exc}")
 
 
 if __name__ == "__main__":

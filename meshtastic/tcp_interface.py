@@ -184,6 +184,31 @@ class TCPInterface(StreamInterface):
         self.socket = connected_socket
         self._fatal_disconnect = False
 
+    @staticmethod
+    def _notify_pending_sender_failure(pending_entry: Any, reason: str) -> bool:
+        """Best-effort notify a pending sender entry about reconnect queue drop.
+
+        Supports common waiter/future-like interfaces when present. Returns
+        True when any notifier was invoked.
+        """
+        # Future-like objects.
+        set_exception = getattr(pending_entry, "set_exception", None)
+        if callable(set_exception):
+            set_exception(ConnectionError(reason))
+            return True
+
+        # Custom waiter patterns.
+        set_failed = getattr(pending_entry, "set_failed", None)
+        if callable(set_failed):
+            set_failed(ConnectionError(reason))
+            return True
+
+        signal_set = getattr(pending_entry, "set", None)
+        if callable(signal_set):
+            signal_set()
+            return True
+        return False
+
     def close(self) -> None:
         """Close the TCP connection and stop the reader thread.
 
@@ -328,16 +353,27 @@ class TCPInterface(StreamInterface):
                     # because queue updates are also processed by the reader thread.
                     if threading.current_thread() is getattr(self, "_rxThread", None):
                         dropped = 0
+                        notified = 0
+                        drop_reason = (
+                            f"Queued send dropped during reconnect for {self.hostname}"
+                        )
                         with self._queue_lock:
                             pending_queue = getattr(self, "queue", None)
                             if isinstance(pending_queue, dict) and pending_queue:
                                 dropped = len(pending_queue)
+                                for pending_entry in pending_queue.values():
+                                    with contextlib.suppress(Exception):
+                                        if self._notify_pending_sender_failure(
+                                            pending_entry, drop_reason
+                                        ):
+                                            notified += 1
                                 pending_queue.clear()
                         if dropped > 0:
                             logger.warning(
-                                "Dropped %d queued packet(s) before reconnect config on %s",
+                                "Dropped %d queued packet(s) before reconnect config on %s (notified=%d)",
                                 dropped,
                                 self.hostname,
+                                notified,
                             )
 
                     try:
@@ -365,12 +401,12 @@ class TCPInterface(StreamInterface):
     # exit condition: no socket, shutdown requested (checked twice during
     # reconnect wait), reconnect failure, socket not set after reconnect,
     # shutdown during reconnect, successful reconnect, and normal data return.
-    def _read_bytes(self, length: int) -> bytes | None:
+    def _read_bytes(self, length: int) -> bytes:
         """Read up to `length` bytes from the TCP socket, handling dead connections and automatic reconnection.
 
         If a socket is present and data is available, returns the received bytes. If the
         socket is detected as disconnected, the method initiates a reconnect sequence and
-        returns `None`. If no socket is available, the method attempts reconnect unless a
+        returns `b""`. If no socket is available, the method attempts reconnect unless a
         shutdown is already requested.
 
         Parameters
@@ -380,8 +416,8 @@ class TCPInterface(StreamInterface):
 
         Returns
         -------
-        bytes | None
-            The received bytes, or `None` if no data was returned
+        bytes
+            The received bytes, or `b""` if no data was returned
             because the socket is absent, a reconnect was started, or shutdown was requested.
         """
         sock = self.socket
@@ -402,7 +438,7 @@ class TCPInterface(StreamInterface):
                     logger.debug(
                         "Socket changed during read cleanup, skipping reconnect"
                     )
-                return None
+                return b""
             with self._reconnect_lock:
                 self._reconnect_attempts = 0
                 self._fatal_disconnect = False
@@ -413,4 +449,4 @@ class TCPInterface(StreamInterface):
         if not self._wantExit and not self._fatal_disconnect:
             logger.debug("Socket unavailable, attempting reconnect")
             self._attempt_reconnect()
-        return None
+        return b""

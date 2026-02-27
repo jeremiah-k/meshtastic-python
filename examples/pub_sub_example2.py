@@ -32,8 +32,10 @@ def main() -> None:
         print(f"usage: {sys.argv[0]} host")
         raise SystemExit(1)
 
-    pub.subscribe(onReceive, "meshtastic.receive")
-    pub.subscribe(onConnection, "meshtastic.connection.established")
+    recv_topic = "meshtastic.receive"
+    conn_topic = "meshtastic.connection.established"
+    pub.subscribe(onReceive, recv_topic)
+    pub.subscribe(onConnection, conn_topic)
     try:
         with meshtastic.tcp_interface.TCPInterface(hostname=sys.argv[1]):
             while True:
@@ -43,6 +45,9 @@ def main() -> None:
     except OSError as exc:
         print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
         raise SystemExit(1) from None
+    finally:
+        pub.unsubscribe(onReceive, recv_topic)
+        pub.unsubscribe(onConnection, conn_topic)
 
 
 if __name__ == "__main__":

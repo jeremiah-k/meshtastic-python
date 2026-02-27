@@ -42,7 +42,7 @@ class LockLike(Protocol):
     def release(self) -> None:
         """Release the lock."""
 
-    def __enter__(self) -> "LockLike":
+    def __enter__(self) -> bool:
         """Enter context manager and acquire lock."""
 
     def __exit__(
@@ -309,7 +309,13 @@ class RemoteHardwareClient:
         if has_invalid_dest_nodeid:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
-        dest_nodeid: int | str = nodeid.strip() if isinstance(nodeid, str) else nodeid
+        if isinstance(nodeid, str):
+            dest_nodeid: int | str = nodeid.strip()
+        elif isinstance(nodeid, int) and not isinstance(nodeid, bool):
+            dest_nodeid = nodeid
+        else:
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         return self.iface.sendData(
             r,
             dest_nodeid,

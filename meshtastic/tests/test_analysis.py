@@ -97,9 +97,7 @@ def test_main_routes_load_errors_through_cli_exit(
 
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
     _patch_cli_exit_capture(monkeypatch, captured)
-    monkeypatch.setattr(
-        sys, "argv", ["fakescriptname", "--no-server", "--slog", os.devnull]
-    )
+    monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
         main()
