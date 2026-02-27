@@ -381,11 +381,11 @@ def getPref(node: Any, comp_name: str) -> bool:
         config_values = getattr(config, config_type.name)
         if not wholeField:
             pref_value = getattr(config_values, pref.name)
-            repeated = pref.label == pref.LABEL_REPEATED
+            repeated = pref.is_repeated
             _print_setting(config_type, uni_name, pref_value, repeated)
         else:
             for field in config_values.ListFields():
-                repeated = field[0].label == field[0].LABEL_REPEATED
+                repeated = field[0].is_repeated
                 _print_setting(config_type, field[0].name, field[1], repeated)
     else:
         # Always show whole field for remote node
@@ -547,7 +547,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
             return False
 
     # repeating fields need to be handled with append, not setattr
-    if pref.label != pref.LABEL_REPEATED:
+    if not pref.is_repeated:
         try:
             if config_type.message_type is not None:
                 config_values = getattr(config_part, config_type.name)
