@@ -60,7 +60,7 @@ If you're interested in contributing but don't have specific things you'd like t
 This should always be considered a list in progress and flux -- inclusion doesn't guarantee implementation, and exclusion doesn't mean something's not wanted. GitHub issues are a great place to discuss ideas.
 
 - Types
-  - type annotations throughout the codebase, and upgrading mypy running in CI to `--strict`
+  - type annotations throughout the codebase, and upgrading mypy running in CI to `--strict` (codebase is now currently `--strict` compatible; CI still runs without it currently)
 - async-friendliness
 - CLI completeness & consistency
   - the CLI should support all features of the firmware

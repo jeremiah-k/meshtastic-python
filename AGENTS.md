@@ -187,8 +187,10 @@ Current `COMPAT_DEPRECATE` methods:
   materially impacts readability/maintenance.
 - Constant extraction must not change behavior.
 
-## Type Checking Gate
+## Type Checking
 
-- CI/local validation should run strict typing with:
-  - `mypy meshtastic/ --strict`
-- `make ci` should remain aligned with workflow checks.
+- CI runs mypy without `--strict` to avoid blocking PRs on minor type issues.
+- The codebase is currently `--strict` compatible; maintainers can run
+  `mypy meshtastic/ --strict` locally to catch regressions.
+- `make ci` runs the same checks as CI (no `--strict`).
+- `make ci-strict` runs CI checks with strict mypy (for maintainers).

@@ -1,4 +1,4 @@
-.PHONY: all clean test ci lint docs cov virt smoke1 slow install examples protobufs protobufs-update FORCE
+.PHONY: all clean test ci ci-strict lint docs cov virt smoke1 slow install examples protobufs protobufs-update FORCE
 
 all: test
 
@@ -15,8 +15,13 @@ test:
 ci:
 	poetry run pytest --cov=meshtastic --cov-report=xml
 	$(MAKE) lint
-	poetry run mypy meshtastic/ --strict
+	poetry run mypy meshtastic/
 
+# run CI checks with strict mypy (for maintainers)
+ci-strict:
+	poetry run pytest --cov=meshtastic --cov-report=xml
+	$(MAKE) lint
+	poetry run mypy meshtastic/ --strict
 # only run the smoke tests against the virtual device
 virt:
 	poetry run pytest -m smokevirt
