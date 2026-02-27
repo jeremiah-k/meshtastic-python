@@ -108,6 +108,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
 
     class _FailingApp:
         def run(self, *, debug: bool, host: str, port: int) -> NoReturn:
+            """Simulate Dash server startup failure."""
             _ = (debug, host, port)
             raise OSError("address already in use")
 
