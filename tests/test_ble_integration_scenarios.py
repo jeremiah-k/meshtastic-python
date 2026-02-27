@@ -231,7 +231,6 @@ def test_connection_validator_with_normalized_addresses():
             mock_client,
             variant.lower().replace(":", "").replace("-", ""),
             None,
-            variant,
         )
         # Since they all normalize to the same value, should match
         assert result  # All address variants should match when normalized

@@ -143,14 +143,18 @@ def mt_config_state() -> Generator[None, None, None]:
         except Exception:  # noqa: BLE001 - fallback for non-copyable objects
             snapshot[key] = value
     # Also snapshot and restore warn-once tracking for deprecation warnings
+    # Clear before yield so each test starts with fresh warn-once state
     warned_deprecations: Any = getattr(mt_config, "_warned_deprecations", set())
     if isinstance(warned_deprecations, set):
         try:
             warned_snapshot: set[str] = copy.deepcopy(warned_deprecations)
         except Exception:  # noqa: BLE001 - deepcopy may fail for unusual set items
             warned_snapshot = set(warned_deprecations)
+        # Ensure each test starts from a clean warn-once registry
+        warned_deprecations.clear()
     else:
         warned_snapshot = set()
+        mt_config._warned_deprecations = set()
     try:
         yield
     finally:

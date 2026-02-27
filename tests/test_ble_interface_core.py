@@ -953,10 +953,10 @@ def test_connection_validator_existing_client_checks():
     client.isConnected = lambda: True
 
     ble_like = cast(BLEClient, client)
-    assert validator._check_existing_client(ble_like, None, None, None) is True
-    assert validator._check_existing_client(ble_like, "dummy", "dummy", "dummy") is True
+    assert validator._check_existing_client(ble_like, None, None) is True
+    assert validator._check_existing_client(ble_like, "dummy", "dummy") is True
     assert (
-        validator._check_existing_client(client, "something-else", None, None) is False  # type: ignore[arg-type]
+        validator._check_existing_client(client, "something-else", None) is False  # type: ignore[arg-type]
     )
 
 

@@ -15,6 +15,12 @@ def main() -> None:
             my_info = iface.myInfo
             if my_info is not None:
                 my_node_num = my_info.my_node_num
+                # Guard against unjoined-node sentinel (-1 indicates radio not yet joined)
+                if my_node_num < 0:
+                    print(
+                        "myInfo is not available — radio may not yet have joined a mesh."
+                    )
+                    return
                 nodes_by_num = iface.nodesByNum
                 if nodes_by_num is not None:
                     node = nodes_by_num.get(my_node_num)

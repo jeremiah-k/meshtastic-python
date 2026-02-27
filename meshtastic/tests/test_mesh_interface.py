@@ -812,12 +812,15 @@ def test_getOrCreateByNum(iface_with_nodes: MeshInterface) -> None:
 def test_exit_with_exception(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that MeshInterface.__exit__ logs the exception type, value, and traceback when an exception is raised inside its context.
 
+    This test intentionally raises a ValueError inside the with-block to verify that
+    MeshInterface.__exit__ properly logs exception details.
+
     Asserts an ERROR-level log entry contains the ValueError message and a traceback that includes the line where the exception was raised.
 
     Raises
     ------
     ValueError
-        Raised intentionally inside the context body to verify __exit__ logging.
+        Intentionally raised inside the context body to verify __exit__ exception logging.
     """
     with caplog.at_level(logging.ERROR):
         with pytest.raises(ValueError):

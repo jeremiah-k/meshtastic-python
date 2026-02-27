@@ -47,7 +47,7 @@ Events are delivered using a publish-subscribe model, and you can subscribe to o
    make ci
    ```
 
-For more contributor workflow details, see `CONTRIBUTING.md`.
+For more contributor workflow details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Call for Contributors
 

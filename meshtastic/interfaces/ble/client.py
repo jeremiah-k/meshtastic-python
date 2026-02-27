@@ -574,6 +574,35 @@ class BLEClient:
             else:
                 raise
 
+    def _cleanup_future_best_effort(self, future: Future[Any], context: str) -> None:
+        """Best-effort cleanup for a failed/cancelled future.
+
+        Parameters
+        ----------
+        future : Future[Any]
+            The future to clean up.
+        context : str
+            Context string for logging (e.g., "timeout", "cancellation").
+        """
+        try:
+            future.cancel()
+        except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
+            logger.debug(
+                f"Failed to cancel BLE future after {context}",
+                exc_info=True,
+            )
+        # Consume any late exceptions to avoid "Task exception was never retrieved"
+        try:
+            future.add_done_callback(
+                lambda f: f.exception() if not f.cancelled() else None
+            )  # pragma: no cover - best effort suppression
+        except Exception:  # noqa: BLE001 - best effort
+            # Event loop may be closing; ignore best-effort callback registration
+            logger.debug(
+                f"Skipping callback registration after {context}",
+                exc_info=True,
+            )
+
     def _async_await(
         self, coro: Coroutine[Any, Any, Any], timeout: float | None = None
     ) -> Any:
@@ -643,56 +672,14 @@ class BLEClient:
         except KeyboardInterrupt:  # pylint: disable=W0706
             raise
         except FutureTimeoutError as e:
-            try:
-                future.cancel()  # Clean up pending task to avoid resource leaks
-            except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
-                logger.debug(
-                    "Failed to cancel BLE future after timeout",
-                    exc_info=True,
-                )
-            # Consume any late exceptions to avoid "Task exception was never retrieved"
-            try:
-                future.add_done_callback(
-                    lambda f: (
-                        f.exception() if not f.cancelled() else None
-                    )  # pragma: no cover - best effort suppression
-                )
-            except Exception:  # noqa: BLE001 - best effort
-                # Event loop may be closing; ignore best-effort callback registration
-                logger.debug(
-                    "Skipping callback registration after timeout",
-                    exc_info=True,
-                )
+            self._cleanup_future_best_effort(future, "timeout")
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_TIMEOUT) from e
         except FutureCancelledError as e:
-            try:
-                future.cancel()  # Best effort cancellation cleanup
-            except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
-                logger.debug(
-                    "Failed to cancel BLE future after cancellation",
-                    exc_info=True,
-                )
-            try:
-                future.add_done_callback(
-                    lambda f: (
-                        f.exception() if not f.cancelled() else None
-                    )  # pragma: no cover - best effort suppression
-                )
-            except Exception:  # noqa: BLE001 - best effort
-                logger.debug(
-                    "Skipping callback registration after cancellation",
-                    exc_info=True,
-                )
+            self._cleanup_future_best_effort(future, "cancellation")
             raise self.BLEError(BLECLIENT_ERROR_CANCELLED) from e
         except RuntimeError as e:
             # RuntimeError here typically indicates loop shutdown/closure, not a timeout.
-            try:
-                future.cancel()
-            except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
-                logger.debug(
-                    "Failed to cancel BLE future after runtime error",
-                    exc_info=True,
-                )
+            self._cleanup_future_best_effort(future, "runtime error")
             raise self.BLEError(BLECLIENT_ERROR_ASYNC_OPERATION_FAILED.format(e)) from e
         except asyncio.CancelledError as e:
             # Defensive coverage: Future.result() typically raises

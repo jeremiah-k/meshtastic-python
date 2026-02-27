@@ -27,7 +27,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
     """
     try:
         # Intentional shell=True for legacy string-based test commands.
-        # For argv + shell=False patterns, see _run_cli_with_timeout in test_int.py.
+        # For argv + shell=False patterns, use run_cli_argv_with_timeout.
         result = subprocess.run(  # noqa: S602
             command,
             shell=True,
@@ -46,3 +46,35 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
         pytest.fail(f"CLI command timed out after {timeout}s: {masked}")
         raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout
+
+
+def run_cli_argv_with_timeout(
+    cmd: list[str], timeout: int = 30
+) -> subprocess.CompletedProcess[str]:
+    """Run a CLI command using argv list and return CompletedProcess.
+
+    Parameters
+    ----------
+    cmd : list[str]
+        Command and arguments as a list (e.g., ["meshtastic", "--info"]).
+    timeout : int
+        Maximum time to allow command execution before failing the test.
+        (Default value = 30)
+
+    Returns
+    -------
+    subprocess.CompletedProcess[str]
+        CompletedProcess with returncode, stdout, and stderr attributes.
+    """
+    try:
+        return subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        cmd_name = cmd[0] if cmd else "<unknown>"
+        pytest.fail(f"CLI command timed out ({cmd_name!r}): {e}")
+        raise  # pragma: no cover - pytest.fail always raises

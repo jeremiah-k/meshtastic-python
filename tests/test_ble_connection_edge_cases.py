@@ -91,7 +91,7 @@ def test_connection_validator_check_existing_client_none_request():
     mock_client.isConnected.return_value = True
 
     # Should return True for None request
-    assert validator._check_existing_client(mock_client, None, None, None)
+    assert validator._check_existing_client(mock_client, None, None)
 
 
 @pytest.mark.unit
@@ -108,7 +108,7 @@ def test_connection_validator_check_existing_client_disconnected():
     mock_client = MagicMock()
     mock_client.isConnected.return_value = False
 
-    assert not validator._check_existing_client(mock_client, "address", None, None)
+    assert not validator._check_existing_client(mock_client, "address", None)
 
 
 @pytest.mark.unit
@@ -122,7 +122,7 @@ def test_connection_validator_check_existing_client_none_client():
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
-    assert not validator._check_existing_client(None, "address", None, None)
+    assert not validator._check_existing_client(None, "address", None)
 
 
 @pytest.mark.unit
@@ -175,9 +175,8 @@ def test_connection_validator_check_existing_client_matching_address():
     # Should return True when addresses match (case-insensitive, punctuation-agnostic)
     assert validator._check_existing_client(
         mock_client,
-        "aabbccddeeff",  # normalized
+        "aabbccddeeff",  # normalized request
         "aabbccddeeff",  # last connection request
-        "AA:BB:CC:DD:EE:FF",  # original address
     )
 
 
