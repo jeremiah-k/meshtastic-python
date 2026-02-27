@@ -186,3 +186,9 @@ Current `COMPAT_DEPRECATE` methods:
 - Avoid mass churn; extract constants in touched code paths or when repetition
   materially impacts readability/maintenance.
 - Constant extraction must not change behavior.
+
+## Type Checking Gate
+
+- CI/local validation should run strict typing with:
+  - `mypy meshtastic/ --strict`
+- `make ci` should remain aligned with workflow checks.

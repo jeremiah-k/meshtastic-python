@@ -2031,8 +2031,14 @@ class BLEInterface(MeshInterface):
         connected : bool
             True when the interface is connected, False when disconnected.
         """
-        # Lazy import avoids circular dependency with mesh_interface
-        from pubsub import pub as mesh_pub
+        # Lazy import avoids circular dependency and keeps compatibility with
+        # tests/integrations that monkeypatch meshtastic.mesh_interface.pub.
+        from meshtastic import mesh_interface as mesh_iface_module
+
+        mesh_pub: Any = getattr(mesh_iface_module, "pub", None)
+        if mesh_pub is None:
+            logger.debug("Skipping connection status publish: mesh pub is unavailable")
+            return
 
         def _publish_status() -> None:
             """Publish the legacy "meshtastic.connection.status" message reflecting the interface's current connection state.

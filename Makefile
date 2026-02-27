@@ -15,7 +15,7 @@ test:
 ci:
 	poetry run pytest --cov=meshtastic --cov-report=xml
 	$(MAKE) lint
-	poetry run mypy meshtastic/
+	poetry run mypy meshtastic/ --strict
 
 # only run the smoke tests against the virtual device
 virt:

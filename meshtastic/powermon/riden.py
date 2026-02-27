@@ -3,13 +3,14 @@
 import logging
 import math
 from datetime import datetime
+from typing import Any, cast
 
-from riden import (  # type: ignore[attr-defined]
-    Riden,  # pyright: ignore[reportMissingTypeStubs]
-)
+import riden
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
 from .power_supply import PowerSupply
+
+Riden = cast(type[Any], riden.Riden)  # type: ignore[attr-defined]
 
 
 class RidenPowerSupply(PowerSupply):
@@ -66,4 +67,4 @@ class RidenPowerSupply(PowerSupply):
     def _get_raw_watt_hour(self) -> float:
         """Get the current watt-hour reading."""
         self.r.update()
-        return self.r.wh
+        return float(self.r.wh)

@@ -75,7 +75,7 @@ jobs:
         run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
       - name: Check types with mypy
         if: ${{ matrix.python-version == '3.13' }}
-        run: poetry run mypy meshtastic/
+        run: poetry run mypy meshtastic/ --strict
   validate:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.python-version == '3.14' }}
