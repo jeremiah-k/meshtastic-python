@@ -298,14 +298,15 @@ class RemoteHardwareClient:
                 is_zero_numeric_str = int(normalized_nodeid, 0) == 0
             except ValueError:
                 is_zero_numeric_str = False
-        if (
+        has_invalid_dest_nodeid = (
             nodeid is None
             or is_invalid_bool
             or is_invalid_str
             or is_invalid_int
             or is_zero_numeric_str
             or is_special_alias
-        ):
+        )
+        if has_invalid_dest_nodeid:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         dest_nodeid: int | str = nodeid.strip() if isinstance(nodeid, str) else nodeid
