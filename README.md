@@ -59,23 +59,29 @@ If you're interested in contributing but don't have specific things you'd like t
 
 This should always be considered a list in progress and flux -- inclusion doesn't guarantee implementation, and exclusion doesn't mean something's not wanted. GitHub issues are a great place to discuss ideas.
 
-- Types
-  - type annotations throughout the codebase, and upgrading mypy running in CI to `--strict` (codebase is now currently `--strict` compatible; CI still runs without it currently)
-- async-friendliness
-- CLI completeness & consistency
-  - the CLI should support all features of the firmware
-  - there should be a consistent output format available for shell scripting
-- CLI input validation & documentation
-  - what arguments and options are compatible & incompatible with one another?
-  - can the options be restructured in a way that is more self-documenting?
-  - pubsub events should be documented clearly
-- helpers for third-party code
-  - it should be easy to write a script that supports similar options to the CLI so many tools support the same ways of connecting to nodes
-- data storage & processing
-  - there should be a standardized way of recording packets for later use, debugging, etc.
-  - a persistence layer could also keep track of nodes beyond nodedb, as the apps do
-  - a sqlite database schema and tools for writing to it may be a good starting point
-  - enable maps, charts, visualizations
+- ✅ Types
+  - Codebase is `mypy --strict` compatible.
+  - CI still runs `mypy meshtastic/` (non-strict); strict is available via `make ci-strict`.
+- 🟡 Async-friendliness
+  - BLE lifecycle/reconnect internals were substantially refactored and race-hardened.
+  - Additional async-friendly API improvements are still open.
+- 🟡 API consistency and compatibility
+  - Broad camelCase normalization with explicit compatibility shims is in place across key modules.
+  - Historical BLE compatibility surface from 2.7.7 is preserved.
+- ✅ Example readability
+  - Examples were updated and simplified to emphasize library usage patterns
+- ⏳ CLI completeness and consistency
+  - Support full firmware feature coverage in the CLI.
+  - Provide stable, script-friendly output formats.
+- ⏳ CLI input validation and documentation
+  - Clarify compatible/incompatible argument combinations.
+  - Document pubsub events and common workflows.
+- ⏳ Helpers for third-party code
+  - Provide reusable helpers so external tools can share CLI-style connection options.
+- ⏳ Data storage and processing
+  - Standardize packet recording for post-analysis/debugging.
+  - Evaluate persistence beyond nodedb (for example sqlite-backed tooling).
+  - Expand maps/charts/visualization support.
 
 ## Stats
 
