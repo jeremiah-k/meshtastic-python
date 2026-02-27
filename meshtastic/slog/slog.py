@@ -259,8 +259,10 @@ class PowerLogger:
                 "max_mW": max_mW,
                 "min_mW": min_mW,
             }
-            self.writer.addRow(d)
-            self._p_meter.resetMeasurements()
+            try:
+                self.writer.addRow(d)
+            finally:
+                self._p_meter.resetMeasurements()
 
     def storeCurrentReading(self, now: datetime | None = None) -> None:
         """Preferred camelCase public API; see `_store_current_reading`."""

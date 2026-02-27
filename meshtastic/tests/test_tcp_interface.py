@@ -116,7 +116,7 @@ def test_TCPInterface_accepts_none_connect_timeout() -> None:
 
         iface.myConnect()
 
-        mock_connect.assert_called_once_with(("localhost", 4403), timeout=None)
+        mock_connect.assert_called_once_with(("localhost", 4403))
         connected_socket.settimeout.assert_called_once_with(None)
         iface.close()
 

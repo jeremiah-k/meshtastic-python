@@ -12,8 +12,9 @@ from pubsub import pub
 import meshtastic.tcp_interface
 
 
-def onReceive(packet: Any, _interface: Any) -> None:  # pylint: disable=unused-argument
+def onReceive(packet: Any, interface: Any) -> None:
     """Handle an incoming packet."""
+    _ = interface
     print(f"Received: {packet}")
 
 

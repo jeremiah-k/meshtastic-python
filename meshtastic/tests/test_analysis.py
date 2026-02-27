@@ -56,9 +56,9 @@ def test_analysis(
     monkeypatch.setattr(
         sys, "argv", ["fakescriptname", "--no-server", "--slog", slog_input_dir]
     )
+    monkeypatch.setattr(logging.getLogger(), "propagate", True)
 
     with caplog.at_level(logging.DEBUG):
-        logging.getLogger().propagate = True  # Let our testing framework see our logs
         main()
 
     assert "Exiting without running visualization server" in caplog.text

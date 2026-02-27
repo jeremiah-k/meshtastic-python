@@ -394,7 +394,7 @@ class BLECoroutineRunner:
                             asyncio.gather(*tasks, return_exceptions=True),
                             timeout=BLEConfig.RUNNER_SHUTDOWN_TIMEOUT_SECONDS,
                         )
-                    except TimeoutError:
+                    except (asyncio.TimeoutError, TimeoutError):
                         logger.debug("Timeout waiting for tasks to cancel")
 
                 loop.run_until_complete(_cancel_with_timeout())

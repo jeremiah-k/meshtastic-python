@@ -16,6 +16,10 @@ def main() -> None:
                 print("myInfo is not available — radio may not yet have joined a mesh.")
                 return
 
+            if my_info.my_node_num < 0:
+                print("Local node has not joined the mesh yet.")
+                return
+
             node = (iface.nodesByNum or {}).get(my_info.my_node_num)
             if node is None:
                 print("Local node not found in node database yet.")

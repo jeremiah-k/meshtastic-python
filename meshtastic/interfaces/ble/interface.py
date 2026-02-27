@@ -1570,10 +1570,21 @@ class BLEInterface(MeshInterface):
                     # Use unified state lock
                     with self._state_lock:
                         client = self.client
+                        is_connecting = (
+                            self._state_manager._current_state
+                            == ConnectionState.CONNECTING
+                        )
+                        is_closing = self._state_manager._is_closing or self._closed
                     if client is None:
-                        if self.auto_reconnect:
+                        if self.auto_reconnect or is_connecting:
+                            wait_reason = (
+                                "connection establishment"
+                                if is_connecting
+                                else "auto-reconnect"
+                            )
                             logger.debug(
-                                "BLE client is None; waiting for auto-reconnect"
+                                "BLE client is None; waiting for %s",
+                                wait_reason,
                             )
                             # Wait briefly for reconnect or shutdown signal, then re-check
                             coordinator._wait_for_event(
@@ -1581,8 +1592,13 @@ class BLEInterface(MeshInterface):
                                 timeout=wait_timeout,
                             )
                             break  # Return to outer loop to re-check state
-                        logger.debug("BLE client is None, shutting down")
-                        self._set_receive_wanted(False)
+                        if is_closing:
+                            logger.debug("BLE client is None, shutting down")
+                            self._set_receive_wanted(False)
+                        else:
+                            logger.debug(
+                                "BLE client is None; re-checking connection state"
+                            )
                         break
                     try:
                         payload = self._read_from_radio_with_retries(client)

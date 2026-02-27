@@ -27,6 +27,28 @@ class ReconnectPolicy:
     class ConfigurationError(ValueError):
         """Raised when a ReconnectPolicy is constructed with invalid parameters."""
 
+        @classmethod
+        def invalid_value(
+            cls, name: str, requirement: str, value: Any
+        ) -> "ReconnectPolicy.ConfigurationError":
+            """Build a standardized invalid-value configuration error."""
+            return cls(f"{name} must be {requirement}, got {value}")
+
+        @classmethod
+        def invalid_relation(
+            cls,
+            *,
+            left_name: str,
+            left_value: float,
+            relation: str,
+            right_name: str,
+            right_value: float,
+        ) -> "ReconnectPolicy.ConfigurationError":
+            """Build a standardized invalid cross-field configuration error."""
+            return cls(
+                f"{left_name} ({left_value}) must be {relation} {right_name} ({right_value})"
+            )
+
     def __init__(
         self,
         *,
@@ -60,24 +82,28 @@ class ReconnectPolicy:
             If any parameter is outside its valid range.
         """
         if initial_delay <= 0:
-            raise ReconnectPolicy.ConfigurationError(
-                f"initial_delay must be > 0, got {initial_delay}"
+            raise ReconnectPolicy.ConfigurationError.invalid_value(
+                "initial_delay", "> 0", initial_delay
             )
         if max_delay < initial_delay:
-            raise ReconnectPolicy.ConfigurationError(
-                f"max_delay ({max_delay}) must be >= initial_delay ({initial_delay})"
+            raise ReconnectPolicy.ConfigurationError.invalid_relation(
+                left_name="max_delay",
+                left_value=max_delay,
+                relation=">=",
+                right_name="initial_delay",
+                right_value=initial_delay,
             )
         if backoff <= 1.0:
-            raise ReconnectPolicy.ConfigurationError(
-                f"backoff must be > 1.0, got {backoff}"
+            raise ReconnectPolicy.ConfigurationError.invalid_value(
+                "backoff", "> 1.0", backoff
             )
         if not 0.0 <= jitter_ratio <= 1.0:
-            raise ReconnectPolicy.ConfigurationError(
-                f"jitter_ratio must be between 0.0 and 1.0, got {jitter_ratio}"
+            raise ReconnectPolicy.ConfigurationError.invalid_value(
+                "jitter_ratio", "between 0.0 and 1.0", jitter_ratio
             )
         if max_retries is not None and max_retries < 0:
-            raise ReconnectPolicy.ConfigurationError(
-                f"max_retries must be >= 0 or None, got {max_retries}"
+            raise ReconnectPolicy.ConfigurationError.invalid_value(
+                "max_retries", ">= 0 or None", max_retries
             )
         self.initial_delay = initial_delay
         self.max_delay = max_delay

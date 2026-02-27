@@ -60,7 +60,8 @@ class TCPInterface(StreamInterface):
             Request/response timeout in seconds (default: 300.0).
         connectTimeout : float | None
             Timeout in seconds for socket connect attempts (default: 10.0).
-            ``None`` uses the platform socket default timeout behavior.
+            ``None`` omits the timeout parameter, allowing the platform socket
+            default to apply.
         """
         if connectTimeout is not None and connectTimeout <= 0:
             raise ValueError(self.CONNECT_TIMEOUT_ERROR.format(connectTimeout))
@@ -173,9 +174,12 @@ class TCPInterface(StreamInterface):
         """
         logger.debug("Connecting to %s", self.hostname)
         server_address = (self.hostname, self.portNumber)
-        connected_socket = socket.create_connection(
-            server_address, timeout=self._connect_timeout
-        )
+        if self._connect_timeout is None:
+            connected_socket = socket.create_connection(server_address)
+        else:
+            connected_socket = socket.create_connection(
+                server_address, timeout=self._connect_timeout
+            )
         connected_socket.settimeout(None)
         self.socket = connected_socket
         self._fatal_disconnect = False
