@@ -92,12 +92,12 @@ class PPK2PowerSupply(PowerSupply):
         r.get_modifiers()
 
         self.measurement_thread = threading.Thread(
-            target=self.measurement_loop, daemon=True, name="ppk2 measurement"
+            target=self._measurement_loop, daemon=True, name="ppk2 measurement"
         )
         logging.info("Connected to Power Profiler Kit II (PPK2)")
         super().__init__()  # we call this late so that the serial port is already open
 
-    def measurement_loop(self) -> None:
+    def _measurement_loop(self) -> None:
         """Endless measurement loop that runs in a background thread.
 
         Continuously polls the PPK2 device for current samples, updating
@@ -279,7 +279,7 @@ class PPK2PowerSupply(PowerSupply):
             # thread has already been started (and possibly joined via close()).
             if self.measurement_thread.ident is not None:
                 self.measurement_thread = threading.Thread(
-                    target=self.measurement_loop, daemon=True, name="ppk2 measurement"
+                    target=self._measurement_loop, daemon=True, name="ppk2 measurement"
                 )
             # We can't start reading from the thread until vdd is set, so start running the thread now
             self.measurement_thread.start()

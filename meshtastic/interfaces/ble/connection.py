@@ -497,6 +497,7 @@ class ConnectionOrchestrator:
             self._finalize_connection(
                 client, device.address, register_notifications_func, on_connected_func
             )
+            return client
         except BleakDBusError:
             if client:
                 self.client_manager._safe_close_client(client)
@@ -515,7 +516,3 @@ class ConnectionOrchestrator:
                 self.client_manager._safe_close_client(client)
             self._transition_failure_to_disconnected("unexpected connect failure")
             raise
-        else:
-            # Discovery-success path: direct connect returned earlier; this
-            # returns the client finalized after findDevice/create/connect.
-            return client

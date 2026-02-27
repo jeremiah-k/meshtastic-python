@@ -12,7 +12,9 @@ with meshtastic.serial_interface.SerialInterface() as iface:
     else:
         print("Known nodes:")
         for node in iface.nodes.values():
-            user = node.get("user", {})
+            user = node.get("user")
+            if not isinstance(user, dict):
+                user = {}
             node_id = user.get("id", "unknown")
             long_name = user.get("longName", "unknown")
             hw_model = user.get("hwModel", "unknown")

@@ -312,7 +312,8 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
     for _ in range(numTests):
         # pylint: disable=W0603
         global testNumber
-        testNumber = testNumber + 1
+        with guards_lock:
+            testNumber = testNumber + 1
         isBroadcast: bool = True
         # asBinary=(i % 2 == 0)
         success = testSend(
