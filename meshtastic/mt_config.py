@@ -20,7 +20,7 @@ import sys
 import threading
 import types
 import warnings
-from typing import IO, TYPE_CHECKING, Any, cast
+from typing import IO, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from meshtastic.tunnel import Tunnel
@@ -55,8 +55,9 @@ def reset() -> None:
     warned_deprecations = module_globals.get("_warned_deprecations")
     warned_deprecations_lock = module_globals.get("_warned_deprecations_lock")
     if isinstance(warned_deprecations, set):
-        if warned_deprecations_lock is not None:
-            with cast(Any, warned_deprecations_lock):
+        lock = warned_deprecations_lock
+        if lock is not None:
+            with lock:
                 warned_deprecations.clear()
         else:
             warned_deprecations.clear()

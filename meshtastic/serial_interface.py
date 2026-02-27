@@ -196,8 +196,10 @@ class SerialInterface(StreamInterface):
                 stream.flush()
                 time.sleep(SERIAL_SETTLING_DELAY)
         logger.debug("Closing Serial stream")
-        StreamInterface.close(self)
-        self.stream = None
+        try:
+            StreamInterface.close(self)
+        finally:
+            self.stream = None
 
     def __enter__(self) -> "SerialInterface":
         """Provide the SerialInterface instance for use in a with-statement.

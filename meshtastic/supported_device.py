@@ -28,10 +28,14 @@ class SupportedDevice:
     def __post_init__(self) -> None:
         """Normalize USB ID fields to lowercase and canonical tuple form."""
         self.usb_vendor_id_in_hex = (
-            self.usb_vendor_id_in_hex.lower() if self.usb_vendor_id_in_hex else None
+            self.usb_vendor_id_in_hex.strip().lower()
+            if self.usb_vendor_id_in_hex and self.usb_vendor_id_in_hex.strip()
+            else None
         )
         self.usb_product_id_in_hex = (
-            self.usb_product_id_in_hex.lower() if self.usb_product_id_in_hex else None
+            self.usb_product_id_in_hex.strip().lower()
+            if self.usb_product_id_in_hex and self.usb_product_id_in_hex.strip()
+            else None
         )
         normalized_aliases: list[tuple[str, str]] = []
         for vendor_id, product_id in self.usb_id_aliases:

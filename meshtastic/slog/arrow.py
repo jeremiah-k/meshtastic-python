@@ -233,7 +233,9 @@ class ArrowWriter:
         with self._lock:
             if self._closed:
                 raise WriterClosedError()
-            self.new_rows.append(row_dict)
+            # Snapshot caller input so later caller-side mutations do not
+            # corrupt buffered rows that have not yet been flushed.
+            self.new_rows.append(dict(row_dict))
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
 
@@ -297,7 +299,22 @@ class FeatherWriter(ArrowWriter):
             super().close()
             src_name = self.base_file_name + ".arrow"
             dest_name = self.base_file_name + ".feather"
+
+            def _remove_stale_dest_file() -> None:
+                """Best-effort removal of stale destination file from prior runs."""
+                if not os.path.exists(dest_name):
+                    return
+                try:
+                    os.remove(dest_name)
+                except OSError:
+                    logger.warning(
+                        "Failed to remove stale Feather destination file %s",
+                        dest_name,
+                        exc_info=True,
+                    )
+
             if not os.path.exists(src_name):
+                _remove_stale_dest_file()
                 self._conversion_done = True
                 return
             if os.path.getsize(src_name) == 0:
@@ -310,6 +327,7 @@ class FeatherWriter(ArrowWriter):
                         src_name,
                         exc_info=True,
                     )
+                _remove_stale_dest_file()
                 self._conversion_done = True
                 return
 
@@ -332,6 +350,7 @@ class FeatherWriter(ArrowWriter):
                         src_name,
                         exc_info=True,
                     )
+                _remove_stale_dest_file()
                 self._conversion_done = True
                 return
 

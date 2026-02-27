@@ -244,8 +244,8 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     sw_version = str(first_row["sw_version"])
     raw_board_id = first_row["board_id"]
     try:
-        if isinstance(raw_board_id, bool):
-            raise ValueError(raw_board_id)  # noqa: TRY301
+        if isinstance(raw_board_id, (bool, np.bool_)):
+            raise TypeError(raw_board_id)  # noqa: TRY301
         if isinstance(raw_board_id, (float, np.floating)):
             if not float(raw_board_id).is_integer():
                 raise ValueError(raw_board_id)  # noqa: TRY301

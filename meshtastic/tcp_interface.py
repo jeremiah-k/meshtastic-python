@@ -23,6 +23,7 @@ class TCPInterface(StreamInterface):
 
     DEFAULT_CONNECT_TIMEOUT = 10.0
     CONNECT_TIMEOUT_ERROR = "connectTimeout must be a positive number, got {!r}"
+    SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
     DEFAULT_MAX_RECONNECT_ATTEMPTS = 8
     DEFAULT_RECONNECT_BACKOFF = 1.6
     DEFAULT_RECONNECT_BASE_DELAY = 1.0
@@ -249,10 +250,12 @@ class TCPInterface(StreamInterface):
         ------
         ConnectionError
             If the TCP socket is missing or disconnected.
+        OSError
+            If the underlying socket write fails.
         """
         sock = self.socket
         if sock is None:
-            raise ConnectionError("TCP socket is closed or not connected")
+            raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
         try:
             # sendall() guarantees full payload transmission or raises.
             sock.sendall(b)
@@ -265,6 +268,7 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
+            raise
 
     def _compute_reconnect_delay(self) -> float:
         """Compute exponential reconnect backoff delay in seconds."""

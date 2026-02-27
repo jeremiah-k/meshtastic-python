@@ -36,7 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "expire",
         help=(
             "Expiration date interpreted by datetime.fromisoformat "
-            "(for example 2024-12-18T23:05:23)"
+            "(for example 2024-12-18T23:05:23); interpreted as UTC if no timezone specified"
         ),
     )
     parser_create.add_argument("latitude", type=float, help="Latitude")

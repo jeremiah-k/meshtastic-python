@@ -209,11 +209,12 @@ def _packet_debug_summary(as_dict: dict[str, Any]) -> dict[str, Any]:
         if isinstance(payload, (bytes, bytearray, memoryview, str))
         else None
     )
+    decoded_keys = sorted(str(key) for key in decoded_dict.keys())
     return {
         "from": as_dict.get("from"),
         "to": as_dict.get("to"),
         "portnum": decoded_dict.get("portnum"),
-        "decoded_keys": sorted(decoded_dict.keys()),
+        "decoded_keys": decoded_keys,
         "payload_len": payload_len,
     }
 
