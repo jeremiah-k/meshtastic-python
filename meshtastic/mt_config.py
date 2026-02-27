@@ -52,14 +52,15 @@ def reset() -> None:
     module_globals = globals()
     for name, default in MODULE_STATE_DEFAULTS.items():
         module_globals[name] = default
-    warned_deprecations = module_globals.get("_warned_deprecations")
     warned_deprecations_lock = module_globals.get("_warned_deprecations_lock")
-    if isinstance(warned_deprecations, set):
-        lock = warned_deprecations_lock
-        if lock is not None:
-            with lock:
+    if warned_deprecations_lock is not None:
+        with warned_deprecations_lock:
+            warned_deprecations = module_globals.get("_warned_deprecations")
+            if isinstance(warned_deprecations, set):
                 warned_deprecations.clear()
-        else:
+    else:
+        warned_deprecations = module_globals.get("_warned_deprecations")
+        if isinstance(warned_deprecations, set):
             warned_deprecations.clear()
 
 

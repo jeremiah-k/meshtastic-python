@@ -67,27 +67,27 @@ def test_onGPIOreceive_uses_node_watch_mask(
 
 
 @pytest.mark.unit
-def test_onGPIOreceive_ignores_nondict_decoded() -> None:
-    """Test that onGPIOreceive ignores packets with non-dict decoded payloads."""
+def test_onGPIOreceive_marks_response_on_nondict_decoded() -> None:
+    """Malformed decoded payloads should still unblock waiting callers."""
     iface = create_autospec(SerialInterface, instance=True)
     iface.gotResponse = False
     packet = {"decoded": None}
 
     onGPIOreceive(packet, iface)
 
-    assert iface.gotResponse is False
+    assert iface.gotResponse is True
 
 
 @pytest.mark.unit
-def test_onGPIOreceive_ignores_nondict_remotehw() -> None:
-    """Test that onGPIOreceive ignores packets with non-dict remotehw sections."""
+def test_onGPIOreceive_marks_response_on_nondict_remotehw() -> None:
+    """Malformed remotehw payloads should still unblock waiting callers."""
     iface = create_autospec(SerialInterface, instance=True)
     iface.gotResponse = False
     packet = {"decoded": {"remotehw": "not-a-dict"}}
 
     onGPIOreceive(packet, iface)
 
-    assert iface.gotResponse is False
+    assert iface.gotResponse is True
 
 
 @pytest.mark.unit

@@ -100,44 +100,43 @@ class PPK2PowerSupply(PowerSupply):
         """
         while self.measuring:
             with self._want_measurement:
-                self._want_measurement.wait(
+                timeout_s = (
                     INITIAL_POLL_TIMEOUT_S
                     if self.num_data_reads == 0
                     else SUBSEQUENT_POLL_TIMEOUT_S
                 )
+                self._want_measurement.wait(timeout_s)
                 if not self.measuring:
                     break
-                # normally we poll using this timeout, but sometimes
-                # reset_measurement() will notify us to read immediately
+            # Always reads 4096 bytes, even if there are no new samples.
+            # This I/O must happen outside _want_measurement to avoid blocking
+            # reset/close notifications.
+            read_data = self.r.get_data()
+            if read_data != b"":
+                samples, _ = self.r.get_samples(read_data)
 
-                # always reads 4096 bytes, even if there is no new samples - or possibly the python single thread (because of global interpreter lock)
-                # is always behind and thefore we are inherently dropping samples semi randomly!!!
-                read_data = self.r.get_data()
-                if read_data != b"":
-                    samples, _ = self.r.get_samples(read_data)
+                # update invariants
+                if len(samples) > 0:
+                    # The following operations could be expensive, so do outside of the lock
+                    # FIXME - change all these lists into numpy arrays to use lots less CPU
+                    batch_max = max(samples)
+                    batch_min = min(samples)
+                    latest_sum = sum(samples)
+                    with self._result_lock:
+                        if self.current_num_samples == 0:
+                            # First set of new reads, reset min/max
+                            self.current_max = batch_max
+                            self.current_min = batch_min
+                        else:
+                            self.current_max = max(self.current_max, batch_max)
+                            self.current_min = min(self.current_min, batch_min)
+                        self.current_sum += latest_sum
+                        self.current_num_samples += len(samples)
+                    # logging.debug(f"PPK2 data_len={len(read_data)}, sample_len={len(samples)}")
 
-                    # update invariants
-                    if len(samples) > 0:
-                        # The following operations could be expensive, so do outside of the lock
-                        # FIXME - change all these lists into numpy arrays to use lots less CPU
-                        batch_max = max(samples)
-                        batch_min = min(samples)
-                        latest_sum = sum(samples)
-                        with self._result_lock:
-                            if self.current_num_samples == 0:
-                                # First set of new reads, reset min/max
-                                self.current_max = batch_max
-                                self.current_min = batch_min
-                            else:
-                                self.current_max = max(self.current_max, batch_max)
-                                self.current_min = min(self.current_min, batch_min)
-                            self.current_sum += latest_sum
-                            self.current_num_samples += len(samples)
-                        # logging.debug(f"PPK2 data_len={len(read_data)}, sample_len={len(samples)}")
-
-                self.num_data_reads += 1
-                self.total_data_len += len(read_data)
-                self.max_data_len = max(self.max_data_len, len(read_data))
+            self.num_data_reads += 1
+            self.total_data_len += len(read_data)
+            self.max_data_len = max(self.max_data_len, len(read_data))
 
     def getMinCurrentMA(self) -> float:
         """Return the minimum current reading in milliamperes.
