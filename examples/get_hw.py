@@ -1,32 +1,35 @@
-"""Simple program to demo how to use meshtastic library.
-To run: python examples/get_hw.py.
+"""Print the local node's hardware model.
+To run: python examples/get_hw.py
 """
 
 import sys
 
-import meshtastic
 import meshtastic.serial_interface
 
-# simple arg check
-if len(sys.argv) != 1:
-    print(f"usage: {sys.argv[0]}")
-    print("Print the hardware model for the local node.")
-    sys.exit(3)
 
-with meshtastic.serial_interface.SerialInterface() as iface:
-    my_info = iface.myInfo
-    if my_info is not None and iface.nodes:
-        for n in iface.nodes.values():
-            if n.get("num") == my_info.my_node_num:
-                user = n.get("user")
-                if not isinstance(user, dict):
-                    user = {}
-                hw_model = user.get("hwModel", "unknown")
-                print(hw_model)
-                break
-        else:
-            print("Local node not found in node list.")
-    else:
-        print(
-            "No node info available. Ensure the device is connected and has joined the mesh."
-        )
+def main() -> None:
+    """Connect to a serial radio and print the local hardware model."""
+    if len(sys.argv) != 1:
+        print(f"usage: {sys.argv[0]}")
+        print("Print the hardware model for the local node.")
+        raise SystemExit(3)
+
+    with meshtastic.serial_interface.SerialInterface() as iface:
+        my_info = iface.myInfo
+        if my_info is None:
+            print("Local node info is not available yet.")
+            return
+
+        node = (iface.nodesByNum or {}).get(my_info.my_node_num)
+        if node is None:
+            print("Local node not found in node database yet.")
+            return
+
+        user = node.get("user", {})
+        if not isinstance(user, dict):
+            user = {}
+        print(user.get("hwModel", "unknown"))
+
+
+if __name__ == "__main__":
+    main()

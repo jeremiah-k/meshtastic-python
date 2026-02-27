@@ -2,7 +2,6 @@
 Before running, connect your machine to the same WiFi network as the radio.
 """
 
-import meshtastic
 import meshtastic.tcp_interface
 
 RADIO_HOSTNAME = "meshtastic.local"  # Can also be an IP
@@ -13,27 +12,21 @@ def main() -> None:
     try:
         with meshtastic.tcp_interface.TCPInterface(RADIO_HOSTNAME) as iface:
             my_info = iface.myInfo
-            if my_info is not None:
-                my_node_num = my_info.my_node_num
-                # Guard against unjoined-node sentinel (-1 indicates radio not yet joined)
-                if my_node_num < 0:
-                    print(
-                        "myInfo is not available — radio may not yet have joined a mesh."
-                    )
-                    return
-                nodes_by_num = iface.nodesByNum
-                if nodes_by_num is not None:
-                    node = nodes_by_num.get(my_node_num)
-                    if node is not None and "position" in node:
-                        print(node["position"])
-                    elif node is None:
-                        print(f"Node {my_node_num} not found in nodesByNum.")
-                    else:
-                        print("Node has no position data yet.")
-                else:
-                    print("nodesByNum is not available.")
-            else:
+            if my_info is None:
                 print("myInfo is not available — radio may not yet have joined a mesh.")
+                return
+
+            node = (iface.nodesByNum or {}).get(my_info.my_node_num)
+            if node is None:
+                print("Local node not found in node database yet.")
+                return
+
+            position = node.get("position")
+            if position is None:
+                print("Node has no position data yet.")
+                return
+
+            print(position)
     except OSError as exc:
         print(f"Could not connect to {RADIO_HOSTNAME}: {exc}")
 

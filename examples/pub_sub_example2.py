@@ -7,13 +7,7 @@ import time
 
 from pubsub import pub
 
-import meshtastic
 import meshtastic.tcp_interface
-
-# simple arg check
-if len(sys.argv) < 2:
-    print(f"usage: {sys.argv[0]} host")
-    sys.exit(1)
 
 
 def onReceive(packet, interface):  # pylint: disable=unused-argument
@@ -27,13 +21,24 @@ def onConnection(interface, topic=pub.AUTO_TOPIC):  # pylint: disable=unused-arg
     interface.sendText("hello mesh")
 
 
-pub.subscribe(onReceive, "meshtastic.receive")
-pub.subscribe(onConnection, "meshtastic.connection.established")
-try:
-    iface = meshtastic.tcp_interface.TCPInterface(hostname=sys.argv[1])
-    while True:
-        time.sleep(1000)
-    iface.close()
-except Exception as ex:
-    print(f"Error: Could not connect to {sys.argv[1]} {ex}")
-    sys.exit(1)
+def main() -> None:
+    """Connect to a TCP radio, print received packets, and send a greeting on connect."""
+    if len(sys.argv) < 2:
+        print(f"usage: {sys.argv[0]} host")
+        raise SystemExit(1)
+
+    pub.subscribe(onReceive, "meshtastic.receive")
+    pub.subscribe(onConnection, "meshtastic.connection.established")
+    try:
+        with meshtastic.tcp_interface.TCPInterface(hostname=sys.argv[1]):
+            while True:
+                time.sleep(1)
+    except KeyboardInterrupt:
+        print("Exiting...")
+    except OSError as exc:
+        print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
