@@ -371,7 +371,6 @@ class ConnectionOrchestrator:
             normalized_device_address or "unknown",
         )
 
-    def _transition_failure_to_disconnected(self, error_context: str) -> None:
         """Perform a best-effort state correction after a connection failure.
 
         Attempts to transition the connection state to ERROR and then to DISCONNECTED; if a transition is rejected, logs a warning and forces DISCONNECTED as a final fallback.

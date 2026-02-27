@@ -20,7 +20,6 @@ OPTIONAL_ANALYSIS_DEPS = {
 
 try:
     import pandas as pd
-    import pyarrow as pa
     from pyarrow import feather
 
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
