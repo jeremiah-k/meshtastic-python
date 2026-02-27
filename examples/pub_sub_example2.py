@@ -5,18 +5,21 @@ To run: `python examples/pub_sub_example2.py host`.
 
 import sys
 import time
+from typing import Any
 
 from pubsub import pub
 
 import meshtastic.tcp_interface
 
 
-def onReceive(packet, _interface):  # pylint: disable=unused-argument
+def onReceive(packet: Any, _interface: Any) -> None:  # pylint: disable=unused-argument
     """Handle an incoming packet."""
     print(f"Received: {packet}")
 
 
-def onConnection(interface, _topic=pub.AUTO_TOPIC):  # pylint: disable=unused-argument
+def onConnection(  # pylint: disable=unused-argument
+    interface: Any, _topic: Any = pub.AUTO_TOPIC
+) -> None:
     """Handle (re)connection to the radio."""
     # defaults to broadcast, specify a destination ID if you wish
     interface.sendText("hello mesh")

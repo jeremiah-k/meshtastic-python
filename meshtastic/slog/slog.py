@@ -5,6 +5,7 @@ import io
 import logging
 import os
 import re
+import shutil
 import threading
 import warnings
 from dataclasses import dataclass
@@ -550,7 +551,14 @@ class LogSet:
 
             # Also make a 'latest' directory that always points to the most recent logs
             latest_dir = Path(app_dir, "latest")
-            latest_dir.unlink(missing_ok=True)
+            if latest_dir.is_symlink() or latest_dir.exists():
+                try:
+                    if latest_dir.is_symlink() or latest_dir.is_file():
+                        latest_dir.unlink()
+                    elif latest_dir.is_dir():
+                        shutil.rmtree(latest_dir)
+                except OSError as ex:
+                    logger.debug("Unable to remove existing latest slog path: %s", ex)
 
             # symlink might fail on some platforms, if it does fail silently
             try:

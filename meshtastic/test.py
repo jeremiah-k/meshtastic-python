@@ -112,6 +112,8 @@ else:
     DotMap = _ImportedDotMap
 
 TEXT_MESSAGE_APP_PORTNUM = "TEXT_MESSAGE_APP"
+WAIT_LOOP_MAX_SECONDS = 60
+WAIT_LOOP_SLEEP_INTERVAL_SECONDS = 1
 
 # The interfaces we are using for our tests.
 interfaces: list[Any] = []
@@ -255,28 +257,30 @@ def testSend(
     )
     # pylint: disable=W0603
     global sendingInterface
+    local_test_id: int
     with guards_lock:
+        local_test_id = testNumber
         receivedPackets = []
         sendingInterface = fromInterface
         expected_from_node = fromNode
         expected_to_node = toNode
-        expected_text = None if asBinary else f"Test {testNumber}"
+        expected_text = None if asBinary else f"Test {local_test_id}"
     try:
         try:
             if not asBinary:
-                fromInterface.sendText(f"Test {testNumber}", toNode, wantAck=wantAck)
+                fromInterface.sendText(f"Test {local_test_id}", toNode, wantAck=wantAck)
             else:
                 fromInterface.sendData(
-                    (f"Binary {testNumber}").encode("utf-8"),
+                    (f"Binary {local_test_id}").encode("utf-8"),
                     toNode,
                     portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP,
                     wantAck=wantAck,
                 )
         except Exception:  # noqa: BLE001 - convert send failures into test failures
-            logger.exception("Send failed for test %s", testNumber)
+            logger.exception("Send failed for test %s", local_test_id)
             return False
-        for _ in range(60):  # max of 60 secs before we timeout
-            time.sleep(1)
+        for _ in range(WAIT_LOOP_MAX_SECONDS):
+            time.sleep(WAIT_LOOP_SLEEP_INTERVAL_SECONDS)
             with guards_lock:
                 packet_count = (
                     len(receivedPackets) if receivedPackets is not None else 0
