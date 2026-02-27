@@ -25,6 +25,7 @@ from .arrow import FeatherWriter
 
 logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
+_warned_deprecations_lock = threading.Lock()
 
 
 def _root_dir_impl() -> str:
@@ -48,13 +49,15 @@ def root_dir() -> str:
     str
         Filesystem path to the "slogs" directory.
     """
-    if "root_dir" not in _warned_deprecations:
-        warnings.warn(
-            "root_dir() is deprecated; use rootDir() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+    with _warned_deprecations_lock:
+        if "root_dir" in _warned_deprecations:
+            return _root_dir_impl()
         _warned_deprecations.add("root_dir")
+    warnings.warn(
+        "root_dir() is deprecated; use rootDir() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _root_dir_impl()
 
 
