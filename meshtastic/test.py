@@ -414,7 +414,7 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
 
 
 def testAll(numTests: int = 5) -> bool:
-    """Discover connected Meshtastic devices, open serial interfaces for each, run integration tests, and close interfaces.
+    """Discover connected Meshtastic devices, open up to two usable serial interfaces, run integration tests, and close interfaces.
 
     Parameters
     ----------

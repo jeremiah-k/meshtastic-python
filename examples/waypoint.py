@@ -14,7 +14,7 @@ import meshtastic.serial_interface
 INVALID_EXPIRE_MSG = "Invalid --expire: {!r}; expected ISO8601 format."
 
 
-def build_parser() -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser for waypoint operations."""
     parser = argparse.ArgumentParser(
         prog="waypoint", description="Create and delete Meshtastic waypoints"
@@ -46,7 +46,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Execute waypoint create/delete command against a serial-connected radio."""
-    args = build_parser().parse_args()
+    args = _build_parser().parse_args()
+
+    expire_unix: int | None = None
+    if args.cmd == "create":
+        try:
+            expire_unix = int(datetime.datetime.fromisoformat(args.expire).timestamp())
+        except ValueError:
+            raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire)) from None
 
     # By default this will auto-detect a Meshtastic device.
     debug_out = sys.stderr if args.debug else None
@@ -54,12 +61,6 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
-            try:
-                expire_unix = int(
-                    datetime.datetime.fromisoformat(args.expire).timestamp()
-                )
-            except ValueError:
-                raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire)) from None
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,

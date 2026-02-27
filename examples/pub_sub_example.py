@@ -28,8 +28,8 @@ def main() -> None:
         print(f"usage: {sys.argv[0]} host")
         raise SystemExit(1)
 
-    pub.subscribe(onConnection, "meshtastic.connection.established")
     _connected.clear()
+    pub.subscribe(onConnection, "meshtastic.connection.established")
     try:
         # Wait until the connection callback runs, then exit.
         with meshtastic.tcp_interface.TCPInterface(sys.argv[1]):
