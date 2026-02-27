@@ -73,6 +73,8 @@ class BLECoroutineRunner:
 
     """
 
+    # PEP 526 type hints for instance state used by static analyzers/IDEs;
+    # concrete initialization happens in __new__/__init__.
     _instance: "BLECoroutineRunner | None" = None
     _singleton_lock = threading.Lock()
     _initialized: bool

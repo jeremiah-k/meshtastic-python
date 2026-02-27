@@ -6,6 +6,12 @@ import subprocess
 import pytest
 
 
+def _fail_masked_timeout(command_name: str, timeout_s: int | float) -> None:
+    """Fail a test with a redacted timeout message for a CLI command."""
+    masked = f"{command_name!r} +REDACTED_ARGS"
+    pytest.fail(f"CLI command timed out after {timeout_s}s: {masked}")
+
+
 def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
     """Run a shell CLI command and return (exit_code, combined_output).
 
@@ -49,8 +55,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
             executable = shlex.split(command)[0]
         except (ValueError, IndexError):
             executable = command.split(" ", 1)[0] if command else "<unknown>"
-        masked = f"{executable!r} +REDACTED_ARGS"
-        pytest.fail(f"CLI command timed out after {timeout}s: {masked}")
+        _fail_masked_timeout(executable, timeout)
         raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout
 
@@ -86,6 +91,5 @@ def run_cli_argv_with_timeout(
     except subprocess.TimeoutExpired as e:
         cmd_name = cmd[0] if cmd else "<unknown>"
         timeout_value = e.timeout if e.timeout is not None else timeout
-        masked = f"{cmd_name!r} +REDACTED_ARGS"
-        pytest.fail(f"CLI command timed out after {timeout_value}s: {masked}")
+        _fail_masked_timeout(cmd_name, timeout_value)
         raise  # pragma: no cover - pytest.fail always raises

@@ -966,6 +966,8 @@ class BLEInterface(MeshInterface):
         b : bytes | bytearray
             Serialized mesh_pb2.LogRecord payload.
         """
+        # Async signature is intentional for 2.7.7 API compatibility; callers
+        # may safely await this wrapper even though it returns immediately.
         self._log_radio_handler(sender, b)
 
     def _legacy_log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:

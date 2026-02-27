@@ -372,17 +372,19 @@ class TCPInterface(StreamInterface):
                         drop_reason = (
                             f"Queued send dropped during reconnect for {self.hostname}"
                         )
+                        pending_entries: list[Any] = []
                         with self._queue_lock:
                             pending_queue = getattr(self, "queue", None)
                             if isinstance(pending_queue, dict) and pending_queue:
                                 dropped = len(pending_queue)
-                                for pending_entry in pending_queue.values():
-                                    with contextlib.suppress(Exception):
-                                        if self._notify_pending_sender_failure(
-                                            pending_entry, drop_reason
-                                        ):
-                                            notified += 1
+                                pending_entries = list(pending_queue.values())
                                 pending_queue.clear()
+                        for pending_entry in pending_entries:
+                            with contextlib.suppress(Exception):
+                                if self._notify_pending_sender_failure(
+                                    pending_entry, drop_reason
+                                ):
+                                    notified += 1
                         if dropped > 0:
                             logger.warning(
                                 "Dropped %d queued packet(s) before reconnect config on %s (notified=%d)",

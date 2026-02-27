@@ -158,9 +158,21 @@ def onGPIOReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
     gpioValue = 0
     decoded = packet.get("decoded", {})
     if not isinstance(decoded, dict):
+        logger.warning(
+            "Malformed remote hardware packet: decoded is not a dict (decoded=%r packet=%r)",
+            decoded,
+            packet,
+        )
+        interface.gotResponse = True
         return
     hw = decoded.get("remotehw", {})
     if not isinstance(hw, dict):
+        logger.warning(
+            "Malformed remote hardware packet: remotehw is not a dict (remotehw=%r packet=%r)",
+            hw,
+            packet,
+        )
+        interface.gotResponse = True
         return
     if "gpioValue" in hw:
         gpioValue = hw["gpioValue"]

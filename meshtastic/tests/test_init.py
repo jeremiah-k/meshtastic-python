@@ -148,6 +148,8 @@ def test_init_getattr_caches_serial_on_first_access(
 ) -> None:
     """Verify __getattr__ caches serial module on first access."""
     # Isolate module-level cache mutation to this test and auto-restore afterwards.
+    # `raising=False` allows this test to run whether meshtastic.serial is
+    # already cached or not.
     monkeypatch.delattr(meshtastic, "serial", raising=False)
 
     # First access should trigger lazy load.

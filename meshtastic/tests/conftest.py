@@ -151,9 +151,7 @@ def mt_config_state() -> Generator[None, None, None]:
             if isinstance(warned_deprecations, set):
                 try:
                     warned_snapshot: set[str] = copy.deepcopy(warned_deprecations)
-                except (
-                    Exception
-                ):  # noqa: BLE001 - deepcopy may fail for unusual set items
+                except (TypeError, copy.Error):
                     warned_snapshot = set(warned_deprecations)
                 # Ensure each test starts from a clean warn-once registry
                 warned_deprecations.clear()
@@ -163,7 +161,7 @@ def mt_config_state() -> Generator[None, None, None]:
     elif isinstance(warned_deprecations, set):
         try:
             warned_snapshot = copy.deepcopy(warned_deprecations)
-        except Exception:  # noqa: BLE001 - deepcopy may fail for unusual set items
+        except (TypeError, copy.Error):
             warned_snapshot = set(warned_deprecations)
         warned_deprecations.clear()
     else:

@@ -22,8 +22,8 @@ class SupportedDevice:
     # when you run "lsusb -d xxxx:" in linux
     usb_vendor_id_in_hex: str | None = None  # store in lower case
     usb_product_id_in_hex: str | None = None  # store in lower case
+    # Alternate VID/PID pairs for known USB enumeration modes.
     usb_id_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
-    """Alternate VID/PID pairs for known USB enumeration modes."""
 
     def __post_init__(self) -> None:
         """Normalize USB ID fields to lowercase and canonical tuple form."""
@@ -39,8 +39,8 @@ class SupportedDevice:
         )
         normalized_aliases: list[tuple[str, str]] = []
         for vendor_id, product_id in self.usb_id_aliases:
-            normalized_vendor_id = vendor_id.lower().strip() if vendor_id else ""
-            normalized_product_id = product_id.lower().strip() if product_id else ""
+            normalized_vendor_id = vendor_id.strip().lower() if vendor_id else ""
+            normalized_product_id = product_id.strip().lower() if product_id else ""
             if normalized_vendor_id and normalized_product_id:
                 normalized_aliases.append((normalized_vendor_id, normalized_product_id))
         self.usb_id_aliases = tuple(normalized_aliases)

@@ -316,6 +316,9 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
     # pylint: disable=W0603
     global testNumber
     logger.info("Running %s tests with wantAck=%s", numTests, wantAck)
+    if len(interfaces) < 2:
+        logger.error("runTests requires two initialized interfaces.")
+        return False
     numFail: int = 0
     numSuccess: int = 0
     for _ in range(numTests):

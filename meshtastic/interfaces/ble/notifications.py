@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.client import BLEClient
 
 logger = logging.getLogger("meshtastic.ble")
+UNSUBSCRIBE_FAILURE_WARNING_THRESHOLD = 3
 
 
 class NotificationManager:
@@ -113,15 +114,23 @@ class NotificationManager:
         with self._lock:
             characteristics = list(self._characteristic_to_callback.keys())
 
+        failure_count = 0
         for characteristic in characteristics:
             try:
                 client.stopNotify(characteristic, timeout=timeout)
             except Exception as e:  # noqa: BLE001
+                failure_count += 1
                 logger.debug(
                     "Failed to unsubscribe %s during shutdown: %s",
                     characteristic,
                     e,
                 )
+        if failure_count >= UNSUBSCRIBE_FAILURE_WARNING_THRESHOLD:
+            logger.warning(
+                "Failed to unsubscribe %d/%d BLE characteristic notifications during shutdown.",
+                failure_count,
+                len(characteristics),
+            )
 
     def _resubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
         """Resubscribe all tracked BLE notification callbacks on the given client.
