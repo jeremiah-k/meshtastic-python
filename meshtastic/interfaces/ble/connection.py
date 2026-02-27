@@ -110,6 +110,7 @@ class ConnectionValidator:
             normalized_request is None or normalized_request in normalized_known_targets
         )
 
+
 class ClientManager:
     """Helper for creating, connecting, and closing BLEClient instances."""
 
@@ -371,6 +372,7 @@ class ConnectionOrchestrator:
             normalized_device_address or "unknown",
         )
 
+    def _handle_connection_error(self, error_context: str) -> None:
         """Perform a best-effort state correction after a connection failure.
 
         Attempts to transition the connection state to ERROR and then to DISCONNECTED; if a transition is rejected, logs a warning and forces DISCONNECTED as a final fallback.
