@@ -135,11 +135,10 @@ class ReconnectScheduler:
         try:
             self.thread_coordinator._start_thread(thread)
             thread_ident = getattr(thread, "ident", None)
-            thread_started = bool(getattr(thread, "started", False))
             thread_is_alive = bool(
                 callable(getattr(thread, "is_alive", None)) and thread.is_alive()
             )
-            if thread_ident is None and not thread_started and not thread_is_alive:
+            if thread_ident is None and not thread_is_alive:
                 logger.debug(
                     "Auto-reconnect thread did not start; clearing stale thread reference."
                 )
@@ -219,13 +218,17 @@ class ReconnectWorker:
                 return fallback(*args)
         raise ReconnectPolicyMissingMethodError(method_name)
 
-    def _should_abort_reconnect(self, auto_reconnect: bool, context: str = "") -> bool:
-        """Return whether the reconnect process should be aborted based on the interface state and the auto-reconnect setting.
+    def _should_abort_reconnect(
+        self, auto_reconnect: bool | None = None, context: str = ""
+    ) -> bool:
+        """Return whether the reconnect process should be aborted based on interface state and live auto-reconnect setting.
 
         Parameters
         ----------
-        auto_reconnect : bool
-            Whether automatic reconnect is enabled.
+        auto_reconnect : bool | None
+            Backward-compatible placeholder. Current behavior reads
+            ``self.interface.auto_reconnect`` on each call so runtime flag
+            changes are observed immediately. (Default value = None)
         context : str
             Optional context string included in debug messages. (Default value = '')
 
@@ -234,13 +237,14 @@ class ReconnectWorker:
         bool
             `True` if reconnection should be aborted, `False` otherwise.
         """
+        _ = auto_reconnect  # retained for compatibility with existing call sites/tests
         if self.interface._is_connection_closing:
             logger.debug(
                 "Auto-reconnect aborted%s: interface is closing.",
                 f" ({context})" if context else "",
             )
             return True
-        if not auto_reconnect:
+        if not bool(getattr(self.interface, "auto_reconnect", False)):
             logger.debug(
                 "Auto-reconnect aborted%s: auto-reconnect disabled.",
                 f" ({context})" if context else "",
@@ -312,7 +316,8 @@ class ReconnectWorker:
         Parameters
         ----------
         auto_reconnect : bool
-            If False, the loop will exit without attempting reconnects.
+            Backward-compatible snapshot value from scheduler call sites. Live
+            gating uses ``self.interface.auto_reconnect`` on each loop pass.
         shutdown_event : Event
             Event that stops the loop when set.
         on_exit : Callable[[], None] | None
@@ -322,9 +327,10 @@ class ReconnectWorker:
             self._call_policy("reset")
             interface = self.interface
             override_delay: float | None = None
+            _ = auto_reconnect  # retained for compatibility with existing tests/callers
             while not shutdown_event.is_set():
                 override_delay = None
-                if self._should_abort_reconnect(auto_reconnect, "loop start"):
+                if self._should_abort_reconnect(context="loop start"):
                     return
                 attempt_num = 0
                 try:
@@ -372,6 +378,11 @@ class ReconnectWorker:
                         "Attempting BLE auto-reconnect (attempt %d).",
                         attempt_num,
                     )
+                    if not interface.address:
+                        logger.warning(
+                            "Cannot attempt auto-reconnect: interface address is not set."
+                        )
+                        return
                     interface.connect(interface.address)
                 except ReconnectPolicyMissingMethodError as err:
                     logger.exception(
@@ -380,7 +391,7 @@ class ReconnectWorker:
                     )
                     return
                 except interface.BLEError as err:
-                    if self._should_abort_reconnect(auto_reconnect, "BLEError"):
+                    if self._should_abort_reconnect(context="BLEError"):
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed: %s",
@@ -388,7 +399,7 @@ class ReconnectWorker:
                         err,
                     )
                 except BleakDBusError:
-                    if self._should_abort_reconnect(auto_reconnect, "DBusError"):
+                    if self._should_abort_reconnect(context="DBusError"):
                         return
                     # DBus errors are often transient on Linux; log as warning since we'll retry
                     logger.warning(
@@ -401,7 +412,7 @@ class ReconnectWorker:
                     # State transition to ERROR and DISCONNECTED is already handled by
                     # the connection orchestrator, so we don't need to do it here
                 except BleakError as err:
-                    if self._should_abort_reconnect(auto_reconnect, "BleakError"):
+                    if self._should_abort_reconnect(context="BleakError"):
                         return
                     logger.warning(
                         "Auto-reconnect attempt %d failed with BLE error: %s",
@@ -416,7 +427,7 @@ class ReconnectWorker:
                     )
                     override_delay = delay_hint
                 except Exception:
-                    if self._should_abort_reconnect(auto_reconnect, "unexpected error"):
+                    if self._should_abort_reconnect(context="unexpected error"):
                         return
                     logger.exception(
                         "Unexpected error during auto-reconnect attempt %d",
@@ -429,7 +440,7 @@ class ReconnectWorker:
                     )
                     return
 
-                if self._should_abort_reconnect(auto_reconnect, "pre-sleep"):
+                if self._should_abort_reconnect(context="pre-sleep"):
                     return
                 try:
                     next_attempt = self._call_policy("next_attempt")

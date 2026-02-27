@@ -152,7 +152,7 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
         ):
             data = iface._read_bytes(1)
 
-        assert data is None
+        assert data == b""
         mock_connect.assert_not_called()
         mock_start_config.assert_not_called()
         mock_sleep.assert_not_called()

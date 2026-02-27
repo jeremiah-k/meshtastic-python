@@ -27,7 +27,9 @@ MISSING_DEST_NODE_ID_ERROR = (
 WATCH_MASKS_ATTR = "_remote_hardware_watch_masks"
 WATCH_MASKS_LOCK_ATTR = "_remote_hardware_watch_masks_lock"
 WATCH_MASKS_INIT_LOCK = threading.Lock()
+REMOTE_HARDWARE_SUBSCRIBE_LOCK = threading.Lock()
 
+_MESH_INTERFACE_ERROR_LOCK = threading.Lock()
 _MESH_INTERFACE_ERROR: type[Exception] | None = None
 
 
@@ -40,7 +42,7 @@ class LockLike(Protocol):
     def release(self) -> None:
         """Release the lock."""
 
-    def __enter__(self) -> "LockLike":
+    def __enter__(self) -> bool:
         """Enter context manager and acquire lock."""
 
     def __exit__(
@@ -62,11 +64,13 @@ def _get_mesh_interface_error() -> type[Exception]:
     """
     global _MESH_INTERFACE_ERROR  # pylint: disable=global-statement
     if _MESH_INTERFACE_ERROR is None:
-        from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
-            MeshInterface,
-        )
+        with _MESH_INTERFACE_ERROR_LOCK:
+            if _MESH_INTERFACE_ERROR is None:
+                from meshtastic.mesh_interface import (  # pylint: disable=import-outside-toplevel
+                    MeshInterface,
+                )
 
-        _MESH_INTERFACE_ERROR = MeshInterface.MeshInterfaceError
+                _MESH_INTERFACE_ERROR = MeshInterface.MeshInterfaceError
     return _MESH_INTERFACE_ERROR
 
 
@@ -98,7 +102,13 @@ def _normalize_node_key(nodeid: Any) -> str | None:
 
 
 def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
-    """Return per-interface watch masks, creating storage if needed."""
+    """Return per-interface watch masks, creating storage if needed.
+
+    This helper mutates ``WATCH_MASKS_ATTR`` on ``interface`` when missing and
+    is not thread-safe by itself. Callers of ``_get_watch_masks`` must hold the
+    lock returned by ``_get_watch_masks_lock(interface)`` when reading or
+    mutating the returned dictionary.
+    """
     watch_masks = getattr(interface, WATCH_MASKS_ATTR, None)
     if isinstance(watch_masks, dict):
         return watch_masks
@@ -227,19 +237,22 @@ class RemoteHardwareClient:
         with _get_watch_masks_lock(self.iface):
             _get_watch_masks(self.iface)
 
-        already_subscribed = False
-        try:
-            already_subscribed = pub.isSubscribed(onGpioReceive, REMOTE_HARDWARE_TOPIC)
-        except pub.TopicNameError:
-            # Topic may not exist yet; subscribe below to create/register it.
+        with REMOTE_HARDWARE_SUBSCRIBE_LOCK:
             already_subscribed = False
-        except (TypeError, ValueError) as ex:
-            logger.warning(
-                "Unable to inspect remote hardware topic subscription: %s", ex
-            )
-            already_subscribed = False
-        if not already_subscribed:
-            pub.subscribe(onGpioReceive, REMOTE_HARDWARE_TOPIC)
+            try:
+                already_subscribed = pub.isSubscribed(
+                    onGpioReceive, REMOTE_HARDWARE_TOPIC
+                )
+            except pub.TopicNameError:
+                # Topic may not exist yet; subscribe below to create/register it.
+                already_subscribed = False
+            except (TypeError, ValueError) as ex:
+                logger.warning(
+                    "Unable to inspect remote hardware topic subscription: %s", ex
+                )
+                already_subscribed = False
+            if not already_subscribed:
+                pub.subscribe(onGpioReceive, REMOTE_HARDWARE_TOPIC)
 
     def _send_hardware(
         self,
@@ -277,21 +290,32 @@ class RemoteHardwareClient:
         is_invalid_str = isinstance(nodeid, str) and nodeid.strip() == ""
         is_invalid_int = isinstance(nodeid, int) and not is_invalid_bool and nodeid == 0
         is_zero_numeric_str = False
+        is_special_alias = False
         if isinstance(nodeid, str) and not is_invalid_str:
+            normalized_nodeid = nodeid.strip().lower()
+            is_special_alias = normalized_nodeid.startswith("^")
             try:
-                is_zero_numeric_str = int(nodeid.strip().lower(), 0) == 0
+                is_zero_numeric_str = int(normalized_nodeid, 0) == 0
             except ValueError:
                 is_zero_numeric_str = False
-        if (
+        has_invalid_dest_nodeid = (
             nodeid is None
             or is_invalid_bool
             or is_invalid_str
             or is_invalid_int
             or is_zero_numeric_str
-        ):
+            or is_special_alias
+        )
+        if has_invalid_dest_nodeid:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
-        dest_nodeid: int | str = nodeid.strip() if isinstance(nodeid, str) else nodeid
+        if isinstance(nodeid, str):
+            dest_nodeid: int | str = nodeid.strip()
+        elif isinstance(nodeid, int) and not isinstance(nodeid, bool):
+            dest_nodeid = nodeid
+        else:
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         return self.iface.sendData(
             r,
             dest_nodeid,

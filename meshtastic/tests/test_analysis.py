@@ -44,6 +44,19 @@ except ModuleNotFoundError as exc:
     raise
 
 
+def _patch_cli_exit_capture(
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
+) -> None:
+    """Patch analysis_main._cli_exit to capture message and raise SystemExit."""
+
+    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
+        captured["message"] = message
+        captured["code"] = return_value
+        raise SystemExit(return_value)
+
+    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+
+
 @pytest.mark.unit
 def test_analysis(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
@@ -76,27 +89,50 @@ def test_main_routes_load_errors_through_cli_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """main() should emit a graceful CLI error when slog loading fails."""
-    captured: dict[str, str] = {}
+    captured: dict[str, Any] = {}
 
     def _fake_create_dash(*, slog_path: str) -> NoReturn:
         _ = slog_path
         raise ValueError("bad slog")  # noqa: TRY003
 
-    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
-        _ = return_value
-        captured["message"] = message
-        raise SystemExit(1)
-
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
-    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
-    monkeypatch.setattr(
-        sys, "argv", ["fakescriptname", "--no-server", "--slog", os.devnull]
-    )
+    _patch_cli_exit_capture(monkeypatch, captured)
+    monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
         main()
 
     assert "Error loading slog data: bad slog" in captured["message"]
+    assert captured["code"] == 1
+
+
+@pytest.mark.unit
+def test_main_routes_server_startup_errors_through_cli_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """main() should emit a graceful CLI error when Dash server startup fails."""
+    captured: dict[str, Any] = {}
+
+    class _FailingApp:
+        def run(self, *, debug: bool, host: str, port: int) -> NoReturn:
+            """Simulate Dash server startup failure."""
+            _ = (debug, host, port)
+            raise OSError("address already in use")
+
+    def _fake_create_dash(*, slog_path: str) -> _FailingApp:
+        _ = slog_path
+        return _FailingApp()
+
+    monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
+    _patch_cli_exit_capture(monkeypatch, captured)
+    monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
+
+    with pytest.raises(SystemExit):
+        main()
+
+    assert "Error starting Dash server on 127.0.0.1:" in captured["message"]
+    assert "address already in use" in captured["message"]
+    assert captured["code"] == 1
 
 
 @pytest.mark.unit
@@ -208,6 +244,19 @@ def test_get_pmon_raises_requires_time_column() -> None:
     """get_pmon_raises should fail clearly when the time column is missing."""
     dslog = pd.DataFrame({"pm_mask": [0, 1, 3]})
     with pytest.raises(ValueError, match="No time column found in slog"):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
+def test_get_pmon_raises_rejects_non_integer_masks() -> None:
+    """get_pmon_raises should reject non-integer pm_mask values."""
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0, 1.5],
+        }
+    )
+    with pytest.raises(ValueError, match="pm_mask contains non-integer values"):
         get_pmon_raises(dslog)
 
 

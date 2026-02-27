@@ -11,7 +11,7 @@ import sys
 
 import meshtastic.serial_interface
 
-INVALID_EXPIRE_MSG = "Invalid --expire: {!r}; expected ISO8601 format."
+INVALID_EXPIRE_MSG = 'Invalid "expire": {!r}; expected ISO8601 format.'
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -51,7 +51,10 @@ def main() -> None:
     expire_unix: int | None = None
     if args.cmd == "create":
         try:
-            expire_unix = int(datetime.datetime.fromisoformat(args.expire).timestamp())
+            parsed_expire = datetime.datetime.fromisoformat(args.expire)
+            if parsed_expire.tzinfo is None:
+                parsed_expire = parsed_expire.replace(tzinfo=datetime.timezone.utc)
+            expire_unix = int(parsed_expire.timestamp())
         except ValueError:
             raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire)) from None
 
@@ -61,6 +64,7 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
+            assert expire_unix is not None
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,

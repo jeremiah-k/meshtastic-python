@@ -11,7 +11,9 @@ managers/helpers live in submodules under
 
 try:
     import bleak as _bleak  # noqa: F401
-except ImportError as exc:  # pragma: no cover - dependency guard
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    if exc.name != "bleak":
+        raise
     raise ImportError(  # noqa: TRY003
         "BLE support requires the 'bleak' package, but it is missing. "
         "Your Meshtastic installation appears incomplete; reinstall dependencies "

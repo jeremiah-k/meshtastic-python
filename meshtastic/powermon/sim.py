@@ -2,15 +2,15 @@
 
 import math
 import time
+from typing import Final
 
 from .power_supply import PowerSupply
 
 # Simulation constants
-SIM_BASE_CURRENT_MA = 20.0
-"""Base simulated current in milliamperes."""
-
-SIM_CURRENT_VARIATION_MA = 5.0
-"""Amplitude of sinusoidal current variation in milliamperes."""
+SIM_BASE_CURRENT_MA: Final[float] = 20.0  # Base simulated current in milliamperes.
+SIM_CURRENT_VARIATION_MA: Final[float] = (
+    5.0  # Amplitude of sinusoidal current variation in milliamperes.
+)
 
 
 class SimPowerSupply(PowerSupply):

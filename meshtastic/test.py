@@ -113,13 +113,13 @@ else:
 
 TEXT_MESSAGE_APP_PORTNUM = "TEXT_MESSAGE_APP"
 WAIT_LOOP_MAX_SECONDS = 60
-WAIT_LOOP_SLEEP_INTERVAL_SECONDS = 1
 
 # The interfaces we are using for our tests.
 interfaces: list[Any] = []
 
 # A list of all packets we received while the current test was running.
 receivedPackets: list[Any] | None = None
+packet_received_event = threading.Event()
 
 testNumber: int = 0
 
@@ -189,6 +189,7 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
             # We only care about clear text packets.
             if receivedPackets is not None:
                 receivedPackets.append(DotMap(packet))
+                packet_received_event.set()
 
 
 def onNode(node: Any) -> None:
@@ -261,6 +262,7 @@ def testSend(
     with guards_lock:
         local_test_id = testNumber
         receivedPackets = []
+        packet_received_event.clear()
         sendingInterface = fromInterface
         expected_from_node = fromNode
         expected_to_node = toNode
@@ -279,15 +281,11 @@ def testSend(
         except Exception:  # noqa: BLE001 - convert send failures into test failures
             logger.exception("Send failed for test %s", local_test_id)
             return False
-        for _ in range(WAIT_LOOP_MAX_SECONDS):
-            time.sleep(WAIT_LOOP_SLEEP_INTERVAL_SECONDS)
-            with guards_lock:
-                packet_count = (
-                    len(receivedPackets) if receivedPackets is not None else 0
-                )
-            if packet_count >= 1:
-                return True
-        return False  # Failed to send
+        if not packet_received_event.wait(timeout=WAIT_LOOP_MAX_SECONDS):
+            return False
+        with guards_lock:
+            packet_count = len(receivedPackets) if receivedPackets is not None else 0
+        return packet_count >= 1
     finally:
         with guards_lock:
             expected_from_node = None
@@ -295,6 +293,7 @@ def testSend(
             expected_text = None
             sendingInterface = None
             receivedPackets = None
+            packet_received_event.clear()
 
 
 def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) -> bool:
@@ -314,15 +313,16 @@ def runTests(numTests: int = 50, wantAck: bool = False, maxFailures: int = 0) ->
     bool
         `True` if the number of failed tests is less than or equal to `maxFailures`, `False` otherwise.
     """
+    # pylint: disable=W0603
+    global testNumber
     logger.info("Running %s tests with wantAck=%s", numTests, wantAck)
     numFail: int = 0
     numSuccess: int = 0
     for _ in range(numTests):
-        # pylint: disable=W0603
-        global testNumber
         with guards_lock:
             testNumber = testNumber + 1
-        isBroadcast: bool = True
+        # Use unicast when ACKs are requested so ACK behavior is exercised.
+        isBroadcast: bool = not wantAck
         # asBinary=(i % 2 == 0)
         success = testSend(
             interfaces[0], interfaces[1], isBroadcast, asBinary=False, wantAck=wantAck

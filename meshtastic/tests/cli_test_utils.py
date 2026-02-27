@@ -66,6 +66,8 @@ def run_cli_argv_with_timeout(
     subprocess.CompletedProcess[str]
         CompletedProcess with returncode, stdout, and stderr attributes.
     """
+    if not cmd:
+        raise ValueError("cmd must not be empty")
     try:
         return subprocess.run(  # noqa: S603
             cmd,

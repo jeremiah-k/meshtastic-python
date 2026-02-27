@@ -81,15 +81,17 @@ def test_send_to_radio_impl_rejects_oversized_payload() -> None:
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_write_and_read_skip_when_stream_not_open() -> None:
-    """_write_bytes/_read_bytes should ignore a configured-but-closed stream."""
+    """_write_bytes/_read_bytes should fail clearly for a configured-but-closed stream."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
         stream = MagicMock()
         stream.is_open = False
         iface.stream = stream
 
-        iface._write_bytes(b"hello")
-        assert iface._read_bytes(5) is None
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._write_bytes(b"hello")
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._read_bytes(5)
 
         stream.write.assert_not_called()
         stream.flush.assert_not_called()

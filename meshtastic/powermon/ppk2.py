@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 from contextlib import suppress
+from typing import Final
 
 from ppk2_api import ppk2_api  # type: ignore[import-untyped]
 
@@ -11,17 +12,10 @@ from .constants import MICROAMPS_PER_MILLIAMP, MILLIVOLTS_PER_VOLT, MIN_SUPPLY_V
 from .power_supply import PowerError, PowerSupply
 
 # PPK2-specific timing constants
-INITIAL_POLL_TIMEOUT_S = 0.0001
-"""Initial wait timeout for measurement polling (100μs)."""
-
-SUBSEQUENT_POLL_TIMEOUT_S = 0.001
-"""Subsequent wait timeout for measurement polling (1ms)."""
-
-THREAD_JOIN_TIMEOUT_S = 5.0
-"""Timeout for joining the measurement thread on close."""
-
-STABILIZATION_DELAY_S = 0.2
-"""Delay to discard bogus initial power readings in FIFO."""
+INITIAL_POLL_TIMEOUT_S: Final[float] = 0.0001  # Initial poll timeout (100μs).
+SUBSEQUENT_POLL_TIMEOUT_S: Final[float] = 0.001  # Subsequent poll timeout (1ms).
+THREAD_JOIN_TIMEOUT_S: Final[float] = 5.0  # Join timeout for measurement thread.
+STABILIZATION_DELAY_S: Final[float] = 0.2  # Delay to discard initial FIFO readings.
 
 
 class PPK2PowerSupply(PowerSupply):
@@ -211,6 +205,8 @@ class PPK2PowerSupply(PowerSupply):
     def close(self) -> None:
         """Close the power meter and release resources."""
         self.measuring = False
+        with self._want_measurement:
+            self._want_measurement.notify_all()
         with suppress(Exception):
             self.r.stop_measuring()  # send command to ppk2
         if self.measurement_thread.is_alive():
@@ -246,6 +242,9 @@ class PPK2PowerSupply(PowerSupply):
             If the supply voltage has not been set to at least MIN_SUPPLY_VOLTAGE_V before calling this method.
         """
 
+        # setIsSupply validates the preconfigured voltage (self.v) before
+        # calling set_source_voltage(); callers should set desired voltage
+        # first via set_source_voltage() or direct self.v assignment.
         if self.v < MIN_SUPPLY_VOLTAGE_V:
             raise PowerError(  # noqa: TRY003
                 f"Supply voltage must be set to at least {MIN_SUPPLY_VOLTAGE_V}V before calling setIsSupply "

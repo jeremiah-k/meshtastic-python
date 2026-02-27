@@ -11,4 +11,6 @@ convention = "numpy"
 # Generated protobuf modules rely on import side effects during descriptor loading.
 [lint.per-file-ignores]
 "meshtastic/protobuf/*_pb2.py" = ["F401"]
+"meshtastic/protobuf/*_pb2.pyi" = ["F401"]
 "meshtastic/__init__.py" = ["F401"]
+"meshtastic/__init__.pyi" = ["F401"]

@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_ASSERT_MODULE_STATE_DRIFT: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip3 install "poetry==2.3.2"
+          python -m pip install "poetry==2.3.2"
       - name: Install meshtastic from local
         run: |
           poetry install --all-extras --with dev,powermon
@@ -59,7 +62,7 @@ jobs:
           fi
       - name: Upload coverage to Codecov
         if: ${{ matrix.python-version == '3.13' }}
-        uses: codecov/codecov-action@v5.5.2
+        uses: codecov/codecov-action@0561704f0f02c16a585d4c7555e57fa2e44cf909
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -107,6 +110,6 @@ jobs:
       - name: Install meshtastic from local
         run: |
           python -m pip install --upgrade pip
-          pip3 install "poetry==2.3.2"
+          python -m pip install "poetry==2.3.2"
           poetry install
           poetry run meshtastic --version
