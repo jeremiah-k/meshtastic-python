@@ -132,7 +132,7 @@ def _get_watch_masks_lock(interface: "MeshInterface") -> LockLike:
     return cast(LockLike, lock)
 
 
-def onGPIOReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
+def onGPIOReceive(packet: Any, interface: "MeshInterface") -> None:
     """Handle an incoming remote hardware (GPIO) response packet, log its summary, and mark the interface as having received a response.
 
     Extracts `gpioValue` from packet["decoded"]["remotehw"] (defaults to 0 if
@@ -144,16 +144,25 @@ def onGPIOReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
 
     Parameters
     ----------
-    packet : dict[str, Any]
+    packet : Any
         Decoded message dictionary containing a "remotehw" mapping with optional keys:
         - "gpioValue" (int): GPIO value reported by the remote device (may be
           omitted; treated as 0).
         - "gpioMask" (int): Mask provided by the remote device.
         - "type" (int|enum): Hardware message type.
+        Non-dict payloads are treated as malformed and only mark `gotResponse`.
     interface : 'MeshInterface'
         MeshInterface instance that may contain per-node watch mask state and
         whose `gotResponse` attribute will be set to True.
     """
+    if not isinstance(packet, dict):
+        logger.warning(
+            "Malformed remote hardware packet: packet is not a dict (packet=%r)",
+            packet,
+        )
+        interface.gotResponse = True
+        return
+
     logger.debug("packet:%s interface:%s", packet, interface)
     gpioValue = 0
     decoded = packet.get("decoded", {})

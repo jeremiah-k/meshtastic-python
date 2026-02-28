@@ -67,6 +67,17 @@ def test_onGPIOreceive_uses_node_watch_mask(
 
 
 @pytest.mark.unit
+def test_onGPIOreceive_marks_response_on_nondict_packet() -> None:
+    """Malformed top-level packet values should still unblock waiting callers."""
+    iface = create_autospec(SerialInterface, instance=True)
+    iface.gotResponse = False
+
+    onGPIOreceive(None, iface)  # type: ignore[arg-type]
+
+    assert iface.gotResponse is True
+
+
+@pytest.mark.unit
 def test_onGPIOreceive_marks_response_on_nondict_decoded() -> None:
     """Malformed decoded payloads should still unblock waiting callers."""
     iface = create_autospec(SerialInterface, instance=True)

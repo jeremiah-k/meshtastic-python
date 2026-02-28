@@ -115,6 +115,34 @@ def test_setIsSupply_does_not_restart_when_already_measuring(
 
 
 @pytest.mark.unit
+def test_setIsSupply_rechecks_thread_liveness_before_reader_restart(
+    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+) -> None:
+    """If reader thread dies mid-call, setIsSupply() should still restart measurement safely."""
+    ppk = ppk2_stub
+    ppk.v = 3.3
+    ppk.r = MagicMock()
+    old_thread = MagicMock()
+    old_thread.is_alive.side_effect = [True, False]
+    old_thread.ident = 123
+    ppk.measurement_thread = old_thread
+    replacement_thread = MagicMock()
+    replacement_thread.ident = None
+    replacement_thread.is_alive.return_value = False
+    monkeypatch.setattr(
+        "meshtastic.powermon.ppk2.threading.Thread", lambda **_: replacement_thread
+    )
+    ppk.resetMeasurements = MagicMock()  # type: ignore[method-assign]
+    monkeypatch.setattr("meshtastic.powermon.ppk2.time.sleep", lambda _: None)
+
+    ppk.setIsSupply(is_supply=False)
+
+    ppk.r.start_measuring.assert_called_once()
+    replacement_thread.start.assert_called_once()
+    assert ppk.measurement_thread is replacement_thread
+
+
+@pytest.mark.unit
 def test_average_current_camelcase_aliases_are_consistent(
     ppk2_stub: "PPK2PowerSupply",
 ) -> None:

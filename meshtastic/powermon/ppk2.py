@@ -99,10 +99,12 @@ class PPK2PowerSupply(PowerSupply):
         initialization after ``reset_measurements()`` cannot race.
         """
         while self.measuring:
+            with self._result_lock:
+                num_data_reads = self.num_data_reads
             with self._want_measurement:
                 timeout_s = (
                     INITIAL_POLL_TIMEOUT_S
-                    if self.num_data_reads == 0
+                    if num_data_reads == 0
                     else SUBSEQUENT_POLL_TIMEOUT_S
                 )
                 self._want_measurement.wait(timeout_s)
@@ -134,9 +136,10 @@ class PPK2PowerSupply(PowerSupply):
                         self.current_num_samples += len(samples)
                     # logging.debug(f"PPK2 data_len={len(read_data)}, sample_len={len(samples)}")
 
-            self.num_data_reads += 1
-            self.total_data_len += len(read_data)
-            self.max_data_len = max(self.max_data_len, len(read_data))
+            with self._result_lock:
+                self.num_data_reads += 1
+                self.total_data_len += len(read_data)
+                self.max_data_len = max(self.max_data_len, len(read_data))
 
     def getMinCurrentMA(self) -> float:
         """Return the minimum current reading in milliamperes.
@@ -192,13 +195,12 @@ class PPK2PowerSupply(PowerSupply):
                 self.last_reported_max = self.current_max
             self.current_sum = 0
             self.current_num_samples = 0
-
-        # if self.num_data_reads:
-        #    logging.debug(f"max data len = {self.max_data_len},avg {self.total_data_len/self.num_data_reads}, num reads={self.num_data_reads}")
-        # Summary stats for performance monitoring
-        self.num_data_reads = 0
-        self.total_data_len = 0
-        self.max_data_len = 0
+            # if self.num_data_reads:
+            #    logging.debug(f"max data len = {self.max_data_len},avg {self.total_data_len/self.num_data_reads}, num reads={self.num_data_reads}")
+            # Summary stats for performance monitoring
+            self.num_data_reads = 0
+            self.total_data_len = 0
+            self.max_data_len = 0
 
         with self._want_measurement:
             self._want_measurement.notify()  # notify the measurement loop to read immediately
@@ -259,10 +261,11 @@ class PPK2PowerSupply(PowerSupply):
 
         # Avoid re-issuing start while actively measuring: some devices flush/restart
         # buffered data if start_measuring() is sent again mid-session.
-        is_measuring = self.measurement_thread.is_alive()
-        if not is_measuring:
+        did_start_measuring = False
+        if not self.measurement_thread.is_alive():
             # must be after setting source voltage and before setting mode
             self.r.start_measuring()  # send command to ppk2
+            did_start_measuring = True
 
         if (
             not is_supply
@@ -271,8 +274,13 @@ class PPK2PowerSupply(PowerSupply):
         else:
             self.r.use_source_meter()  # set source meter mode
 
-        if not is_measuring:
+        if not self.measurement_thread.is_alive():
             self.measuring = True
+            if not did_start_measuring:
+                # The previous thread may have exited between checks; ensure the
+                # device-side measurement stream is running before restarting
+                # the reader thread.
+                self.r.start_measuring()
 
             # Thread objects are single-use; create a fresh one if the previous
             # thread has already been started (and possibly joined via close()).
