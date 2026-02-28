@@ -187,6 +187,25 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
 
 
 @pytest.mark.unit
+def test_TCPInterface_connect_skips_startup_when_shutting_down() -> None:
+    """connect() should no-op when shutdown/fatal flags are active and no socket exists."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        iface.socket = None
+        iface._wantExit = True
+        try:
+            with (
+                patch.object(iface, "myConnect") as mock_connect,
+                patch("meshtastic.tcp_interface.StreamInterface.connect") as mock_super,
+            ):
+                iface.connect()
+            mock_connect.assert_not_called()
+            mock_super.assert_not_called()
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
     """Ensure reader-thread reconnect clears queued packets before _start_config().
 

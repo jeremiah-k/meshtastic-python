@@ -452,7 +452,8 @@ class BLEInterface(MeshInterface):
         stack = contextlib.ExitStack()
         try:
             for key in ordered_keys:
-                stack.enter_context(_addr_lock_context(key))
+                addr_lock = stack.enter_context(_addr_lock_context(key))
+                stack.enter_context(addr_lock)
         except BaseException:
             stack.close()
             raise
@@ -1479,7 +1480,10 @@ class BLEInterface(MeshInterface):
                 # Acquire the per-address lock without holding _REGISTRY_LOCK to
                 # avoid lock-order inversion with paths that hold address locks
                 # and then take registry lock to mark ownership.
-                stack.enter_context(_addr_lock_context(address_registry_key))
+                addr_lock = stack.enter_context(
+                    _addr_lock_context(address_registry_key)
+                )
+                stack.enter_context(addr_lock)
                 # Re-check after waiting for the address gate to close the TOCTOU window.
                 self._raise_if_duplicate_connect(address_registry_key)
 

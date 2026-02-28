@@ -231,7 +231,13 @@ class TCPInterface(StreamInterface):
 
     def connect(self) -> None:
         """Ensure socket availability, then run shared StreamInterface startup."""
-        if self.socket is None and not self._wantExit and not self._fatal_disconnect:
+        if self.socket is None:
+            if self._wantExit or self._fatal_disconnect:
+                logger.debug(
+                    "Skipping TCP connect during shutdown/fatal state for %s",
+                    self.hostname,
+                )
+                return
             self.myConnect()
         super().connect()
 

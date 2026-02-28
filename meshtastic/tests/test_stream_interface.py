@@ -113,3 +113,59 @@ def test_close_closes_stream_even_without_reader_thread() -> None:
 
     stream.close.assert_called_once()
     assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
+    """connect() should not send wake bytes when subclass provides its own stream."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_write_bytes") as write_bytes,
+            patch.object(iface, "_start_config") as start_config,
+        ):
+            iface.connect()
+        write_bytes.assert_not_called()
+        start_config.assert_called_once()
+        iface._rxThread.start.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_retries_until_full_payload_written() -> None:
+    """_write_bytes should handle partial writes until full payload is sent."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.side_effect = [2, 3]
+    iface.stream = stream
+    try:
+        iface._write_bytes(b"hello")
+        assert stream.write.call_count == 2
+        stream.flush.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_raises_on_zero_progress() -> None:
+    """_write_bytes should fail fast when stream write reports no progress."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.return_value = 0
+    iface.stream = stream
+    try:
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._write_bytes(b"hello")
+    finally:
+        iface.close()
