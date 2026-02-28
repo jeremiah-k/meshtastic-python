@@ -1,5 +1,6 @@
 """Unit tests for PPK2 power-meter measurement state behavior."""
 
+import math
 from unittest.mock import MagicMock
 
 import pytest
@@ -33,6 +34,15 @@ def test_reset_measurements_preserves_last_reported_extrema(
     assert ppk.max_data_len == 0
     assert ppk.get_min_current_mA() == pytest.approx(2.1)
     assert ppk.get_max_current_mA() == pytest.approx(9.4)
+
+
+@pytest.mark.unit
+def test_initial_pre_sample_stats_are_nan(ppk2_stub: "PPK2PowerSupply") -> None:
+    """Pre-sample stats should start as NaN so no-data is distinguishable from zero."""
+    ppk = ppk2_stub
+    assert math.isnan(ppk.current_average)
+    assert math.isnan(ppk.last_reported_min)
+    assert math.isnan(ppk.last_reported_max)
 
 
 @pytest.mark.unit

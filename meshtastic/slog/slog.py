@@ -190,7 +190,12 @@ class PowerLogger:
     @pMeter.setter
     def pMeter(self, value: PowerMeter) -> None:
         """Set the underlying PowerMeter."""
-        self._p_meter = value
+        reading_lock = getattr(self, "_reading_lock", None)
+        if reading_lock is None:
+            self._p_meter = value
+            return
+        with reading_lock:
+            self._p_meter = value
 
     # COMPAT_STABLE_SHIM: alias for pMeter property
     @property
@@ -204,9 +209,10 @@ class PowerLogger:
         """Legacy compatibility alias for pMeter setter."""
         self.pMeter = value
 
-    def _nominal_voltage_v(self) -> float | None:
+    def _nominal_voltage_v(self, meter: PowerMeter | None = None) -> float | None:
         """Return nominal supply voltage in volts when available on the power meter."""
-        raw_v = getattr(self._p_meter, "v", None)
+        source_meter = self._p_meter if meter is None else meter
+        raw_v = getattr(source_meter, "v", None)
         if (
             isinstance(raw_v, (int, float))
             and not isinstance(raw_v, bool)
@@ -233,13 +239,14 @@ class PowerLogger:
             Optional timestamp to use for the recorded row. (Default value = None)
         """
         with self._reading_lock:
+            meter = self._p_meter
             if now is None:
                 now = datetime.now()
             try:
-                average_mA = self._p_meter.getAverageCurrentMA()
-                max_mA = self._p_meter.getMaxCurrentMA()
-                min_mA = self._p_meter.getMinCurrentMA()
-                nominal_voltage = self._nominal_voltage_v()
+                average_mA = meter.getAverageCurrentMA()
+                max_mA = meter.getMaxCurrentMA()
+                min_mA = meter.getMinCurrentMA()
+                nominal_voltage = self._nominal_voltage_v(meter)
                 if nominal_voltage is None:
                     average_mW = average_mA
                     max_mW = max_mA
@@ -266,7 +273,7 @@ class PowerLogger:
                 }
                 self.writer.addRow(d)
             finally:
-                self._p_meter.resetMeasurements()
+                meter.resetMeasurements()
 
     def storeCurrentReading(self, now: datetime | None = None) -> None:
         """Preferred camelCase public API; see `_store_current_reading`."""

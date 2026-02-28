@@ -20,6 +20,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.python-version == '3.14' }}
+    env:
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
     strategy:
       fail-fast: false
       matrix:
@@ -30,12 +32,15 @@ jobs:
           - "3.13"
           - "3.14"
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python 3
+      - &checkout_step
+        uses: actions/checkout@v4
+      - &setup_python_step
+        name: Install Python 3
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Cache Poetry artifacts
+      - &cache_poetry_step
+        name: Cache Poetry artifacts
         uses: actions/cache@v4
         with:
           path: |
@@ -45,13 +50,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
             ${{ runner.os }}-poetry-
-      - name: Install dependencies
+      - &install_dependencies_step
+        name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install "poetry==2.3.2"
-      - name: Install meshtastic from local
+      - &install_local_step
+        name: Install meshtastic from local
         run: |
-          poetry install --all-extras --with dev,powermon
+          poetry install ${{ env.POETRY_INSTALL_ARGS }}
           poetry run meshtastic --version
       - name: Run tests with pytest
         run: |
@@ -80,6 +87,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.python-version == '3.14' }}
+    env:
+      POETRY_INSTALL_ARGS: ""
     strategy:
       fail-fast: false
       matrix:
@@ -90,24 +99,8 @@ jobs:
           - "3.13"
           - "3.14"
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python 3
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Cache Poetry artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.cache/pip
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
-            ${{ runner.os }}-poetry-
-      - name: Install meshtastic from local
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install "poetry==2.3.2"
-          poetry install
-          poetry run meshtastic --version
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step

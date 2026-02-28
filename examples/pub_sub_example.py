@@ -33,7 +33,7 @@ def main() -> None:
     pub.subscribe(onConnection, topic)
     try:
         # Wait until the connection callback runs, then exit.
-        with meshtastic.tcp_interface.TCPInterface(sys.argv[1]):
+        with meshtastic.tcp_interface.TCPInterface(hostname=sys.argv[1]):
             if not _connected.wait(timeout=30):
                 print("Error: Timed out waiting for connection callback")
                 sys.exit(1)

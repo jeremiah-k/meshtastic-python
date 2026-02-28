@@ -109,12 +109,17 @@ class SerialInterface(StreamInterface):
                 self._set_hupcl_with_termios(f)
             time.sleep(SERIAL_SETTLING_DELAY)
 
+        serial_kwargs: dict[str, Any] = {
+            "timeout": SERIAL_READ_TIMEOUT,
+            "write_timeout": SERIAL_WRITE_TIMEOUT,
+        }
+        if sys.platform != "win32":
+            serial_kwargs["exclusive"] = True
+
         self.stream = serial.Serial(
             self.devPath,
             DEFAULT_BAUD_RATE,
-            exclusive=True,
-            timeout=SERIAL_READ_TIMEOUT,
-            write_timeout=SERIAL_WRITE_TIMEOUT,
+            **serial_kwargs,
         )
         initialized = False
         try:
