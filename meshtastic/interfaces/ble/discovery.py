@@ -30,6 +30,7 @@ _BLE_ADDRESS_SHAPE_RE = re.compile(
 )
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
+_PENDING_DISCOVERY_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
@@ -44,6 +45,18 @@ def _looks_like_ble_address(identifier: str) -> bool:
     if not stripped:
         return False
     return bool(_BLE_ADDRESS_SHAPE_RE.fullmatch(stripped))
+
+
+def _finalize_discovery_close_task(task: asyncio.Task[None]) -> None:
+    """Release retained close tasks and log failures in best-effort cleanup paths."""
+    _PENDING_DISCOVERY_CLOSE_TASKS.discard(task)
+    with contextlib.suppress(asyncio.CancelledError):
+        close_exc = task.exception()
+        if close_exc is not None:
+            logger.debug(
+                "Async close/disconnect failed for discarded discovery client.",
+                exc_info=(type(close_exc), close_exc, close_exc.__traceback__),
+            )
 
 
 async def _await_close_result(close_result: Awaitable[Any]) -> None:
@@ -91,7 +104,9 @@ def _close_discovery_client_best_effort(client: Any) -> None:
             )
     else:
         try:
-            running_loop.create_task(_await_close_result(awaitable_result))
+            close_task = running_loop.create_task(_await_close_result(awaitable_result))
+            _PENDING_DISCOVERY_CLOSE_TASKS.add(close_task)
+            close_task.add_done_callback(_finalize_discovery_close_task)
         except Exception:  # noqa: BLE001 - best effort cleanup path
             logger.debug(
                 "Failed to schedule async close/disconnect for discarded discovery client of type %s.",
@@ -134,7 +149,9 @@ class DiscoveryClientError(Exception):
 def _normalize_device_name_for_matching(name: str | None) -> str | None:
     """Normalize a Bluetooth device name for tolerant comparisons.
 
-    Strips leading/trailing whitespace and applies casefolding; preserves punctuation. If the input is None or reduces to an empty string after normalization, returns `None`.
+    Strips leading/trailing whitespace and applies casefolding; preserves
+    punctuation. If the input is None or reduces to an empty string after
+    normalization, returns `None`.
 
     Parameters
     ----------
@@ -144,7 +161,8 @@ def _normalize_device_name_for_matching(name: str | None) -> str | None:
     Returns
     -------
     str | None
-        The normalized name (`name.strip().casefold()`), or `None` if input is None or empty after normalization.
+        The normalized name (`name.strip().casefold()`), or `None` if input is
+        None or empty after normalization.
     """
     if name is None:
         return None
@@ -155,12 +173,13 @@ def _normalize_device_name_for_matching(name: str | None) -> str | None:
 def _filter_devices_for_target_identifier(
     devices: list[BLEDevice], target_identifier: str
 ) -> list[BLEDevice]:
-    """Select BLEDevice objects matching a user-supplied address or name using deterministic precedence.
+    """Select BLEDevice objects matching a user-supplied address or name.
 
     Matching precedence:
     1) Exact normalized address match.
     2) Exact name match (case-sensitive).
-    3) Normalized name match (casefolded and stripped) only when exactly one candidate matches.
+    3) Normalized name match (casefolded and stripped) only when exactly one
+       candidate matches.
 
     Parameters
     ----------
@@ -172,7 +191,9 @@ def _filter_devices_for_target_identifier(
     Returns
     -------
     list[BLEDevice]
-        Devices that match according to the precedence rules. Returns an empty list when no match is found or when multiple devices match by normalized name (ambiguous).
+        Devices that match according to the precedence rules. Returns an empty
+        list when no match is found or when multiple devices match by normalized
+        name (ambiguous).
     """
     target_key: str | None = None
     if _looks_like_ble_address(target_identifier):
@@ -291,7 +312,9 @@ class DiscoveryManager:
         Parameters
         ----------
         client_factory : Callable[..., Any] | None
-            Optional factory to construct BLE client instances; primarily for testing or to override the default BLE client implementation. If provided, the factory should return a BLEClient-like object or None.
+            Optional factory to construct BLE client instances; primarily for
+            testing or to override the default BLE client implementation. If
+            provided, the factory should return a BLEClient-like object or None.
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
@@ -485,7 +508,9 @@ class DiscoveryManager:
     def close(self) -> None:
         """Close the manager's persistent discovery client and clear the internal reference.
 
-        If a persistent client exists with a close method, it is closed and the manager's internal reference is set to None; if no client is present, this method does nothing.
+        If a persistent client exists with a close method, it is closed and the
+        manager's internal reference is set to None; if no client is present,
+        this method does nothing.
         """
         with self._client_lock:
             client = self._client

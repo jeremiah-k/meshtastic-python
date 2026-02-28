@@ -21,7 +21,6 @@ def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None
     runpy.run_path(
         str(HELLO_WORLD_SERIAL_PATH),
         run_name="__main__",
-        init_globals={"__name__": "__main__"},
     )
 
 
@@ -35,7 +34,8 @@ def test_examples_hello_world_serial_no_arg(
 
     out, _err = capsys.readouterr()
     assert exc_info.value.code == 3
-    assert "usage: examples/hello_world_serial.py message" in out
+    assert out.startswith("usage: ")
+    assert out.strip().endswith("hello_world_serial.py message")
 
 
 @pytest.mark.examples

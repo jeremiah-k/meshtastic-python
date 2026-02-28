@@ -199,7 +199,10 @@ def onGPIOReceive(packet: Any, interface: "MeshInterface") -> None:
                 if key is not None and key in watch_masks:
                     raw_mask = watch_masks[key]
                     break
-            sender_missing = sender_from is None and sender_from_id in (None, "")
+            sender_missing = sender_from is None and (
+                sender_from_id is None
+                or (isinstance(sender_from_id, str) and not sender_from_id.strip())
+            )
             if raw_mask is None and sender_missing and len(watch_masks) == 1:
                 # Legacy fallback for packets that omit sender identity.
                 raw_mask = next(iter(watch_masks.values()))

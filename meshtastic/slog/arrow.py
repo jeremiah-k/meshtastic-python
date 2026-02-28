@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 import threading
+import types
 import warnings
 
 import pyarrow as pa
@@ -81,7 +82,7 @@ class ArrowWriter:
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: object | None,
+        traceback: types.TracebackType | None,
     ) -> None:
         """Close the writer on context-manager exit and propagate exceptions.
 

@@ -25,6 +25,10 @@ class TCPInterface(StreamInterface):
     DEFAULT_CONNECT_TIMEOUT = 10.0
     CONNECT_TIMEOUT_ERROR = "connectTimeout must be a positive number, got {!r}"
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
+    CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
+    RECONNECT_DISABLED_AFTER_FATAL_ERROR = (
+        "Cannot connect to {}: reconnect disabled after fatal disconnect"
+    )
     DEFAULT_MAX_RECONNECT_ATTEMPTS = 8
     DEFAULT_RECONNECT_BACKOFF = 1.6
     DEFAULT_RECONNECT_BASE_DELAY = 1.0
@@ -94,7 +98,7 @@ class TCPInterface(StreamInterface):
         self._reconnect_base_delay = self.DEFAULT_RECONNECT_BASE_DELAY
         self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
         self._reconnect_sleep_slice = self.DEFAULT_RECONNECT_SLEEP_SLICE
-        self._reconnect_lock = threading.Lock()
+        self._reconnect_lock = threading.RLock()
         self._fatal_disconnect = False
 
         if connectNow:
@@ -117,7 +121,8 @@ class TCPInterface(StreamInterface):
                     self._socket_shutdown(sock)
                 with contextlib.suppress(Exception):
                     sock.close()
-                self.socket = None
+                with self._reconnect_lock:
+                    self.socket = None
             raise
 
     def __repr__(self) -> str:
@@ -171,9 +176,10 @@ class TCPInterface(StreamInterface):
             self._socket_shutdown(sock)
         with contextlib.suppress(Exception):
             sock.close()
-        if self.socket is sock:
-            self.socket = None
-            return True
+        with self._reconnect_lock:
+            if self.socket is sock:
+                self.socket = None
+                return True
         return False
 
     def myConnect(self) -> None:
@@ -190,8 +196,9 @@ class TCPInterface(StreamInterface):
                 server_address, timeout=self._connect_timeout
             )
         connected_socket.settimeout(None)
-        self.socket = connected_socket
-        self._fatal_disconnect = False
+        with self._reconnect_lock:
+            self.socket = connected_socket
+            self._fatal_disconnect = False
 
     @staticmethod
     def _notify_pending_sender_failure(pending_entry: Any, reason: str) -> bool:
@@ -247,19 +254,17 @@ class TCPInterface(StreamInterface):
         ConnectionError
             If reconnect has been disabled after a fatal disconnect.
         """
-        if self.socket is None:
-            if self._wantExit:
-                raise ConnectionError(
-                    f"Cannot connect to {self.hostname}: interface is shutting down"
-                )
-            if self._fatal_disconnect:
-                raise ConnectionError(
-                    (
-                        f"Cannot connect to {self.hostname}: "
-                        "reconnect disabled after fatal disconnect"
+        with self._reconnect_lock:
+            if self.socket is None:
+                if self._wantExit:
+                    raise ConnectionError(
+                        self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
                     )
-                )
-            self.myConnect()
+                if self._fatal_disconnect:
+                    raise ConnectionError(
+                        self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(self.hostname)
+                    )
+                self.myConnect()
         super().connect()
 
     def _write_bytes(self, b: bytes) -> None:

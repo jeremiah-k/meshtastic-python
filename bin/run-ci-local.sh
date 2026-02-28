@@ -8,4 +8,6 @@
 # -j build-and-publish-ubuntu
 
 # also: we only run one matrix variant locally, because otherwise it absolutely hammers the CPU
-act -P ubuntu-latest=-self-hosted --matrix "python-version:3.13" "$@"
+# LOCAL_PYTHON_VERSION can override the local matrix python-version (default: 3.13).
+LOCAL_PYTHON_VERSION="${LOCAL_PYTHON_VERSION:-3.13}"
+act -P ubuntu-latest=-self-hosted --matrix "python-version:${LOCAL_PYTHON_VERSION}" "$@"

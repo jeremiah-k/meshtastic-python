@@ -38,9 +38,14 @@ class SupportedDevice:
             else None
         )
         normalized_aliases: list[tuple[str, str]] = []
-        for vendor_id, product_id in self.usb_id_aliases:
-            normalized_vendor_id = vendor_id.strip().lower() if vendor_id else ""
-            normalized_product_id = product_id.strip().lower() if product_id else ""
+        for alias in self.usb_id_aliases:
+            if not isinstance(alias, tuple) or len(alias) != 2:
+                continue
+            vendor_id, product_id = alias
+            if not isinstance(vendor_id, str) or not isinstance(product_id, str):
+                continue
+            normalized_vendor_id = vendor_id.strip().lower()
+            normalized_product_id = product_id.strip().lower()
             if normalized_vendor_id and normalized_product_id:
                 normalized_aliases.append((normalized_vendor_id, normalized_product_id))
         self.usb_id_aliases = tuple(normalized_aliases)

@@ -287,7 +287,7 @@ def test_get_pmon_raises_rejects_non_integer_masks() -> None:
 
 
 @pytest.mark.unit
-def test_get_pmon_rejects_negative_masks() -> None:
+def test_get_pmon_raises_rejects_negative_masks() -> None:
     """get_pmon_raises should reject negative pm_mask values."""
     dslog = pd.DataFrame(
         {

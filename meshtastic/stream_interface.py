@@ -308,9 +308,8 @@ class StreamInterface(MeshInterface):
         toRadio : mesh_pb2.ToRadio
             The protobuf message to transmit.
         """
-        to_radio = toRadio
-        logger.debug("Sending: %s", stripnl(to_radio))
-        b: bytes = to_radio.SerializeToString()
+        logger.debug("Sending: %s", stripnl(toRadio))
+        b: bytes = toRadio.SerializeToString()
         buf_len: int = len(b)
         if buf_len > MAX_TO_FROM_RADIO_SIZE:
             raise StreamInterface.PayloadTooLargeError(

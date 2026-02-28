@@ -1,4 +1,4 @@
-.PHONY: all clean test ci ci-strict ci-base lint docs cov virt smoke1 slow install examples protobufs protobufs-update FORCE
+.PHONY: all clean test ci ci-strict ci-base lint docs cov open-coverage virt smoke1 slow install examples protobufs protobufs-update FORCE
 
 POETRY_RUN := poetry run
 
@@ -60,8 +60,7 @@ protobufs-update: FORCE
 	./bin/regen-protobufs.sh
 
 # run the coverage report and open results in a browser
-cov:
-	$(POETRY_RUN) pytest --cov-report html --cov=meshtastic
+open-coverage:
 	@# Open report when possible; otherwise print location.
 	@if command -v open >/dev/null 2>&1; then \
 		open htmlcov/index.html; \
@@ -70,6 +69,10 @@ cov:
 	else \
 		echo "Coverage report generated at htmlcov/index.html"; \
 	fi
+
+cov:
+	$(POETRY_RUN) pytest --cov-report html --cov=meshtastic
+	@$(MAKE) open-coverage
 
 # run cli examples
 examples: FORCE
