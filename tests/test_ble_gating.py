@@ -147,18 +147,14 @@ class TestMarkDisconnected:
     """Test cases for _mark_disconnected function."""
 
     @pytest.fixture(autouse=True)
-    def _mark_default_connected(self, clear_registry):
+    def _mark_default_connected(
+        self, clear_registry  # pylint: disable=unused-argument
+    ):
         """Mark a fixed test address as connected before each test.
 
         This autouse fixture ensures the registry is cleared (via the `clear_registry` fixture)
         and then records the address "aabbccddeeff" as connected for the duration of the test.
-
-        Parameters
-        ----------
-        clear_registry
-            pytest fixture that clears gating registries before use.
         """
-        _ = clear_registry
         _mark_connected("aabbccddeeff")
 
     def test_mark_disconnected_removes_from_registry(self):

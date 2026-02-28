@@ -198,12 +198,14 @@ class _FakeDiscoveryClient:
         return self._async_await(coro, timeout)
 
 
-def _attach_close_monitor(monkeypatch: Any, iface: BLEInterface) -> threading.Event:
+def _attach_close_monitor(
+    monkeypatch: pytest.MonkeyPatch, iface: BLEInterface
+) -> threading.Event:
     """Wrap iface.close so calling close sets a threading.Event and then invokes the original close.
 
     Parameters
     ----------
-    monkeypatch : Any
+    monkeypatch : pytest.MonkeyPatch
         pytest-style monkeypatch fixture used to replace attributes on the interface.
     iface : BLEInterface
         BLEInterface whose close method will be wrapped.

@@ -11,6 +11,7 @@ import os
 import threading
 import time
 import weakref
+from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
@@ -21,7 +22,7 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
 
 @contextmanager
-def _suppress_ble_debug_logs():
+def _suppress_ble_debug_logs() -> Generator[None, None, None]:
     """Temporarily suppress noisy meshtastic.ble debug logs during timing-sensitive tests.
 
     Performance and memory regression tests should not be dominated by logger
@@ -508,7 +509,7 @@ class TestPhase3LockConsolidation:
         # Create multiple contending threads
         threads = []
         for _i in range(10):
-            thread = threading.Thread(target=contending_worker)
+            thread = threading.Thread(target=contending_worker, daemon=True)
             threads.append(thread)
             thread.start()
 
@@ -527,7 +528,7 @@ class TestPhase3LockConsolidation:
 @pytest.mark.skipif(
     not os.getenv("RUN_PERF_TESTS"), reason="Performance tests disabled by default"
 )
-def test_state_transition_performance():
+def test_state_transition_performance() -> None:
     """Lightweight performance regression guard for repeated BLE state transitions.
 
     This is intentionally a fast check (not a full benchmark): it validates
@@ -564,7 +565,7 @@ def test_state_transition_performance():
 @pytest.mark.skipif(
     not os.getenv("RUN_PERF_TESTS"), reason="Performance tests disabled by default"
 )
-def test_lock_contention_performance():
+def test_lock_contention_performance() -> None:
     """Lightweight lock-contention regression guard for BLEStateManager.
 
     Spawns 5 worker threads that each perform 200 iterations of CONNECTING → CONNECTED → DISCONNECTED
@@ -579,7 +580,7 @@ def test_lock_contention_performance():
     def worker(worker_id):
         """Run a fixed sequence of BLE state transitions while measuring this worker's operations and elapsed time.
 
-        Executes 100 iterations where the outer-scope `manager` is asked to transition to CONNECTING, CONNECTED, and DISCONNECTED in sequence; each successful transition increments an operation count. After completion, appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed seconds).
+        Executes 200 iterations where the outer-scope `manager` is asked to transition to CONNECTING, CONNECTED, and DISCONNECTED in sequence; each successful transition increments an operation count. After completion, appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed seconds).
 
         Parameters
         ----------
@@ -615,7 +616,7 @@ def test_lock_contention_performance():
     with _suppress_ble_debug_logs():
         start_time = time.perf_counter()
         for i in range(5):
-            thread = threading.Thread(target=worker, args=(i,))
+            thread = threading.Thread(target=worker, args=(i,), daemon=True)
             threads.append(thread)
             thread.start()
 

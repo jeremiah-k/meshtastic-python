@@ -45,6 +45,12 @@ IP_OCTET_MASK = 0xFF
 OCTET_MULTIPLIER = 256
 NODE_NUM_MASK = 0xFFFF
 RX_THREAD_JOIN_TIMEOUT = 2.0
+MIN_IPV4_HEADER_LEN = 20
+MIN_ICMP_HEADER_LEN = 4
+MIN_TRANSPORT_HEADER_LEN = 4
+IP_PROTOCOL_OFFSET = 9
+IP_SRC_ADDR_OFFSET = 12
+IP_DEST_ADDR_OFFSET = 16
 
 
 def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
@@ -216,7 +222,7 @@ class Tunnel:
             else:
                 logger.debug("starting TUN reader, our IP address is %s", myAddr)
                 self._rx_thread = threading.Thread(
-                    target=self.__tun_reader, args=(), daemon=True
+                    target=self._tun_reader, args=(), daemon=True
                 )
                 self._rx_thread.start()
         except Exception:
@@ -270,15 +276,22 @@ class Tunnel:
         bool
             `True` if the packet should be ignored (filtered), `False` otherwise.
         """
-        protocol = p[8 + 1]
-        src_addr = p[12:16]
-        dest_addr = p[16:20]
+        if len(p) < MIN_IPV4_HEADER_LEN:
+            logger.debug("Ignoring short IP packet (len=%d)", len(p))
+            return True
+
+        protocol = p[IP_PROTOCOL_OFFSET]
+        src_addr = p[IP_SRC_ADDR_OFFSET : IP_SRC_ADDR_OFFSET + 4]
+        dest_addr = p[IP_DEST_ADDR_OFFSET : IP_DEST_ADDR_OFFSET + 4]
         subheader = 20
         ignore = False  # Assume we will be forwarding the packet
         if protocol in self.PROTOCOL_BLACKLIST:
             ignore = True
             logger.log(self.LOG_TRACE, "Ignoring blacklisted protocol 0x%02x", protocol)
         elif protocol == IP_PROTOCOL_ICMP:
+            if len(p) < MIN_IPV4_HEADER_LEN + MIN_ICMP_HEADER_LEN:
+                logger.debug("Ignoring short ICMP packet (len=%d)", len(p))
+                return True
             icmpType = p[20]
             icmpCode = p[21]
             checksum = p[22:24]
@@ -295,6 +308,9 @@ class Tunnel:
             # pingback = p[:12]+p[16:20]+p[12:16]+p[20:]
             # tap.write(pingback)
         elif protocol == IP_PROTOCOL_UDP:
+            if len(p) < MIN_IPV4_HEADER_LEN + MIN_TRANSPORT_HEADER_LEN:
+                logger.debug("Ignoring short UDP packet (len=%d)", len(p))
+                return True
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
             if destport in self.UDP_BLACKLIST:
@@ -305,6 +321,9 @@ class Tunnel:
                     "forwarding udp srcport=%s, destport=%s", srcport, destport
                 )
         elif protocol == IP_PROTOCOL_TCP:
+            if len(p) < MIN_IPV4_HEADER_LEN + MIN_TRANSPORT_HEADER_LEN:
+                logger.debug("Ignoring short TCP packet (len=%d)", len(p))
+                return True
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
             if destport in self.TCP_BLACKLIST:
@@ -324,7 +343,7 @@ class Tunnel:
 
         return ignore
 
-    def __tun_reader(self) -> None:
+    def _tun_reader(self) -> None:
         """Background thread that reads IP packets from the TUN device and forwards them to the mesh.
 
         Continuously reads packets from the TUN device, checks if they should be filtered,

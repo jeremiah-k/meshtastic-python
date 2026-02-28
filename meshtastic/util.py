@@ -515,6 +515,16 @@ class Timeout:
             time.sleep(self.sleepInterval)
         return False
 
+    def _wait_for_ack_attribute(self, acknowledgment: Any, attr: str) -> bool:
+        """Wait until one acknowledgment attribute is set, then reset the object."""
+        self.reset()
+        while time.time() < self.expireTime:
+            if getattr(acknowledgment, attr, None):
+                acknowledgment.reset()
+                return True
+            time.sleep(self.sleepInterval)
+        return False
+
     def waitForTelemetry(self, acknowledgment: Any) -> bool:
         """Wait until a telemetry acknowledgement is observed or timeout expires.
 
@@ -530,13 +540,7 @@ class Timeout:
             True if telemetry acknowledgement was received before timeout,
             False otherwise.
         """
-        self.reset()
-        while time.time() < self.expireTime:
-            if getattr(acknowledgment, "receivedTelemetry", None):
-                acknowledgment.reset()
-                return True
-            time.sleep(self.sleepInterval)
-        return False
+        return self._wait_for_ack_attribute(acknowledgment, "receivedTelemetry")
 
     def waitForPosition(self, acknowledgment: Any) -> bool:
         """Wait until a position acknowledgment is observed or the timeout expires.
@@ -553,13 +557,7 @@ class Timeout:
         bool
             True if the position acknowledgment was received before timeout, False otherwise.
         """
-        self.reset()
-        while time.time() < self.expireTime:
-            if getattr(acknowledgment, "receivedPosition", None):
-                acknowledgment.reset()
-                return True
-            time.sleep(self.sleepInterval)
-        return False
+        return self._wait_for_ack_attribute(acknowledgment, "receivedPosition")
 
     def waitForWaypoint(self, acknowledgment: Any) -> bool:
         """Wait until a waypoint acknowledgement is observed or the timeout expires.
@@ -575,13 +573,7 @@ class Timeout:
         bool
             True if a waypoint acknowledgement was received before the timeout, False otherwise.
         """
-        self.reset()
-        while time.time() < self.expireTime:
-            if getattr(acknowledgment, "receivedWaypoint", None):
-                acknowledgment.reset()
-                return True
-            time.sleep(self.sleepInterval)
-        return False
+        return self._wait_for_ack_attribute(acknowledgment, "receivedWaypoint")
 
 
 class Acknowledgment:
@@ -1063,13 +1055,19 @@ def get_devices_with_vendor_id(vid: str) -> set[SupportedDevice]:
         Set of SupportedDevice entries whose primary or aliased VID/PID tuples
         include the provided vendor id.
     """
-    normalized_vid = vid.lower()
+    normalized_vid = vid.strip().lower().removeprefix("0x")
     sd: set[SupportedDevice] = set()
     for d in supported_devices:
-        if any(vendor_id == normalized_vid for vendor_id, _ in d.usb_ids):
+        if any(
+            isinstance(vendor_id, str) and vendor_id.lower() == normalized_vid
+            for vendor_id, _ in d.usb_ids
+        ):
             sd.add(d)
             continue
-        if d.usb_vendor_id_in_hex == normalized_vid:
+        if (
+            isinstance(d.usb_vendor_id_in_hex, str)
+            and d.usb_vendor_id_in_hex.lower().removeprefix("0x") == normalized_vid
+        ):
             sd.add(d)
     return sd
 
@@ -1176,7 +1174,7 @@ def detect_windows_port(
                 and sd.usb_product_id_in_hex is not None
             ):
                 usb_ids = ((sd.usb_vendor_id_in_hex, sd.usb_product_id_in_hex),)
-            for vendor_id, product_id in usb_ids:
+            for vendor_id, product_id in usb_ids or ():
                 filters = [f"($_.DeviceId -like '*{vendor_id.upper()}*')"]
                 if product_id:
                     filters.append(f"($_.DeviceId -like '*{product_id.upper()}*')")

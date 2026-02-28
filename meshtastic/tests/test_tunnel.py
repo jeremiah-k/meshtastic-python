@@ -140,6 +140,25 @@ def test_should_filter_packet_random(
         assert not ignore
 
 
+@pytest.mark.unit
+def test_should_filter_packet_short_header(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Packets shorter than an IPv4 header should be dropped safely."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    packet = b"\x00" * 10
+    with caplog.at_level(logging.DEBUG):
+        tun = Tunnel(iface)
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert ignore
+        finally:
+            tun.close()
+    assert re.search(r"Ignoring short IP packet", caplog.text, re.MULTILINE)
+
+
 @pytest.mark.unitslow
 def test_should_filter_packet_in_blacklist(
     caplog: pytest.LogCaptureFixture,

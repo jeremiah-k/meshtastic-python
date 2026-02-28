@@ -56,7 +56,7 @@ def test_SerialInterface_no_ports(
     mocked_findPorts: MagicMock, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that we can instantiate a SerialInterface with no ports."""
-    serial_interface = None
+    serial_interface: SerialInterface | None = None
     try:
         with caplog.at_level(logging.WARNING):
             serial_interface = SerialInterface(noProto=True)

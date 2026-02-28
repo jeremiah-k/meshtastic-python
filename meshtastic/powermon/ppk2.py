@@ -59,19 +59,20 @@ class PPK2PowerSupply(PowerSupply):
                 )
             portName = devs[0]
 
-        self.measuring = False
-        self.current_max = 0
-        self.current_min = 0
-        self.current_sum = 0
-        self.current_num_samples = 0
+        self.measuring: bool = False
+        self.current_max: int = 0
+        self.current_min: int = 0
+        self.current_sum: int = 0
+        self.current_num_samples: int = 0
         self.current_average: float = math.nan
         self.last_reported_min: float = math.nan
         self.last_reported_max: float = math.nan
 
-        # for tracking avera data read length (to determine if we are sleeping efficiently in measurement_loop)
-        self.total_data_len = 0
-        self.num_data_reads = 0
-        self.max_data_len = 0
+        # For tracking average data read length (to determine whether sleeping
+        # behavior in measurement_loop is efficient).
+        self.total_data_len: int = 0
+        self.num_data_reads: int = 0
+        self.max_data_len: int = 0
 
         # Normally we just sleep with a timeout on this condition (polling the power measurement data repeatedly)
         # but any time our measurements have been fully consumed (via reset_measurements) we notify() this condition
@@ -80,6 +81,8 @@ class PPK2PowerSupply(PowerSupply):
 
         # To guard against a brief window while updating measured values
         self._result_lock = threading.Condition()
+        # Serialize measurement-thread lifecycle transitions.
+        self._measurement_state_lock = threading.Lock()
 
         self.r = r = ppk2_api.PPK2_API(
             portName
@@ -209,17 +212,19 @@ class PPK2PowerSupply(PowerSupply):
 
     def close(self) -> None:
         """Close the power meter and release resources."""
-        self.measuring = False
-        with self._want_measurement:
-            self._want_measurement.notify_all()
-        with suppress(Exception):
-            self.r.stop_measuring()  # send command to ppk2
-        if self.measurement_thread.is_alive():
-            self.measurement_thread.join(timeout=THREAD_JOIN_TIMEOUT_S)
-            if self.measurement_thread.is_alive():
-                logging.warning(
-                    "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
-                )
+        with self._measurement_state_lock:
+            self.measuring = False
+            with self._want_measurement:
+                self._want_measurement.notify_all()
+            with suppress(Exception):
+                self.r.stop_measuring()  # send command to ppk2
+            measurement_thread = self.measurement_thread
+            if measurement_thread.is_alive():
+                measurement_thread.join(timeout=THREAD_JOIN_TIMEOUT_S)
+                if measurement_thread.is_alive():
+                    logging.warning(
+                        "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
+                    )
         close_method = getattr(self.r, "close", None)
         if callable(close_method):
             with suppress(Exception):
@@ -264,37 +269,38 @@ class PPK2PowerSupply(PowerSupply):
         # Avoid re-issuing start while actively measuring: some devices flush/restart
         # buffered data if start_measuring() is sent again mid-session.
         did_start_measuring = False
-        if not self.measurement_thread.is_alive():
-            # must be after setting source voltage and before setting mode
-            self.r.start_measuring()  # send command to ppk2
-            did_start_measuring = True
+        with self._measurement_state_lock:
+            if not self.measurement_thread.is_alive():
+                # must be after setting source voltage and before setting mode
+                self.r.start_measuring()  # send command to ppk2
+                did_start_measuring = True
 
         if (
             not is_supply
-        ):  # min power outpuf of PPK2.  If less than this assume we want just meter mode.
+        ):  # Minimum power output of PPK2. If less, assume we want meter-only mode.
             self.r.use_ampere_meter()
         else:
             self.r.use_source_meter()  # set source meter mode
 
-        if not self.measurement_thread.is_alive():
+        with self._measurement_state_lock:
             self.measuring = True
-            if not did_start_measuring:
-                # The previous thread may have exited between checks; ensure the
-                # device-side measurement stream is running before restarting
-                # the reader thread.
-                self.r.start_measuring()
+            if not self.measurement_thread.is_alive():
+                if not did_start_measuring:
+                    # The previous thread may have exited between checks; ensure the
+                    # device-side measurement stream is running before restarting
+                    # the reader thread.
+                    self.r.start_measuring()
 
-            # Thread objects are single-use; create a fresh one if the previous
-            # thread has already been started (and possibly joined via close()).
-            if self.measurement_thread.ident is not None:
-                self.measurement_thread = threading.Thread(
-                    target=self._measurement_loop, daemon=True, name="ppk2 measurement"
-                )
-            # We can't start reading from the thread until vdd is set, so start running the thread now
-            self.measurement_thread.start()
-        else:
-            # Preserve measuring intent when switching mode on a running thread.
-            self.measuring = True
+                # Thread objects are single-use; create a fresh one if the previous
+                # thread has already been started (and possibly joined via close()).
+                if self.measurement_thread.ident is not None:
+                    self.measurement_thread = threading.Thread(
+                        target=self._measurement_loop,
+                        daemon=True,
+                        name="ppk2 measurement",
+                    )
+                # We can't start reading from the thread until vdd is set, so start running the thread now.
+                self.measurement_thread.start()
 
         # Mode switches can produce transient FIFO samples. Clear windows, allow
         # stabilization, then reset again so post-switch stats start clean.

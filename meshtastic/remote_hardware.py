@@ -320,26 +320,26 @@ class RemoteHardwareClient:
         MeshInterface.MeshInterfaceError
             If no destination node ID is provided.
         """
-        # Reject None, empty/whitespace-only string, integer 0, and string
-        # values that parse as numeric zero (e.g., "0", "0x0", "0b0").
+        # Reject None, empty/whitespace-only string, integer values <= 0, and
+        # string values that parse as non-positive numbers (e.g., "0", "-1").
         is_invalid_bool = isinstance(nodeid, bool)
         is_invalid_str = isinstance(nodeid, str) and nodeid.strip() == ""
-        is_invalid_int = isinstance(nodeid, int) and not is_invalid_bool and nodeid == 0
-        is_zero_numeric_str = False
+        is_invalid_int = isinstance(nodeid, int) and not is_invalid_bool and nodeid <= 0
+        is_non_positive_numeric_str = False
         is_special_alias = False
         if isinstance(nodeid, str) and not is_invalid_str:
             normalized_nodeid = nodeid.strip().lower()
             is_special_alias = normalized_nodeid.startswith("^")
             try:
-                is_zero_numeric_str = int(normalized_nodeid, 0) == 0
+                is_non_positive_numeric_str = int(normalized_nodeid, 0) <= 0
             except ValueError:
-                is_zero_numeric_str = False
+                is_non_positive_numeric_str = False
         has_invalid_dest_nodeid = (
             nodeid is None
             or is_invalid_bool
             or is_invalid_str
             or is_invalid_int
-            or is_zero_numeric_str
+            or is_non_positive_numeric_str
             or is_special_alias
         )
         if has_invalid_dest_nodeid:

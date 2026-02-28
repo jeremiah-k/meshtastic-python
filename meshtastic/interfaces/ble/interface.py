@@ -1143,7 +1143,7 @@ class BLEInterface(MeshInterface):
                     address,
                     sanitized,
                 )
-                return BLEDevice(address, address, {})
+                return BLEDevice(sanitized, address, {})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]

@@ -36,6 +36,13 @@ READER_THREAD_JOIN_TIMEOUT = 2.0
 READER_IDLE_BACKOFF_SECONDS = 0.01
 """Small sleep used when the reader loop has no bytes to process."""
 
+STREAM_WRITE_EXCEPTIONS = (
+    OSError,
+    serial.SerialException,
+    serial.SerialTimeoutException,
+)
+"""Write/flush exceptions that indicate stream closure."""
+
 logger = logging.getLogger(__name__)
 
 
@@ -248,24 +255,27 @@ class StreamInterface(MeshInterface):
             raise StreamInterface.StreamClosedError()
         payload = memoryview(b)
         bytes_written = 0
-        while bytes_written < len(payload):
-            written = s.write(payload[bytes_written:])
-            if written is None:
-                raise StreamInterface.StreamClosedError(
-                    StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
-                )
-            try:
-                written_count = int(written)
-            except (TypeError, ValueError) as exc:
-                raise StreamInterface.StreamClosedError(
-                    StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
-                ) from exc
-            if written_count <= 0:
-                raise StreamInterface.StreamClosedError(
-                    StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
-                )
-            bytes_written += written_count
-        s.flush()
+        try:
+            while bytes_written < len(payload):
+                written = s.write(payload[bytes_written:])
+                if written is None:
+                    raise StreamInterface.StreamClosedError(
+                        StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
+                    )
+                try:
+                    written_count = int(written)
+                except (TypeError, ValueError) as exc:
+                    raise StreamInterface.StreamClosedError(
+                        StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
+                    ) from exc
+                if written_count <= 0:
+                    raise StreamInterface.StreamClosedError(
+                        StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
+                    )
+                bytes_written += written_count
+            s.flush()
+        except STREAM_WRITE_EXCEPTIONS as exc:
+            raise StreamInterface.StreamClosedError() from exc
         # win11 might need a bit more time, too
         if self.is_windows11:
             time.sleep(WINDOWS11_WRITE_DELAY)
@@ -428,7 +438,12 @@ class StreamInterface(MeshInterface):
 
                     elif ptr == 1:  # looking for START2
                         if c != START2:
-                            self._rxBuf.clear()  # failed to find start2
+                            # Preserve repeated START1 to resync on
+                            # START1, START1, START2.
+                            if c == START1:
+                                self._rxBuf[:] = bytes([START1])
+                            else:
+                                self._rxBuf.clear()  # failed to find start2
                     elif ptr >= HEADER_LEN - 1:  # we've at least got a header
                         # logger.debug('at least we received a header')
                         # big endian length follows header

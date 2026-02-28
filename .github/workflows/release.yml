@@ -103,6 +103,8 @@ jobs:
 
       - name: Prepare release asset names
         run: |
+          test -f dist/meshtastic || { echo "::error::Missing dist/meshtastic build artifact"; exit 1; }
+          test -f standalone_readme.txt || { echo "::error::Missing standalone_readme.txt"; exit 1; }
           cp dist/meshtastic dist/meshtastic_ubuntu
           cp standalone_readme.txt dist/readme.txt
 

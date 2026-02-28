@@ -327,14 +327,17 @@ class TCPInterface(StreamInterface):
 
     def _on_fatal_disconnect(self, reason: str) -> None:
         """Mark the interface as fatally disconnected and stop reconnect attempts."""
-        if self._fatal_disconnect:
-            return
-        self._fatal_disconnect = True
-        self._wantExit = True
+        attempts = 0
+        with self._reconnect_lock:
+            if self._fatal_disconnect:
+                return
+            self._fatal_disconnect = True
+            self._wantExit = True
+            attempts = self._reconnect_attempts
         logger.error(
             "Stopping TCP reconnect for %s after %d attempts: %s",
             self.hostname,
-            self._reconnect_attempts,
+            attempts,
             reason,
         )
 
