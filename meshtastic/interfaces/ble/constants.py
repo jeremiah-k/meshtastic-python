@@ -158,7 +158,9 @@ BLECLIENT_ERROR_LOOP_RESTART_FAILED = "BLE event loop failed to restart"
 BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT = (
     "Specify only one of timeout or startup_timeout"
 )
-BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED = "Subscription token space exhausted."
+BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED = (
+    "Subscription token space exhausted."  # noqa: S105
+)
 
 
 _MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"

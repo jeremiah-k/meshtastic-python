@@ -70,6 +70,26 @@ class Tunnel:
     """A TUN based IP tunnel over meshtastic."""
 
     LOG_TRACE = 5
+    # Default packet filters (copied into instance-level compatibility attributes).
+    UDP_BLACKLIST_DEFAULT: frozenset[int] = frozenset(
+        {
+            1900,  # SSDP
+            5353,  # multicast DNS
+            9001,  # Yggdrasil multicast discovery
+            64512,  # cjdns beacon
+        }
+    )
+    TCP_BLACKLIST_DEFAULT: frozenset[int] = frozenset(
+        {
+            5900,  # VNC (note: currently used for testing coverage).
+        }
+    )
+    PROTOCOL_BLACKLIST_DEFAULT: frozenset[int] = frozenset(
+        {
+            IP_PROTOCOL_IGMP,
+            IP_PROTOCOL_SCCOPMCE,
+        }
+    )
 
     class TunnelError(Exception):
         """An exception class for general tunnel errors."""
@@ -149,30 +169,14 @@ class Tunnel:
         if my_info is None:
             raise Tunnel.UninitializedInterfaceError()
 
-        """A list of chatty UDP services we should never accidentally
-        forward to our slow network"""
-        self.UDP_BLACKLIST = {
-            1900,  # SSDP
-            5353,  # multicast DNS
-            9001,  # Yggdrasil multicast discovery
-            64512,  # cjdns beacon
-        }
-        # Legacy compatibility alias
+        # Per-instance copies preserve historical mutability of these attributes.
+        self.UDP_BLACKLIST: set[int] = set(self.UDP_BLACKLIST_DEFAULT)
+        self.TCP_BLACKLIST: set[int] = set(self.TCP_BLACKLIST_DEFAULT)
+        self.PROTOCOL_BLACKLIST: set[int] = set(self.PROTOCOL_BLACKLIST_DEFAULT)
+
+        # Legacy compatibility aliases
         self.udpBlacklist = self.UDP_BLACKLIST
-
-        """A list of TCP services to block"""
-        self.TCP_BLACKLIST = {
-            5900,  # VNC (Note: Only adding for testing purposes.)
-        }
-        # Legacy compatibility alias
         self.tcpBlacklist = self.TCP_BLACKLIST
-
-        """A list of protocols we ignore"""
-        self.PROTOCOL_BLACKLIST = {
-            IP_PROTOCOL_IGMP,
-            IP_PROTOCOL_SCCOPMCE,
-        }
-        # Legacy compatibility alias
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
 
         # TODO: check if root?

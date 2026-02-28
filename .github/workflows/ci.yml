@@ -88,6 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.python-version == '3.14' }}
     env:
+      # Validate base package installs without extras.
       POETRY_INSTALL_ARGS: ""
     strategy:
       fail-fast: false

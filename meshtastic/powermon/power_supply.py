@@ -3,8 +3,10 @@
 import math
 import threading
 import warnings
+from collections.abc import Callable
 from datetime import datetime
 from numbers import Real
+from typing import cast
 
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock = threading.Lock()
@@ -52,6 +54,17 @@ class PowerMeter:
         """Return average current of last measurement in mA (since last call to this method)."""
         return math.nan
 
+    def _deprecated_alias_current_method(
+        self, old_name: str, new_name: str, target_method_name: str
+    ) -> float:
+        """Warn once and delegate a deprecated current alias to the canonical method."""
+        _warn_deprecated_once(
+            old_name,
+            f"{old_name} is deprecated, use {new_name} instead.",
+        )
+        target = cast(Callable[[], float], getattr(self, target_method_name))
+        return target()
+
     # COMPAT_STABLE_SHIM: alias for getAverageCurrentMA
     def get_average_current_mA(self) -> float:
         """Shim for getAverageCurrentMA."""
@@ -63,11 +76,11 @@ class PowerMeter:
 
         Prefer getAverageCurrentMA for consistent unit capitalization.
         """
-        _warn_deprecated_once(
+        return self._deprecated_alias_current_method(
             "getAverageCurrentmA",
-            "getAverageCurrentmA is deprecated, use getAverageCurrentMA instead.",
+            "getAverageCurrentMA",
+            "getAverageCurrentMA",
         )
-        return self.getAverageCurrentMA()
 
     def getMinCurrentMA(self) -> float:
         """Return min current in mA since last call to this method.
@@ -100,11 +113,11 @@ class PowerMeter:
         float
             Minimum current in milliamperes.
         """
-        _warn_deprecated_once(
+        return self._deprecated_alias_current_method(
             "getMinCurrentmA",
-            "getMinCurrentmA is deprecated, use getMinCurrentMA instead.",
+            "getMinCurrentMA",
+            "getMinCurrentMA",
         )
-        return self.getMinCurrentMA()
 
     def getMaxCurrentMA(self) -> float:
         """Return max current in mA since last call to this method.
@@ -137,11 +150,11 @@ class PowerMeter:
         float
             Maximum current in milliamperes.
         """
-        _warn_deprecated_once(
+        return self._deprecated_alias_current_method(
             "getMaxCurrentmA",
-            "getMaxCurrentmA is deprecated, use getMaxCurrentMA instead.",
+            "getMaxCurrentMA",
+            "getMaxCurrentMA",
         )
-        return self.getMaxCurrentMA()
 
     def resetMeasurements(self) -> None:
         """Reset current measurements."""
