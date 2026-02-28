@@ -590,7 +590,8 @@ class BLEClient:
             future.cancel()
         except Exception:  # pragma: no cover  # noqa: BLE001 - defensive
             logger.debug(
-                f"Failed to cancel BLE future after {context}",
+                "Failed to cancel BLE future after %s",
+                context,
                 exc_info=True,
             )
         # Consume any late exceptions to avoid "Task exception was never retrieved"
@@ -601,7 +602,8 @@ class BLEClient:
         except Exception:  # noqa: BLE001 - best effort
             # Event loop may be closing; ignore best-effort callback registration
             logger.debug(
-                f"Skipping callback registration after {context}",
+                "Skipping callback registration after %s",
+                context,
                 exc_info=True,
             )
 

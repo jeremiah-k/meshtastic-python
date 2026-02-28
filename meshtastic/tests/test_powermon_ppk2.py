@@ -151,12 +151,11 @@ def test_setIsSupply_rechecks_thread_liveness_before_reader_restart(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_power_supply_deprecations")
 def test_average_current_camelcase_aliases_are_consistent(
     ppk2_stub: "PPK2PowerSupply",
-    reset_power_supply_deprecations: None,
 ) -> None:
     """CamelCase average-current aliases should be consistent for PPK2."""
-    _ = reset_power_supply_deprecations
     ppk = ppk2_stub
     ppk.getAverageCurrentMA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
 

@@ -3,7 +3,7 @@
 import logging
 import sys
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -369,7 +369,7 @@ class DummyClient:
         """
         self.disconnect_calls = 0
         self.close_calls = 0
-        self.stop_notify_calls = []
+        self.stop_notify_calls: list[Any] = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
         self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
@@ -469,13 +469,13 @@ class DummyClient:
 @pytest.fixture
 def stub_atexit(
     monkeypatch: pytest.MonkeyPatch,
-    mock_serial,  # pylint: disable=redefined-outer-name
-    mock_pubsub,  # pylint: disable=redefined-outer-name
-    mock_tabulate,  # pylint: disable=redefined-outer-name
-    mock_bleak,  # pylint: disable=redefined-outer-name
-    mock_bleak_exc,  # pylint: disable=redefined-outer-name
-    mock_publishing_thread,  # pylint: disable=redefined-outer-name
-):
+    mock_serial: types.ModuleType,  # pylint: disable=redefined-outer-name
+    mock_pubsub: types.ModuleType,  # pylint: disable=redefined-outer-name
+    mock_tabulate: types.ModuleType,  # pylint: disable=redefined-outer-name
+    mock_bleak: types.ModuleType,  # pylint: disable=redefined-outer-name
+    mock_bleak_exc: types.ModuleType,  # pylint: disable=redefined-outer-name
+    mock_publishing_thread: types.ModuleType,  # pylint: disable=redefined-outer-name
+) -> Generator[None, None, None]:
     """Replace the BLE interface module's atexit.register/unregister with test stubs that record callbacks and invoke them at fixture teardown.
 
     The fixture patches meshtastic.interfaces.ble.interface.atexit.register and .unregister so that registered callables are appended to an internal list and later executed when the fixture tears down. Any exceptions raised by those callbacks are caught and logged at debug level; execution continues for remaining callbacks.
@@ -543,13 +543,16 @@ def stub_atexit(
 
 
 def _build_interface(
-    monkeypatch: Any, client: DummyClient, *, start_receive_thread: bool = True
+    monkeypatch: pytest.MonkeyPatch,
+    client: DummyClient,
+    *,
+    start_receive_thread: bool = True,
 ) -> "BLEInterface":
     """Create a BLEInterface configured for tests whose `connect` is stubbed to return the supplied client and whose `_start_config` is a no-op.
 
     Parameters
     ----------
-    monkeypatch : Any
+    monkeypatch : pytest.MonkeyPatch
         pytest monkeypatch fixture used to patch BLEInterface methods.
     client : DummyClient
         Fake or mock BLE client instance that the stubbed `connect` will return.

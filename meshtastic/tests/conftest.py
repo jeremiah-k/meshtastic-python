@@ -199,13 +199,25 @@ def mt_config_state() -> Generator[None, None, None]:
 @pytest.fixture
 def reset_power_supply_deprecations() -> Generator[None, None, None]:
     """Reset and restore powermon deprecation warn-once state for isolated tests."""
-    previous = set(power_supply_module._warned_deprecations)
-    power_supply_module._warned_deprecations.clear()
+    warned_deprecations = power_supply_module._warned_deprecations
+    warned_lock = getattr(power_supply_module, "_warned_deprecations_lock", None)
+    if warned_lock is not None:
+        with cast(Any, warned_lock):
+            previous = set(warned_deprecations)
+            warned_deprecations.clear()
+    else:
+        previous = set(warned_deprecations)
+        warned_deprecations.clear()
     try:
         yield
     finally:
-        power_supply_module._warned_deprecations.clear()
-        power_supply_module._warned_deprecations.update(previous)
+        if warned_lock is not None:
+            with cast(Any, warned_lock):
+                warned_deprecations.clear()
+                warned_deprecations.update(previous)
+        else:
+            warned_deprecations.clear()
+            warned_deprecations.update(previous)
 
 
 @pytest.fixture

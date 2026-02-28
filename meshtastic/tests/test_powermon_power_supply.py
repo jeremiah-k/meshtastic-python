@@ -49,12 +49,11 @@ def test_set_voltage_rejects_bool_nonfinite_and_negative(
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_power_supply_deprecations")
 def test_deprecated_current_aliases_warn_once_per_method(
     power_supply: PowerSupply,
-    reset_power_supply_deprecations: None,
 ) -> None:
     """Deprecated camelCase aliases should emit one deprecation warning per method."""
-    _ = reset_power_supply_deprecations
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         power_supply.getAverageCurrentmA()
