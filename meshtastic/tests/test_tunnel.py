@@ -81,7 +81,7 @@ def test_Tunnel_with_interface(
             assert tun == mt_config.tunnel_instance
         finally:
             tun.close()
-    assert re.search(r"Not creating a TapDevice()", caplog.text, re.MULTILINE)
+    assert re.search(r"Not creating a TapDevice\(\)", caplog.text, re.MULTILINE)
     assert re.search(r"Not starting TUN reader", caplog.text, re.MULTILINE)
 
 
@@ -96,7 +96,7 @@ def test_onTunnelReceive_from_ourselves(
     assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     monkeypatch.setattr(sys, "argv", [""])
-    mt_config.args = argparse.Namespace()
+    monkeypatch.setattr(mt_config, "args", argparse.Namespace())
     packet = {"decoded": {"payload": "foo"}, "from": 2475227164}
     with caplog.at_level(logging.DEBUG):
         Tunnel(iface)
@@ -116,7 +116,7 @@ def test_onTunnelReceive_from_someone_else(
     assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     monkeypatch.setattr(sys, "argv", [""])
-    mt_config.args = argparse.Namespace()
+    monkeypatch.setattr(mt_config, "args", argparse.Namespace())
     packet = {"decoded": {"payload": "foo"}, "from": 123}
     with caplog.at_level(logging.DEBUG):
         Tunnel(iface)

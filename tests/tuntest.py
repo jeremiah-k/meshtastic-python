@@ -9,7 +9,7 @@
 # print known node ids as IP addresses
 
 import logging
-from _thread import start_new_thread
+import threading
 
 from pytap2 import TapDevice
 
@@ -115,16 +115,16 @@ def _readtest(tap: TapDevice) -> None:
             )
 
 
-logging.basicConfig(level=logging.DEBUG)
-
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
     tun = TapDevice(mtu=200)
     try:
         # tun.create()
         tun.up()
         tun.ifconfig(address="10.115.1.2", netmask="255.255.0.0")
 
-        start_new_thread(_readtest, (tun,))
+        reader_thread = threading.Thread(target=_readtest, args=(tun,), daemon=True)
+        reader_thread.start()
         input("press return key to quit!")
     finally:
         tun.close()

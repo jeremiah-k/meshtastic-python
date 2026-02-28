@@ -52,6 +52,8 @@ def reset() -> None:
     module_globals = globals()
     for name, default in MODULE_STATE_DEFAULTS.items():
         module_globals[name] = default
+    # reset() runs once before compatibility warn-once state is defined below,
+    # so this bootstrap path must tolerate lock/set absence during import.
     warned_deprecations_lock = module_globals.get("_warned_deprecations_lock")
     if warned_deprecations_lock is not None:
         with warned_deprecations_lock:
@@ -161,6 +163,15 @@ class _MtConfigModule(types.ModuleType):
             super().__setattr__(new_name, value)
             return
         super().__setattr__(name, value)
+
+    def __delattr__(self, name: str) -> None:
+        """Support deprecated alias deletion by redirecting to canonical names."""
+        if name in _COMPAT_ALIASES:
+            new_name = _COMPAT_ALIASES[name]
+            _warn_compat_alias_once(name, new_name)
+            super().__delattr__(new_name)
+            return
+        super().__delattr__(name)
 
 
 sys.modules[__name__].__class__ = _MtConfigModule

@@ -190,14 +190,17 @@ def onGPIOReceive(packet: Any, interface: "MeshInterface") -> None:
 
     raw_mask = hw.get("gpioMask")
     if raw_mask is None:
+        sender_from = packet.get("from")
+        sender_from_id = packet.get("fromId")
         with _get_watch_masks_lock(interface):
             watch_masks = _get_watch_masks(interface)
-            for lookup_value in (packet.get("from"), packet.get("fromId")):
+            for lookup_value in (sender_from, sender_from_id):
                 key = _normalize_node_key(lookup_value)
                 if key is not None and key in watch_masks:
                     raw_mask = watch_masks[key]
                     break
-            if raw_mask is None and len(watch_masks) == 1:
+            sender_missing = sender_from is None and sender_from_id in (None, "")
+            if raw_mask is None and sender_missing and len(watch_masks) == 1:
                 # Legacy fallback for packets that omit sender identity.
                 raw_mask = next(iter(watch_masks.values()))
     if raw_mask is None:

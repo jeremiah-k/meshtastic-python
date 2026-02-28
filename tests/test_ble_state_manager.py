@@ -643,14 +643,14 @@ def test_lock_contention_performance():
 
 
 @pytest.mark.unit
-def test_memory_efficiency():
+def test_memory_efficiency() -> None:
     """Verify BLEStateManager instances are collectable after repeated use.
 
     This avoids brittle gc.get_objects() delta checks (which vary heavily under
     coverage/plugins) and instead asserts no managers remain strongly referenced.
     """
     manager_refs = []
-    manager: BLEStateManager = None  # type: ignore[assignment]
+    manager: BLEStateManager | None = None
     with _suppress_ble_debug_logs():
         for _i in range(300):
             manager = BLEStateManager()

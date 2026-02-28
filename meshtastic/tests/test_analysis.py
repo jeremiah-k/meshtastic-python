@@ -287,6 +287,19 @@ def test_get_pmon_raises_rejects_non_integer_masks() -> None:
 
 
 @pytest.mark.unit
+def test_get_pmon_rejects_negative_masks() -> None:
+    """get_pmon_raises should reject negative pm_mask values."""
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0, -1],
+        }
+    )
+    with pytest.raises(ValueError, match="pm_mask contains negative values"):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
 def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
     """get_pmon_raises should decode simultaneous multi-bit raise masks."""
     dslog = pd.DataFrame(

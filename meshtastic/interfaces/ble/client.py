@@ -43,6 +43,12 @@ from meshtastic.interfaces.ble.utils import with_timeout
 
 T = TypeVar("T")
 
+# macOS/CoreBluetooth workaround tracking:
+# Bleak can starve callback delivery unless occasional I/O occurs on stdout.
+# We apply a guarded stdout.flush() nudge in _async_await() on darwin hosts.
+# This is limited when stdout is redirected or non-flushable.
+# Upstream issue: https://github.com/hbldh/bleak/issues?q=is%3Aissue+CoreBluetooth+callback
+
 
 class BLEClient:
     """Client wrapper for managing BLE device connections with thread-safe async operations.

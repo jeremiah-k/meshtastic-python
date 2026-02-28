@@ -64,7 +64,10 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
-            assert expire_unix is not None
+            if expire_unix is None:
+                raise SystemExit(
+                    "Internal error: expire_unix not set for create command"
+                )
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,

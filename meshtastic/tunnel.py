@@ -271,8 +271,8 @@ class Tunnel:
             `True` if the packet should be ignored (filtered), `False` otherwise.
         """
         protocol = p[8 + 1]
-        srcaddr = p[12:16]
-        destAddr = p[16:20]
+        src_addr = p[12:16]
+        dest_addr = p[16:20]
         subheader = 20
         ignore = False  # Assume we will be forwarding the packet
         if protocol in self.PROTOCOL_BLACKLIST:
@@ -285,8 +285,8 @@ class Tunnel:
             # pylint: disable=line-too-long
             logger.debug(
                 "forwarding ICMP message src=%s, dest=%s, type=%d, code=%d, checksum=%s",
-                ipstr(srcaddr),
-                ipstr(destAddr),
+                ipstr(src_addr),
+                ipstr(dest_addr),
                 icmpType,
                 icmpCode,
                 checksum.hex(),
@@ -318,8 +318,8 @@ class Tunnel:
             logger.warning(
                 "forwarding unexpected protocol 0x%02x, src=%s, dest=%s",
                 protocol,
-                ipstr(srcaddr),
-                ipstr(destAddr),
+                ipstr(src_addr),
+                ipstr(dest_addr),
             )
 
         return ignore
@@ -344,10 +344,10 @@ class Tunnel:
                 logger.exception("TUN reader terminating due to read failure")
                 break
             # logger.debug(f"IP packet received on TUN interface, type={type(p)}")
-            destAddr = p[16:20]
+            dest_addr = p[16:20]
 
             if not self._should_filter_packet(p):
-                self._send_packet(destAddr, p)
+                self._send_packet(dest_addr, p)
 
     def _ip_to_node_id(self, ipAddr: bytes) -> str | None:
         """Convert a 4-byte IP address to the corresponding mesh node ID.
@@ -396,29 +396,29 @@ class Tunnel:
         """
         return f"{self.subnetPrefix}.{(nodeNum >> 8) & IP_OCTET_MASK}.{nodeNum & IP_OCTET_MASK}"
 
-    def _send_packet(self, destAddr: bytes, p: bytes) -> None:
+    def _send_packet(self, dest_addr: bytes, p: bytes) -> None:
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
 
         Parameters
         ----------
-        destAddr : bytes
+        dest_addr : bytes
             4-byte IPv4 address in network byte order identifying the packet's destination.
         p : bytes
             Raw IP packet bytes to be forwarded.
         """
-        nodeId = self._ip_to_node_id(destAddr)
+        nodeId = self._ip_to_node_id(dest_addr)
         if nodeId is not None:
             logger.debug(
                 "Forwarding packet bytelen=%d dest=%s, destNode=%s",
                 len(p),
-                ipstr(destAddr),
+                ipstr(dest_addr),
                 nodeId,
             )
             self.iface.sendData(p, nodeId, portnums_pb2.IP_TUNNEL_APP, wantAck=False)
         else:
             logger.warning(
                 "Dropping packet because no node found for destIP=%s",
-                ipstr(destAddr),
+                ipstr(dest_addr),
             )
 
     def close(self) -> None:
@@ -440,6 +440,8 @@ class Tunnel:
             and self._rx_thread.is_alive()
         ):
             self._rx_thread.join(timeout=RX_THREAD_JOIN_TIMEOUT)
+            if self._rx_thread.is_alive():
+                logger.warning("TUN reader thread did not terminate within timeout")
         self._rx_thread = None
         self.tun = None
         if mt_config.tunnel_instance is self:

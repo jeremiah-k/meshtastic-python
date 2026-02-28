@@ -376,10 +376,12 @@ def getPref(node: Any, comp_name: str) -> bool:
     if config_type is None:
         return False
 
-    if len(config.ListFields()) != 0 and pref is not None:
+    if len(config.ListFields()) != 0 and (pref is not None or wholeField):
         # read the value
         config_values = getattr(config, config_type.name)
         if not wholeField:
+            if pref is None:
+                return False
             pref_value = getattr(config_values, pref.name)
             repeated = pref.is_repeated
             _print_setting(config_type, uni_name, pref_value, repeated)
@@ -1931,8 +1933,10 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
         try:
             parsed_port = int(tcp_port_str)
         except ValueError:
-            # Not a valid integer port; treat the entire string as hostname.
-            return tcp_hostname, tcp_port
+            _cli_exit(
+                f"Error: invalid TCP port in --host '{host_str}'.",
+                1,
+            )
 
         tcp_hostname = candidate_host
         if not 1 <= parsed_port <= 65535:

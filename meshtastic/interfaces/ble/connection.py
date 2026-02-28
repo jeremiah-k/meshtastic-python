@@ -32,7 +32,10 @@ class ConnectionValidator:
     """Encapsulate connection pre-checks and reuse logic."""
 
     def __init__(
-        self, state_manager: BLEStateManager, state_lock: RLock, error_class: type
+        self,
+        state_manager: BLEStateManager,
+        state_lock: RLock,
+        error_class: type[Exception],
     ) -> None:
         """Create a ConnectionValidator that enforces pre-connection checks for BLE operations.
 
@@ -42,7 +45,7 @@ class ConnectionValidator:
             Manager for BLE connection state and transitions.
         state_lock : RLock
             Reentrant lock for synchronizing access to shared BLE state.
-        error_class : type
+        error_class : type[Exception]
             Exception class raised when validation fails.
         """
         self.state_manager = state_manager
@@ -81,17 +84,20 @@ class ConnectionValidator:
         client : BLEClient | None
             The BLE client to verify.
         normalized_request : str | None
-            Sanitized identifier for the desired target; when `None` any connected client matches.
+            Desired target identifier. Separator/case variants are normalized
+            internally; when `None` any connected client matches.
         last_connection_request : str | None
             The last sanitized connection request to include among known targets.
 
         Returns
         -------
         bool
-            `True` if the client is connected and its address equals `normalized_request` or one of the known targets, `False` otherwise.
+            `True` if the client is connected and its normalized address equals
+            the normalized request or one of the known targets, `False` otherwise.
         """
         if not client or not client.isConnected():
             return False
+        normalized_request_key = sanitize_address(normalized_request)
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
@@ -103,7 +109,8 @@ class ConnectionValidator:
             if t is not None
         }
         return (
-            normalized_request is None or normalized_request in normalized_known_targets
+            normalized_request_key is None
+            or normalized_request_key in normalized_known_targets
         )
 
 

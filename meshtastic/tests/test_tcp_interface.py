@@ -80,13 +80,19 @@ def test_TCPInterface_without_connecting() -> None:
     """Test that we can instantiate a TCPInterface with connectNow as false."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        assert iface.socket is None
+        try:
+            assert iface.socket is None
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("connect_timeout", [0.0, -1.0])
+@pytest.mark.parametrize(
+    "connect_timeout",
+    [0.0, -1.0, True, float("nan"), float("inf"), "invalid-timeout"],
+)
 def test_TCPInterface_rejects_non_positive_connect_timeout(
-    connect_timeout: float,
+    connect_timeout: object,
 ) -> None:
     """Constructor should fail fast for invalid connectTimeout values."""
     with pytest.raises(
@@ -140,9 +146,12 @@ def test_TCPInterface_write_raises_when_socket_missing() -> None:
     """_write_bytes should fail fast when no TCP socket is connected."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        iface.socket = None
-        with pytest.raises(ConnectionError, match="closed or not connected"):
-            iface._write_bytes(b"abc")
+        try:
+            iface.socket = None
+            with pytest.raises(ConnectionError, match="closed or not connected"):
+                iface._write_bytes(b"abc")
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
@@ -150,14 +159,17 @@ def test_TCPInterface_write_reraises_socket_errors() -> None:
     """_write_bytes should propagate socket write failures after cleanup."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        mock_socket = MagicMock()
-        mock_socket.sendall.side_effect = OSError("boom")
-        iface.socket = mock_socket
+        try:
+            mock_socket = MagicMock()
+            mock_socket.sendall.side_effect = OSError("boom")
+            iface.socket = mock_socket
 
-        with pytest.raises(OSError, match="boom"):
-            iface._write_bytes(b"abc")
+            with pytest.raises(OSError, match="boom"):
+                iface._write_bytes(b"abc")
 
-        assert iface.socket is None
+            assert iface.socket is None
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
@@ -165,30 +177,32 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
     """Test that _read_bytes avoids reconnect attempts during intentional shutdown."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        mock_socket = MagicMock()
-        mock_socket.recv.return_value = b""
-        iface.socket = mock_socket
-        iface._wantExit = True
+        try:
+            mock_socket = MagicMock()
+            mock_socket.recv.return_value = b""
+            iface.socket = mock_socket
+            iface._wantExit = True
 
-        with (
-            patch.object(iface, "myConnect") as mock_connect,
-            patch.object(iface, "_start_config") as mock_start_config,
-            patch("meshtastic.tcp_interface.time.sleep") as mock_sleep,
-        ):
-            data = iface._read_bytes(1)
+            with (
+                patch.object(iface, "myConnect") as mock_connect,
+                patch.object(iface, "_start_config") as mock_start_config,
+                patch("meshtastic.tcp_interface.time.sleep") as mock_sleep,
+            ):
+                data = iface._read_bytes(1)
 
-        assert data == b""
-        mock_connect.assert_not_called()
-        mock_start_config.assert_not_called()
-        mock_sleep.assert_not_called()
-        mock_socket.close.assert_called_once()
-        assert iface.socket is None
-        iface.close()
+            assert data == b""
+            mock_connect.assert_not_called()
+            mock_start_config.assert_not_called()
+            mock_sleep.assert_not_called()
+            mock_socket.close.assert_called_once()
+            assert iface.socket is None
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
-def test_TCPInterface_connect_skips_startup_when_shutting_down() -> None:
-    """connect() should no-op when shutdown/fatal flags are active and no socket exists."""
+def test_TCPInterface_connect_fails_fast_when_shutting_down() -> None:
+    """connect() should fail fast when shutdown/fatal flags block a new connect."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         iface.socket = None
@@ -198,7 +212,35 @@ def test_TCPInterface_connect_skips_startup_when_shutting_down() -> None:
                 patch.object(iface, "myConnect") as mock_connect,
                 patch("meshtastic.tcp_interface.StreamInterface.connect") as mock_super,
             ):
-                iface.connect()
+                with pytest.raises(
+                    ConnectionError,
+                    match=r"Cannot connect to localhost: interface is shutting down",
+                ):
+                    iface.connect()
+            mock_connect.assert_not_called()
+            mock_super.assert_not_called()
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_connect_fails_fast_after_fatal_disconnect() -> None:
+    """connect() should fail fast after reconnect is disabled by fatal disconnect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        iface.socket = None
+        iface._wantExit = False
+        iface._fatal_disconnect = True
+        try:
+            with (
+                patch.object(iface, "myConnect") as mock_connect,
+                patch("meshtastic.tcp_interface.StreamInterface.connect") as mock_super,
+            ):
+                with pytest.raises(
+                    ConnectionError,
+                    match=r"Cannot connect to localhost: reconnect disabled after fatal disconnect",
+                ):
+                    iface.connect()
             mock_connect.assert_not_called()
             mock_super.assert_not_called()
         finally:

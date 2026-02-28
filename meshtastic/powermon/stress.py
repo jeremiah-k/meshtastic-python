@@ -177,5 +177,5 @@ class PowerStress:
                     return
 
             logging.info("Power stress test complete.")
-        except KeyboardInterrupt as e:
-            logging.warning("Power stress interrupted: %s", e)
+        except KeyboardInterrupt:
+            logging.warning("Power stress interrupted by user.")

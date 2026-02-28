@@ -296,7 +296,6 @@ class MeshInterface:  # pylint: disable=R0902
         trace : TracebackType | None
             The traceback object for the exception if present, otherwise None.
         """
-        _ = trace
         if exc_type is not None and exc_value is not None:
             logger.error(
                 f"An exception of type {exc_type} with value {exc_value} has occurred"
@@ -2158,6 +2157,9 @@ class MeshInterface:  # pylint: disable=R0902
             # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
             for packetId, packet in resentQueue.items():
                 with self._queue_lock:
+                    # Returns False if packetId is absent (default) or if a
+                    # False marker was stored for an earlier unexpected ACK.
+                    # Both cases indicate "already ACKed" for resend purposes.
                     acked = self.queue.pop(packetId, False) is False
                 if acked:  # Packet got acked under us
                     logger.debug("packet %08x got acked under us", packetId)
