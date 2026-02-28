@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from ..powermon.stress import PowerStress, PowerStressClient, onPowerStressResponse
+from ..powermon.stress import (
+    PowerStress,
+    PowerStressClient,
+    handlePowerStressResponse,
+    onPowerStressResponse,
+)
 from ..protobuf import portnums_pb2, powermon_pb2
 
 
@@ -23,8 +28,17 @@ def _fake_send(
 
 
 @pytest.mark.unit
-def test_on_power_stress_response_sets_flag() -> None:
-    """Test that onPowerStressResponse marks interface.gotResponse as True."""
+def test_handle_power_stress_response_sets_flag() -> None:
+    """Test that handlePowerStressResponse marks interface.gotResponse as True."""
+    iface = MagicMock()
+    iface.gotResponse = False
+    handlePowerStressResponse({"decoded": {}}, iface)
+    assert iface.gotResponse is True
+
+
+@pytest.mark.unit
+def test_on_power_stress_response_alias_sets_flag() -> None:
+    """Compatibility alias should preserve callback behavior."""
     iface = MagicMock()
     iface.gotResponse = False
     onPowerStressResponse({"decoded": {}}, iface)

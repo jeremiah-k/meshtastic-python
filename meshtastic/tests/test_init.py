@@ -24,8 +24,11 @@ from ..serial_interface import SerialInterface
 
 
 @pytest.mark.unit
-def test_init_serial_alias_points_to_internal_module() -> None:
+def test_init_serial_alias_points_to_internal_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify meshtastic.serial resolves to the internal serial_interface module."""
+    monkeypatch.delattr(meshtastic, "serial", raising=False)
     assert meshtastic.serial is serial_interface
 
 

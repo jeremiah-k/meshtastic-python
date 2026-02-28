@@ -261,28 +261,27 @@ class PPK2PowerSupply(PowerSupply):
                 f"(current v={self.v!r})"
             )
 
-        self.r.set_source_voltage(
-            int(self.v * MILLIVOLTS_PER_VOLT)
-        )  # set source voltage in mV BEFORE setting source mode
-        # Note: source voltage must be set even if we are using the amp meter mode
-
-        # Avoid re-issuing start while actively measuring: some devices flush/restart
-        # buffered data if start_measuring() is sent again mid-session.
-        did_start_measuring = False
         with self._measurement_state_lock:
+            self.r.set_source_voltage(
+                int(self.v * MILLIVOLTS_PER_VOLT)
+            )  # set source voltage in mV BEFORE setting source mode
+            # Note: source voltage must be set even if we are using the amp meter mode
+
+            # Avoid re-issuing start while actively measuring: some devices flush/restart
+            # buffered data if start_measuring() is sent again mid-session.
+            did_start_measuring = False
             if not self.measurement_thread.is_alive():
                 # must be after setting source voltage and before setting mode
                 self.r.start_measuring()  # send command to ppk2
                 did_start_measuring = True
 
-        if (
-            not is_supply
-        ):  # Minimum power output of PPK2. If less, assume we want meter-only mode.
-            self.r.use_ampere_meter()
-        else:
-            self.r.use_source_meter()  # set source meter mode
+            if (
+                not is_supply
+            ):  # Minimum power output of PPK2. If less, assume we want meter-only mode.
+                self.r.use_ampere_meter()
+            else:
+                self.r.use_source_meter()  # set source meter mode
 
-        with self._measurement_state_lock:
             self.measuring = True
             if not self.measurement_thread.is_alive():
                 if not did_start_measuring:

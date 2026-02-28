@@ -429,6 +429,10 @@ def testAll(numTests: int = 5) -> bool:
     bool
         `True` if the test sequence completed within configured failure tolerances, `False` otherwise.
     """
+    # pylint: disable=W0603
+    global interfaces
+    interfaces = []
+
     ports: list[str] = meshtastic.util.findPorts(True)
     if len(ports) < 2:
         logger.error("Must have at least two devices connected to USB.")
@@ -439,43 +443,39 @@ def testAll(numTests: int = 5) -> bool:
         with suppress(Exception):
             pub.unsubscribe(listener, topic)
 
-    # pylint: disable=W0603
-    global interfaces
-    interfaces = []
+    try:
+        with ExitStack() as stack:
+            pub.subscribe(onConnection, "meshtastic.connection")
+            stack.callback(_safe_unsubscribe, onConnection, "meshtastic.connection")
+            pub.subscribe(onReceive, "meshtastic.receive")
+            stack.callback(_safe_unsubscribe, onReceive, "meshtastic.receive")
 
-    with ExitStack() as stack:
-        pub.subscribe(onConnection, "meshtastic.connection")
-        stack.callback(_safe_unsubscribe, onConnection, "meshtastic.connection")
-        pub.subscribe(onReceive, "meshtastic.receive")
-        stack.callback(_safe_unsubscribe, onReceive, "meshtastic.receive")
+            # Build interfaces incrementally to ensure cleanup on failure.
+            for port in ports:
+                debug_log = None
+                try:
+                    debug_log = openDebugLog(port)
+                    iface = SerialInterface(port, debugOut=debug_log, connectNow=True)
+                except Exception:  # noqa: BLE001 - keep scanning remaining ports
+                    logger.exception("Skipping unusable port: %s", port)
+                    if debug_log is not None:
+                        with suppress(Exception):
+                            debug_log.close()
+                    continue
+                stack.callback(debug_log.close)
+                stack.callback(iface.close)
+                interfaces.append(iface)
+                if len(interfaces) == 2:
+                    break
 
-        # Build interfaces incrementally to ensure cleanup on failure.
-        for port in ports:
-            debug_log = None
-            try:
-                debug_log = openDebugLog(port)
-                iface = SerialInterface(port, debugOut=debug_log, connectNow=True)
-            except Exception:  # noqa: BLE001 - keep scanning remaining ports
-                logger.exception("Skipping unusable port: %s", port)
-                if debug_log is not None:
-                    with suppress(Exception):
-                        debug_log.close()
-                continue
-            stack.callback(debug_log.close)
-            stack.callback(iface.close)
-            interfaces.append(iface)
-            if len(interfaces) == 2:
-                break
+            if len(interfaces) < 2:
+                logger.error("Unable to open two usable Meshtastic interfaces.")
+                return False
 
-        if len(interfaces) < 2:
-            logger.error("Unable to open two usable Meshtastic interfaces.")
-            return False
-
-        logger.info("Ports opened, starting test")
-        result: bool = testThread(numTests)
-
-    interfaces = []
-    return result
+            logger.info("Ports opened, starting test")
+            return testThread(numTests)
+    finally:
+        interfaces = []
 
 
 def testSimulator() -> NoReturn:

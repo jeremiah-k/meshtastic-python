@@ -204,6 +204,15 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(  # noqa: TRY003
             f"pm_mask contains negative values at rows {bad_rows_preview}{suffix}"
         )
+    uint64_max = np.iinfo(np.uint64).max
+    is_within_uint64 = np.less_equal(pm_mask_array, uint64_max)
+    if not np.all(is_within_uint64):
+        bad_rows = pmon_events.index[~is_within_uint64].tolist()
+        bad_rows_preview = bad_rows[:5]
+        suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
+        raise ValueError(  # noqa: TRY003
+            f"pm_mask contains values outside uint64 range at rows {bad_rows_preview}{suffix}"
+        )
     pm_masks = pm_mask_series.astype(np.uint64, copy=False).to_numpy(copy=False)
 
     # possible to do this with pandas rolling windows if I was smarter?

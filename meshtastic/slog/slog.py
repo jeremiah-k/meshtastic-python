@@ -317,11 +317,16 @@ class PowerLogger:
         if self.is_logging:
             self.is_logging = False
             self._stop_event.set()
-            self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
-            if self.thread.is_alive():
-                logger.warning(
-                    "PowerLogger background thread did not stop within %.1fs; continuing teardown.",
-                    POWER_LOGGER_JOIN_TIMEOUT,
+            if threading.current_thread() is not self.thread:
+                self.thread.join(timeout=POWER_LOGGER_JOIN_TIMEOUT)
+                if self.thread.is_alive():
+                    logger.warning(
+                        "PowerLogger background thread did not stop within %.1fs; continuing teardown.",
+                        POWER_LOGGER_JOIN_TIMEOUT,
+                    )
+            else:
+                logger.debug(
+                    "PowerLogger.close() called from logging thread; skipping self-join."
                 )
             try:
                 self._p_meter.close()

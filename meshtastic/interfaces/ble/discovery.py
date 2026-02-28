@@ -428,10 +428,12 @@ class DiscoveryManager:
                     self._client = resolved_factory()
                 # Validate factory returned a valid client (duck typing for testability)
                 if self._client is None:
-                    raise DiscoveryClientError.factory_returned_none(resolved_factory)
+                    invalid_client_error = DiscoveryClientError.factory_returned_none(
+                        resolved_factory
+                    )
                 # Accept BLEClient instances or any object with the required interface
                 # (duck typing allows test fixtures while still catching errors)
-                if not isinstance(self._client, BLEClient):
+                elif not isinstance(self._client, BLEClient):
                     # Duck-typed discovery clients must support scan operations:
                     # _discover() is the only required method for device scanning.
                     required_callables = ("_discover",)
@@ -449,7 +451,7 @@ class DiscoveryManager:
                             missing,
                         )
 
-            client = self._client
+            client = cast(Any, self._client)
 
         seen_stale_ids: set[int] = set()
         for stale_client in stale_clients:

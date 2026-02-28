@@ -38,6 +38,7 @@ READER_IDLE_BACKOFF_SECONDS = 0.01
 
 STREAM_WRITE_EXCEPTIONS = (
     OSError,
+    ValueError,
     serial.SerialException,
     serial.SerialTimeoutException,
 )

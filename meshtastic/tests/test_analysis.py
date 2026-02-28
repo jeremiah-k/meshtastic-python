@@ -300,6 +300,21 @@ def test_get_pmon_raises_rejects_negative_masks() -> None:
 
 
 @pytest.mark.unit
+def test_get_pmon_raises_rejects_overflowing_masks() -> None:
+    """get_pmon_raises should reject pm_mask values beyond uint64 max."""
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0, float(np.iinfo(np.uint64).max) * 2.0],
+        }
+    )
+    with pytest.raises(
+        ValueError, match="pm_mask contains values outside uint64 range"
+    ):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
 def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
     """get_pmon_raises should decode simultaneous multi-bit raise masks."""
     dslog = pd.DataFrame(
