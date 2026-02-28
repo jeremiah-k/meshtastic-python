@@ -92,7 +92,7 @@ def run_cli_argv_with_timeout(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as e:
-        cmd_name = cmd[0] if cmd else "<unknown>"
+        cmd_name = cmd[0]
         timeout_value = e.timeout if e.timeout is not None else timeout
         _fail_masked_timeout(cmd_name, timeout_value)
         raise  # pragma: no cover - pytest.fail always raises

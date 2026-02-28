@@ -2,10 +2,13 @@
 It is used for auto detection as to which device might be connected.
 """
 
+import logging
 from dataclasses import dataclass, field
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(eq=False)
@@ -40,14 +43,30 @@ class SupportedDevice:
         normalized_aliases: list[tuple[str, str]] = []
         for alias in self.usb_id_aliases:
             if not isinstance(alias, tuple) or len(alias) != 2:
+                logger.debug(
+                    "Ignoring malformed USB ID alias for %s: %r",
+                    self.name,
+                    alias,
+                )
                 continue
             vendor_id, product_id = alias
             if not isinstance(vendor_id, str) or not isinstance(product_id, str):
+                logger.debug(
+                    "Ignoring non-string USB ID alias for %s: %r",
+                    self.name,
+                    alias,
+                )
                 continue
             normalized_vendor_id = vendor_id.strip().lower()
             normalized_product_id = product_id.strip().lower()
             if normalized_vendor_id and normalized_product_id:
                 normalized_aliases.append((normalized_vendor_id, normalized_product_id))
+            else:
+                logger.debug(
+                    "Ignoring blank USB ID alias for %s: %r",
+                    self.name,
+                    alias,
+                )
         self.usb_id_aliases = tuple(normalized_aliases)
 
     @property

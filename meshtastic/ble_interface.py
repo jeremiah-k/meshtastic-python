@@ -32,9 +32,30 @@ except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
 # Public API re-export: import the canonical BLE facade once and mirror its
 # declared public surface from __all__ into this shim namespace.
 from meshtastic.interfaces import ble as _ble
-from meshtastic.interfaces.ble import *  # noqa: F403  # pylint: disable=wildcard-import,unused-wildcard-import
+from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-import
+    BLECLIENT_ERROR_ASYNC_TIMEOUT,
+    ERROR_CONNECTION_FAILED,
+    ERROR_MULTIPLE_DEVICES,
+    ERROR_NO_PERIPHERAL_FOUND,
+    ERROR_NO_PERIPHERALS_FOUND,
+    ERROR_READING_BLE,
+    ERROR_TIMEOUT,
+    ERROR_WRITING_BLE,
+    FROMNUM_UUID,
+    FROMRADIO_UUID,
+    LEGACY_LOGRADIO_UUID,
+    LOGRADIO_UUID,
+    SERVICE_UUID,
+    TORADIO_UUID,
+    BLEClient,
+    BLEConfig,
+    BLEInterface,
+    logger,
+)
 
 _BLE_PUBLIC_ALL = tuple(getattr(_ble, "__all__", ()))
+for _symbol in _BLE_PUBLIC_ALL:
+    globals().setdefault(_symbol, getattr(_ble, _symbol))
 
 # Stable public API delegates to the canonical BLE facade export list.
 __all__ = list(_BLE_PUBLIC_ALL)

@@ -84,6 +84,11 @@ def test_init_on_node_info_receive(
     with caplog.at_level(logging.DEBUG):
         _on_node_info_receive(iface, packet)
     assert re.search(r"in _on_node_info_receive", caplog.text, re.MULTILINE)
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["user"]["id"] == "bar"
+    assert iface.nodes is not None
+    assert iface.nodes["bar"] is node
+    assert node["lastReceived"]["decoded"]["user"]["id"] == "bar"
 
 
 @pytest.mark.unit

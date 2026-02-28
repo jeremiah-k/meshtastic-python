@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import serial  # type: ignore[import-untyped]
 
 from ..stream_interface import MAX_TO_FROM_RADIO_SIZE, START1, START2, StreamInterface
 
@@ -166,5 +167,59 @@ def test_write_bytes_raises_on_zero_progress() -> None:
     try:
         with pytest.raises(StreamInterface.StreamClosedError):
             iface._write_bytes(b"hello")
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_wraps_serial_exception_as_stream_closed() -> None:
+    """_write_bytes should normalize serial-layer write failures to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.side_effect = serial.SerialException("boom")
+    iface.stream = stream
+    try:
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._write_bytes(b"hello")
+        assert isinstance(exc_info.value.__cause__, serial.SerialException)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_reader_resyncs_when_start1_repeats_before_start2() -> None:
+    """Reader should recover from START1,START1,START2 framing without dropping packet."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        read_bytes = iter(
+            [
+                bytes([START1]),
+                bytes([START1]),
+                bytes([START2]),
+                b"\x00",
+                b"\x01",
+                b"X",
+            ]
+        )
+
+        def _fake_read_bytes(_length: int) -> bytes:
+            try:
+                return next(read_bytes)
+            except StopIteration:
+                iface._wantExit = True
+                return b""
+
+        with (
+            patch.object(iface, "_read_bytes", side_effect=_fake_read_bytes),
+            patch.object(iface, "_handle_from_radio") as handle_from_radio,
+            patch.object(iface, "_disconnected"),
+            patch("meshtastic.stream_interface.time.sleep", lambda _seconds: None),
+        ):
+            iface._reader()
+
+        handle_from_radio.assert_called_once_with(b"X")
     finally:
         iface.close()

@@ -90,7 +90,7 @@ def _close_discovery_client_best_effort(client: Any) -> None:
     if not inspect.isawaitable(close_result):
         return
 
-    awaitable_result = cast(Awaitable[Any], close_result)
+    awaitable_result = close_result
     try:
         running_loop = asyncio.get_running_loop()
     except RuntimeError:

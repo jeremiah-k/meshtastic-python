@@ -345,6 +345,7 @@ def ppk2_stub() -> "PPK2PowerSupply":
     ppk = object.__new__(PPK2PowerSupply)
     ppk._result_lock = threading.Condition()
     ppk._want_measurement = threading.Condition()
+    ppk._measurement_state_lock = threading.Lock()
     ppk.current_sum = 0
     ppk.current_num_samples = 0
     ppk.current_min = 0

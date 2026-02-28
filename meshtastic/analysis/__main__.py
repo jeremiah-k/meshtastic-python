@@ -189,7 +189,7 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("pm_mask contains non-numeric values") from exc  # noqa: TRY003
     pm_mask_array = pm_mask_series.to_numpy(copy=False)
     is_integral = np.equal(np.mod(pm_mask_array, 1), 0)
-    if not bool(np.all(is_integral)):
+    if not np.all(is_integral):
         bad_rows = pmon_events.index[~is_integral].tolist()
         bad_rows_preview = bad_rows[:5]
         suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
@@ -197,7 +197,7 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
             f"pm_mask contains non-integer values at rows {bad_rows_preview}{suffix}"
         )
     is_non_negative = np.greater_equal(pm_mask_array, 0)
-    if not bool(np.all(is_non_negative)):
+    if not np.all(is_non_negative):
         bad_rows = pmon_events.index[~is_non_negative].tolist()
         bad_rows_preview = bad_rows[:5]
         suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""

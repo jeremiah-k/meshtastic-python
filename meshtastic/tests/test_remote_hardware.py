@@ -213,9 +213,12 @@ def test_watchGPIOs_does_not_cache_mask_on_send_failure(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("nodeid", [None, False, True, "0", "0x0", "0b0", "   "])
+@pytest.mark.parametrize(
+    "nodeid",
+    [None, False, True, -1, "0", "0x0", "0b0", "-1", "-0x1", "   "],
+)
 def test_send_hardware_no_nodeid(mock_gpio_iface: MagicMock, nodeid: object) -> None:
-    """Reject missing or zero-equivalent destination node IDs in _send_hardware()."""
+    """Reject missing or non-positive destination node IDs in _send_hardware()."""
     rhw = RemoteHardwareClient(mock_gpio_iface)
     with pytest.raises(
         MeshInterface.MeshInterfaceError, match="Must use a destination node ID"

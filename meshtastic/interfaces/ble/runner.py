@@ -535,7 +535,15 @@ class BLECoroutineRunner:
 
         # Log the full context for other exceptions
         message = context.get("message", "Unknown error")
-        logger.error("BLE event loop error: %s", message, exc_info=exception)
+        if exception is not None and isinstance(exception, BaseException):
+            exception_info: bool | tuple[type[BaseException], BaseException, Any] = (
+                type(exception),
+                exception,
+                exception.__traceback__,
+            )
+        else:
+            exception_info = True
+        logger.error("BLE event loop error: %s", message, exc_info=exception_info)
 
         # Use default handler for additional processing
         try:

@@ -63,9 +63,9 @@ protobufs-update: FORCE
 open-coverage:
 	@# Open report when possible; otherwise print location.
 	@if command -v open >/dev/null 2>&1; then \
-		open htmlcov/index.html; \
+		open htmlcov/index.html >/dev/null 2>&1 || echo "Coverage report generated at htmlcov/index.html"; \
 	elif command -v xdg-open >/dev/null 2>&1; then \
-		xdg-open htmlcov/index.html; \
+		xdg-open htmlcov/index.html >/dev/null 2>&1 || echo "Coverage report generated at htmlcov/index.html"; \
 	else \
 		echo "Coverage report generated at htmlcov/index.html"; \
 	fi

@@ -69,11 +69,11 @@ def test_TCPInterface_myConnect_clears_socket_timeout() -> None:
         connected_socket = MagicMock()
         mock_connect.return_value = connected_socket
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-
-        iface.myConnect()
-
-        connected_socket.settimeout.assert_called_once_with(None)
-        iface.close()
+        try:
+            iface.myConnect()
+            connected_socket.settimeout.assert_called_once_with(None)
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
