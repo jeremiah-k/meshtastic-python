@@ -365,8 +365,9 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
             # Also check owner ID when weakref is unavailable (non-weakrefable objects)
             if current_owner is None:
                 stored_id = _CONNECTED_OWNER_IDS.get(key)
-                # CPython can reuse ids after GC; this fallback path is only used
-                # when weakref tracking is unavailable and remains best-effort.
+                # CPython can reuse ids after GC; this _mark_disconnected fallback is
+                # best-effort when _CONNECTED_OWNER_IDS must compare id(owner).
+                # The race window is narrow because callers still hold owner live.
                 if stored_id is not None and stored_id != id(owner):
                     logger.debug(
                         "Ignoring disconnect mark for %s from non-owner instance.",

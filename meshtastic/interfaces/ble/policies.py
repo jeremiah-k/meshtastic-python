@@ -96,6 +96,8 @@ class ReconnectPolicy:
                 right_value=initial_delay,
             )
         if backoff <= 1.0:
+            # ReconnectPolicy requires exponential growth; fixed/decelerating intervals
+            # (<= 1.0) should use a different retry policy.
             raise ReconnectPolicy.ConfigurationError.invalid_value(
                 "backoff", "> 1.0", backoff
             )

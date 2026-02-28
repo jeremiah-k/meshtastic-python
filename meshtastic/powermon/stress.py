@@ -21,10 +21,16 @@ DEFAULT_STRESS_STATE_DURATION_S = 5.0
 INVALID_ACK_TIMEOUT_ERROR = "ack_timeout must be a finite number > 0 seconds"
 
 
-def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
+def handlePowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     """Handle power stress responses and mark interface as having received a response."""
     logging.debug("packet:%s interface:%s", packet, interface)
     interface.gotResponse = True
+
+
+# COMPAT_STABLE_SHIM: naming alias for existing callback users.
+def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
+    """Compatibility alias for handlePowerStressResponse()."""
+    handlePowerStressResponse(packet, interface)
 
 
 class PowerStressClient:
