@@ -10,15 +10,24 @@ but should not be considered part of the stable public API.
 # Historical module-level imports retained for compatibility with code that
 # imported Bleak symbols from meshtastic.ble_interface in the pre-refactor API.
 # COMPAT_STABLE_SHIM
-from bleak import (  # type: ignore[attr-defined]  # noqa: F401  # pylint: disable=unused-import
-    BleakClient,
-    BleakScanner,
-    BLEDevice,
-)
-from bleak.exc import (  # noqa: F401  # pylint: disable=unused-import
-    BleakDBusError,
-    BleakError,
-)
+try:
+    from bleak import (  # type: ignore[attr-defined]  # noqa: F401  # pylint: disable=unused-import
+        BleakClient,
+        BleakScanner,
+        BLEDevice,
+    )
+    from bleak.exc import (  # noqa: F401  # pylint: disable=unused-import
+        BleakDBusError,
+        BleakError,
+    )
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    if exc.name != "bleak":
+        raise
+    raise ImportError(  # noqa: TRY003
+        "BLE support requires the 'bleak' package, but it is missing. "
+        "Your Meshtastic installation appears incomplete; reinstall dependencies "
+        "with `poetry install` (or `pip install --upgrade meshtastic`)."
+    ) from exc
 
 # Public API - only export what users actually need
 from meshtastic.interfaces.ble import (  # Main classes; UUID constants (for custom operations); Error messages (for error handling); Utility

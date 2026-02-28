@@ -33,6 +33,7 @@ def main() -> None:
             print(position)
     except OSError as exc:
         print(f"Could not connect to {RADIO_HOSTNAME}: {exc}")
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

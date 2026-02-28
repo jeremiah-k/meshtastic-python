@@ -170,9 +170,9 @@ class ReconnectPolicy:
 
         Order of operations for each call:
         1. `_get_delay()` computes the delay for the current attempt counter.
-        2. `_should_retry()` computes whether another retry is allowed *after*
+        2. `_attempt_count` is incremented to consume this attempt.
+        3. `_should_retry()` computes whether another retry is allowed *after*
            consuming this attempt.
-        3. `_attempt_count` is incremented.
 
         `max_retries` counts retries after the initial attempt, so total
         attempts are `1 + max_retries`. For finite retry budgets, calls up to
@@ -186,8 +186,8 @@ class ReconnectPolicy:
             `(delay_seconds, another_retry_allowed_after_this_attempt)`.
         """
         delay = self._get_delay()
-        should_retry = self._should_retry()
         self._attempt_count += 1
+        should_retry = self._should_retry(self._attempt_count)
         return delay, should_retry
 
     def get_attempt_count(self) -> int:

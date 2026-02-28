@@ -76,6 +76,7 @@ class StreamInterface(MeshInterface):
         """Raised when stream I/O is attempted without an active stream."""
 
         DEFAULT_MSG = "stream is not available"
+        WRITE_NO_PROGRESS_MSG = "stream write returned no bytes"
 
         def __init__(self, message: str = DEFAULT_MSG) -> None:
             """Initialize with a provided or default stream-closed message."""
@@ -188,11 +189,12 @@ class StreamInterface(MeshInterface):
             # All reconnect side effects happen under the same lock so a concurrent
             # close() intent is not accidentally cleared by an early-return connect().
             self._wantExit = False
-            # Send bogus UART characters to wake sleeping devices and force parser
-            # resynchronization before starting a new reader thread.
-            p: bytes = bytes([START2] * WAKE_BYTE_COUNT)
-            self._write_bytes(p)
-            time.sleep(DEVICE_WAKE_DELAY)  # give device time to start running
+            if not _provides_own_stream and self.stream is not None:
+                # Send bogus UART characters to wake sleeping devices and force parser
+                # resynchronization before starting a new reader thread.
+                p: bytes = bytes([START2] * WAKE_BYTE_COUNT)
+                self._write_bytes(p)
+                time.sleep(DEVICE_WAKE_DELAY)  # give device time to start running
             if self._rxThread.ident is not None:
                 self._rxThread = threading.Thread(
                     target=self.__reader, args=(), daemon=True, name="stream reader"
@@ -244,7 +246,25 @@ class StreamInterface(MeshInterface):
         s = self.stream
         if s is None or not getattr(s, "is_open", True):
             raise StreamInterface.StreamClosedError()
-        s.write(b)
+        payload = memoryview(b)
+        bytes_written = 0
+        while bytes_written < len(payload):
+            written = s.write(payload[bytes_written:])
+            if written is None:
+                raise StreamInterface.StreamClosedError(
+                    StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
+                )
+            try:
+                written_count = int(written)
+            except (TypeError, ValueError) as exc:
+                raise StreamInterface.StreamClosedError(
+                    StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
+                ) from exc
+            if written_count <= 0:
+                raise StreamInterface.StreamClosedError(
+                    StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
+                )
+            bytes_written += written_count
         s.flush()
         # win11 might need a bit more time, too
         if self.is_windows11:

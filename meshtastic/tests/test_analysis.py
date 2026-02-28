@@ -133,7 +133,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
         main()
 
     assert "Error starting Dash server on 127.0.0.1:" in captured["message"]
-    assert "address already in use" in captured["message"]
+    assert ADDRESS_IN_USE_ERROR in captured["message"]
     assert captured["code"] == 1
 
 

@@ -19,7 +19,7 @@ def main() -> None:
         print("Detect which device we might have.")
         raise SystemExit(3)
 
-    vendor_ids = get_unique_vendor_ids()
+    vendor_ids = sorted(get_unique_vendor_ids())
     print(f"Searching for all devices with these vendor ids {vendor_ids}")
 
     supported_devices = detect_supported_devices()

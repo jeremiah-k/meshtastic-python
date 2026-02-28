@@ -17,12 +17,13 @@ class SimPowerSupply(PowerSupply):
     """A simulated power supply for testing."""
 
     def getAverageCurrentMA(self) -> float:
-        """Return average current of last measurement in mA (since last call to this method).
+        """Return a simulated instantaneous current sample in mA.
 
         Returns
         -------
         float
-            The average current in mA.
+            Simulated current in mA for the current measurement interval;
+            not a cumulative average across calls.
         """
 
         # Sim an approximately 20mA load that varies sinusoidally

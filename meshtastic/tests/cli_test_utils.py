@@ -5,6 +5,9 @@ import subprocess
 
 import pytest
 
+EMPTY_SHELL_COMMAND_ERROR = "Empty command passed to CLI shell helper"
+EMPTY_ARGV_COMMAND_ERROR = "cmd must not be empty"
+
 
 def _fail_masked_timeout(command_name: str, timeout_s: int | float) -> None:
     """Fail a test with a redacted timeout message for a CLI command."""
@@ -37,7 +40,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
         If command is empty or whitespace-only.
     """
     if not command.strip():
-        raise ValueError("Empty command passed to CLI shell helper")
+        raise ValueError(EMPTY_SHELL_COMMAND_ERROR)
     try:
         # Intentional shell=True for legacy string-based test commands.
         # For argv + shell=False patterns, use run_cli_argv_with_timeout.
@@ -79,7 +82,7 @@ def run_cli_argv_with_timeout(
         CompletedProcess with returncode, stdout, and stderr attributes.
     """
     if not cmd:
-        raise ValueError("cmd must not be empty")
+        raise ValueError(EMPTY_ARGV_COMMAND_ERROR)
     try:
         return subprocess.run(  # noqa: S603
             cmd,
