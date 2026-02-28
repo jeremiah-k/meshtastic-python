@@ -33,7 +33,7 @@ def test_int_mesh_tunnel_no_args(mesh_tunnel_bin: str) -> None:
 def test_int_version(meshtastic_bin: str) -> None:
     """Test '--version'."""
     returncode, output = _run_and_collect([meshtastic_bin, "--version"])
-    assert re.search(r"[0-9]+\.[0-9]+\.[0-9]", output)
+    assert re.search(r"[0-9]+\.[0-9]+\.[0-9]+", output)
     assert returncode == 0
 
 

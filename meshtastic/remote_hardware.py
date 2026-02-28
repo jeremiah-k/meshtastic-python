@@ -227,13 +227,13 @@ def onGPIOReceive(packet: Any, interface: "MeshInterface") -> None:
 
 
 # COMPAT_STABLE_SHIM: alias for onGPIOReceive
-def onGpioReceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
+def onGpioReceive(packet: Any, interface: "MeshInterface") -> None:
     """Backward-compatible alias for onGPIOReceive."""
     onGPIOReceive(packet, interface)
 
 
 # COMPAT_STABLE_SHIM: alias for onGPIOReceive
-def onGPIOreceive(packet: dict[str, Any], interface: "MeshInterface") -> None:
+def onGPIOreceive(packet: Any, interface: "MeshInterface") -> None:
     """Backward-compatible alias for onGPIOReceive."""
     onGPIOReceive(packet, interface)
 
@@ -362,7 +362,7 @@ class RemoteHardwareClient:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(error_message)
-        return int(value)
+        return cast(int, value)
 
     def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
         """Set specified GPIO pins on a remote device according to the provided mask and values.

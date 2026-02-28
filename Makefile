@@ -1,4 +1,4 @@
-.PHONY: all clean test ci ci-strict lint docs cov virt smoke1 slow install examples protobufs protobufs-update FORCE
+.PHONY: all clean test ci ci-strict ci-base lint docs cov virt smoke1 slow install examples protobufs protobufs-update FORCE
 
 all: test
 
@@ -12,15 +12,17 @@ test:
 # run all CI checks locally (same as CI pipeline)
 # Runs the same checks in the same order as .github/workflows/ci.yml:
 # pytest (with coverage) -> pylint -> mypy
-ci:
+ci-base:
 	poetry run pytest --cov=meshtastic --cov-report=xml
 	$(MAKE) lint
+
+ci:
+	$(MAKE) ci-base
 	poetry run mypy meshtastic/
 
 # run CI checks with strict mypy (for maintainers)
 ci-strict:
-	poetry run pytest --cov=meshtastic --cov-report=xml
-	$(MAKE) lint
+	$(MAKE) ci-base
 	poetry run mypy meshtastic/ --strict
 # only run the smoke tests against the virtual device
 virt:
@@ -40,7 +42,7 @@ docs:
 
 # lint the codebase (same command as CI)
 lint:
-	poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
+	PYLINTHOME=/tmp/pylint-cache poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
 
 # show the slowest unit tests
 slow:

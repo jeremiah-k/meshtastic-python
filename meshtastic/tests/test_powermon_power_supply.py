@@ -5,7 +5,6 @@ import warnings
 
 import pytest
 
-from meshtastic.powermon import power_supply as power_supply_module
 from meshtastic.powermon.power_supply import PowerError, PowerSupply
 from meshtastic.powermon.sim import SimPowerSupply
 
@@ -52,22 +51,18 @@ def test_set_voltage_rejects_bool_nonfinite_and_negative(
 @pytest.mark.unit
 def test_deprecated_current_aliases_warn_once_per_method(
     power_supply: PowerSupply,
+    reset_power_supply_deprecations: None,
 ) -> None:
     """Deprecated camelCase aliases should emit one deprecation warning per method."""
-    previous_warned = set(power_supply_module._warned_deprecations)
-    power_supply_module._warned_deprecations.clear()
-    try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            power_supply.getAverageCurrentmA()
-            power_supply.getAverageCurrentmA()
-            power_supply.getMinCurrentmA()
-            power_supply.getMinCurrentmA()
-            power_supply.getMaxCurrentmA()
-            power_supply.getMaxCurrentmA()
-    finally:
-        power_supply_module._warned_deprecations.clear()
-        power_supply_module._warned_deprecations.update(previous_warned)
+    _ = reset_power_supply_deprecations
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        power_supply.getAverageCurrentmA()
+        power_supply.getAverageCurrentmA()
+        power_supply.getMinCurrentmA()
+        power_supply.getMinCurrentmA()
+        power_supply.getMaxCurrentmA()
+        power_supply.getMaxCurrentmA()
 
     deprecations = [
         warning

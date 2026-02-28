@@ -94,7 +94,7 @@ class ThreadCoordinator:
         """
         self._lock = RLock()
         self._threads: list[Thread] = []
-        self._pending_start: set[ThreadLike] = set()
+        self._pending_start: set[Thread] = set()
         self._events: dict[str, Event] = {}
         self._cleaned_up: bool = False
 
@@ -212,7 +212,11 @@ class ThreadCoordinator:
             # thread.ident is None only if the thread has never been started
             # This prevents RuntimeError from calling start() on a completed thread
             # Also check _pending_start to prevent TOCTOU race between checking ident and calling start()
-            if thread.ident is None and thread not in self._pending_start:
+            if (
+                isinstance(thread, Thread)
+                and thread.ident is None
+                and thread not in self._pending_start
+            ):
                 self._pending_start.add(thread)
                 should_start = True
         # Start outside the lock to prevent deadlocks if the new thread
@@ -222,7 +226,8 @@ class ThreadCoordinator:
                 thread.start()
             finally:
                 with self._lock:
-                    self._pending_start.discard(thread)
+                    if isinstance(thread, Thread):
+                        self._pending_start.discard(thread)
                     # cleanup() may have run after we released the lock but before
                     # thread.start(); if so, join this now-started thread below so
                     # we don't leave it detached from coordinator shutdown.

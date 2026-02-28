@@ -107,12 +107,7 @@ class TestAddrLock:
         assert _addr_key("temp-address") not in _LOCK_HOLDERS
 
     def test_addr_lock_context_cleans_lock_on_exception(self):
-        """Address-lock holder tracking should unwind correctly when the context exits via exception.
-
-        Raises
-        ------
-        RuntimeError
-        """
+        """Address-lock holder tracking should unwind correctly when the context exits via exception."""
         key = _addr_key("temp-exception-address")
         assert key is not None
 
@@ -160,6 +155,7 @@ class TestMarkDisconnected:
 
         Parameters
         ----------
+        clear_registry
             pytest fixture that clears gating registries before use.
         """
         _ = clear_registry
@@ -310,6 +306,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
                 Returns
                 -------
+                bool
                     `True` if the connection is established, `False` otherwise.
                 """
                 return False
@@ -322,12 +319,7 @@ class TestIsCurrentlyConnectedElsewhere:
         assert key not in _CONNECTED_ADDRS
 
     def test_preserves_owner_claim_when_state_probe_raises(self):
-        """State-probe exceptions should not aggressively prune active claims.
-
-        Raises
-        ------
-        RuntimeError
-        """
+        """State-probe exceptions should not aggressively prune active claims."""
 
         class Owner:
             """Test owner stub."""
@@ -337,12 +329,8 @@ class TestIsCurrentlyConnectedElsewhere:
 
                 Returns
                 -------
+                bool
                     `True` if the owner's connection is active, `False` otherwise.
-
-                Raises
-                ------
-                RuntimeError
-                    If the probe cannot determine connection state (e.g., probe failure).
                 """
                 raise RuntimeError("probe failed")
 

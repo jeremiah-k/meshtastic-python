@@ -351,7 +351,7 @@ def test_smoke1_ch_add_and_ch_del() -> None:
     assert return_value == 0
     # pause for the radio
     time.sleep(PAUSE_AFTER_REBOOT)
-    # make sure the secondar channel is not there
+    # make sure the secondary channel is not there
     return_value, out = run_cli_with_timeout("meshtastic --info")
     assert re.match(r"Connected to radio", out)
     assert not re.search(r"SECONDARY", out, re.MULTILINE)

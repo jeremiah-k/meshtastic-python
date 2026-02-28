@@ -448,7 +448,7 @@ class Timeout:
         Returns
         -------
         bool
-            `true` if all named attributes are present on `target` and evaluate to true before the timeout, `false` otherwise.
+            `True` if all named attributes are present on `target` and evaluate to true before the timeout, `False` otherwise.
         """
         attr_names = tuple(attrs)
         self.reset()
@@ -1014,7 +1014,7 @@ def is_windows11() -> bool:
     Returns
     -------
     bool
-        `true` if the OS is Windows and the OS build (version patch) is 22000 or greater, `false` otherwise.
+        `True` if the OS is Windows and the OS build (version patch) is 22000 or greater, `False` otherwise.
     """
     is_win11: bool = False
     if platform.system() == "Windows":

@@ -1,4 +1,4 @@
-"""code logging power consumption of meshtastic devices."""
+"""Classes for logging power consumption of Meshtastic devices."""
 
 import math
 import threading

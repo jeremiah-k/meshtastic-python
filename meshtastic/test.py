@@ -474,6 +474,7 @@ def testAll(numTests: int = 5) -> bool:
         logger.info("Ports opened, starting test")
         result: bool = testThread(numTests)
 
+    interfaces = []
     return result
 
 

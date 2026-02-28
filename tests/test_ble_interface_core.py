@@ -318,7 +318,7 @@ def test_find_device_returns_single_scan_result() -> None:
     assert result is scanned_device
 
 
-def test_ble_package_all_uses_stable_surface():
+def test_ble_package_all_uses_stable_surface() -> None:
     """`meshtastic.interfaces.ble.__all__` should expose the stable facade only."""
     assert "BLEInterface" in ble_mod.__all__
     assert "BLEClient" in ble_mod.__all__
@@ -326,7 +326,7 @@ def test_ble_package_all_uses_stable_surface():
     assert "ThreadCoordinator" not in ble_mod.__all__
 
 
-def test_ble_package_and_legacy_facade_exports_match():
+def test_ble_package_and_legacy_facade_exports_match() -> None:
     """Package BLE exports should match the legacy meshtastic.ble_interface facade."""
     import meshtastic.ble_interface as legacy_ble_mod
 
@@ -1077,10 +1077,6 @@ def test_receive_thread_specific_exceptions(monkeypatch, caplog, exc_type):
 
     The test injects a client whose read_gatt_char raises the given exception type,
     triggers the receive loop, and asserts that the fatal log entry is present and that close() was called.
-
-    Raises
-    ------
-    __UnknownError__
     """
     # logging and threading already imported at top
 

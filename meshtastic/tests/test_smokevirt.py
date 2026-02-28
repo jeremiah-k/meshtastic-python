@@ -131,34 +131,30 @@ def test_smokevirt_debug() -> None:
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_seriallog_to_file() -> None:
+def test_smokevirt_seriallog_to_file(tmp_path: Path) -> None:
     """Test --seriallog to a file creates a file."""
-    filename = "tmpoutput.txt"
-    if os.path.exists(f"{filename}"):
-        os.remove(f"{filename}")
+    filename = tmp_path / "tmpoutput.txt"
+    quoted_filename = _quote_shell_path(filename)
     return_value, _ = run_cli_with_timeout(
-        f"meshtastic --host localhost --info --seriallog {filename}"
+        f"meshtastic --host localhost --info --seriallog {quoted_filename}"
     )
-    assert os.path.exists(f"{filename}")
+    assert filename.exists()
     assert return_value == 0
-    os.remove(f"{filename}")
 
 
 @pytest.mark.smokevirt
-def test_smokevirt_qr() -> None:
+def test_smokevirt_qr(tmp_path: Path) -> None:
     """Test --qr."""
-    filename = "tmpqr"
-    if os.path.exists(f"{filename}"):
-        os.remove(f"{filename}")
+    filename = tmp_path / "tmpqr"
+    quoted_filename = _quote_shell_path(filename)
     return_value, _ = run_cli_with_timeout(
-        f"meshtastic --host localhost --qr > {filename}"
+        f"meshtastic --host localhost --qr > {quoted_filename}"
     )
-    assert os.path.exists(f"{filename}")
+    assert filename.exists()
     # not really testing that a valid qr code is created, just that the file size
     # is reasonably big enough for a qr code
-    assert os.stat(f"{filename}").st_size > 20000
+    assert filename.stat().st_size > 20000
     assert return_value == 0
-    os.remove(f"{filename}")
 
 
 @pytest.mark.smokevirt

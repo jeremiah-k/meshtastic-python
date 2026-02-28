@@ -1,5 +1,6 @@
 """Unit tests for powermon stress helpers and client behavior."""
 
+import logging
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, call
@@ -101,7 +102,7 @@ def test_sync_power_stress_negative_duration_uses_ack_wait_path(
     monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", sleep_mock)
     client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING):
         assert (
             client.syncPowerStress(
                 powermon_pb2.PowerStressMessage.BT_ON,

@@ -88,7 +88,7 @@ class ConnectionValidator:
         Returns
         -------
         bool
-            `true` if the client is connected and its address equals `normalized_request` or one of the known targets, `false` otherwise.
+            `True` if the client is connected and its address equals `normalized_request` or one of the known targets, `False` otherwise.
         """
         if not client or not client.isConnected():
             return False

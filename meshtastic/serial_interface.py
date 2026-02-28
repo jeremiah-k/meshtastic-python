@@ -25,8 +25,8 @@ DEFAULT_BAUD_RATE = 115200
 SERIAL_READ_TIMEOUT = 0.5
 """Default read timeout for serial operations (seconds)."""
 
-SERIAL_WRITE_TIMEOUT = 0
-"""Default write timeout for serial operations (0 = non-blocking)."""
+SERIAL_WRITE_TIMEOUT = 0.5
+"""Default write timeout for serial operations (seconds)."""
 
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""

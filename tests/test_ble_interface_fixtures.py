@@ -3,6 +3,7 @@
 import logging
 import sys
 import types
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -65,7 +66,7 @@ def mock_serial(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 
 @pytest.fixture
-def mock_pubsub(monkeypatch):
+def mock_pubsub(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Injects a fake `pubsub` module into sys.modules for tests.
 
     The injected module exposes a `pub` attribute (a SimpleNamespace) with
@@ -88,7 +89,7 @@ def mock_pubsub(monkeypatch):
 
 
 @pytest.fixture
-def mock_publishing_thread(monkeypatch):
+def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Provide a synchronous test stub for the publishingThread module and install it into sys.modules.
 
     The stub exposes a queueWork(callback) callable that invokes the provided callback immediately if it is truthy. The mocked module is registered under both "publishingThread" and "meshtastic.publishingThread".
@@ -99,7 +100,7 @@ def mock_publishing_thread(monkeypatch):
     """
     publishing_thread_module: Any = types.ModuleType("publishingThread")
 
-    def queueWork(callback):
+    def queueWork(callback: Callable[[], Any] | None) -> None:
         """Execute the provided callback immediately.
 
         Parameters
@@ -122,7 +123,7 @@ def mock_publishing_thread(monkeypatch):
 
 
 @pytest.fixture
-def mock_tabulate(monkeypatch):
+def mock_tabulate(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Install a minimal fake `tabulate` module into sys.modules for tests.
 
     The fake module exposes a `tabulate(*args, **kwargs)` function that always returns an empty string.
@@ -139,7 +140,7 @@ def mock_tabulate(monkeypatch):
 
 
 @pytest.fixture
-def mock_bleak(monkeypatch):
+def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Create and install a minimal fake `bleak` package into sys.modules for tests.
 
     The injected module supplies lightweight test doubles compatible with production imports:
@@ -277,8 +278,6 @@ def mock_bleak(monkeypatch):
         def __init__(self):
             """Initialize a BleakScanner stub that reports no BLE devices."""
 
-            pass
-
         @staticmethod
         async def discover(**_kwargs):
             """Simulate BLE device discovery.
@@ -314,8 +313,8 @@ def mock_bleak(monkeypatch):
 
 @pytest.fixture
 def mock_bleak_exc(
-    monkeypatch, mock_bleak: Any
-):  # pylint: disable=redefined-outer-name
+    monkeypatch: pytest.MonkeyPatch, mock_bleak: Any
+) -> types.ModuleType:  # pylint: disable=redefined-outer-name
     """Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
 
     The created module is attached to the provided `mock_bleak` as its `exc` attribute and inserted into `sys.modules` under the name `"bleak.exc"`.
@@ -329,12 +328,8 @@ def mock_bleak_exc(
     class _StubBleakError(Exception):
         """Stub BleakError type for tests."""
 
-        pass
-
     class _StubBleakDBusError(_StubBleakError):
         """Stub BleakDBusError type for tests."""
-
-        pass
 
     bleak_exc_module.BleakError = _StubBleakError
     bleak_exc_module.BleakDBusError = _StubBleakDBusError
@@ -381,11 +376,12 @@ class DummyClient:
         # The bleak_client should be a separate object to correctly test identity checks
         self.bleak_client = SimpleNamespace(address=self.address)
 
-    def has_characteristic(self, _specifier) -> bool:
+    def has_characteristic(self, _specifier: Any) -> bool:
         """Report whether this mock client exposes a BLE characteristic matching the given specifier.
 
         Parameters
         ----------
+        _specifier
             Identifier of the characteristic to check (for example, a UUID string or characteristic object).
 
         Returns
@@ -472,7 +468,7 @@ class DummyClient:
 
 @pytest.fixture
 def stub_atexit(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     mock_serial,  # pylint: disable=redefined-outer-name
     mock_pubsub,  # pylint: disable=redefined-outer-name
     mock_tabulate,  # pylint: disable=redefined-outer-name
@@ -501,7 +497,7 @@ def stub_atexit(
         mock_publishing_thread,
     )
 
-    def fake_register(func):
+    def fake_register(func: Any) -> Any:
         """Register a callable to be invoked later during teardown.
 
         Parameters
@@ -517,7 +513,7 @@ def stub_atexit(
         registered.append(func)
         return func
 
-    def fake_unregister(func):
+    def fake_unregister(func: Any) -> None:
         """Unregisters all callbacks identical to the given function from the module-level registration list.
 
         Removes every entry whose identity matches `func` (comparison is by `is`, not by equality).
@@ -569,7 +565,7 @@ def _build_interface(
     """
     ble_mod = _get_ble_module()
     BleInterfaceClass = ble_mod.BLEInterface
-    connect_calls: list = []
+    connect_calls: list[str | None] = []
 
     def _stub_connect(
         _self: Any, _address: str | None = None, *args, **kwargs

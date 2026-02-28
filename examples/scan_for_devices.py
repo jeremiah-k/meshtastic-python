@@ -31,7 +31,8 @@ def main() -> None:
         )
         for device in sorted_devices:
             version_suffix = f" {device.version}" if device.version else ""
-            print(f" name:{device.name}{version_suffix} firmware:{device.for_firmware}")
+            firmware_info = device.for_firmware or "unknown"
+            print(f" name:{device.name}{version_suffix} firmware:{firmware_info}")
     else:
         print("No supported devices detected.")
 
