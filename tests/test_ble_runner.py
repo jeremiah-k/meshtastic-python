@@ -4,6 +4,7 @@ import asyncio
 import threading
 import time
 import warnings
+from collections.abc import Generator
 from concurrent.futures import Future
 from typing import Any, cast
 
@@ -17,7 +18,7 @@ from meshtastic.interfaces.ble.runner import (
 
 
 @pytest.fixture(autouse=True)
-def ensure_runner_running():
+def ensure_runner_running() -> Generator[None, None, None]:
     """Ensure the BLECoroutineRunner singleton is running for the duration of a test.
 
     Start the BLECoroutineRunner before the test and re-validate or restart it after the test to prevent singleton state leakage between tests. Intended for use as an autouse pytest fixture.

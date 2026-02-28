@@ -24,6 +24,7 @@ from ..slog import rootDir
 pd.options.mode.copy_on_write = True
 
 BOARD_ID_INTEGER_RE = re.compile(r"^[+-]?[0-9]+$")
+PMON_MARKER_Y_POSITION = 10.0
 
 
 def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
@@ -440,7 +441,7 @@ def create_dash(slog_path: str) -> Dash:
     )
     set_legend(min_pwr_points, "min power")
 
-    fake_y = np.full(len(pmon_raises), 10.0)
+    fake_y = np.full(len(pmon_raises), PMON_MARKER_Y_POSITION)
     pmon_points = px.scatter(pmon_raises, x="time", y=fake_y, text="pm_raises")
 
     figure_data = (

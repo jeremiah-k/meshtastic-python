@@ -1,10 +1,12 @@
 """BLE device discovery strategies."""
 
+import asyncio
 import contextlib
 import inspect
 import re
 import threading
 import time
+from collections.abc import Awaitable
 from types import TracebackType
 from typing import Any, Callable, cast
 
@@ -42,6 +44,64 @@ def _looks_like_ble_address(identifier: str) -> bool:
     if not stripped:
         return False
     return bool(_BLE_ADDRESS_SHAPE_RE.fullmatch(stripped))
+
+
+async def _await_close_result(close_result: Awaitable[Any]) -> None:
+    """Await a best-effort discovery-client close/disconnect result."""
+    await close_result
+
+
+def _close_discovery_client_best_effort(client: Any) -> None:
+    """Best-effort close of a discarded discovery client.
+
+    Prefers ``close()`` and falls back to ``disconnect()`` when available. If
+    the close call returns an awaitable, it is awaited when no event loop is
+    running in this thread, or scheduled on the current running loop.
+    """
+    close = getattr(client, "close", None)
+    if not callable(close):
+        close = getattr(client, "disconnect", None)
+    if not callable(close):
+        return
+
+    try:
+        close_result = close()
+    except Exception:  # noqa: BLE001 - best effort cleanup path
+        logger.debug(
+            "Failed to close discarded discovery client of type %s.",
+            type(client).__name__,
+            exc_info=True,
+        )
+        return
+
+    if not inspect.isawaitable(close_result):
+        return
+
+    awaitable_result = cast(Awaitable[Any], close_result)
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            asyncio.run(_await_close_result(awaitable_result))
+        except Exception:  # noqa: BLE001 - best effort cleanup path
+            logger.debug(
+                "Failed to await close/disconnect for discarded discovery client of type %s.",
+                type(client).__name__,
+                exc_info=True,
+            )
+    else:
+        try:
+            running_loop.create_task(_await_close_result(awaitable_result))
+        except Exception:  # noqa: BLE001 - best effort cleanup path
+            logger.debug(
+                "Failed to schedule async close/disconnect for discarded discovery client of type %s.",
+                type(client).__name__,
+                exc_info=True,
+            )
+            close_awaitable = getattr(awaitable_result, "close", None)
+            if callable(close_awaitable):
+                with contextlib.suppress(Exception):
+                    close_awaitable()
 
 
 class DiscoveryClientError(Exception):
@@ -262,7 +322,16 @@ class DiscoveryManager:
         DiscoveryClientError
             If the discovery client factory returns an invalid type.
         """
+        stale_clients: list[Any] = []
+        invalid_client_error: DiscoveryClientError | None = None
         with self._client_lock:
+
+            def _discard_cached_client() -> None:
+                cached_client = self._client
+                if cached_client is not None:
+                    stale_clients.append(cached_client)
+                    self._client = None
+
             # Only discard the client if it was previously connected and has since
             # disconnected. A discovery-only client (never connected) should be reused.
             if self._client is not None:
@@ -273,12 +342,12 @@ class DiscoveryManager:
                         logger.debug(
                             "Cached discovery client lacks isConnected(); discarding client."
                         )
-                        self._client = None
+                        _discard_cached_client()
                     else:
                         is_connected = cast(Any, is_connected_method)
                         try:
                             if not is_connected():  # pylint: disable=not-callable
-                                self._client = None
+                                _discard_cached_client()
                         except (
                             Exception
                         ):  # noqa: BLE001 - defensive path for flaky clients
@@ -286,7 +355,7 @@ class DiscoveryManager:
                                 "Cached discovery client isConnected() failed; discarding client.",
                                 exc_info=True,
                             )
-                            self._client = None
+                            _discard_cached_client()
             if self._client is None:
                 # Factory resolution precedence (back-compat and testability):
                 #   1. Explicit self.client_factory (injected for testing)
@@ -350,14 +419,25 @@ class DiscoveryManager:
                     ]
                     if missing:
                         invalid_client = self._client
-                        self._client = None
-                        raise DiscoveryClientError.invalid_client(
+                        _discard_cached_client()
+                        invalid_client_error = DiscoveryClientError.invalid_client(
                             resolved_factory,
                             type(invalid_client),
                             missing,
                         )
 
             client = self._client
+
+        seen_stale_ids: set[int] = set()
+        for stale_client in stale_clients:
+            stale_id = id(stale_client)
+            if stale_id in seen_stale_ids:
+                continue
+            seen_stale_ids.add(stale_id)
+            _close_discovery_client_best_effort(stale_client)
+
+        if invalid_client_error is not None:
+            raise invalid_client_error
         devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:
@@ -411,9 +491,7 @@ class DiscoveryManager:
             client = self._client
             self._client = None
         if client is not None:
-            close = getattr(client, "close", None)
-            if callable(close):
-                close()
+            _close_discovery_client_best_effort(client)
 
     def __enter__(self) -> "DiscoveryManager":
         """Return self for context-manager usage."""

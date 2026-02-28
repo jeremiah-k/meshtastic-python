@@ -76,7 +76,7 @@ class SerialInterface(StreamInterface):
         self.devPath: str | None = devPath
 
         if self.devPath is None:
-            ports: list[str] = meshtastic.util.findPorts(True)
+            ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
             logger.debug("ports: %s", ports)
             if len(ports) == 0:
                 logger.warning(

@@ -195,7 +195,16 @@ class ArrowWriter:
         self._set_schema(schema)
 
     def setSchema(self, schema: pa.Schema) -> None:
-        """Public camelCase wrapper for _set_schema()."""
+        """Set the schema for the Arrow file.
+
+        Only needed for datasets where the schema cannot be inferred from the
+        first record written.
+
+        Parameters
+        ----------
+        schema : pa.Schema
+            The schema to use for the Arrow file.
+        """
         self._set_schema(schema)
 
     def _write(self) -> None:
@@ -261,7 +270,16 @@ class ArrowWriter:
         self._add_row(row_dict)
 
     def addRow(self, row_dict: dict[str, object]) -> None:
-        """Public camelCase wrapper for _add_row()."""
+        """Add a row to the Arrow file.
+
+        The schema is automatically learned from the first row. All subsequent
+        rows must conform to that schema.
+
+        Parameters
+        ----------
+        row_dict : dict[str, object]
+            Dictionary representing a single row with field names matching the schema.
+        """
         self._add_row(row_dict)
 
 

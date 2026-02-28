@@ -308,16 +308,17 @@ class StreamInterface(MeshInterface):
         toRadio : mesh_pb2.ToRadio
             The protobuf message to transmit.
         """
-        logger.debug("Sending: %s", stripnl(toRadio))
-        b: bytes = toRadio.SerializeToString()
-        bufLen: int = len(b)
-        if bufLen > MAX_TO_FROM_RADIO_SIZE:
+        to_radio = toRadio
+        logger.debug("Sending: %s", stripnl(to_radio))
+        b: bytes = to_radio.SerializeToString()
+        buf_len: int = len(b)
+        if buf_len > MAX_TO_FROM_RADIO_SIZE:
             raise StreamInterface.PayloadTooLargeError(
-                payload_size=bufLen,
+                payload_size=buf_len,
                 max_size=MAX_TO_FROM_RADIO_SIZE,
             )
         # We convert into a string, because the TCP code doesn't work with byte arrays
-        header: bytes = bytes([START1, START2, (bufLen >> 8) & 0xFF, bufLen & 0xFF])
+        header: bytes = bytes([START1, START2, (buf_len >> 8) & 0xFF, buf_len & 0xFF])
         logger.debug("sending header:%r b:%r", header, b)
         self._write_bytes(header + b)
 

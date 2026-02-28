@@ -7,6 +7,7 @@ Meshtastic devices via TCP/IP network connections.
 # pylint: disable=R0917
 import contextlib
 import logging
+import math
 import socket
 import threading
 import time
@@ -64,8 +65,14 @@ class TCPInterface(StreamInterface):
             ``None`` omits the timeout parameter, allowing the platform socket
             default to apply.
         """
-        if connectTimeout is not None and connectTimeout <= 0:
-            raise ValueError(self.CONNECT_TIMEOUT_ERROR.format(connectTimeout))
+        if connectTimeout is not None:
+            if (
+                isinstance(connectTimeout, bool)
+                or not isinstance(connectTimeout, (int, float))
+                or not math.isfinite(connectTimeout)
+                or connectTimeout <= 0
+            ):
+                raise ValueError(self.CONNECT_TIMEOUT_ERROR.format(connectTimeout))
 
         self.stream = None
         self._provides_own_stream = True
@@ -146,7 +153,8 @@ class TCPInterface(StreamInterface):
         """
         sock_to_shutdown = self.socket if sock is None else sock
         if sock_to_shutdown is not None:
-            sock_to_shutdown.shutdown(socket.SHUT_RDWR)
+            with contextlib.suppress(OSError):
+                sock_to_shutdown.shutdown(socket.SHUT_RDWR)
 
     def _close_socket_if_current(self, sock: socket.socket | None) -> bool:
         """Best-effort socket teardown and conditional state clear.
@@ -230,14 +238,27 @@ class TCPInterface(StreamInterface):
         self._join_reader_thread()
 
     def connect(self) -> None:
-        """Ensure socket availability, then run shared StreamInterface startup."""
+        """Ensure socket availability, then run shared StreamInterface startup.
+
+        Raises
+        ------
+        ConnectionError
+            If connect is attempted while shutdown is in progress.
+        ConnectionError
+            If reconnect has been disabled after a fatal disconnect.
+        """
         if self.socket is None:
-            if self._wantExit or self._fatal_disconnect:
-                logger.debug(
-                    "Skipping TCP connect during shutdown/fatal state for %s",
-                    self.hostname,
+            if self._wantExit:
+                raise ConnectionError(
+                    f"Cannot connect to {self.hostname}: interface is shutting down"
                 )
-                return
+            if self._fatal_disconnect:
+                raise ConnectionError(
+                    (
+                        f"Cannot connect to {self.hostname}: "
+                        "reconnect disabled after fatal disconnect"
+                    )
+                )
             self.myConnect()
         super().connect()
 

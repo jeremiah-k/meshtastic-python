@@ -1,4 +1,4 @@
-# PEP 561 type support marker file
+# Includes PEP 561 py.typed marker for type checker support
 [tool.poetry]
 name = "meshtastic"
 version = "2.7.7"

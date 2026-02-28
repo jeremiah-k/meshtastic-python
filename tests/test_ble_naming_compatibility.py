@@ -61,23 +61,27 @@ def test_reconnect_policy_naming_compatibility() -> None:
 def test_ble_client_legacy_async_aliases_delegate() -> None:
     """Legacy BLEClient async aliases should delegate to canonical underscored methods."""
     client = object.__new__(BLEClient)
-    coro = asyncio.sleep(0)
-    try:
-        async_await_mock = MagicMock(return_value="await-ok")
-        async_run_mock = MagicMock(return_value="run-ok")
-        client._async_await = async_await_mock  # type: ignore[attr-defined]
-        client._async_run = async_run_mock  # type: ignore[attr-defined]
+    async_await_mock = MagicMock(return_value="await-ok")
+    async_run_mock = MagicMock(return_value="run-ok")
+    client._async_await = async_await_mock  # type: ignore[attr-defined]
+    client._async_run = async_run_mock  # type: ignore[attr-defined]
 
+    coro_await = asyncio.sleep(0)
+    try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            assert client.async_await(coro, timeout=1.5) == "await-ok"
+            assert client.async_await(coro_await, timeout=1.5) == "await-ok"
         assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
-        async_await_mock.assert_called_once_with(coro, timeout=1.5)
-
-        assert client.async_run(coro) == "run-ok"
-        async_run_mock.assert_called_once_with(coro)
+        async_await_mock.assert_called_once_with(coro_await, timeout=1.5)
     finally:
-        coro.close()
+        coro_await.close()
+
+    coro_run = asyncio.sleep(0)
+    try:
+        assert client.async_run(coro_run) == "run-ok"
+        async_run_mock.assert_called_once_with(coro_run)
+    finally:
+        coro_run.close()
 
 
 def test_ble_interface_legacy_handler_aliases_delegate() -> None:

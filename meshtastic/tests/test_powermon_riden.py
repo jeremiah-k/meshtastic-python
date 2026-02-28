@@ -9,8 +9,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ..powermon import power_supply as power_supply_module
-
 try:
     from ..powermon.riden import RidenPowerSupply
 except ImportError:
@@ -85,15 +83,16 @@ def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
 
     assert math.isnan(result)
     assert pps.prevWattHour == pytest.approx(12.0)
-    assert pps.prevPowerTime != start + timedelta(seconds=1)
+    assert pps.prevPowerTime > start
+    assert pps.prevPowerTime <= datetime.now()
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_power_supply_deprecations")
 def test_get_average_current_camelcase_aliases_delegate(
     riden_stub: RidenPowerSupply,
 ) -> None:
-    """CamelCase aliases should delegate to getAverageCurrentMA."""
-    power_supply_module._warned_deprecations.clear()
+    """snake_case and legacy aliases should delegate to canonical getAverageCurrentMA."""
     pps = riden_stub
     pps.getAverageCurrentMA = MagicMock(return_value=123.4)  # type: ignore[method-assign]
     delegated = pps.getAverageCurrentMA

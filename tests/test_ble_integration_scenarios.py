@@ -199,7 +199,7 @@ def test_backwards_compatible_constant_access():
 
 
 @pytest.mark.unit
-def test_connection_validator_with_normalized_addresses():
+def test_connection_validator_with_normalized_addresses() -> None:
     """Test ConnectionValidator handles address normalization correctly."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -225,15 +225,8 @@ def test_connection_validator_with_normalized_addresses():
     ]
 
     for variant in variants:
-        # The actual validation uses sanitize_address which normalizes these
-        # We're testing the logic that any of these should be recognized
-        result = validator._check_existing_client(
-            mock_client,
-            variant.lower().replace(":", "").replace("-", ""),
-            None,
-        )
-        # Since they all normalize to the same value, should match
-        assert result  # All address variants should match when normalized
+        result = validator._check_existing_client(mock_client, variant, None)
+        assert result, f"Address variant '{variant}' should match when normalized"
 
 
 @pytest.mark.unit

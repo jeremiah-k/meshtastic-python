@@ -872,13 +872,16 @@ def test_showNodes_exclude_self(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test that we hit that continue statement."""
+    """showNodes(includeSelf=False) should omit the local node from output."""
     with caplog.at_level(logging.DEBUG):
         iface = iface_with_nodes
         iface.localNode.nodeNum = 2475227164
         iface.showNodes()
+        out_with_self, _ = capsys.readouterr()
         iface.showNodes(includeSelf=False)
-        capsys.readouterr()
+        out_without_self, _ = capsys.readouterr()
+        assert "!9388f81c" in out_with_self
+        assert "!9388f81c" not in out_without_self
 
 
 @pytest.mark.unitslow

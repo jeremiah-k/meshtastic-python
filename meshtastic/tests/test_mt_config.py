@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import warnings
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -28,26 +27,21 @@ def test_reset_restores_module_defaults() -> None:
 @pytest.mark.usefixtures("mt_config_state")
 def test_getattr_compat_alias_emits_deprecation_warning() -> None:
     """Accessing tunnelInstance should return tunnel_instance and warn."""
-    marker = cast(Any, object())
+    marker: Any = object()
     mt_config.tunnel_instance = marker
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert (
-            mt_config.tunnelInstance is marker
-        )  # pyright: ignore[reportAttributeAccessIssue]
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    with pytest.warns(DeprecationWarning):
+        result = mt_config.tunnelInstance  # pyright: ignore[reportAttributeAccessIssue]
+    assert result is marker
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("mt_config_state")
 def test_setattr_compat_alias_sets_new_name_and_warns() -> None:
     """Assigning tunnelInstance should route to tunnel_instance and warn."""
-    marker = cast(Any, object())
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    marker: Any = object()
+    with pytest.warns(DeprecationWarning):
         mt_config.tunnelInstance = marker  # pyright: ignore[reportAttributeAccessIssue]
     assert mt_config.tunnel_instance is marker
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
 @pytest.mark.unit

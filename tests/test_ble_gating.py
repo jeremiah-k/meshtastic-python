@@ -179,23 +179,23 @@ class TestMarkDisconnected:
         _mark_disconnected("")
         assert len(_CONNECTED_ADDRS) == initial_count
 
-    def test_mark_disconnected_cleanup_lock(self):
-        """Verify that marking an address disconnected removes its per-address.
+    def test_mark_disconnected_cleanup_lock(self) -> None:
+        """Verify marking an address disconnected removes its per-address lock.
 
-        lock from the registry.
-
-        The test enters `_addr_lock_context` for `"testaddress"`, marks it
+        The test enters `_addr_lock_context` for "testaddress", marks it
         connected, and asserts the lock remains after the context exits. After
         calling `_mark_disconnected("testaddress")`, the test asserts the lock
         has been removed from `_ADDR_LOCKS`.
         """
+        key = _addr_key("testaddress")
+        assert key is not None
         # Use context manager for proper holder count management
         with _addr_lock_context("testaddress") as lock:
             with lock:
                 _mark_connected("testaddress")
-        assert "testaddress" in _ADDR_LOCKS  # Lock still exists
+        assert key in _ADDR_LOCKS  # Lock still exists
         _mark_disconnected("testaddress")
-        assert "testaddress" not in _ADDR_LOCKS  # Lock cleaned up
+        assert key not in _ADDR_LOCKS  # Lock cleaned up
 
     def test_mark_disconnected_ignores_non_owner(self):
         """Disconnect from a different owner should not clear an active claim."""

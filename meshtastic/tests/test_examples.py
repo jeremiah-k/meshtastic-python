@@ -18,7 +18,11 @@ HELLO_WORLD_SERIAL_PATH = (
 def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
     """Execute the hello_world_serial example in-process with controlled argv."""
     monkeypatch.setattr(sys, "argv", ["examples/hello_world_serial.py", *args])
-    runpy.run_path(str(HELLO_WORLD_SERIAL_PATH), run_name="__main__")
+    runpy.run_path(
+        str(HELLO_WORLD_SERIAL_PATH),
+        run_name="__main__",
+        init_globals={"__name__": "__main__"},
+    )
 
 
 @pytest.mark.examples

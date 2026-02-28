@@ -9,7 +9,7 @@ except ImportError:
 
 
 @pytest.mark.unit
-def test_ble_constants_uuid_values():
+def test_ble_constants_uuid_values() -> None:
     """Verify that BLE UUID constants have expected values."""
     assert ble_constants.SERVICE_UUID == "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
     assert ble_constants.TORADIO_UUID == "f75c76d2-129e-4dad-a1dd-7866124401e7"
@@ -20,7 +20,7 @@ def test_ble_constants_uuid_values():
 
 
 @pytest.mark.unit
-def test_ble_constants_timeout_values():
+def test_ble_constants_timeout_values() -> None:
     """Verify that timeout constants have expected values."""
     assert ble_constants.DISCONNECT_TIMEOUT_SECONDS == 5.0
     assert ble_constants.RECEIVE_THREAD_JOIN_TIMEOUT == 2.0
@@ -28,7 +28,7 @@ def test_ble_constants_timeout_values():
 
 
 @pytest.mark.unit
-def test_ble_config_class_attributes():
+def test_ble_config_class_attributes() -> None:
     """Verify that BLEConfig class has expected attributes."""
     assert hasattr(ble_constants.BLEConfig, "BLE_SCAN_TIMEOUT")
     assert hasattr(ble_constants.BLEConfig, "RECEIVE_WAIT_TIMEOUT")
@@ -43,7 +43,7 @@ def test_ble_config_class_attributes():
 
 
 @pytest.mark.unit
-def test_ble_constants_module_level_aliases():
+def test_ble_constants_module_level_aliases() -> None:
     """Verify that module-level constants are aliases for BLEConfig attributes."""
     assert ble_constants.BLE_SCAN_TIMEOUT == ble_constants.BLEConfig.BLE_SCAN_TIMEOUT
     assert (
@@ -57,7 +57,7 @@ def test_ble_constants_module_level_aliases():
 
 
 @pytest.mark.unit
-def test_ble_constants_getattr_delegates_to_bleconfig():
+def test_ble_constants_getattr_delegates_to_bleconfig() -> None:
     """Verify that __getattr__ delegates unknown attributes to BLEConfig."""
     # Access an attribute that exists on BLEConfig but wasn't explicitly aliased
     assert hasattr(ble_constants, "RUNNER_LOOP_READY_TIMEOUT_SECONDS")
@@ -66,7 +66,7 @@ def test_ble_constants_getattr_delegates_to_bleconfig():
 
 
 @pytest.mark.unit
-def test_ble_constants_getattr_raises_for_unknown():
+def test_ble_constants_getattr_raises_for_unknown() -> None:
     """Verify that __getattr__ raises AttributeError for truly unknown attributes."""
     with pytest.raises(
         AttributeError, match="module .* has no attribute 'NONEXISTENT_CONSTANT'"
@@ -75,11 +75,11 @@ def test_ble_constants_getattr_raises_for_unknown():
 
 
 @pytest.mark.unit
-def test_ble_error_message_constants():
+def test_ble_error_message_constants() -> None:
     """Verify that error message constants are properly defined."""
     assert "timed out" in ble_constants.ERROR_TIMEOUT
     assert "Multiple Meshtastic BLE peripherals" in ble_constants.ERROR_MULTIPLE_DEVICES
-    assert "Error reading BLE" == ble_constants.ERROR_READING_BLE
+    assert "Error reading BLE" in ble_constants.ERROR_READING_BLE
     assert "No Meshtastic BLE peripheral" in ble_constants.ERROR_NO_PERIPHERAL_FOUND
     assert "Error writing BLE" in ble_constants.ERROR_WRITING_BLE
     assert "Connection failed" in ble_constants.ERROR_CONNECTION_FAILED
@@ -90,7 +90,7 @@ def test_ble_error_message_constants():
 
 
 @pytest.mark.unit
-def test_bleclient_constants():
+def test_bleclient_constants() -> None:
     """Verify BLEClient-specific constants are defined."""
     assert (
         ble_constants.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
@@ -100,7 +100,7 @@ def test_bleclient_constants():
 
 
 @pytest.mark.unit
-def test_ble_config_runner_constants():
+def test_ble_config_runner_constants() -> None:
     """Verify BLEConfig has runner-related constants."""
     assert hasattr(ble_constants.BLEConfig, "RUNNER_LOOP_READY_TIMEOUT_SECONDS")
     assert hasattr(ble_constants.BLEConfig, "RUNNER_ZOMBIE_WARN_THRESHOLD")
@@ -114,7 +114,7 @@ def test_ble_config_runner_constants():
 
 
 @pytest.mark.unit
-def test_ble_config_reconnect_constants():
+def test_ble_config_reconnect_constants() -> None:
     """Verify BLEConfig has reconnect-related constants."""
     assert hasattr(ble_constants.BLEConfig, "AUTO_RECONNECT_INITIAL_DELAY")
     assert hasattr(ble_constants.BLEConfig, "AUTO_RECONNECT_MAX_DELAY")
@@ -128,7 +128,7 @@ def test_ble_config_reconnect_constants():
 
 
 @pytest.mark.unit
-def test_logger_exists():
+def test_logger_exists() -> None:
     """Verify that the BLE logger is properly configured."""
     assert hasattr(ble_constants, "logger")
     logger = ble_constants.logger
