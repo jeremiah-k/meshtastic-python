@@ -2,6 +2,7 @@
 
 import re
 import threading
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -89,7 +90,14 @@ def test_TCPInterface_without_connecting() -> None:
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "connect_timeout",
-    [0.0, -1.0, True, float("nan"), float("inf"), "invalid-timeout"],
+    [
+        pytest.param(0.0, id="zero"),
+        pytest.param(-1.0, id="negative"),
+        pytest.param(True, id="bool"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="inf"),
+        pytest.param("invalid-timeout", id="string"),
+    ],
 )
 def test_TCPInterface_rejects_non_positive_connect_timeout(
     connect_timeout: object,
@@ -103,7 +111,7 @@ def test_TCPInterface_rejects_non_positive_connect_timeout(
             hostname="localhost",
             noProto=True,
             connectNow=False,
-            connectTimeout=connect_timeout,
+            connectTimeout=cast(float | None, connect_timeout),
         )
 
 

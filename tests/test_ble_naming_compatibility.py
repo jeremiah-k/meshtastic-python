@@ -78,7 +78,10 @@ def test_ble_client_legacy_async_aliases_delegate() -> None:
 
     coro_run = asyncio.sleep(0)
     try:
-        assert client.async_run(coro_run) == "run-ok"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            assert client.async_run(coro_run) == "run-ok"
+        assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
         async_run_mock.assert_called_once_with(coro_run)
     finally:
         coro_run.close()

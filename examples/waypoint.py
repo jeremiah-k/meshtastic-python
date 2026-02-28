@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser_create.add_argument("id", type=int, help="ID of the waypoint")
     parser_create.add_argument("name", help="Name of the waypoint")
     parser_create.add_argument("description", help="Description of the waypoint")
-    parser_create.add_argument("icon", help="Icon of the waypoint")
+    parser_create.add_argument("icon", type=int, help="Icon of the waypoint")
     parser_create.add_argument(
         "expire",
         help=(
@@ -64,10 +64,6 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
-            if expire_unix is None:
-                raise SystemExit(
-                    "Internal error: expire_unix not set for create command"
-                )
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,

@@ -168,7 +168,14 @@ class PowerLogger:
                 )
             )
         except Exception:
-            self.writer.close()
+            try:
+                self.writer.close()
+            except Exception as close_exc:  # noqa: BLE001 - preserve setup failure
+                logger.warning(
+                    "Failed to close power writer after schema setup failure: %s",
+                    close_exc,
+                    exc_info=True,
+                )
             raise
         self.interval = interval
         self._warned_legacy_mw_without_voltage = False
@@ -410,8 +417,20 @@ class StructuredLogger:
             try:
                 if self.raw_file:
                     self.raw_file.close()
-            finally:
+            except Exception as raw_close_exc:  # noqa: BLE001 - preserve setup error
+                logger.warning(
+                    "Failed to close raw slog file after setup failure: %s",
+                    raw_close_exc,
+                    exc_info=True,
+                )
+            try:
                 self.writer.close()
+            except Exception as writer_close_exc:  # noqa: BLE001 - preserve setup error
+                logger.warning(
+                    "Failed to close slog writer after setup failure: %s",
+                    writer_close_exc,
+                    exc_info=True,
+                )
             raise
 
     def close(self) -> None:

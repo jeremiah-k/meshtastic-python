@@ -21,7 +21,7 @@ def _warn_deprecated_once(key: str, message: str) -> None:
     warnings.warn(
         message,
         DeprecationWarning,
-        stacklevel=3,
+        stacklevel=4,
     )
 
 
