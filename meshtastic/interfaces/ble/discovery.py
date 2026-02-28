@@ -1,6 +1,7 @@
 """BLE device discovery strategies."""
 
 import contextlib
+import inspect
 import re
 import threading
 import time
@@ -25,6 +26,14 @@ _BLE_ADDRESS_KEY_RE = re.compile(r"^[0-9a-f]{12}$")
 _BLE_ADDRESS_SHAPE_RE = re.compile(
     r"^[0-9A-Fa-f]{12}$|^[0-9A-Fa-f]{2}(?:[:\-_ ][0-9A-Fa-f]{2}){5}$"
 )
+_DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
+_UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
+
+
+def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
+    """Return True when a TypeError clearly indicates an unsupported keyword arg."""
+    message = str(exc)
+    return _UNEXPECTED_KEYWORD_FRAGMENT in message and f"'{kwarg_name}'" in message
 
 
 def _looks_like_ble_address(identifier: str) -> bool:
@@ -290,22 +299,41 @@ class DiscoveryManager:
                     Callable[..., Any],
                     self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
                 )
-                # Attempt to create client with log_if_no_address=False; fall back
-                # for custom factories that don't accept this kwarg. This broad
-                # TypeError catch can hide internal factory TypeErrors, but we keep
-                # it for compatibility with older/custom factory signatures.
+                # Prefer signature-based compatibility checks so real factory
+                # TypeErrors are not misclassified as kwarg mismatch.
                 try:
+                    signature = inspect.signature(resolved_factory)
+                except (TypeError, ValueError):
+                    signature = None
+
+                accepts_log_kwarg = False
+                if signature is not None:
+                    accepts_log_kwarg = (
+                        _DISCOVERY_FACTORY_LOG_KWARG in signature.parameters
+                    ) or any(
+                        parameter.kind == inspect.Parameter.VAR_KEYWORD
+                        for parameter in signature.parameters.values()
+                    )
+
+                if signature is None:
+                    try:
+                        self._client = resolved_factory(log_if_no_address=False)
+                    except TypeError as exc:
+                        if _is_unexpected_keyword_error(
+                            exc, _DISCOVERY_FACTORY_LOG_KWARG
+                        ):
+                            logger.debug(
+                                "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
+                                exc,
+                                exc_info=True,
+                            )
+                            self._client = resolved_factory()
+                        else:
+                            raise
+                elif accepts_log_kwarg:
                     self._client = resolved_factory(log_if_no_address=False)
-                except TypeError as exc:
-                    if any("log_if_no_address" in str(arg) for arg in exc.args):
-                        logger.debug(
-                            "Discovery client factory rejected log_if_no_address kwarg; retrying without it: %s",
-                            exc,
-                            exc_info=True,
-                        )
-                        self._client = resolved_factory()
-                    else:
-                        raise
+                else:
+                    self._client = resolved_factory()
                 # Validate factory returned a valid client (duck typing for testability)
                 if self._client is None:
                     raise DiscoveryClientError.factory_returned_none(resolved_factory)
@@ -321,9 +349,11 @@ class DiscoveryManager:
                         if not callable(getattr(self._client, a, None))
                     ]
                     if missing:
+                        invalid_client = self._client
+                        self._client = None
                         raise DiscoveryClientError.invalid_client(
                             resolved_factory,
-                            type(self._client),
+                            type(invalid_client),
                             missing,
                         )
 

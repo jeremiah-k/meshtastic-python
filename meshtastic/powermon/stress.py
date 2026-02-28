@@ -92,9 +92,6 @@ class PowerStressClient:
         bool
             `True` if an ack was observed, `False` if timed out.
         """
-        if not math.isfinite(ack_timeout) or ack_timeout <= 0.0:
-            raise ValueError(INVALID_ACK_TIMEOUT_ERROR)
-
         ack_event = threading.Event()
 
         def _on_response(_packet: dict[str, Any]) -> None:
@@ -123,6 +120,8 @@ class PowerStressClient:
         )
 
         if effective_num_seconds <= 0.0:
+            if not math.isfinite(ack_timeout) or ack_timeout <= 0.0:
+                raise ValueError(INVALID_ACK_TIMEOUT_ERROR)
             # Wait for the response and then continue, with a safety timeout.
             if not ack_event.wait(timeout=ack_timeout):
                 logging.error("Timed out waiting for power stress ack!")

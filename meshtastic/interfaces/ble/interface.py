@@ -542,6 +542,7 @@ class BLEInterface(MeshInterface):
         disconnect_lock_released = False
         target_client = client
         previous_client: BLEClient | None = None
+        client_at_start: BLEClient | None = None
         should_reconnect = False
         should_schedule_reconnect = False
         address = "unknown"
@@ -597,6 +598,7 @@ class BLEInterface(MeshInterface):
                     return True
 
                 previous_client = current_client
+                client_at_start = current_client
                 alias_key = self._connection_alias_key
                 self.client = None
                 self._disconnect_notified = True
@@ -647,6 +649,15 @@ class BLEInterface(MeshInterface):
         finally:
             if not disconnect_lock_released:
                 self._disconnect_lock.release()
+
+        with self._state_lock:
+            active_client = self.client
+            if active_client is not None and active_client is not client_at_start:
+                logger.debug(
+                    "Skipping stale disconnect side-effects from %s: newer client already active.",
+                    source,
+                )
+                return True
 
         logger.debug("BLE client %s disconnected (source: %s).", address, source)
         # Expose the most recent disconnect source for external listeners that

@@ -31,23 +31,8 @@ Events are delivered using a publish-subscribe model, and you can subscribe to o
 
 ## Local Development Setup
 
-1. Clone the repository and initialize submodules:
-   ```bash
-   git submodule update --init --recursive
-   ```
-1. Prerequisites:
-   - Requires Python 3.10+.
-   - Type hints in this repo use PEP 604 unions and built-in generics (`X | Y`, `list[...]`, `dict[...]`).
-1. Install dependencies with Poetry:
-   ```bash
-   poetry install --all-extras --with dev,powermon
-   ```
-1. Run the same checks as CI:
-   ```bash
-   make ci
-   ```
-
-For more contributor workflow details, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For full setup, local checks, and CI-equivalent commands, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Call for Contributors
 

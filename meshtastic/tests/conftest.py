@@ -2,6 +2,7 @@
 
 import argparse
 import copy
+import math
 import shutil
 import threading
 from collections.abc import Generator
@@ -336,9 +337,9 @@ def ppk2_stub() -> "PPK2PowerSupply":
     ppk.current_num_samples = 0
     ppk.current_min = 0
     ppk.current_max = 0
-    ppk.current_average = 0.0
-    ppk.last_reported_min = 0
-    ppk.last_reported_max = 0
+    ppk.current_average = math.nan
+    ppk.last_reported_min = math.nan
+    ppk.last_reported_max = math.nan
     ppk.num_data_reads = 0
     ppk.total_data_len = 0
     ppk.max_data_len = 0

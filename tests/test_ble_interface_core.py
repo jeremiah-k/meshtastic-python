@@ -855,6 +855,32 @@ def test_discovery_manager_rejects_non_callable_discover_method() -> None:
     with pytest.raises(DiscoveryClientError, match="_discover"):
         manager._discover_devices(address=None)
 
+    assert manager._client is None
+
+
+def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() -> None:
+    """DiscoveryManager should call factories without log_if_no_address using signature-based fallback."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    factory_calls = 0
+
+    def _factory_without_kwargs() -> _FakeDiscoveryClient:
+        nonlocal factory_calls
+        factory_calls += 1
+        return _FakeDiscoveryClient(discover_result)
+
+    manager = DiscoveryManager(client_factory=_factory_without_kwargs)
+    devices = manager._discover_devices(address=None)
+
+    assert devices == [filtered_device]
+    assert factory_calls == 1
+
 
 def test_parse_scan_response_prefers_exact_name_before_normalized_match():
     """Targeted scan should prefer an exact name match over normalized-name candidates."""
