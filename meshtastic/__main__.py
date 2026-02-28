@@ -190,7 +190,7 @@ def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
     args = mt_config.args
     try:
         d = packet.get("decoded")
-        logger.debug(f"in onReceive() d:{d}")
+        logger.debug("in onReceive() d:%s", d)
 
         # Exit once we receive a reply
         is_text_reply = (
@@ -255,7 +255,7 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
         `True` if the channel exists and its role is not DISABLED, `False` otherwise.
     """
     ch = interface.localNode.getChannelByChannelIndex(channelIndex)
-    logger.debug(f"ch:{ch}")
+    logger.debug("ch:%s", ch)
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
 
@@ -333,7 +333,7 @@ def getPref(node: Any, comp_name: str) -> bool:
         else:
             pref_value = meshtastic.util.toStr(pref_value)
         print(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
-        logger.debug(f"{str(config_type.name)}.{uni_name}: {str(pref_value)}")
+        logger.debug("%s.%s: %s", config_type.name, uni_name, pref_value)
 
     comp_name = _normalize_pref_name(comp_name)
     name = splitCompoundName(comp_name)
@@ -343,8 +343,8 @@ def getPref(node: Any, comp_name: str) -> bool:
     # Note: protobufs has the keys in snake_case, so snake internally
     snake_name = meshtastic.util.camel_to_snake(name[1])
     uni_name = camel_name if mt_config.camel_case else snake_name
-    logger.debug(f"snake_name:{snake_name} camel_name:{camel_name}")
-    logger.debug(f"use camel:{mt_config.camel_case}")
+    logger.debug("snake_name:%s camel_name:%s", snake_name, camel_name)
+    logger.debug("use camel:%s", mt_config.camel_case)
 
     # First validate the input
     localConfig = node.localConfig
@@ -412,7 +412,6 @@ def splitCompoundName(comp_name: str) -> list[str]:
     """
     name: list[str] = comp_name.split(".")
     if len(name) < 2:
-        name[0] = comp_name
         name.append(comp_name)
     return name
 
@@ -496,8 +495,8 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
     snake_name = meshtastic.util.camel_to_snake(name[-1])
     camel_name = meshtastic.util.snake_to_camel(name[-1])
     uni_name = camel_name if mt_config.camel_case else snake_name
-    logger.debug(f"snake_name:{snake_name}")
-    logger.debug(f"camel_name:{camel_name}")
+    logger.debug("snake_name:%s", snake_name)
+    logger.debug("camel_name:%s", camel_name)
 
     objDesc = config.DESCRIPTOR
     config_part = config
@@ -521,7 +520,7 @@ def setPref(config: Any, comp_name: str, raw_val: Any) -> bool:
         val = meshtastic.util.fromStr(raw_val)
     else:
         val = raw_val
-    logger.debug(f"valStr:{raw_val} val:{val}")
+    logger.debug("valStr:%s val:%s", raw_val, val)
 
     if snake_name == "wifi_psk" and len(str(raw_val)) < 8:
         print("Warning: network.wifi_psk must be 8 or more characters.")

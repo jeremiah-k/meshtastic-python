@@ -1,6 +1,6 @@
 """Edge case tests for BLE connection management."""
 
-from threading import RLock
+from threading import Event, RLock
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,14 +18,15 @@ except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
 
+class MockBLEError(Exception):
+    """Mock BLE error for connection validator tests."""
+
+
 @pytest.mark.unit
-def test_connection_validator_allows_connect_when_disconnected():
+def test_connection_validator_allows_connect_when_disconnected() -> None:
     """ConnectionValidator should allow connection when state is DISCONNECTED."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -34,13 +35,10 @@ def test_connection_validator_allows_connect_when_disconnected():
 
 
 @pytest.mark.unit
-def test_connection_validator_blocks_when_closing():
+def test_connection_validator_blocks_when_closing() -> None:
     """ConnectionValidator should block connection when interface is closing."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -55,13 +53,10 @@ def test_connection_validator_blocks_when_closing():
 
 
 @pytest.mark.unit
-def test_connection_validator_blocks_when_already_connecting():
+def test_connection_validator_blocks_when_already_connecting() -> None:
     """ConnectionValidator should block when already connecting."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -76,13 +71,10 @@ def test_connection_validator_blocks_when_already_connecting():
 
 
 @pytest.mark.unit
-def test_connection_validator_check_existing_client_none_request():
+def test_connection_validator_check_existing_client_none_request() -> None:
     """check_existing_client should accept any connected client when request is None."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -95,13 +87,10 @@ def test_connection_validator_check_existing_client_none_request():
 
 
 @pytest.mark.unit
-def test_connection_validator_check_existing_client_disconnected():
+def test_connection_validator_check_existing_client_disconnected() -> None:
     """check_existing_client should return False for disconnected client."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -112,13 +101,10 @@ def test_connection_validator_check_existing_client_disconnected():
 
 
 @pytest.mark.unit
-def test_connection_validator_check_existing_client_none_client():
+def test_connection_validator_check_existing_client_none_client() -> None:
     """check_existing_client should return False when client is None."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -126,7 +112,7 @@ def test_connection_validator_check_existing_client_none_client():
 
 
 @pytest.mark.unit
-def test_client_manager_initialization():
+def test_client_manager_initialization() -> None:
     """ClientManager should initialize with required dependencies."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -142,27 +128,24 @@ def test_client_manager_initialization():
 
 
 @pytest.mark.unit
-def test_direct_connect_timeout_is_reasonable():
+def test_direct_connect_timeout_is_reasonable() -> None:
     """DIRECT_CONNECT_TIMEOUT_SECONDS should be shorter than CONNECTION_TIMEOUT."""
     assert DIRECT_CONNECT_TIMEOUT_SECONDS < BLEConfig.CONNECTION_TIMEOUT
     assert DIRECT_CONNECT_TIMEOUT_SECONDS > 0
 
 
 @pytest.mark.unit
-def test_await_timeout_buffer_is_positive():
+def test_await_timeout_buffer_is_positive() -> None:
     """AWAIT_TIMEOUT_BUFFER_SECONDS should be positive to allow timeout margin."""
     assert AWAIT_TIMEOUT_BUFFER_SECONDS > 0
-    assert isinstance(AWAIT_TIMEOUT_BUFFER_SECONDS, float)
+    assert isinstance(AWAIT_TIMEOUT_BUFFER_SECONDS, (int, float))
 
 
 @pytest.mark.unit
-def test_connection_validator_check_existing_client_matching_address():
+def test_connection_validator_check_existing_client_matching_address() -> None:
     """check_existing_client should return True when addresses match."""
     state_manager = BLEStateManager()
     lock = RLock()
-
-    class MockBLEError(Exception):
-        pass
 
     validator = ConnectionValidator(state_manager, lock, MockBLEError)
 
@@ -181,9 +164,8 @@ def test_connection_validator_check_existing_client_matching_address():
 
 
 @pytest.mark.unit
-def test_client_manager_safe_close_client_handles_none():
-    """_safe_close_client should handle None client gracefully."""
-    from threading import Event
+def test_client_manager_safe_close_client_already_closed() -> None:
+    """_safe_close_client should return cleanly for an already-closed client."""
 
     state_manager = BLEStateManager()
     lock = RLock()
@@ -204,7 +186,7 @@ def test_client_manager_safe_close_client_handles_none():
 
 
 @pytest.mark.unit
-def test_client_manager_update_client_reference_same_client():
+def test_client_manager_update_client_reference_same_client() -> None:
     """_update_client_reference should not close when old and new are same."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -221,7 +203,7 @@ def test_client_manager_update_client_reference_same_client():
 
 
 @pytest.mark.unit
-def test_client_manager_update_client_reference_schedules_close():
+def test_client_manager_update_client_reference_schedules_close() -> None:
     """_update_client_reference should schedule background close for old client."""
     state_manager = BLEStateManager()
     lock = RLock()

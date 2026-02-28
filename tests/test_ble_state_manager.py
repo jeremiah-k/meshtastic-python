@@ -215,7 +215,7 @@ class TestBLEStateManager:
         """Test that state transitions are properly logged."""
         manager = BLEStateManager()
 
-        with caplog.at_level("DEBUG"):
+        with caplog.at_level(logging.DEBUG):
             manager._transition_to(ConnectionState.CONNECTING)
             manager._transition_to(ConnectionState.CONNECTED)
 
@@ -230,7 +230,7 @@ class TestBLEStateManager:
         """
         manager = BLEStateManager()
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(logging.WARNING):
             manager._transition_to(
                 ConnectionState.CONNECTED
             )  # Invalid from DISCONNECTED

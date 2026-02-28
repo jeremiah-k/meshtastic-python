@@ -333,10 +333,6 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     """Verify that _send_to_radio_impl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
 
     This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
-
-    Raises
-    ------
-    __UnknownError__
     """
     # logging already imported at top
     # BleakError already imported at top as ble_mod.BleakError, BLEInterface
@@ -734,12 +730,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
 
 def test_ble_client_is_connected_exception_handling(caplog):
-    """Test that BLEClient.isConnected handles exceptions gracefully.
-
-    Raises
-    ------
-    __UnknownError__
-    """
+    """Test that BLEClient.isConnected handles exceptions gracefully."""
     # logging already imported at top
     # BLEClient already imported at top as ble_mod.BLEClient
 

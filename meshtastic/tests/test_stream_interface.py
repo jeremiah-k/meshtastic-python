@@ -1,6 +1,5 @@
 """Meshtastic unit tests for stream_interface.py."""
 
-import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,20 +25,19 @@ def test_stream_interface() -> None:
 # Note: This takes a bit, so moving from unit to slow
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
-def test_stream_interface_with_no_proto(caplog: pytest.LogCaptureFixture) -> None:
+def test_stream_interface_with_no_proto() -> None:
     """Verify noProto StreamInterface can read and write through an assigned stream."""
     stream = MagicMock()
     test_data = b"hello"
     stream.read.return_value = test_data
-    with caplog.at_level(logging.DEBUG):
-        iface = StreamInterface(noProto=True, connectNow=False)
-        try:
-            iface.stream = stream
-            iface._write_bytes(test_data)
-            data = iface._read_bytes(len(test_data))
-            assert data == test_data
-        finally:
-            iface.close()
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface.stream = stream
+        iface._write_bytes(test_data)
+        data = iface._read_bytes(len(test_data))
+        assert data == test_data
+    finally:
+        iface.close()
 
 
 @pytest.mark.unit
@@ -121,6 +119,7 @@ def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
     """connect() should not send wake bytes when subclass provides its own stream."""
     iface = StreamInterface(noProto=True, connectNow=False)
     try:
+        # Exercise the code path used by stream-owning subclasses (e.g. TCPInterface).
         iface._provides_own_stream = True  # type: ignore[attr-defined]
         iface.stream = None
         iface._rxThread = MagicMock()

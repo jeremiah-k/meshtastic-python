@@ -1,7 +1,7 @@
 """Create or delete a waypoint.
 
 To run:
-python3 examples/waypoint.py --port /dev/ttyUSB0 create 45 test desc pin '2024-12-18T23:05:23' 48.74 7.35
+python3 examples/waypoint.py --port /dev/ttyUSB0 create 45 test desc 128205 '2024-12-18T23:05:23' 48.74 7.35
 python3 examples/waypoint.py delete 45
 """
 

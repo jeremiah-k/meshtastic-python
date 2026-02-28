@@ -2,6 +2,8 @@
 Before running, connect your machine to the same WiFi network as the radio.
 """
 
+import sys
+
 import meshtastic.tcp_interface
 
 RADIO_HOSTNAME = "meshtastic.local"  # Can also be an IP
@@ -33,7 +35,7 @@ def main() -> None:
             print(position)
     except OSError as exc:
         print(f"Could not connect to {RADIO_HOSTNAME}: {exc}")
-        raise SystemExit(1) from None
+        sys.exit(1)
 
 
 if __name__ == "__main__":

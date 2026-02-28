@@ -396,7 +396,7 @@ class BLEClient:
         Returns
         -------
         bool
-            `true` if the characteristic is present, `false` otherwise.
+            `True` if the characteristic is present, `False` otherwise.
         """
         bleak_client = self.bleak_client
         if bleak_client is None:

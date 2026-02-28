@@ -26,7 +26,7 @@ def main() -> None:
     """Connect to a TCP radio and print local node info on connection."""
     if len(sys.argv) < 2:
         print(f"usage: {sys.argv[0]} host")
-        raise SystemExit(1)
+        sys.exit(1)
 
     _connected.clear()
     topic = "meshtastic.connection.established"
@@ -36,10 +36,10 @@ def main() -> None:
         with meshtastic.tcp_interface.TCPInterface(sys.argv[1]):
             if not _connected.wait(timeout=30):
                 print("Error: Timed out waiting for connection callback")
-                raise SystemExit(1)
+                sys.exit(1)
     except OSError as exc:
         print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
-        raise SystemExit(1) from None
+        sys.exit(1)
     finally:
         pub.unsubscribe(onConnection, topic)
 

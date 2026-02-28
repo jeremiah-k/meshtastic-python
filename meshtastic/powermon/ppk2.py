@@ -119,8 +119,9 @@ class PPK2PowerSupply(PowerSupply):
 
                 # update invariants
                 if len(samples) > 0:
-                    # The following operations could be expensive, so do outside of the lock
-                    # FIXME - change all these lists into numpy arrays to use lots less CPU
+                    # The following operations could be expensive, so do outside of the lock.
+                    # TODO: Profile representative workloads and switch to numpy reduction
+                    # helpers only if end-to-end CPU usage improves.
                     batch_max = max(samples)
                     batch_min = min(samples)
                     latest_sum = sum(samples)

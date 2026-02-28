@@ -62,11 +62,9 @@ jobs:
           fi
       - name: Upload coverage to Codecov
         if: ${{ matrix.python-version == '3.13' }}
-        uses: codecov/codecov-action@0561704f0f02c16a585d4c7555e57fa2e44cf909
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
-          token: ${{ env.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
           env_vars: OS, PYTHON
           files: ./coverage.xml
           flags: unittests

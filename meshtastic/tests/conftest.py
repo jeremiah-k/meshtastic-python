@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, create_autospec, patch
 import pytest
 
 from meshtastic import mt_config
+from meshtastic.powermon import power_supply as power_supply_module
 
 from ..mesh_interface import MeshInterface
 from ..serial_interface import SerialInterface
@@ -192,6 +193,18 @@ def mt_config_state() -> Generator[None, None, None]:
             warned_deprecations_restore.update(warned_snapshot)
         else:
             mt_config._warned_deprecations = set(warned_snapshot)
+
+
+@pytest.fixture
+def reset_power_supply_deprecations() -> Generator[None, None, None]:
+    """Reset and restore powermon deprecation warn-once state for isolated tests."""
+    previous = set(power_supply_module._warned_deprecations)
+    power_supply_module._warned_deprecations.clear()
+    try:
+        yield
+    finally:
+        power_supply_module._warned_deprecations.clear()
+        power_supply_module._warned_deprecations.update(previous)
 
 
 @pytest.fixture

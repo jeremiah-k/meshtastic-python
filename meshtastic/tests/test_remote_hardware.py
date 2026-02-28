@@ -72,7 +72,7 @@ def test_onGPIOreceive_marks_response_on_nondict_packet() -> None:
     iface = create_autospec(SerialInterface, instance=True)
     iface.gotResponse = False
 
-    onGPIOreceive(None, iface)  # type: ignore[arg-type]
+    onGPIOreceive(None, iface)
 
     assert iface.gotResponse is True
 

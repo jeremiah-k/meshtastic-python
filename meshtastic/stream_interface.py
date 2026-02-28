@@ -139,7 +139,7 @@ class StreamInterface(MeshInterface):
         # daemon=True so the reader thread does not prevent process exit;
         # callers must call close() explicitly for a clean shutdown.
         self._rxThread = threading.Thread(
-            target=self.__reader, args=(), daemon=True, name="stream reader"
+            target=self._reader, args=(), daemon=True, name="stream reader"
         )
 
         MeshInterface.__init__(
@@ -197,7 +197,7 @@ class StreamInterface(MeshInterface):
                 time.sleep(DEVICE_WAKE_DELAY)  # give device time to start running
             if self._rxThread.ident is not None:
                 self._rxThread = threading.Thread(
-                    target=self.__reader, args=(), daemon=True, name="stream reader"
+                    target=self._reader, args=(), daemon=True, name="stream reader"
                 )
             self._rxThread.start()
 
@@ -395,7 +395,7 @@ class StreamInterface(MeshInterface):
         else:
             self.cur_log_line += utf
 
-    def __reader(self) -> None:
+    def _reader(self) -> None:
         """Background reader loop that reads from the configured stream and dispatches device log bytes and framed radio messages.
 
         Continuously reads incoming bytes, forwarding non-protocol bytes to
@@ -403,7 +403,7 @@ class StreamInterface(MeshInterface):
         On exit records the disconnect source in _last_disconnect_source, logs the
         shutdown, and calls _disconnected() to perform cleanup.
         """
-        logger.debug("in __reader()")
+        logger.debug("in _reader()")
         disconnect_source = "stream.reader_exit"
 
         try:

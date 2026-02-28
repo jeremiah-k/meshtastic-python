@@ -445,11 +445,6 @@ class Node:
             If `config_name` is not one of the supported names, or if
             localConfig/moduleConfig has not been loaded.
         """
-        if self.localConfig is None or self.moduleConfig is None:
-            self._raise_interface_error(
-                "Error: No localConfig has been read. "
-                "Request config from the device before writing."
-            )
         p = admin_pb2.AdminMessage()
 
         config_dispatch: dict[str, tuple[str, Any]] = {
@@ -491,6 +486,14 @@ class Node:
         if config_entry is None:
             self._raise_interface_error(
                 f"Error: No valid config with name {config_name}"
+            )
+        if (
+            len(self.localConfig.ListFields()) == 0
+            and len(self.moduleConfig.ListFields()) == 0
+        ):
+            self._raise_interface_error(
+                "Error: No localConfig has been read. "
+                "Request config from the device before writing."
             )
         setter_name, source_config = config_entry
         config_setter = getattr(p, setter_name)
@@ -2018,9 +2021,10 @@ class Node:
                 "Not ensuring session key, because protocol use is disabled by noProto"
             )
         else:
-            nodeid = toNodeNum(self.nodeNum)
             if (
-                self.iface._get_or_create_by_num(nodeid).get("adminSessionPassKey")
+                self.iface._get_or_create_by_num(self.nodeNum).get(
+                    "adminSessionPassKey"
+                )
                 is None
             ):
                 self.requestConfig(admin_pb2.AdminMessage.SESSIONKEY_CONFIG)

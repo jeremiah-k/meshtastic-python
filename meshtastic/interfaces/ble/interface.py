@@ -359,7 +359,7 @@ class BLEInterface(MeshInterface):
         Returns
         -------
         bool
-            `true` if the receive loop is desired and the interface is not closed, `false` otherwise.
+            `True` if the receive loop is desired and the interface is not closed, `False` otherwise.
         """
         with self._state_lock:
             return self._want_receive and not self._closed
@@ -1196,7 +1196,7 @@ class BLEInterface(MeshInterface):
         Returns
         -------
         bool
-            `true` if a BLE connection is active, `false` otherwise.
+            `True` if a BLE connection is active, `False` otherwise.
         """
         with self._state_lock:
             return self._state_manager._is_connected

@@ -48,7 +48,8 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git add pyproject.toml
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "::error::Version already bumped, nothing to release"
+            exit 1
           else
             git commit -m "bump version to ${{ steps.get_version.outputs.version }}"
             git push
@@ -64,6 +65,7 @@ jobs:
         with:
           name: python-dist
           path: dist/*
+          retention-days: 30
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
@@ -121,6 +123,8 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' }}
     # Require protected-environment approval before publishing.
     environment: pypi-release
+    permissions:
+      contents: read
     needs:
       - release_create
       - build-and-publish-ubuntu

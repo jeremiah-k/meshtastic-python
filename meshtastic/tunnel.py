@@ -69,6 +69,8 @@ def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
 class Tunnel:
     """A TUN based IP tunnel over meshtastic."""
 
+    LOG_TRACE = 5
+
     class TunnelError(Exception):
         """An exception class for general tunnel errors."""
 
@@ -149,26 +151,29 @@ class Tunnel:
 
         """A list of chatty UDP services we should never accidentally
         forward to our slow network"""
-        self.udpBlacklist = {
+        self.UDP_BLACKLIST = {
             1900,  # SSDP
             5353,  # multicast DNS
             9001,  # Yggdrasil multicast discovery
             64512,  # cjdns beacon
         }
+        # Legacy compatibility alias
+        self.udpBlacklist = self.UDP_BLACKLIST
 
         """A list of TCP services to block"""
-        self.tcpBlacklist = {
+        self.TCP_BLACKLIST = {
             5900,  # VNC (Note: Only adding for testing purposes.)
         }
+        # Legacy compatibility alias
+        self.tcpBlacklist = self.TCP_BLACKLIST
 
         """A list of protocols we ignore"""
-        self.protocolBlacklist = {
+        self.PROTOCOL_BLACKLIST = {
             IP_PROTOCOL_IGMP,
             IP_PROTOCOL_SCCOPMCE,
         }
-
-        # A new non standard log level that is lower level than DEBUG
-        self.LOG_TRACE = 5
+        # Legacy compatibility alias
+        self.protocolBlacklist = self.PROTOCOL_BLACKLIST
 
         # TODO: check if root?
         logger.info(
@@ -266,7 +271,7 @@ class Tunnel:
         destAddr = p[16:20]
         subheader = 20
         ignore = False  # Assume we will be forwarding the packet
-        if protocol in self.protocolBlacklist:
+        if protocol in self.PROTOCOL_BLACKLIST:
             ignore = True
             logger.log(self.LOG_TRACE, "Ignoring blacklisted protocol 0x%02x", protocol)
         elif protocol == IP_PROTOCOL_ICMP:
@@ -288,7 +293,7 @@ class Tunnel:
         elif protocol == IP_PROTOCOL_UDP:
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
-            if destport in self.udpBlacklist:
+            if destport in self.UDP_BLACKLIST:
                 ignore = True
                 logger.log(self.LOG_TRACE, "ignoring blacklisted UDP port %s", destport)
             else:
@@ -298,7 +303,7 @@ class Tunnel:
         elif protocol == IP_PROTOCOL_TCP:
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)
-            if destport in self.tcpBlacklist:
+            if destport in self.TCP_BLACKLIST:
                 ignore = True
                 logger.log(self.LOG_TRACE, "ignoring blacklisted TCP port %s", destport)
             else:
@@ -361,6 +366,9 @@ class Tunnel:
 
         if ip_bits == NODE_NUM_MASK:
             return "^all"
+
+        if not self.iface.nodes:
+            return None
 
         for node in self.iface.nodes.values():
             node_num = node["num"] & NODE_NUM_MASK

@@ -30,7 +30,7 @@ def main() -> None:
     """Connect to a TCP radio, print received packets, and send a greeting on connect."""
     if len(sys.argv) < 2:
         print(f"usage: {sys.argv[0]} host")
-        raise SystemExit(1)
+        sys.exit(1)
 
     recv_topic = "meshtastic.receive"
     conn_topic = "meshtastic.connection.established"
@@ -44,7 +44,7 @@ def main() -> None:
         print("Exiting...")
     except OSError as exc:
         print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
-        raise SystemExit(1) from None
+        sys.exit(1)
     finally:
         pub.unsubscribe(onReceive, recv_topic)
         pub.unsubscribe(onConnection, conn_topic)

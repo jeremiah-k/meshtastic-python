@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from meshtastic.interfaces.ble import BLEClient, BLEInterface
 
 
-def test_ble_interface_naming_compatibility():
+def test_ble_interface_naming_compatibility() -> None:
     """Verify BLEInterface exposes the intended compatibility/public method names."""
     # We don't need to actually connect, just check for attribute existence
     assert hasattr(BLEInterface, "findDevice")
@@ -18,7 +18,7 @@ def test_ble_interface_naming_compatibility():
     assert hasattr(BLEInterface, "legacy_log_radio_handler")
 
 
-def test_ble_client_naming_compatibility():
+def test_ble_client_naming_compatibility() -> None:
     """Verify BLEClient exposes pre-refactor-compatible names plus selected promotions."""
     # Established public API on master
     assert hasattr(BLEClient, "discover")
@@ -40,7 +40,7 @@ def test_ble_client_naming_compatibility():
     assert hasattr(BLEClient, "stop_notify")
 
 
-def test_ble_module_level_naming_compatibility():
+def test_ble_module_level_naming_compatibility() -> None:
     """Verify internal gating helpers are not leaked as interface module aliases."""
     from meshtastic.interfaces.ble import interface
 
@@ -48,7 +48,7 @@ def test_ble_module_level_naming_compatibility():
     assert not hasattr(interface, "is_currently_connected_elsewhere")
 
 
-def test_reconnect_policy_naming_compatibility():
+def test_reconnect_policy_naming_compatibility() -> None:
     """ReconnectPolicy is internal and uses snake_case canonical names."""
     from meshtastic.interfaces.ble.policies import ReconnectPolicy
 
@@ -100,10 +100,16 @@ def test_ble_interface_legacy_handler_aliases_delegate() -> None:
     assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
     from_num_mock.assert_called_once_with(sender, payload)
 
-    asyncio.run(iface.log_radio_handler(sender, payload))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        asyncio.run(iface.log_radio_handler(sender, payload))
+    assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
     log_mock.assert_called_once_with(sender, payload)
 
-    asyncio.run(iface.legacy_log_radio_handler(sender, payload))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        asyncio.run(iface.legacy_log_radio_handler(sender, payload))
+    assert not any(issubclass(w.category, DeprecationWarning) for w in caught)
     legacy_log_mock.assert_called_once_with(sender, payload)
 
 
