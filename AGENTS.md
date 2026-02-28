@@ -96,6 +96,13 @@ Quick inventory command:
 
 - `rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic`
 
+### Compatibility Alias Inventory (source of truth)
+
+- Treat the pinned BLE 2.7.7 matrix above as authoritative for historical BLE compatibility names.
+- Treat `COMPAT_STABLE_SHIM` / `COMPAT_DEPRECATE` markers as the grep-able inventory for intentionally maintained aliases elsewhere in the codebase.
+- If a symbol is not in the BLE matrix and is not marked with a `COMPAT_*` marker, do not add compatibility aliases by default.
+- `meshtastic.interfaces.ble.runner.get_zombie_runner_count()` is internal diagnostics and intentionally remains snake_case-only unless explicitly approved to expand public surface.
+
 Current `COMPAT_DEPRECATE` methods:
 
 - mt_config: `tunnelInstance` (module attribute alias to `tunnel_instance`, warn-once)

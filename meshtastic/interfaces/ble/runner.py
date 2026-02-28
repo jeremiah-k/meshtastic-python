@@ -44,6 +44,10 @@ _zombie_runner_count = 0
 def get_zombie_runner_count() -> int:
     """Return the number of recorded zombie runner threads that failed to stop cleanly.
 
+    This is an internal diagnostics helper in `meshtastic.interfaces.ble.runner`
+    and is intentionally not part of the historical BLE compatibility alias
+    surface exposed via `meshtastic.ble_interface`.
+
     Returns
     -------
     int

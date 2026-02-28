@@ -140,7 +140,7 @@ def mt_config_state() -> Generator[None, None, None]:
             continue
         try:
             snapshot[key] = copy.deepcopy(value)
-        except Exception:  # noqa: BLE001 - fallback for non-copyable objects
+        except (TypeError, copy.Error):
             snapshot[key] = value
     # Also snapshot and restore warn-once tracking for deprecation warnings
     # Clear before yield so each test starts with fresh warn-once state
