@@ -174,7 +174,9 @@ class TCPInterface(StreamInterface):
         Must be called while holding ``_reconnect_lock``.
         """
         if getattr(self, "_wantExit", False):
-            raise ConnectionError(self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname))
+            raise ConnectionError(
+                self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
+            )
         if self._fatal_disconnect:
             raise ConnectionError(
                 self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(self.hostname)

@@ -14,7 +14,7 @@ except ImportError:
 
 
 @pytest.mark.unit
-def test_state_manager_full_connection_lifecycle():
+def test_state_manager_full_connection_lifecycle() -> None:
     """Test complete connection state machine lifecycle from DISCONNECTED to DISCONNECTED."""
     state_manager = BLEStateManager()
 
@@ -43,7 +43,7 @@ def test_state_manager_full_connection_lifecycle():
 
 
 @pytest.mark.unit
-def test_state_manager_error_recovery_path():
+def test_state_manager_error_recovery_path() -> None:
     """Test state machine can recover from ERROR state to DISCONNECTED."""
     state_manager = BLEStateManager()
 
@@ -60,7 +60,7 @@ def test_state_manager_error_recovery_path():
 
 
 @pytest.mark.unit
-def test_validator_and_state_manager_integration():
+def test_validator_and_state_manager_integration() -> None:
     """Test ConnectionValidator correctly interprets BLEStateManager states."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -94,7 +94,7 @@ def test_validator_and_state_manager_integration():
 
 
 @pytest.mark.unit
-def test_constants_getattr_integration_with_bleconfig():
+def test_constants_getattr_integration_with_bleconfig() -> None:
     """Test that constants module __getattr__ correctly delegates to BLEConfig."""
     # Test accessing a new config value through __getattr__
     # This simulates the scenario where BLEConfig gains a new attribute
@@ -112,7 +112,7 @@ def test_constants_getattr_integration_with_bleconfig():
 
 
 @pytest.mark.unit
-def test_client_manager_handles_concurrent_updates():
+def test_client_manager_handles_concurrent_updates() -> None:
     """Test ClientManager handles rapid client updates safely."""
     state_manager = BLEStateManager()
     lock = RLock()
@@ -133,7 +133,7 @@ def test_client_manager_handles_concurrent_updates():
 
 
 @pytest.mark.unit
-def test_connection_timeout_configuration_consistency():
+def test_connection_timeout_configuration_consistency() -> None:
     """Verify timeout constants are consistent and reasonable across the stack."""
     from meshtastic.interfaces.ble.connection import (
         AWAIT_TIMEOUT_BUFFER_SECONDS,
@@ -162,7 +162,7 @@ def test_connection_timeout_configuration_consistency():
 
 
 @pytest.mark.unit
-def test_state_manager_invalid_transition_rejection():
+def test_state_manager_invalid_transition_rejection() -> None:
     """Test that invalid state transitions are properly rejected."""
     state_manager = BLEStateManager()
 
@@ -178,7 +178,7 @@ def test_state_manager_invalid_transition_rejection():
 
 
 @pytest.mark.unit
-def test_backwards_compatible_constant_access():
+def test_backwards_compatible_constant_access() -> None:
     """Test that legacy constant access patterns still work."""
     from meshtastic.interfaces.ble import constants
 
@@ -230,7 +230,7 @@ def test_connection_validator_with_normalized_addresses() -> None:
 
 
 @pytest.mark.unit
-def test_ble_config_can_be_modified_at_runtime():
+def test_ble_config_can_be_modified_at_runtime() -> None:
     """Test that BLEConfig attributes can be modified for testing/tuning."""
     original_timeout = BLEConfig.CONNECTION_TIMEOUT
 
@@ -252,7 +252,7 @@ def test_ble_config_can_be_modified_at_runtime():
 
 
 @pytest.mark.unit
-def test_error_state_allows_transition_to_disconnecting():
+def test_error_state_allows_transition_to_disconnecting() -> None:
     """Regression test: ERROR state should allow transition to DISCONNECTING for cleanup."""
     state_manager = BLEStateManager()
 

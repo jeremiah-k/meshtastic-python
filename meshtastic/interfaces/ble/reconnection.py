@@ -102,8 +102,6 @@ class ReconnectScheduler:
         -------
         bool
             True if a new reconnect worker thread was created and started, False otherwise.
-
-
         """
         if not auto_reconnect:
             return False

@@ -637,7 +637,7 @@ class TestBLEClientWithRunner:
             def __init__(self):
                 """Initialize the mock connected bleak client state.
 
-                Sets `isConnected` to True and initializes `disconnect_calls` to 0.
+                Sets `is_connected` to True and initializes `disconnect_calls` to 0.
                 """
                 self.is_connected = True
                 self.disconnect_calls = 0
@@ -661,12 +661,7 @@ class TestBLEClientWithRunner:
         assert client._closed is True
 
     def test_client_close_suppresses_disconnect_failures(self):
-        """close() should remain best-effort when disconnect raises.
-
-        Raises
-        ------
-        RuntimeError
-        """
+        """close() should remain best-effort when disconnect raises."""
 
         class FailingBleakClient:
             """Bleak client stub whose disconnect always raises."""

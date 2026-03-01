@@ -313,7 +313,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 @pytest.fixture
 def mock_bleak_exc(
-    monkeypatch: pytest.MonkeyPatch, mock_bleak: Any
+    monkeypatch: pytest.MonkeyPatch, mock_bleak: types.ModuleType
 ) -> types.ModuleType:  # pylint: disable=redefined-outer-name
     """Create and register a minimal `bleak.exc` submodule exposing `BleakError` and `BleakDBusError`.
 
@@ -323,7 +323,7 @@ def mock_bleak_exc(
     -------
         The created `bleak.exc` module.
     """
-    bleak_exc_module: Any = types.ModuleType("bleak.exc")
+    bleak_exc_module: types.ModuleType = types.ModuleType("bleak.exc")
 
     class _StubBleakError(Exception):
         """Stub BleakError type for tests."""

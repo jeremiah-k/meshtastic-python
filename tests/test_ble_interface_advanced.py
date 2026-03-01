@@ -574,7 +574,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         """
 
         outer_client = StressTestClient()
-        connect_calls: list = []
+        connect_calls: list[str | None] = []
 
         stack = ExitStack()
 

@@ -676,7 +676,7 @@ def test_memory_efficiency() -> None:
 @pytest.mark.skipif(
     not os.getenv("RUN_PERF_TESTS"), reason="Performance tests disabled by default"
 )
-def test_property_access_performance():
+def test_property_access_performance() -> None:
     """Lightweight property-access performance regression guard.
 
     Performs repeated reads of `state`, `isConnected`, `is_closing`, and `can_connect` on a fresh BLEStateManager instance,

@@ -57,7 +57,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
         try:
             executable = shlex.split(command)[0]
         except (ValueError, IndexError):
-            executable = command.split(" ", 1)[0] if command else "<unknown>"
+            executable = command.split(" ", 1)[0]
         _fail_masked_timeout(executable, timeout)
         raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout
@@ -80,6 +80,11 @@ def run_cli_argv_with_timeout(
     -------
     subprocess.CompletedProcess[str]
         CompletedProcess with returncode, stdout, and stderr attributes.
+
+    Raises
+    ------
+    ValueError
+        If cmd is empty.
     """
     if not cmd:
         raise ValueError(EMPTY_ARGV_COMMAND_ERROR)

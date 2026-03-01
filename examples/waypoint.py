@@ -19,8 +19,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="waypoint", description="Create and delete Meshtastic waypoints"
     )
-    parser.add_argument("--port", default=None)
-    parser.add_argument("--debug", default=False, action="store_true")
+    parser.add_argument(
+        "--port",
+        default=None,
+        help="Serial port of the Meshtastic device (auto-detected if not specified)",
+    )
+    parser.add_argument(
+        "--debug",
+        default=False,
+        action="store_true",
+        help="Enable debug output to stderr",
+    )
 
     subparsers = parser.add_subparsers(dest="cmd", required=True)
 

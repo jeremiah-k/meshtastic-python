@@ -283,7 +283,7 @@ class Tunnel:
         protocol = p[IP_PROTOCOL_OFFSET]
         src_addr = p[IP_SRC_ADDR_OFFSET : IP_SRC_ADDR_OFFSET + 4]
         dest_addr = p[IP_DEST_ADDR_OFFSET : IP_DEST_ADDR_OFFSET + 4]
-        subheader = 20
+        subheader = MIN_IPV4_HEADER_LEN
         ignore = False  # Assume we will be forwarding the packet
         if protocol in self.PROTOCOL_BLACKLIST:
             ignore = True
@@ -292,9 +292,9 @@ class Tunnel:
             if len(p) < MIN_IPV4_HEADER_LEN + MIN_ICMP_HEADER_LEN:
                 logger.debug("Ignoring short ICMP packet (len=%d)", len(p))
                 return True
-            icmpType = p[20]
-            icmpCode = p[21]
-            checksum = p[22:24]
+            icmpType = p[MIN_IPV4_HEADER_LEN]
+            icmpCode = p[MIN_IPV4_HEADER_LEN + 1]
+            checksum = p[MIN_IPV4_HEADER_LEN + 2 : MIN_IPV4_HEADER_LEN + 4]
             # pylint: disable=line-too-long
             logger.debug(
                 "forwarding ICMP message src=%s, dest=%s, type=%d, code=%d, checksum=%s",
