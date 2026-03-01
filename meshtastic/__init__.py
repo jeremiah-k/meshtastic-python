@@ -70,8 +70,7 @@ from importlib import import_module
 from typing import Any, Callable, NamedTuple, TypeGuard
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub
-
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.node import Node
 from meshtastic.util import (
@@ -351,13 +350,15 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         p = decoded["user"]
         # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
         # update node DB as needed
-        n = iface._get_or_create_by_num(sender)
-        n["user"] = p
-        # We now have a node ID, make sure it is up-to-date in that table
-        node_id = p.get("id") if isinstance(p, dict) else None
-        if isinstance(node_id, str) and node_id:
-            iface.nodes[node_id] = n
-        _receive_info_update(iface, as_dict)
+        with iface._node_db_lock:
+            n = iface._get_or_create_by_num(sender)
+            n["user"] = p
+            # We now have a node ID, make sure it is up-to-date in that table
+            node_id = p.get("id") if isinstance(p, dict) else None
+            nodes_by_id = iface.nodes
+            if isinstance(node_id, str) and node_id and isinstance(nodes_by_id, dict):
+                nodes_by_id[node_id] = n
+            _receive_info_update(iface, as_dict)
 
 
 def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:

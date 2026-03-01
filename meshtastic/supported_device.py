@@ -39,15 +39,22 @@ class SupportedDevice:
 
     def __post_init__(self) -> None:
         """Normalize USB ID fields to canonical lowercase tuple form."""
-        self.usb_vendor_id_in_hex = (
-            self.usb_vendor_id_in_hex.strip().lower()
-            if self.usb_vendor_id_in_hex and self.usb_vendor_id_in_hex.strip()
-            else None
+
+        def _normalize_primary_usb_id(raw_value: object, field_name: str) -> str | None:
+            if raw_value is None:
+                return None
+            if not isinstance(raw_value, str):
+                self._raise_validation_error(
+                    f"Invalid {field_name} for {self.name}: expected str or None, got {type(raw_value).__name__}"
+                )
+            normalized = raw_value.strip().lower()
+            return normalized if normalized else None
+
+        self.usb_vendor_id_in_hex = _normalize_primary_usb_id(
+            self.usb_vendor_id_in_hex, "usb_vendor_id_in_hex"
         )
-        self.usb_product_id_in_hex = (
-            self.usb_product_id_in_hex.strip().lower()
-            if self.usb_product_id_in_hex and self.usb_product_id_in_hex.strip()
-            else None
+        self.usb_product_id_in_hex = _normalize_primary_usb_id(
+            self.usb_product_id_in_hex, "usb_product_id_in_hex"
         )
         if (self.usb_vendor_id_in_hex is None) != (self.usb_product_id_in_hex is None):
             self._raise_validation_error(

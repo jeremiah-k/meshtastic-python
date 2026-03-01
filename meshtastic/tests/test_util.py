@@ -1032,6 +1032,17 @@ def test_supported_device_post_init_rejects_partial_primary_usb_id() -> None:
 
 
 @pytest.mark.unit
+def test_supported_device_post_init_rejects_non_string_primary_usb_id() -> None:
+    """Primary USB IDs should reject non-string values with validation errors."""
+    with pytest.raises(SupportedDeviceValidationError, match="expected str or None"):
+        SupportedDevice(
+            name="Test Device",
+            usb_vendor_id_in_hex=cast(Any, 1234),
+            usb_product_id_in_hex="1001",
+        )
+
+
+@pytest.mark.unit
 def test_vendor_lookup_uses_alias_vids() -> None:
     """Vendor-based lookup should include devices matched through alias VID/PID pairs."""
     vids = get_unique_vendor_ids()
