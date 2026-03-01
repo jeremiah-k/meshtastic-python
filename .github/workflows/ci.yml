@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - "**-review"
   pull_request:
     branches:
       - master
