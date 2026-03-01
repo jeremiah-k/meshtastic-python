@@ -1594,7 +1594,6 @@ def test_reconnect_worker_successful_attempt():
     iface = DummyInterface()
     worker = ReconnectWorker(iface, iface._reconnect_policy)  # type: ignore[arg-type]
     worker._attempt_reconnect_loop(
-        True,
         threading.Event(),
         on_exit=iface._reconnect_scheduler._clear_thread_reference,
     )
@@ -1753,7 +1752,6 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
     monkeypatch.setattr(shutdown_event, "wait", mock_wait)
 
     worker._attempt_reconnect_loop(
-        True,
         shutdown_event,
         on_exit=iface._reconnect_scheduler._clear_thread_reference,
     )

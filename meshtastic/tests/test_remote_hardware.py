@@ -198,6 +198,17 @@ def test_watchGPIOs(
 
 
 @pytest.mark.unit
+def test_watchGPIOs_normalizes_leading_zero_decimal_nodeid(
+    mock_gpio_iface: MagicMock,
+) -> None:
+    """WatchGPIOs should treat leading-zero decimal node ids as numeric keys."""
+    rhw = RemoteHardwareClient(mock_gpio_iface)
+    rhw.watchGPIOs("0016", 123)
+
+    assert getattr(mock_gpio_iface, WATCH_MASKS_ATTR)["num:16"] == 123
+
+
+@pytest.mark.unit
 def test_watchGPIOs_does_not_cache_mask_on_send_failure(
     mock_gpio_iface: MagicMock,
 ) -> None:
@@ -215,7 +226,7 @@ def test_watchGPIOs_does_not_cache_mask_on_send_failure(
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "nodeid",
-    [None, False, True, -1, "0", "0x0", "0b0", "-1", "-0x1", "   "],
+    [None, False, True, -1, "0", "00", "0x0", "0b0", "-1", "-0x1", "   "],
 )
 def test_send_hardware_no_nodeid(mock_gpio_iface: MagicMock, nodeid: object) -> None:
     """Reject missing or non-positive destination node IDs in _send_hardware()."""

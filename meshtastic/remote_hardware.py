@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, remote_hardware_pb2
 
@@ -42,12 +42,15 @@ class LockLike(Protocol):
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         """Acquire the lock."""
+        raise NotImplementedError
 
     def release(self) -> None:
         """Release the lock."""
+        raise NotImplementedError
 
     def __enter__(self) -> bool:
         """Enter context manager and acquire lock."""
+        raise NotImplementedError
 
     def __exit__(
         self,
@@ -56,6 +59,7 @@ class LockLike(Protocol):
         tb: Any,
     ) -> None:
         """Exit context manager and release lock."""
+        raise NotImplementedError
 
 
 def _get_mesh_interface_error() -> type[Exception]:
@@ -92,10 +96,10 @@ def _normalize_node_key(nodeid: Any) -> str | None:
             if stripped.startswith("!"):
                 key = f"id:{stripped.lower()}"
             else:
-                try:
-                    key = f"num:{int(stripped, 0)}"
-                except ValueError:
-                    key = f"id:{stripped.lower()}"
+                parsed = _parse_node_number(stripped)
+                key = (
+                    f"num:{parsed}" if parsed is not None else f"id:{stripped.lower()}"
+                )
     else:
         try:
             key = f"num:{int(nodeid)}"
@@ -103,6 +107,20 @@ def _normalize_node_key(nodeid: Any) -> str | None:
             key = None
 
     return key
+
+
+def _parse_node_number(text: str) -> int | None:
+    """Parse node number text from prefixed base forms or plain decimal."""
+    normalized = text.strip().lower()
+    if not normalized:
+        return None
+    try:
+        return int(normalized, 0)
+    except ValueError:
+        decimal_candidate = normalized.lstrip("+-")
+        if decimal_candidate.isdigit():
+            return int(normalized, 10)
+        return None
 
 
 def _get_watch_masks(interface: "MeshInterface") -> dict[str, int]:
@@ -331,10 +349,10 @@ class RemoteHardwareClient:
         if isinstance(nodeid, str) and not is_invalid_str:
             normalized_nodeid = nodeid.strip().lower()
             is_special_alias = normalized_nodeid.startswith("^")
-            try:
-                is_non_positive_numeric_str = int(normalized_nodeid, 0) <= 0
-            except ValueError:
-                is_non_positive_numeric_str = False
+            parsed_nodeid = _parse_node_number(normalized_nodeid)
+            is_non_positive_numeric_str = (
+                parsed_nodeid is not None and parsed_nodeid <= 0
+            )
         has_invalid_dest_nodeid = (
             nodeid is None
             or is_invalid_bool

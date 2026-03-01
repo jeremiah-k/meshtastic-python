@@ -50,7 +50,6 @@ from meshtastic.interfaces.ble.connection import (
     ConnectionValidator,
 )
 from meshtastic.interfaces.ble.constants import (
-    CONNECTION_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_ADDRESS_RESOLUTION_FAILED,
     ERROR_CONNECTION_FAILED,
@@ -300,7 +299,7 @@ class BLEInterface(MeshInterface):
             logger.debug("Mesh configure starting")
             self._start_config()
             if not self.noProto:
-                self._wait_connected(timeout=CONNECTION_TIMEOUT)
+                self._wait_connected(timeout=timeout)
                 self.waitForConfig()
 
             # FROMNUM notification is set in _register_notifications
@@ -667,9 +666,21 @@ class BLEInterface(MeshInterface):
                 ]
                 skip_side_effects = True
 
+        def _close_previous_client_async() -> None:
+            if previous_client:
+                # Keep cleanup behavior consistent between reconnect paths.
+                close_thread = self.thread_coordinator._create_thread(
+                    target=self._client_manager._safe_close_client,
+                    args=(previous_client,),
+                    name="BLEClientClose",
+                    daemon=True,
+                )
+                self.thread_coordinator._start_thread(close_thread)
+
         if skip_side_effects:
             if stale_disconnect_keys:
                 self._mark_address_keys_disconnected(*stale_disconnect_keys)
+            _close_previous_client_async()
             logger.debug(
                 "Skipping stale disconnect side-effects from %s: newer client already active.",
                 source,
@@ -684,15 +695,7 @@ class BLEInterface(MeshInterface):
         if disconnect_keys:
             self._mark_address_keys_disconnected(*disconnect_keys)
 
-        if previous_client:
-            # Keep cleanup behavior consistent between reconnect paths.
-            close_thread = self.thread_coordinator._create_thread(
-                target=self._client_manager._safe_close_client,
-                args=(previous_client,),
-                name="BLEClientClose",
-                daemon=True,
-            )
-            self.thread_coordinator._start_thread(close_thread)
+        _close_previous_client_async()
         self._disconnected()
 
         if should_reconnect:

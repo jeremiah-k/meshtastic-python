@@ -105,7 +105,7 @@ def test_TCPInterface_rejects_non_positive_connect_timeout(
     """Constructor should fail fast for invalid connectTimeout values."""
     with pytest.raises(
         ValueError,
-        match=r"connectTimeout must be a positive number",
+        match=r"connectTimeout must be a positive finite number",
     ):
         TCPInterface(
             hostname="localhost",

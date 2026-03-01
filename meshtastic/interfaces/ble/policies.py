@@ -168,24 +168,23 @@ class ReconnectPolicy:
         return self.max_retries is None or attempt < self.max_retries
 
     def next_attempt(self) -> tuple[float, bool]:
-        """Compute delay for the current retry attempt and report whether one more retry is allowed after this attempt.
+        """Compute delay for the current retry attempt and report whether that consumed attempt is permitted.
 
         Order of operations for each call:
         1. `_get_delay()` computes the delay for the current attempt counter.
         2. `_attempt_count` is incremented to consume this attempt.
-        3. `_should_retry()` computes whether another retry is allowed *after*
-           consuming this attempt.
+        3. `_should_retry(consumed_attempt)` computes whether the consumed/current
+           attempt index is permitted by the retry budget.
 
         `max_retries` counts retries after the initial attempt, so total
-        attempts are `1 + max_retries`. For finite retry budgets, calls up to
-        `max_retries` return `True` for the second tuple element; the final call
-        still returns a delay but returns `False` to indicate no additional
-        retries remain.
+        attempts are `1 + max_retries`. The returned boolean indicates whether
+        the attempt whose delay was just computed is allowed, not whether an
+        additional attempt remains after this call.
 
         Returns
         -------
         delay_and_permission : tuple[float, bool]
-            `(delay_seconds, another_retry_allowed_after_this_attempt)`.
+            `(delay_seconds, consumed_attempt_is_permitted)`.
         """
         consumed_attempt = self._attempt_count
         delay = self._get_delay()

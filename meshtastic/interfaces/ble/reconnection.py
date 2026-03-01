@@ -128,7 +128,7 @@ class ReconnectScheduler:
 
             thread = self.thread_coordinator._create_thread(
                 target=self._reconnect_worker._attempt_reconnect_loop,
-                args=(auto_reconnect, shutdown_event),
+                args=(shutdown_event,),
                 kwargs={"on_exit": self._clear_thread_reference},
                 name="BLEAutoReconnect",
                 daemon=True,
@@ -361,7 +361,6 @@ class ReconnectWorker:
 
     def _attempt_reconnect_loop(  # pylint: disable=R0911
         self,
-        auto_reconnect: bool,
         shutdown_event: Event,
         *,
         on_exit: Callable[[], None] | None = None,
@@ -370,16 +369,13 @@ class ReconnectWorker:
 
         Attempts reconnects until a connection succeeds, the reconnect policy
         stops further retries, the provided shutdown_event is set, or
-        auto_reconnect is False. Between failed attempts the loop waits
+        auto-reconnect is disabled. Between failed attempts the loop waits
         according to the policy; certain BLE/DBus errors may increase the
         delay. The optional on_exit callback is invoked unconditionally when the
         loop ends.
 
         Parameters
         ----------
-        auto_reconnect : bool
-            Backward-compatible snapshot value from scheduler call sites. Live
-            gating uses ``self.interface.auto_reconnect`` on each loop pass.
         shutdown_event : Event
             Event that stops the loop when set.
         on_exit : Callable[[], None] | None
@@ -389,7 +385,6 @@ class ReconnectWorker:
             self._call_policy("reset")
             interface = self.interface
             override_delay: float | None = None
-            _ = auto_reconnect  # retained for compatibility with existing tests/callers
             while not shutdown_event.is_set():
                 override_delay = None
                 if self._should_abort_reconnect(context="loop start"):

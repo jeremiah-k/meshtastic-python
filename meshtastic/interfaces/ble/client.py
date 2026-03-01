@@ -8,7 +8,7 @@ import weakref
 from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from threading import RLock, current_thread
+from threading import Lock, RLock, current_thread
 from typing import Any, Awaitable, Callable, Coroutine, TypeVar, cast
 from uuid import UUID
 
@@ -48,6 +48,19 @@ T = TypeVar("T")
 # We apply a guarded stdout.flush() nudge in _async_await() on darwin hosts.
 # This is limited when stdout is redirected or non-flushable.
 # Upstream issue: https://github.com/hbldh/bleak/issues?q=is%3Aissue+CoreBluetooth+callback
+
+_MACOS_WORKAROUND_LOG_LOCK = Lock()
+_MACOS_WORKAROUND_LOGGED_UNAVAILABLE = False
+
+
+def _log_macos_stdout_workaround_unavailable_once(reason: str) -> None:
+    """Log once when the macOS stdout flush workaround cannot be applied."""
+    global _MACOS_WORKAROUND_LOGGED_UNAVAILABLE  # pylint: disable=global-statement
+    with _MACOS_WORKAROUND_LOG_LOCK:
+        if _MACOS_WORKAROUND_LOGGED_UNAVAILABLE:
+            return
+        _MACOS_WORKAROUND_LOGGED_UNAVAILABLE = True
+    logger.debug("macOS CoreBluetooth workaround skipped: %s.", reason)
 
 
 class BLEClient:
@@ -676,10 +689,19 @@ class BLEClient:
             # provide the I/O nudge needed for callback progress.
             if sys.platform == "darwin":
                 stdout = getattr(sys, "stdout", None)
-                if stdout is not None and hasattr(stdout, "flush"):
+                if stdout is None:
+                    _log_macos_stdout_workaround_unavailable_once(
+                        "stdout is unavailable"
+                    )
+                elif not hasattr(stdout, "flush"):
+                    _log_macos_stdout_workaround_unavailable_once(
+                        "stdout is not flushable"
+                    )
+                elif getattr(stdout, "closed", False):
+                    _log_macos_stdout_workaround_unavailable_once("stdout is closed")
+                else:
                     with contextlib.suppress(ValueError, OSError, AttributeError):
-                        if not getattr(stdout, "closed", False):
-                            stdout.flush()
+                        stdout.flush()
             return future.result(timeout)
         except SystemExit:  # pylint: disable=W0706
             raise

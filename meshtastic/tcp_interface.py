@@ -23,7 +23,10 @@ class TCPInterface(StreamInterface):
     """Interface class for meshtastic devices over a TCP link."""
 
     DEFAULT_CONNECT_TIMEOUT = 10.0
-    CONNECT_TIMEOUT_ERROR = "connectTimeout must be a positive number, got {!r}"
+    CONNECT_TIMEOUT_ERROR = (
+        "connectTimeout must be a positive finite number (bool values are not accepted), "
+        "got {0!r} (type: {1})"
+    )
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
     CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
     RECONNECT_DISABLED_AFTER_FATAL_ERROR = (
@@ -76,7 +79,11 @@ class TCPInterface(StreamInterface):
                 or not math.isfinite(connectTimeout)
                 or connectTimeout <= 0
             ):
-                raise ValueError(self.CONNECT_TIMEOUT_ERROR.format(connectTimeout))
+                raise ValueError(
+                    self.CONNECT_TIMEOUT_ERROR.format(
+                        connectTimeout, type(connectTimeout).__name__
+                    )
+                )
 
         self.stream = None
         self._provides_own_stream = True
