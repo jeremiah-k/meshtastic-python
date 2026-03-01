@@ -114,7 +114,7 @@ class NotificationManager:
         client : 'BLEClient'
             BLE client used to stop notifications.
         timeout : float | None
-            Per-unsubscribe timeout passed to the client's `stopNotify` method; may be None.
+            Per-unsubscribe timeout passed to the client's `stop_notify` method; may be None.
 
         Returns
         -------
@@ -126,7 +126,7 @@ class NotificationManager:
         failure_count = 0
         for characteristic in characteristics:
             try:
-                client.stopNotify(characteristic, timeout=timeout)
+                client.stop_notify(characteristic, timeout=timeout)
             except Exception as e:  # noqa: BLE001
                 failure_count += 1
                 logger.debug(

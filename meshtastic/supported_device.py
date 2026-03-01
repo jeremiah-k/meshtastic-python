@@ -273,6 +273,9 @@ nano_g1 = SupportedDevice(
     usb_product_id_in_hex="55d4",
 )
 
+# NOTE: Seeed Xiao ESP32-S3 and T-Deck can both enumerate as 303a:1001
+# (Espressif USB Serial/JTAG mode), so VID/PID-only auto-detection is ambiguous
+# in that hardware mode and requires higher-level disambiguation.
 seeed_xiao_s3 = SupportedDevice(
     name="Seeed Xiao ESP32-S3",
     version=None,

@@ -58,6 +58,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_DISCOVERY_MANAGER_UNAVAILABLE,
     ERROR_INTERFACE_CLOSING,
     ERROR_MULTIPLE_DEVICES,
+    ERROR_MULTIPLE_DEVICES_DISCOVERY,
     ERROR_NO_CLIENT_ESTABLISHED,
     ERROR_NO_PERIPHERALS_FOUND,
     ERROR_READING_BLE,
@@ -1139,7 +1140,7 @@ class BLEInterface(MeshInterface):
         Returns
         -------
         BLEDevice
-            The matched BLE device. If `address` is None and multiple devices are discovered, the first discovered device is returned.
+            The matched BLE device.
 
         Raises
         ------
@@ -1188,7 +1189,11 @@ class BLEInterface(MeshInterface):
                 [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
             )
             raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
-        # No specific address provided and multiple devices found, return the first one
+        if len(addressed_devices) > 1:
+            device_list = "\n".join(
+                [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
+            )
+            raise self.BLEError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
         return addressed_devices[0]
 
     # COMPAT_STABLE_SHIM: historical public BLEInterface API.
@@ -1554,13 +1559,12 @@ class BLEInterface(MeshInterface):
                 if connected_client is None:
                     raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
 
-                # Finalize gate ownership before releasing the per-address gate
-                # held by this ExitStack scope to minimize duplicate-connect races.
-                self._finalize_connection_gates(
-                    connected_client, connected_device_key, connection_alias_key
-                )
-
-                return connected_client
+            # Preserve lock ordering by finalizing gates after _connect_lock is released,
+            # while still inside the per-address ExitStack scope.
+            self._finalize_connection_gates(
+                connected_client, connected_device_key, connection_alias_key
+            )
+            return connected_client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: BLEClient

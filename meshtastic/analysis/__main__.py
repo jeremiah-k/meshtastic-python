@@ -56,7 +56,7 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
         value cannot be mapped or represents the "None" state.
     """
 
-    def to_pmon_name(n: Any) -> str | None:
+    def _to_pmon_name(n: Any) -> str | None:
         """Map a power-monitor state numeric value to enum name(s).
 
         Parameters
@@ -100,7 +100,7 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
         else:
             return s if s != "None" else None
 
-    return [to_pmon_name(x) for x in arr]
+    return [_to_pmon_name(x) for x in arr]
 
 
 def read_pandas(filepath: str) -> pd.DataFrame:
@@ -429,7 +429,7 @@ def create_dash(slog_path: str) -> Dash:
 
     pmon_raises = get_pmon_raises(dslog)
 
-    def set_legend(f: go.Figure, name: str) -> go.Figure:
+    def _set_legend(f: go.Figure, name: str) -> go.Figure:
         """Set the legend name and enable legend display for the first trace in a figure.
 
         Parameters
@@ -455,15 +455,15 @@ def create_dash(slog_path: str) -> Dash:
     min_col = choose_power_column(dpwr, legacy_name="min_mW", new_name="min_mA")
 
     avg_pwr_lines = px.line(dpwr, x="time", y=avg_col).update_traces(line_color="red")
-    set_legend(avg_pwr_lines, "avg power")
+    _set_legend(avg_pwr_lines, "avg power")
     max_pwr_points = px.scatter(dpwr, x="time", y=max_col).update_traces(
         marker_color="blue"
     )
-    set_legend(max_pwr_points, "max power")
+    _set_legend(max_pwr_points, "max power")
     min_pwr_points = px.scatter(dpwr, x="time", y=min_col).update_traces(
         marker_color="green"
     )
-    set_legend(min_pwr_points, "min power")
+    _set_legend(min_pwr_points, "min power")
 
     fake_y = np.full(len(pmon_raises), PMON_MARKER_Y_POSITION)
     pmon_points = px.scatter(pmon_raises, x="time", y=fake_y, text="pm_raises")

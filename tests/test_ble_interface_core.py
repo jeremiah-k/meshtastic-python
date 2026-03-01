@@ -321,6 +321,23 @@ def test_find_device_returns_single_scan_result() -> None:
     assert result is scanned_device
 
 
+def test_find_device_multiple_scan_results_without_address_raises() -> None:
+    """Discovery-mode findDevice should reject ambiguous multi-device scans."""
+    iface = object.__new__(ble_mod.BLEInterface)
+    devices = [
+        _create_ble_device(address="11:22:33:44:55:66", name="Meshtastic-A"),
+        _create_ble_device(address="22:33:44:55:66:77", name="Meshtastic-B"),
+    ]
+    iface._discovery_manager = SimpleNamespace(  # type: ignore[assignment]
+        _discover_devices=lambda _address: devices
+    )
+
+    with pytest.raises(BLEInterface.BLEError) as excinfo:
+        ble_mod.BLEInterface.findDevice(iface, None)
+
+    assert "Multiple Meshtastic BLE peripherals found." in str(excinfo.value)
+
+
 def test_ble_package_all_uses_stable_surface() -> None:
     """`meshtastic.interfaces.ble.__all__` should expose the stable facade only."""
     assert "BLEInterface" in ble_mod.__all__

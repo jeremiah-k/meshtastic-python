@@ -641,13 +641,15 @@ class BLECoroutineRunner:
 
         # Final cleanup under lock - only clear if no concurrent _ensure_running replaced them
         with self._instance_lock:
+            thread_matches = self._thread is thread
+            thread_exited = thread is None or not thread.is_alive()
             # Only clear _thread if it still references the original thread we stopped
             # AND the thread has actually exited (not just because we're the current thread)
-            if self._thread is thread and (thread is None or not thread.is_alive()):
+            if thread_matches and thread_exited:
                 self._thread = None
             # Only clear _loop if it still references the original loop and
             # the associated thread has actually exited.
-            if self._loop is loop and (thread is None or not thread.is_alive()):
+            if self._loop is loop and thread_exited:
                 self._loop = None
             # Keep process-exit cleanup registered if a concurrent restart already
             # installed a new active runner.

@@ -96,10 +96,10 @@ def _close_discovery_client_best_effort(client: Any) -> None:
         return
 
     awaitable_result = close_result
+    close_timeout = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
     try:
         running_loop = asyncio.get_running_loop()
     except RuntimeError:
-        close_timeout = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
         try:
             asyncio.run(
                 asyncio.wait_for(
@@ -120,7 +120,12 @@ def _close_discovery_client_best_effort(client: Any) -> None:
             )
     else:
         try:
-            close_task = running_loop.create_task(_await_close_result(awaitable_result))
+            close_task = running_loop.create_task(
+                asyncio.wait_for(
+                    _await_close_result(awaitable_result),
+                    timeout=close_timeout,
+                )
+            )
             _PENDING_DISCOVERY_CLOSE_TASKS.add(close_task)
             close_task.add_done_callback(_finalize_discovery_close_task)
         except Exception:  # noqa: BLE001 - best effort cleanup path

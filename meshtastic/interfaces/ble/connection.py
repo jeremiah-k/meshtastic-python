@@ -12,6 +12,10 @@ from meshtastic.interfaces.ble.constants import (
     AWAIT_TIMEOUT_BUFFER_SECONDS,
     BLECLIENT_ERROR_ALREADY_CONNECTED,
     BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING,
+    CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION,
+    CONNECTION_ERROR_EMPTY_ADDRESS,
+    CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT,
+    CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED,
     DIRECT_CONNECT_TIMEOUT_SECONDS,
     DISCONNECT_TIMEOUT_SECONDS,
     BLEConfig,
@@ -345,7 +349,7 @@ class ConnectionOrchestrator:
                     current_state,
                 )
                 raise self.interface.BLEError(
-                    "Connection invalidated by concurrent disconnect"
+                    CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT
                 )
 
         # Register notifications OUTSIDE the lock to avoid blocking state transitions
@@ -360,7 +364,7 @@ class ConnectionOrchestrator:
                     "Connection finalization aborted: state changed during notification registration"
                 )
                 raise self.interface.BLEError(
-                    "Connection invalidated by concurrent disconnect"
+                    CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT
                 )
 
             # Post-registration check: verify client is still connected.
@@ -371,12 +375,12 @@ class ConnectionOrchestrator:
                     "Connection finalization aborted: client disconnected during notification registration"
                 )
                 raise self.interface.BLEError(
-                    "Connection invalidated: client disconnected during finalization"
+                    CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION
                 )
 
             if not self.state_manager._transition_to(ConnectionState.CONNECTED):
                 raise self.interface.BLEError(
-                    "Connection invalidated during state transition to connected"
+                    CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED
                 )
 
         on_connected_func()
@@ -457,7 +461,7 @@ class ConnectionOrchestrator:
         # Allow None target_address for discovery mode - find_device() handles this
         # Only reject empty/whitespace-only strings that are explicitly provided
         if target_address is not None and not target_address.strip():
-            raise self.interface.BLEError("Cannot connect: empty address provided")
+            raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
 
         normalized_target = sanitize_address(target_address)
         # Note: normalized_target can be None for discovery mode - this is intentional
@@ -470,9 +474,7 @@ class ConnectionOrchestrator:
 
         with self.state_lock:
             if not self.state_manager._transition_to(ConnectionState.CONNECTING):
-                raise self.interface.BLEError(
-                    "Already connected or connection in progress"
-                )
+                raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
         client: BLEClient | None = None
         try:
             # Only attempt direct connect if we have a target address

@@ -225,7 +225,9 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
 
 
 @pytest.mark.unit
-def test_client_manager_connect_client_refreshes_services_on_non_callable_probe() -> None:
+def test_client_manager_connect_client_refreshes_services_on_non_callable_probe() -> (
+    None
+):
     """_connect_client should refresh services when get_characteristic is non-callable."""
     state_manager = BLEStateManager()
     state_lock = RLock()

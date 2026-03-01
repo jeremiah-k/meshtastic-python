@@ -97,9 +97,9 @@ class TCPInterface(StreamInterface):
         self._reconnect_backoff = self.DEFAULT_RECONNECT_BACKOFF
         self._reconnect_base_delay = self.DEFAULT_RECONNECT_BASE_DELAY
         self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
-        self._reconnect_sleep_slice = self.DEFAULT_RECONNECT_SLEEP_SLICE
         self._reconnect_lock = threading.RLock()
         self._reconnect_attempt_lock = threading.Lock()
+        self._reconnect_attempt_in_progress = False
         self._fatal_disconnect = False
 
         if connectNow:
@@ -184,14 +184,26 @@ class TCPInterface(StreamInterface):
 
     def _connect_socket_if_needed(self) -> None:
         """Open a TCP socket when none is active, with reconnect-safe serialization."""
-        with self._reconnect_attempt_lock:
-            should_connect = False
-            with self._reconnect_lock:
-                if self.socket is None:
-                    self._raise_if_connect_blocked_locked()
-                    should_connect = True
-            if should_connect:
-                self.myConnect()
+        while True:
+            reconnect_in_progress = False
+            with self._reconnect_attempt_lock:
+                should_connect = False
+                with self._reconnect_lock:
+                    if self._reconnect_attempt_in_progress:
+                        reconnect_in_progress = True
+                    elif self.socket is None:
+                        self._raise_if_connect_blocked_locked()
+                        should_connect = True
+                    else:
+                        return
+                if should_connect:
+                    self.myConnect()
+                    return
+            if not reconnect_in_progress:
+                return
+            # Give the in-flight reconnect attempt a chance to finish before
+            # reevaluating socket state.
+            time.sleep(self.DEFAULT_RECONNECT_SLEEP_SLICE)
 
     def _close_socket_if_current(self, sock: socket.socket | None) -> bool:
         """Best-effort socket teardown and conditional state clear.
@@ -366,7 +378,7 @@ class TCPInterface(StreamInterface):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return True
-            time.sleep(min(self._reconnect_sleep_slice, remaining))
+            time.sleep(min(self.DEFAULT_RECONNECT_SLEEP_SLICE, remaining))
 
     def _on_fatal_disconnect(self, reason: str) -> None:
         """Mark the interface as fatally disconnected and stop reconnect attempts."""
@@ -397,17 +409,23 @@ class TCPInterface(StreamInterface):
         ):
             logger.debug("Reconnect already in progress for %s", self.hostname)
             return False
+        released_attempt_lock = False
+        owns_reconnect_attempt = False
         try:
             abort_reconnect = False
             should_mark_fatal = False
             attempt_number = 0
             delay = 0.0
             with self._reconnect_lock:
-                if self._wantExit or self._fatal_disconnect:
+                if self._reconnect_attempt_in_progress:
+                    abort_reconnect = True
+                elif self._wantExit or self._fatal_disconnect:
                     abort_reconnect = True
                 elif self._reconnect_attempts >= self._max_reconnect_attempts:
                     should_mark_fatal = True
                 else:
+                    self._reconnect_attempt_in_progress = True
+                    owns_reconnect_attempt = True
                     self._reconnect_attempts += 1
                     attempt_number = self._reconnect_attempts
                     delay = (
@@ -419,6 +437,10 @@ class TCPInterface(StreamInterface):
                 return False
             if abort_reconnect:
                 return False
+            # Release the attempt lock before blocking delay/connect I/O. A per-attempt
+            # flag still prevents overlapping reconnect/connect work.
+            self._reconnect_attempt_lock.release()
+            released_attempt_lock = True
 
             logger.debug(
                 "Reconnect attempt %d/%d for %s in %.1fs",
@@ -500,7 +522,11 @@ class TCPInterface(StreamInterface):
 
             return reconnect_ok
         finally:
-            self._reconnect_attempt_lock.release()
+            if not released_attempt_lock:
+                self._reconnect_attempt_lock.release()
+            if owns_reconnect_attempt:
+                with self._reconnect_lock:
+                    self._reconnect_attempt_in_progress = False
 
     # pylint: disable=too-many-return-statements
     # Multiple early returns are intentional here for clear handling of each
