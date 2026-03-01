@@ -4,6 +4,7 @@ It is used for auto detection as to which device might be connected.
 
 import re
 from dataclasses import dataclass, field
+from typing import NoReturn
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
@@ -32,6 +33,10 @@ class SupportedDevice:
     # Alternate VID/PID pairs for known USB enumeration modes.
     usb_id_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
+    def _raise_validation_error(self, message: str) -> NoReturn:
+        """Raise a normalized validation error for this device."""
+        raise SupportedDeviceValidationError(message)
+
     def __post_init__(self) -> None:
         """Normalize USB ID fields to canonical lowercase tuple form."""
         self.usb_vendor_id_in_hex = (
@@ -45,32 +50,32 @@ class SupportedDevice:
             else None
         )
         if (self.usb_vendor_id_in_hex is None) != (self.usb_product_id_in_hex is None):
-            raise SupportedDeviceValidationError(
+            self._raise_validation_error(
                 "Both usb_vendor_id_in_hex and usb_product_id_in_hex must be provided "
                 f"together for {self.name}"
             )
         if self.usb_vendor_id_in_hex is not None and not USB_ID_HEX_RE.fullmatch(
             self.usb_vendor_id_in_hex
         ):
-            raise SupportedDeviceValidationError(
+            self._raise_validation_error(
                 f"Invalid usb_vendor_id_in_hex for {self.name}: {self.usb_vendor_id_in_hex!r}"
             )
         if self.usb_product_id_in_hex is not None and not USB_ID_HEX_RE.fullmatch(
             self.usb_product_id_in_hex
         ):
-            raise SupportedDeviceValidationError(
+            self._raise_validation_error(
                 f"Invalid usb_product_id_in_hex for {self.name}: {self.usb_product_id_in_hex!r}"
             )
         normalized_aliases: list[tuple[str, str]] = []
         seen_aliases: set[tuple[str, str]] = set()
         for alias in self.usb_id_aliases:
             if not isinstance(alias, (tuple, list)) or len(alias) != 2:
-                raise SupportedDeviceValidationError(
+                self._raise_validation_error(
                     f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
                 )
             vendor_id, product_id = alias
             if not isinstance(vendor_id, str) or not isinstance(product_id, str):
-                raise SupportedDeviceValidationError(
+                self._raise_validation_error(
                     f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
                 )
             normalized_vendor_id = vendor_id.strip().lower()
@@ -78,7 +83,7 @@ class SupportedDevice:
             if not USB_ID_HEX_RE.fullmatch(
                 normalized_vendor_id
             ) or not USB_ID_HEX_RE.fullmatch(normalized_product_id):
-                raise SupportedDeviceValidationError(
+                self._raise_validation_error(
                     f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
                 )
             normalized_alias = (normalized_vendor_id, normalized_product_id)

@@ -15,26 +15,29 @@ def main() -> None:
         with meshtastic.tcp_interface.TCPInterface(RADIO_HOSTNAME) as iface:
             my_info = iface.myInfo
             if my_info is None:
-                print("myInfo is not available — radio may not yet have joined a mesh.")
+                print(
+                    "myInfo is not available — radio may not yet have joined a mesh.",
+                    file=sys.stderr,
+                )
                 return
 
             if my_info.my_node_num < 0:
-                print("Local node has not joined the mesh yet.")
+                print("Local node has not joined the mesh yet.", file=sys.stderr)
                 return
 
             node = (iface.nodesByNum or {}).get(my_info.my_node_num)
             if node is None:
-                print("Local node not found in node database yet.")
+                print("Local node not found in node database yet.", file=sys.stderr)
                 return
 
             position = node.get("position")
             if position is None:
-                print("Node has no position data yet.")
+                print("Node has no position data yet.", file=sys.stderr)
                 return
 
             print(position)
     except OSError as exc:
-        print(f"Could not connect to {RADIO_HOSTNAME}: {exc}")
+        print(f"Could not connect to {RADIO_HOSTNAME}: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -332,6 +332,34 @@ def test_connected_noop_when_closing() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_connected_publishes_established_once_per_connected_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_connected() should publish established once per connect transition."""
+    queued_callbacks: list[Any] = []
+
+    def _queue_work(callback: Any) -> None:
+        queued_callbacks.append(callback)
+
+    monkeypatch.setattr(
+        "meshtastic.mesh_interface.publishingThread.queueWork", _queue_work
+    )
+
+    with MeshInterface(noProto=True) as iface:
+        monkeypatch.setattr(iface, "_start_heartbeat", lambda: None)
+
+        iface._connected()
+        iface._connected()
+        assert len(queued_callbacks) == 1
+
+        # Simulate a new session transition and verify publish happens again.
+        iface.isConnected.clear()
+        iface._connected()
+        assert len(queued_callbacks) == 2
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_disconnected_publishes_lost_once_per_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

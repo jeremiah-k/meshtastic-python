@@ -215,7 +215,7 @@ def test_on_log_message_keeps_raw_and_power_on_add_row_failure(
 def test_log_set_close_preserves_primary_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """LogSet.close should preserve slog close failure and keep power close as context."""
+    """LogSet.close should preserve slog close failure and chain power close as cause."""
     log_set = object.__new__(LogSet)
     log_set.dir_name = "tmp"
     log_set.atexit_handler = lambda: None
@@ -231,6 +231,6 @@ def test_log_set_close_preserves_primary_exception(
     with pytest.raises(ValueError, match="slog close failed") as exc_info:
         log_set.close()
 
-    assert exc_info.value.__context__ is power_error
+    assert exc_info.value.__cause__ is power_error
     assert log_set.slog_logger is None
     assert log_set.power_logger is None

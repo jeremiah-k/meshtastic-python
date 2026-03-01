@@ -2021,7 +2021,8 @@ class MeshInterface:  # pylint: disable=R0902
             self._start_heartbeat()
         # Check _closing again before publishing to avoid race with close()
         with self._heartbeat_lock:
-            should_publish = self.isConnected.is_set() and not self._closing
+            # Publish once per disconnected->connected transition.
+            should_publish = start_heartbeat and not self._closing
         if should_publish:
             publishingThread.queueWork(
                 lambda: pub.sendMessage(

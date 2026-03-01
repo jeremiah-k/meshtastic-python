@@ -375,7 +375,7 @@ def _mark_disconnected(addr: str | None, owner: Any | None = None) -> None:
                 # CPython can reuse ids after GC; this _mark_disconnected fallback is
                 # best-effort when _CONNECTED_OWNER_IDS must compare id(owner).
                 # The race window is narrow because callers still hold owner live.
-                if stored_id is not None and stored_id != id(owner):
+                if stored_id is None or stored_id != id(owner):
                     logger.debug(
                         "Ignoring disconnect mark for %s from non-owner instance.",
                         key,

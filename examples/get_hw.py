@@ -11,8 +11,8 @@ import meshtastic.serial_interface
 def main() -> None:
     """Connect to a serial radio and print the local hardware model."""
     if len(sys.argv) != 1:
-        print(f"usage: {sys.argv[0]}")
-        print("Print the hardware model for the local node.")
+        print(f"usage: {sys.argv[0]}", file=sys.stderr)
+        print("Print the hardware model for the local node.", file=sys.stderr)
         raise SystemExit(3)
 
     with meshtastic.serial_interface.SerialInterface() as iface:

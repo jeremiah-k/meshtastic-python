@@ -361,6 +361,7 @@ def riden_stub() -> "RidenPowerSupply":
     """Create a minimally initialized RidenPowerSupply test instance."""
     from meshtastic.powermon.riden import RidenPowerSupply  # pylint: disable=C0415
 
+    # Bypass __init__ to avoid opening a real serial port during unit tests.
     pps = object.__new__(RidenPowerSupply)
     pps.r = MagicMock()
     pps.prevPowerTime = datetime.now() - timedelta(seconds=10)
@@ -374,6 +375,7 @@ def ppk2_stub() -> "PPK2PowerSupply":
     """Create a minimally initialized PPK2PowerSupply test instance."""
     from meshtastic.powermon.ppk2 import PPK2PowerSupply  # pylint: disable=C0415
 
+    # Bypass __init__ to avoid starting the background measurement thread in tests.
     ppk = object.__new__(PPK2PowerSupply)
     ppk._result_lock = threading.Condition()
     ppk._want_measurement = threading.Condition()

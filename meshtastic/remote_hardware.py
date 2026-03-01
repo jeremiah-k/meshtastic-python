@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
 from pubsub import pub
 
-from meshtastic.protobuf import portnums_pb2, remote_hardware_pb2
+from meshtastic.protobuf import mesh_pb2, portnums_pb2, remote_hardware_pb2
 
 if TYPE_CHECKING:
     from meshtastic.mesh_interface import MeshInterface
@@ -297,7 +297,7 @@ class RemoteHardwareClient:
         r: remote_hardware_pb2.HardwareMessage,
         wantResponse: bool = False,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-    ) -> Any:
+    ) -> mesh_pb2.MeshPacket:
         """Send a HardwareMessage to a remote node over the configured GPIO channel.
 
         Parameters
@@ -313,8 +313,8 @@ class RemoteHardwareClient:
 
         Returns
         -------
-        Any
-            The result returned by the underlying sendData call.
+        mesh_pb2.MeshPacket
+            The packet returned by the underlying sendData call.
 
         Raises
         ------
@@ -371,7 +371,9 @@ class RemoteHardwareClient:
             raise mesh_interface_error(error_message)
         return cast(int, value)
 
-    def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
+    def writeGPIOs(
+        self, nodeid: int | str, mask: int, vals: int
+    ) -> mesh_pb2.MeshPacket:
         """Set specified GPIO pins on a remote device according to the provided mask and values.
 
         Parameters
@@ -385,7 +387,7 @@ class RemoteHardwareClient:
 
         Returns
         -------
-        Any
+        mesh_pb2.MeshPacket
             Result of the underlying send operation.
         """
         mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
@@ -405,7 +407,7 @@ class RemoteHardwareClient:
         nodeid: int | str,
         mask: int,
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
-    ) -> Any:
+    ) -> mesh_pb2.MeshPacket:
         """Request the device to read the specified GPIO bits.
 
         Parameters
@@ -419,7 +421,7 @@ class RemoteHardwareClient:
 
         Returns
         -------
-        Any
+        mesh_pb2.MeshPacket
             The result returned by the underlying `MeshInterface.sendData` call.
             Callback return values are ignored.
         """
@@ -430,7 +432,7 @@ class RemoteHardwareClient:
         r.gpio_mask = mask
         return self._send_hardware(nodeid, r, wantResponse=True, onResponse=onResponse)
 
-    def watchGPIOs(self, nodeid: int | str, mask: int) -> Any:
+    def watchGPIOs(self, nodeid: int | str, mask: int) -> mesh_pb2.MeshPacket:
         """Start monitoring the specified GPIO bits on a remote device for changes.
 
         Parameters
@@ -442,8 +444,8 @@ class RemoteHardwareClient:
 
         Returns
         -------
-        Any
-            Result of sending the watch request; may contain a send/response token or interface-specific response.
+        mesh_pb2.MeshPacket
+            Result of sending the watch request.
         """
         mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
         logger.debug("watchGPIOs nodeid:%s mask:%s", nodeid, mask)

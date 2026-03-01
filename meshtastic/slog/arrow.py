@@ -48,6 +48,13 @@ class WriterClosedError(ArrowWriterStateError):
         super().__init__("Cannot perform operation: ArrowWriter is closed.")
 
 
+class LockNotHeldError(ArrowWriterStateError):
+    """Raised when lock-protected write path is called without owning the lock."""
+
+    def __init__(self) -> None:
+        super().__init__("_write() called without holding _lock")
+
+
 class ArrowWriter:
     """Writes an arrow file in a streaming fashion."""
 
@@ -218,7 +225,7 @@ class ArrowWriter:
         is_owned = getattr(self._lock, "_is_owned", None)
         if callable(is_owned):
             if not is_owned():
-                raise RuntimeError("_write() called without holding _lock")
+                raise LockNotHeldError()
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
