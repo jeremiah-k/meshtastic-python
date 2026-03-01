@@ -933,9 +933,10 @@ class MeshInterface:  # pylint: disable=R0902
             packet id cannot be generated, or if an invalid port number is supplied.
         """
 
-        if getattr(data, "SerializeToString", None):
+        serializer = getattr(data, "SerializeToString", None)
+        if callable(serializer):
             logger.debug("Serializing protobuf as data: %s", stripnl(data))
-            data = data.SerializeToString()
+            data = serializer()
 
         logger.debug("len(data): %s", len(data))
         logger.debug(
@@ -2120,54 +2121,54 @@ class MeshInterface:  # pylint: disable=R0902
             logger.warning(
                 "Not sending packet because protocol use is disabled by noProto"
             )
+            return
+
+        # logger.debug(f"Sending toRadio: {stripnl(toRadio)}")
+        if not toRadio.HasField("packet"):
+            # not a meshpacket -- send immediately, give queue a chance,
+            # this makes heartbeat trigger queue
+            self._send_to_radio_impl(toRadio)
         else:
-            # logger.debug(f"Sending toRadio: {stripnl(toRadio)}")
+            # meshpacket -- queue
+            with self._queue_lock:
+                self.queue[toRadio.packet.id] = toRadio
 
-            if not toRadio.HasField("packet"):
-                # not a meshpacket -- send immediately, give queue a chance,
-                # this makes heartbeat trigger queue
-                self._send_to_radio_impl(toRadio)
-            else:
-                # meshpacket -- queue
+        resentQueue = collections.OrderedDict()
+
+        while True:
+            toResend = self._queue_pop_for_send()
+            if toResend is None:
                 with self._queue_lock:
-                    self.queue[toRadio.packet.id] = toRadio
+                    queue_has_items = bool(self.queue)
+                if not queue_has_items:
+                    break
+                logger.debug("Waiting for free space in TX Queue")
+                time.sleep(QUEUE_WAIT_DELAY_SECONDS)
+                continue
 
-            resentQueue = collections.OrderedDict()
+            packetId, packet = toResend
+            # logger.warn(f"packet: {packetId:08x} {packet}")
+            resentQueue[packetId] = packet
+            if not isinstance(packet, mesh_pb2.ToRadio):
+                continue
+            if packet != toRadio:
+                logger.debug("Resending packet ID %08x %s", packetId, packet)
+            self._send_to_radio_impl(packet)
 
-            while True:
-                toResend = self._queue_pop_for_send()
-                if toResend is None:
-                    with self._queue_lock:
-                        queue_has_items = bool(self.queue)
-                    if not queue_has_items:
-                        break
-                    logger.debug("Waiting for free space in TX Queue")
-                    time.sleep(QUEUE_WAIT_DELAY_SECONDS)
-                    continue
-
-                packetId, packet = toResend
-                # logger.warn(f"packet: {packetId:08x} {packet}")
-                resentQueue[packetId] = packet
-                if not isinstance(packet, mesh_pb2.ToRadio):
-                    continue
-                if packet != toRadio:
-                    logger.debug("Resending packet ID %08x %s", packetId, packet)
-                self._send_to_radio_impl(packet)
-
-            # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
-            for packetId, packet in resentQueue.items():
+        # logger.warn("resentQueue: " + " ".join(f'{k:08x}' for k in resentQueue))
+        for packetId, packet in resentQueue.items():
+            with self._queue_lock:
+                # Returns False if packetId is absent (default) or if a
+                # False marker was stored for an earlier unexpected ACK.
+                # Both cases indicate "already ACKed" for resend purposes.
+                acked = self.queue.pop(packetId, False) is False
+            if acked:  # Packet got acked under us
+                logger.debug("packet %08x got acked under us", packetId)
+                continue
+            if packet:
                 with self._queue_lock:
-                    # Returns False if packetId is absent (default) or if a
-                    # False marker was stored for an earlier unexpected ACK.
-                    # Both cases indicate "already ACKed" for resend purposes.
-                    acked = self.queue.pop(packetId, False) is False
-                if acked:  # Packet got acked under us
-                    logger.debug("packet %08x got acked under us", packetId)
-                    continue
-                if packet:
-                    with self._queue_lock:
-                        self.queue[packetId] = packet
-            # logger.warn("queue + resentQueue: " + " ".join(f'{k:08x}' for k in self.queue))
+                    self.queue[packetId] = packet
+        # logger.warn("queue + resentQueue: " + " ".join(f'{k:08x}' for k in self.queue))
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Transport hook that delivers a ToRadio protobuf to the radio device.

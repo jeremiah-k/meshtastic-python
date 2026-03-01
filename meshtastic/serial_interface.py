@@ -35,6 +35,23 @@ SERIAL_SETTLING_DELAY = 0.1
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
+    def _resolve_dev_path(self) -> str | None:
+        """Return an explicit or auto-detected serial device path."""
+        if self.devPath is not None:
+            return self.devPath
+
+        ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
+        logger.debug("ports: %s", ports)
+        if len(ports) == 0:
+            return None
+        if len(ports) > 1:
+            message: str = (
+                "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
+            )
+            message += f"  Ports detected: {ports}"
+            raise self.MeshInterfaceError(message)
+        return ports[0]
+
     # pylint: disable=R0917
     def __init__(
         self,
@@ -74,33 +91,22 @@ class SerialInterface(StreamInterface):
         self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
 
         self.devPath: str | None = devPath
-
-        if self.devPath is None:
-            ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
-            logger.debug("ports: %s", ports)
-            if len(ports) == 0:
-                logger.warning(
-                    "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
-                )
-                # Ensure base classes are initialized so close() is safe
-                # Use noProto=True for fallback since no stream is available
-                StreamInterface.__init__(
-                    self,
-                    debugOut=debugOut,
-                    noProto=True,
-                    connectNow=False,
-                    noNodes=noNodes,
-                    timeout=timeout,
-                )
-                return
-            elif len(ports) > 1:
-                message: str = (
-                    "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
-                )
-                message += f"  Ports detected: {ports}"
-                raise self.MeshInterfaceError(message)
-            else:
-                self.devPath = ports[0]
+        resolved_dev_path = self._resolve_dev_path()
+        if resolved_dev_path is None:
+            logger.warning(
+                "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."
+            )
+            # Ensure base classes are initialized so close() is safe.
+            # Use noProto=True for fallback since no stream is available.
+            super().__init__(
+                debugOut=debugOut,
+                noProto=True,
+                connectNow=False,
+                noNodes=noNodes,
+                timeout=timeout,
+            )
+            return
+        self.devPath = resolved_dev_path
 
         logger.debug("Connecting to %s", self.devPath)
 
@@ -125,8 +131,7 @@ class SerialInterface(StreamInterface):
         try:
             self.stream.flush()
             time.sleep(SERIAL_SETTLING_DELAY)
-            StreamInterface.__init__(
-                self,
+            super().__init__(
                 debugOut=debugOut,
                 noProto=noProto,
                 connectNow=connectNow,
@@ -202,7 +207,7 @@ class SerialInterface(StreamInterface):
                 time.sleep(SERIAL_SETTLING_DELAY)
         logger.debug("Closing Serial stream")
         try:
-            StreamInterface.close(self)
+            super().close()
         finally:
             self.stream = None
 

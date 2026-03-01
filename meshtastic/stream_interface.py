@@ -150,8 +150,8 @@ class StreamInterface(MeshInterface):
             target=self._reader, args=(), daemon=True, name="stream reader"
         )
 
-        MeshInterface.__init__(
-            self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
+        super().__init__(
+            debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
         )
 
         # Start the reader thread after superclass constructor completes init
@@ -182,10 +182,11 @@ class StreamInterface(MeshInterface):
         """
 
         _provides_own_stream = getattr(self, "_provides_own_stream", False)
+        requires_stream = not _provides_own_stream
         # Check if thread has already been started (threads can only be started once)
         # If ident is not None, the thread was started before and needs recreation.
         with self._connect_lock:
-            if self.stream is None and not _provides_own_stream:
+            if self.stream is None and requires_stream:
                 raise StreamInterface.StreamInterfaceError(
                     StreamInterface.StreamInterfaceError.CONNECT_WITHOUT_STREAM_MSG
                 )
@@ -197,7 +198,8 @@ class StreamInterface(MeshInterface):
             # All reconnect side effects happen under the same lock so a concurrent
             # close() intent is not accidentally cleared by an early-return connect().
             self._wantExit = False
-            if not _provides_own_stream and self.stream is not None:
+            should_wake_stream = requires_stream and self.stream is not None
+            if should_wake_stream:
                 # Send bogus UART characters to wake sleeping devices and force parser
                 # resynchronization before starting a new reader thread.
                 p: bytes = bytes([START2] * WAKE_BYTE_COUNT)
@@ -227,7 +229,7 @@ class StreamInterface(MeshInterface):
 
         This method calls MeshInterface._disconnected(self), then, if self.stream is not None, closes it and sets self.stream to None.
         """
-        MeshInterface._disconnected(self)
+        super()._disconnected()
 
         with self._connect_lock:
             logger.debug("Closing our port")
@@ -279,12 +281,13 @@ class StreamInterface(MeshInterface):
             raise StreamInterface.StreamClosedError(
                 str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
             ) from exc
-        # win11 might need a bit more time, too
-        if self.is_windows11:
-            time.sleep(WINDOWS11_WRITE_DELAY)
-        else:
-            # we sleep here to give the TBeam a chance to work
-            time.sleep(STANDARD_WRITE_DELAY)
+        self._sleep_after_write()
+
+    def _sleep_after_write(self) -> None:
+        """Pause after writes so device-side parsers can process framed input."""
+        # Win11 sometimes needs additional settling time after writes.
+        delay = WINDOWS11_WRITE_DELAY if self.is_windows11 else STANDARD_WRITE_DELAY
+        time.sleep(delay)
 
     def _read_bytes(self, length: int) -> bytes:
         """Read up to the specified number of bytes from the configured underlying stream.
@@ -361,7 +364,7 @@ class StreamInterface(MeshInterface):
         with self._connect_lock:
             self._wantExit = True
             self._close_stream_safely()
-        MeshInterface.close(self)
+        super().close()
 
     def _join_reader_thread(self) -> None:
         """Join the reader thread when it is alive and not the current thread."""
@@ -401,12 +404,12 @@ class StreamInterface(MeshInterface):
             logger.debug("Non-UTF8 log byte encountered: %r", b)
 
         if utf == "\r":
-            pass  # ignore
-        elif utf == "\n":
+            return
+        if utf == "\n":
             self._handle_log_line(self.cur_log_line)
             self.cur_log_line = ""
-        else:
-            self.cur_log_line += utf
+            return
+        self.cur_log_line += utf
 
     def _reader(self) -> None:
         """Background reader loop that reads from the configured stream and dispatches device log bytes and framed radio messages.
