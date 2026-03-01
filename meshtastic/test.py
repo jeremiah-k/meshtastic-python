@@ -422,12 +422,13 @@ def onConnection(interface: Any = None, topic: Any = pub.AUTO_TOPIC) -> None:
 
 
 def openDebugLog(portName: str) -> io.TextIOWrapper:
-    """Create a per-port debug log file and return its open file handle.
+    r"""Create a per-port debug log file and return its open file handle.
 
     Parameters
     ----------
     portName : str
-        Serial port name used to derive the filename; '/' characters will be replaced with '_'.
+        Serial port name used to derive the filename; '/' and '\\' characters
+        will be replaced with '_'.
 
     Returns
     -------
@@ -436,7 +437,8 @@ def openDebugLog(portName: str) -> io.TextIOWrapper:
         Caller must close the returned handle (for example via
         ``ExitStack.enter_context`` as done in ``testAll``).
     """
-    debugname = "log" + portName.replace("/", "_")
+    safe_port_name = portName.replace("/", "_").replace("\\", "_")
+    debugname = f"log{safe_port_name}"
     logger.info("Writing serial debugging to %s", debugname)
     return open(debugname, "w+", buffering=1, encoding="utf8")
 

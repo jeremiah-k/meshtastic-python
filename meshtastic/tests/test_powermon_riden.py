@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ..powermon.power_supply import PowerError
+
 try:
     from ..powermon.riden import RidenPowerSupply
 except ImportError:
@@ -35,6 +37,25 @@ def test_power_on_applies_voltage_and_enables_output(
     pps.powerOn()
     r_mock.set_v_set.assert_called_once_with(4.2)
     r_mock.set_output.assert_called_once_with(True)
+
+
+@pytest.mark.unit
+def test_power_on_rejects_non_positive_voltage(
+    riden_stub: RidenPowerSupply,
+) -> None:
+    """PowerOn should fail fast when the configured voltage is not positive."""
+    pps = riden_stub
+    pps.v = 0.0
+    r_mock = cast(MagicMock, pps.r)
+
+    with pytest.raises(
+        PowerError,
+        match=r"Voltage must be set to a positive value before powerOn\(\)\.",
+    ):
+        pps.powerOn()
+
+    r_mock.set_v_set.assert_not_called()
+    r_mock.set_output.assert_not_called()
 
 
 @pytest.mark.unit

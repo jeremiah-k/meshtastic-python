@@ -11,7 +11,7 @@ import meshtastic.serial_interface
 def main() -> None:
     """Send one text message over a serial-connected radio."""
     if len(sys.argv) < 2:
-        print(f"usage: {sys.argv[0]} message")
+        print(f"usage: {sys.argv[0]} message", file=sys.stderr)
         raise SystemExit(3)
 
     # By default this will auto-detect a Meshtastic device.

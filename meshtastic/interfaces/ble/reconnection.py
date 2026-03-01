@@ -33,6 +33,12 @@ def _camel_to_snake(name: str) -> str:
     return "".join(chars)
 
 
+def _snake_to_camel(name: str) -> str:
+    """Convert snake_case identifier to lower camelCase."""
+    head, *tail = name.split("_")
+    return head + "".join(piece.capitalize() for piece in tail)
+
+
 class ReconnectPolicyMissingMethodError(AttributeError):
     """Raised when a required reconnect-policy method is missing."""
 
@@ -197,22 +203,22 @@ class ReconnectWorker:
         Any
             The return value from the policy method.
         """
-        method = getattr(self.reconnect_policy, method_name, None)
-        if callable(method):
-            return method(*args)
-
+        candidate_names: list[str] = [method_name]
         snake_name = _camel_to_snake(method_name)
         if snake_name != method_name:
-            snake_method = getattr(self.reconnect_policy, snake_name, None)
-            if callable(snake_method):
-                return snake_method(*args)
+            candidate_names.append(snake_name)
+        camel_name = _snake_to_camel(snake_name)
+        if camel_name not in candidate_names:
+            candidate_names.append(camel_name)
+
+        for candidate_name in candidate_names:
+            candidate_method = getattr(self.reconnect_policy, candidate_name, None)
+            if callable(candidate_method):
+                return candidate_method(*args)
 
         # Backward compatibility for test doubles that only expose underscored methods.
-        for fallback_name in (
-            f"_{method_name}",
-            f"_{snake_name}",
-        ):
-            fallback = getattr(self.reconnect_policy, fallback_name, None)
+        for candidate_name in candidate_names:
+            fallback = getattr(self.reconnect_policy, f"_{candidate_name}", None)
             if callable(fallback):
                 return fallback(*args)
         raise ReconnectPolicyMissingMethodError(method_name)

@@ -32,10 +32,11 @@ def test_examples_hello_world_serial_no_arg(
     with pytest.raises(SystemExit) as exc_info:
         _run_hello_world_serial(monkeypatch)
 
-    out, _err = capsys.readouterr()
+    out, err = capsys.readouterr()
     assert exc_info.value.code == 3
-    assert out.startswith("usage: ")
-    assert out.strip().endswith("hello_world_serial.py message")
+    assert out == ""
+    assert err.startswith("usage: ")
+    assert err.strip().endswith("hello_world_serial.py message")
 
 
 @pytest.mark.examples

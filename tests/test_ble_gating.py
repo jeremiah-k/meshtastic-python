@@ -209,6 +209,16 @@ class TestMarkDisconnected:
 
         assert key in _CONNECTED_ADDRS
 
+    def test_mark_disconnected_ignores_owner_when_record_has_no_owner_id(self):
+        """Owner-scoped disconnect should not clear claims without a matching owner id."""
+        key = _addr_key("aabbccddeeff")
+        assert key is not None
+
+        _mark_connected("aabbccddeeff")
+        _mark_disconnected("aabbccddeeff", owner=object())
+
+        assert key in _CONNECTED_ADDRS
+
 
 @pytest.mark.usefixtures("clear_registry")
 class TestIsCurrentlyConnectedElsewhere:

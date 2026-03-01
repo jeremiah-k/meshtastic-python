@@ -10,9 +10,11 @@ try:
         AWAIT_TIMEOUT_BUFFER_SECONDS,
         DIRECT_CONNECT_TIMEOUT_SECONDS,
         ClientManager,
+        ConnectionOrchestrator,
         ConnectionValidator,
     )
     from meshtastic.interfaces.ble.constants import BLEConfig
+    from meshtastic.interfaces.ble.reconnection import ReconnectWorker
     from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
@@ -220,3 +222,89 @@ def test_client_manager_update_client_reference_schedules_close() -> None:
     # Should have created and started a thread
     thread_coordinator._create_thread.assert_called_once()
     thread_coordinator._start_thread.assert_called_once()
+
+
+@pytest.mark.unit
+def test_client_manager_connect_client_refreshes_services_on_non_callable_probe() -> None:
+    """_connect_client should refresh services when get_characteristic is non-callable."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    manager = ClientManager(
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+        error_handler=MagicMock(),
+    )
+
+    services = MagicMock()
+    services.get_characteristic = object()
+    bleak_client = MagicMock()
+    bleak_client.services = services
+
+    client = MagicMock()
+    client.bleak_client = bleak_client
+
+    manager._connect_client(client, timeout=1.0)
+
+    client.connect.assert_called_once()
+    client._get_services.assert_called_once()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_call_policy_resolves_snake_to_legacy_camelcase() -> None:
+    """_call_policy should resolve snake_case requests to legacy camelCase methods."""
+
+    class LegacyCamelPolicy:
+        """Policy stub exposing only legacy camelCase methods."""
+
+        def nextAttempt(self) -> tuple[float, bool]:
+            """Return a retry delay and continuation flag."""
+            return 0.25, False
+
+        def getAttemptCount(self) -> int:
+            """Return a stable retry attempt count for assertions."""
+            return 7
+
+    policy = LegacyCamelPolicy()
+    worker = ReconnectWorker(MagicMock(), policy)  # type: ignore[arg-type]
+
+    assert worker._call_policy("next_attempt") == (0.25, False)
+    assert worker._call_policy("get_attempt_count") == 7
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> None:
+    """Interrupts during connect should reset state to DISCONNECTED and close client."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+
+    client_manager = MagicMock()
+    mock_client = MagicMock()
+    client_manager._create_client.return_value = mock_client
+    client_manager._connect_client.side_effect = KeyboardInterrupt()
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    assert state_manager._current_state == ConnectionState.DISCONNECTED
+    client_manager._safe_close_client.assert_called_once_with(mock_client)

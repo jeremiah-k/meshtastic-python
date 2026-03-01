@@ -29,7 +29,7 @@ def onConnection(  # pylint: disable=unused-argument
 def main() -> None:
     """Connect to a TCP radio, print received packets, and send a greeting on connect."""
     if len(sys.argv) < 2:
-        print(f"usage: {sys.argv[0]} host")
+        print(f"usage: {sys.argv[0]} host", file=sys.stderr)
         sys.exit(1)
 
     recv_topic = "meshtastic.receive"
@@ -43,7 +43,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("Exiting...")
     except OSError as exc:
-        print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
+        print(f"Error: Could not connect to {sys.argv[1]} ({exc})", file=sys.stderr)
         sys.exit(1)
     finally:
         pub.unsubscribe(onReceive, recv_topic)

@@ -150,7 +150,7 @@ class PowerLogger:
             raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
-        power_schema_fields: list[pa.Field] = [
+        power_schema_fields: list[pa.Field[pa.DataType]] = [
             pa.field("time", pa.timestamp("us")),
             pa.field("average_mA", pa.float64()),
             pa.field("max_mA", pa.float64()),
@@ -714,8 +714,8 @@ class LogSet:
             if slog_close_exc is not None:
                 if power_close_exc is not None:
                     # Python 3.10 has no ExceptionGroup, so preserve slog close
-                    # as primary and attach power close as secondary context.
-                    slog_close_exc.__context__ = power_close_exc
+                    # as primary and chain power close as the explicit cause.
+                    raise slog_close_exc from power_close_exc
                 raise slog_close_exc
             if power_close_exc is not None:
                 raise power_close_exc

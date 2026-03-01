@@ -198,7 +198,8 @@ class ClientManager:
                 exc,
             )
             services = None
-        if not services or not getattr(services, "get_characteristic", None):
+        get_characteristic = getattr(services, "get_characteristic", None)
+        if not services or not callable(get_characteristic):
             logger.debug(
                 "BLE services not available immediately after connect; getting services"
             )
@@ -526,6 +527,9 @@ class ConnectionOrchestrator:
             self._transition_failure_to_disconnected("BleakDBusError during connect")
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            self._transition_failure_to_disconnected(
+                "connect interrupted by SystemExit/KeyboardInterrupt"
+            )
             # Clean up client before re-raising to avoid resource leak
             if client:
                 self.client_manager._safe_close_client(client)

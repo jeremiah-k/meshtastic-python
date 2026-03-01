@@ -76,7 +76,7 @@ class PPK2PowerSupply(PowerSupply):
         self.max_data_len: int = 0
 
         # Normally we just sleep with a timeout on this condition (polling the power measurement data repeatedly)
-        # but any time our measurements have been fully consumed (via reset_measurements) we notify() this condition
+        # but any time our measurements have been fully consumed (via resetMeasurements) we notify() this condition
         # to trigger a new reading ASAP.
         self._want_measurement = threading.Condition()
 

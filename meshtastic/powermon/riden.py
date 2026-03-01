@@ -8,7 +8,11 @@ from typing import Any, cast
 import riden
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
-from .power_supply import PowerSupply
+from .power_supply import PowerError, PowerSupply
+
+INVALID_POWER_ON_VOLTAGE_ERROR = (
+    "Voltage must be set to a positive value before powerOn()."
+)
 
 Riden = cast(type[Any], riden.Riden)  # type: ignore[attr-defined]
 
@@ -42,6 +46,8 @@ class RidenPowerSupply(PowerSupply):
 
     def powerOn(self) -> None:
         """Power on the supply, with reasonable defaults for meshtastic devices."""
+        if self.v <= 0:
+            raise PowerError(INVALID_POWER_ON_VOLTAGE_ERROR)
         self.r.set_v_set(
             self.v
         )  # my WM1110 devboard header is directly connected to the 3.3V rail

@@ -99,8 +99,19 @@ def _close_discovery_client_best_effort(client: Any) -> None:
     try:
         running_loop = asyncio.get_running_loop()
     except RuntimeError:
+        close_timeout = BLEConfig.BLECLIENT_EVENT_THREAD_JOIN_TIMEOUT
         try:
-            asyncio.run(_await_close_result(awaitable_result))
+            asyncio.run(
+                asyncio.wait_for(
+                    _await_close_result(awaitable_result),
+                    timeout=close_timeout,
+                )
+            )
+        except asyncio.TimeoutError:
+            logger.debug(
+                "Timed out waiting to close/disconnect discarded discovery client of type %s.",
+                type(client).__name__,
+            )
         except Exception:  # noqa: BLE001 - best effort cleanup path
             logger.debug(
                 "Failed to await close/disconnect for discarded discovery client of type %s.",
