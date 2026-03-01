@@ -43,7 +43,7 @@ def test_set_voltage_accepts_zero(power_supply: PowerSupply) -> None:
     "value",
     [True, math.nan, math.inf, -math.inf, -0.1, MAX_SUPPLY_VOLTAGE_V + 0.1],
 )
-def test_set_voltage_rejects_bool_nonfinite_and_negative(
+def test_set_voltage_rejects_invalid_values(
     power_supply: PowerSupply,
     value: float | bool,
 ) -> None:
