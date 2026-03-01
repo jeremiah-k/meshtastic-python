@@ -23,6 +23,9 @@ def _warn_deprecated_once(key: str, message: str) -> None:
     warnings.warn(
         message,
         DeprecationWarning,
+        # caller -> deprecated alias -> _deprecated_alias_current_method ->
+        # _warn_deprecated_once: stacklevel=4 points at the original caller.
+        # Verified by test_deprecated_current_aliases_warn_once_per_method.
         stacklevel=4,
     )
 

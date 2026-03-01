@@ -79,7 +79,7 @@ class SupportedDevice:
         elif isinstance(raw_aliases_obj, (tuple, list)):
             raw_aliases = raw_aliases_obj
         else:
-            raise TypeError(
+            self._raise_validation_error(
                 "Invalid usb_id_aliases for "
                 f"{self.name}: expected tuple/list of (vendor_id, product_id) pairs "
                 f"or None, got {type(raw_aliases_obj).__name__}"

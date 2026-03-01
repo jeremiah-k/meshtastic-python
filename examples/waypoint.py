@@ -60,7 +60,12 @@ def main() -> None:
     expire_unix: int | None = None
     if args.cmd == "create":
         try:
-            parsed_expire = datetime.datetime.fromisoformat(args.expire)
+            normalized_expire = (
+                args.expire[:-1] + "+00:00"
+                if args.expire.endswith("Z")
+                else args.expire
+            )
+            parsed_expire = datetime.datetime.fromisoformat(normalized_expire)
             if parsed_expire.tzinfo is None:
                 parsed_expire = parsed_expire.replace(tzinfo=datetime.timezone.utc)
             expire_unix = int(parsed_expire.timestamp())
@@ -73,6 +78,8 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
+            if expire_unix is None:
+                raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire))
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,

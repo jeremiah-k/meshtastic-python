@@ -77,6 +77,7 @@ from meshtastic.interfaces.ble.constants import (
     RECEIVE_THREAD_JOIN_TIMEOUT,
     SERVICE_UUID,
     TORADIO_UUID,
+    UNREACHABLE_ADDRESSED_DEVICES_MSG,
     BLEConfig,
     logger,
 )
@@ -1015,8 +1016,9 @@ class BLEInterface(MeshInterface):
         b : bytes | bytearray
             Serialized mesh_pb2.LogRecord payload.
         """
-        # Async signature is intentional for 2.7.7 API compatibility; callers
-        # may safely await this wrapper even though it returns immediately.
+        # Async signature is intentional for 2.7.7 API compatibility.
+        # Keep direct in-thread dispatch (no asyncio.to_thread/run_in_executor)
+        # so legacy callback ordering/side-effects remain synchronous.
         self._log_radio_handler(sender, b)
 
     def _legacy_log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
@@ -1197,9 +1199,7 @@ class BLEInterface(MeshInterface):
                 [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
             )
             raise self.BLEError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
-        raise AssertionError(
-            "Unreachable: all addressed_devices length cases are handled"
-        )
+        raise AssertionError(UNREACHABLE_ADDRESSED_DEVICES_MSG)
 
     # COMPAT_STABLE_SHIM: historical public BLEInterface API.
     # Keep callable without deprecation warning.

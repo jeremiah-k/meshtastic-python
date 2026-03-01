@@ -42,7 +42,13 @@ MODULE_STATE_DEFAULTS: dict[str, Any] = {
 def reset() -> None:
     """Reset module-level state variables to their defined default values.
 
-    Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to its initial pristine state.
+    Defaults are applied from MODULE_STATE_DEFAULTS to restore the module to
+    its initial pristine state.
+
+    This helper is intended for test isolation/bootstrap and is not thread-safe
+    with concurrent module attribute reads/writes. Callers that need serialized
+    access should coordinate around `_warned_deprecations_lock` (or another
+    explicit module-wide lock) before invoking reset().
 
     Returns
     -------

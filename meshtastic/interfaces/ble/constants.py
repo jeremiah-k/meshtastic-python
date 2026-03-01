@@ -129,6 +129,9 @@ CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION = (
 CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED = (
     "Connection invalidated during state transition to connected"
 )
+UNREACHABLE_ADDRESSED_DEVICES_MSG = (
+    "Unreachable: all addressed_devices length cases are handled"
+)
 
 # BLEClient-specific constants
 # Alias preserves legacy access while sourcing value from BLEConfig

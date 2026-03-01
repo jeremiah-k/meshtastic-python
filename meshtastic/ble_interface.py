@@ -15,7 +15,9 @@ try:
         BleakClient,
         BleakScanner,
     )
-    from bleak.backends.device import BLEDevice  # noqa: F401  # pylint: disable=unused-import
+    from bleak.backends.device import (  # noqa: F401  # pylint: disable=unused-import
+        BLEDevice,
+    )
     from bleak.exc import (  # noqa: F401  # pylint: disable=unused-import
         BleakDBusError,
         BleakError,
