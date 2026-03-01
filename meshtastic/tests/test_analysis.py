@@ -46,17 +46,15 @@ except ModuleNotFoundError as exc:
     raise
 
 
-def _patch_cli_exit_capture(
-    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
-) -> None:
-    """Patch analysis_main._cli_exit to capture message and raise SystemExit."""
-
-    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
-        captured["message"] = message
-        captured["code"] = return_value
-        raise SystemExit(return_value)
-
-    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+def _single_bit_power_states() -> tuple[int, int]:
+    """Return two deterministic single-bit PowerMon state values."""
+    single_bits = sorted(
+        state.number
+        for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values
+        if state.number > 0 and (state.number & (state.number - 1)) == 0
+    )
+    assert len(single_bits) >= 2
+    return single_bits[0], single_bits[1]
 
 
 @pytest.mark.unit
@@ -89,31 +87,30 @@ def test_choose_power_column_falls_back_to_new_when_legacy_all_null() -> None:
 @pytest.mark.unit
 def test_main_routes_load_errors_through_cli_exit(
     monkeypatch: pytest.MonkeyPatch,
+    cli_exit_capture: dict[str, Any],
 ) -> None:
     """main() should emit a graceful CLI error when slog loading fails."""
-    captured: dict[str, Any] = {}
 
     def _fake_create_dash(*, slog_path: str) -> NoReturn:
         _ = slog_path
         raise ValueError("bad slog")  # noqa: TRY003
 
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
-    _patch_cli_exit_capture(monkeypatch, captured)
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
         main()
 
-    assert "Error loading slog data: bad slog" in captured["message"]
-    assert captured["code"] == 1
+    assert "Error loading slog data: bad slog" in cli_exit_capture["message"]
+    assert cli_exit_capture["code"] == 1
 
 
 @pytest.mark.unit
 def test_main_routes_server_startup_errors_through_cli_exit(
     monkeypatch: pytest.MonkeyPatch,
+    cli_exit_capture: dict[str, Any],
 ) -> None:
     """main() should emit a graceful CLI error when Dash server startup fails."""
-    captured: dict[str, Any] = {}
 
     class _FailingApp:
         def run(self, *, debug: bool, host: str, port: int) -> NoReturn:
@@ -126,15 +123,14 @@ def test_main_routes_server_startup_errors_through_cli_exit(
         return _FailingApp()
 
     monkeypatch.setattr(analysis_main, "create_dash", _fake_create_dash)
-    _patch_cli_exit_capture(monkeypatch, captured)
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
         main()
 
-    assert "Error starting Dash server on 127.0.0.1:" in captured["message"]
-    assert ADDRESS_IN_USE_ERROR in captured["message"]
-    assert captured["code"] == 1
+    assert "Error starting Dash server on 127.0.0.1:" in cli_exit_capture["message"]
+    assert ADDRESS_IN_USE_ERROR in cli_exit_capture["message"]
+    assert cli_exit_capture["code"] == 1
 
 
 @pytest.mark.unit
@@ -180,15 +176,15 @@ def test_get_board_info_rejects_numpy_bool_board_id() -> None:
 @pytest.mark.unit
 def test_to_pmon_names_maps_valid_states() -> None:
     """to_pmon_names should convert valid power-monitor state integers to name strings."""
-    result = to_pmon_names([1, 2, 3])
+    bit1, bit2 = _single_bit_power_states()
+    result = to_pmon_names([bit1, bit2, bit1 | bit2])
     assert isinstance(result, list)
     assert len(result) == 3
-    assert result[0] == powermon_pb2.PowerMon.State.Name(cast(Any, 1))
-    assert result[1] == powermon_pb2.PowerMon.State.Name(cast(Any, 2))
-    # Value 3 is a combined bitmask (1|2) and should decode both bits.
+    assert result[0] == powermon_pb2.PowerMon.State.Name(cast(Any, bit1))
+    assert result[1] == powermon_pb2.PowerMon.State.Name(cast(Any, bit2))
     assert result[2] == (
-        f"{powermon_pb2.PowerMon.State.Name(cast(Any, 1))}"
-        f"|{powermon_pb2.PowerMon.State.Name(cast(Any, 2))}"
+        f"{powermon_pb2.PowerMon.State.Name(cast(Any, bit1))}"
+        f"|{powermon_pb2.PowerMon.State.Name(cast(Any, bit2))}"
     )
 
 
@@ -243,11 +239,12 @@ def test_read_pandas_preserves_nullable_dtypes(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_get_pmon_raises_extracts_raise_events() -> None:
     """get_pmon_raises should extract power-monitor raise events from slog."""
+    bit1, bit2 = _single_bit_power_states()
     # Create test data with pm_mask transitions
     dslog = pd.DataFrame(
         {
             "time": [1.0, 2.0, 3.0, 4.0],
-            "pm_mask": [0, 1, 3, 1],  # 0->1 (raise), 1->3 (raise), 3->1 (fall)
+            "pm_mask": [0, bit1, bit1 | bit2, bit1],
         }
     )
 
@@ -260,8 +257,8 @@ def test_get_pmon_raises_extracts_raise_events() -> None:
     assert len(result) == 2
     assert result["time"].tolist() == [2.0, 3.0]
     assert result["pm_raises"].tolist() == [
-        powermon_pb2.PowerMon.State.Name(cast(Any, 1)),
-        powermon_pb2.PowerMon.State.Name(cast(Any, 2)),
+        powermon_pb2.PowerMon.State.Name(cast(Any, bit1)),
+        powermon_pb2.PowerMon.State.Name(cast(Any, bit2)),
     ]
 
 
@@ -317,10 +314,11 @@ def test_get_pmon_raises_rejects_overflowing_masks() -> None:
 @pytest.mark.unit
 def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
     """get_pmon_raises should decode simultaneous multi-bit raise masks."""
+    bit1, bit2 = _single_bit_power_states()
     dslog = pd.DataFrame(
         {
             "time": [1.0, 2.0],
-            "pm_mask": [0, 3],  # 0->3 is a simultaneous two-bit raise
+            "pm_mask": [0, bit1 | bit2],
         }
     )
 
@@ -330,8 +328,8 @@ def test_get_pmon_raises_handles_multibit_raise_mask() -> None:
     assert result["time"].tolist() == [2.0]
     assert result["pm_raises"].tolist() == [
         (
-            f"{powermon_pb2.PowerMon.State.Name(cast(Any, 1))}"
-            f"|{powermon_pb2.PowerMon.State.Name(cast(Any, 2))}"
+            f"{powermon_pb2.PowerMon.State.Name(cast(Any, bit1))}"
+            f"|{powermon_pb2.PowerMon.State.Name(cast(Any, bit2))}"
         )
     ]
 

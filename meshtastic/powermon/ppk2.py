@@ -17,6 +17,7 @@ INITIAL_POLL_TIMEOUT_S: Final[float] = 0.0001  # Initial poll timeout (100μs).
 SUBSEQUENT_POLL_TIMEOUT_S: Final[float] = 0.001  # Subsequent poll timeout (1ms).
 THREAD_JOIN_TIMEOUT_S: Final[float] = 5.0  # Join timeout for measurement thread.
 STABILIZATION_DELAY_S: Final[float] = 0.2  # Delay to discard initial FIFO readings.
+READ_ERROR_RETRY_DELAY_S: Final[float] = 0.05  # Backoff after transient read errors.
 
 
 class PPK2PowerSupply(PowerSupply):
@@ -117,29 +118,42 @@ class PPK2PowerSupply(PowerSupply):
             # Always reads 4096 bytes, even if there are no new samples.
             # This I/O must happen outside _want_measurement to avoid blocking
             # reset/close notifications.
-            read_data = self.r.get_data()
-            if read_data != b"":
-                samples, _ = self.r.get_samples(read_data)
-
-                # update invariants
-                if len(samples) > 0:
-                    # The following operations could be expensive, so do outside of the lock.
-                    # TODO: Profile representative workloads and switch to numpy reduction
-                    # helpers only if end-to-end CPU usage improves.
-                    batch_max = max(samples)
-                    batch_min = min(samples)
-                    latest_sum = sum(samples)
-                    with self._result_lock:
-                        if self.current_num_samples == 0:
-                            # First set of new reads, reset min/max
-                            self.current_max = batch_max
-                            self.current_min = batch_min
-                        else:
-                            self.current_max = max(self.current_max, batch_max)
-                            self.current_min = min(self.current_min, batch_min)
-                        self.current_sum += latest_sum
-                        self.current_num_samples += len(samples)
-                    # logging.debug(f"PPK2 data_len={len(read_data)}, sample_len={len(samples)}")
+            read_data = b""
+            try:
+                read_data = self.r.get_data()
+                if read_data != b"":
+                    samples, _ = self.r.get_samples(read_data)
+                else:
+                    samples = []
+            except Exception as exc:  # noqa: BLE001 - keep background reader alive
+                if not self.measuring:
+                    break
+                logging.warning(
+                    "PPK2 read loop error; retrying: %s",
+                    exc,
+                    exc_info=True,
+                )
+                time.sleep(READ_ERROR_RETRY_DELAY_S)
+                continue
+            # update invariants
+            if len(samples) > 0:
+                # The following operations could be expensive, so do outside of the lock.
+                # TODO: Profile representative workloads and switch to numpy reduction
+                # helpers only if end-to-end CPU usage improves.
+                batch_max = max(samples)
+                batch_min = min(samples)
+                latest_sum = sum(samples)
+                with self._result_lock:
+                    if self.current_num_samples == 0:
+                        # First set of new reads, reset min/max
+                        self.current_max = batch_max
+                        self.current_min = batch_min
+                    else:
+                        self.current_max = max(self.current_max, batch_max)
+                        self.current_min = min(self.current_min, batch_min)
+                    self.current_sum += latest_sum
+                    self.current_num_samples += len(samples)
+                # logging.debug(f"PPK2 data_len={len(read_data)}, sample_len={len(samples)}")
 
             with self._result_lock:
                 self.num_data_reads += 1
@@ -225,15 +239,15 @@ class PPK2PowerSupply(PowerSupply):
                     logging.warning(
                         "PPK2 measurement thread did not stop within timeout; forcing transport cleanup."
                     )
-        close_method = getattr(self.r, "close", None)
-        if callable(close_method):
-            with suppress(Exception):
-                close_method()  # pylint: disable=not-callable
+            close_method = getattr(self.r, "close", None)
+            if callable(close_method):
+                with suppress(Exception):
+                    close_method()  # pylint: disable=not-callable
 
-        serial_handle = getattr(self.r, "ser", None)
-        if serial_handle is not None:
-            with suppress(Exception):
-                serial_handle.close()
+            serial_handle = getattr(self.r, "ser", None)
+            if serial_handle is not None:
+                with suppress(Exception):
+                    serial_handle.close()
         super().close()
 
     def setIsSupply(self, is_supply: bool) -> None:

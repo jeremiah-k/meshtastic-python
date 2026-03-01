@@ -127,6 +127,7 @@ sendingInterface: Any = None
 expected_from_node: int | None = None
 expected_to_node: int | None = None
 expected_text: str | None = None
+expected_binary_payload: bytes | None = None
 guards_lock = threading.Lock()
 
 logger = logging.getLogger(__name__)
@@ -184,8 +185,25 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
                 if isinstance(decoded, dict)
                 else getattr(decoded, "text", None)
             )
+            decoded_payload = (
+                decoded.get("payload")
+                if isinstance(decoded, dict)
+                else getattr(decoded, "payload", None)
+            )
             if expected_text is not None and decoded_text != expected_text:
                 return
+            if expected_binary_payload is not None:
+                payload_bytes = (
+                    decoded_payload
+                    if isinstance(decoded_payload, bytes)
+                    else (
+                        bytes(decoded_payload)
+                        if isinstance(decoded_payload, bytearray)
+                        else None
+                    )
+                )
+                if payload_bytes != expected_binary_payload:
+                    return
             # We only care about clear text packets.
             if receivedPackets is not None:
                 receivedPackets.append(DotMap(packet))
@@ -246,6 +264,7 @@ def testSend(
     global expected_from_node
     global expected_to_node
     global expected_text
+    global expected_binary_payload
     fromNode = fromInterface.myInfo.my_node_num
 
     if isBroadcast:
@@ -267,6 +286,9 @@ def testSend(
         expected_from_node = fromNode
         expected_to_node = toNode
         expected_text = None if asBinary else f"Test {local_test_id}"
+        expected_binary_payload = (
+            f"Binary {local_test_id}".encode("utf-8") if asBinary else None
+        )
     try:
         try:
             if not asBinary:
@@ -291,6 +313,7 @@ def testSend(
             expected_from_node = None
             expected_to_node = None
             expected_text = None
+            expected_binary_payload = None
             sendingInterface = None
             receivedPackets = None
             packet_received_event.clear()

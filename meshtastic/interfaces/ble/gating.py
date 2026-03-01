@@ -304,6 +304,13 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
         time.monotonic() - marked_at > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
     ):
         _remove_connected_record_locked(key)
+        is_owned = getattr(_REGISTRY_LOCK, "_is_owned", None)
+        if callable(is_owned):
+            assert (
+                is_owned()
+            )  # Nested lock acquisition below relies on RLock ownership.
+        # Intentional nested acquisition: _cleanup_addr_lock() also takes
+        # _REGISTRY_LOCK, and _REGISTRY_LOCK is a reentrant RLock.
         _cleanup_addr_lock(key)
         return True
     return False

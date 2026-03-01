@@ -916,7 +916,7 @@ class BLEInterface(MeshInterface):
                 self._notification_manager._subscribe(uuid, handler)
             return handler
 
-        # Optional log notifications - failures are non-fatal
+        # Optional log notifications - failures are non-fatal.
         try:
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
                 legacy_handler = _get_or_create_handler(
@@ -927,6 +927,19 @@ class BLEInterface(MeshInterface):
                     legacy_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
+        except (
+            BleakError,
+            BleakDBusError,
+            RuntimeError,
+            BLEClient.BLEError,
+            self.BLEError,
+        ) as e:
+            logger.debug(
+                "Failed to start optional legacy log notifications for %s: %s",
+                LEGACY_LOGRADIO_UUID,
+                e,
+            )
+        try:
             if client.has_characteristic(LOGRADIO_UUID):
                 log_handler = _get_or_create_handler(
                     LOGRADIO_UUID, lambda: _safe_log_handler
@@ -943,7 +956,11 @@ class BLEInterface(MeshInterface):
             BLEClient.BLEError,
             self.BLEError,
         ) as e:
-            logger.debug("Failed to start optional log notifications: %s", e)
+            logger.debug(
+                "Failed to start optional log notifications for %s: %s",
+                LOGRADIO_UUID,
+                e,
+            )
 
         # Critical notification for packet ingress
         from_num_handler = _get_or_create_handler(
@@ -1142,12 +1159,12 @@ class BLEInterface(MeshInterface):
         addressed_devices = self._discovery_manager._discover_devices(target)
 
         if len(addressed_devices) == 0:
-            if address:
-                if not _looks_like_ble_address(address):
+            if target:
+                if not _looks_like_ble_address(target):
                     raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
                 logger.warning(
                     "No peripherals found for %s via scan; attempting direct address connect",
-                    address,
+                    target,
                 )
                 if not sanitized:
                     raise self.BLEError(ERROR_ADDRESS_RESOLUTION_FAILED)
@@ -1156,12 +1173,12 @@ class BLEInterface(MeshInterface):
                 # verification, supporting pre-bonded devices (e.g., via bluetoothctl).
                 logger.debug(
                     "Creating synthetic BLEDevice for direct connect: address=%s, sanitized=%s",
-                    address,
+                    target,
                     sanitized,
                 )
                 # Use the backend-usable raw address as the BLEDevice identity.
                 # `sanitized` remains for registry/discovery key normalization.
-                return BLEDevice(address, address, {})
+                return BLEDevice(target, target, {})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
@@ -1674,13 +1691,13 @@ class BLEInterface(MeshInterface):
                         except self.BLEError:
                             # Retry policy exhausted, treat as fatal
                             logger.error("Fatal BLE read error after retries: %s", e)
-                            if not self._state_manager._is_closing:
+                            if not self._is_connection_closing:
                                 self.close()
                             return
                     except (RuntimeError, OSError) as e:
                         # Treat these as fatal errors that should close the interface
                         logger.error("Fatal error in BLE receive thread: %s", e)
-                        if not self._state_manager._is_closing:
+                        if not self._is_connection_closing:
                             self.close()
                         return
                     except (
@@ -1714,7 +1731,7 @@ class BLEInterface(MeshInterface):
         disconnect_reason : str
             Reason string passed to disconnect handling for diagnostics.
         """
-        if self._state_manager._is_closing:
+        if self._is_connection_closing:
             return
         with self._state_lock:
             current_client = self.client

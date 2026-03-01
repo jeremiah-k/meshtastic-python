@@ -162,6 +162,14 @@ def read_pandas(filepath: str) -> pd.DataFrame:
     return feather.read_table(filepath).to_pandas(types_mapper=cast(Any, _types_mapper))
 
 
+def _bad_row_preview(index: pd.Index, invalid_mask: Any) -> tuple[list[Any], str]:
+    """Return a short row-index preview and suffix for validation errors."""
+    bad_rows = index[invalid_mask].tolist()
+    bad_rows_preview = bad_rows[:5]
+    suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
+    return bad_rows_preview, suffix
+
+
 def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     """Extract rows where one or more power monitors transitioned to the raised state.
 
@@ -190,26 +198,22 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     pm_mask_array = pm_mask_series.to_numpy(copy=False)
     is_integral = np.equal(np.mod(pm_mask_array, 1), 0)
     if not np.all(is_integral):
-        bad_rows = pmon_events.index[~is_integral].tolist()
-        bad_rows_preview = bad_rows[:5]
-        suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
+        bad_rows_preview, suffix = _bad_row_preview(pmon_events.index, ~is_integral)
         raise ValueError(  # noqa: TRY003
             f"pm_mask contains non-integer values at rows {bad_rows_preview}{suffix}"
         )
     is_non_negative = np.greater_equal(pm_mask_array, 0)
     if not np.all(is_non_negative):
-        bad_rows = pmon_events.index[~is_non_negative].tolist()
-        bad_rows_preview = bad_rows[:5]
-        suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
+        bad_rows_preview, suffix = _bad_row_preview(pmon_events.index, ~is_non_negative)
         raise ValueError(  # noqa: TRY003
             f"pm_mask contains negative values at rows {bad_rows_preview}{suffix}"
         )
     uint64_max = np.iinfo(np.uint64).max
     is_within_uint64 = np.less_equal(pm_mask_array, uint64_max)
     if not np.all(is_within_uint64):
-        bad_rows = pmon_events.index[~is_within_uint64].tolist()
-        bad_rows_preview = bad_rows[:5]
-        suffix = "..." if len(bad_rows) > len(bad_rows_preview) else ""
+        bad_rows_preview, suffix = _bad_row_preview(
+            pmon_events.index, ~is_within_uint64
+        )
         raise ValueError(  # noqa: TRY003
             f"pm_mask contains values outside uint64 range at rows {bad_rows_preview}{suffix}"
         )

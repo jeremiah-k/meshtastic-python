@@ -2,12 +2,13 @@
 
 import argparse
 import copy
+import importlib
 import math
 import shutil
 import threading
 from collections.abc import Generator
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -25,6 +26,15 @@ if TYPE_CHECKING:
     from meshtastic.powermon.stress import PowerStressClient
 
 _MT_CONFIG_SENTINEL = object()
+_OPTIONAL_ANALYSIS_DEPS = {
+    "dash",
+    "dash_bootstrap_components",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "plotly",
+    "pyarrow",
+}
 
 
 def _create_context_manager_mock(spec_class: type[Any]) -> MagicMock:
@@ -194,6 +204,28 @@ def mt_config_state() -> Generator[None, None, None]:
             warned_deprecations_restore.update(warned_snapshot)
         else:
             mt_config._warned_deprecations = set(warned_snapshot)
+
+
+@pytest.fixture
+def cli_exit_capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Patch analysis_main._cli_exit and return a capture dict for message/code assertions."""
+    try:
+        analysis_main = importlib.import_module("meshtastic.analysis.__main__")
+    except ModuleNotFoundError as exc:
+        missing = (exc.name or "").split(".")[0]
+        if missing in _OPTIONAL_ANALYSIS_DEPS:
+            pytest.skip("Can't import meshtastic.analysis")
+        raise
+
+    captured: dict[str, Any] = {}
+
+    def _fake_cli_exit(message: str, return_value: int = 1) -> NoReturn:
+        captured["message"] = message
+        captured["code"] = return_value
+        raise SystemExit(return_value)
+
+    monkeypatch.setattr(analysis_main, "_cli_exit", _fake_cli_exit)
+    return captured
 
 
 @pytest.fixture

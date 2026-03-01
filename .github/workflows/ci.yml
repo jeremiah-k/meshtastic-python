@@ -83,6 +83,8 @@ jobs:
       - name: Check types with mypy
         if: ${{ matrix.python-version == '3.13' }}
         run: poetry run mypy meshtastic/
+  # Fast install sanity check across Python versions.
+  # Full tests and lint/type checks run in the build job above.
   validate:
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.python-version == '3.14' }}
