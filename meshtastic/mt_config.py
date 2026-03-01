@@ -121,7 +121,7 @@ _COMPAT_ALIASES: dict[str, str] = {
 
 # Track which deprecation warnings have been emitted (warn-once per process)
 _warned_deprecations: set[str] = set()
-_warned_deprecations_lock = threading.Lock()
+_warned_deprecations_lock: threading.Lock = threading.Lock()
 
 
 def _warn_compat_alias_once(old_name: str, new_name: str) -> None:

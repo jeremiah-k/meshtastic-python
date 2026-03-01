@@ -37,7 +37,7 @@ def test_init_on_text_receive_with_exception(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test _on_text_receive."""
+    """Test _on_text_receive logs error when packet is malformatted."""
     args = MagicMock()
     monkeypatch.setattr(mt_config, "args", args)
     iface = create_autospec(SerialInterface, instance=True)

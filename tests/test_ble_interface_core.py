@@ -693,7 +693,10 @@ def test_receive_loop_outer_catch_routes_to_disconnect_handler(monkeypatch):
 
         Parameters
         ----------
+        _name : str
+            Event name (unused in this stub).
         timeout : float | None
+            Timeout value (unused in this stub).
 
         Raises
         ------
@@ -1056,6 +1059,7 @@ def test_close_handles_errors(monkeypatch, exc_cls):
         ----------
         topic : str
             Pubsub topic identifier.
+        **kwargs
             Additional message fields to capture.
         """
         calls.append((topic, kwargs))

@@ -197,7 +197,7 @@ def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
             raise asyncio.CancelledError()
 
     async def _dummy_coro():
-        return None
+        pass
 
     client = BLEClient(address=None, log_if_no_address=False)
     try:
@@ -224,7 +224,7 @@ def test_bleclient_async_await_rejects_wait_from_runner_thread(
             """Support best-effort cancellation in guarded path."""
 
     async def _dummy_coro() -> None:
-        return None
+        pass
 
     client = BLEClient(address=None, log_if_no_address=False)
     try:

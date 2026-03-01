@@ -1272,11 +1272,10 @@ def onConnected(interface: MeshInterface) -> None:
                 ch.role = channel_pb2.Channel.Role.SECONDARY
                 print("Writing modified channels to device")
                 n.writeChannel(ch.index)
-                if ch_add_idx is None:
-                    print(
-                        f"Setting newly-added channel's {ch.index} as '--ch-index' for further modifications"
-                    )
-                    mt_config.channel_index = ch.index
+                print(
+                    f"Setting newly-added channel's {ch.index} as '--ch-index' for further modifications"
+                )
+                mt_config.channel_index = ch.index
 
         if args.ch_del:
             closeNow = True
@@ -1848,7 +1847,7 @@ def create_power_meter() -> None:
         meter = SimPowerSupply()
 
     if meter and v:
-        logger.info(f"Setting power supply to {v} volts")
+        logger.info("Setting power supply to %s volts", v)
         meter.setVoltage(v)
         meter.powerOn()
 
@@ -2154,7 +2153,7 @@ def common() -> None:
                         message += "  Need to add yourself to the 'dialout' group by running:\n"
                         message += f"     sudo usermod -a -G dialout {username}\n"
                         message += "  After running that command, log out and re-login for it to take effect.\n"
-                        message += f"Error was:{ex}"
+                        message += f"Error was: {ex}"
                         _cli_exit(message)
                     except MeshInterface.MeshInterfaceError as ex:
                         _cli_exit(f"[Serial] {ex}", 1)

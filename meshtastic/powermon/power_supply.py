@@ -9,7 +9,7 @@ from numbers import Real
 from typing import cast
 
 _warned_deprecations: set[str] = set()
-_warned_deprecations_lock = threading.Lock()
+_warned_deprecations_lock: threading.Lock = threading.Lock()
 
 
 def _warn_deprecated_once(key: str, message: str) -> None:

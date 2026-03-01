@@ -217,7 +217,8 @@ class ArrowWriter:
         # precondition only when that probe is available.
         is_owned = getattr(self._lock, "_is_owned", None)
         if callable(is_owned):
-            assert bool(is_owned()), "_write() called without holding _lock"
+            if not is_owned():
+                raise RuntimeError("_write() called without holding _lock")
         if len(self.new_rows) > 0:
             if self.schema is None:
                 # only need to look at the first row to learn the schema
