@@ -11,11 +11,11 @@ but should not be considered part of the stable public API.
 # imported Bleak symbols from meshtastic.ble_interface in the pre-refactor API.
 # COMPAT_STABLE_SHIM
 try:
-    from bleak import (  # type: ignore[attr-defined]  # noqa: F401  # pylint: disable=unused-import
+    from bleak import (  # noqa: F401  # pylint: disable=unused-import
         BleakClient,
         BleakScanner,
-        BLEDevice,
     )
+    from bleak.backends.device import BLEDevice  # noqa: F401  # pylint: disable=unused-import
     from bleak.exc import (  # noqa: F401  # pylint: disable=unused-import
         BleakDBusError,
         BleakError,
@@ -56,7 +56,6 @@ from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-
 _BLE_PUBLIC_ALL = tuple(getattr(_ble, "__all__", ()))
 for _symbol in _BLE_PUBLIC_ALL:
     globals().setdefault(_symbol, getattr(_ble, _symbol))
-del _symbol  # Clean up loop variable from module namespace
 
 # Retained module-level Bleak compatibility exports from pre-refactor API.
 _COMPAT_BLEAK_EXPORTS = (

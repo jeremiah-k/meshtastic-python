@@ -1197,7 +1197,9 @@ class BLEInterface(MeshInterface):
                 [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
             )
             raise self.BLEError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
-        return addressed_devices[0]
+        raise AssertionError(
+            "Unreachable: all addressed_devices length cases are handled"
+        )
 
     # COMPAT_STABLE_SHIM: historical public BLEInterface API.
     # Keep callable without deprecation warning.

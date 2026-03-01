@@ -140,6 +140,59 @@ def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_connect_cleans_up_when_start_config_fails() -> None:
+    """connect() should tear down reader/connection state if _start_config fails."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_start_config", side_effect=RuntimeError("boom")),
+            patch.object(iface, "_shared_close") as shared_close,
+            patch.object(iface, "_join_reader_thread") as join_reader,
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                iface.connect()
+        shared_close.assert_called_once()
+        join_reader.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_cleans_up_when_wait_connected_fails() -> None:
+    """connect() should tear down reader/connection state if _wait_connected fails."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface.noProto = False
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_start_config"),
+            patch.object(
+                iface, "_wait_connected", side_effect=RuntimeError("wait failed")
+            ),
+            patch.object(iface, "_shared_close") as shared_close,
+            patch.object(iface, "_join_reader_thread") as join_reader,
+        ):
+            with pytest.raises(RuntimeError, match="wait failed"):
+                iface.connect()
+        shared_close.assert_called_once()
+        join_reader.assert_called_once()
+    finally:
+        iface.noProto = True
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_write_bytes_retries_until_full_payload_written() -> None:
     """_write_bytes should handle partial writes until full payload is sent."""
     iface = StreamInterface(noProto=True, connectNow=False)

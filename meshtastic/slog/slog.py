@@ -6,10 +6,12 @@ import logging
 import os
 import re
 import threading
+import time
 import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
@@ -71,10 +73,10 @@ class LogDef:
     """Log definition."""
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
-    fields: list[tuple[str, pa.DataType]]  # A list of field names and their arrow types
+    fields: list[tuple[str, Any]]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, Any]]) -> None:
         """Create a LogDef for the given code and fields and compile a parser for those fields.
 
         Parameters
@@ -123,6 +125,8 @@ POWER_LOG_SCHEMA_METADATA: dict[bytes | str, bytes | str] = {
 POWER_LOGGER_JOIN_TIMEOUT = 1.0
 INTERVAL_REQUIRED_MESSAGE = "interval must be > 0 seconds"
 DIR_NAME_REQUIRED_MESSAGE = "dir_name must be a non-empty path when provided"
+SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS = 5.0
+SAMPLE_FAILURE_WARNING_BURST_COUNT = 3
 
 
 class PowerLogger:
@@ -151,7 +155,7 @@ class PowerLogger:
             raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
-        power_schema_fields: list[pa.Field] = [
+        power_schema_fields = [
             pa.field("time", pa.timestamp("us")),
             pa.field("average_mA", pa.float64()),
             pa.field("max_mA", pa.float64()),
@@ -183,6 +187,8 @@ class PowerLogger:
         self._deprecation_warning_lock = threading.Lock()
         self._reading_lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._sample_warning_count = 0
+        self._last_sample_warning_monotonic = 0.0
         self.is_logging = True
         self.thread = threading.Thread(
             target=self._logging_thread, name="PowerLogger", daemon=True
@@ -322,8 +328,27 @@ class PowerLogger:
         while not self._stop_event.is_set():
             try:
                 self._store_current_reading()
+                self._sample_warning_count = 0
+                self._last_sample_warning_monotonic = 0.0
             except Exception as exc:  # noqa: BLE001 - keep sampler alive
-                logger.warning("PowerLogger sample failed: %s", exc, exc_info=True)
+                self._sample_warning_count += 1
+                now_monotonic = time.monotonic()
+                should_warn = (
+                    self._sample_warning_count <= SAMPLE_FAILURE_WARNING_BURST_COUNT
+                    or (
+                        now_monotonic - self._last_sample_warning_monotonic
+                        >= SAMPLE_FAILURE_WARNING_COOLDOWN_SECONDS
+                    )
+                )
+                if should_warn:
+                    logger.warning("PowerLogger sample failed: %s", exc, exc_info=True)
+                    self._last_sample_warning_monotonic = now_monotonic
+                else:
+                    logger.debug(
+                        "PowerLogger sample failed (suppressed warning #%d): %s",
+                        self._sample_warning_count,
+                        exc,
+                    )
             self._stop_event.wait(self.interval)
 
     def close(self) -> None:
@@ -402,7 +427,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, pa.DataType]] = [
+        all_fields: list[tuple[str, Any]] = [
             field for logdef in log_defs.values() for field in logdef.fields
         ]
 
@@ -490,7 +515,7 @@ class StructuredLogger:
             try:
                 f.close()  # Close the raw.txt file
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup
-                logger.warning("Failed to close raw log file: %s", exc)
+                logger.warning("Failed to close raw log file: %s", exc, exc_info=True)
         if unsubscribe_exc is not None:
             if writer_close_exc is not None:
                 raise unsubscribe_exc from writer_close_exc

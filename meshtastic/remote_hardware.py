@@ -117,8 +117,8 @@ def _parse_node_number(text: str) -> int | None:
     try:
         return int(normalized, 0)
     except ValueError:
-        decimal_candidate = normalized.lstrip("+-")
-        if decimal_candidate.isdigit():
+        signless = normalized[1:] if normalized[:1] in "+-" else normalized
+        if signless.isdigit() and signless:
             return int(normalized, 10)
         return None
 

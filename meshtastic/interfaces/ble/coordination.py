@@ -11,6 +11,9 @@ logger = logging.getLogger("meshtastic.ble")
 _INERT_THREAD_START_ERROR = (
     "Cannot start inert thread '{name}': coordinator has been cleaned up"
 )
+_EVENT_CREATE_AFTER_CLEANUP_ERROR = (
+    "Cannot create event '{name}': coordinator has been cleaned up"
+)
 
 
 class _InertThread:
@@ -162,8 +165,18 @@ class ThreadCoordinator:
         -------
         Event
             The Event instance registered under `name`, or the existing instance if one was already registered.
+
+        Notes
+        -----
+        After cleanup has started this returns a pre-set inert Event so callers
+        do not block indefinitely on new waits.
         """
         with self._lock:
+            if self._cleaned_up:
+                logger.warning(_EVENT_CREATE_AFTER_CLEANUP_ERROR.format(name=name))
+                inert_event = Event()
+                inert_event.set()
+                return inert_event
             if name in self._events:
                 logger.warning(
                     "Event already exists: %s, returning existing instance", name

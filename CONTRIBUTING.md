@@ -96,9 +96,12 @@ poetry run mypy meshtastic/ --strict
 - You need to have act installed. You can get it at https://nektosact.com/
 - `bin/run-ci-local.sh` is the canonical local runner and reads `LOCAL_PYTHON_VERSION` (default defined in that script).
 - on Linux: `./bin/run-ci-local.sh`
-- on Windows:
+- on Windows (Git Bash/WSL, POSIX shell syntax):
   - linux checks (linux docker): `LOCAL_PYTHON_VERSION=3.13 ./bin/run-ci-local.sh`
   - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:${LOCAL_PYTHON_VERSION:-3.13}"`
+- on Windows (PowerShell):
+  - linux checks (linux docker): `$env:LOCAL_PYTHON_VERSION = "3.13"; ./bin/run-ci-local.sh`
+  - Windows checks (Windows host): `$env:LOCAL_PYTHON_VERSION = "3.13"; act -P windows-latest=-self-hosted --matrix "python-version:$env:LOCAL_PYTHON_VERSION"`
 
 The `-P ...=-self-hosted` mapping is optional. It tells `act` to run that job on
 your host machine instead of in a container, which can be useful for

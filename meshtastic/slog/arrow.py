@@ -6,6 +6,7 @@ import tempfile
 import threading
 import types
 import warnings
+from typing import Any, cast
 
 import pyarrow as pa
 from pyarrow import feather
@@ -71,7 +72,7 @@ class ArrowWriter:
         file_name : str
             Path to the output file to write Arrow stream data to.
         """
-        self.sink = pa.OSFile(file_name, "wb")
+        self.sink = pa.output_stream(file_name)
         self.new_rows: list[dict[str, object]] = []
         self.schema: pa.Schema | None = None  # haven't yet learned the schema
         self.writer: pa.RecordBatchStreamWriter | None = None
@@ -233,9 +234,8 @@ class ArrowWriter:
 
             if self.writer is None:
                 raise WriterNoneError()
-            self.writer.write_batch(
-                pa.RecordBatch.from_pylist(self.new_rows, schema=self.schema)
-            )
+            table = pa.Table.from_pylist(self.new_rows, schema=self.schema)
+            self.writer.write_table(table)
             self.new_rows = []
 
     def _add_row(self, row_dict: dict[str, object]) -> None:
@@ -396,7 +396,7 @@ class FeatherWriter(ArrowWriter):
                 ) as temp_file:
                     temp_name = temp_file.name
 
-                feather.write_feather(array, temp_name, compression="zstd")
+                feather.write_feather(cast(Any, array), temp_name, compression="zstd")
                 os.replace(temp_name, dest_name)
                 temp_name = None
             except Exception:

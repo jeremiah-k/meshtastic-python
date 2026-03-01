@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.serial_interface
 import meshtastic.tcp_interface

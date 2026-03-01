@@ -18,23 +18,12 @@ HEADER_LEN = 4
 MAX_TO_FROM_RADIO_SIZE = 512
 
 # Stream timing constants
-DEVICE_WAKE_DELAY = 0.1
-"""Delay after sending wake bytes to allow device to start (seconds)."""
-
-WAKE_BYTE_COUNT = 32
-"""Number of wake bytes to send to resync device state machine."""
-
-STANDARD_WRITE_DELAY = 0.1
-"""Standard delay after write operations (seconds)."""
-
-WINDOWS11_WRITE_DELAY = 1.0
-"""Extended delay after write operations on Windows 11 (seconds)."""
-
-READER_THREAD_JOIN_TIMEOUT = 2.0
-"""Timeout for joining reader thread on shutdown (seconds)."""
-
-READER_IDLE_BACKOFF_SECONDS = 0.01
-"""Small sleep used when the reader loop has no bytes to process."""
+DEVICE_WAKE_DELAY = 0.1  # Delay after wake bytes to allow device startup.
+WAKE_BYTE_COUNT = 32  # Number of wake bytes sent to resync the device parser.
+STANDARD_WRITE_DELAY = 0.1  # Standard post-write delay.
+WINDOWS11_WRITE_DELAY = 1.0  # Extended post-write delay on Windows 11.
+READER_THREAD_JOIN_TIMEOUT = 2.0  # Reader thread join timeout during shutdown.
+READER_IDLE_BACKOFF_SECONDS = 0.01  # Backoff when read loop receives no bytes.
 
 STREAM_WRITE_EXCEPTIONS = (
     OSError,
@@ -42,7 +31,7 @@ STREAM_WRITE_EXCEPTIONS = (
     serial.SerialException,
     serial.SerialTimeoutException,
 )
-"""Write/flush exceptions that indicate stream closure."""
+# Write/flush exceptions that indicate stream closure.
 
 logger = logging.getLogger(__name__)
 
@@ -211,10 +200,18 @@ class StreamInterface(MeshInterface):
                 )
             self._rxThread.start()
 
-        self._start_config()
-
-        if not self.noProto:  # Wait for the db download if using the protocol
-            self._wait_connected()
+        try:
+            self._start_config()
+            if not self.noProto:  # Wait for the db download if using the protocol
+                self._wait_connected()
+        except Exception:
+            # If protocol startup fails after reader launch, tear down to avoid
+            # leaked background threads and partial connection state.
+            with contextlib.suppress(Exception):
+                self._shared_close()
+            with contextlib.suppress(Exception):
+                self._join_reader_thread()
+            raise
 
     def _close_stream_safely(self) -> None:
         """Best-effort close and clear of the underlying stream handle."""

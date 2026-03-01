@@ -138,7 +138,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
     }
 
     def _types_mapper(
-        data_type: pa.DataType,
+        data_type: Any,
     ) -> pd.api.extensions.ExtensionDtype | None:
         """Map a PyArrow DataType to a pandas nullable ExtensionDtype.
 

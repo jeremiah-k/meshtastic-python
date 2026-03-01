@@ -30,9 +30,10 @@ def main() -> None:
             key=lambda d: (d.name or "", d.version or "", d.for_firmware or ""),
         )
         for device in sorted_devices:
+            name_label = device.name or "unknown"
             version_suffix = f" {device.version}" if device.version else ""
             firmware_info = device.for_firmware or "unknown"
-            print(f" name:{device.name}{version_suffix} firmware:{firmware_info}")
+            print(f" name:{name_label}{version_suffix} firmware:{firmware_info}")
     else:
         print("No supported devices detected.")
 
