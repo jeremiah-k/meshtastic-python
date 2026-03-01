@@ -187,9 +187,10 @@ class ReconnectPolicy:
         delay_and_permission : tuple[float, bool]
             `(delay_seconds, another_retry_allowed_after_this_attempt)`.
         """
+        consumed_attempt = self._attempt_count
         delay = self._get_delay()
         self._attempt_count += 1
-        should_retry = self._should_retry(self._attempt_count)
+        should_retry = self._should_retry(consumed_attempt)
         return delay, should_retry
 
     def get_attempt_count(self) -> int:

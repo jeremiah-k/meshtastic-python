@@ -256,7 +256,9 @@ def _extract_sender_and_decoded(
     """
     sender = as_dict.get("from")
     decoded = as_dict.get("decoded")
-    if not isinstance(sender, int) or not isinstance(decoded, dict):
+    if not (isinstance(sender, int) and not isinstance(sender, bool)) or not isinstance(
+        decoded, dict
+    ):
         return None
     return sender, decoded
 
@@ -427,7 +429,7 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
         - hopLimit: value of `hopLimit` from the packet (or None)
     """
     sender = as_dict.get("from")
-    if not isinstance(sender, int):
+    if not (isinstance(sender, int) and not isinstance(sender, bool)):
         if sender is not None:
             logger.debug(
                 "Skipping receive info update due to non-integer sender type: %s",
@@ -462,7 +464,7 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         decoded = as_dict.get("decoded")
         if sender is None:
             logger.debug("Dropping admin packet because 'from' field is missing")
-        elif not isinstance(sender, int):
+        elif not (isinstance(sender, int) and not isinstance(sender, bool)):
             logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
         elif not isinstance(decoded, dict):
             logger.debug("Admin packet missing decoded dict from=%s", sender)

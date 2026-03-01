@@ -152,11 +152,13 @@ def _normalize_node_id(node_id: Any) -> int | None:
 
 
 def onReceive(packet: dict[str, Any], interface: Any) -> None:
-    """Handle an incoming packet and record clear-text messages.
+    """Handle an incoming packet and record matching test messages.
 
     If the packet did not originate from the current sendingInterface, convert it to a DotMap.
-    If the packet's decoded.portnum equals "TEXT_MESSAGE_APP" and the module-level
-    receivedPackets list is set, append the converted packet to receivedPackets.
+    If the packet's decoded.portnum equals "TEXT_MESSAGE_APP" and expected sender/receiver
+    constraints match, validate text and/or binary payload expectations
+    (`expected_text`, `expected_binary_payload`) and append matching packets to
+    the module-level receivedPackets list.
 
     Parameters
     ----------
@@ -204,7 +206,7 @@ def onReceive(packet: dict[str, Any], interface: Any) -> None:
                 )
                 if payload_bytes != expected_binary_payload:
                     return
-            # We only care about clear text packets.
+            # We only care about matching test packets on TEXT_MESSAGE_APP.
             if receivedPackets is not None:
                 receivedPackets.append(DotMap(packet))
                 packet_received_event.set()

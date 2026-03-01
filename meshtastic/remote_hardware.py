@@ -420,7 +420,8 @@ class RemoteHardwareClient:
         Returns
         -------
         Any
-            The result of the underlying send operation (may be the callback's return value or the send call result).
+            The result returned by the underlying `MeshInterface.sendData` call.
+            Callback return values are ignored.
         """
         mask = self._validate_non_negative_int(mask, INVALID_GPIO_MASK_ERROR)
         logger.debug("readGPIOs nodeid:%s mask:%s", nodeid, mask)

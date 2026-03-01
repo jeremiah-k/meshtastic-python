@@ -14,7 +14,11 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from meshtastic.protobuf import mesh_pb2
-from meshtastic.supported_device import SupportedDevice, supported_devices
+from meshtastic.supported_device import (
+    SupportedDevice,
+    SupportedDeviceValidationError,
+    supported_devices,
+)
 from meshtastic.util import (
     DEFAULT_KEY,
     Acknowledgment,
@@ -998,15 +1002,33 @@ def test_supported_device_post_init_accepts_list_aliases_and_deduplicates() -> N
 @pytest.mark.unit
 def test_supported_device_post_init_rejects_invalid_usb_aliases() -> None:
     """Invalid alias VID/PID values should fail fast during normalization."""
-    with pytest.raises(ValueError, match="Invalid usb_id_aliases entry"):
+    with pytest.raises(
+        SupportedDeviceValidationError, match="Invalid usb_id_aliases entry"
+    ):
         SupportedDevice(name="Test Device", usb_id_aliases=(("ZZZZ", "1001"),))
 
 
 @pytest.mark.unit
 def test_supported_device_post_init_rejects_invalid_primary_usb_id() -> None:
     """Invalid primary VID/PID values should fail fast during normalization."""
-    with pytest.raises(ValueError, match="Invalid usb_vendor_id_in_hex"):
-        SupportedDevice(name="Test Device", usb_vendor_id_in_hex="12")
+    with pytest.raises(
+        SupportedDeviceValidationError, match="Invalid usb_vendor_id_in_hex"
+    ):
+        SupportedDevice(
+            name="Test Device",
+            usb_vendor_id_in_hex="12",
+            usb_product_id_in_hex="1001",
+        )
+
+
+@pytest.mark.unit
+def test_supported_device_post_init_rejects_partial_primary_usb_id() -> None:
+    """Primary USB vendor/product IDs must be provided together."""
+    with pytest.raises(
+        SupportedDeviceValidationError,
+        match="must be provided together",
+    ):
+        SupportedDevice(name="Test Device", usb_vendor_id_in_hex="303a")
 
 
 @pytest.mark.unit
