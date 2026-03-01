@@ -297,8 +297,24 @@ def test_get_pmon_raises_rejects_negative_masks() -> None:
 
 
 @pytest.mark.unit
+def test_get_pmon_raises_rejects_float_masks_beyond_exact_int_range() -> None:
+    """get_pmon_raises should reject float pm_mask values beyond 2**53."""
+    dslog = pd.DataFrame(
+        {
+            "time": [1.0, 2.0],
+            "pm_mask": [0.0, float((1 << 53) + 2)],
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match="pm_mask contains values that cannot be exactly represented in float64",
+    ):
+        get_pmon_raises(dslog)
+
+
+@pytest.mark.unit
 def test_get_pmon_raises_rejects_overflowing_masks() -> None:
-    """get_pmon_raises should reject pm_mask values beyond uint64 max."""
+    """get_pmon_raises should reject overflowing float masks before uint64 cast."""
     dslog = pd.DataFrame(
         {
             "time": [1.0, 2.0],
@@ -306,7 +322,8 @@ def test_get_pmon_raises_rejects_overflowing_masks() -> None:
         }
     )
     with pytest.raises(
-        ValueError, match="pm_mask contains values outside uint64 range"
+        ValueError,
+        match="pm_mask contains values that cannot be exactly represented in float64",
     ):
         get_pmon_raises(dslog)
 

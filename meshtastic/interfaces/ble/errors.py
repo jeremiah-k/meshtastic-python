@@ -11,7 +11,10 @@ from meshtastic.interfaces.ble.constants import logger
 DecodeError: type[Exception]
 try:
     from google.protobuf.message import DecodeError as _ProtobufDecodeError
-except ImportError:
+except ImportError as exc:
+    missing_name = getattr(exc, "name", None)
+    if missing_name not in ("google", "google.protobuf", "google.protobuf.message"):
+        raise
 
     class _FallbackDecodeError(Exception):
         """Fallback DecodeError when protobuf is unavailable."""

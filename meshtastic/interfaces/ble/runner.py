@@ -319,6 +319,10 @@ class BLECoroutineRunner:
                 """Keep the event loop responsive by scheduling a periodic no-op callback.
 
                 This prevents the loop from sleeping indefinitely between I/O events so callbacks submitted from other threads are observed promptly on platforms where the loop's low-level wakeup signaling may not occur.
+                `_runner_keepalive_tick` captures `keepalive_handle` and self-reschedules,
+                but self-terminates when `_stop_requested` is set, when the active runner
+                thread no longer matches, or when the loop closes, so no explicit
+                cancellation path is required across rapid `_run_loop` restarts.
 
                 Returns
                 -------

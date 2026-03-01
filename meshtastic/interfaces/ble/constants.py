@@ -162,6 +162,10 @@ BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT = (
 BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED = (
     "Subscription token space exhausted."  # noqa: S105
 )
+BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING = (
+    "Cannot connect while interface is closing"
+)
+BLECLIENT_ERROR_ALREADY_CONNECTED = "Already connected or connection in progress"
 
 
 _MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"

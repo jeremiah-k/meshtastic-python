@@ -27,7 +27,7 @@ def main() -> None:
         print("Detected possible devices:")
         sorted_devices = sorted(
             supported_devices,
-            key=lambda d: (d.name, d.version or "", d.for_firmware or ""),
+            key=lambda d: (d.name or "", d.version or "", d.for_firmware or ""),
         )
         for device in sorted_devices:
             version_suffix = f" {device.version}" if device.version else ""

@@ -1118,7 +1118,7 @@ def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
     iface.close()
 
     assert client.disconnect_calls == 0
-    assert client.close_calls == 1
+    assert client.close_calls == 0
 
 
 def test_close_clears_ble_threads(monkeypatch):

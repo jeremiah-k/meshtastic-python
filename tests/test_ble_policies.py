@@ -28,5 +28,10 @@ def test_reconnect_policy_snake_case_methods_work() -> None:
 
     delay, should_retry = policy.next_attempt()
     assert delay == pytest.approx(4.0)
-    assert should_retry is False
+    assert should_retry is True
     assert policy.get_attempt_count() == 3
+
+    delay, should_retry = policy.next_attempt()
+    assert delay == pytest.approx(8.0)
+    assert should_retry is False
+    assert policy.get_attempt_count() == 4

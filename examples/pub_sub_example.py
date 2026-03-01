@@ -25,7 +25,7 @@ def onConnection(  # pylint: disable=unused-argument
 def main() -> None:
     """Connect to a TCP radio and print local node info on connection."""
     if len(sys.argv) < 2:
-        print(f"usage: {sys.argv[0]} host")
+        print(f"usage: {sys.argv[0]} host", file=sys.stderr)
         sys.exit(1)
     hostname = sys.argv[1]
 
@@ -36,10 +36,13 @@ def main() -> None:
         # Wait until the connection callback runs, then exit.
         with meshtastic.tcp_interface.TCPInterface(hostname=hostname):
             if not _connected.wait(timeout=30):
-                print("Error: Timed out waiting for connection callback")
+                print(
+                    "Error: Timed out waiting for connection callback",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
     except OSError as exc:
-        print(f"Error: Could not connect to {hostname} ({exc})")
+        print(f"Error: Could not connect to {hostname} ({exc})", file=sys.stderr)
         sys.exit(1)
     finally:
         pub.unsubscribe(onConnection, topic)

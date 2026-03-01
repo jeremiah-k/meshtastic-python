@@ -10,6 +10,8 @@ from bleak.exc import BleakDBusError, BleakError
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
     AWAIT_TIMEOUT_BUFFER_SECONDS,
+    BLECLIENT_ERROR_ALREADY_CONNECTED,
+    BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING,
     DIRECT_CONNECT_TIMEOUT_SECONDS,
     DISCONNECT_TIMEOUT_SECONDS,
     BLEConfig,
@@ -68,8 +70,8 @@ class ConnectionValidator:
 
         if not can_connect:
             if is_closing:
-                raise self.BLEError("Cannot connect while interface is closing")
-            raise self.BLEError("Already connected or connection in progress")
+                raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
+            raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
 
     def _check_existing_client(
         self,
@@ -107,7 +109,7 @@ class ConnectionValidator:
         normalized_known_targets = {
             t
             for t in (
-                last_connection_request,
+                sanitize_address(last_connection_request),
                 sanitize_address(bleak_address),
             )
             if t is not None
@@ -258,7 +260,10 @@ class ClientManager:
             logger.debug(
                 "Skipping BLE client disconnect during interpreter finalization."
             )
-        self.error_handler._safe_cleanup(client.close, "client close")
+        if not skip_disconnect:
+            self.error_handler._safe_cleanup(client.close, "client close")
+        else:
+            logger.debug("Skipping BLE client close during interpreter finalization.")
         if event:
             event.set()
 

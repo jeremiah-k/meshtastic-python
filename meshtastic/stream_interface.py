@@ -458,8 +458,9 @@ class StreamInterface(MeshInterface):
                         if (
                             ptr == HEADER_LEN - 1
                         ):  # we _just_ finished reading the header, validate length
-                            if packetlen > MAX_TO_FROM_RADIO_SIZE:
-                                self._rxBuf.clear()  # length was out out bounds, restart
+                            if packetlen == 0 or packetlen > MAX_TO_FROM_RADIO_SIZE:
+                                self._rxBuf.clear()  # malformed length, restart
+                                continue
 
                         if self._rxBuf and ptr + 1 >= packetlen + HEADER_LEN:
                             try:

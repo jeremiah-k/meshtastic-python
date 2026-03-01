@@ -224,7 +224,11 @@ class TCPInterface(StreamInterface):
             connected_socket = socket.create_connection(
                 server_address, timeout=self._connect_timeout
             )
-        connected_socket.settimeout(None)
+        try:
+            connected_socket.settimeout(None)
+        except Exception:
+            self._close_socket_handle(connected_socket)
+            raise
         discard_redundant_socket = False
         closing = False
         with self._reconnect_lock:

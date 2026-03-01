@@ -208,6 +208,17 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(  # noqa: TRY003
             f"pm_mask contains negative values at rows {bad_rows_preview}{suffix}"
         )
+    if np.issubdtype(pm_mask_array.dtype, np.floating):
+        max_exact_float_int = float(1 << 53)
+        is_within_safe_float_int = np.less_equal(pm_mask_array, max_exact_float_int)
+        if not np.all(is_within_safe_float_int):
+            bad_rows_preview, suffix = _bad_row_preview(
+                pmon_events.index, ~is_within_safe_float_int
+            )
+            raise ValueError(  # noqa: TRY003
+                "pm_mask contains values that cannot be exactly represented in float64 "
+                f"at rows {bad_rows_preview}{suffix}"
+            )
     uint64_max = np.iinfo(np.uint64).max
     is_within_uint64 = np.less_equal(pm_mask_array, uint64_max)
     if not np.all(is_within_uint64):
