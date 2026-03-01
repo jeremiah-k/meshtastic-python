@@ -20,7 +20,6 @@ import sys
 import threading
 import types
 import warnings
-from _thread import LockType
 from typing import IO, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -122,7 +121,7 @@ _COMPAT_ALIASES: dict[str, str] = {
 
 # Track which deprecation warnings have been emitted (warn-once per process)
 _warned_deprecations: set[str] = set()
-_warned_deprecations_lock: LockType = threading.Lock()
+_warned_deprecations_lock = threading.Lock()
 
 
 def _warn_compat_alias_once(old_name: str, new_name: str) -> None:

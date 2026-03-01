@@ -4,21 +4,21 @@ import logging
 import math
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Final
 
 from ..protobuf import portnums_pb2, powermon_pb2
 
 # Stress test timing constants
-DEFAULT_ACK_TIMEOUT_S = 30.0
-"""Default acknowledgment timeout in seconds."""
-
-STRESS_DURATION_BUFFER_S = 0.2
-"""Additional time to wait beyond the stress duration (seconds)."""
-
-DEFAULT_STRESS_STATE_DURATION_S = 5.0
-"""Default duration for each stress state in seconds."""
-
-INVALID_ACK_TIMEOUT_ERROR = "ack_timeout must be a finite number > 0 seconds"
+DEFAULT_ACK_TIMEOUT_S: Final[float] = 30.0  # Default acknowledgment timeout (seconds).
+STRESS_DURATION_BUFFER_S: Final[float] = (
+    0.2  # Additional wait beyond stress duration (seconds).
+)
+DEFAULT_STRESS_STATE_DURATION_S: Final[float] = (
+    5.0  # Default duration per stress state (seconds).
+)
+INVALID_ACK_TIMEOUT_ERROR: Final[str] = (
+    "ack_timeout must be a finite number > 0 seconds"
+)
 
 
 def handlePowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
@@ -121,13 +121,15 @@ class PowerStressClient:
             )
             effective_num_seconds = 0.0
 
+        if effective_num_seconds <= 0.0:
+            if not math.isfinite(ack_timeout) or ack_timeout <= 0.0:
+                raise ValueError(INVALID_ACK_TIMEOUT_ERROR)
+
         self.sendPowerStress(
             cmd, onResponse=_on_response, num_seconds=effective_num_seconds
         )
 
         if effective_num_seconds <= 0.0:
-            if not math.isfinite(ack_timeout) or ack_timeout <= 0.0:
-                raise ValueError(INVALID_ACK_TIMEOUT_ERROR)
             # Wait for the response and then continue, with a safety timeout.
             if not ack_event.wait(timeout=ack_timeout):
                 logging.error("Timed out waiting for power stress ack!")

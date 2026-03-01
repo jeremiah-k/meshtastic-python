@@ -57,5 +57,15 @@ _BLE_PUBLIC_ALL = tuple(getattr(_ble, "__all__", ()))
 for _symbol in _BLE_PUBLIC_ALL:
     globals().setdefault(_symbol, getattr(_ble, _symbol))
 
-# Stable public API delegates to the canonical BLE facade export list.
-__all__ = list(_BLE_PUBLIC_ALL)
+# Retained module-level Bleak compatibility exports from pre-refactor API.
+_COMPAT_BLEAK_EXPORTS = (
+    "BleakClient",
+    "BleakScanner",
+    "BLEDevice",
+    "BleakError",
+    "BleakDBusError",
+)
+
+# Stable public API delegates to canonical facade exports plus retained Bleak
+# compatibility names for `from meshtastic.ble_interface import *`.
+__all__ = list(dict.fromkeys([*_BLE_PUBLIC_ALL, *_COMPAT_BLEAK_EXPORTS]))

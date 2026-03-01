@@ -27,18 +27,19 @@ def main() -> None:
     if len(sys.argv) < 2:
         print(f"usage: {sys.argv[0]} host")
         sys.exit(1)
+    hostname = sys.argv[1]
 
     _connected.clear()
     topic = "meshtastic.connection.established"
     pub.subscribe(onConnection, topic)
     try:
         # Wait until the connection callback runs, then exit.
-        with meshtastic.tcp_interface.TCPInterface(hostname=sys.argv[1]):
+        with meshtastic.tcp_interface.TCPInterface(hostname=hostname):
             if not _connected.wait(timeout=30):
                 print("Error: Timed out waiting for connection callback")
                 sys.exit(1)
     except OSError as exc:
-        print(f"Error: Could not connect to {sys.argv[1]} ({exc})")
+        print(f"Error: Could not connect to {hostname} ({exc})")
         sys.exit(1)
     finally:
         pub.unsubscribe(onConnection, topic)

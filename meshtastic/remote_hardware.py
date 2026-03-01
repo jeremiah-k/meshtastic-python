@@ -368,7 +368,7 @@ class RemoteHardwareClient:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(error_message)
-        return value
+        return int(value)
 
     def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
         """Set specified GPIO pins on a remote device according to the provided mask and values.

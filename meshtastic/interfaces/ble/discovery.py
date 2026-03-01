@@ -24,9 +24,14 @@ from meshtastic.interfaces.ble.utils import (
     sanitize_address,
 )
 
-_BLE_ADDRESS_KEY_RE = re.compile(r"^[0-9a-f]{12}$")
+_BLE_ADDRESS_KEY_RE = re.compile(r"^(?:[0-9a-f]{12}|[0-9a-f]{32})$")
 _BLE_ADDRESS_SHAPE_RE = re.compile(
-    r"^[0-9A-Fa-f]{12}$|^[0-9A-Fa-f]{2}(?:[:\-_ ][0-9A-Fa-f]{2}){5}$"
+    r"^(?:"
+    r"[0-9A-Fa-f]{12}|"
+    r"[0-9A-Fa-f]{2}(?:[:\-_ ][0-9A-Fa-f]{2}){5}|"
+    r"[0-9A-Fa-f]{32}|"
+    r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
+    r")$"
 )
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
@@ -276,6 +281,18 @@ def _parse_scan_response(
     for _, value in response.items():
         if isinstance(value, tuple) and len(value) == 2:
             device, adv = value
+            if not isinstance(device, BLEDevice):
+                logger.warning(
+                    "Unexpected device type from BleakScanner.discover tuple: %s",
+                    type(device),
+                )
+                continue
+            if not hasattr(adv, "service_uuids"):
+                logger.warning(
+                    "Unexpected adv payload type from BleakScanner.discover tuple: %s",
+                    type(adv),
+                )
+                continue
         else:
             logger.warning(
                 "Unexpected return type from BleakScanner.discover: %s (len=%s)",

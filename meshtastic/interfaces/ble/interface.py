@@ -270,8 +270,8 @@ class BLEInterface(MeshInterface):
         self._last_recovery_time = 0.0  # monotonic clock
 
         # Initialize parent interface
-        MeshInterface.__init__(
-            self, debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
+        super().__init__(
+            debugOut=debugOut, noProto=noProto, noNodes=noNodes, timeout=timeout
         )
 
         # Initialize retry counter for transient read errors
@@ -650,14 +650,30 @@ class BLEInterface(MeshInterface):
             if not disconnect_lock_released:
                 self._disconnect_lock.release()
 
+        skip_side_effects = False
+        stale_disconnect_keys: list[str] = []
         with self._state_lock:
             active_client = self.client
             if active_client is not None and active_client is not client_at_start:
-                logger.debug(
-                    "Skipping stale disconnect side-effects from %s: newer client already active.",
-                    source,
+                active_keys = set(
+                    self._sorted_address_keys(
+                        _addr_key(getattr(active_client, "address", None)),
+                        self._connection_alias_key,
+                    )
                 )
-                return True
+                stale_disconnect_keys = [
+                    key for key in disconnect_keys if key not in active_keys
+                ]
+                skip_side_effects = True
+
+        if skip_side_effects:
+            if stale_disconnect_keys:
+                self._mark_address_keys_disconnected(*stale_disconnect_keys)
+            logger.debug(
+                "Skipping stale disconnect side-effects from %s: newer client already active.",
+                source,
+            )
+            return True
 
         logger.debug("BLE client %s disconnected (source: %s).", address, source)
         # Expose the most recent disconnect source for external listeners that
@@ -1143,7 +1159,7 @@ class BLEInterface(MeshInterface):
                     address,
                     sanitized,
                 )
-                return BLEDevice(address, address, {})
+                return BLEDevice(sanitized, address, {})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]

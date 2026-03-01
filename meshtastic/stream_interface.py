@@ -276,7 +276,9 @@ class StreamInterface(MeshInterface):
                 bytes_written += written_count
             s.flush()
         except STREAM_WRITE_EXCEPTIONS as exc:
-            raise StreamInterface.StreamClosedError() from exc
+            raise StreamInterface.StreamClosedError(
+                str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
+            ) from exc
         # win11 might need a bit more time, too
         if self.is_windows11:
             time.sleep(WINDOWS11_WRITE_DELAY)

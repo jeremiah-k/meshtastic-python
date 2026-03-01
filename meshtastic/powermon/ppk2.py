@@ -253,8 +253,8 @@ class PPK2PowerSupply(PowerSupply):
         """
 
         # setIsSupply validates the preconfigured voltage (self.v) before
-        # calling set_source_voltage(); callers should set desired voltage
-        # first via set_source_voltage() or direct self.v assignment.
+        # forwarding it to the device set_source_voltage(); callers should set
+        # desired voltage first via setVoltage() or direct self.v assignment.
         if self.v < MIN_SUPPLY_VOLTAGE_V:
             raise PowerError(  # noqa: TRY003
                 f"Supply voltage must be set to at least {MIN_SUPPLY_VOLTAGE_V}V before calling setIsSupply "
