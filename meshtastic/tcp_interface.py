@@ -99,6 +99,7 @@ class TCPInterface(StreamInterface):
         self._reconnect_max_delay = self.DEFAULT_RECONNECT_MAX_DELAY
         self._reconnect_sleep_slice = self.DEFAULT_RECONNECT_SLEEP_SLICE
         self._reconnect_lock = threading.RLock()
+        self._reconnect_attempt_lock = threading.Lock()
         self._fatal_disconnect = False
 
         if connectNow:
@@ -196,9 +197,29 @@ class TCPInterface(StreamInterface):
                 server_address, timeout=self._connect_timeout
             )
         connected_socket.settimeout(None)
+        discard_redundant_socket = False
+        closing = False
         with self._reconnect_lock:
-            self.socket = connected_socket
-            self._fatal_disconnect = False
+            if getattr(self, "_wantExit", False):
+                closing = True
+            elif self.socket is not None:
+                discard_redundant_socket = True
+            else:
+                self.socket = connected_socket
+                self._fatal_disconnect = False
+        if closing or discard_redundant_socket:
+            with contextlib.suppress(Exception):
+                self._socket_shutdown(connected_socket)
+            with contextlib.suppress(Exception):
+                connected_socket.close()
+            if closing:
+                raise ConnectionError(
+                    self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
+                )
+            logger.debug(
+                "Dropping redundant TCP socket for %s because a socket is already active.",
+                self.hostname,
+            )
 
     @staticmethod
     def _notify_pending_sender_failure(pending_entry: Any, reason: str) -> bool:
@@ -239,7 +260,14 @@ class TCPInterface(StreamInterface):
         self._shared_close()
         # Sometimes the socket read might be blocked in the reader thread.
         # Therefore we force the shutdown by closing the socket here
-        self._close_socket_if_current(self.socket)
+        with self._reconnect_lock:
+            sock = self.socket
+            self.socket = None
+        if sock is not None:
+            with contextlib.suppress(Exception):
+                self._socket_shutdown(sock)
+            with contextlib.suppress(Exception):
+                sock.close()
 
         # Join after socket teardown so a blocking recv() can exit promptly.
         self._join_reader_thread()
@@ -254,6 +282,7 @@ class TCPInterface(StreamInterface):
         ConnectionError
             If reconnect has been disabled after a fatal disconnect.
         """
+        should_connect = False
         with self._reconnect_lock:
             if self.socket is None:
                 if self._wantExit:
@@ -264,7 +293,27 @@ class TCPInterface(StreamInterface):
                     raise ConnectionError(
                         self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(self.hostname)
                     )
-                self.myConnect()
+                should_connect = True
+        if should_connect:
+            # Serialize user-initiated dials with reconnect dials while keeping
+            # _reconnect_lock free during the blocking socket connect call.
+            with self._reconnect_attempt_lock:
+                perform_connect = False
+                with self._reconnect_lock:
+                    if self.socket is None:
+                        if self._wantExit:
+                            raise ConnectionError(
+                                self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
+                            )
+                        if self._fatal_disconnect:
+                            raise ConnectionError(
+                                self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(
+                                    self.hostname
+                                )
+                            )
+                        perform_connect = True
+                if perform_connect:
+                    self.myConnect()
         super().connect()
 
     def _write_bytes(self, b: bytes) -> None:
@@ -349,30 +398,35 @@ class TCPInterface(StreamInterface):
         bool
             `True` if reconnect and post-connect startup succeeded, `False` otherwise.
         """
-        if not self._reconnect_lock.acquire(  # pylint: disable=consider-using-with
+        if not self._reconnect_attempt_lock.acquire(  # pylint: disable=consider-using-with
             blocking=False
         ):
             logger.debug("Reconnect already in progress for %s", self.hostname)
             return False
         try:
-            if (
-                self._wantExit
-                or self._fatal_disconnect
-                or self._reconnect_attempts >= self._max_reconnect_attempts
-            ):
-                if self._reconnect_attempts >= self._max_reconnect_attempts:
-                    self._on_fatal_disconnect("reconnect retry limit reached")
+            abort_reconnect = False
+            should_mark_fatal = False
+            with self._reconnect_lock:
+                if self._wantExit or self._fatal_disconnect:
+                    abort_reconnect = True
+                elif self._reconnect_attempts >= self._max_reconnect_attempts:
+                    should_mark_fatal = True
+                else:
+                    self._reconnect_attempts += 1
+                    attempt_number = self._reconnect_attempts
+                    delay = (
+                        0.0 if attempt_number == 1 else self._compute_reconnect_delay()
+                    )
+
+            if should_mark_fatal:
+                self._on_fatal_disconnect("reconnect retry limit reached")
+                return False
+            if abort_reconnect:
                 return False
 
-            self._reconnect_attempts += 1
-            delay = (
-                0.0
-                if self._reconnect_attempts == 1
-                else self._compute_reconnect_delay()
-            )
             logger.debug(
                 "Reconnect attempt %d/%d for %s in %.1fs",
-                self._reconnect_attempts,
+                attempt_number,
                 self._max_reconnect_attempts,
                 self.hostname,
                 delay,
@@ -383,6 +437,9 @@ class TCPInterface(StreamInterface):
             connect_failed = False
             try:
                 self.myConnect()
+            except ConnectionError as connect_ex:
+                logger.debug("Reconnect for %s aborted: %s", self.hostname, connect_ex)
+                connect_failed = True
             except OSError as connect_ex:
                 logger.warning("Reconnect to %s failed: %s", self.hostname, connect_ex)
                 connect_failed = True
@@ -440,13 +497,14 @@ class TCPInterface(StreamInterface):
                         reconnect_sock = self.socket
                         self._close_socket_if_current(reconnect_sock)
                     else:
-                        self._reconnect_attempts = 0
-                        self._fatal_disconnect = False
+                        with self._reconnect_lock:
+                            self._reconnect_attempts = 0
+                            self._fatal_disconnect = False
                         reconnect_ok = True
 
             return reconnect_ok
         finally:
-            self._reconnect_lock.release()
+            self._reconnect_attempt_lock.release()
 
     # pylint: disable=too-many-return-statements
     # Multiple early returns are intentional here for clear handling of each

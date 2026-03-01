@@ -130,14 +130,14 @@ Current `COMPAT_DEPRECATE` methods:
 
 ## Slog API Refactoring Decisions
 
-| Class         | Method                  | Refactor Action        |
-| ------------- | ----------------------- | ---------------------- |
-| `PowerLogger` | `_p_meter`              | Internal attribute     |
-| `PowerLogger` | `pMeter`                | Public property        |
-| `PowerLogger` | `rootDir`               | Public property        |
-| `PowerLogger` | `root_dir`              | Compatibility shim     |
-| `PowerLogger` | `storeCurrentReading`   | Primary implementation |
-| `PowerLogger` | `store_current_reading` | Compatibility shim     |
+| Class         | Method                  | Refactor Action         |
+| ------------- | ----------------------- | ----------------------- |
+| `PowerLogger` | `_p_meter`              | Internal attribute      |
+| `PowerLogger` | `pMeter`                | Public property         |
+| `PowerLogger` | `storeCurrentReading`   | Primary implementation  |
+| `PowerLogger` | `store_current_reading` | Compatibility shim      |
+| `slog module` | `rootDir`               | Primary helper function |
+| `slog module` | `root_dir`              | Compatibility shim      |
 
 ## mt_config API Refactoring Decisions
 

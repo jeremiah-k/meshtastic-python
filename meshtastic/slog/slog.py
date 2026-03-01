@@ -328,10 +328,24 @@ class PowerLogger:
                 logger.debug(
                     "PowerLogger.close() called from logging thread; skipping self-join."
                 )
+            meter_close_exc: Exception | None = None
             try:
                 self._p_meter.close()
-            finally:
+            except Exception as exc:  # noqa: BLE001 - preserve primary close failure
+                meter_close_exc = exc
+            try:
                 self.writer.close()
+            except Exception as writer_close_exc:  # noqa: BLE001 - secondary cleanup
+                if meter_close_exc is not None:
+                    logger.warning(
+                        "PowerLogger writer close failed after power meter close error: %s",
+                        writer_close_exc,
+                        exc_info=True,
+                    )
+                else:
+                    raise
+            if meter_close_exc is not None:
+                raise meter_close_exc
 
 
 # FIXME move these defs somewhere else
@@ -445,20 +459,30 @@ class StructuredLogger:
         raw log file reference while holding the internal lock so concurrent writers cannot race
         with shutdown.
         """
+        unsubscribe_exc: Exception | None = None
+        writer_close_exc: Exception | None = None
         try:
             pub.unsubscribe(self._listen_glue, TOPIC_MESHTASTIC_LOG_LINE)
-        finally:
+        except Exception as exc:  # noqa: BLE001 - preserve as primary error
+            unsubscribe_exc = exc
+        try:
+            self.writer.close()
+        except Exception as exc:  # noqa: BLE001 - capture secondary close failure
+            writer_close_exc = exc
+        with self._raw_file_lock:
+            f = self.raw_file
+            self.raw_file = None  # mark that we are shutting down
+        if f:
             try:
-                self.writer.close()
-            finally:
-                with self._raw_file_lock:
-                    f = self.raw_file
-                    self.raw_file = None  # mark that we are shutting down
-                if f:
-                    try:
-                        f.close()  # Close the raw.txt file
-                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
-                        logger.warning("Failed to close raw log file: %s", exc)
+                f.close()  # Close the raw.txt file
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                logger.warning("Failed to close raw log file: %s", exc)
+        if unsubscribe_exc is not None:
+            if writer_close_exc is not None:
+                raise unsubscribe_exc from writer_close_exc
+            raise unsubscribe_exc
+        if writer_close_exc is not None:
+            raise writer_close_exc
 
     def _on_log_message(self, line: str) -> None:
         """Process a single raw log line, extract any structured slog fields, and persist the resulting record.

@@ -33,6 +33,7 @@ from meshtastic.interfaces.ble.discovery import (
     DiscoveryClientError,
     DiscoveryManager,
     _filter_devices_for_target_identifier,
+    _looks_like_ble_address,
     _parse_scan_response,
 )
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
@@ -329,10 +330,22 @@ def test_ble_package_all_uses_stable_surface() -> None:
 
 
 def test_ble_package_and_legacy_facade_exports_match() -> None:
-    """Package BLE exports should match the legacy meshtastic.ble_interface facade."""
+    """Legacy BLE facade should include canonical exports plus retained Bleak compat names."""
     import meshtastic.ble_interface as legacy_ble_mod
 
-    assert set(ble_mod.__all__) == set(legacy_ble_mod.__all__)
+    canonical_exports = set(ble_mod.__all__)
+    legacy_exports = set(legacy_ble_mod.__all__)
+    compat_bleak_exports = {
+        "BleakClient",
+        "BleakScanner",
+        "BLEDevice",
+        "BleakError",
+        "BleakDBusError",
+    }
+
+    assert canonical_exports.issubset(legacy_exports)
+    assert compat_bleak_exports.issubset(legacy_exports)
+    assert canonical_exports.isdisjoint(compat_bleak_exports)
 
 
 def test_state_manager_closing_only_for_disconnect():
@@ -897,6 +910,32 @@ def test_parse_scan_response_prefers_exact_name_before_normalized_match():
     devices = _parse_scan_response(response, whitelist_address="My Device")
 
     assert devices == [exact_name_device]
+
+
+def test_parse_scan_response_skips_malformed_tuple_payloads() -> None:
+    """Malformed discover tuple entries should be ignored, preserving only valid BLEDevice entries."""
+    valid_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Valid")
+    response = {
+        "valid": (valid_device, SimpleNamespace(service_uuids=[SERVICE_UUID])),
+        "invalid_device": (
+            "not-a-device",
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+        "invalid_adv": (valid_device, object()),
+    }
+
+    devices = _parse_scan_response(response, whitelist_address=None)
+
+    assert devices == [valid_device]
+
+
+def test_looks_like_ble_address_accepts_mac_and_uuid_shapes() -> None:
+    """Address-shape detection should support MAC-style and UUID-style identifiers."""
+    assert _looks_like_ble_address("AA:BB:CC:DD:EE:FF")
+    assert _looks_like_ble_address("aabbccddeeff")
+    assert _looks_like_ble_address("00112233445566778899aabbccddeeff")
+    assert _looks_like_ble_address("00112233-4455-6677-8899-aabbccddeeff")
+    assert not _looks_like_ble_address("Meshtastic Device")
 
 
 def test_filter_devices_rejects_ambiguous_normalized_name_matches():
