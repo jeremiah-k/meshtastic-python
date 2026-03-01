@@ -1159,7 +1159,9 @@ class BLEInterface(MeshInterface):
                     address,
                     sanitized,
                 )
-                return BLEDevice(sanitized, address, {})
+                # Use the backend-usable raw address as the BLEDevice identity.
+                # `sanitized` remains for registry/discovery key normalization.
+                return BLEDevice(address, address, {})
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]

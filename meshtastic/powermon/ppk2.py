@@ -249,13 +249,14 @@ class PPK2PowerSupply(PowerSupply):
         Raises
         ------
         PowerError
-            If the supply voltage has not been set to at least MIN_SUPPLY_VOLTAGE_V before calling this method.
+            If ``is_supply`` is True and the configured voltage is below
+            ``MIN_SUPPLY_VOLTAGE_V``.
         """
 
-        # setIsSupply validates the preconfigured voltage (self.v) before
-        # forwarding it to the device set_source_voltage(); callers should set
-        # desired voltage first via setVoltage() or direct self.v assignment.
-        if self.v < MIN_SUPPLY_VOLTAGE_V:
+        # When enabling supply mode, validate preconfigured voltage (self.v)
+        # before forwarding it to device set_source_voltage(); callers should
+        # set desired voltage first via setVoltage() or direct self.v assignment.
+        if is_supply and self.v < MIN_SUPPLY_VOLTAGE_V:
             raise PowerError(  # noqa: TRY003
                 f"Supply voltage must be set to at least {MIN_SUPPLY_VOLTAGE_V}V before calling setIsSupply "
                 f"(current v={self.v!r})"

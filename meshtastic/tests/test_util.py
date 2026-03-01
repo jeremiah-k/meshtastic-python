@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from collections import Counter
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -977,6 +978,22 @@ def test_supported_device_post_init_normalizes_usb_ids() -> None:
     assert device.usb_product_id_in_hex == "ef01"
     assert device.usb_id_aliases == (("303a", "1001"),)
     assert ("abcd", "ef01") in device.usb_ids
+
+
+@pytest.mark.unit
+def test_supported_device_post_init_accepts_list_aliases_and_deduplicates() -> None:
+    """Alias normalization should accept list pairs and remove duplicates."""
+    raw_aliases: Any = (
+        ("303A", "1001"),
+        ["303a", "1001"],
+        (" 303a ", " 1001 "),
+        ("", "1001"),
+    )
+    device = SupportedDevice(
+        name="Test Device",
+        usb_id_aliases=cast(tuple[tuple[str, str], ...], raw_aliases),
+    )
+    assert device.usb_id_aliases == (("303a", "1001"),)
 
 
 @pytest.mark.unit

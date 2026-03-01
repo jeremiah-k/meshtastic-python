@@ -799,6 +799,20 @@ def test_find_device_multiple_matches_raises():
     assert "Multiple Meshtastic BLE peripherals found matching" in str(excinfo.value)
 
 
+def test_find_device_direct_connect_preserves_raw_address():
+    """Direct-connect fallback should keep the raw BLE address format."""
+    iface = object.__new__(ble_mod.BLEInterface)
+    iface._discovery_manager = SimpleNamespace(
+        _discover_devices=lambda _addr: []
+    )  # type: ignore[assignment]
+
+    address = "AA:BB:CC:DD:EE:FF"
+    direct_device = BLEInterface.findDevice(iface, address)
+
+    assert direct_device.address == address
+    assert direct_device.name == address
+
+
 def test_discovery_manager_filters_meshtastic_devices(monkeypatch):
     """DiscoveryManager should return only devices advertising the Meshtastic service UUID."""
 

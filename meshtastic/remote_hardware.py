@@ -22,7 +22,8 @@ NO_GPIO_CHANNEL_ERROR = (
     "the other devices using the url from the device where the channel was added."
 )
 MISSING_DEST_NODE_ID_ERROR = (
-    "Must use a destination node ID for this operation (use --dest)."
+    "Must use a destination node ID for this operation (use --dest). "
+    "Special aliases (for example '^all') are not valid here."
 )
 INVALID_GPIO_MASK_ERROR = "mask must be a non-negative int"
 INVALID_GPIO_VALS_ERROR = "vals must be a non-negative int"
@@ -368,7 +369,7 @@ class RemoteHardwareClient:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(error_message)
-        return int(value)
+        return cast(int, value)
 
     def writeGPIOs(self, nodeid: int | str, mask: int, vals: int) -> Any:
         """Set specified GPIO pins on a remote device according to the provided mask and values.

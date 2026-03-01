@@ -29,7 +29,7 @@ class SupportedDevice:
     usb_id_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
-        """Normalize USB ID fields to lowercase and canonical tuple form."""
+        """Normalize USB ID fields to canonical lowercase tuple form."""
         self.usb_vendor_id_in_hex = (
             self.usb_vendor_id_in_hex.strip().lower()
             if self.usb_vendor_id_in_hex and self.usb_vendor_id_in_hex.strip()
@@ -41,8 +41,9 @@ class SupportedDevice:
             else None
         )
         normalized_aliases: list[tuple[str, str]] = []
+        seen_aliases: set[tuple[str, str]] = set()
         for alias in self.usb_id_aliases:
-            if not isinstance(alias, tuple) or len(alias) != 2:
+            if not isinstance(alias, (tuple, list)) or len(alias) != 2:
                 logger.debug(
                     "Ignoring malformed USB ID alias for %s: %r",
                     self.name,
@@ -60,7 +61,11 @@ class SupportedDevice:
             normalized_vendor_id = vendor_id.strip().lower()
             normalized_product_id = product_id.strip().lower()
             if normalized_vendor_id and normalized_product_id:
-                normalized_aliases.append((normalized_vendor_id, normalized_product_id))
+                normalized_alias = (normalized_vendor_id, normalized_product_id)
+                if normalized_alias in seen_aliases:
+                    continue
+                seen_aliases.add(normalized_alias)
+                normalized_aliases.append(normalized_alias)
             else:
                 logger.debug(
                     "Ignoring blank USB ID alias for %s: %r",
