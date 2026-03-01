@@ -8,7 +8,7 @@ import time
 from contextlib import ExitStack, suppress
 from typing import Any, NoReturn
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM

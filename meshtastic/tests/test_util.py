@@ -1009,6 +1009,13 @@ def test_supported_device_post_init_rejects_invalid_usb_aliases() -> None:
 
 
 @pytest.mark.unit
+def test_supported_device_post_init_rejects_non_container_usb_aliases() -> None:
+    """usb_id_aliases should reject non-list/tuple container values with TypeError."""
+    with pytest.raises(TypeError, match="expected tuple/list"):
+        SupportedDevice(name="Test Device", usb_id_aliases=cast(Any, 1234))
+
+
+@pytest.mark.unit
 def test_supported_device_post_init_rejects_invalid_primary_usb_id() -> None:
     """Invalid primary VID/PID values should fail fast during normalization."""
     with pytest.raises(

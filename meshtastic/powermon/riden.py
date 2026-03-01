@@ -3,14 +3,14 @@
 import logging
 import math
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import riden
 
 from .constants import MILLIAMPS_PER_AMP, SECONDS_PER_HOUR
 from .power_supply import PowerError, PowerSupply
 
-INVALID_POWER_ON_VOLTAGE_ERROR = (
+INVALID_POWER_ON_VOLTAGE_ERROR: Final[str] = (
     "Voltage must be set to a positive value before powerOn()."
 )
 

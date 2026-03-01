@@ -377,6 +377,17 @@ def ppk2_stub() -> "PPK2PowerSupply":
 
     # Bypass __init__ to avoid starting the background measurement thread in tests.
     ppk = object.__new__(PPK2PowerSupply)
+    ppk.r = MagicMock()
+    ppk.measuring = False
+    ppk.measurement_thread = threading.Thread(
+        target=lambda: None, daemon=True, name="ppk2 test thread"
+    )
+    ppk._v = 3.3
+    ppk_any = cast(Any, ppk)
+    ppk_any._is_supply = False
+    ppk_any._closed = False
+    ppk_any._shutdown_event = threading.Event()
+    ppk_any._measurement_thread = None
     ppk._result_lock = threading.Condition()
     ppk._want_measurement = threading.Condition()
     ppk._measurement_state_lock = threading.Lock()

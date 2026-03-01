@@ -18,17 +18,17 @@ def main() -> None:
     with meshtastic.serial_interface.SerialInterface() as iface:
         my_info = iface.myInfo
         if my_info is None:
-            print("Local node info is not available yet.")
-            return
+            print("Local node info is not available yet.", file=sys.stderr)
+            raise SystemExit(1)
 
         if my_info.my_node_num < 0:
-            print("Local node has not joined the mesh yet.")
-            return
+            print("Local node has not joined the mesh yet.", file=sys.stderr)
+            raise SystemExit(1)
 
         node = (iface.nodesByNum or {}).get(my_info.my_node_num)
         if node is None:
-            print("Local node not found in node database yet.")
-            return
+            print("Local node not found in node database yet.", file=sys.stderr)
+            raise SystemExit(1)
 
         user = node.get("user", {})
         if not isinstance(user, dict):

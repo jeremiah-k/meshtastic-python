@@ -209,6 +209,17 @@ def test_watchGPIOs_normalizes_leading_zero_decimal_nodeid(
 
 
 @pytest.mark.unit
+def test_watchGPIOs_treats_malformed_signed_nodeid_as_id(
+    mock_gpio_iface: MagicMock,
+) -> None:
+    """Malformed signed node ids should be normalized as ID keys without crashing."""
+    rhw = RemoteHardwareClient(mock_gpio_iface)
+    rhw.watchGPIOs("+-1", 123)
+
+    assert getattr(mock_gpio_iface, WATCH_MASKS_ATTR)["id:+-1"] == 123
+
+
+@pytest.mark.unit
 def test_watchGPIOs_does_not_cache_mask_on_send_failure(
     mock_gpio_iface: MagicMock,
 ) -> None:

@@ -4,7 +4,7 @@ It is used for auto detection as to which device might be connected.
 
 import re
 from dataclasses import dataclass, field
-from typing import NoReturn
+from typing import Any, NoReturn
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
@@ -73,9 +73,20 @@ class SupportedDevice:
             self._raise_validation_error(
                 f"Invalid usb_product_id_in_hex for {self.name}: {self.usb_product_id_in_hex!r}"
             )
+        raw_aliases_obj: object = self.usb_id_aliases
+        if raw_aliases_obj is None:
+            raw_aliases: tuple[Any, ...] | list[Any] = ()
+        elif isinstance(raw_aliases_obj, (tuple, list)):
+            raw_aliases = raw_aliases_obj
+        else:
+            raise TypeError(
+                "Invalid usb_id_aliases for "
+                f"{self.name}: expected tuple/list of (vendor_id, product_id) pairs "
+                f"or None, got {type(raw_aliases_obj).__name__}"
+            )
         normalized_aliases: list[tuple[str, str]] = []
         seen_aliases: set[tuple[str, str]] = set()
-        for alias in self.usb_id_aliases:
+        for alias in raw_aliases:
             if not isinstance(alias, (tuple, list)) or len(alias) != 2:
                 self._raise_validation_error(
                     f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"

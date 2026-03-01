@@ -15,7 +15,7 @@ import traceback
 import warnings
 from datetime import datetime
 from types import TracebackType
-from typing import IO, Any, Callable, Literal, TypeAlias
+from typing import IO, Any, Callable, Literal, TypeAlias, cast
 
 import google.protobuf.json_format
 
@@ -24,7 +24,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
 
 import meshtastic.node
@@ -334,7 +334,7 @@ class MeshInterface:  # pylint: disable=R0902
         if print_color is not None and interface.debugOut == sys.stdout:
             # this isn't quite correct (could cause false positives), but currently our formatting differs between different log representations
             if "DEBUG" in line:
-                print_color.print(line, color="cyan")
+                print_color.print(line, color=cast(Any, "cyan"))
             elif "INFO" in line:
                 print_color.print(line, color="white")
             elif "WARN" in line:
