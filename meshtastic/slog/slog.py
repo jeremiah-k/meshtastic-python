@@ -5,7 +5,6 @@ import io
 import logging
 import os
 import re
-import shutil
 import threading
 import warnings
 from dataclasses import dataclass
@@ -15,7 +14,7 @@ from pathlib import Path
 import parse  # type: ignore[import-untyped]
 import platformdirs
 import pyarrow as pa
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter
@@ -48,15 +47,17 @@ def root_dir() -> str:
     str
         Filesystem path to the "slogs" directory.
     """
+    should_warn = False
     with _warned_deprecations_lock:
-        if "root_dir" in _warned_deprecations:
-            return _root_dir_impl()
-        _warned_deprecations.add("root_dir")
-    warnings.warn(
-        "root_dir() is deprecated; use rootDir() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+        if "root_dir" not in _warned_deprecations:
+            _warned_deprecations.add("root_dir")
+            should_warn = True
+    if should_warn:
+        warnings.warn(
+            "root_dir() is deprecated; use rootDir() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     return _root_dir_impl()
 
 
@@ -150,7 +151,7 @@ class PowerLogger:
             raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
-        power_schema_fields: list[pa.Field[pa.DataType]] = [
+        power_schema_fields = [
             pa.field("time", pa.timestamp("us")),
             pa.field("average_mA", pa.float64()),
             pa.field("max_mA", pa.float64()),
@@ -630,18 +631,25 @@ class LogSet:
 
             # Also make a 'latest' directory that always points to the most recent logs
             latest_dir = Path(app_dir, "latest")
+            can_update_latest_link = True
             if latest_dir.is_symlink() or latest_dir.exists():
                 try:
                     if latest_dir.is_symlink() or latest_dir.is_file():
                         latest_dir.unlink()
                     elif latest_dir.is_dir():
-                        shutil.rmtree(latest_dir)
+                        latest_dir.rmdir()
                 except OSError as ex:
-                    logger.debug("Unable to remove existing latest slog path: %s", ex)
+                    logger.warning(
+                        "Skipping latest symlink update because existing path %s could not be removed non-destructively: %s",
+                        latest_dir,
+                        ex,
+                    )
+                    can_update_latest_link = False
 
             # symlink might fail on some platforms, if it does fail silently
             try:
-                latest_dir.symlink_to(dir_name, target_is_directory=True)
+                if can_update_latest_link:
+                    latest_dir.symlink_to(dir_name, target_is_directory=True)
             except OSError as ex:
                 logger.debug("Unable to update latest slog symlink: %s", ex)
         elif dir_name == "":

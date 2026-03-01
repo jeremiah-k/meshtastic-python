@@ -67,10 +67,10 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 import logging
 from importlib import import_module
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, NamedTuple, TypeGuard
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.node import Node
 from meshtastic.util import (
@@ -237,6 +237,11 @@ def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def _is_valid_node_num(value: object) -> TypeGuard[int]:
+    """Return True when value is an integer node number (excluding bool)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _extract_sender_and_decoded(
     as_dict: dict[str, Any],
 ) -> tuple[int, dict[str, Any]] | None:
@@ -256,9 +261,7 @@ def _extract_sender_and_decoded(
     """
     sender = as_dict.get("from")
     decoded = as_dict.get("decoded")
-    if not (isinstance(sender, int) and not isinstance(sender, bool)) or not isinstance(
-        decoded, dict
-    ):
+    if not _is_valid_node_num(sender) or not isinstance(decoded, dict):
         return None
     return sender, decoded
 
@@ -429,7 +432,7 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
         - hopLimit: value of `hopLimit` from the packet (or None)
     """
     sender = as_dict.get("from")
-    if not (isinstance(sender, int) and not isinstance(sender, bool)):
+    if not _is_valid_node_num(sender):
         if sender is not None:
             logger.debug(
                 "Skipping receive info update due to non-integer sender type: %s",
@@ -464,7 +467,7 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         decoded = as_dict.get("decoded")
         if sender is None:
             logger.debug("Dropping admin packet because 'from' field is missing")
-        elif not (isinstance(sender, int) and not isinstance(sender, bool)):
+        elif not _is_valid_node_num(sender):
             logger.debug("Admin packet has invalid 'from' field type: %r", type(sender))
         elif not isinstance(decoded, dict):
             logger.debug("Admin packet missing decoded dict from=%s", sender)

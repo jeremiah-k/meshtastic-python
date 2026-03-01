@@ -130,6 +130,9 @@ def _warn_compat_alias_once(old_name: str, new_name: str) -> None:
         if old_name in _warned_deprecations:
             return
         _warned_deprecations.add(old_name)
+    # stacklevel=3 targets user callsites through __getattr__/__setattr__:
+    # _warn_compat_alias_once -> accessor (__getattr__/__setattr__) -> user code.
+    # If additional wrappers are introduced around these accessors, increase this.
     warnings.warn(
         f"mt_config.{old_name} is deprecated, use mt_config.{new_name} instead",
         DeprecationWarning,

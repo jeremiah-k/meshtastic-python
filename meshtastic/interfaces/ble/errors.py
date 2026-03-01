@@ -30,15 +30,10 @@ T = TypeVar("T")
 
 
 class BLEErrorHandler:
-    """Helper class for consistent error handling in BLE operations.
+    """Internal helper class for consistent BLE error handling patterns.
 
-    This class provides static methods for standardized error handling patterns
-    throughout the BLE interface. It centralizes error logging and recovery strategies.
-
-    Features:
-        - Safe execution with fallback return values
-        - Consistent error logging and classification
-        - Cleanup operations that never raise exceptions
+    Static methods are intentionally underscore-prefixed because they are internal
+    orchestration helpers, not public BLE interface APIs.
     """
 
     @staticmethod
@@ -49,7 +44,7 @@ class BLEErrorHandler:
         error_msg: str = "Error in operation",
         reraise: bool = False,
     ) -> T | None:
-        """Execute a zero-argument callable, returning its result or a fallback on handled errors.
+        """Execute a callable with standardized BLE exception handling.
 
         Parameters
         ----------
@@ -112,7 +107,7 @@ class BLEErrorHandler:
     def _safe_cleanup(
         func: Callable[[], Any], cleanup_name: str = "cleanup operation"
     ) -> bool:
-        """Run a zero-argument cleanup callable and suppress any exceptions.
+        """Run cleanup callable and suppress non-fatal exceptions.
 
         Logs a debug message that includes `cleanup_name` if the callable raises an exception.
 

@@ -94,10 +94,11 @@ poetry run mypy meshtastic/ --strict
 ### Using GitHub CI actions locally
 
 - You need to have act installed. You can get it at https://nektosact.com/
-- on Linux: `act -P ubuntu-latest=-self-hosted --matrix "python-version:3.13"`
+- `bin/run-ci-local.sh` is the canonical local runner and reads `LOCAL_PYTHON_VERSION` (default defined in that script).
+- on Linux: `./bin/run-ci-local.sh`
 - on Windows:
-  - linux checks (linux docker): `act --matrix "python-version:3.13"`
-  - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:3.13"`
+  - linux checks (linux docker): `LOCAL_PYTHON_VERSION=3.13 ./bin/run-ci-local.sh`
+  - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:${LOCAL_PYTHON_VERSION:-3.13}"`
 
 The `-P ...=-self-hosted` mapping is optional. It tells `act` to run that job on
 your host machine instead of in a container, which can be useful for

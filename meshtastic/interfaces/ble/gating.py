@@ -303,6 +303,12 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
     if marked_at is None or (
         time.monotonic() - marked_at > BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS
     ):
+        logger.debug(
+            "Pruning stale unowned claim for %s (marked_at=%s, threshold=%.1fs).",
+            key,
+            marked_at,
+            BLEConfig.CONNECTION_GATE_UNOWNED_STALE_SECONDS,
+        )
         _remove_connected_record_locked(key)
         is_owned = getattr(_REGISTRY_LOCK, "_is_owned", None)
         if callable(is_owned):

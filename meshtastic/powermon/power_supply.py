@@ -92,7 +92,8 @@ class PowerMeter:
         float
             Minimum current in milliamperes.
         """
-        # Subclasses must override for a better implementation
+        # Preserve legacy fallback semantics for subclasses that only override
+        # getAverageCurrentMA().
         return self.getAverageCurrentMA()
 
     # COMPAT_STABLE_SHIM: alias for getMinCurrentMA
@@ -129,7 +130,8 @@ class PowerMeter:
         float
             Maximum current in milliamperes.
         """
-        # Subclasses must override for a better implementation
+        # Preserve legacy fallback semantics for subclasses that only override
+        # getAverageCurrentMA().
         return self.getAverageCurrentMA()
 
     # COMPAT_STABLE_SHIM: alias for getMaxCurrentMA

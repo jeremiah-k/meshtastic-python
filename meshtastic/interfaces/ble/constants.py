@@ -99,6 +99,9 @@ ERROR_TIMEOUT = "{0} timed out after {1:.1f} seconds"
 ERROR_MULTIPLE_DEVICES = (
     "Multiple Meshtastic BLE peripherals found matching '{0}'. Please specify one:\n{1}"
 )
+ERROR_MULTIPLE_DEVICES_DISCOVERY = (
+    "Multiple Meshtastic BLE peripherals found. Please specify one:\n{0}"
+)
 ERROR_READING_BLE = "Error reading BLE"
 ERROR_NO_PERIPHERAL_FOUND = "No Meshtastic BLE peripheral with identifier or address '{0}' found. Try --ble-scan to find it."
 
@@ -116,6 +119,16 @@ ERROR_ADDRESS_RESOLUTION_FAILED = "Address resolution failed, cannot create devi
 ERROR_INTERFACE_CLOSING = "Cannot connect while interface is closing"
 ERROR_CONNECTION_SUPPRESSED = "Connection suppressed: recently connected elsewhere"
 ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
+CONNECTION_ERROR_EMPTY_ADDRESS = "Cannot connect: empty address provided"
+CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT = (
+    "Connection invalidated by concurrent disconnect"
+)
+CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION = (
+    "Connection invalidated: client disconnected during finalization"
+)
+CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED = (
+    "Connection invalidated during state transition to connected"
+)
 
 # BLEClient-specific constants
 # Alias preserves legacy access while sourcing value from BLEConfig
