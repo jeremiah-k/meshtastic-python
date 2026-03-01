@@ -786,6 +786,8 @@ class Node:
         if len(splitURL) == 1:
             self._raise_interface_error(f"Invalid URL '{url}'")
         b64 = splitURL[-1]
+        if not b64:
+            self._raise_interface_error(f"Invalid URL '{url}': no channel data found")
 
         # We normally strip padding to make for a shorter URL, but the python parser doesn't like
         # that.  So add back any missing padding

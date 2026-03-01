@@ -1847,7 +1847,7 @@ def create_power_meter() -> None:
         meter = SimPowerSupply()
 
     if meter and v:
-        logger.info(f"Setting power supply to {v} volts")
+        logger.info("Setting power supply to %s volts", v)
         meter.setVoltage(v)
         meter.powerOn()
 

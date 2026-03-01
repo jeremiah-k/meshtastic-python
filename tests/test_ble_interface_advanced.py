@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Any, cast
+from typing import Any, Callable, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -832,7 +832,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
             """
             self.cancelled = False
             self.coro = None
-            self.callbacks = []
+            self.callbacks: list[Callable[..., Any]] = []
 
         def result(self, _timeout=None):
             """Raise FutureTimeoutError to simulate a future timing out.
