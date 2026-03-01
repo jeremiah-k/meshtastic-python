@@ -404,19 +404,26 @@ class TCPInterface(StreamInterface):
             logger.debug("Reconnect already in progress for %s", self.hostname)
             return False
         try:
-            attempt_number = 0
+            abort_reconnect = False
+            should_mark_fatal = False
             with self._reconnect_lock:
                 if self._wantExit or self._fatal_disconnect:
-                    return False
-                if self._reconnect_attempts >= self._max_reconnect_attempts:
-                    self._on_fatal_disconnect("reconnect retry limit reached")
-                    return False
-                self._reconnect_attempts += 1
-                attempt_number = self._reconnect_attempts
+                    abort_reconnect = True
+                elif self._reconnect_attempts >= self._max_reconnect_attempts:
+                    should_mark_fatal = True
+                else:
+                    self._reconnect_attempts += 1
+                    attempt_number = self._reconnect_attempts
+                    delay = (
+                        0.0 if attempt_number == 1 else self._compute_reconnect_delay()
+                    )
 
-            delay = (
-                0.0 if attempt_number == 1 else self._compute_reconnect_delay()
-            )
+            if should_mark_fatal:
+                self._on_fatal_disconnect("reconnect retry limit reached")
+                return False
+            if abort_reconnect:
+                return False
+
             logger.debug(
                 "Reconnect attempt %d/%d for %s in %.1fs",
                 attempt_number,
