@@ -363,7 +363,7 @@ class Tunnel:
                 logger.exception("TUN reader terminating due to read failure")
                 break
             # logger.debug(f"IP packet received on TUN interface, type={type(p)}")
-            dest_addr = p[16:20]
+            dest_addr = p[IP_DEST_ADDR_OFFSET : IP_DEST_ADDR_OFFSET + 4]
 
             if not self._should_filter_packet(p):
                 self._send_packet(dest_addr, p)
