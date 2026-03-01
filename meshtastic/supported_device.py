@@ -2,13 +2,13 @@
 It is used for auto detection as to which device might be connected.
 """
 
-import logging
+import re
 from dataclasses import dataclass, field
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
 
-logger = logging.getLogger(__name__)
+USB_ID_HEX_RE = re.compile(r"^[0-9a-f]{4}$")
 
 
 @dataclass(eq=False)
@@ -40,38 +40,43 @@ class SupportedDevice:
             if self.usb_product_id_in_hex and self.usb_product_id_in_hex.strip()
             else None
         )
+        if self.usb_vendor_id_in_hex is not None and not USB_ID_HEX_RE.fullmatch(
+            self.usb_vendor_id_in_hex
+        ):
+            raise ValueError(
+                f"Invalid usb_vendor_id_in_hex for {self.name}: {self.usb_vendor_id_in_hex!r}"
+            )
+        if self.usb_product_id_in_hex is not None and not USB_ID_HEX_RE.fullmatch(
+            self.usb_product_id_in_hex
+        ):
+            raise ValueError(
+                f"Invalid usb_product_id_in_hex for {self.name}: {self.usb_product_id_in_hex!r}"
+            )
         normalized_aliases: list[tuple[str, str]] = []
         seen_aliases: set[tuple[str, str]] = set()
         for alias in self.usb_id_aliases:
             if not isinstance(alias, (tuple, list)) or len(alias) != 2:
-                logger.debug(
-                    "Ignoring malformed USB ID alias for %s: %r",
-                    self.name,
-                    alias,
+                raise ValueError(
+                    f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
                 )
-                continue
             vendor_id, product_id = alias
             if not isinstance(vendor_id, str) or not isinstance(product_id, str):
-                logger.debug(
-                    "Ignoring non-string USB ID alias for %s: %r",
-                    self.name,
-                    alias,
+                raise ValueError(
+                    f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
                 )
-                continue
             normalized_vendor_id = vendor_id.strip().lower()
             normalized_product_id = product_id.strip().lower()
-            if normalized_vendor_id and normalized_product_id:
-                normalized_alias = (normalized_vendor_id, normalized_product_id)
-                if normalized_alias in seen_aliases:
-                    continue
-                seen_aliases.add(normalized_alias)
-                normalized_aliases.append(normalized_alias)
-            else:
-                logger.debug(
-                    "Ignoring blank USB ID alias for %s: %r",
-                    self.name,
-                    alias,
+            if not USB_ID_HEX_RE.fullmatch(
+                normalized_vendor_id
+            ) or not USB_ID_HEX_RE.fullmatch(normalized_product_id):
+                raise ValueError(
+                    f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
                 )
+            normalized_alias = (normalized_vendor_id, normalized_product_id)
+            if normalized_alias in seen_aliases:
+                continue
+            seen_aliases.add(normalized_alias)
+            normalized_aliases.append(normalized_alias)
         self.usb_id_aliases = tuple(normalized_aliases)
 
     @property

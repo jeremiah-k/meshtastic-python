@@ -967,12 +967,12 @@ def test_supported_device_usb_ids_include_aliases() -> None:
 
 @pytest.mark.unit
 def test_supported_device_post_init_normalizes_usb_ids() -> None:
-    """SupportedDevice should normalize USB IDs and drop empty values."""
+    """SupportedDevice should normalize USB IDs."""
     device = SupportedDevice(
         name="Test Device",
         usb_vendor_id_in_hex="ABCD",
         usb_product_id_in_hex="EF01",
-        usb_id_aliases=(("303A", "1001"), ("", "1234")),
+        usb_id_aliases=(("303A", "1001"),),
     )
     assert device.usb_vendor_id_in_hex == "abcd"
     assert device.usb_product_id_in_hex == "ef01"
@@ -987,13 +987,26 @@ def test_supported_device_post_init_accepts_list_aliases_and_deduplicates() -> N
         ("303A", "1001"),
         ["303a", "1001"],
         (" 303a ", " 1001 "),
-        ("", "1001"),
     )
     device = SupportedDevice(
         name="Test Device",
         usb_id_aliases=cast(tuple[tuple[str, str], ...], raw_aliases),
     )
     assert device.usb_id_aliases == (("303a", "1001"),)
+
+
+@pytest.mark.unit
+def test_supported_device_post_init_rejects_invalid_usb_aliases() -> None:
+    """Invalid alias VID/PID values should fail fast during normalization."""
+    with pytest.raises(ValueError, match="Invalid usb_id_aliases entry"):
+        SupportedDevice(name="Test Device", usb_id_aliases=(("ZZZZ", "1001"),))
+
+
+@pytest.mark.unit
+def test_supported_device_post_init_rejects_invalid_primary_usb_id() -> None:
+    """Invalid primary VID/PID values should fail fast during normalization."""
+    with pytest.raises(ValueError, match="Invalid usb_vendor_id_in_hex"):
+        SupportedDevice(name="Test Device", usb_vendor_id_in_hex="12")
 
 
 @pytest.mark.unit

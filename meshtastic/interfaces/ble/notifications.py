@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("meshtastic.ble")
 UNSUBSCRIBE_FAILURE_WARNING_THRESHOLD = 3
+RESUBSCRIBE_FAILURE_WARNING_THRESHOLD = 3
 
 
 class SubscriptionTokenExhaustedError(RuntimeError):
@@ -41,6 +42,7 @@ class NotificationManager:
             int, tuple[str, Callable[[Any, Any], None]]
         ] = {}
         self._characteristic_to_callback: dict[str, Callable[[Any, Any], None]] = {}
+        self._resubscribe_failures: dict[str, int] = {}
         self._subscription_counter = 0
         self._lock = RLock()
 
@@ -101,6 +103,7 @@ class NotificationManager:
         with self._lock:
             self._active_subscriptions.clear()
             self._characteristic_to_callback.clear()
+            self._resubscribe_failures.clear()
             self._subscription_counter = 0
 
     def _unsubscribe_all(self, client: "BLEClient", *, timeout: float | None) -> None:
@@ -159,6 +162,8 @@ class NotificationManager:
             # Use _characteristic_to_callback to deduplicate - it holds only the latest
             # callback per characteristic, avoiding redundant resubscription attempts
             subscriptions = list(self._characteristic_to_callback.items())
+            failures = self._resubscribe_failures
+        max_failure_threshold = RESUBSCRIBE_FAILURE_WARNING_THRESHOLD
 
         for characteristic, callback in subscriptions:
             try:
@@ -168,11 +173,24 @@ class NotificationManager:
                     timeout=timeout,
                 )
             except Exception as e:  # noqa: BLE001
+                with self._lock:
+                    failure_count = failures.get(characteristic, 0) + 1
+                    failures[characteristic] = failure_count
                 logger.debug(
                     "Failed to resubscribe %s during reconnect: %s",
                     characteristic,
                     e,
                 )
+                if failure_count >= max_failure_threshold:
+                    logger.warning(
+                        "Repeated BLE resubscribe failures for %s (%d attempts): %s",
+                        characteristic,
+                        failure_count,
+                        e,
+                    )
+            else:
+                with self._lock:
+                    failures.pop(characteristic, None)
 
     def __len__(self) -> int:
         """Report the number of active BLE notification subscriptions being tracked.

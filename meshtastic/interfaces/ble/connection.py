@@ -62,8 +62,12 @@ class ConnectionValidator:
             "Cannot connect while interface is closing". If a connection is already established or in progress
             the error message will be "Already connected or connection in progress".
         """
-        if not self.state_manager._can_connect:
-            if self.state_manager._is_closing:
+        with self.state_lock:
+            can_connect = self.state_manager._can_connect
+            is_closing = self.state_manager._is_closing
+
+        if not can_connect:
+            if is_closing:
                 raise self.BLEError("Cannot connect while interface is closing")
             raise self.BLEError("Already connected or connection in progress")
 

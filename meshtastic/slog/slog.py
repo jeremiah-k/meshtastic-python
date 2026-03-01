@@ -249,6 +249,7 @@ class PowerLogger:
             meter = self._p_meter
             if now is None:
                 now = datetime.now()
+            primary_exc: Exception | None = None
             try:
                 average_mA = meter.getAverageCurrentMA()
                 max_mA = meter.getMaxCurrentMA()
@@ -279,8 +280,21 @@ class PowerLogger:
                     "min_mW": min_mW,
                 }
                 self.writer.addRow(d)
+            except Exception as exc:
+                primary_exc = exc
+                raise
             finally:
-                meter.resetMeasurements()
+                try:
+                    meter.resetMeasurements()
+                except Exception as reset_exc:  # noqa: BLE001 - preserve primary error
+                    if primary_exc is not None:
+                        logger.warning(
+                            "Failed to reset power meter after sample/write error: %s",
+                            reset_exc,
+                            exc_info=True,
+                        )
+                    else:
+                        raise
 
     def storeCurrentReading(self, now: datetime | None = None) -> None:
         """Preferred camelCase public API; see `_store_current_reading`."""

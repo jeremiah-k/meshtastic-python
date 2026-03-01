@@ -1,6 +1,7 @@
 """BLE constants and configuration."""
 
 import logging
+import re
 
 logger = logging.getLogger("meshtastic.ble")
 
@@ -164,6 +165,7 @@ BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED = (
 
 
 _MISSING_ATTR_MSG = "module {!r} has no attribute {!r}"
+_UPPER_SNAKE_ATTR_RE = re.compile(r"^[A-Z0-9_]+$")
 
 
 def __getattr__(name: str) -> object:
@@ -172,6 +174,10 @@ def __getattr__(name: str) -> object:
     This preserves backward-compatible module-level constant access when new
     BLEConfig attributes are introduced without requiring an explicit alias.
     """
-    if not name.startswith("__") and name in vars(BLEConfig):
+    if (
+        not name.startswith("__")
+        and _UPPER_SNAKE_ATTR_RE.fullmatch(name) is not None
+        and name in vars(BLEConfig)
+    ):
         return getattr(BLEConfig, name)
     raise AttributeError(_MISSING_ATTR_MSG.format(__name__, name))

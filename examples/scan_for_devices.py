@@ -15,8 +15,8 @@ from meshtastic.util import (
 def main() -> None:
     """Print detected supported Meshtastic devices and active ports."""
     if len(sys.argv) != 1:
-        print(f"usage: {sys.argv[0]}")
-        print("Detect which device we might have.")
+        print(f"usage: {sys.argv[0]}", file=sys.stderr)
+        print("Detect which device we might have.", file=sys.stderr)
         raise SystemExit(3)
 
     vendor_ids = sorted(get_unique_vendor_ids())

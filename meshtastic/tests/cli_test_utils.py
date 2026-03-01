@@ -1,5 +1,6 @@
 """Helpers for invoking CLI commands in tests with bounded execution time."""
 
+import re
 import shlex
 import subprocess
 
@@ -7,12 +8,25 @@ import pytest
 
 EMPTY_SHELL_COMMAND_ERROR = "Empty command passed to CLI shell helper"
 EMPTY_ARGV_COMMAND_ERROR = "cmd must not be empty"
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 
 
 def _fail_masked_timeout(command_name: str, timeout_s: int | float) -> None:
     """Fail a test with a redacted timeout message for a CLI command."""
     masked = f"{command_name!r} +REDACTED_ARGS"
     pytest.fail(f"CLI command timed out after {timeout_s}s: {masked}")
+
+
+def _shell_executable_for_timeout(command: str) -> str:
+    """Return a safe executable token for timeout messages without leaking env assignments."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    for token in tokens:
+        if not _ENV_ASSIGNMENT_RE.fullmatch(token):
+            return token
+    return "<shell-command>"
 
 
 def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
@@ -54,10 +68,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        try:
-            executable = shlex.split(command)[0]
-        except (ValueError, IndexError):
-            executable = command.split(" ", 1)[0]
+        executable = _shell_executable_for_timeout(command)
         _fail_masked_timeout(executable, timeout)
         raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout
