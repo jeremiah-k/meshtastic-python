@@ -60,6 +60,26 @@ When modernizing BLE naming:
 5. Do not silently remove or hard-rename legacy methods.
 6. Update tests/monkeypatch points if alias names are introduced.
 
+#### Historical BLE compatibility baseline (source of truth)
+
+Use this pinned baseline for BLE compatibility decisions:
+
+- Tag: `2.7.7`
+- Commit: `b26d80f1866ffa765467e5cb7688c59dee7f2bb2`
+- Baseline file: `meshtastic/ble_interface.py`
+
+Historical names below must remain callable as compatibility wrappers over
+canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`,
+`_log_radio_handler`, `_legacy_log_radio_handler`):
+
+| Symbol                                  | Status                        | Warning policy | Notes                                  |
+| --------------------------------------- | ----------------------------- | -------------- | -------------------------------------- |
+| `BLEClient.async_await`                 | Required callable compat shim | Silent         | Keep historical argument behavior.     |
+| `BLEClient.async_run`                   | Required callable compat shim | Silent         | Keep historical argument behavior.     |
+| `BLEInterface.from_num_handler`         | Required callable compat shim | Silent         | Delegates to `_from_num_handler`.      |
+| `BLEInterface.log_radio_handler`        | Required callable compat shim | Silent         | Keep historical `async def` signature. |
+| `BLEInterface.legacy_log_radio_handler` | Required callable compat shim | Silent         | Keep historical `async def` signature. |
+
 ## How to check your code (pytest/pylint) before a PR
 
 - [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)

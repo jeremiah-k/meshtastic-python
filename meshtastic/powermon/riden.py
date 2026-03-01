@@ -37,8 +37,9 @@ class RidenPowerSupply(PowerSupply):
         r.set_date_time(datetime.now())
         # Keep base init after port open so timing/voltage state is available.
         super().__init__()
+        init_time = datetime.now()
         self.prevWattHour = self._get_raw_watt_hour()
-        self.prevPowerTime = datetime.now()
+        self.prevPowerTime = init_time
 
     def setMaxCurrent(self, i: float) -> None:
         """Set the maximum current the supply will provide."""

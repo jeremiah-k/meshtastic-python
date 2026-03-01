@@ -101,7 +101,7 @@ class PPK2PowerSupply(PowerSupply):
 
         Continuously polls the PPK2 device for current samples, updating
         min/max/sum statistics under ``_result_lock`` so first-batch
-        initialization after ``reset_measurements()`` cannot race.
+        initialization after ``resetMeasurements()`` cannot race.
         """
         while self.measuring:
             with self._result_lock:

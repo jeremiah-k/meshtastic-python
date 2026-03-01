@@ -143,7 +143,10 @@ class SerialInterface(StreamInterface):
             if self.stream is not None:
                 if not initialized:
                     # Ensure stream lock is released when base initialization fails.
-                    self.stream.close()
+                    with contextlib.suppress(
+                        OSError, ValueError, serial.SerialException
+                    ):
+                        self.stream.close()
                     self.stream = None
 
     def _set_hupcl_with_termios(self, f: IO[str]) -> None:

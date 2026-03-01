@@ -26,27 +26,15 @@ This document tracks coding standards and API refactoring decisions for the Mesh
 
 ## BLE API Refactoring Decisions
 
-Source of truth for BLE compatibility is `master`'s historical `meshtastic/ble_interface.py` public surface.
-When in doubt, treat the pinned baseline below as normative for BLE compatibility.
+Canonical BLE compatibility baseline and matrix now live in
+`CONTRIBUTING.md` under **API naming and compatibility policy**.
+Use that section as the single source of truth for:
 
-### Historical API Baseline (pinned)
-
-- Tag: `2.7.7`
-- Commit: `b26d80f1866ffa765467e5cb7688c59dee7f2bb2`
-- Baseline file: `meshtastic/ble_interface.py`
-- Canonical compatibility list: use the matrix below as the single source of truth.
-
-### Historical BLE compatibility treatment matrix (2.7.7 baseline)
-
-These names are kept as compatibility wrappers over canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`, `_log_radio_handler`, `_legacy_log_radio_handler`).
-
-| Symbol                                  | Status                        | Warning policy | Notes                                  |
-| --------------------------------------- | ----------------------------- | -------------- | -------------------------------------- |
-| `BLEClient.async_await`                 | Required callable compat shim | Silent         | Keep historical argument behavior.     |
-| `BLEClient.async_run`                   | Required callable compat shim | Silent         | Keep historical argument behavior.     |
-| `BLEInterface.from_num_handler`         | Required callable compat shim | Silent         | Delegates to `_from_num_handler`.      |
-| `BLEInterface.log_radio_handler`        | Required callable compat shim | Silent         | Keep historical `async def` signature. |
-| `BLEInterface.legacy_log_radio_handler` | Required callable compat shim | Silent         | Keep historical `async def` signature. |
+- pinned BLE baseline (`2.7.7`),
+- required historical BLE compatibility shims (including
+  `_async_await`, `_async_run`, `_from_num_handler`, `_log_radio_handler`,
+  `_legacy_log_radio_handler` wrappers),
+- warning policy for compatibility aliases.
 
 Any BLE methods introduced only in the refactored `meshtastic/interfaces/ble/*`
 package are not historical compatibility surface by default and should not get
@@ -98,7 +86,7 @@ Quick inventory command:
 
 ### Compatibility Alias Inventory (source of truth)
 
-- Treat the pinned BLE 2.7.7 matrix above as authoritative for historical BLE compatibility names.
+- Treat the pinned BLE 2.7.7 matrix in `CONTRIBUTING.md` as authoritative for historical BLE compatibility names.
 - Treat `COMPAT_STABLE_SHIM` / `COMPAT_DEPRECATE` markers as the grep-able inventory for intentionally maintained aliases elsewhere in the codebase.
 - If a symbol is not in the BLE matrix and is not marked with a `COMPAT_*` marker, do not add compatibility aliases by default.
 - `meshtastic.interfaces.ble.runner.get_zombie_runner_count()` is internal diagnostics and intentionally remains snake_case-only unless explicitly approved to expand public surface.
