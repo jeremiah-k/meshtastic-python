@@ -46,7 +46,8 @@ def get_zombie_runner_count() -> int:
 
     This is an internal diagnostics helper in `meshtastic.interfaces.ble.runner`
     and is intentionally not part of the historical BLE compatibility alias
-    surface exposed via `meshtastic.ble_interface`.
+    surface exposed via `meshtastic.ble_interface` (no camelCase alias by
+    policy; see AGENTS compatibility inventory).
 
     Returns
     -------

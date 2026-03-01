@@ -15,6 +15,10 @@ logger = logging.getLogger("meshtastic.ble")
 UNSUBSCRIBE_FAILURE_WARNING_THRESHOLD = 3
 
 
+class SubscriptionTokenExhaustedError(RuntimeError):
+    """Raised when notification subscription token space is exhausted."""
+
+
 class NotificationManager:
     """Manage BLE notification subscriptions so we can resubscribe cleanly after reconnects."""
 
@@ -78,7 +82,9 @@ class NotificationManager:
                     self._subscription_counter + 1
                 ) & self._MAX_SUBSCRIPTION_TOKEN
                 if token == start_token:
-                    raise RuntimeError(BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED)
+                    raise SubscriptionTokenExhaustedError(
+                        BLECLIENT_ERROR_SUBSCRIPTION_TOKEN_EXHAUSTED
+                    )
             self._active_subscriptions[token] = (characteristic, callback)
             self._characteristic_to_callback[characteristic] = callback
             return token

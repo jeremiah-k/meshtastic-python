@@ -8,6 +8,8 @@ from datetime import datetime
 from numbers import Real
 from typing import cast
 
+from .constants import MAX_SUPPLY_VOLTAGE_V
+
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
 
@@ -197,6 +199,8 @@ class PowerSupply(PowerMeter):
             If ``v`` is not a finite real number.
         PowerError
             If ``v`` is negative.
+        PowerError
+            If ``v`` exceeds ``MAX_SUPPLY_VOLTAGE_V``.
         """
         if isinstance(v, bool) or not isinstance(v, Real):
             raise PowerError("Voltage must be a real number")  # noqa: TRY003
@@ -205,6 +209,10 @@ class PowerSupply(PowerMeter):
             raise PowerError("Voltage must be finite")  # noqa: TRY003
         if voltage < 0:
             raise PowerError("Voltage cannot be negative")  # noqa: TRY003
+        if voltage > MAX_SUPPLY_VOLTAGE_V:
+            raise PowerError(  # noqa: TRY003
+                f"Voltage cannot exceed {MAX_SUPPLY_VOLTAGE_V}V"
+            )
         self._v = voltage
 
     def powerOn(self) -> None:

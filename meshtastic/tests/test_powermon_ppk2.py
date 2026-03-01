@@ -123,6 +123,25 @@ def test_setIsSupply_does_not_restart_when_already_measuring(
 
 
 @pytest.mark.unit
+def test_setIsSupply_allows_meter_mode_without_supply_voltage(
+    monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
+) -> None:
+    """Amp-meter mode should not require supply voltage prevalidation."""
+    ppk = ppk2_stub
+    ppk.v = 0.0
+    ppk.r = MagicMock()
+    ppk.measurement_thread = MagicMock()
+    ppk.measurement_thread.is_alive.return_value = True
+    ppk.resetMeasurements = MagicMock()  # type: ignore[method-assign]
+    monkeypatch.setattr("meshtastic.powermon.ppk2.time.sleep", lambda _: None)
+
+    ppk.setIsSupply(is_supply=False)
+
+    ppk.r.use_ampere_meter.assert_called_once()
+    ppk.r.set_source_voltage.assert_called_once_with(0)
+
+
+@pytest.mark.unit
 def test_setIsSupply_rechecks_thread_liveness_before_reader_restart(
     monkeypatch: pytest.MonkeyPatch, ppk2_stub: "PPK2PowerSupply"
 ) -> None:
