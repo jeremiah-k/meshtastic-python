@@ -118,10 +118,7 @@ class TCPInterface(StreamInterface):
             # resources if StreamInterface setup fails.
             sock = self.socket
             if sock is not None:
-                with contextlib.suppress(Exception):
-                    self._socket_shutdown(sock)
-                with contextlib.suppress(Exception):
-                    sock.close()
+                self._close_socket_handle(sock)
                 with self._reconnect_lock:
                     self.socket = None
             raise
@@ -162,6 +159,38 @@ class TCPInterface(StreamInterface):
             with contextlib.suppress(OSError):
                 sock_to_shutdown.shutdown(socket.SHUT_RDWR)
 
+    def _close_socket_handle(self, sock: socket.socket | None) -> None:
+        """Best-effort shutdown/close for a concrete socket handle."""
+        if sock is None:
+            return
+        with contextlib.suppress(Exception):
+            self._socket_shutdown(sock)
+        with contextlib.suppress(Exception):
+            sock.close()
+
+    def _raise_if_connect_blocked_locked(self) -> None:
+        """Raise when current state disallows opening a new TCP socket.
+
+        Must be called while holding ``_reconnect_lock``.
+        """
+        if getattr(self, "_wantExit", False):
+            raise ConnectionError(self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname))
+        if self._fatal_disconnect:
+            raise ConnectionError(
+                self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(self.hostname)
+            )
+
+    def _connect_socket_if_needed(self) -> None:
+        """Open a TCP socket when none is active, with reconnect-safe serialization."""
+        with self._reconnect_attempt_lock:
+            should_connect = False
+            with self._reconnect_lock:
+                if self.socket is None:
+                    self._raise_if_connect_blocked_locked()
+                    should_connect = True
+            if should_connect:
+                self.myConnect()
+
     def _close_socket_if_current(self, sock: socket.socket | None) -> bool:
         """Best-effort socket teardown and conditional state clear.
 
@@ -173,10 +202,7 @@ class TCPInterface(StreamInterface):
         """
         if sock is None:
             return False
-        with contextlib.suppress(Exception):
-            self._socket_shutdown(sock)
-        with contextlib.suppress(Exception):
-            sock.close()
+        self._close_socket_handle(sock)
         with self._reconnect_lock:
             if self.socket is sock:
                 self.socket = None
@@ -208,10 +234,7 @@ class TCPInterface(StreamInterface):
                 self.socket = connected_socket
                 self._fatal_disconnect = False
         if closing or discard_redundant_socket:
-            with contextlib.suppress(Exception):
-                self._socket_shutdown(connected_socket)
-            with contextlib.suppress(Exception):
-                connected_socket.close()
+            self._close_socket_handle(connected_socket)
             if closing:
                 raise ConnectionError(
                     self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
@@ -263,11 +286,7 @@ class TCPInterface(StreamInterface):
         with self._reconnect_lock:
             sock = self.socket
             self.socket = None
-        if sock is not None:
-            with contextlib.suppress(Exception):
-                self._socket_shutdown(sock)
-            with contextlib.suppress(Exception):
-                sock.close()
+        self._close_socket_handle(sock)
 
         # Join after socket teardown so a blocking recv() can exit promptly.
         self._join_reader_thread()
@@ -282,38 +301,7 @@ class TCPInterface(StreamInterface):
         ConnectionError
             If reconnect has been disabled after a fatal disconnect.
         """
-        should_connect = False
-        with self._reconnect_lock:
-            if self.socket is None:
-                if self._wantExit:
-                    raise ConnectionError(
-                        self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
-                    )
-                if self._fatal_disconnect:
-                    raise ConnectionError(
-                        self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(self.hostname)
-                    )
-                should_connect = True
-        if should_connect:
-            # Serialize user-initiated dials with reconnect dials while keeping
-            # _reconnect_lock free during the blocking socket connect call.
-            with self._reconnect_attempt_lock:
-                perform_connect = False
-                with self._reconnect_lock:
-                    if self.socket is None:
-                        if self._wantExit:
-                            raise ConnectionError(
-                                self.CONNECT_SHUTTING_DOWN_ERROR.format(self.hostname)
-                            )
-                        if self._fatal_disconnect:
-                            raise ConnectionError(
-                                self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(
-                                    self.hostname
-                                )
-                            )
-                        perform_connect = True
-                if perform_connect:
-                    self.myConnect()
+        self._connect_socket_if_needed()
         super().connect()
 
     def _write_bytes(self, b: bytes) -> None:
@@ -406,6 +394,8 @@ class TCPInterface(StreamInterface):
         try:
             abort_reconnect = False
             should_mark_fatal = False
+            attempt_number = 0
+            delay = 0.0
             with self._reconnect_lock:
                 if self._wantExit or self._fatal_disconnect:
                     abort_reconnect = True
