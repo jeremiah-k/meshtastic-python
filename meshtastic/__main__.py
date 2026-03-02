@@ -24,8 +24,7 @@ import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-import meshtastic.mt_config as mt_config
-from meshtastic import BROADCAST_ADDR, remote_hardware
+from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
