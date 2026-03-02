@@ -116,6 +116,27 @@ def test_close_closes_stream_even_without_reader_thread() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_shared_close_runs_super_before_stream_close() -> None:
+    """_shared_close should keep stream available during super().close() then close it."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    super_close_stream_refs: list[object | None] = []
+
+    def _fake_super_close(self: StreamInterface) -> None:
+        super_close_stream_refs.append(self.stream)
+
+    with patch("meshtastic.stream_interface.MeshInterface.close", _fake_super_close):
+        iface._shared_close()
+
+    assert super_close_stream_refs == [stream]
+    stream.close.assert_called_once()
+    assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
     """connect() should not send wake bytes when subclass provides its own stream."""
     iface = StreamInterface(noProto=True, connectNow=False)

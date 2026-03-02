@@ -1019,6 +1019,17 @@ def test_discovery_manager_destructor_does_not_close_client():
     assert manager._client is None
 
 
+def test_discovery_manager_destructor_tolerates_unusable_lock() -> None:
+    """DiscoveryManager.__del__ should fall back when _client_lock is not lock-like."""
+    manager = object.__new__(DiscoveryManager)
+    manager._client_lock = object()  # type: ignore[attr-defined]
+    manager._client = object()  # type: ignore[attr-defined]
+
+    manager.__del__()
+
+    assert manager._client is None  # type: ignore[attr-defined]
+
+
 def test_connection_validator_enforces_state():
     """ConnectionValidator should block connections when interface is closing or already connecting."""
 

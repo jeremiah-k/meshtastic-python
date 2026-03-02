@@ -4,7 +4,7 @@ import logging
 import re
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import create_autospec
 
 import pytest
 
@@ -38,7 +38,7 @@ def test_init_on_text_receive_with_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test _on_text_receive logs error when packet is malformatted."""
-    args = MagicMock()
+    args = SimpleNamespace(camel_case=False)
     monkeypatch.setattr(mt_config, "args", args)
     iface = create_autospec(SerialInterface, instance=True)
     packet: dict[str, Any] = {}
@@ -54,7 +54,7 @@ def test_init_on_position_receive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test _on_position_receive."""
-    args = MagicMock()
+    args = SimpleNamespace(camel_case=False)
     monkeypatch.setattr(mt_config, "args", args)
     iface = create_autospec(SerialInterface, instance=True)
     packet = {"from": "foo", "decoded": {"position": {}}}
@@ -71,7 +71,7 @@ def test_init_on_node_info_receive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test _on_node_info_receive."""
-    args = MagicMock()
+    args = SimpleNamespace(camel_case=False)
     monkeypatch.setattr(mt_config, "args", args)
     iface = iface_with_nodes
     assert iface.myInfo is not None

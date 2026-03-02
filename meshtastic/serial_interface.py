@@ -48,6 +48,10 @@ class SerialInterface(StreamInterface):
             message: str = (
                 "Multiple serial ports were detected; one serial port must be specified with '--port'.\n"
             )
+            message += (
+                "  Auto-detection cannot disambiguate when multiple compatible devices "
+                "or overlapping USB VID/PID aliases are present.\n"
+            )
             message += f"  Ports detected: {ports}"
             raise self.MeshInterfaceError(message)
         return ports[0]

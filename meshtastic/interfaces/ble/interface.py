@@ -2127,7 +2127,7 @@ class BLEInterface(MeshInterface):
                 mesh_pub.sendMessage(
                     "meshtastic.connection.status", interface=self, connected=connected
                 )
-            except (AttributeError, RuntimeError, ValueError):
+            except Exception:  # noqa: BLE001 - best-effort publish path
                 logger.debug(
                     "Error publishing %s status via mesh_pub.sendMessage",
                     "connect" if connected else "disconnect",
@@ -2136,7 +2136,7 @@ class BLEInterface(MeshInterface):
 
         try:
             publishingThread.queueWork(_publish_status)
-        except (AttributeError, RuntimeError, ValueError):
+        except Exception:  # noqa: BLE001 - best-effort queueing path
             logger.debug(
                 "Error queuing connection status publish via publishingThread.queueWork",
                 exc_info=True,

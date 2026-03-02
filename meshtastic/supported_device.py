@@ -293,7 +293,9 @@ nano_g1 = SupportedDevice(
 
 # NOTE: Seeed Xiao ESP32-S3 and T-Deck can both enumerate as 303a:1001
 # (Espressif USB Serial/JTAG mode), so VID/PID-only auto-detection is ambiguous
-# in that hardware mode and requires higher-level disambiguation.
+# in that hardware mode and requires higher-level disambiguation. When multiple
+# matching serial devices are attached, users should select one explicitly with
+# --port.
 seeed_xiao_s3 = SupportedDevice(
     name="Seeed Xiao ESP32-S3",
     version=None,

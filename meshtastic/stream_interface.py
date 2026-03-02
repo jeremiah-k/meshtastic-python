@@ -350,9 +350,11 @@ class StreamInterface(MeshInterface):
 
         Sets the shutdown intent before delegating to MeshInterface.close() so
         background readers don't treat intentional close as an unexpected
-        disconnect. Then proactively closes the underlying stream (if present)
-        to unblock any pending reads and ensure resources are released even when
-        no reader thread was started (e.g. connectNow=False tests).
+        disconnect. Calls MeshInterface.close() while the stream is still open
+        so best-effort disconnect frames can be transmitted, then closes the
+        underlying stream in a finally block to unblock pending reads and ensure
+        resources are released even when no reader thread was started (for
+        example, connectNow=False tests).
 
         All shutdown state transitions are synchronized with connect() via
         _connect_lock to prevent a concurrent connect() from clearing the
@@ -360,8 +362,11 @@ class StreamInterface(MeshInterface):
         """
         with self._connect_lock:
             self._wantExit = True
-            self._close_stream_safely()
-        super().close()
+        try:
+            super().close()
+        finally:
+            with self._connect_lock:
+                self._close_stream_safely()
 
     def _join_reader_thread(self) -> None:
         """Join the reader thread when it is alive and not the current thread."""
