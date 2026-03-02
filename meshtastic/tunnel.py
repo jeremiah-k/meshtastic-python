@@ -21,7 +21,7 @@ import threading
 from contextlib import suppress
 from typing import Any
 
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 from pytap2 import TapDevice
 
 from meshtastic import mt_config

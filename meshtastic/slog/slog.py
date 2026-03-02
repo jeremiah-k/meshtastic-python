@@ -18,7 +18,7 @@ from typing import Any
 import parse  # type: ignore[import-untyped]
 import platformdirs
 import pyarrow as pa
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter

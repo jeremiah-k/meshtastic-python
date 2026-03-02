@@ -6,6 +6,7 @@ description = "Python API & client shell for talking to Meshtastic devices"
 authors = ["Meshtastic Developers <contact@meshtastic.org>"]
 license = "GPL-3.0-only"
 readme = "README.md"
+packages = [{ include = "meshtastic" }]
 include = [{ path = "meshtastic/py.typed", format = ["sdist", "wheel"] }]
 
 [tool.poetry.dependencies]

@@ -43,7 +43,7 @@ lint:
       commands:
         - name: lint
           output: mypy
-          run: poetry run mypy meshtastic/ --strict
+          run: poetry -C ${workspace} run mypy meshtastic/ --strict --exclude '^meshtastic/tests/'
           target: meshtastic
           run_from: ${root_or_parent_with_any_config}
           success_codes: [0, 1]
@@ -61,7 +61,7 @@ lint:
       commands:
         - name: lint
           output: pylint
-          run: poetry run pylint meshtastic examples/ --exit-zero --output ${tmpfile} --output-format json
+          run: poetry -C ${workspace} run pylint meshtastic examples/ --exit-zero --output ${tmpfile} --output-format json
           target: meshtastic
           read_output_from: tmp_file
           run_from: ${root_or_parent_with_any_config}
