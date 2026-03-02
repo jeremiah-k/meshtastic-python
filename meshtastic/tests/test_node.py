@@ -14,7 +14,13 @@ from pytest import CaptureFixture, LogCaptureFixture
 
 from ..mesh_interface import MeshInterface
 from ..node import Node
-from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2, mesh_pb2
+from ..protobuf import (
+    admin_pb2,
+    apponly_pb2,
+    config_pb2,
+    localonly_pb2,
+    mesh_pb2,
+)
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Acknowledgment

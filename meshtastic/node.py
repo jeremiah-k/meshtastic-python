@@ -367,7 +367,9 @@ class Node:
                     f"{configType.name.upper()}_CONFIG"
                 )
             else:
-                p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
+                p.get_module_config_request = (
+                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
+                )
 
         self._send_admin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:
