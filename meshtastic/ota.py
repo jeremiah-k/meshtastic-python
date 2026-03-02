@@ -1,15 +1,28 @@
-"""Meshtastic ESP32 Unified OTA"""
+"""Meshtastic ESP32 Unified OTA."""
 
-import os
 import hashlib
-import socket
 import logging
-from typing import Optional, Callable
+import os
+import socket
+from typing import Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
 
-def _file_sha256(filename: str):
+class _SHA256Digest(Protocol):
+    """Minimal digest protocol returned by hashlib.sha256()."""
+
+    def update(self, data: bytes) -> None:
+        """Update the digest with bytes."""
+
+    def digest(self) -> bytes:
+        """Return raw digest bytes."""
+
+    def hexdigest(self) -> str:
+        """Return digest as hexadecimal string."""
+
+
+def _file_sha256(filename: str) -> _SHA256Digest:
     """Calculate SHA256 hash of a file."""
     sha256_hash = hashlib.sha256()
 
@@ -27,16 +40,16 @@ class OTAError(Exception):
 class ESP32WiFiOTA:
     """ESP32 WiFi Unified OTA updates."""
 
-    def __init__(self, filename: str, hostname: str, port: int = 3232):
+    def __init__(self, filename: str, hostname: str, port: int = 3232) -> None:
         self._filename = filename
         self._hostname = hostname
         self._port = port
-        self._socket: Optional[socket.socket] = None
+        self._socket: socket.socket | None = None
 
         if not os.path.exists(self._filename):
             raise FileNotFoundError(f"File {self._filename} does not exist")
 
-        self._file_hash = _file_sha256(self._filename)
+        self._file_hash: _SHA256Digest = _file_sha256(self._filename)
 
     def _read_line(self) -> str:
         """Read a line from the socket."""
@@ -62,7 +75,9 @@ class ESP32WiFiOTA:
         """Return the hash as a hex string."""
         return self._file_hash.hexdigest()
 
-    def update(self, progress_callback: Optional[Callable[[int, int], None]] = None):
+    def update(
+        self, progress_callback: Callable[[int, int], None] | None = None
+    ) -> None:
         """Perform the OTA update."""
         with open(self._filename, "rb") as f:
             data = f.read()
