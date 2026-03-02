@@ -801,7 +801,6 @@ class MeshInterface:  # pylint: disable=R0902
             Application port number for the text message. (Default value = portnums_pb2.PortNum.TEXT_MESSAGE_APP)
         hopLimit : int | None
             Optional hop limit override for the outgoing packet. (Default value = None)
-
         Returns
         -------
         mesh_pb2.MeshPacket
@@ -829,7 +828,6 @@ class MeshInterface:  # pylint: disable=R0902
         hopLimit: int | None = None,
     ) -> mesh_pb2.MeshPacket:
         """Send a high-priority alert text to a node, which may trigger special notifications on clients.
-
         Parameters
         ----------
         text : str
