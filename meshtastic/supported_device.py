@@ -1,40 +1,124 @@
-""" Supported Meshtastic Devices - This is a class and collection of Meshtastic devices.
-    It is used for auto detection as to which device might be connected.
+"""Supported Meshtastic Devices - This is a class and collection of Meshtastic devices.
+It is used for auto detection as to which device might be connected.
 """
-# pylint: disable=R0917
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, NoReturn
 
 # Goal is to detect which device and port to use from the supported devices
 # without installing any libraries that are not currently in the python meshtastic library
 
+USB_ID_HEX_RE = re.compile(r"^[0-9a-f]{4}$")
 
+
+class SupportedDeviceValidationError(ValueError):
+    """Raised when supported device USB metadata is invalid."""
+
+
+@dataclass(eq=False)
 class SupportedDevice:
-    """Devices supported on Meshtastic"""
+    """Devices supported on Meshtastic."""
 
-    def __init__(
-        self,
-        name,
-        version=None,
-        for_firmware=None,
-        device_class="esp32",
-        baseport_on_linux=None,
-        baseport_on_mac=None,
-        baseport_on_windows="COM",
-        usb_vendor_id_in_hex=None,
-        usb_product_id_in_hex=None,
-    ):
-        """constructor"""
-        self.name = name
-        self.version = version
-        self.for_firmware = for_firmware
-        self.device_class = device_class  # could be "nrf52"
+    name: str
+    version: str | None = None
+    for_firmware: str | None = None
+    device_class: str = "esp32"  # could be "nrf52"
+    baseport_on_linux: str | None = None  # ex: ttyUSB or ttyACM
+    baseport_on_mac: str | None = None
+    baseport_on_windows: str = "COM"
+    # when you run "lsusb -d xxxx:" in linux
+    usb_vendor_id_in_hex: str | None = None  # store in lower case
+    usb_product_id_in_hex: str | None = None  # store in lower case
+    # Alternate VID/PID pairs for known USB enumeration modes.
+    usb_id_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
-        # when you run "lsusb -d xxxx:" in linux
-        self.usb_vendor_id_in_hex = usb_vendor_id_in_hex  # store in lower case
-        self.usb_product_id_in_hex = usb_product_id_in_hex  # store in lower case
+    def _raise_validation_error(self, message: str) -> NoReturn:
+        """Raise a normalized validation error for this device."""
+        raise SupportedDeviceValidationError(message)
 
-        self.baseport_on_linux = baseport_on_linux  # ex: ttyUSB or ttyACM
-        self.baseport_on_mac = baseport_on_mac
-        self.baseport_on_windows = baseport_on_windows
+    def __post_init__(self) -> None:
+        """Normalize USB ID fields to canonical lowercase tuple form."""
+
+        def _normalize_primary_usb_id(raw_value: object, field_name: str) -> str | None:
+            if raw_value is None:
+                return None
+            if not isinstance(raw_value, str):
+                self._raise_validation_error(
+                    f"Invalid {field_name} for {self.name}: expected str or None, got {type(raw_value).__name__}"
+                )
+            normalized = raw_value.strip().lower()
+            return normalized if normalized else None
+
+        self.usb_vendor_id_in_hex = _normalize_primary_usb_id(
+            self.usb_vendor_id_in_hex, "usb_vendor_id_in_hex"
+        )
+        self.usb_product_id_in_hex = _normalize_primary_usb_id(
+            self.usb_product_id_in_hex, "usb_product_id_in_hex"
+        )
+        if (self.usb_vendor_id_in_hex is None) != (self.usb_product_id_in_hex is None):
+            self._raise_validation_error(
+                "Both usb_vendor_id_in_hex and usb_product_id_in_hex must be provided "
+                f"together for {self.name}"
+            )
+        if self.usb_vendor_id_in_hex is not None and not USB_ID_HEX_RE.fullmatch(
+            self.usb_vendor_id_in_hex
+        ):
+            self._raise_validation_error(
+                f"Invalid usb_vendor_id_in_hex for {self.name}: {self.usb_vendor_id_in_hex!r}"
+            )
+        if self.usb_product_id_in_hex is not None and not USB_ID_HEX_RE.fullmatch(
+            self.usb_product_id_in_hex
+        ):
+            self._raise_validation_error(
+                f"Invalid usb_product_id_in_hex for {self.name}: {self.usb_product_id_in_hex!r}"
+            )
+        raw_aliases_obj: object = self.usb_id_aliases
+        if raw_aliases_obj is None:
+            raw_aliases: tuple[Any, ...] | list[Any] = ()
+        elif isinstance(raw_aliases_obj, (tuple, list)):
+            raw_aliases = raw_aliases_obj
+        else:
+            self._raise_validation_error(
+                "Invalid usb_id_aliases for "
+                f"{self.name}: expected tuple/list of (vendor_id, product_id) pairs "
+                f"or None, got {type(raw_aliases_obj).__name__}"
+            )
+        normalized_aliases: list[tuple[str, str]] = []
+        seen_aliases: set[tuple[str, str]] = set()
+        for alias in raw_aliases:
+            if not isinstance(alias, (tuple, list)) or len(alias) != 2:
+                self._raise_validation_error(
+                    f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
+                )
+            vendor_id, product_id = alias
+            if not isinstance(vendor_id, str) or not isinstance(product_id, str):
+                self._raise_validation_error(
+                    f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
+                )
+            normalized_vendor_id = vendor_id.strip().lower()
+            normalized_product_id = product_id.strip().lower()
+            if not USB_ID_HEX_RE.fullmatch(
+                normalized_vendor_id
+            ) or not USB_ID_HEX_RE.fullmatch(normalized_product_id):
+                self._raise_validation_error(
+                    f"Invalid usb_id_aliases entry for {self.name}: {alias!r}"
+                )
+            normalized_alias = (normalized_vendor_id, normalized_product_id)
+            if normalized_alias in seen_aliases:
+                continue
+            seen_aliases.add(normalized_alias)
+            normalized_aliases.append(normalized_alias)
+        self.usb_id_aliases = tuple(normalized_aliases)
+
+    @property
+    def usb_ids(self) -> tuple[tuple[str, str], ...]:
+        """Return primary and alternate normalized VID/PID pairs for detection."""
+        usb_ids: list[tuple[str, str]] = []
+        if self.usb_vendor_id_in_hex and self.usb_product_id_in_hex:
+            usb_ids.append((self.usb_vendor_id_in_hex, self.usb_product_id_in_hex))
+        usb_ids.extend(self.usb_id_aliases)
+        return tuple(dict.fromkeys(usb_ids))
 
 
 # supported devices
@@ -139,7 +223,7 @@ heltec_v2_1 = SupportedDevice(
 )
 rak11200 = SupportedDevice(
     name="RAK 11200",
-    version="",
+    version=None,
     for_firmware="rak11200",
     baseport_on_linux="ttyUSB",
     baseport_on_mac="cu.usbserial-",
@@ -168,7 +252,7 @@ techo_1 = SupportedDevice(
 )
 rak4631_5005 = SupportedDevice(
     name="RAK 4631 5005",
-    version="",
+    version=None,
     for_firmware="rak4631_5005",
     device_class="nrf52",
     baseport_on_linux="ttyACM",
@@ -178,7 +262,7 @@ rak4631_5005 = SupportedDevice(
 )
 rak4631_5005_epaper = SupportedDevice(
     name="RAK 4631 5005 14000 epaper",
-    version="",
+    version=None,
     for_firmware="rak4631_5005_epaper",
     device_class="nrf52",
     baseport_on_linux="ttyACM",
@@ -189,7 +273,7 @@ rak4631_5005_epaper = SupportedDevice(
 # Note: The 19003 reports same product id as 5005 in boot mode
 rak4631_19003 = SupportedDevice(
     name="RAK 4631 19003",
-    version="",
+    version=None,
     for_firmware="rak4631_19003",
     device_class="nrf52",
     baseport_on_linux="ttyACM",
@@ -199,7 +283,7 @@ rak4631_19003 = SupportedDevice(
 )
 nano_g1 = SupportedDevice(
     name="Nano G1",
-    version="",
+    version=None,
     for_firmware="nano-g1",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
@@ -207,28 +291,36 @@ nano_g1 = SupportedDevice(
     usb_product_id_in_hex="55d4",
 )
 
+# NOTE: Seeed Xiao ESP32-S3 and T-Deck can both enumerate as 303a:1001
+# (Espressif USB Serial/JTAG mode), so VID/PID-only auto-detection is ambiguous
+# in that hardware mode and requires higher-level disambiguation. When multiple
+# matching serial devices are attached, users should select one explicitly with
+# --port.
 seeed_xiao_s3 = SupportedDevice(
-    name = "Seeed Xiao ESP32-S3",
-    version = "",
+    name="Seeed Xiao ESP32-S3",
+    version=None,
     for_firmware="seeed-xiao-esp32s3",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
     usb_vendor_id_in_hex="2886",
     usb_product_id_in_hex="0059",
+    # Alternate enumeration mode: native Espressif USB Serial/JTAG.
+    usb_id_aliases=(("303a", "1001"),),
 )
 
 tdeck = SupportedDevice(
     name="T-Deck",
-    version="",
+    version=None,
     for_firmware="t-deck",  # Confirmed firmware identifier
     device_class="esp32",
     baseport_on_linux="ttyACM",
     baseport_on_mac="cu.usbmodem",
     baseport_on_windows="COM",
     usb_vendor_id_in_hex="303a",  # Espressif Systems (VERIFIED)
-    usb_product_id_in_hex="1001", # VERIFIED from actual device
+    usb_product_id_in_hex="1001",  # VERIFIED from actual device
+    # Alternate enumeration mode observed with CH9102 USB-UART bridge variants.
+    usb_id_aliases=(("1a86", "55d4"),),
 )
-
 
 
 supported_devices = [

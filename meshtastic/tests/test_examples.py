@@ -1,29 +1,53 @@
-"""Meshtastic test that the examples run as expected.
-   We assume you have a python virtual environment in current directory.
-   If not, you need to run: "python3 -m venv venv", "source venv/bin/activate", "pip install ."
-"""
-import subprocess
+"""Meshtastic tests that examples run as expected."""
+
+from __future__ import annotations
+
+import logging
+import runpy
+import sys
+from pathlib import Path
 
 import pytest
+import serial.tools.list_ports  # type: ignore[import-untyped]
+
+HELLO_WORLD_SERIAL_PATH = (
+    Path(__file__).resolve().parents[2] / "examples" / "hello_world_serial.py"
+)
+
+
+def _run_hello_world_serial(monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
+    """Execute the hello_world_serial example in-process with controlled argv."""
+    monkeypatch.setattr(sys, "argv", ["examples/hello_world_serial.py", *args])
+    runpy.run_path(
+        str(HELLO_WORLD_SERIAL_PATH),
+        run_name="__main__",
+    )
 
 
 @pytest.mark.examples
-def test_examples_hello_world_serial_no_arg():
-    """Test hello_world_serial without any args"""
-    return_value, _ = subprocess.getstatusoutput(
-        "source venv/bin/activate; python3 examples/hello_world_serial.py"
-    )
-    assert return_value == 3
+def test_examples_hello_world_serial_no_arg(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test hello_world_serial without any args."""
+    with pytest.raises(SystemExit) as exc_info:
+        _run_hello_world_serial(monkeypatch)
+
+    out, err = capsys.readouterr()
+    assert exc_info.value.code == 3
+    assert out == ""
+    assert err.startswith("usage: ")
+    assert err.strip().endswith("hello_world_serial.py message")
 
 
 @pytest.mark.examples
-def test_examples_hello_world_serial_with_arg(capsys):
-    """Test hello_world_serial with arg"""
-    return_value, _ = subprocess.getstatusoutput(
-        "source venv/bin/activate; python3 examples/hello_world_serial.py hello"
+def test_examples_hello_world_serial_with_arg(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test hello_world_serial with arg in a mocked no-device environment."""
+    monkeypatch.setattr(
+        serial.tools.list_ports, "comports", lambda *_args, **_kwargs: []
     )
-    assert return_value == 1
-    _, err = capsys.readouterr()
-    assert err == ""
-    # TODO: Why does this not work?
-    # assert out == 'Warning: No Meshtastic devices detected.'
+    with caplog.at_level(logging.WARNING):
+        _run_hello_world_serial(monkeypatch, "hello")
+
+    assert "No serial Meshtastic device detected" in caplog.text

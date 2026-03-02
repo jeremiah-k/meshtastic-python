@@ -1,13 +1,17 @@
-"""Version lookup utilities, isolated for cleanliness"""
-import sys
-try:
-    from importlib.metadata import version
-except:
-    import pkg_resources
+"""Version lookup utilities, isolated for cleanliness."""
 
-def get_active_version():
-    """Get the currently active version using importlib, or pkg_resources if we must"""
-    if "importlib.metadata" in sys.modules:
+from importlib.metadata import PackageNotFoundError, version
+
+
+def get_active_version() -> str:
+    """Retrieve the active installed version of the "meshtastic" package.
+
+    Returns
+    -------
+    str
+        The package version string, or "unknown" if the distribution metadata cannot be found.
+    """
+    try:
         return version("meshtastic")
-    else:
-        return pkg_resources.get_distribution("meshtastic").version # pylint: disable=E0601
+    except PackageNotFoundError:
+        return "unknown"

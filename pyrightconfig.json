@@ -1,0 +1,11 @@
+{
+  "pythonVersion": "3.10",
+  "venvPath": ".",
+  "venv": "venv",
+  "include": ["meshtastic", "examples", "tests"],
+  "exclude": [
+    "**/__pycache__",
+    "meshtastic/protobuf/*_pb2.py",
+    "meshtastic/protobuf/*_pb2.pyi"
+  ]
+}
