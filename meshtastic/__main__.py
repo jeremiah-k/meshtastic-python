@@ -1665,7 +1665,7 @@ def _is_repeated_field(field_desc: Any) -> bool:
 
     label = getattr(field_desc, "label", None)
     label_repeated = getattr(field_desc, "LABEL_REPEATED", None)
-    return bool(label == label_repeated)
+    return label is not None and label == label_repeated
 
 
 def _set_missing_flags_false(
