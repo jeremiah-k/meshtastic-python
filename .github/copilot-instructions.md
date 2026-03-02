@@ -200,10 +200,9 @@ pub.subscribe(on_receive, "meshtastic.receive")
 
 1. Install dependencies: `poetry install --all-extras --with dev`
 2. Make changes
-3. Run linting: `poetry run pylint meshtastic examples/`
-4. Run type checking: `poetry run mypy meshtastic/`
-5. Run tests: `poetry run pytest -m unit`
-6. Update documentation if needed
+3. Run unified lint/type checks: `TRUNK_INTERACTIVE=0 .trunk/trunk check --fix --show-existing`
+4. Run tests: `poetry run pytest -m unit`
+5. Update documentation if needed
 
 ## CLI Development
 

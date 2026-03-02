@@ -80,7 +80,7 @@ canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`,
 | `BLEInterface.log_radio_handler`        | Required callable compat shim | Silent         | Keep historical `async def` signature. |
 | `BLEInterface.legacy_log_radio_handler` | Required callable compat shim | Silent         | Keep historical `async def` signature. |
 
-## How to check your code (pytest/pylint) before a PR
+## How to check your code (pytest/pylint/mypy) before a PR
 
 - [Pre-requisites](https://meshtastic.org/docs/development/python/building/#pre-requisites)
 - also execute `poetry install --all-extras --with dev,powermon` for all optional dependencies
@@ -94,6 +94,16 @@ make ci
 ```
 
 This runs the same checks as CI (pylint, mypy, pytest with coverage).
+
+### Unified lint/type check via Trunk
+
+Run lint and type checks (including Poetry-managed `pylint` + `mypy`) with one command:
+
+```bash
+TRUNK_INTERACTIVE=0 .trunk/trunk check --fix --show-existing
+```
+
+This does not run `pytest`; use `make ci` (or `poetry run pytest ...`) for test execution.
 
 ### Manual checks
 
