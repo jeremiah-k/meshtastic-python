@@ -1,20 +1,28 @@
-"""Simple program to demo how to use meshtastic library.
-   To run: python examples/info.py
+"""List known mesh nodes with their hardware model information.
+
+To run: `python examples/info_example.py`.
 """
 
-import meshtastic
 import meshtastic.serial_interface
 
-iface = meshtastic.serial_interface.SerialInterface()
 
-# call showInfo() just to ensure values are populated
-# info = iface.showInfo()
+def main() -> None:
+    """Connect and print known nodes with their hardware model."""
+    with meshtastic.serial_interface.SerialInterface() as iface:
+        if not iface.nodes:
+            print("No node info available yet.")
+            return
+
+        print("Known nodes:")
+        for node in iface.nodes.values():
+            user = node.get("user", {})
+            if not isinstance(user, dict):
+                user = {}
+            print(
+                f"{user.get('id', 'unknown')} ({user.get('longName', 'unknown')}): "
+                f"{user.get('hwModel', 'unknown')}"
+            )
 
 
-if iface.nodes:
-    for n in iface.nodes.values():
-        if n["num"] == iface.myInfo.my_node_num:
-            print(n["user"]["hwModel"])
-            break
-
-iface.close()
+if __name__ == "__main__":
+    main()

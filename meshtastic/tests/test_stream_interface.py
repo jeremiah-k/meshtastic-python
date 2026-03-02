@@ -1,84 +1,390 @@
-"""Meshtastic unit tests for stream_interface.py"""
+"""Meshtastic unit tests for stream_interface.py."""
 
-import logging
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+import serial  # type: ignore[import-untyped]
 
-from ..stream_interface import StreamInterface
-
-# import re
+from ..stream_interface import MAX_TO_FROM_RADIO_SIZE, START1, START2, StreamInterface
 
 
 @pytest.mark.unit
-def test_StreamInterface():
-    """Test that we cannot instantiate a StreamInterface based on noProto"""
-    with pytest.raises(Exception) as pytest_wrapped_e:
+def test_stream_interface() -> None:
+    """Verify that creating a StreamInterface without protocol configuration raises an error.
+
+    Raises
+    ------
+    StreamInterface.StreamInterfaceError
+        when a StreamInterface is instantiated without a protocol.
+    """
+    with pytest.raises(
+        StreamInterface.StreamInterfaceError, match=r"StreamInterface is now abstract"
+    ):
         StreamInterface()
-    assert pytest_wrapped_e.type == Exception
 
 
 # Note: This takes a bit, so moving from unit to slow
 @pytest.mark.unitslow
 @pytest.mark.usefixtures("reset_mt_config")
-def test_StreamInterface_with_noProto(caplog):
-    """Test that we can instantiate a StreamInterface based on nonProto
-    and we can read/write bytes from a mocked stream
-    """
+def test_stream_interface_with_no_proto() -> None:
+    """Verify noProto StreamInterface can read and write through an assigned stream."""
     stream = MagicMock()
     test_data = b"hello"
     stream.read.return_value = test_data
-    with caplog.at_level(logging.DEBUG):
-        iface = StreamInterface(noProto=True, connectNow=False)
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
         iface.stream = stream
-        iface._writeBytes(test_data)
-        data = iface._readBytes(len(test_data))
+        iface._write_bytes(test_data)
+        data = iface._read_bytes(len(test_data))
         assert data == test_data
+    finally:
+        iface.close()
 
 
-# TODO
-### Note: This takes a bit, so moving from unit to slow
-### Tip: If you want to see the print output, run with '-s' flag:
-###      pytest -s meshtastic/tests/test_stream_interface.py::test_sendToRadioImpl
-# @pytest.mark.unitslow
-# @pytest.mark.usefixtures("reset_mt_config")
-# def test_sendToRadioImpl(caplog):
-#    """Test _sendToRadioImpl()"""
-#
-##    def add_header(b):
-##        """Add header stuffs for radio"""
-##        bufLen = len(b)
-##        header = bytes([START1, START2, (bufLen >> 8) & 0xff,  bufLen & 0xff])
-##        return header + b
-#
-#    # captured raw bytes of a Heltec2.1 radio with 2 channels (primary and a secondary channel named "gpio")
-#    raw_1_my_info = b'\x1a,\x08\xdc\x8c\xd5\xc5\x02\x18\r2\x0e1.2.49.5354c49P\x15]\xe1%\x17Eh\xe0\xa7\x12p\xe8\x9d\x01x\x08\x90\x01\x01'
-#    raw_2_node_info = b'"9\x08\xdc\x8c\xd5\xc5\x02\x12(\n\t!28b5465c\x12\x0cUnknown 465c\x1a\x03?5C"\x06$o(\xb5F\\0\n\x1a\x02 1%M<\xc6a'
-#    # pylint: disable=C0301
-#    raw_3_node_info = b'"C\x08\xa4\x8c\xd5\xc5\x02\x12(\n\t!28b54624\x12\x0cUnknown 4624\x1a\x03?24"\x06$o(\xb5F$0\n\x1a\x07 5MH<\xc6a%G<\xc6a=\x00\x00\xc0@'
-#    raw_4_complete = b'@\xcf\xe5\xd1\x8c\x0e'
-#    # pylint: disable=C0301
-#    raw_5_prefs = b'Z6\r\\F\xb5(\x15\\F\xb5("\x1c\x08\x06\x12\x13*\x11\n\x0f0\x84\x07P\xac\x02\x88\x01\x01\xb0\t#\xb8\t\x015]$\xddk5\xd5\x7f!b=M<\xc6aP\x03`F'
-#    # pylint: disable=C0301
-#    raw_6_channel0 = b'Z.\r\\F\xb5(\x15\\F\xb5("\x14\x08\x06\x12\x0b:\t\x12\x05\x18\x01"\x01\x01\x18\x015^$\xddk5\xd6\x7f!b=M<\xc6aP\x03`F'
-#    # pylint: disable=C0301
-#    raw_7_channel1 = b'ZS\r\\F\xb5(\x15\\F\xb5("9\x08\x06\x120:.\x08\x01\x12(" \xb4&\xb3\xc7\x06\xd8\xe39%\xba\xa5\xee\x8eH\x06\xf6\xf4H\xe8\xd5\xc1[ao\xb5Y\\\xb4"\xafmi*\x04gpio\x18\x025_$\xddk5\xd7\x7f!b=M<\xc6aP\x03`F'
-#    raw_8_channel2 = b'Z)\r\\F\xb5(\x15\\F\xb5("\x0f\x08\x06\x12\x06:\x04\x08\x02\x12\x005`$\xddk5\xd8\x7f!b=M<\xc6aP\x03`F'
-#    raw_blank = b''
-#
-#    test_data = b'hello'
-#    stream = MagicMock()
-#    #stream.read.return_value = add_header(test_data)
-#    stream.read.side_effect = [ raw_1_my_info, raw_2_node_info, raw_3_node_info, raw_4_complete,
-#                                raw_5_prefs, raw_6_channel0, raw_7_channel1, raw_8_channel2,
-#                                raw_blank, raw_blank]
-#    toRadio = MagicMock()
-#    toRadio.SerializeToString.return_value = test_data
-#    with caplog.at_level(logging.DEBUG):
-#        iface = StreamInterface(noProto=True, connectNow=False)
-#        iface.stream = stream
-#        iface.connect()
-#        iface._sendToRadioImpl(toRadio)
-#        assert re.search(r'Sending: ', caplog.text, re.MULTILINE)
-#        assert re.search(r'reading character', caplog.text, re.MULTILINE)
-#        assert re.search(r'In reader loop', caplog.text, re.MULTILINE)
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_to_radio_impl_frames_payload() -> None:
+    """Test that _send_to_radio_impl writes a properly framed payload."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        payload = b"hello"
+        to_radio = MagicMock()
+        to_radio.SerializeToString.return_value = payload
+
+        with patch.object(iface, "_write_bytes") as write_bytes:
+            iface._send_to_radio_impl(to_radio)
+
+            length_high = (len(payload) >> 8) & 0xFF
+            length_low = len(payload) & 0xFF
+            expected = bytes([START1, START2, length_high, length_low]) + payload
+            write_bytes.assert_called_once_with(expected)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_send_to_radio_impl_rejects_oversized_payload() -> None:
+    """_send_to_radio_impl should raise PayloadTooLargeError for payloads > MAX_TO_FROM_RADIO_SIZE."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        to_radio = MagicMock()
+        to_radio.SerializeToString.return_value = b"\x00" * (MAX_TO_FROM_RADIO_SIZE + 1)
+
+        with pytest.raises(StreamInterface.PayloadTooLargeError):
+            iface._send_to_radio_impl(to_radio)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_and_read_skip_when_stream_not_open() -> None:
+    """_write_bytes/_read_bytes should fail clearly for a configured-but-closed stream."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = False
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._write_bytes(b"hello")
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._read_bytes(5)
+
+        stream.write.assert_not_called()
+        stream.flush.assert_not_called()
+        stream.read.assert_not_called()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_wraps_stream_exceptions_as_stream_closed() -> None:
+    """_read_bytes should normalize backend read errors to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = serial.SerialException("boom")
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._read_bytes(5)
+        assert isinstance(exc_info.value.__cause__, serial.SerialException)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_raises_stream_closed_when_backend_returns_none() -> None:
+    """_read_bytes should treat None from backend read as closed stream."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.return_value = None
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._read_bytes(5)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_closes_stream_even_without_reader_thread() -> None:
+    """close() should release stream resources even when connectNow=False."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+
+    iface.close()
+
+    stream.close.assert_called_once()
+    assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_shared_close_runs_super_before_stream_close() -> None:
+    """_shared_close should keep stream available during super().close() then close it."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    super_close_stream_refs: list[object | None] = []
+
+    def _fake_super_close(self: StreamInterface) -> None:
+        super_close_stream_refs.append(self.stream)
+
+    with patch("meshtastic.stream_interface.MeshInterface.close", _fake_super_close):
+        iface._shared_close()
+
+    assert super_close_stream_refs == [stream]
+    stream.close.assert_called_once()
+    assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_ignores_requests_while_stream_close_in_progress() -> None:
+    """connect() should not restart reader state while _shared_close is in progress."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface._stream_close_in_progress = True
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with patch.object(iface, "_start_config") as start_config:
+            iface.connect()
+        start_config.assert_not_called()
+        iface._rxThread.start.assert_not_called()
+    finally:
+        iface._stream_close_in_progress = False
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_shared_close_resets_close_in_progress_on_super_close_error() -> None:
+    """_shared_close should clear in-progress guard and close stream even if super close fails."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+
+    with patch(
+        "meshtastic.stream_interface.MeshInterface.close",
+        side_effect=RuntimeError("close failed"),
+    ):
+        with pytest.raises(RuntimeError, match="close failed"):
+            iface._shared_close()
+
+    assert iface._stream_close_in_progress is False
+    stream.close.assert_called_once()
+    assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_joins_reader_thread_when_shared_close_raises() -> None:
+    """close() should always attempt to join reader thread even on shared-close errors."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    with (
+        patch.object(iface, "_shared_close", side_effect=RuntimeError("close failed")),
+        patch.object(iface, "_join_reader_thread") as join_reader,
+    ):
+        with pytest.raises(RuntimeError, match="close failed"):
+            iface.close()
+    join_reader.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
+    """connect() should not send wake bytes when subclass provides its own stream."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        # Exercise the code path used by stream-owning subclasses (e.g. TCPInterface).
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_write_bytes") as write_bytes,
+            patch.object(iface, "_start_config") as start_config,
+        ):
+            iface.connect()
+        write_bytes.assert_not_called()
+        start_config.assert_called_once()
+        iface._rxThread.start.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_cleans_up_when_start_config_fails() -> None:
+    """connect() should tear down reader/connection state if _start_config fails."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_start_config", side_effect=RuntimeError("boom")),
+            patch.object(iface, "_shared_close") as shared_close,
+            patch.object(iface, "_join_reader_thread") as join_reader,
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                iface.connect()
+        shared_close.assert_called_once()
+        join_reader.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_connect_cleans_up_when_wait_connected_fails() -> None:
+    """connect() should tear down reader/connection state if _wait_connected fails."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface.noProto = False
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with (
+            patch.object(iface, "_start_config"),
+            patch.object(
+                iface, "_wait_connected", side_effect=RuntimeError("wait failed")
+            ),
+            patch.object(iface, "_shared_close") as shared_close,
+            patch.object(iface, "_join_reader_thread") as join_reader,
+        ):
+            with pytest.raises(RuntimeError, match="wait failed"):
+                iface.connect()
+        shared_close.assert_called_once()
+        join_reader.assert_called_once()
+    finally:
+        iface.noProto = True
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_retries_until_full_payload_written() -> None:
+    """_write_bytes should handle partial writes until full payload is sent."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.side_effect = [2, 3]
+    iface.stream = stream
+    try:
+        iface._write_bytes(b"hello")
+        assert stream.write.call_count == 2
+        stream.flush.assert_called_once()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_raises_on_zero_progress() -> None:
+    """_write_bytes should fail fast when stream write reports no progress."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.return_value = 0
+    iface.stream = stream
+    try:
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._write_bytes(b"hello")
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_wraps_serial_exception_as_stream_closed() -> None:
+    """_write_bytes should normalize serial-layer write failures to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.side_effect = serial.SerialException("boom")
+    iface.stream = stream
+    try:
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._write_bytes(b"hello")
+        assert isinstance(exc_info.value.__cause__, serial.SerialException)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_reader_resyncs_when_start1_repeats_before_start2() -> None:
+    """Reader should recover from START1,START1,START2 framing without dropping packet."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        read_bytes = iter(
+            [
+                bytes([START1]),
+                bytes([START1]),
+                bytes([START2]),
+                b"\x00",
+                b"\x01",
+                b"X",
+            ]
+        )
+
+        def _fake_read_bytes(_length: int) -> bytes:
+            try:
+                return next(read_bytes)
+            except StopIteration:
+                iface._wantExit = True
+                return b""
+
+        with (
+            patch.object(iface, "_read_bytes", side_effect=_fake_read_bytes),
+            patch.object(iface, "_handle_from_radio") as handle_from_radio,
+            patch.object(iface, "_disconnected"),
+            patch("meshtastic.stream_interface.time.sleep", lambda _seconds: None),
+        ):
+            iface._reader()
+
+        handle_from_radio.assert_called_once_with(b"X")
+    finally:
+        iface.close()

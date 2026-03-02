@@ -6,69 +6,103 @@ on:
   pull_request:
     branches:
       - master
-      - '**/*-review'
-  workflow_dispatch:
+      - "**-review"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  CI_ASSERT_MODULE_STATE_DRIFT: "true"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.python-version == '3.14' }}
+    env:
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
     strategy:
+      fail-fast: false
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python 3
-        uses: actions/setup-python@v5
-      - name: Uninstall meshtastic
-        run: |
-          pip3 uninstall -y meshtastic
-      - name: Install dependencies
+      - &checkout_step
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - &setup_python_step
+        name: Install Python 3
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - &cache_poetry_step
+        name: Cache Poetry artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pip
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
+            ${{ runner.os }}-poetry-
+      - &install_dependencies_step
+        name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip3 install poetry
-      - name: Install meshtastic from local
+          python -m pip install "poetry==2.3.2"
+      - &install_local_step
+        name: Install meshtastic from local
         run: |
-          poetry install --all-extras --with dev,powermon
+          poetry install ${{ env.POETRY_INSTALL_ARGS }}
           poetry run meshtastic --version
-      - name: Run pylint
-        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"
-      - name: Check types with mypy
-        run: poetry run mypy meshtastic/
       - name: Run tests with pytest
-        run: poetry run pytest --cov=meshtastic
-      - name: Generate coverage report
         run: |
-          poetry run pytest --cov=meshtastic --cov-report=xml
+          if [ "${{ matrix.python-version }}" = "3.13" ]; then
+            poetry run pytest --cov=meshtastic --cov-report=xml
+          else
+            poetry run pytest --cov=meshtastic
+          fi
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        if: ${{ matrix.python-version == '3.13' }}
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           env_vars: OS, PYTHON
           files: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
+      - name: Run pylint
+        if: ${{ matrix.python-version == '3.13' }}
+        run: poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
+      - name: Check types with mypy
+        if: ${{ matrix.python-version == '3.13' }}
+        run: poetry run mypy meshtastic/
+  # Fast install sanity check across Python versions.
+  # Full tests and lint/type checks run in the build job above.
   validate:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.python-version == '3.14' }}
+    env:
+      # Validate base package installs without extras.
+      POETRY_INSTALL_ARGS: ""
     strategy:
+      fail-fast: false
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python 3
-        uses: actions/setup-python@v5
-      - name: Install meshtastic from local
-        run: |
-          python -m pip install --upgrade pip
-          pip3 install poetry
-          poetry install
-          poetry run meshtastic --version
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
