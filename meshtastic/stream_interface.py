@@ -4,7 +4,7 @@ import contextlib
 import logging
 import threading
 import time
-from typing import IO, Any, Callable
+from typing import IO, Any, BinaryIO, Callable
 
 import serial  # type: ignore[import-untyped]
 
@@ -32,6 +32,13 @@ STREAM_WRITE_EXCEPTIONS = (
     serial.SerialTimeoutException,
 )
 # Write/flush exceptions that indicate stream closure.
+STREAM_READ_EXCEPTIONS = (
+    OSError,
+    ValueError,
+    serial.SerialException,
+    serial.SerialTimeoutException,
+)
+# Read exceptions that indicate stream closure.
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +125,7 @@ class StreamInterface(MeshInterface):
         local_stream = getattr(self, "stream", None)
         if local_stream is None and not noProto and not _provides_own_stream:
             raise StreamInterface.StreamInterfaceError()
-        self.stream: serial.Serial | None = local_stream
+        self.stream: serial.Serial | BinaryIO | None = local_stream
         self._rxBuf = bytearray()
         self._wantExit = False
         # Locking contract:
@@ -317,7 +324,15 @@ class StreamInterface(MeshInterface):
         # treating them as open for backward compatibility (e.g., mock streams, test doubles).
         if s is None or not getattr(s, "is_open", True):
             raise StreamInterface.StreamClosedError()
-        return s.read(length)  # type: ignore[no-any-return]
+        try:
+            data = s.read(length)
+        except STREAM_READ_EXCEPTIONS as exc:
+            raise StreamInterface.StreamClosedError(
+                str(exc) or StreamInterface.StreamClosedError.DEFAULT_MSG
+            ) from exc
+        if data is None:
+            raise StreamInterface.StreamClosedError()
+        return data
 
     def _send_to_radio_impl(self, toRadio: mesh_pb2.ToRadio) -> None:
         """Frame and send a ToRadio protobuf to the underlying stream.
@@ -350,8 +365,10 @@ class StreamInterface(MeshInterface):
         reader remains alive after the timeout.
         """
         logger.debug("Closing stream")
-        self._shared_close()
-        self._join_reader_thread()
+        try:
+            self._shared_close()
+        finally:
+            self._join_reader_thread()
 
     def _shared_close(self) -> None:
         """Run close() cleanup shared by stream-like subclasses.

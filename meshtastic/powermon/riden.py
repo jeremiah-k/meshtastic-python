@@ -14,6 +14,8 @@ from .power_supply import PowerError, PowerSupply
 INVALID_POWER_ON_VOLTAGE_ERROR: Final[str] = (
     "Voltage must be set to a positive value before powerOn()."
 )
+DEFAULT_RIDEN_BAUDRATE: Final[int] = 115200
+DEFAULT_RIDEN_ADDRESS: Final[int] = 1
 
 Riden = cast(type[Any], riden.Riden)  # type: ignore[attr-defined]
 
@@ -28,7 +30,11 @@ class RidenPowerSupply(PowerSupply):
 
         portName (str, optional): The port name of the power supply. Defaults to "/dev/ttyUSB0".
         """
-        self.r = r = Riden(port=portName, baudrate=115200, address=1)
+        self.r = r = Riden(
+            port=portName,
+            baudrate=DEFAULT_RIDEN_BAUDRATE,
+            address=DEFAULT_RIDEN_ADDRESS,
+        )
         logging.info(
             "Connected to Riden power supply: model %s, sn %s, firmware %s. Date/time updated.",
             r.type,

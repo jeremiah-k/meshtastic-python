@@ -1183,6 +1183,8 @@ def test_get_existing_client_if_valid_uses_last_request_snapshot():
     iface = object.__new__(BLEInterface)
     iface._state_lock = threading.RLock()  # type: ignore[attr-defined]
     iface._last_connection_request = "old-request"  # type: ignore[attr-defined]
+    iface._state_manager = SimpleNamespace(_is_connected=True)  # type: ignore[attr-defined]
+    iface._disconnect_notified = False  # type: ignore[attr-defined]
 
     class _Client:
         def isConnected(self) -> bool:

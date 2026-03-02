@@ -168,6 +168,30 @@ def test_sync_power_stress_timed_mode_with_ack(
 
 
 @pytest.mark.unit
+def test_sync_power_stress_timed_mode_with_ack_enforces_minimum_dwell(
+    monkeypatch: pytest.MonkeyPatch,
+    power_stress_client: tuple[MagicMock, PowerStressClient],
+) -> None:
+    """Timed mode should preserve minimum dwell budget even when ack arrives quickly."""
+    _, client = power_stress_client
+    client.sendPowerStress = _fake_send  # type: ignore[method-assign]
+    monkeypatch.setattr("meshtastic.powermon.stress.STRESS_DURATION_BUFFER_S", 0.2)
+    monotonic = MagicMock(side_effect=[10.0, 10.05])
+    sleep = MagicMock()
+    monkeypatch.setattr("meshtastic.powermon.stress.time.monotonic", monotonic)
+    monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", sleep)
+
+    assert (
+        client.syncPowerStress(
+            powermon_pb2.PowerStressMessage.LED_ON,
+            num_seconds=1.0,
+        )
+        is True
+    )
+    sleep.assert_called_once_with(pytest.approx(1.15))
+
+
+@pytest.mark.unit
 def test_power_stress_run_continues_after_print_info_failure_then_aborts_on_first_state_failure() -> (
     None
 ):
