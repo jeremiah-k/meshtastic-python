@@ -367,9 +367,7 @@ class Node:
                     f"{configType.name.upper()}_CONFIG"
                 )
             else:
-                p.get_module_config_request = (
-                    msg_index  # pyright: ignore[reportAttributeAccessIssue]
-                )
+                p.get_module_config_request = msg_index  # pyright: ignore[reportAttributeAccessIssue]
 
         self._send_admin(p, wantResponse=True, onResponse=onResponse)
         if onResponse:
@@ -529,15 +527,13 @@ class Node:
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
-        try:
-            channel = self.channels[channelIndex]
-        except IndexError:
+        if channelIndex < 0 or channelIndex >= len(self.channels):
             self._raise_interface_error(
                 f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
             )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(channel)
+        p.set_channel.CopyFrom(self.channels[channelIndex])
         self._send_admin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
@@ -582,12 +578,11 @@ class Node:
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
-        try:
-            ch = self.channels[channelIndex]
-        except IndexError:
+        if channelIndex < 0 or channelIndex >= len(self.channels):
             self._raise_interface_error(
                 f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
             )
+        ch = self.channels[channelIndex]
         if ch.role not in (
             channel_pb2.Channel.Role.SECONDARY,
             channel_pb2.Channel.Role.DISABLED,

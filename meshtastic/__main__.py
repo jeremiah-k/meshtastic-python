@@ -1388,10 +1388,17 @@ def onConnected(interface: MeshInterface) -> None:
             channels = node.channels
             if channels is None:
                 _cli_exit("Warning: Device channels are not available.", 1)
+            # Reject negative indices explicitly (security fix)
+            if _idx < 0:
+                _cli_exit(
+                    f"Warning: Channel index {_idx} is out of range.",
+                    1,
+                )
+            # Try to access channel - IndexError catches out-of-range positive indices
+            # TypeError handles case where channels is not indexable (e.g., mocked in tests)
             try:
                 ch = channels[_idx]
             except (IndexError, TypeError):
-                # TypeError handles case where channels is not indexable (e.g., mocked in tests)
                 _cli_exit(
                     f"Warning: Channel index {_idx} is out of range.",
                     1,
