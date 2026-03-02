@@ -2,6 +2,7 @@
 
 import logging
 import math
+import time
 from datetime import datetime
 from typing import Any, Final, cast
 
@@ -37,9 +38,8 @@ class RidenPowerSupply(PowerSupply):
         r.set_date_time(datetime.now())
         # Keep base init after port open so timing/voltage state is available.
         super().__init__()
-        init_time = datetime.now()
         self.prevWattHour = self._get_raw_watt_hour()
-        self.prevPowerTime = init_time
+        self.prevPowerTime = time.monotonic()
 
     def setMaxCurrent(self, i: float) -> None:
         """Set the maximum current the supply will provide."""
@@ -56,9 +56,9 @@ class RidenPowerSupply(PowerSupply):
 
     def getAverageCurrentMA(self) -> float:
         """Return average current of last measurement in mA since last call to this method."""
-        now = datetime.now()
+        now = time.monotonic()
         nowWattHour = self._get_raw_watt_hour()
-        elapsed_s = (now - self.prevPowerTime).total_seconds()
+        elapsed_s = now - self.prevPowerTime
         if elapsed_s <= 0:
             # Consume the window to avoid stale deltas on subsequent reads.
             self.prevPowerTime = now

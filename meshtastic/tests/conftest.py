@@ -6,8 +6,8 @@ import importlib
 import math
 import shutil
 import threading
+import time
 from collections.abc import Generator
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
@@ -364,7 +364,7 @@ def riden_stub() -> "RidenPowerSupply":
     # Bypass __init__ to avoid opening a real serial port during unit tests.
     pps = object.__new__(RidenPowerSupply)
     pps.r = MagicMock()
-    pps.prevPowerTime = datetime.now() - timedelta(seconds=10)
+    pps.prevPowerTime = time.monotonic() - 10.0
     pps.prevWattHour = 100.0
     pps.v = 3.3
     return pps

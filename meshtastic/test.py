@@ -285,8 +285,8 @@ def testSend(
         receivedPackets = []
         packet_received_event.clear()
         sendingInterface = fromInterface
-        expected_from_node = fromNode
-        expected_to_node = toNode
+        expected_from_node = _normalize_node_id(fromNode)
+        expected_to_node = _normalize_node_id(toNode)
         expected_text = None if asBinary else f"Test {local_test_id}"
         expected_binary_payload = (
             f"Binary {local_test_id}".encode("utf-8") if asBinary else None

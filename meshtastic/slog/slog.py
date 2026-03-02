@@ -155,7 +155,7 @@ class PowerLogger:
             raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
-        power_schema_fields = [
+        power_schema_fields: list[pa.Field[Any]] = [
             pa.field("time", pa.timestamp("us")),
             pa.field("average_mA", pa.float64()),
             pa.field("max_mA", pa.float64()),

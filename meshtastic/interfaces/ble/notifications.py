@@ -44,6 +44,7 @@ class NotificationManager:
         self._characteristic_to_callback: dict[str, Callable[[Any, Any], None]] = {}
         self._resubscribe_failures: dict[str, int] = {}
         self._subscription_counter = 0
+        self._resubscribe_epoch = 0
         self._lock = RLock()
 
     def _subscribe(
@@ -101,6 +102,7 @@ class NotificationManager:
         None
         """
         with self._lock:
+            self._resubscribe_epoch += 1
             self._active_subscriptions.clear()
             self._characteristic_to_callback.clear()
             self._resubscribe_failures.clear()
@@ -163,9 +165,13 @@ class NotificationManager:
             # callback per characteristic, avoiding redundant resubscription attempts
             subscriptions = list(self._characteristic_to_callback.items())
             failures = self._resubscribe_failures
+            epoch = self._resubscribe_epoch
         max_failure_threshold = RESUBSCRIBE_FAILURE_WARNING_THRESHOLD
 
         for characteristic, callback in subscriptions:
+            with self._lock:
+                if epoch != self._resubscribe_epoch:
+                    return
             try:
                 client.start_notify(
                     characteristic,
@@ -174,6 +180,8 @@ class NotificationManager:
                 )
             except Exception as e:  # noqa: BLE001
                 with self._lock:
+                    if epoch != self._resubscribe_epoch:
+                        return
                     failure_count = failures.get(characteristic, 0) + 1
                     failures[characteristic] = failure_count
                 logger.debug(
@@ -190,6 +198,8 @@ class NotificationManager:
                     )
             else:
                 with self._lock:
+                    if epoch != self._resubscribe_epoch:
+                        return
                     failures.pop(characteristic, None)
 
     def __len__(self) -> int:

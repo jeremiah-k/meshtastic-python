@@ -22,7 +22,7 @@ def _shell_executable_for_timeout(command: str) -> str:
     try:
         tokens = shlex.split(command)
     except ValueError:
-        tokens = command.split()
+        tokens = ["<COMMAND_PARSING_FAILED>"]
     for token in tokens:
         if not _ENV_ASSIGNMENT_RE.fullmatch(token):
             return token

@@ -57,7 +57,7 @@ def main() -> None:
     """Execute waypoint create/delete command against a serial-connected radio."""
     args = _build_parser().parse_args()
 
-    expire_unix: int | None = None
+    expire_unix = 0
     if args.cmd == "create":
         try:
             normalized_expire = (
@@ -69,7 +69,7 @@ def main() -> None:
             if parsed_expire.tzinfo is None:
                 parsed_expire = parsed_expire.replace(tzinfo=datetime.timezone.utc)
             expire_unix = int(parsed_expire.timestamp())
-        except ValueError:
+        except (ValueError, OverflowError, OSError):
             raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire)) from None
 
     # By default this will auto-detect a Meshtastic device.
@@ -78,8 +78,6 @@ def main() -> None:
         args.port, debugOut=debug_out
     ) as iface:
         if args.cmd == "create":
-            if expire_unix is None:
-                raise SystemExit(INVALID_EXPIRE_MSG.format(args.expire))
             result = iface.sendWaypoint(
                 waypoint_id=args.id,
                 name=args.name,

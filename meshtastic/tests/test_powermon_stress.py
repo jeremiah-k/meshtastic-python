@@ -107,13 +107,10 @@ def test_sync_power_stress_wait_until_ack_timeout(
 @pytest.mark.unit
 def test_sync_power_stress_negative_duration_uses_ack_wait_path(
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
     power_stress_client: tuple[MagicMock, PowerStressClient],
 ) -> None:
     """Negative durations should be handled via the run-until-ack timeout path."""
     _, client = power_stress_client
-    sleep_mock = MagicMock()
-    monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", sleep_mock)
     client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
 
     with caplog.at_level(logging.WARNING):
@@ -130,7 +127,6 @@ def test_sync_power_stress_negative_duration_uses_ack_wait_path(
     sent_args, sent_kwargs = client.sendPowerStress.call_args
     assert sent_args[0] == powermon_pb2.PowerStressMessage.BT_ON
     assert sent_kwargs["num_seconds"] == 0.0
-    sleep_mock.assert_not_called()
     assert "Negative num_seconds" in caplog.text
 
 
@@ -141,13 +137,13 @@ def test_sync_power_stress_timed_mode_without_ack(
 ) -> None:
     """Test that syncPowerStress fails timed mode when ack callback never fires."""
     _, client = power_stress_client
-    monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", lambda _: None)
+    monkeypatch.setattr("meshtastic.powermon.stress.STRESS_DURATION_BUFFER_S", 0.0)
 
     client.sendPowerStress = MagicMock(return_value=None)  # type: ignore[method-assign]
     assert (
         client.syncPowerStress(
             powermon_pb2.PowerStressMessage.LED_ON,
-            num_seconds=1.0,
+            num_seconds=0.01,
         )
         is False
     )
@@ -155,12 +151,10 @@ def test_sync_power_stress_timed_mode_without_ack(
 
 @pytest.mark.unit
 def test_sync_power_stress_timed_mode_with_ack(
-    monkeypatch: pytest.MonkeyPatch,
     power_stress_client: tuple[MagicMock, PowerStressClient],
 ) -> None:
     """Test that syncPowerStress succeeds timed mode when ack callback fires."""
     _, client = power_stress_client
-    monkeypatch.setattr("meshtastic.powermon.stress.time.sleep", lambda _: None)
 
     client.sendPowerStress = _fake_send  # type: ignore[method-assign]
     assert (

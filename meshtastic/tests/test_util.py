@@ -17,7 +17,9 @@ from meshtastic.protobuf import mesh_pb2
 from meshtastic.supported_device import (
     SupportedDevice,
     SupportedDeviceValidationError,
+    seeed_xiao_s3,
     supported_devices,
+    tdeck,
 )
 from meshtastic.util import (
     DEFAULT_KEY,
@@ -967,6 +969,42 @@ def test_supported_device_usb_ids_include_aliases() -> None:
     assert len(xiao_devices) == 1
     assert ("2886", "0059") in xiao_devices[0].usb_ids
     assert ("303a", "1001") in xiao_devices[0].usb_ids
+
+
+def _resolve_device_by_vid_pid(
+    devices: list[SupportedDevice], vendor_id: str, product_id: str
+) -> SupportedDevice | None:
+    """Resolve the first supported device for a VID/PID pair with direct-match precedence."""
+    normalized_pair = (
+        vendor_id.strip().lower().removeprefix("0x"),
+        product_id.strip().lower().removeprefix("0x"),
+    )
+    for device in devices:
+        if (
+            device.usb_vendor_id_in_hex,
+            device.usb_product_id_in_hex,
+        ) == normalized_pair:
+            return device
+    for device in devices:
+        if normalized_pair in device.usb_id_aliases:
+            return device
+    return None
+
+
+@pytest.mark.unit
+def test_supported_device_vid_pid_resolution_handles_overlapping_aliases() -> None:
+    """Overlapping VID/PID aliases should resolve deterministically with direct-match precedence."""
+    candidate_devices = [seeed_xiao_s3, tdeck]
+
+    assert ("303a", "1001") in seeed_xiao_s3.usb_id_aliases
+    assert ("303a", "1001") in tdeck.usb_ids
+    assert ("1a86", "55d4") in tdeck.usb_id_aliases
+
+    assert _resolve_device_by_vid_pid(candidate_devices, "303a", "1001") is tdeck
+    assert (
+        _resolve_device_by_vid_pid(candidate_devices, "2886", "0059") is seeed_xiao_s3
+    )
+    assert _resolve_device_by_vid_pid(candidate_devices, "1a86", "55d4") is tdeck
 
 
 @pytest.mark.unit

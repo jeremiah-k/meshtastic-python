@@ -3,7 +3,6 @@
 import logging
 import math
 import threading
-import time
 from typing import Any, Callable, Final
 
 from ..protobuf import portnums_pb2, powermon_pb2
@@ -136,10 +135,9 @@ class PowerStressClient:
                 return False
         else:
             # we wait a little bit longer than the time the UUT would be waiting (to make sure all of its messages are handled first)
-            time.sleep(
-                effective_num_seconds + STRESS_DURATION_BUFFER_S
-            )  # completely block our thread for the duration of the test
-            if not ack_event.is_set():
+            if not ack_event.wait(
+                timeout=effective_num_seconds + STRESS_DURATION_BUFFER_S
+            ):
                 logging.error("Did not receive ack for power stress command!")
                 return False
         return True

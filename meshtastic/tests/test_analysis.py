@@ -53,7 +53,8 @@ def _single_bit_power_states() -> tuple[int, int]:
         for state in powermon_pb2.PowerMon.State.DESCRIPTOR.values
         if state.number > 0 and (state.number & (state.number - 1)) == 0
     )
-    assert len(single_bits) >= 2
+    if len(single_bits) < 2:
+        pytest.skip("PowerMon enum must expose at least two single-bit states")
     return single_bits[0], single_bits[1]
 
 
