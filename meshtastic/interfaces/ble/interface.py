@@ -1357,9 +1357,14 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             existing_client = self.client
             last_connection_request = self._last_connection_request
+            state_manager = getattr(self, "_state_manager", None)
+            is_connected = getattr(
+                state_manager, "_is_connected", True
+            ) and not getattr(self, "_disconnect_notified", False)
+        if not is_connected or existing_client is None:
+            return None
         if (
-            existing_client
-            and existing_client.isConnected()
+            existing_client.isConnected()
             and self._connection_validator._check_existing_client(
                 existing_client,
                 normalized_request,
@@ -1565,13 +1570,14 @@ class BLEInterface(MeshInterface):
                 )
                 if connected_client is None:
                     raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
-
-            # Preserve lock ordering by finalizing gates after _connect_lock is released,
-            # while still inside the per-address ExitStack scope.
-            self._finalize_connection_gates(
-                connected_client, connected_device_key, connection_alias_key
-            )
-            return connected_client
+        # Finalize after the per-address lock scope exits to avoid nested
+        # lock-order inversions when gate finalization reacquires address locks.
+        if connected_client is None:
+            raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
+        self._finalize_connection_gates(
+            connected_client, connected_device_key, connection_alias_key
+        )
+        return connected_client
 
     def _handle_read_loop_disconnect(
         self, error_message: str, previous_client: BLEClient

@@ -1,5 +1,7 @@
 """Classes for logging power consumption of Meshtastic devices."""
 
+from __future__ import annotations
+
 import atexit
 import io
 import logging
@@ -11,7 +13,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import Any
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
@@ -26,11 +28,6 @@ from .arrow import FeatherWriter
 logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
-
-if TYPE_CHECKING:
-    PowerSchemaField: TypeAlias = pa.Field[Any]
-else:
-    PowerSchemaField: TypeAlias = pa.Field
 
 
 def _root_dir_impl() -> str:
@@ -78,10 +75,12 @@ class LogDef:
     """Log definition."""
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
-    fields: list[tuple[str, Any]]  # A list of field names and their arrow types
+    fields: list[
+        tuple[str, pa.DataType[Any]]
+    ]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: list[tuple[str, Any]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, pa.DataType[Any]]]) -> None:
         """Create a LogDef for the given code and fields and compile a parser for those fields.
 
         Parameters
@@ -90,22 +89,26 @@ class LogDef:
             Short log code (e.g., "B", "PM", "PS").
         fields : list[tuple[str, pa.DataType]]
             Ordered (name, type) pairs
-            describing each field. Fields whose type equals `pa.string()` are parsed as
-            strings; other types are parsed as integers.
+            describing each field. String and integer Arrow fields are supported.
+            Unsupported field types raise ValueError.
         """
         self.code = code
         self.fields = fields
 
         fmt = ""
-        for idx, f in enumerate(fields):
+        for idx, (field_name, field_type) in enumerate(fields):
             if idx != 0:
                 fmt += ","
 
-            # make the format string
-            suffix = (
-                "" if f[1] == pa.string() else ":d"
-            )  # treat as a string or an int (the only types we have so far)
-            fmt += "{" + f[0] + suffix + "}"
+            if pa.types.is_string(field_type) or pa.types.is_large_string(field_type):
+                suffix = ""
+            elif pa.types.is_integer(field_type):
+                suffix = ":d"
+            else:
+                raise ValueError(
+                    f"Unsupported LogDef field type for '{field_name}': {field_type!r}"
+                )
+            fmt += "{" + field_name + suffix + "}"
         self.format = parse.compile(
             fmt
         )  # We include a catchall matcher at the end - to ignore stuff we don't understand
@@ -167,7 +170,11 @@ class PowerLogger:
         if compat_kwargs:
             unexpected = ", ".join(sorted(compat_kwargs.keys()))
             raise TypeError(f"Unexpected keyword argument(s): {unexpected}")
-        if p_meter is not None and legacy_p_meter is not None and p_meter is not legacy_p_meter:
+        if (
+            p_meter is not None
+            and legacy_p_meter is not None
+            and p_meter is not legacy_p_meter
+        ):
             raise TypeError("Specify only one of 'p_meter' or legacy 'pMeter'")
         if p_meter is None:
             p_meter = legacy_p_meter
@@ -179,7 +186,7 @@ class PowerLogger:
             raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
         self.writer = FeatherWriter(file_path)
-        power_schema_fields: list[PowerSchemaField] = [
+        power_schema_fields: list[pa.Field[Any]] = [
             pa.field("time", pa.timestamp("us")),
             pa.field("average_mA", pa.float64()),
             pa.field("max_mA", pa.float64()),
@@ -451,7 +458,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, Any]] = [
+        all_fields: list[tuple[str, pa.DataType[Any]]] = [
             field for logdef in log_defs.values() for field in logdef.fields
         ]
 
@@ -628,7 +635,7 @@ class StructuredLogger:
                 if self.raw_file:
                     try:
                         self.raw_file.write(line + "\n")  # Write the raw log
-                    except OSError as exc:
+                    except Exception as exc:  # noqa: BLE001 - keep callbacks resilient
                         logger.warning(
                             "Failed to write raw slog line: %s",
                             exc,

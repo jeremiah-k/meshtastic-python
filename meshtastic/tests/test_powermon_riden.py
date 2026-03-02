@@ -110,6 +110,27 @@ def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
 
 
 @pytest.mark.unit
+def test_get_average_current_ma_returns_nan_on_watt_hour_rollback(
+    riden_stub: RidenPowerSupply,
+) -> None:
+    """Counter rollback/reset windows should return NaN and resync baseline state."""
+    pps = riden_stub
+    start = time.monotonic()
+    pps.prevPowerTime = start - 3600.0
+    pps.prevWattHour = 10.0
+    pps._get_raw_watt_hour = MagicMock(return_value=9.0)  # type: ignore[method-assign]
+    pps.v = 3.3
+
+    result = pps.getAverageCurrentMA()
+
+    assert math.isnan(result)
+    assert pps.nowWattHour == pytest.approx(9.0)
+    assert pps.prevWattHour == pytest.approx(9.0)
+    assert pps.prevPowerTime > start
+    assert pps.prevPowerTime <= time.monotonic()
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_power_supply_deprecations")
 def test_get_average_current_camelcase_aliases_delegate(
     riden_stub: RidenPowerSupply,

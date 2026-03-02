@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, call
 import pytest
 
 from ..powermon.stress import (
+    DEFAULT_STRESS_STATE_DURATION_S,
     PowerStress,
     PowerStressClient,
     handlePowerStressResponse,
@@ -180,9 +181,11 @@ def test_power_stress_run_continues_after_print_info_failure_then_aborts_on_firs
 
     # PRINT_INFO failure now logs warning and continues, then aborts on LED_ON
     assert ps.client.syncPowerStress.call_count == 2
-    first_cmd = ps.client.syncPowerStress.call_args_list[0].args[0]
+    first_call = ps.client.syncPowerStress.call_args_list[0]
+    first_cmd = first_call.args[0]
     second_cmd = ps.client.syncPowerStress.call_args_list[1].args[0]
     assert first_cmd == powermon_pb2.PowerStressMessage.PRINT_INFO
+    assert first_call.kwargs == {"ack_timeout": DEFAULT_STRESS_STATE_DURATION_S}
     assert second_cmd == powermon_pb2.PowerStressMessage.LED_ON
 
 
@@ -198,9 +201,11 @@ def test_power_stress_run_stops_on_first_failed_state() -> None:
     ps.run()
 
     assert ps.client.syncPowerStress.call_count == 2
-    first_cmd = ps.client.syncPowerStress.call_args_list[0].args[0]
+    first_call = ps.client.syncPowerStress.call_args_list[0]
+    first_cmd = first_call.args[0]
     second_cmd = ps.client.syncPowerStress.call_args_list[1].args[0]
     assert first_cmd == powermon_pb2.PowerStressMessage.PRINT_INFO
+    assert first_call.kwargs == {"ack_timeout": DEFAULT_STRESS_STATE_DURATION_S}
     assert second_cmd == powermon_pb2.PowerStressMessage.LED_ON
 
 
@@ -216,7 +221,10 @@ def test_power_stress_run_completes_all_states() -> None:
 
     expected_call_count = 1 + len(ps.states)
     assert ps.client.syncPowerStress.call_count == expected_call_count
-    expected_calls = [call(powermon_pb2.PowerStressMessage.PRINT_INFO)] + [
-        call(state, 5.0) for state in ps.states
-    ]
+    expected_calls = [
+        call(
+            powermon_pb2.PowerStressMessage.PRINT_INFO,
+            ack_timeout=DEFAULT_STRESS_STATE_DURATION_S,
+        )
+    ] + [call(state, 5.0) for state in ps.states]
     ps.client.syncPowerStress.assert_has_calls(expected_calls, any_order=False)
