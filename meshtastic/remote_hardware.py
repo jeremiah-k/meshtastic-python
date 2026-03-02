@@ -309,6 +309,41 @@ class RemoteHardwareClient:
             if not already_subscribed:
                 pub.subscribe(onGPIOReceive, REMOTE_HARDWARE_TOPIC)
 
+    @staticmethod
+    def _normalize_dest_nodeid(nodeid: int | str | None) -> int | str:
+        """Validate and normalize destination node IDs for remote hardware commands."""
+        # Reject None, empty/whitespace-only string, integer values <= 0, and
+        # string values that parse as non-positive numbers (for example, "0", "-1").
+        is_invalid_bool = isinstance(nodeid, bool)
+        is_invalid_str = isinstance(nodeid, str) and nodeid.strip() == ""
+        is_invalid_int = isinstance(nodeid, int) and not is_invalid_bool and nodeid <= 0
+        is_non_positive_numeric_str = False
+        is_special_alias = False
+        if isinstance(nodeid, str) and not is_invalid_str:
+            normalized_nodeid = nodeid.strip().lower()
+            is_special_alias = normalized_nodeid.startswith("^")
+            parsed_nodeid = _parse_node_number(normalized_nodeid)
+            is_non_positive_numeric_str = (
+                parsed_nodeid is not None and parsed_nodeid <= 0
+            )
+        has_invalid_dest_nodeid = (
+            nodeid is None
+            or is_invalid_bool
+            or is_invalid_str
+            or is_invalid_int
+            or is_non_positive_numeric_str
+            or is_special_alias
+        )
+        if has_invalid_dest_nodeid:
+            mesh_interface_error = _get_mesh_interface_error()
+            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+        if isinstance(nodeid, str):
+            return nodeid.strip()
+        if isinstance(nodeid, int) and not isinstance(nodeid, bool):
+            return nodeid
+        mesh_interface_error = _get_mesh_interface_error()
+        raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+
     def _send_hardware(
         self,
         nodeid: int | str | None,
@@ -339,38 +374,7 @@ class RemoteHardwareClient:
         MeshInterface.MeshInterfaceError
             If no destination node ID is provided.
         """
-        # Reject None, empty/whitespace-only string, integer values <= 0, and
-        # string values that parse as non-positive numbers (e.g., "0", "-1").
-        is_invalid_bool = isinstance(nodeid, bool)
-        is_invalid_str = isinstance(nodeid, str) and nodeid.strip() == ""
-        is_invalid_int = isinstance(nodeid, int) and not is_invalid_bool and nodeid <= 0
-        is_non_positive_numeric_str = False
-        is_special_alias = False
-        if isinstance(nodeid, str) and not is_invalid_str:
-            normalized_nodeid = nodeid.strip().lower()
-            is_special_alias = normalized_nodeid.startswith("^")
-            parsed_nodeid = _parse_node_number(normalized_nodeid)
-            is_non_positive_numeric_str = (
-                parsed_nodeid is not None and parsed_nodeid <= 0
-            )
-        has_invalid_dest_nodeid = (
-            nodeid is None
-            or is_invalid_bool
-            or is_invalid_str
-            or is_invalid_int
-            or is_non_positive_numeric_str
-            or is_special_alias
-        )
-        if has_invalid_dest_nodeid:
-            mesh_interface_error = _get_mesh_interface_error()
-            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
-        if isinstance(nodeid, str):
-            dest_nodeid: int | str = nodeid.strip()
-        elif isinstance(nodeid, int) and not isinstance(nodeid, bool):
-            dest_nodeid = nodeid
-        else:
-            mesh_interface_error = _get_mesh_interface_error()
-            raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+        dest_nodeid = self._normalize_dest_nodeid(nodeid)
         return self.iface.sendData(
             r,
             dest_nodeid,

@@ -25,8 +25,11 @@ def main() -> None:
                 print("Local node has not joined the mesh yet.", file=sys.stderr)
                 return
 
-            node = (iface.nodesByNum or {}).get(my_info.my_node_num)
-            if node is None:
+            nodes_by_num = (
+                iface.nodesByNum if isinstance(iface.nodesByNum, dict) else {}
+            )
+            node = nodes_by_num.get(my_info.my_node_num)
+            if not isinstance(node, dict):
                 print("Local node not found in node database yet.", file=sys.stderr)
                 return
 

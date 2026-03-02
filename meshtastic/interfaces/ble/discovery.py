@@ -8,7 +8,7 @@ import threading
 import time
 from collections.abc import Awaitable
 from types import TracebackType
-from typing import Any, Callable, cast
+from typing import Any, Callable, Protocol, cast, runtime_checkable
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
@@ -36,6 +36,15 @@ _BLE_ADDRESS_SHAPE_RE = re.compile(
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 _PENDING_DISCOVERY_CLOSE_TASKS: set[asyncio.Task[None]] = set()
+
+
+@runtime_checkable
+class DiscoveryClientProtocol(Protocol):
+    """Minimal protocol required by DiscoveryManager for scan operations."""
+
+    def _discover(self, **kwargs: Any) -> Any:
+        """Run a BLE scan and return raw backend response data."""
+        ...
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
@@ -351,7 +360,7 @@ class DiscoveryManager:
         """
         # Allow test overrides via meshtastic.ble_interface monkeypatch (backwards compatibility)
         self.client_factory = client_factory
-        self._client: Any | None = None
+        self._client: BLEClient | DiscoveryClientProtocol | None = None
         self._client_lock = threading.RLock()
 
     def _discover_devices(self, address: str | None) -> list[BLEDevice]:
@@ -464,27 +473,18 @@ class DiscoveryManager:
                     invalid_client_error = DiscoveryClientError.factory_returned_none(
                         resolved_factory
                     )
-                # Accept BLEClient instances or any object with the required interface
-                # (duck typing allows test fixtures while still catching errors)
-                elif not isinstance(self._client, BLEClient):
-                    # Duck-typed discovery clients must support scan operations:
-                    # _discover() is the only required method for device scanning.
-                    required_callables = ("_discover",)
-                    missing = [
-                        a
-                        for a in required_callables
-                        if not callable(getattr(self._client, a, None))
-                    ]
-                    if missing:
-                        invalid_client = self._client
-                        _discard_cached_client()
-                        invalid_client_error = DiscoveryClientError.invalid_client(
-                            resolved_factory,
-                            type(invalid_client),
-                            missing,
-                        )
+                # Accept BLEClient instances or runtime-checkable protocol implementations
+                # so tests can provide minimal discovery doubles.
+                elif not isinstance(self._client, (BLEClient, DiscoveryClientProtocol)):
+                    invalid_client = self._client
+                    _discard_cached_client()
+                    invalid_client_error = DiscoveryClientError.invalid_client(
+                        resolved_factory,
+                        type(invalid_client),
+                        ["_discover"],
+                    )
 
-            client = cast(Any, self._client)
+            client = cast(BLEClient | DiscoveryClientProtocol, self._client)
 
         seen_stale_ids: set[int] = set()
         for stale_client in stale_clients:
@@ -589,8 +589,12 @@ class DiscoveryManager:
         """
         # Only set attributes; avoid calling methods as __init__ may not have completed.
         with contextlib.suppress(Exception):
-            if hasattr(self, "_client_lock"):
-                with self._client_lock:
+            client_lock = getattr(self, "_client_lock", None)
+            lock_is_usable = callable(
+                getattr(client_lock, "acquire", None)
+            ) and callable(getattr(client_lock, "release", None))
+            if lock_is_usable:
+                with cast(Any, client_lock):
                     self._client = None
             elif hasattr(self, "_client"):
                 self._client = None

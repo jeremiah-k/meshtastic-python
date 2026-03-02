@@ -129,6 +129,36 @@ class TestBLECoroutineRunner:
         runner._stop()
         assert runner._is_running is False
 
+    def test_handle_loop_exception_without_exception_disables_exc_info(
+        self, monkeypatch
+    ):
+        """Loop exception logging should avoid traceback output when no exception exists."""
+        runner = BLECoroutineRunner()
+        observed_exc_info: list[object] = []
+
+        class _LoopStub:
+            def __init__(self) -> None:
+                self.seen_contexts: list[dict[str, Any]] = []
+
+            def default_exception_handler(self, context: dict[str, Any]) -> None:
+                self.seen_contexts.append(context)
+
+        def _capture_error(_message: str, *args: Any, **kwargs: Any) -> None:
+            _ = args
+            observed_exc_info.append(kwargs.get("exc_info"))
+
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.runner.logger.error", _capture_error
+        )
+        loop = _LoopStub()
+
+        runner._handle_loop_exception(
+            loop, {"message": "test error", "exception": None}
+        )
+
+        assert observed_exc_info == [False]
+        assert loop.seen_contexts == [{"message": "test error", "exception": None}]
+
     def test_cancel_pending_futures(self):
         """Verify that pending futures are properly cancelled."""
         runner = BLECoroutineRunner()

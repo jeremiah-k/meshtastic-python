@@ -314,6 +314,36 @@ class FeatherWriter(ArrowWriter):
         self.base_file_name = file_name
         self._conversion_done = False
 
+    @staticmethod
+    def _remove_stale_dest_file(dest_name: str) -> None:
+        """Best-effort removal of stale destination file from prior runs."""
+        if not os.path.exists(dest_name):
+            return
+        try:
+            os.remove(dest_name)
+        except OSError:
+            logger.warning(
+                "Failed to remove stale Feather destination file %s",
+                dest_name,
+                exc_info=True,
+            )
+
+    def _discard_empty_source(
+        self, src_name: str, dest_name: str, message: str
+    ) -> None:
+        """Log/drop an empty Arrow source and mark conversion complete."""
+        logger.warning(message, src_name)
+        try:
+            os.remove(src_name)
+        except OSError:
+            logger.warning(
+                "Failed to remove empty Arrow source file %s",
+                src_name,
+                exc_info=True,
+            )
+        self._remove_stale_dest_file(dest_name)
+        self._conversion_done = True
+
     def close(self) -> None:
         """Close the writer and convert the temporary Arrow file to Feather format.
 
@@ -327,35 +357,14 @@ class FeatherWriter(ArrowWriter):
             src_name = self.base_file_name + ".arrow"
             dest_name = self.base_file_name + ".feather"
 
-            def _remove_stale_dest_file() -> None:
-                """Best-effort removal of stale destination file from prior runs."""
-                if not os.path.exists(dest_name):
-                    return
-                try:
-                    os.remove(dest_name)
-                except OSError:
-                    logger.warning(
-                        "Failed to remove stale Feather destination file %s",
-                        dest_name,
-                        exc_info=True,
-                    )
-
             if not os.path.exists(src_name):
-                _remove_stale_dest_file()
+                self._remove_stale_dest_file(dest_name)
                 self._conversion_done = True
                 return
             if os.path.getsize(src_name) == 0:
-                logger.warning("Discarding empty file: %s", src_name)
-                try:
-                    os.remove(src_name)
-                except OSError:
-                    logger.warning(
-                        "Failed to remove empty Arrow source file %s",
-                        src_name,
-                        exc_info=True,
-                    )
-                _remove_stale_dest_file()
-                self._conversion_done = True
+                self._discard_empty_source(
+                    src_name, dest_name, "Discarding empty file: %s"
+                )
                 return
 
             logger.info("Compressing log data into %s", dest_name)
@@ -368,17 +377,9 @@ class FeatherWriter(ArrowWriter):
 
             # Check for zero-row streams and discard them
             if array.num_rows == 0:
-                logger.warning("Discarding empty Arrow file: %s", src_name)
-                try:
-                    os.remove(src_name)
-                except OSError:
-                    logger.warning(
-                        "Failed to remove empty Arrow source file %s",
-                        src_name,
-                        exc_info=True,
-                    )
-                _remove_stale_dest_file()
-                self._conversion_done = True
+                self._discard_empty_source(
+                    src_name, dest_name, "Discarding empty Arrow file: %s"
+                )
                 return
 
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements

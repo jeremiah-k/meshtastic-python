@@ -547,7 +547,7 @@ class BLECoroutineRunner:
                 exception.__traceback__,
             )
         else:
-            exception_info = True
+            exception_info = False
         logger.error("BLE event loop error: %s", message, exc_info=exception_info)
 
         # Use default handler for additional processing
