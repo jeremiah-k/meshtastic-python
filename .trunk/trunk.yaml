@@ -20,6 +20,55 @@ lint:
         # Ignore generated files
         - meshtastic/**/*_pb2.py
         - meshtastic/**/*_pb2.pyi
+    - linters: [mypy-poetry]
+      paths:
+        # Keep Trunk's mypy scope aligned with CI (meshtastic/ only).
+        - examples/**
+        - tests/**
+        - meshtastic/tests/**
+    - linters: [pylint-poetry]
+      paths:
+        # Keep Trunk's pylint scope aligned with CI (meshtastic/ + examples/).
+        - tests/**
+        - meshtastic/tests/**
+  definitions:
+    - name: mypy-poetry
+      description: Run mypy via Poetry using the project's pinned dependencies.
+      files: [python, python-interface]
+      suggest_if: files_present
+      direct_configs:
+        - pyproject.toml
+        - mypy.ini
+        - .mypy.ini
+      commands:
+        - name: lint
+          output: mypy
+          run: poetry run mypy meshtastic/ --strict
+          target: meshtastic
+          run_from: ${root_or_parent_with_any_config}
+          success_codes: [0, 1]
+          batch: true
+          cache_results: false
+          stdin: false
+    - name: pylint-poetry
+      description: Run pylint via Poetry with the project's CI arguments.
+      files: [python]
+      suggest_if: files_present
+      direct_configs:
+        - pyproject.toml
+        - pylintrc
+        - .pylintrc
+      commands:
+        - name: lint
+          output: pylint
+          run: poetry run pylint meshtastic examples/ --exit-zero --output ${tmpfile} --output-format json
+          target: meshtastic
+          read_output_from: tmp_file
+          run_from: ${root_or_parent_with_any_config}
+          success_codes: [0]
+          batch: true
+          cache_results: false
+          stdin: false
   enabled:
     - actionlint@1.7.10
     - black@26.1.0
@@ -37,6 +86,8 @@ lint:
     - trivy@0.69.1
     - trufflehog@3.93.3
     - yamllint@1.38.0
+    - mypy-poetry
+    - pylint-poetry
 runtimes:
   enabled:
     - go@1.21.0
