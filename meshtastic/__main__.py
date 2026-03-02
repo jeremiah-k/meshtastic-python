@@ -24,7 +24,8 @@ import meshtastic.ota
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
 import meshtastic.util
-from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
+import meshtastic.mt_config as mt_config
+from meshtastic import BROADCAST_ADDR, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import (
@@ -1328,7 +1329,9 @@ def onConnected(interface: MeshInterface) -> None:
                         ch_del_idx
                     )
 
-        def _set_simple_config(modem_preset: int) -> None:
+        def _set_simple_config(
+            modem_preset: config_pb2.Config.LoRaConfig.ModemPreset.ValueType,
+        ) -> None:
             """Set and persist the LORA modem preset on the device's primary channel.
 
             If the configured channel is not the primary channel, the function exits
@@ -1350,7 +1353,7 @@ def onConnected(interface: MeshInterface) -> None:
                 node.requestConfig(
                     node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
                 )
-            node.localConfig.lora.modem_preset = modem_preset  # type: ignore[assignment]
+            node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
         # handle the simple radio set commands
@@ -1383,7 +1386,10 @@ def onConnected(interface: MeshInterface) -> None:
                 _cli_exit("Warning: Need to specify '--ch-index'.", 1)
             # _idx is now narrowed to int due to NoReturn from _cli_exit
             node = interface.getNode(args.dest, **getNode_kwargs)
-            ch = node.channels[_idx]  # type: ignore[index]
+            channels = node.channels
+            if channels is None:
+                _cli_exit("Warning: Device channels are not available.", 1)
+            ch = channels[_idx]
 
             enable: bool = True  # default to enable
             if args.ch_enable or args.ch_disable:
@@ -1649,13 +1655,17 @@ def subscribe() -> None:
     # pub.subscribe(onNode, "meshtastic.node")
 
 
-def _is_repeated_field(field_desc) -> bool:
+def _is_repeated_field(field_desc: Any) -> bool:
     """Return True if the protobuf field is repeated.
     Protobuf 6.31.0 and later use an is_repeated property, while older versions compare against the label field.
     """
-    if hasattr(field_desc, "is_repeated"):
-        return bool(field_desc.is_repeated)
-    return field_desc.label == field_desc.LABEL_REPEATED
+    is_repeated = getattr(field_desc, "is_repeated", None)
+    if isinstance(is_repeated, bool):
+        return is_repeated
+
+    label = getattr(field_desc, "label", None)
+    label_repeated = getattr(field_desc, "LABEL_REPEATED", None)
+    return bool(label == label_repeated)
 
 
 def _set_missing_flags_false(

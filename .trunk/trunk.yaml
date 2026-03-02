@@ -48,6 +48,7 @@ lint:
           run: poetry -C ${workspace} run mypy meshtastic/ --strict --exclude '^meshtastic/tests/'
           target: meshtastic
           run_from: ${root_or_parent_with_any_config}
+          disable_upstream: true
           success_codes: [0, 1]
           batch: true
           cache_results: false
@@ -67,6 +68,7 @@ lint:
           target: meshtastic
           read_output_from: tmp_file
           run_from: ${root_or_parent_with_any_config}
+          disable_upstream: true
           success_codes: [0]
           batch: true
           cache_results: false
