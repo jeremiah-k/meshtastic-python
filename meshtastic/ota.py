@@ -1,11 +1,10 @@
-"""Meshtastic ESP32 Unified OTA
-"""
+"""Meshtastic ESP32 Unified OTA"""
+
 import os
 import hashlib
 import socket
 import logging
 from typing import Optional, Callable
-
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,9 @@ class ESP32WiFiOTA:
             data = f.read()
         size = len(data)
 
-        logger.info(f"Starting OTA update with {self._filename} ({size} bytes, hash {self.hash_hex()})")
+        logger.info(
+            f"Starting OTA update with {self._filename} ({size} bytes, hash {self.hash_hex()})"
+        )
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.settimeout(15)
@@ -104,7 +105,10 @@ class ESP32WiFiOTA:
                 if progress_callback:
                     progress_callback(sent_bytes, size)
                 else:
-                    print(f"[{sent_bytes / size * 100:5.1f}%] Sent {sent_bytes} of {size} bytes...", end="\r")
+                    print(
+                        f"[{sent_bytes / size * 100:5.1f}%] Sent {sent_bytes} of {size} bytes...",
+                        end="\r",
+                    )
 
             if not progress_callback:
                 print()

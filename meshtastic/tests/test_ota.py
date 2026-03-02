@@ -10,9 +10,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meshtastic.ota import (
-    _file_sha256,
     ESP32WiFiOTA,
     OTAError,
+    _file_sha256,
 )
 
 

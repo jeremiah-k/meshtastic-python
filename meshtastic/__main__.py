@@ -803,8 +803,7 @@ def onConnected(interface: MeshInterface) -> None:
 
             print(f"Triggering OTA update on {interface.hostname}...")
             interface.getNode(args.dest, False, **getNode_kwargs).startOTA(
-                ota_mode=admin_pb2.OTAMode.OTA_WIFI,
-                ota_file_hash=ota.hash_bytes()
+                ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
             )
 
             print("Waiting for device to reboot into OTA mode...")
@@ -1649,13 +1648,15 @@ def subscribe() -> None:
 
     # pub.subscribe(onNode, "meshtastic.node")
 
+
 def _is_repeated_field(field_desc) -> bool:
-    """Return True if the protobuf field is repeated. 
-       Protobuf 6.31.0 and later use an is_repeated property, while older versions compare against the label field.
-       """
+    """Return True if the protobuf field is repeated.
+    Protobuf 6.31.0 and later use an is_repeated property, while older versions compare against the label field.
+    """
     if hasattr(field_desc, "is_repeated"):
         return bool(field_desc.is_repeated)
     return field_desc.label == field_desc.LABEL_REPEATED
+
 
 def _set_missing_flags_false(
     config_dict: dict[str, Any], true_defaults: set[tuple[str, ...]]

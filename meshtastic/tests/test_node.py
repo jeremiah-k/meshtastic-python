@@ -1,4 +1,5 @@
 """Meshtastic unit tests for node.py."""
+
 # pylint: disable=C0302
 
 import base64
@@ -381,6 +382,7 @@ def test_writeChannel_with_no_channels_raises_mesh_error(
     ):
         anode.writeChannel(0)
 
+
 @pytest.mark.unit
 def test_writeConfig_traffic_management(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
@@ -403,9 +405,7 @@ def test_writeConfig_traffic_management(
     assert sent_message.HasField("set_module_config")
     assert sent_message.set_module_config.HasField("traffic_management")
     assert sent_message.set_module_config.traffic_management.enabled is True
-    assert (
-        sent_message.set_module_config.traffic_management.rate_limit_enabled is True
-    )
+    assert sent_message.set_module_config.traffic_management.rate_limit_enabled is True
 
 
 @pytest.mark.unit
@@ -692,6 +692,7 @@ def test_waitForConfig_success(
 
     result = anode.waitForConfig()
     assert result is True
+
 
 @pytest.mark.unit
 def test_start_ota_local_node() -> None:
