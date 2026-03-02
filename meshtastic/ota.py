@@ -4,7 +4,7 @@ import hashlib
 import logging
 import os
 import socket
-from typing import Callable, Optional, Protocol
+from typing import Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class ESP32WiFiOTA:
         self._filename = filename
         self._hostname = hostname
         self._port = port
-        self._socket: Optional[socket.socket] = None
+        self._socket: socket.socket | None = None
 
         if not os.path.exists(self._filename):
             raise FileNotFoundError(f"File {self._filename} does not exist")
@@ -76,7 +76,7 @@ class ESP32WiFiOTA:
         return self._file_hash.hexdigest()
 
     def update(
-        self, progress_callback: Optional[Callable[[int, int], None]] = None
+        self, progress_callback: Callable[[int, int], None] | None = None
     ) -> None:
         """Perform the OTA update."""
         with open(self._filename, "rb") as f:

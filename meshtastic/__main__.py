@@ -1388,7 +1388,14 @@ def onConnected(interface: MeshInterface) -> None:
             channels = node.channels
             if channels is None:
                 _cli_exit("Warning: Device channels are not available.", 1)
-            ch = channels[_idx]
+            try:
+                ch = channels[_idx]
+            except (IndexError, TypeError):
+                # TypeError handles case where channels is not indexable (e.g., mocked in tests)
+                _cli_exit(
+                    f"Warning: Channel index {_idx} is out of range.",
+                    1,
+                )
 
             enable: bool = True  # default to enable
             if args.ch_enable or args.ch_disable:

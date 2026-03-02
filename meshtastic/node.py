@@ -529,9 +529,15 @@ class Node:
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
+        try:
+            channel = self.channels[channelIndex]
+        except IndexError:
+            self._raise_interface_error(
+                f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
+            )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(self.channels[channelIndex])
+        p.set_channel.CopyFrom(channel)
         self._send_admin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
@@ -576,7 +582,12 @@ class Node:
         """
         if self.channels is None:
             self._raise_interface_error("Error: No channels have been read")
-        ch = self.channels[channelIndex]
+        try:
+            ch = self.channels[channelIndex]
+        except IndexError:
+            self._raise_interface_error(
+                f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
+            )
         if ch.role not in (
             channel_pb2.Channel.Role.SECONDARY,
             channel_pb2.Channel.Role.DISABLED,
@@ -1432,6 +1443,7 @@ class Node:
         if self != self.iface.localNode:
             self._raise_interface_error("startOTA only possible on local node")
 
+        # COMPAT_STABLE_SHIM: support legacy `hash=` keyword used by older callers.
         legacy_hash = kwargs.pop("hash", None)
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
@@ -1445,16 +1457,16 @@ class Node:
         if resolved_mode is None:
             raise TypeError("startOTA() missing required argument: 'mode'")
 
-        hash_candidates = [
+        hash_values = {
             value
             for value in (ota_file_hash, ota_hash, legacy_hash)
             if value is not None
-        ]
-        if not hash_candidates:
+        }
+        if not hash_values:
             raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
-        resolved_hash = hash_candidates[0]
-        if any(candidate != resolved_hash for candidate in hash_candidates[1:]):
+        if len(hash_values) > 1:
             raise ValueError("Conflicting OTA hash arguments provided")
+        resolved_hash = hash_values.pop()
         if not isinstance(resolved_hash, bytes):
             raise TypeError("ota_file_hash must be bytes")
 
