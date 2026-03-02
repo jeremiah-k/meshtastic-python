@@ -6,10 +6,8 @@ import tempfile
 import threading
 import types
 import warnings
-from typing import Any, cast
 
 import pyarrow as pa
-from pyarrow import feather
 
 CHUNK_SIZE = 1000  # disk writes are batched based on this number of rows
 logger = logging.getLogger(__name__)
@@ -369,19 +367,6 @@ class FeatherWriter(ArrowWriter):
 
             logger.info("Compressing log data into %s", dest_name)
 
-            # note: must use open_stream, not open_file/read_table because the streaming layout is different
-            # data = feather.read_table(src_name)
-            with pa.memory_map(src_name) as source:
-                with pa.ipc.open_stream(source) as reader:
-                    array = reader.read_all()
-
-            # Check for zero-row streams and discard them
-            if array.num_rows == 0:
-                self._discard_empty_source(
-                    src_name, dest_name, "Discarding empty Arrow file: %s"
-                )
-                return
-
             # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
             temp_name: str | None = None
             try:
@@ -397,7 +382,39 @@ class FeatherWriter(ArrowWriter):
                 ) as temp_file:
                     temp_name = temp_file.name
 
-                feather.write_feather(cast(Any, array), temp_name, compression="zstd")
+                # Convert stream->file incrementally to avoid loading the entire
+                # Arrow source into memory for large logs.
+                write_options = pa.ipc.IpcWriteOptions(compression="zstd")
+                wrote_rows = False
+                with pa.memory_map(src_name) as source:
+                    with pa.ipc.open_stream(source) as reader:
+                        with pa.output_stream(temp_name) as temp_out:
+                            with pa.ipc.new_file(
+                                temp_out,
+                                reader.schema,
+                                options=write_options,
+                            ) as file_writer:
+                                for batch in reader:
+                                    if batch.num_rows == 0:
+                                        continue
+                                    file_writer.write_batch(batch)
+                                    wrote_rows = True
+
+                if not wrote_rows:
+                    try:
+                        os.remove(temp_name)
+                    except OSError:
+                        logger.warning(
+                            "Failed to remove temporary Feather file %s",
+                            temp_name,
+                            exc_info=True,
+                        )
+                    temp_name = None
+                    self._discard_empty_source(
+                        src_name, dest_name, "Discarding empty Arrow file: %s"
+                    )
+                    return
+
                 os.replace(temp_name, dest_name)
                 temp_name = None
             except Exception:

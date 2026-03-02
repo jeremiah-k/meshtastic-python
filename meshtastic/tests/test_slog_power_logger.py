@@ -9,12 +9,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import meshtastic.slog as slog_package
+
 try:
+    from meshtastic.slog import slog as slog_module
     from meshtastic.slog.slog import (
         POWER_LOG_SCHEMA_METADATA,
         LogSet,
         PowerLogger,
         StructuredLogger,
+        rootDir,
+        root_dir,
     )
 except ImportError:
     pytest.skip("Can't import meshtastic.slog", allow_module_level=True)
@@ -87,6 +92,56 @@ def test_power_logger_sets_schema_metadata(monkeypatch: pytest.MonkeyPatch) -> N
         "min_mW",
     ]
     logger.close()
+
+
+@pytest.mark.unit
+def test_power_logger_accepts_legacy_pmeter_constructor_keyword(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy `pMeter=` constructor keyword should remain accepted for compatibility."""
+    monkeypatch.setattr("meshtastic.slog.slog.FeatherWriter", _FakeWriter)
+    monkeypatch.setattr("meshtastic.slog.slog.threading.Thread", _FakeThread)
+
+    meter = MagicMock()
+    logger = PowerLogger(pMeter=meter, file_path="unused-path")
+    assert logger.pMeter is meter
+    logger.close()
+
+
+@pytest.mark.unit
+def test_root_dir_legacy_alias_warns_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Legacy root_dir() alias should warn once and return the same path as rootDir()."""
+    monkeypatch.setattr(
+        slog_module.platformdirs, "user_data_dir", lambda *_args, **_kwargs: str(tmp_path)
+    )
+    slog_module._warned_deprecations.clear()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        legacy_path_first = root_dir()
+        legacy_path_second = root_dir()
+    preferred_path = rootDir()
+
+    assert legacy_path_first == preferred_path
+    assert legacy_path_second == preferred_path
+    deprecations = [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]
+    assert len(deprecations) == 1
+    assert "root_dir()" in str(deprecations[0].message)
+
+
+@pytest.mark.unit
+def test_slog_public_exports_remain_available() -> None:
+    """Slog package should keep expected historical public exports."""
+    expected_exports = {"LogSet", "rootDir", "root_dir"}
+    assert expected_exports.issubset(set(slog_package.__all__))
+    for export_name in expected_exports:
+        assert hasattr(slog_package, export_name)
 
 
 @pytest.mark.unit
@@ -209,6 +264,17 @@ def test_on_log_message_keeps_raw_and_power_on_add_row_failure(
     assert "Failed to write structured slog row" in caplog.text
     raw_file.write.assert_called_once_with(f"{line}\n")
     logger.power_logger.storeCurrentReading.assert_called_once()
+
+
+@pytest.mark.unit
+def test_on_log_message_legacy_alias_delegates() -> None:
+    """Legacy internal `_onLogMessage` alias should delegate to `_on_log_message`."""
+    logger = object.__new__(StructuredLogger)
+    logger._on_log_message = MagicMock()  # type: ignore[method-assign]
+
+    logger._onLogMessage("sample line")
+
+    logger._on_log_message.assert_called_once_with("sample line")
 
 
 @pytest.mark.unit
