@@ -54,6 +54,10 @@ DEFAULT_KEY = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==".encode("utf-8"))
 # Timeout for HTTP requests (e.g., PyPI version checks)
 HTTP_REQUEST_TIMEOUT_SECONDS = 5.0
 
+# Ordered candidates for PyPI metadata checks. Fork builds can publish to an
+# alternate package while preserving upstream fallback behavior.
+DISTRIBUTION_NAME_CANDIDATES: tuple[str, ...] = ("mtjk", "meshtastic")
+
 
 _PSK_SIMPLE_MSG = 'Invalid PSK format: expected "simpleN" with N in 0..254'
 
@@ -1193,9 +1197,10 @@ def detect_windows_port(
 def check_if_newer_version() -> str | None:
     """Check PyPI for a newer Meshtastic release than the active installation.
 
-    Attempts to fetch the package metadata from PyPI and compares the latest PyPI version
-    to the currently active version. Returns the PyPI version string when it is newer;
-    returns None if no newer version is available or if the check fails.
+    Attempts to fetch package metadata from PyPI for each distribution name in
+    ``DISTRIBUTION_NAME_CANDIDATES`` and compares the newest discovered version
+    to the currently active version. Returns the PyPI version string when it is
+    newer; returns ``None`` if no newer version is available or if all checks fail.
 
     Returns
     -------
@@ -1203,12 +1208,18 @@ def check_if_newer_version() -> str | None:
         The newer PyPI version string if available, `None` otherwise.
     """
     pypi_version: str | None = None
-    try:
-        url: str = "https://pypi.org/pypi/meshtastic/json"
-        data = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECONDS).json()
-        pypi_version = data["info"]["version"]
-    except Exception:
-        logger.debug("PyPI version check failed", exc_info=True)
+    for distribution_name in DISTRIBUTION_NAME_CANDIDATES:
+        try:
+            url = f"https://pypi.org/pypi/{distribution_name}/json"
+            data = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECONDS).json()
+            pypi_version = data["info"]["version"]
+            break
+        except Exception:
+            logger.debug(
+                "PyPI version check failed for %s",
+                distribution_name,
+                exc_info=True,
+            )
     act_version = get_active_version()
 
     if pypi_version is None:
