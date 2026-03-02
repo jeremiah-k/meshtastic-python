@@ -101,6 +101,41 @@ def test_write_and_read_skip_when_stream_not_open() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_wraps_stream_exceptions_as_stream_closed() -> None:
+    """_read_bytes should normalize backend read errors to StreamClosedError."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.side_effect = serial.SerialException("boom")
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError) as exc_info:
+            iface._read_bytes(5)
+        assert isinstance(exc_info.value.__cause__, serial.SerialException)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_read_bytes_raises_stream_closed_when_backend_returns_none() -> None:
+    """_read_bytes should treat None from backend read as closed stream."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        stream = MagicMock()
+        stream.is_open = True
+        stream.read.return_value = None
+        iface.stream = stream
+
+        with pytest.raises(StreamInterface.StreamClosedError):
+            iface._read_bytes(5)
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_close_closes_stream_even_without_reader_thread() -> None:
     """close() should release stream resources even when connectNow=False."""
     iface = StreamInterface(noProto=True, connectNow=False)
@@ -175,6 +210,20 @@ def test_shared_close_resets_close_in_progress_on_super_close_error() -> None:
     assert iface._stream_close_in_progress is False
     stream.close.assert_called_once()
     assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_close_joins_reader_thread_when_shared_close_raises() -> None:
+    """close() should always attempt to join reader thread even on shared-close errors."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    with (
+        patch.object(iface, "_shared_close", side_effect=RuntimeError("close failed")),
+        patch.object(iface, "_join_reader_thread") as join_reader,
+    ):
+        with pytest.raises(RuntimeError, match="close failed"):
+            iface.close()
+    join_reader.assert_called_once()
 
 
 @pytest.mark.unit

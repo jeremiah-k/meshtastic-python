@@ -1357,10 +1357,9 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             existing_client = self.client
             last_connection_request = self._last_connection_request
-            state_manager = getattr(self, "_state_manager", None)
-            is_connected = getattr(
-                state_manager, "_is_connected", True
-            ) and not getattr(self, "_disconnect_notified", False)
+            is_connected = (
+                self._state_manager._is_connected and not self._disconnect_notified
+            )
         if not is_connected or existing_client is None:
             return None
         if (

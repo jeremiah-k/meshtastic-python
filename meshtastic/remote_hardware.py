@@ -288,7 +288,7 @@ class RemoteHardwareClient:
         """
         self.iface = iface
         ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
-        if not ch:
+        if ch is None:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)
         self.channelIndex = ch.index
