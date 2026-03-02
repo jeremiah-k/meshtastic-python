@@ -17,7 +17,7 @@ def _run_and_collect(cmd: list[str]) -> tuple[int, str]:
 def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
     """Test meshtastic without any args."""
     returncode, output = _run_and_collect([meshtastic_bin])
-    assert re.search(r"usage: meshtastic", output)
+    assert re.match(r"^usage: meshtastic", output)
     assert returncode == 1
 
 
@@ -25,7 +25,7 @@ def test_int_meshtastic_no_args(meshtastic_bin: str) -> None:
 def test_int_mesh_tunnel_no_args(mesh_tunnel_bin: str) -> None:
     """Test mesh-tunnel without any args."""
     returncode, output = _run_and_collect([mesh_tunnel_bin])
-    assert re.search(r"usage: mesh-tunnel", output)
+    assert re.match(r"^usage: mesh-tunnel", output)
     assert returncode == 1
 
 
@@ -41,7 +41,7 @@ def test_int_version(meshtastic_bin: str) -> None:
 def test_int_help(meshtastic_bin: str) -> None:
     """Test '--help'."""
     returncode, output = _run_and_collect([meshtastic_bin, "--help"])
-    assert re.search(r"usage: meshtastic ", output)
+    assert re.match(r"^usage: meshtastic ", output)
     assert returncode == 0
 
 
