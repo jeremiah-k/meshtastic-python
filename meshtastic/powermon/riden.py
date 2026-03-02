@@ -67,11 +67,15 @@ class RidenPowerSupply(PowerSupply):
             self.prevPowerTime = now
             self.prevWattHour = nowWattHour
             return math.nan
-        watts = ((nowWattHour - self.prevWattHour) / elapsed_s) * SECONDS_PER_HOUR
+        delta_watt_hour = nowWattHour - self.prevWattHour
         # Intentional: consume this measurement window even when voltage <= 0 to avoid a
         # large energy spike after voltage recovers.
         self.prevPowerTime = now
         self.prevWattHour = nowWattHour
+        if delta_watt_hour < 0:
+            # Counter reset/rollover or transient read glitch; resync baseline.
+            return math.nan
+        watts = (delta_watt_hour / elapsed_s) * SECONDS_PER_HOUR
         if self.v <= 0:
             return math.nan
         return (watts / self.v) * MILLIAMPS_PER_AMP

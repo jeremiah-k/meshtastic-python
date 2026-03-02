@@ -129,6 +129,9 @@ class StreamInterface(MeshInterface):
         #   back into higher-level code and must remain lock-free.
         # Serialize reader-thread creation/start across concurrent connect() calls.
         self._connect_lock = threading.Lock()
+        # Guard connect() against close() interleavings while super().close()
+        # executes outside this class lock.
+        self._stream_close_in_progress = False
 
         self.is_windows11 = is_windows11()
         self.cur_log_line = ""
@@ -175,6 +178,11 @@ class StreamInterface(MeshInterface):
         # Check if thread has already been started (threads can only be started once)
         # If ident is not None, the thread was started before and needs recreation.
         with self._connect_lock:
+            if self._stream_close_in_progress:
+                logger.warning(
+                    "connect() called while close() is in progress; ignoring request"
+                )
+                return
             if self.stream is None and requires_stream:
                 raise StreamInterface.StreamInterfaceError(
                     StreamInterface.StreamInterfaceError.CONNECT_WITHOUT_STREAM_MSG
@@ -361,12 +369,16 @@ class StreamInterface(MeshInterface):
         shutdown intent and restarting the reader against a closed stream.
         """
         with self._connect_lock:
+            if self._stream_close_in_progress:
+                return
+            self._stream_close_in_progress = True
             self._wantExit = True
         try:
             super().close()
         finally:
             with self._connect_lock:
                 self._close_stream_safely()
+                self._stream_close_in_progress = False
 
     def _join_reader_thread(self) -> None:
         """Join the reader thread when it is alive and not the current thread."""

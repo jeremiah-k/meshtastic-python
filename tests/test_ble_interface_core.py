@@ -1,6 +1,7 @@
 """Tests for the BLE interface module - Core functionality."""
 
 import asyncio
+import contextlib
 import logging
 import threading
 import time
@@ -637,6 +638,110 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_re
         if disconnect_thread.is_alive():
             disconnect_thread.join(timeout=1.0)
         iface.close()
+
+
+def test_connect_finalizes_gates_after_address_lock_scope(monkeypatch, clear_registry):
+    """connect() should finalize address gates only after per-address lock scope exits."""
+    _ = clear_registry
+    import meshtastic.interfaces.ble.interface as ble_iface_mod
+
+    target_address = "AA:BB:CC:DD:EE:02"
+    real_connect = BLEInterface.connect
+
+    def _init_connect_stub(
+        iface: BLEInterface, _address: str | None = None
+    ) -> DummyClient:
+        _ = _address
+        initial_client = DummyClient()
+        initial_client.address = target_address
+        initial_client.bleak_client = SimpleNamespace(address=target_address)
+        with iface._state_lock:
+            iface.client = initial_client  # type: ignore[assignment]
+            iface._disconnect_notified = False
+            iface._state_manager._reset_to_disconnected()
+            iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return initial_client
+
+    monkeypatch.setattr(BLEInterface, "connect", _init_connect_stub, raising=True)
+    monkeypatch.setattr(
+        BLEInterface,
+        "_start_receive_thread",
+        lambda _self, *, name: None,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_start_config", lambda _self: None, raising=True)
+
+    iface = BLEInterface(address=target_address, noProto=True, auto_reconnect=False)
+    monkeypatch.setattr(BLEInterface, "connect", real_connect, raising=True)
+
+    with iface._state_lock:
+        iface.client = None
+        iface._disconnect_notified = False
+        iface._connection_alias_key = None
+        iface._state_manager._reset_to_disconnected()
+
+    address_lock_held = False
+
+    class _FakeAddressLock:
+        def __enter__(self) -> "_FakeAddressLock":
+            nonlocal address_lock_held
+            address_lock_held = True
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: Any,
+        ) -> bool:
+            _ = (exc_type, exc, tb)
+            nonlocal address_lock_held
+            address_lock_held = False
+            return False
+
+    @contextlib.contextmanager
+    def _fake_addr_lock_context(_addr: str | None):
+        yield _FakeAddressLock()
+
+    connected_client = DummyClient()
+    connected_client.address = target_address
+    connected_client.bleak_client = SimpleNamespace(address=target_address)
+
+    finalized_lock_states: list[bool] = []
+
+    def _finalize_stub(
+        _client: BLEClient, _device_key: str | None, _alias_key: str | None
+    ) -> None:
+        finalized_lock_states.append(address_lock_held)
+
+    monkeypatch.setattr(
+        ble_iface_mod, "_addr_lock_context", _fake_addr_lock_context, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        lambda _address, _normalized_request, _address_key: (
+            connected_client,
+            "device-key",
+            None,
+        ),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        iface, "_finalize_connection_gates", _finalize_stub, raising=True
+    )
+
+    result = iface.connect(target_address)
+
+    assert result is connected_client
+    assert finalized_lock_states == [False]
+    iface.close()
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):

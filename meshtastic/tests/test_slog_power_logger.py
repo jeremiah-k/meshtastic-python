@@ -4,9 +4,11 @@ import logging
 import threading
 import warnings
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import pyarrow as pa
 import pytest
 
 import meshtastic.slog as slog_package
@@ -15,11 +17,12 @@ try:
     from meshtastic.slog import slog as slog_module
     from meshtastic.slog.slog import (
         POWER_LOG_SCHEMA_METADATA,
+        LogDef,
         LogSet,
         PowerLogger,
         StructuredLogger,
-        rootDir,
         root_dir,
+        rootDir,
     )
 except ImportError:
     pytest.skip("Can't import meshtastic.slog", allow_module_level=True)
@@ -110,11 +113,12 @@ def test_power_logger_accepts_legacy_pmeter_constructor_keyword(
 
 @pytest.mark.unit
 def test_root_dir_legacy_alias_warns_once(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Legacy root_dir() alias should warn once and return the same path as rootDir()."""
     monkeypatch.setattr(
-        slog_module.platformdirs, "user_data_dir", lambda *_args, **_kwargs: str(tmp_path)
+        "meshtastic.slog.slog.platformdirs.user_data_dir",
+        lambda *_args, **_kwargs: str(tmp_path),
     )
     slog_module._warned_deprecations.clear()
 
@@ -142,6 +146,13 @@ def test_slog_public_exports_remain_available() -> None:
     assert expected_exports.issubset(set(slog_package.__all__))
     for export_name in expected_exports:
         assert hasattr(slog_package, export_name)
+
+
+@pytest.mark.unit
+def test_logdef_rejects_unsupported_arrow_field_types() -> None:
+    """LogDef should fail fast when asked to format unsupported Arrow data types."""
+    with pytest.raises(ValueError, match="Unsupported LogDef field type"):
+        LogDef("X", [("voltage", pa.float64())])
 
 
 @pytest.mark.unit
@@ -275,6 +286,26 @@ def test_on_log_message_legacy_alias_delegates() -> None:
     logger._onLogMessage("sample line")
 
     logger._on_log_message.assert_called_once_with("sample line")
+
+
+@pytest.mark.unit
+def test_on_log_message_keeps_running_when_raw_write_raises_non_oserror(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """StructuredLogger should swallow non-OSError raw write failures in callback path."""
+    logger = object.__new__(StructuredLogger)
+    logger.writer = MagicMock()
+    logger.power_logger = None
+    logger.include_raw = True
+    logger._raw_file_lock = threading.Lock()
+    logger.raw_file = MagicMock()
+    logger.raw_file.write.side_effect = RuntimeError("raw stream unavailable")
+
+    with caplog.at_level(logging.WARNING):
+        logger._on_log_message("plain log line")
+
+    assert "Failed to write raw slog line" in caplog.text
+    logger.writer.addRow.assert_called_once()
 
 
 @pytest.mark.unit

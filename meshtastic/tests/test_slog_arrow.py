@@ -11,7 +11,7 @@ from meshtastic.slog.arrow import FeatherWriter
 
 def _test_schema() -> pa.Schema:
     """Return a compact deterministic schema for FeatherWriter tests."""
-    return pa.schema([("value", pa.int64())])
+    return pa.schema([pa.field("value", pa.int64())])
 
 
 @pytest.mark.unit
@@ -31,7 +31,7 @@ def test_feather_writer_close_writes_rows_without_source_artifacts(
     dest_path = tmp_path / "power-log.feather"
     assert not src_path.exists()
     assert dest_path.exists()
-    table = feather.read_table(dest_path)
+    table = feather.read_table(str(dest_path))
     assert table.column("value").to_pylist() == [1, 2]
 
 

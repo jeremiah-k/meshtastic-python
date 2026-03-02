@@ -170,7 +170,8 @@ class PowerStress:
         """Run the power stress test."""
         try:
             if not self.client.syncPowerStress(
-                powermon_pb2.PowerStressMessage.PRINT_INFO
+                powermon_pb2.PowerStressMessage.PRINT_INFO,
+                ack_timeout=DEFAULT_STRESS_STATE_DURATION_S,
             ):
                 logging.warning(
                     "Ack not received for PRINT_INFO; continuing with stress sequence."

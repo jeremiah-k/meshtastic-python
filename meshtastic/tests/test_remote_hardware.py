@@ -82,6 +82,25 @@ def test_onGPIOreceive_does_not_apply_single_mask_fallback_with_mismatched_sende
 
 
 @pytest.mark.unit
+def test_onGPIOreceive_applies_single_mask_fallback_with_blank_sender_fields(
+    caplog: pytest.LogCaptureFixture, mock_gpio_iface: MagicMock
+) -> None:
+    """Blank sender identity fields should be treated as missing for legacy fallback."""
+    iface = mock_gpio_iface
+    setattr(iface, WATCH_MASKS_ATTR, {"num:16": 7})
+    packet = {
+        "from": "   ",
+        "fromId": "",
+        "decoded": {"remotehw": {"gpioValue": "7"}},
+    }
+    with caplog.at_level(logging.DEBUG):
+        onGPIOreceive(packet, iface)
+        assert re.search(r"\bmask[=:\s]+7\b", caplog.text)
+        assert re.search(r"value=7", caplog.text)
+    assert iface.gotResponse is True
+
+
+@pytest.mark.unit
 def test_onGPIOreceive_marks_response_on_nondict_packet() -> None:
     """Malformed top-level packet values should still unblock waiting callers."""
     iface = create_autospec(SerialInterface, instance=True)

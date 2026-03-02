@@ -137,6 +137,48 @@ def test_shared_close_runs_super_before_stream_close() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_connect_ignores_requests_while_stream_close_in_progress() -> None:
+    """connect() should not restart reader state while _shared_close is in progress."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    try:
+        iface._provides_own_stream = True  # type: ignore[attr-defined]
+        iface.stream = None
+        iface._stream_close_in_progress = True
+        iface._rxThread = MagicMock()
+        iface._rxThread.is_alive.return_value = False
+        iface._rxThread.ident = None
+        with patch.object(iface, "_start_config") as start_config:
+            iface.connect()
+        start_config.assert_not_called()
+        iface._rxThread.start.assert_not_called()
+    finally:
+        iface._stream_close_in_progress = False
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_shared_close_resets_close_in_progress_on_super_close_error() -> None:
+    """_shared_close should clear in-progress guard and close stream even if super close fails."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+
+    with patch(
+        "meshtastic.stream_interface.MeshInterface.close",
+        side_effect=RuntimeError("close failed"),
+    ):
+        with pytest.raises(RuntimeError, match="close failed"):
+            iface._shared_close()
+
+    assert iface._stream_close_in_progress is False
+    stream.close.assert_called_once()
+    assert iface.stream is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
     """connect() should not send wake bytes when subclass provides its own stream."""
     iface = StreamInterface(noProto=True, connectNow=False)
