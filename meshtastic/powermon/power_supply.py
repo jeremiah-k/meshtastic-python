@@ -2,9 +2,9 @@
 
 import math
 import threading
+import time
 import warnings
 from collections.abc import Callable
-from datetime import datetime
 from numbers import Real
 from typing import cast
 
@@ -50,7 +50,7 @@ class PowerMeter:
 
     def __init__(self) -> None:
         """Initialize the PowerMeter object."""
-        self.prevPowerTime = datetime.now()
+        self.prevPowerTime = time.monotonic()
 
     def close(self) -> None:
         """Close the power meter."""

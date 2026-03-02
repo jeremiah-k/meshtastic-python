@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+import time
 from typing import cast
 from unittest.mock import MagicMock
 
@@ -64,7 +64,7 @@ def test_get_average_current_ma_converts_watts_to_ma(
 ) -> None:
     """Test that get_average_current_mA converts Watt-hours/time to mA."""
     pps = riden_stub
-    pps.prevPowerTime = datetime.now() - timedelta(seconds=3600)
+    pps.prevPowerTime = time.monotonic() - 3600.0
     pps.prevWattHour = 10.0
     pps._get_raw_watt_hour = MagicMock(return_value=11.0)  # type: ignore[method-assign]
     pps.v = 2.0
@@ -95,8 +95,8 @@ def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
 ) -> None:
     """Non-positive elapsed windows should return NaN and advance previous window state."""
     pps = riden_stub
-    start = datetime.now()
-    pps.prevPowerTime = start + timedelta(seconds=1)
+    start = time.monotonic()
+    pps.prevPowerTime = start + 1.0
     pps.prevWattHour = 10.0
     pps._get_raw_watt_hour = MagicMock(return_value=12.0)  # type: ignore[method-assign]
 
@@ -105,7 +105,7 @@ def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
     assert math.isnan(result)
     assert pps.prevWattHour == pytest.approx(12.0)
     assert pps.prevPowerTime > start
-    assert pps.prevPowerTime <= datetime.now()
+    assert pps.prevPowerTime <= time.monotonic()
 
 
 @pytest.mark.unit

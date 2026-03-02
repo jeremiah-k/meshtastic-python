@@ -1061,6 +1061,42 @@ def test_connection_validator_existing_client_checks():
     )
 
 
+def test_get_existing_client_if_valid_uses_last_request_snapshot():
+    """_get_existing_client_if_valid should validate against a lock-protected request snapshot."""
+
+    iface = object.__new__(BLEInterface)
+    iface._state_lock = threading.RLock()  # type: ignore[attr-defined]
+    iface._last_connection_request = "old-request"  # type: ignore[attr-defined]
+
+    class _Client:
+        def isConnected(self) -> bool:
+            iface._last_connection_request = "new-request"  # type: ignore[attr-defined]
+            return True
+
+    class _Validator:
+        def __init__(self) -> None:
+            self.seen_last_request: str | None = None
+
+        def _check_existing_client(
+            self,
+            _client: Any,
+            _normalized_request: str | None,
+            last_request: str | None,
+        ) -> bool:
+            self.seen_last_request = last_request
+            return last_request == "old-request"
+
+    client = _Client()
+    validator = _Validator()
+    iface.client = client  # type: ignore[attr-defined]
+    iface._connection_validator = validator  # type: ignore[attr-defined]
+
+    result = BLEInterface._get_existing_client_if_valid(iface, normalized_request="any")
+
+    assert result is client
+    assert validator.seen_last_request == "old-request"
+
+
 def test_close_idempotent(monkeypatch):
     """Test that close() is idempotent and only calls disconnect once."""
     client = DummyClient()

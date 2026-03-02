@@ -24,7 +24,7 @@ def onConnection(  # pylint: disable=unused-argument
 
 def main() -> None:
     """Connect to a TCP radio and print local node info on connection."""
-    if len(sys.argv) < 2:
+    if len(sys.argv) != 2:
         print(f"usage: {sys.argv[0]} host", file=sys.stderr)
         sys.exit(1)
     hostname = sys.argv[1]

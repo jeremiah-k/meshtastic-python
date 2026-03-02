@@ -1188,16 +1188,16 @@ class BLEInterface(MeshInterface):
             raise self.BLEError(ERROR_NO_PERIPHERALS_FOUND)
         if len(addressed_devices) == 1:
             return addressed_devices[0]
+
+        def _format_device_list(devices: list[BLEDevice]) -> str:
+            return "\n".join(f"- {d.name or 'Unknown'} ({d.address})" for d in devices)
+
         if address and len(addressed_devices) > 1:
             # Build a list of found devices for the error message
-            device_list = "\n".join(
-                [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
-            )
+            device_list = _format_device_list(addressed_devices)
             raise self.BLEError(ERROR_MULTIPLE_DEVICES.format(address, device_list))
         if len(addressed_devices) > 1:
-            device_list = "\n".join(
-                [f"- {d.name or 'Unknown'} ({d.address})" for d in addressed_devices]
-            )
+            device_list = _format_device_list(addressed_devices)
             raise self.BLEError(ERROR_MULTIPLE_DEVICES_DISCOVERY.format(device_list))
         raise AssertionError(UNREACHABLE_ADDRESSED_DEVICES_MSG)
 
@@ -1354,14 +1354,16 @@ class BLEInterface(MeshInterface):
         BLEClient | None
             The existing connected client if compatible with `normalized_request`, otherwise `None`.
         """
-        existing_client = self.client
+        with self._state_lock:
+            existing_client = self.client
+            last_connection_request = self._last_connection_request
         if (
             existing_client
             and existing_client.isConnected()
             and self._connection_validator._check_existing_client(
                 existing_client,
                 normalized_request,
-                self._last_connection_request,
+                last_connection_request,
             )
         ):
             return existing_client
