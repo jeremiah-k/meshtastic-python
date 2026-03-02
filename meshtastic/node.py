@@ -1399,17 +1399,25 @@ class Node:
 
     def startOTA(
         self,
-        mode: admin_pb2.OTAMode.ValueType,
-        hash: bytes,
+        mode: admin_pb2.OTAMode.ValueType | None = None,
+        ota_file_hash: bytes | None = None,
+        *,
+        ota_mode: admin_pb2.OTAMode.ValueType | None = None,
+        ota_hash: bytes | None = None,
+        **kwargs: Any,
     ) -> mesh_pb2.MeshPacket | None:
         """Request OTA mode for local node firmware that supports ota_request.
 
         Parameters
         ----------
-        mode : admin_pb2.OTAMode.ValueType
+        mode : admin_pb2.OTAMode.ValueType | None
             OTA transport mode to use after reboot (for example, ``admin_pb2.OTA_WIFI``).
-        hash : bytes
+        ota_file_hash : bytes | None
             Firmware hash bytes used by the node to validate OTA payload consistency.
+        ota_mode : admin_pb2.OTAMode.ValueType | None
+            Backward-compatible keyword alias for ``mode``.
+        ota_hash : bytes | None
+            Backward-compatible keyword alias for ``ota_file_hash``.
 
         Returns
         -------
@@ -1424,10 +1432,36 @@ class Node:
         if self != self.iface.localNode:
             self._raise_interface_error("startOTA only possible on local node")
 
+        legacy_hash = kwargs.pop("hash", None)
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(
+                f"startOTA() got unexpected keyword argument(s): {unexpected}"
+            )
+
+        if mode is not None and ota_mode is not None and mode != ota_mode:
+            raise ValueError("Conflicting OTA mode arguments provided")
+        resolved_mode = mode if mode is not None else ota_mode
+        if resolved_mode is None:
+            raise TypeError("startOTA() missing required argument: 'mode'")
+
+        hash_candidates = [
+            value
+            for value in (ota_file_hash, ota_hash, legacy_hash)
+            if value is not None
+        ]
+        if not hash_candidates:
+            raise TypeError("startOTA() missing required argument: 'ota_file_hash'")
+        resolved_hash = hash_candidates[0]
+        if any(candidate != resolved_hash for candidate in hash_candidates[1:]):
+            raise ValueError("Conflicting OTA hash arguments provided")
+        if not isinstance(resolved_hash, bytes):
+            raise TypeError("ota_file_hash must be bytes")
+
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
-        p.ota_request.reboot_ota_mode = mode
-        p.ota_request.ota_hash = hash
+        p.ota_request.reboot_ota_mode = resolved_mode
+        p.ota_request.ota_hash = resolved_hash
         return self._send_admin(p)
 
     def enterDFUMode(self) -> mesh_pb2.MeshPacket | None:

@@ -21,9 +21,9 @@ from google.protobuf.json_format import MessageToDict
 from pubsub import pub
 
 import meshtastic.ota
-import meshtastic.util
 import meshtastic.serial_interface
 import meshtastic.tcp_interface
+import meshtastic.util
 from meshtastic import BROADCAST_ADDR, mt_config, remote_hardware
 from meshtastic.interfaces.ble import BLEInterface
 from meshtastic.mesh_interface import MeshInterface

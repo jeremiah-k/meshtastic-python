@@ -2,7 +2,6 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-
 # Ordered candidates for installed distribution metadata resolution.
 # Fork builds can publish under an alternate package name while keeping
 # the import package as `meshtastic`.

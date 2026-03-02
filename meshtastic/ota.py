@@ -1,10 +1,10 @@
 """Meshtastic ESP32 Unified OTA"""
 
-import os
 import hashlib
-import socket
 import logging
-from typing import Optional, Callable
+import os
+import socket
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
