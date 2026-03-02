@@ -73,6 +73,7 @@ def test_get_average_current_ma_converts_watts_to_ma(
 
     # 1 Wh over 1 hour == 1 W; mA = W / V * 1000 => 500 mA
     assert current_ma == pytest.approx(500.0, rel=1e-2)
+    assert pps.nowWattHour == pytest.approx(11.0)
     assert pps.prevWattHour == 11.0
 
 
@@ -135,3 +136,15 @@ def test_get_raw_watt_hour_updates_and_returns_wh(
     value = pps._get_raw_watt_hour()
     r_mock.update.assert_called_once()
     assert value == 42.5
+
+
+@pytest.mark.unit
+def test_get_raw_watt_hour_legacy_alias_delegates(
+    riden_stub: RidenPowerSupply,
+) -> None:
+    """Legacy `_getRawWattHour` alias should delegate to `_get_raw_watt_hour`."""
+    pps = riden_stub
+    pps._get_raw_watt_hour = MagicMock(return_value=7.25)  # type: ignore[method-assign]
+
+    assert pps._getRawWattHour() == pytest.approx(7.25)
+    pps._get_raw_watt_hour.assert_called_once()

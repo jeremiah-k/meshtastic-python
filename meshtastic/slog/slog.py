@@ -138,24 +138,43 @@ class PowerLogger:
     """Logs current watts reading periodically using PowerMeter and ArrowWriter."""
 
     def __init__(
-        self, p_meter: PowerMeter, file_path: str, interval: float = 0.002
+        self,
+        p_meter: PowerMeter | None = None,
+        file_path: str | None = None,
+        interval: float = 0.002,
+        **compat_kwargs: Any,
     ) -> None:
         """Create a PowerLogger that records periodic power readings from a PowerMeter into a Feather file and starts its background logging thread.
 
         Parameters
         ----------
-        p_meter : PowerMeter
+        p_meter : PowerMeter | None
             Source of power measurements; its snapshot and reset methods will be used.
-        file_path : str
+        file_path : str | None
             Path to the output Feather file where readings will be written.
         interval : float
             Time in seconds between automatic samples. Must be > 0 (default 0.002).
+        **compat_kwargs : Any
+            Legacy keyword compatibility:
+            - `pMeter`: historical constructor name for `p_meter`.
 
         Raises
         ------
         ValueError
             If interval is not a positive number.
         """
+        legacy_p_meter = compat_kwargs.pop("pMeter", None)
+        if compat_kwargs:
+            unexpected = ", ".join(sorted(compat_kwargs.keys()))
+            raise TypeError(f"Unexpected keyword argument(s): {unexpected}")
+        if p_meter is not None and legacy_p_meter is not None and p_meter is not legacy_p_meter:
+            raise TypeError("Specify only one of 'p_meter' or legacy 'pMeter'")
+        if p_meter is None:
+            p_meter = legacy_p_meter
+        if p_meter is None:
+            raise TypeError("PowerLogger requires a PowerMeter instance")
+        if file_path is None:
+            raise TypeError("PowerLogger requires file_path")
         if interval <= 0:
             raise ValueError(INTERVAL_REQUIRED_MESSAGE)
         self._p_meter = p_meter
@@ -615,6 +634,11 @@ class StructuredLogger:
                             exc,
                             exc_info=True,
                         )
+
+    # COMPAT_STABLE_SHIM: historical internal helper name used by legacy integrations.
+    def _onLogMessage(self, line: str) -> None:  # pylint: disable=invalid-name
+        """Compatibility alias for _on_log_message()."""
+        self._on_log_message(line)
 
 
 class LogSet:

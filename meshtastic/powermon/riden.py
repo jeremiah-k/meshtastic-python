@@ -39,6 +39,8 @@ class RidenPowerSupply(PowerSupply):
         # Keep base init after port open so timing/voltage state is available.
         super().__init__()
         self.prevWattHour = self._get_raw_watt_hour()
+        # COMPAT_STABLE_SHIM: retained for callers that inspect legacy running sample state.
+        self.nowWattHour = self.prevWattHour
         self.prevPowerTime = time.monotonic()
 
     def setMaxCurrent(self, i: float) -> None:
@@ -58,6 +60,7 @@ class RidenPowerSupply(PowerSupply):
         """Return average current of last measurement in mA since last call to this method."""
         now = time.monotonic()
         nowWattHour = self._get_raw_watt_hour()
+        self.nowWattHour = nowWattHour
         elapsed_s = now - self.prevPowerTime
         if elapsed_s <= 0:
             # Consume the window to avoid stale deltas on subsequent reads.
@@ -77,3 +80,8 @@ class RidenPowerSupply(PowerSupply):
         """Get the current watt-hour reading."""
         self.r.update()
         return float(self.r.wh)
+
+    # COMPAT_STABLE_SHIM: historical private helper alias retained for external integrations.
+    def _getRawWattHour(self) -> float:  # pylint: disable=invalid-name
+        """Compatibility alias for _get_raw_watt_hour()."""
+        return self._get_raw_watt_hour()

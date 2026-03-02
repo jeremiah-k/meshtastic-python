@@ -5,6 +5,7 @@ import warnings
 
 import pytest
 
+from meshtastic import powermon
 from meshtastic.powermon.constants import MAX_SUPPLY_VOLTAGE_V
 from meshtastic.powermon.power_supply import PowerError, PowerSupply
 from meshtastic.powermon.sim import SimPowerSupply
@@ -107,3 +108,20 @@ def test_sim_power_supply_snake_case_alias_is_stable_shim(
         for warning in caught
         if issubclass(warning.category, DeprecationWarning)
     ]
+
+
+@pytest.mark.unit
+def test_powermon_public_exports_remain_available() -> None:
+    """Powermon package should keep expected historical public exports."""
+    expected_exports = {
+        "PowerError",
+        "PowerMeter",
+        "PowerSupply",
+        "PPK2PowerSupply",
+        "RidenPowerSupply",
+        "SimPowerSupply",
+        "PowerStress",
+    }
+    assert expected_exports.issubset(set(powermon.__all__))
+    for export_name in expected_exports:
+        assert hasattr(powermon, export_name)

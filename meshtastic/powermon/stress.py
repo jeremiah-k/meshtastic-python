@@ -8,7 +8,6 @@ from typing import Any, Callable, Final
 from ..protobuf import portnums_pb2, powermon_pb2
 
 # Stress test timing constants
-DEFAULT_ACK_TIMEOUT_S: Final[float] = 30.0  # Default acknowledgment timeout (seconds).
 STRESS_DURATION_BUFFER_S: Final[float] = (
     0.2  # Additional wait beyond stress duration (seconds).
 )
@@ -77,7 +76,7 @@ class PowerStressClient:
         self,
         cmd: powermon_pb2.PowerStressMessage.Opcode.ValueType,
         num_seconds: float = 0.0,
-        ack_timeout: float = DEFAULT_ACK_TIMEOUT_S,
+        ack_timeout: float | None = None,
     ) -> bool:
         """Send a power stress command and wait for the ack.
 
@@ -88,9 +87,10 @@ class PowerStressClient:
         num_seconds : float
             Duration for timed stress commands. A value of 0.0 means
             "run-until-ack"; values below 0.0 are treated the same. (Default value = 0.0)
-        ack_timeout : float
-            Maximum seconds to wait for an ack when `num_seconds` is <= 0.0.
-            (Default value = 30.0)
+        ack_timeout : float | None
+            Optional timeout in seconds to wait for an ack when `num_seconds`
+            is <= 0.0. If `None`, wait indefinitely (legacy behavior).
+            (Default value = None)
 
         Returns
         -------
@@ -121,7 +121,9 @@ class PowerStressClient:
             effective_num_seconds = 0.0
 
         if effective_num_seconds <= 0.0:
-            if not math.isfinite(ack_timeout) or ack_timeout <= 0.0:
+            if ack_timeout is not None and (
+                not math.isfinite(ack_timeout) or ack_timeout <= 0.0
+            ):
                 raise ValueError(INVALID_ACK_TIMEOUT_ERROR)
 
         self.sendPowerStress(
@@ -129,8 +131,12 @@ class PowerStressClient:
         )
 
         if effective_num_seconds <= 0.0:
-            # Wait for the response and then continue, with a safety timeout.
-            if not ack_event.wait(timeout=ack_timeout):
+            # Wait for the response and then continue. Keep legacy indefinite
+            # behavior when no explicit timeout is provided.
+            ack_received = (
+                ack_event.wait() if ack_timeout is None else ack_event.wait(ack_timeout)
+            )
+            if not ack_received:
                 logging.error("Timed out waiting for power stress ack!")
                 return False
         else:
