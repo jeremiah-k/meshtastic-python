@@ -6,6 +6,9 @@ from typing import Any, Callable, Protocol
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.utils import _sleep
 
+RETRY_BACKOFF = 1.5
+RETRY_JITTER_RATIO = 0.1
+
 
 class _RandomLike(Protocol):
     """Protocol for objects that provide a random() method."""
@@ -281,8 +284,8 @@ class RetryPolicy:
         return ReconnectPolicy(
             initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
             max_delay=1.0,
-            backoff=1.5,
-            jitter_ratio=0.1,
+            backoff=RETRY_BACKOFF,
+            jitter_ratio=RETRY_JITTER_RATIO,
             max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
         )
 
@@ -298,8 +301,8 @@ class RetryPolicy:
         return ReconnectPolicy(
             initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
             max_delay=2.0,
-            backoff=1.5,
-            jitter_ratio=0.1,
+            backoff=RETRY_BACKOFF,
+            jitter_ratio=RETRY_JITTER_RATIO,
             max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,
         )
 

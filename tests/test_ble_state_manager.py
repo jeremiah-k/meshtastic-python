@@ -52,6 +52,8 @@ class TestBLEStateManager:
         """Test state-based property methods."""
         manager = BLEStateManager()
 
+        # Direct internal assignment keeps this test focused on property semantics
+        # instead of transition-validation behavior.
         # Test DISCONNECTED state
         manager._state = ConnectionState.DISCONNECTED
         assert not manager._is_connected
@@ -139,7 +141,9 @@ class TestBLEStateManager:
         )
     )
     @settings(max_examples=100, deadline=None)
-    def test_transition_sequence_invariants(self, sequence):
+    def test_transition_sequence_invariants(
+        self, sequence: list[ConnectionState]
+    ) -> None:
         """Verify that arbitrary sequences of state transition requests preserve BLEStateManager invariants.
 
         For each target in `sequence` this test asserts three invariants:
@@ -168,15 +172,11 @@ class TestBLEStateManager:
         results = []
         errors = []
 
-        def worker(worker_id):
-            """Worker loop that performs alternating state transition attempts and records outcomes to shared lists.
+        def worker(worker_id: int) -> None:
+            """Perform alternating transitions and record outcomes.
 
-            On each of 100 iterations the worker attempts ConnectionState.CONNECTING for even indices and ConnectionState.DISCONNECTED for odd indices, appending (worker_id, iteration_index, success, current_state_value) to the shared `results` list. If an exception occurs it is appended to the shared `errors` list as (worker_id, error_message).
-
-            Parameters
-            ----------
-            worker_id : Any
-                Identifier used when recording results and errors.
+            On each of 100 iterations, tries CONNECTING on even indices and
+            DISCONNECTED on odd indices.
             """
             try:
                 for i in range(100):

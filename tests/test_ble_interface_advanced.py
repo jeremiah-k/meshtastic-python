@@ -4,11 +4,11 @@ import logging
 import threading
 import time
 import types
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Any, Callable, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -44,6 +44,27 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
         Recorded addresses for each connect call; `None` represents a connect attempt without an address. Returns an empty list if the attribute is not present.
     """
     return cast(list[str | None], getattr(iface, "_connect_stub_calls", []))
+
+
+def _make_fake_future(exception_to_raise: Exception) -> Any:
+    """Create a fake Future object that raises the provided exception from result()."""
+
+    class _FakeFuture:
+        def __init__(self) -> None:
+            self.cancelled = False
+            self.coro = None
+            self.callbacks: list[Callable[..., Any]] = []
+
+        def result(self, _timeout: float | None = None) -> Any:
+            raise exception_to_raise
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+        def add_done_callback(self, callback: Callable[..., Any]) -> None:
+            self.callbacks.append(callback)
+
+    return _FakeFuture()
 
 
 def test_log_notification_registration_missing_characteristics(monkeypatch):
@@ -182,7 +203,7 @@ def test_receive_loop_handles_decode_error(monkeypatch, caplog):
     iface.close()
 
 
-def test_auto_reconnect_behavior(monkeypatch, caplog):
+def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify BLEInterface schedules an auto-reconnect after a BLE disconnect and preserves connection state and receive-thread behavior.
 
     This test simulates a disconnection with auto_reconnect enabled and asserts that:
@@ -195,24 +216,20 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
 
     Uses test fixtures for monkeypatching and logging; does not document those fixtures.
     """
-    _ = caplog  # Mark as unused
     # time and meshtastic.mesh_interface already imported at top
 
     # Track published events
-    published_events = []
+    published_events: list[tuple[Any, dict[str, Any]]] = []
 
-    def _capture_events(topic, **kwargs):
+    def _capture_events(topic: Any, **kwargs: Any) -> None:
         """Record a pub/sub event for test inspection.
 
         Parameters
         ----------
         topic : Any
             The event topic name.
-            Key/value pairs comprising the event payload; stored as a dict.
-
-        Notes
-        -----
-        Appends a tuple (topic, kwargs) to the module-level `published_events` list.
+        **kwargs : Any
+            Key/value pairs comprising the event payload.
         """
         published_events.append((topic, kwargs))
 
@@ -791,71 +808,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
     client = ble_mod.BLEClient()  # address=None keeps underlying bleak client unset
-
-    class _FakeFuture:
-        """Future stub that simulates timeout behavior for _async_await tests.
-
-        Methods
-        -------
-        result(_timeout=None)
-            Raises FutureTimeoutError to emulate timeout on wait.
-        cancel()
-            Marks the fake future as cancelled.
-        add_done_callback(callback)
-            Stores completion callbacks for later inspection.
-        """
-
-        def __init__(self):
-            """Create a cancellation tracker for an asynchronous operation.
-
-            Tracks cancellation state, the associated coroutine (if any), and completion callbacks.
-
-            Attributes
-            ----------
-            cancelled : bool
-                True if the operation has been cancelled.
-            coro : Coroutine | None
-                The associated coroutine, or None.
-            callbacks : list[Callable]
-                Callables invoked when the operation or future completes.
-            """
-            self.cancelled = False
-            self.coro = None
-            self.callbacks: list[Callable[..., Any]] = []
-
-        def result(self, _timeout=None):
-            """Raise FutureTimeoutError to simulate a future timing out.
-
-            Parameters
-            ----------
-            _timeout : float | None
-                Ignored; accepted for interface compatibility.
-
-            Raises
-            ------
-            FutureTimeoutError
-                Always raised to represent a timeout condition.
-            """
-            raise FutureTimeoutError()
-
-        def cancel(self):
-            """Mark the future as cancelled.
-
-            Sets the object's `cancelled` flag so callers can detect that the future was cancelled.
-            """
-            self.cancelled = True
-
-        def add_done_callback(self, callback):
-            """Register a callable to be invoked with this future when it completes.
-
-            Parameters
-            ----------
-            callback : callable
-                Callable that will be called with this future as its sole argument when the future completes.
-            """
-            self.callbacks.append(callback)
-
-    fake_future = _FakeFuture()
+    fake_future = _make_fake_future(FutureTimeoutError())
 
     def _fake_async_run(coro):
         """Attach a coroutine to the shared test future and return that future.
@@ -895,48 +848,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
     """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
     client = ble_mod.BLEClient()
-
-    class _FakeFuture:
-        """Future stub that simulates runtime-failure behavior for _async_await tests.
-
-        Methods
-        -------
-        result(_timeout=None)
-            Raises RuntimeError("loop is closed").
-        cancel()
-            Marks the fake future as cancelled.
-        """
-
-        def __init__(self):
-            """Initialize the fake future object.
-
-            Sets `cancelled` to False and `coro` to None to represent an active, not-yet-completed future.
-            """
-            self.cancelled = False
-            self.coro = None
-
-        def result(self, _timeout=None):
-            """Signal that the future's result cannot be retrieved because the event loop is closed.
-
-            Parameters
-            ----------
-                Ignored; present for API compatibility.
-
-            Raises
-            ------
-            RuntimeError
-                Always raised with message "loop is closed".
-            """
-            raise RuntimeError("loop is closed")  # noqa: TRY003 - test signal
-
-        def cancel(self):
-            """Mark the object as cancelled.
-
-            Sets the instance attribute `cancelled` to True so callers can detect that the operation was cancelled.
-            """
-            self.cancelled = True
-
-    fake_future = _FakeFuture()
+    fake_future = _make_fake_future(RuntimeError("loop is closed"))
 
     def _fake_async_run(coro):
         """Attach a coroutine to the shared test future and return that future.

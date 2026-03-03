@@ -4,6 +4,7 @@ import logging
 import math
 import threading
 import time
+import warnings
 from contextlib import suppress
 from typing import Final
 
@@ -93,6 +94,9 @@ class PPK2PowerSupply(PowerSupply):
         self.measurement_thread = threading.Thread(
             target=self._measurement_loop, daemon=True, name="ppk2 measurement"
         )
+        self._warned_get_min_current_lowercase_m = False
+        self._warned_get_max_current_lowercase_m = False
+        self._warned_get_average_current_lowercase_m = False
         logging.info("Connected to Power Profiler Kit II (PPK2)")
         super().__init__()  # we call this late so that the serial port is already open
 
@@ -174,6 +178,23 @@ class PPK2PowerSupply(PowerSupply):
                 self.last_reported_min = self.current_min
             return self.last_reported_min / MICROAMPS_PER_MILLIAMP
 
+    # COMPAT_STABLE_SHIM: snake_case alias retained for scripting/tooling callers.
+    def get_min_current_mA(self) -> float:  # pylint: disable=invalid-name
+        """Compatibility alias for getMinCurrentMA()."""
+        return self.getMinCurrentMA()
+
+    # COMPAT_DEPRECATE: legacy lowercase-m alias retained for compatibility.
+    def getMinCurrentmA(self) -> float:  # pylint: disable=invalid-name
+        """Return deprecated compatibility alias result for getMinCurrentMA()."""
+        if not getattr(self, "_warned_get_min_current_lowercase_m", False):
+            warnings.warn(
+                "getMinCurrentmA is deprecated, use getMinCurrentMA instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._warned_get_min_current_lowercase_m = True
+        return self.getMinCurrentMA()
+
     def getMaxCurrentMA(self) -> float:
         """Return the maximum current reading in milliamperes.
 
@@ -187,6 +208,23 @@ class PPK2PowerSupply(PowerSupply):
             if self.current_num_samples != 0:
                 self.last_reported_max = self.current_max
             return self.last_reported_max / MICROAMPS_PER_MILLIAMP
+
+    # COMPAT_STABLE_SHIM: snake_case alias retained for scripting/tooling callers.
+    def get_max_current_mA(self) -> float:  # pylint: disable=invalid-name
+        """Compatibility alias for getMaxCurrentMA()."""
+        return self.getMaxCurrentMA()
+
+    # COMPAT_DEPRECATE: legacy lowercase-m alias retained for compatibility.
+    def getMaxCurrentmA(self) -> float:  # pylint: disable=invalid-name
+        """Return deprecated compatibility alias result for getMaxCurrentMA()."""
+        if not getattr(self, "_warned_get_max_current_lowercase_m", False):
+            warnings.warn(
+                "getMaxCurrentmA is deprecated, use getMaxCurrentMA instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._warned_get_max_current_lowercase_m = True
+        return self.getMaxCurrentMA()
 
     def getAverageCurrentMA(self) -> float:
         """Return the average current reading in milliamperes.
@@ -206,6 +244,23 @@ class PPK2PowerSupply(PowerSupply):
             # measurements are in microamperes, divide by 1000
             return self.current_average / MICROAMPS_PER_MILLIAMP
 
+    # COMPAT_STABLE_SHIM: snake_case alias retained for scripting/tooling callers.
+    def get_average_current_mA(self) -> float:  # pylint: disable=invalid-name
+        """Compatibility alias for getAverageCurrentMA()."""
+        return self.getAverageCurrentMA()
+
+    # COMPAT_DEPRECATE: legacy lowercase-m alias retained for compatibility.
+    def getAverageCurrentmA(self) -> float:  # pylint: disable=invalid-name
+        """Return deprecated compatibility alias result for getAverageCurrentMA()."""
+        if not getattr(self, "_warned_get_average_current_lowercase_m", False):
+            warnings.warn(
+                "getAverageCurrentmA is deprecated, use getAverageCurrentMA instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._warned_get_average_current_lowercase_m = True
+        return self.getAverageCurrentMA()
+
     def resetMeasurements(self) -> None:
         """Reset current-window accumulators while preserving last reported extrema."""
         with self._result_lock:
@@ -223,6 +278,11 @@ class PPK2PowerSupply(PowerSupply):
 
         with self._want_measurement:
             self._want_measurement.notify()  # notify the measurement loop to read immediately
+
+    # COMPAT_STABLE_SHIM: snake_case alias retained for scripting/tooling callers.
+    def reset_measurements(self) -> None:
+        """Compatibility alias for resetMeasurements()."""
+        self.resetMeasurements()
 
     def close(self) -> None:
         """Close the power meter and release resources."""

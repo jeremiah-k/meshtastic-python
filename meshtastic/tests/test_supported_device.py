@@ -575,7 +575,9 @@ def test_nrf52_device_class() -> None:
     """Test that nrf52 devices have correct device_class."""
     nrf52_devices = [d for d in supported_devices if d.device_class == "nrf52"]
     assert len(nrf52_devices) > 0
-    assert all(d.device_class == "nrf52" for d in nrf52_devices)
+    nrf52_names = {d.name for d in nrf52_devices}
+    assert "RAK 4631 5005" in nrf52_names
+    assert "RAK 4631 19003" in nrf52_names
 
 
 @pytest.mark.unit

@@ -343,7 +343,6 @@ def test_close_waits_for_inflight_heartbeat_send(
         # close() should block until the in-flight heartbeat send completes.
         # Use a generous timeout (0.2s) to avoid flakiness on slow CI runners.
         assert not close_done.wait(timeout=0.2)
-        assert not close_done.wait(timeout=0.05)
 
         release_send.set()
         close_thread.join(timeout=1.0)

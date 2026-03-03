@@ -220,9 +220,11 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro, _loop):
+        def _fake_submit(coro: Any, _loop: asyncio.AbstractEventLoop) -> Future[None]:
             """Close the provided coroutine without executing it and return a completed Future with result None.
 
             Parameters
@@ -255,6 +257,7 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
 
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
@@ -280,9 +283,11 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro, _loop):
+        def _fake_submit(coro: Any, _loop: asyncio.AbstractEventLoop) -> Future[None]:
             """Close the provided coroutine without executing it and return a completed Future with result None.
 
             Parameters
@@ -314,6 +319,7 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
 
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
@@ -341,9 +347,11 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro, _loop):
+        def _fake_submit(coro: Any, _loop: asyncio.AbstractEventLoop) -> Future[None]:
             """Close the provided coroutine without executing it and return a completed Future with result None.
 
             Parameters
@@ -377,6 +385,7 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
 
     def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
         """Passing both timeout names should raise to avoid ambiguous behavior."""
@@ -448,83 +457,33 @@ class TestBLECoroutineRunner:
         """stop() timeout path should increment zombie runner count."""
 
         class FakeLoop:
-            """Loop stub used to exercise runner stop timeout behavior.
-
-            Methods
-            -------
-            is_running()
-            stop()
-            call_soon_threadsafe(fn)
-            """
+            """Loop stub used to exercise runner stop-timeout behavior."""
 
             def is_running(self) -> bool:
-                """Report whether the runner's event loop thread is currently active.
-
-                Returns
-                -------
-                bool
-                    `True` if the runner is active and its thread is alive, `False` otherwise.
-                """
+                """Report active loop state."""
                 return True
 
             def stop(self) -> None:
-                """Stop the background coroutine runner and clean up its resources.
-
-                Stops the runner's event loop and associated thread (if active), unregisters the atexit handler when registered, and marks the runner as not running.
-
-                Returns
-                -------
-                None
-                """
+                """No-op stop used in timeout-path tests."""
                 return None
 
             def call_soon_threadsafe(self, fn):
-                """Execute the provided callable immediately and synchronously.
-
-                Parameters
-                ----------
-                fn : callable
-                    Function or callable object to be invoked with no arguments.
-                """
+                """Invoke callable immediately."""
                 fn()
 
         class FakeThread:
-            """Thread stub that records join timeout calls.
-
-            Methods
-            -------
-            is_alive()
-            join(timeout=None)
-            """
+            """Thread stub that records join timeout calls."""
 
             def __init__(self):
-                """Initialize the fake thread and prepare a list to record calls to `join`.
-
-                Attributes
-                ----------
-                join_calls : list
-                    Appends each call's arguments when `join` is invoked (captures positional and keyword arguments).
-                """
+                """Initialize join-call recorder."""
                 self.join_calls = []
 
             def is_alive(self) -> bool:
-                """Indicate whether the thread is currently alive.
-
-                Returns
-                -------
-                bool
-                    `True` if the thread is alive, `False` otherwise.
-                """
+                """Report thread as alive for timeout-path testing."""
                 return True
 
             def join(self, timeout=None):
-                """Record a join call for this fake thread by storing the provided timeout.
-
-                Parameters
-                ----------
-                timeout : float | None
-                    The maximum number of seconds to wait for the thread to join, or None to wait indefinitely. The value is appended to self.join_calls. (Default value = None)
-                """
+                """Record requested timeout."""
                 self.join_calls.append(timeout)
 
         runner = BLECoroutineRunner()

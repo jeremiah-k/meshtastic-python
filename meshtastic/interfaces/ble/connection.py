@@ -23,7 +23,7 @@ from meshtastic.interfaces.ble.constants import (
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-from meshtastic.interfaces.ble.utils import sanitize_address
+from meshtastic.interfaces.ble.utils import sanitizeAddress
 
 if TYPE_CHECKING:
     from bleak import BleakClient as BleakRootClient
@@ -107,14 +107,14 @@ class ConnectionValidator:
         """
         if not client or not client.isConnected():
             return False
-        normalized_request_key = sanitize_address(normalized_request)
+        normalized_request_key = sanitizeAddress(normalized_request)
         bleak_client = getattr(client, "bleak_client", None)
         bleak_address = getattr(bleak_client, "address", None)
         normalized_known_targets = {
             t
             for t in (
-                sanitize_address(last_connection_request),
-                sanitize_address(bleak_address),
+                sanitizeAddress(last_connection_request),
+                sanitizeAddress(bleak_address),
             )
             if t is not None
         }
@@ -251,7 +251,8 @@ class ClientManager:
         event : Event | None
             Optional Event that will be set after cleanup completes. (Default value = None)
         """
-        skip_disconnect = bool(getattr(sys, "is_finalizing", lambda: False)())
+        is_finalizing = getattr(sys, "is_finalizing", None)
+        skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
         if (
             not skip_disconnect
             and not getattr(client, "_closed", False)
@@ -386,7 +387,7 @@ class ConnectionOrchestrator:
         on_connected_func()
         if getattr(self.interface, "_ever_connected", False):
             self.thread_coordinator._set_event("reconnected_event")
-        normalized_device_address = sanitize_address(device_address)
+        normalized_device_address = sanitizeAddress(device_address)
         logger.info(
             "Connection successful to %s",
             normalized_device_address or "unknown",
@@ -463,7 +464,7 @@ class ConnectionOrchestrator:
         if target_address is not None and not target_address.strip():
             raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
 
-        normalized_target = sanitize_address(target_address)
+        normalized_target = sanitizeAddress(target_address)
         # Note: normalized_target can be None for discovery mode - this is intentional
         # The discovery fallback in find_device() will scan for any Meshtastic device
 

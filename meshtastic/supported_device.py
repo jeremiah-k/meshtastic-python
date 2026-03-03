@@ -38,7 +38,7 @@ class SupportedDevice:
         raise SupportedDeviceValidationError(message)
 
     def __post_init__(self) -> None:
-        """Normalize USB ID fields to canonical lowercase tuple form."""
+        """Validate and normalize USB ID fields to canonical lowercase tuple form."""
 
         def _normalize_primary_usb_id(raw_value: object, field_name: str) -> str | None:
             if raw_value is None:

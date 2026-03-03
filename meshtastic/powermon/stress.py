@@ -26,6 +26,12 @@ def handlePowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     interface.gotResponse = True
 
 
+# COMPAT_STABLE_SHIM: snake_case alias for callback users.
+def handle_power_stress_response(packet: dict[str, Any], interface: Any) -> None:
+    """Compatibility alias for handlePowerStressResponse()."""
+    handlePowerStressResponse(packet, interface)
+
+
 # COMPAT_STABLE_SHIM: naming alias for existing callback users.
 def onPowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     """Compatibility alias for handlePowerStressResponse()."""
@@ -58,7 +64,23 @@ class PowerStressClient:
         num_seconds: float = 0.0,
         onResponse: Callable[[dict[str, Any]], None] | None = None,
     ) -> Any:
-        """Client goo for talking with the device side agent."""
+        """Send a power stress command to the device.
+
+        Parameters
+        ----------
+        cmd : powermon_pb2.PowerStressMessage.Opcode.ValueType
+            Power stress opcode to send.
+        num_seconds : float
+            Duration for timed stress commands. (Default value = 0.0)
+        onResponse : Callable[[dict[str, Any]], None] | None
+            Optional callback invoked when a response is received.
+            (Default value = None)
+
+        Returns
+        -------
+        Any
+            Return value from ``iface.sendData(...)``.
+        """
         r = powermon_pb2.PowerStressMessage()
         r.cmd = cmd
         r.num_seconds = num_seconds

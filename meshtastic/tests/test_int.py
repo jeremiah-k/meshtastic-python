@@ -10,7 +10,7 @@ from .cli_test_utils import run_cli_argv_with_timeout
 def _run_and_collect(cmd: list[str]) -> tuple[int, str]:
     """Run CLI argv command and return (returncode, combined output)."""
     result = run_cli_argv_with_timeout(cmd)
-    return result.returncode, result.stdout + result.stderr
+    return result.returncode, (result.stdout or "") + (result.stderr or "")
 
 
 @pytest.mark.int

@@ -387,6 +387,8 @@ def ppk2_stub() -> "PPK2PowerSupply":
     ppk_any._is_supply = False
     ppk_any._closed = False
     ppk_any._shutdown_event = threading.Event()
+    # Keep both names initialized: legacy code paths may still touch
+    # measurement_thread while current code uses _measurement_thread.
     ppk_any._measurement_thread = None
     ppk._result_lock = threading.Condition()
     ppk._want_measurement = threading.Condition()

@@ -20,8 +20,8 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
-    resolve_ble_module,
-    sanitize_address,
+    resolveBleModule,
+    sanitizeAddress,
 )
 
 _BLE_ADDRESS_KEY_RE = re.compile(r"^(?:[0-9a-f]{12}|[0-9a-f]{32})$")
@@ -143,10 +143,9 @@ def _close_discovery_client_best_effort(client: Any) -> None:
                 type(client).__name__,
                 exc_info=True,
             )
-            close_awaitable = getattr(awaitable_result, "close", None)
-            if callable(close_awaitable):
+            if inspect.iscoroutine(awaitable_result):
                 with contextlib.suppress(Exception):
-                    close_awaitable()
+                    awaitable_result.close()
 
 
 class DiscoveryClientError(Exception):
@@ -227,12 +226,12 @@ def _filter_devices_for_target_identifier(
     """
     target_key: str | None = None
     if _looks_like_ble_address(target_identifier):
-        target_key = sanitize_address(target_identifier)
+        target_key = sanitizeAddress(target_identifier)
     if target_key and _BLE_ADDRESS_KEY_RE.fullmatch(target_key):
         address_matches = [
             device
             for device in devices
-            if sanitize_address(getattr(device, "address", None)) == target_key
+            if sanitizeAddress(getattr(device, "address", None)) == target_key
         ]
         if address_matches:
             return address_matches
@@ -426,7 +425,7 @@ class DiscoveryManager:
                 #   1. Explicit self.client_factory (injected for testing)
                 #   2. Monkeypatched ble_mod.BLEClient (legacy/back-compat shim)
                 #   3. Directly imported BLEClient (default)
-                ble_mod = resolve_ble_module()
+                ble_mod = resolveBleModule()
                 if ble_mod is None:
                     logger.debug("No BLE module found; using default BLEClient")
                 resolved_factory: Callable[..., Any] = cast(
@@ -484,6 +483,8 @@ class DiscoveryManager:
                         ["_discover"],
                     )
 
+            if self._client is None:
+                raise DiscoveryClientError.factory_returned_none(resolved_factory)
             client = cast(BLEClient | DiscoveryClientProtocol, self._client)
 
         seen_stale_ids: set[int] = set()

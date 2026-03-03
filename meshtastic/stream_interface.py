@@ -24,21 +24,17 @@ STANDARD_WRITE_DELAY = 0.1  # Standard post-write delay.
 WINDOWS11_WRITE_DELAY = 1.0  # Extended post-write delay on Windows 11.
 READER_THREAD_JOIN_TIMEOUT = 2.0  # Reader thread join timeout during shutdown.
 READER_IDLE_BACKOFF_SECONDS = 0.01  # Backoff when read loop receives no bytes.
+WRITE_PROGRESS_TIMEOUT_SECONDS = 10.0  # Guard against indefinitely stalled writes.
 
-STREAM_WRITE_EXCEPTIONS = (
+STREAM_IO_EXCEPTIONS = (
     OSError,
     ValueError,
     serial.SerialException,
     serial.SerialTimeoutException,
 )
-# Write/flush exceptions that indicate stream closure.
-STREAM_READ_EXCEPTIONS = (
-    OSError,
-    ValueError,
-    serial.SerialException,
-    serial.SerialTimeoutException,
-)
-# Read exceptions that indicate stream closure.
+# Read/write/flush exceptions that indicate stream closure.
+STREAM_WRITE_EXCEPTIONS = STREAM_IO_EXCEPTIONS
+STREAM_READ_EXCEPTIONS = STREAM_IO_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -158,13 +154,10 @@ class StreamInterface(MeshInterface):
             # Use a sentinel attribute to detect if subclass provides its own stream I/O.
             # This is more robust than method identity checks which break with decorators.
             if self.stream is None and not _provides_own_stream:
-                if noProto:
-                    logger.debug(
-                        "No stream configured for %s; deferring connect()",
-                        self.__class__.__name__,
-                    )
-                else:
-                    raise StreamInterface.StreamInterfaceError()
+                logger.debug(
+                    "No stream configured for %s; deferring connect()",
+                    self.__class__.__name__,
+                )
             else:
                 self.connect()
                 if not noProto:
@@ -270,8 +263,13 @@ class StreamInterface(MeshInterface):
             raise StreamInterface.StreamClosedError()
         payload = memoryview(b)
         bytes_written = 0
+        write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
         try:
             while bytes_written < len(payload):
+                if time.monotonic() >= write_deadline:
+                    raise StreamInterface.StreamClosedError(
+                        "stream write timed out waiting for progress"
+                    )
                 written = s.write(payload[bytes_written:])
                 if written is None:
                     raise StreamInterface.StreamClosedError(
@@ -288,6 +286,7 @@ class StreamInterface(MeshInterface):
                         StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG
                     )
                 bytes_written += written_count
+                write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
             s.flush()
         except STREAM_WRITE_EXCEPTIONS as exc:
             raise StreamInterface.StreamClosedError(
@@ -456,6 +455,8 @@ class StreamInterface(MeshInterface):
         try:
             while not self._wantExit:
                 # logger.debug("reading character")
+                # Read a single byte at a time because log lines and framed protobuf
+                # payloads are multiplexed on the same stream.
                 b = self._read_bytes(1)
                 # logger.debug("In reader loop")
                 # logger.debug(f"read returned {b}")

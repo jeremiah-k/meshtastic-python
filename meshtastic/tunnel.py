@@ -180,7 +180,7 @@ class Tunnel:
         self.TCP_BLACKLIST: set[int] = set(self.TCP_BLACKLIST_DEFAULT)
         self.PROTOCOL_BLACKLIST: set[int] = set(self.PROTOCOL_BLACKLIST_DEFAULT)
 
-        # Legacy compatibility aliases
+        # COMPAT_STABLE_SHIM: legacy instance attribute aliases.
         self.udpBlacklist = self.UDP_BLACKLIST
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
@@ -480,7 +480,7 @@ class Tunnel:
                 pub.unsubscribe(onTunnelReceive, TUNNEL_TOPIC)
             self._subscribed = False
 
-    # Backward-compatible aliases for existing callers/tests.
+    # COMPAT_STABLE_SHIM: backward-compatible aliases for existing callers/tests.
     def _shouldFilterPacket(self, p: bytes) -> bool:
         """Compatibility wrapper for _should_filter_packet."""
         return self._should_filter_packet(p)

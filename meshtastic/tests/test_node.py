@@ -75,7 +75,6 @@ def _make_fake_send_admin(
         onResponse: Callable[[dict[str, Any]], Any] | None = None,
         adminIndex: int = 0,
     ) -> mesh_pb2.MeshPacket | None:
-        _ = adminIndex
         if sent_messages is not None:
             sent_messages.append(msg)
         if captured is not None:

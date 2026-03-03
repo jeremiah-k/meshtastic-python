@@ -36,7 +36,19 @@ class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
     def _resolve_dev_path(self) -> str | None:
-        """Return an explicit or auto-detected serial device path."""
+        """Return an explicit or auto-detected serial device path.
+
+        Returns
+        -------
+        str | None
+            Resolved serial port path, or ``None`` when no ports are detected.
+
+        Raises
+        ------
+        MeshInterfaceError
+            If an explicit path is empty/whitespace-only or if multiple ports are
+            detected without an explicit ``--port`` selection.
+        """
         if self.devPath is not None:
             if not self.devPath.strip():
                 raise self.MeshInterfaceError(
@@ -188,11 +200,12 @@ class SerialInterface(StreamInterface):
             that includes only the applicable fields (devPath always; debugOut, noProto, noNodes when present).
         """
         rep = f"SerialInterface(devPath={self.devPath!r}"
-        if hasattr(self, "debugOut") and self.debugOut is not None:
-            rep += f", debugOut={self.debugOut!r}"
+        debug_out = getattr(self, "debugOut", None)
+        if debug_out is not None:
+            rep += f", debugOut={debug_out!r}"
         if self.noProto:
             rep += ", noProto=True"
-        if hasattr(self, "noNodes") and self.noNodes:
+        if getattr(self, "noNodes", False):
             rep += ", noNodes=True"
         rep += ")"
         return rep

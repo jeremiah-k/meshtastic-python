@@ -18,6 +18,7 @@ from typing import (
     Sequence,
 )
 
+from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.message import DecodeError
 
 from meshtastic.protobuf import (
@@ -53,6 +54,12 @@ EMPTY_SHORT_NAME_MSG = (
 )
 # Maximum length for long_name (per protobuf definition in mesh.options)
 MAX_LONG_NAME_LEN = 40
+# Maximum length for owner short_name.
+MAX_SHORT_NAME_LEN = 4
+# Maximum text length for ringtone messages.
+MAX_RINGTONE_LENGTH = 230
+# Maximum text length for canned-message payloads.
+MAX_CANNED_MESSAGE_LENGTH = 200
 # Maximum number of channels a node can hold.
 MAX_CHANNELS = 8
 
@@ -345,7 +352,7 @@ class Node:
                 config_values.CopyFrom(raw_config)
                 logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
-    def requestConfig(self, configType: int | Any) -> None:
+    def requestConfig(self, configType: int | FieldDescriptor) -> None:
         """Request a configuration subset or the full configuration from this node.
 
         If `configType` is an int it is treated as a config index. If it is a protobuf
@@ -357,7 +364,7 @@ class Node:
 
         Parameters
         ----------
-        configType : int | Any
+        configType : int | FieldDescriptor
             Numeric config index or a
             protobuf field descriptor indicating which config field to fetch.
         """
@@ -717,7 +724,6 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
 
-        nChars = 4
         if long_name is not None:
             long_name = long_name.strip()
             # Validate that long_name is not empty or whitespace-only
@@ -735,10 +741,12 @@ class Node:
             # Validate that short_name is not empty or whitespace-only
             if not short_name:
                 self._raise_interface_error(EMPTY_SHORT_NAME_MSG)
-            if len(short_name) > nChars:
-                short_name = short_name[:nChars]
+            if len(short_name) > MAX_SHORT_NAME_LEN:
+                short_name = short_name[:MAX_SHORT_NAME_LEN]
                 logger.warning(
-                    f"Short name is longer than {nChars} characters, truncating to '{short_name}'"
+                    "Short name is longer than %s characters, truncating to '%s'",
+                    MAX_SHORT_NAME_LEN,
+                    short_name,
                 )
             p.set_owner.short_name = short_name
         if is_unmessagable is not None:
@@ -1041,8 +1049,10 @@ class Node:
             )
             return None
 
-        if len(ringtone) > 230:
-            self._raise_interface_error("The ringtone must be 230 characters or fewer.")
+        if len(ringtone) > MAX_RINGTONE_LENGTH:
+            self._raise_interface_error(
+                f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
+            )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_ringtone_message = ringtone
@@ -1199,9 +1209,9 @@ class Node:
             logger.warning("Canned Message module not present (excluded by firmware)")
             return None
 
-        if len(message) > 200:
+        if len(message) > MAX_CANNED_MESSAGE_LENGTH:
             self._raise_interface_error(
-                "The canned message must be 200 characters or fewer."
+                f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
             )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -2222,7 +2232,7 @@ class Node:
         list[dict[str, Any]]
             The list of channel entries described above.
         """
-        return self._get_channels_with_hash()
+        return self.getChannelsWithHash()
 
     def getChannelsWithHash(self) -> list[dict[str, Any]]:
         """Compatibility wrapper that returns channel entries including computed per-channel hashes.

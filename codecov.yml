@@ -87,10 +87,10 @@ component_management:
         - meshtastic/powermon/**
       statuses:
         - type: project
-          target: 30%
+          target: 60%
           threshold: 3%
         - type: patch
-          target: 30%
+          target: 60%
           threshold: 3%
     - component_id: slog
       name: Structured Logging
@@ -109,10 +109,10 @@ component_management:
         - meshtastic/analysis/**
       statuses:
         - type: project
-          target: 30%
+          target: 60%
           threshold: 3%
         - type: patch
-          target: 30%
+          target: 60%
           threshold: 3%
     - component_id: ota
       name: OTA Updates

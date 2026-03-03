@@ -46,7 +46,7 @@ docs:
 
 # lint the codebase (same command as CI)
 lint:
-	PYLINTHOME=/tmp/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
+	PYLINTHOME=$${TMPDIR:-/tmp}/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
 
 # show the slowest unit tests
 slow:

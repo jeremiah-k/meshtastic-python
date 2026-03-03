@@ -30,17 +30,17 @@ PROTOCOL_BLACKLIST: set[int] = {
 }
 
 
-def hexstr(barray: bytes | bytearray) -> str:
+def _hexstr(barray: bytes | bytearray) -> str:
     """Print a string of hex digits."""
     return ":".join("{:02x}".format(x) for x in barray)
 
 
-def ipstr(barray: bytes | bytearray) -> str:
+def _ipstr(barray: bytes | bytearray) -> str:
     """Print a string of ip digits."""
     return ".".join("{}".format(x) for x in barray)
 
 
-def readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
+def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
     """Read big endian u16 (network byte order)."""
     return p[offset] * 256 + p[offset + 1]
 
@@ -84,7 +84,6 @@ def _readtest(tap: TapDevice) -> None:
             icmp_offset = subheader
             if len(p) <= icmp_offset:
                 logging.debug("Ignoring malformed ICMP packet: missing type byte")
-                ignore = True
                 continue
             icmp_type = p[icmp_offset]
             if icmp_type == 0x08:  # echo request -> echo reply
@@ -109,15 +108,21 @@ def _readtest(tap: TapDevice) -> None:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)
                 ignore = True  # Don't forward unsupported ICMP types.
         elif protocol == 0x11:  # UDP
-            srcport = readnet_u16(p, subheader)
-            destport = readnet_u16(p, subheader + 2)
+            if len(p) < subheader + 4:
+                logging.debug("Ignoring malformed UDP packet: too short for ports")
+                continue
+            srcport = _readnet_u16(p, subheader)
+            destport = _readnet_u16(p, subheader + 2)
             logging.debug("udp srcport=%d, destport=%d", srcport, destport)
             if destport in UDP_BLACKLIST:
                 ignore = True
                 logging.debug("ignoring blacklisted UDP port %d", destport)
         elif protocol == 0x06:  # TCP
-            srcport = readnet_u16(p, subheader)
-            destport = readnet_u16(p, subheader + 2)
+            if len(p) < subheader + 4:
+                logging.debug("Ignoring malformed TCP packet: too short for ports")
+                continue
+            srcport = _readnet_u16(p, subheader)
+            destport = _readnet_u16(p, subheader + 2)
             logging.debug("tcp srcport=%d, destport=%d", srcport, destport)
             if destport in TCP_BLACKLIST:
                 ignore = True
@@ -126,16 +131,16 @@ def _readtest(tap: TapDevice) -> None:
             logging.warning(
                 "unexpected protocol 0x%02x, src=%s, dest=%s",
                 protocol,
-                ipstr(srcaddr),
-                ipstr(destaddr),
+                _ipstr(srcaddr),
+                _ipstr(destaddr),
             )
 
         if not ignore:
             logging.debug(
                 "Forwarding packet bytelen=%d src=%s, dest=%s",
                 len(p),
-                ipstr(srcaddr),
-                ipstr(destaddr),
+                _ipstr(srcaddr),
+                _ipstr(destaddr),
             )
 
 

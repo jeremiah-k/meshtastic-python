@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ except ImportError:
 
 
 @pytest.mark.unit
-def test_bleclient_discovery_mode_without_address():
+def test_bleclient_discovery_mode_without_address() -> None:
     """BLEClient should support discovery-only mode when initialized without an address."""
     client = BLEClient(address=None)
     try:
@@ -29,7 +30,7 @@ def test_bleclient_discovery_mode_without_address():
 
 
 @pytest.mark.unit
-def test_bleclient_isConnected_handles_missing_bleak_client():
+def test_bleclient_isConnected_handles_missing_bleak_client() -> None:
     """IsConnected should return False when bleak_client is None."""
     client = BLEClient(address=None)
     try:
@@ -39,7 +40,7 @@ def test_bleclient_isConnected_handles_missing_bleak_client():
 
 
 @pytest.mark.unit
-def test_bleclient_is_connected_alias():
+def test_bleclient_is_connected_alias() -> None:
     """is_connected should be an alias for isConnected."""
     client = BLEClient(address=None)
     try:
@@ -49,7 +50,7 @@ def test_bleclient_is_connected_alias():
 
 
 @pytest.mark.unit
-def test_bleclient_close_is_idempotent():
+def test_bleclient_close_is_idempotent() -> None:
     """close() should be idempotent and safe to call multiple times."""
     client = BLEClient(address=None)
     client.close()
@@ -58,7 +59,7 @@ def test_bleclient_close_is_idempotent():
 
 
 @pytest.mark.unit
-def test_bleclient_context_manager():
+def test_bleclient_context_manager() -> None:
     """BLEClient should work as a context manager."""
     with BLEClient(address=None) as client:
         assert client is not None
@@ -66,14 +67,14 @@ def test_bleclient_context_manager():
 
 
 @pytest.mark.unit
-def test_bleclient_error_class_exists():
+def test_bleclient_error_class_exists() -> None:
     """BLEClient should have a BLEError exception class."""
     assert hasattr(BLEClient, "BLEError")
     assert issubclass(BLEClient.BLEError, Exception)
 
 
 @pytest.mark.unit
-def test_bleclient_operations_require_initialized_client():
+def test_bleclient_operations_require_initialized_client() -> None:
     """BLEClient operations should raise BLEError when bleak_client is not initialized."""
     client = BLEClient(address=None)
     try:
@@ -121,7 +122,7 @@ def test_bleclient_operations_require_initialized_client():
 
 
 @pytest.mark.unit
-def test_bleclient_has_characteristic_returns_false_without_client():
+def test_bleclient_has_characteristic_returns_false_without_client() -> None:
     """has_characteristic should return False when bleak_client is None."""
     client = BLEClient(address=None)
     try:
@@ -131,7 +132,7 @@ def test_bleclient_has_characteristic_returns_false_without_client():
 
 
 @pytest.mark.unit
-def test_bleclient_stop_notify_alias():
+def test_bleclient_stop_notify_alias() -> None:
     """stop_notify should be an alias for stopNotify."""
     client = BLEClient(address=None)
     try:
@@ -145,13 +146,13 @@ def test_bleclient_stop_notify_alias():
 
 
 @pytest.mark.unit
-def test_bleclient_operations_fail_when_closed():
+def test_bleclient_operations_fail_when_closed() -> None:
     """Operations should fail with clear error when client is closed."""
     client = BLEClient(address=None, log_if_no_address=False)
     client.close()
 
     # Create a simple coroutine to test
-    async def dummy_coro():
+    async def dummy_coro() -> str:
         return "result"
 
     with pytest.raises(
@@ -161,20 +162,20 @@ def test_bleclient_operations_fail_when_closed():
 
 
 @pytest.mark.unit
-def test_bleclient_async_await_static_method():
+def test_bleclient_async_await_static_method() -> None:
     """BLEClient should have _with_timeout static method."""
     assert hasattr(BLEClient, "_with_timeout")
     assert callable(BLEClient._with_timeout)
 
 
 @pytest.mark.unit
-def test_bleclient_error_constant():
+def test_bleclient_error_constant() -> None:
     """Verify BLECLIENT_ERROR_ASYNC_TIMEOUT constant is properly defined."""
     assert BLECLIENT_ERROR_ASYNC_TIMEOUT == "Async operation timed out"
 
 
 @pytest.mark.unit
-def test_bleclient_discover_method_exists():
+def test_bleclient_discover_method_exists() -> None:
     """BLEClient should have discover and _discover methods."""
     client = BLEClient(address=None, log_if_no_address=False)
     try:
@@ -193,16 +194,16 @@ def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
     """_async_await should map asyncio cancellation to BLE cancelled error."""
 
     class _CancelledFuture:
-        def result(self, _timeout=None):
+        def result(self, _timeout: float | None = None) -> None:
             raise asyncio.CancelledError()
 
-    async def _dummy_coro():
+    async def _dummy_coro() -> None:
         pass
 
     client = BLEClient(address=None, log_if_no_address=False)
     try:
 
-        def _fake_async_run(coro):
+        def _fake_async_run(coro: Any) -> _CancelledFuture:
             coro.close()
             return _CancelledFuture()
 
@@ -229,7 +230,7 @@ def test_bleclient_async_await_rejects_wait_from_runner_thread(
     client = BLEClient(address=None, log_if_no_address=False)
     try:
 
-        def _fake_async_run(coro):
+        def _fake_async_run(coro: Any) -> _FutureLike:
             coro.close()
             return _FutureLike()
 

@@ -24,6 +24,7 @@ else:
     DecodeError = _ProtobufDecodeError
 
 
+# BLEErrorHandler remains exported for legacy imports from this helper module.
 __all__ = ["BLEErrorHandler", "DecodeError"]
 
 T = TypeVar("T")

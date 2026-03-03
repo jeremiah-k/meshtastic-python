@@ -47,6 +47,7 @@ def test_examples_hello_world_serial_with_arg(
     monkeypatch.setattr(
         serial.tools.list_ports, "comports", lambda *_args, **_kwargs: []
     )
+    # Script logs a warning and returns normally when no serial device is found.
     with caplog.at_level(logging.WARNING):
         _run_hello_world_serial(monkeypatch, "hello")
 

@@ -289,6 +289,12 @@ class ThreadCoordinator:
         for thread in threads_to_join:
             thread.join(timeout=timeout)
 
+    def _assert_lock_owned(self) -> None:
+        """Best-effort debug assertion that the coordinator lock is currently held."""
+        is_owned = getattr(self._lock, "_is_owned", None)
+        if callable(is_owned) and not is_owned():
+            raise RuntimeError("Expected ThreadCoordinator._lock to be held")
+
     def _set_event_no_lock(self, name: str) -> None:
         """Set the named tracked event without acquiring the coordinator lock.
 
@@ -301,6 +307,8 @@ class ThreadCoordinator:
         name : str
             Name of the event to retrieve.
         """
+        if __debug__:
+            self._assert_lock_owned()
         event = self._events.get(name)
         if event is not None:
             event.set()
@@ -317,6 +325,8 @@ class ThreadCoordinator:
         name : str
             The name of the event to clear.
         """
+        if __debug__:
+            self._assert_lock_owned()
         event = self._events.get(name)
         if event is not None:
             event.clear()

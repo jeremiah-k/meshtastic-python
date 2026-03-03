@@ -99,7 +99,7 @@ from meshtastic.interfaces.ble.notifications import NotificationManager
 from meshtastic.interfaces.ble.policies import RetryPolicy
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
-from meshtastic.interfaces.ble.utils import _sleep, sanitize_address, with_timeout
+from meshtastic.interfaces.ble.utils import _sleep, sanitizeAddress, withTimeout
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
@@ -213,7 +213,7 @@ class BLEInterface(MeshInterface):
         )
         self._exit_handler: Any | None = None
         self.address = address
-        self._last_connection_request: str | None = sanitize_address(address)
+        self._last_connection_request: str | None = sanitizeAddress(address)
         self.auto_reconnect = auto_reconnect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._last_disconnect_source: str = (
@@ -1082,7 +1082,7 @@ class BLEInterface(MeshInterface):
         BLEInterface.BLEError
             If the awaitable does not finish before the timeout elapses.
         """
-        return await with_timeout(
+        return await withTimeout(
             awaitable,
             timeout,
             label,
@@ -1154,7 +1154,7 @@ class BLEInterface(MeshInterface):
         """
 
         target = address or getattr(self, "address", None)
-        sanitized = sanitize_address(target)
+        sanitized = sanitizeAddress(target)
 
         # Surface DBus failures to allow higher-level backoff
         if self._discovery_manager is None:
@@ -1231,7 +1231,7 @@ class BLEInterface(MeshInterface):
         str | None
             The sanitized address string, or `None` if the input was `None`.
         """
-        return sanitize_address(address)
+        return sanitizeAddress(address)
 
     @property
     def _connection_state(self) -> ConnectionState:
@@ -1418,7 +1418,7 @@ class BLEInterface(MeshInterface):
             self.address = device_address
             self.client = client
             self._disconnect_notified = False
-            normalized_device_address = sanitize_address(device_address or "")
+            normalized_device_address = sanitizeAddress(device_address or "")
             if normalized_request is not None:
                 self._last_connection_request = normalized_request
             else:
@@ -1523,7 +1523,7 @@ class BLEInterface(MeshInterface):
         self._validate_connection_preconditions()
 
         requested_identifier = address if address is not None else self.address
-        normalized_request = sanitize_address(requested_identifier)
+        normalized_request = sanitizeAddress(requested_identifier)
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         address_registry_key = (
@@ -1567,8 +1567,6 @@ class BLEInterface(MeshInterface):
                 ) = self._establish_and_update_client(
                     address, normalized_request, address_registry_key
                 )
-                if connected_client is None:
-                    raise self.BLEError(ERROR_NO_CLIENT_ESTABLISHED)
         # Finalize after the per-address lock scope exits to avoid nested
         # lock-order inversions when gate finalization reacquires address locks.
         if connected_client is None:

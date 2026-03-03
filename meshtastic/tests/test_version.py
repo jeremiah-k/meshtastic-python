@@ -20,6 +20,7 @@ def test_get_active_version_prefers_mtjk(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
+    assert version_module.getActiveVersion() == "2.7.8"
 
 
 @pytest.mark.unit

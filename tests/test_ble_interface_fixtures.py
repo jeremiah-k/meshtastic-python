@@ -237,7 +237,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             Returns
             -------
             bool
-                `True` if the client is connected, `False` otherwise.
+                Always `False` (simulates a disconnected client).
             """
             return False
 
@@ -437,6 +437,7 @@ class DummyClient:
         Returns
         -------
         bool
+            Connection state reported by isConnected().
         """
         return self.isConnected()
 
@@ -482,9 +483,10 @@ def stub_atexit(
 
     Parameters
     ----------
-        pytest.MonkeyPatch
-        Fixture used to apply the attribute patches.
-        Fixtures accepted solely to enforce fixture ordering; not otherwise used.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to apply the atexit monkeypatches.
+    mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread : types.ModuleType
+        Ordering-only fixture dependencies; values are intentionally unused.
     """
     registered = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).

@@ -99,8 +99,11 @@ def test_onTunnelReceive_from_ourselves(
     monkeypatch.setattr(mt_config, "args", argparse.Namespace())
     packet = {"decoded": {"payload": "foo"}, "from": 2475227164}
     with caplog.at_level(logging.DEBUG):
-        Tunnel(iface)
-        onTunnelReceive(packet, iface)
+        tun = Tunnel(iface)
+        try:
+            onTunnelReceive(packet, iface)
+        finally:
+            tun.close()
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
     assert re.search(r"Ignoring message we sent", caplog.text, re.MULTILINE)
 
@@ -119,8 +122,11 @@ def test_onTunnelReceive_from_someone_else(
     monkeypatch.setattr(mt_config, "args", argparse.Namespace())
     packet = {"decoded": {"payload": "foo"}, "from": 123}
     with caplog.at_level(logging.DEBUG):
-        Tunnel(iface)
-        onTunnelReceive(packet, iface)
+        tun = Tunnel(iface)
+        try:
+            onTunnelReceive(packet, iface)
+        finally:
+            tun.close()
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
 
 
@@ -136,8 +142,11 @@ def test_should_filter_packet_random(
     packet = b"1234567890123456789012345678901234567890"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert not ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert not ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unit
@@ -171,8 +180,11 @@ def test_should_filter_packet_in_blacklist(
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unitslow
@@ -187,9 +199,12 @@ def test_should_filter_packet_icmp(
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert re.search(r"forwarding ICMP message", caplog.text, re.MULTILINE)
-        assert not ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert re.search(r"forwarding ICMP message", caplog.text, re.MULTILINE)
+            assert not ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unit
@@ -204,9 +219,12 @@ def test_should_filter_packet_udp(
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert re.search(r"forwarding udp", caplog.text, re.MULTILINE)
-        assert not ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert re.search(r"forwarding udp", caplog.text, re.MULTILINE)
+            assert not ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unitslow
@@ -221,9 +239,12 @@ def test_should_filter_packet_udp_blacklisted(
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x6c\x07\x6c\x00\x00\x00"
     with caplog.at_level(LOG_TRACE):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert re.search(r"ignoring blacklisted UDP", caplog.text, re.MULTILINE)
-        assert ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert re.search(r"ignoring blacklisted UDP", caplog.text, re.MULTILINE)
+            assert ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unit
@@ -238,9 +259,12 @@ def test_should_filter_packet_tcp(
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert re.search(r"forwarding tcp", caplog.text, re.MULTILINE)
-        assert not ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert re.search(r"forwarding tcp", caplog.text, re.MULTILINE)
+            assert not ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unitslow
@@ -255,9 +279,12 @@ def test_should_filter_packet_tcp_blacklisted(
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x0c\x17\x0c\x00\x00\x00"
     with caplog.at_level(LOG_TRACE):
         tun = Tunnel(iface)
-        ignore = tun._should_filter_packet(packet)
-        assert re.search(r"ignoring blacklisted TCP", caplog.text, re.MULTILINE)
-        assert ignore
+        try:
+            ignore = tun._should_filter_packet(packet)
+            assert re.search(r"ignoring blacklisted TCP", caplog.text, re.MULTILINE)
+            assert ignore
+        finally:
+            tun.close()
 
 
 @pytest.mark.unitslow
@@ -270,8 +297,11 @@ def test_ip_to_node_id_none(
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        nodeid = tun._ip_to_node_id(b"\x00\x00\x00\x00")
-        assert nodeid is None
+        try:
+            nodeid = tun._ip_to_node_id(b"\x00\x00\x00\x00")
+            assert nodeid is None
+        finally:
+            tun.close()
 
 
 @pytest.mark.unitslow
@@ -284,8 +314,11 @@ def test_ip_to_node_id_all(
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        nodeid = tun._ip_to_node_id(b"\x00\x00\xff\xff")
-        assert nodeid == "^all"
+        try:
+            nodeid = tun._ip_to_node_id(b"\x00\x00\xff\xff")
+            assert nodeid == "^all"
+        finally:
+            tun.close()
 
 
 @pytest.mark.unit

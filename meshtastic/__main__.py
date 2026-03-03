@@ -1614,6 +1614,8 @@ def printConfig(config: Any) -> None:
     for config_section in objDesc.fields:
         if config_section.name != "version":
             section_field = objDesc.fields_by_name.get(config_section.name)
+            if section_field is None or section_field.message_type is None:
+                continue
             print(f"{config_section.name}:")
             names = []
             for field in section_field.message_type.fields:
@@ -2136,7 +2138,7 @@ def common() -> None:
                     logger.debug("Not logging serial output")
                     logfile = None
                 else:
-                    logger.info(f"Logging serial output to {args.seriallog}")
+                    logger.info("Logging serial output to %s", args.seriallog)
                     # Note: using line buffering.
                     logfile = stack.enter_context(
                         open(args.seriallog, "w+", buffering=1, encoding="utf8")

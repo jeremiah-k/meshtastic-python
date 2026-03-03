@@ -563,7 +563,7 @@ def test_active_ports_on_supported_devices_mac(
 
 
 @pytest.mark.unit
-@patch("meshtastic.util.detect_windows_port", return_value={"COM2"})
+@patch("meshtastic.util.detectWindowsPort", return_value={"COM2"})
 @patch("platform.system", return_value="Windows")
 def test_active_ports_on_supported_devices_win(
     mock_platform: MagicMock,
@@ -664,23 +664,23 @@ def test_message_to_json_alias_matches_messageToJson() -> None:
 @pytest.mark.unit
 def test_acknowledgement_reset() -> None:
     """Test that the reset method can set all fields back to False."""
-    test_ack_obj = Acknowledgment()
+    ack = Acknowledgment()
     # everything's set to False; let's set it to True to get a good test
-    test_ack_obj.receivedAck = True
-    test_ack_obj.receivedNak = True
-    test_ack_obj.receivedImplAck = True
-    test_ack_obj.receivedTraceRoute = True
-    test_ack_obj.receivedTelemetry = True
-    test_ack_obj.receivedPosition = True
-    test_ack_obj.receivedWaypoint = True
-    test_ack_obj.reset()
-    assert test_ack_obj.receivedAck is False
-    assert test_ack_obj.receivedNak is False
-    assert test_ack_obj.receivedImplAck is False
-    assert test_ack_obj.receivedTraceRoute is False
-    assert test_ack_obj.receivedTelemetry is False
-    assert test_ack_obj.receivedPosition is False
-    assert test_ack_obj.receivedWaypoint is False
+    ack.receivedAck = True
+    ack.receivedNak = True
+    ack.receivedImplAck = True
+    ack.receivedTraceRoute = True
+    ack.receivedTelemetry = True
+    ack.receivedPosition = True
+    ack.receivedWaypoint = True
+    ack.reset()
+    assert ack.receivedAck is False
+    assert ack.receivedNak is False
+    assert ack.receivedImplAck is False
+    assert ack.receivedTraceRoute is False
+    assert ack.receivedTelemetry is False
+    assert ack.receivedPosition is False
+    assert ack.receivedWaypoint is False
 
 
 @pytest.mark.unitslow

@@ -198,6 +198,8 @@ pub.subscribe(on_receive, "meshtastic.receive")
 
 ## Development Workflow
 
+Trunk is the repository's linter orchestrator (ruff, pylint, mypy, markdownlint, etc.).
+
 1. Install dependencies: `poetry install --all-extras --with dev`
 2. Make changes
 3. Run unified lint/type checks: `TRUNK_INTERACTIVE=0 .trunk/trunk check --fix --show-existing`
@@ -224,6 +226,8 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 - `tabulate` - Table formatting
 - `pyyaml` - YAML config support
 - `requests` - HTTP requests
+- `platformdirs` - Platform-specific user data/cache directory resolution
+- `packaging` - Version parsing and comparison helpers
 
 ### Optional (extras)
 

@@ -11,7 +11,7 @@ from pubsub import pub
 
 import meshtastic.tcp_interface
 
-_connected = threading.Event()
+_CONNECTED = threading.Event()
 
 
 def onConnection(  # pylint: disable=unused-argument
@@ -19,7 +19,7 @@ def onConnection(  # pylint: disable=unused-argument
 ) -> None:
     """Handle (re)connection to the radio."""
     print(interface.myInfo)
-    _connected.set()
+    _CONNECTED.set()
 
 
 def main() -> None:
@@ -29,13 +29,13 @@ def main() -> None:
         sys.exit(1)
     hostname = sys.argv[1]
 
-    _connected.clear()
+    _CONNECTED.clear()
     topic = "meshtastic.connection.established"
     pub.subscribe(onConnection, topic)
     try:
         # Wait until the connection callback runs, then exit.
         with meshtastic.tcp_interface.TCPInterface(hostname=hostname):
-            if not _connected.wait(timeout=30):
+            if not _CONNECTED.wait(timeout=30):
                 print(
                     "Error: Timed out waiting for connection callback",
                     file=sys.stderr,

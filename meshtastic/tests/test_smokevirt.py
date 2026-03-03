@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from ..util import findPorts
-from .cli_test_utils import run_cli_with_timeout
+from .cli_test_utils import run_cli_argv_with_timeout, run_cli_with_timeout
 
 # seconds to pause after running a meshtastic command
 PAUSE_AFTER_COMMAND = 0.1
@@ -146,10 +146,9 @@ def test_smokevirt_seriallog_to_file(tmp_path: Path) -> None:
 def test_smokevirt_qr(tmp_path: Path) -> None:
     """Test --qr."""
     filename = tmp_path / "tmpqr"
-    quoted_filename = _quote_shell_path(filename)
-    return_value, _ = run_cli_with_timeout(
-        f"meshtastic --host localhost --qr > {quoted_filename}"
-    )
+    result = run_cli_argv_with_timeout(["meshtastic", "--host", "localhost", "--qr"])
+    filename.write_text(result.stdout, encoding="utf-8")
+    return_value = result.returncode
     assert filename.exists()
     # not really testing that a valid qr code is created, just that the file size
     # is reasonably big enough for a qr code
@@ -780,7 +779,10 @@ def test_smokevirt_set_wifi_settings() -> None:
 
 @pytest.mark.smokevirt
 def test_smokevirt_factory_reset() -> None:
-    """Test factory reset."""
+    """Test factory reset.
+
+    The virtual radio may need restart after this command.
+    """
     return_value, out = run_cli_with_timeout(
         "meshtastic --host localhost --set factory_reset true"
     )

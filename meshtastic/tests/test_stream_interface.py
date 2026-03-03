@@ -282,6 +282,7 @@ def test_connect_cleans_up_when_wait_connected_fails() -> None:
     try:
         iface._provides_own_stream = True  # type: ignore[attr-defined]
         iface.stream = None
+        # Force protocol mode so connect() executes _wait_connected() path.
         iface.noProto = False
         iface._rxThread = MagicMock()
         iface._rxThread.is_alive.return_value = False

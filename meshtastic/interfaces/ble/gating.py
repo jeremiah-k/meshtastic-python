@@ -34,7 +34,7 @@ from threading import RLock
 from typing import Any
 
 from meshtastic.interfaces.ble.constants import BLEConfig
-from meshtastic.interfaces.ble.utils import sanitize_address
+from meshtastic.interfaces.ble.utils import sanitizeAddress
 
 logger = logging.getLogger("meshtastic.ble")
 
@@ -78,7 +78,7 @@ def _addr_key(addr: str | None) -> str | None:
     str | None
         The sanitized address string, or None if the input is None, empty, or contains only whitespace.
     """
-    sanitized = sanitize_address(addr)
+    sanitized = sanitizeAddress(addr)
     return sanitized if sanitized else None
 
 
@@ -311,6 +311,8 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
         )
         _remove_connected_record_locked(key)
         is_owned = getattr(_REGISTRY_LOCK, "_is_owned", None)
+        # _is_owned() is a CPython RLock implementation detail; guard usage so
+        # non-CPython runtimes simply skip this diagnostic assertion.
         if callable(is_owned):
             if not is_owned():
                 raise RuntimeError(

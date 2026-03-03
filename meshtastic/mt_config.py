@@ -58,18 +58,20 @@ def reset() -> None:
     module_globals = globals()
     for name, default in MODULE_STATE_DEFAULTS.items():
         module_globals[name] = default
+
+    def _clear_warned_deprecations_set() -> None:
+        warned_deprecations = module_globals.get("_warned_deprecations")
+        if isinstance(warned_deprecations, set):
+            warned_deprecations.clear()
+
     # reset() runs once before compatibility warn-once state is defined below,
     # so this bootstrap path must tolerate lock/set absence during import.
     warned_deprecations_lock = module_globals.get("_warned_deprecations_lock")
     if warned_deprecations_lock is not None:
         with warned_deprecations_lock:
-            warned_deprecations = module_globals.get("_warned_deprecations")
-            if isinstance(warned_deprecations, set):
-                warned_deprecations.clear()
+            _clear_warned_deprecations_set()
     else:
-        warned_deprecations = module_globals.get("_warned_deprecations")
-        if isinstance(warned_deprecations, set):
-            warned_deprecations.clear()
+        _clear_warned_deprecations_set()
 
 
 # Declared module state managed via reset().

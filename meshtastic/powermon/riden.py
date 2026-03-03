@@ -28,7 +28,10 @@ class RidenPowerSupply(PowerSupply):
     def __init__(self, portName: str = "/dev/ttyUSB0") -> None:
         """Initialize the RidenPowerSupply object.
 
-        portName (str, optional): The port name of the power supply. Defaults to "/dev/ttyUSB0".
+        Parameters
+        ----------
+        portName : str, optional
+            The serial port path of the power supply. Defaults to ``"/dev/ttyUSB0"``.
         """
         self.r = r = Riden(
             port=portName,
@@ -85,6 +88,11 @@ class RidenPowerSupply(PowerSupply):
         if self.v <= 0:
             return math.nan
         return (watts / self.v) * MILLIAMPS_PER_AMP
+
+    # COMPAT_STABLE_SHIM: snake_case alias retained for scripting/tooling callers.
+    def get_average_current_mA(self) -> float:  # pylint: disable=invalid-name
+        """Compatibility alias for getAverageCurrentMA()."""
+        return self.getAverageCurrentMA()
 
     def _get_raw_watt_hour(self) -> float:
         """Get the current watt-hour reading."""

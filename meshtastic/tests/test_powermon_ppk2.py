@@ -1,12 +1,13 @@
 """Unit tests for PPK2 power-meter measurement state behavior."""
 
 import math
+import warnings
 from unittest.mock import MagicMock
 
 import pytest
 
 try:
-    from ..powermon.ppk2 import PPK2PowerSupply
+    from meshtastic.powermon.ppk2 import PPK2PowerSupply
 except ImportError:
     pytest.skip("Can't import PPK2PowerSupply", allow_module_level=True)
 
@@ -181,6 +182,62 @@ def test_average_current_camelcase_aliases_are_consistent(
     assert ppk.getAverageCurrentMA() == 42.0
     with pytest.warns(DeprecationWarning):
         assert ppk.getAverageCurrentmA() == 42.0
+
+
+@pytest.mark.unit
+def test_ppk2_snake_case_current_aliases_delegate(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
+    """snake_case current aliases should delegate to canonical camelCase methods."""
+    ppk = ppk2_stub
+    ppk.getMinCurrentMA = MagicMock(return_value=1.1)  # type: ignore[method-assign]
+    ppk.getMaxCurrentMA = MagicMock(return_value=2.2)  # type: ignore[method-assign]
+    ppk.getAverageCurrentMA = MagicMock(return_value=3.3)  # type: ignore[method-assign]
+
+    assert ppk.get_min_current_mA() == pytest.approx(1.1)
+    assert ppk.get_max_current_mA() == pytest.approx(2.2)
+    assert ppk.get_average_current_mA() == pytest.approx(3.3)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_power_supply_deprecations")
+def test_ppk2_lowercase_m_aliases_warn_once(ppk2_stub: "PPK2PowerSupply") -> None:
+    """Deprecated lowercase-m aliases should emit one warning per method."""
+    ppk = ppk2_stub
+    ppk.getMinCurrentMA = MagicMock(return_value=1.1)  # type: ignore[method-assign]
+    ppk.getMaxCurrentMA = MagicMock(return_value=2.2)  # type: ignore[method-assign]
+    ppk.getAverageCurrentMA = MagicMock(return_value=3.3)  # type: ignore[method-assign]
+
+    with pytest.warns(DeprecationWarning):
+        assert ppk.getMinCurrentmA() == pytest.approx(1.1)
+    with pytest.warns(DeprecationWarning):
+        assert ppk.getMaxCurrentmA() == pytest.approx(2.2)
+    with pytest.warns(DeprecationWarning):
+        assert ppk.getAverageCurrentmA() == pytest.approx(3.3)
+
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        assert ppk.getMinCurrentmA() == pytest.approx(1.1)
+        assert ppk.getMaxCurrentmA() == pytest.approx(2.2)
+        assert ppk.getAverageCurrentmA() == pytest.approx(3.3)
+    assert not [
+        warning
+        for warning in recorded
+        if issubclass(warning.category, DeprecationWarning)
+    ]
+
+
+@pytest.mark.unit
+def test_ppk2_reset_measurements_snake_case_alias(
+    ppk2_stub: "PPK2PowerSupply",
+) -> None:
+    """reset_measurements() should call resetMeasurements()."""
+    ppk = ppk2_stub
+    ppk.resetMeasurements = MagicMock()  # type: ignore[method-assign]
+
+    ppk.reset_measurements()
+
+    ppk.resetMeasurements.assert_called_once()
 
 
 @pytest.mark.unit

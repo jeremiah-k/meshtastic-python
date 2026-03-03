@@ -2,7 +2,6 @@
 
 import re
 import threading
-import time
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -432,20 +431,19 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_shutdown() -> None:
             iface._wantExit = False
             iface._fatal_disconnect = False
 
-            # Start a delay and trigger shutdown during it
-            def trigger_shutdown_during_sleep() -> None:
-                time.sleep(0.1)  # Small delay before triggering
-                iface._wantExit = True
+            sleep_calls = {"count": 0}
 
-            thread = threading.Thread(target=trigger_shutdown_during_sleep)
-            thread.start()
+            def _trigger_shutdown_after_first_sleep(_delay: float) -> None:
+                sleep_calls["count"] += 1
+                if sleep_calls["count"] == 1:
+                    iface._wantExit = True
 
             # Should return False when interrupted
-            result = iface._sleep_reconnect_delay(10.0)
-            thread.join(timeout=1.0)
-            assert (
-                not thread.is_alive()
-            ), "Thread should complete after _wantExit is set"
+            with patch(
+                "meshtastic.tcp_interface.time.sleep",
+                side_effect=_trigger_shutdown_after_first_sleep,
+            ):
+                result = iface._sleep_reconnect_delay(10.0)
 
             assert result is False
         finally:
@@ -461,20 +459,19 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_fatal_disconnect() ->
             iface._wantExit = False
             iface._fatal_disconnect = False
 
-            # Start a delay and trigger fatal disconnect during it
-            def trigger_fatal_during_sleep() -> None:
-                time.sleep(0.1)  # Small delay before triggering
-                iface._fatal_disconnect = True
+            sleep_calls = {"count": 0}
 
-            thread = threading.Thread(target=trigger_fatal_during_sleep)
-            thread.start()
+            def _trigger_fatal_after_first_sleep(_delay: float) -> None:
+                sleep_calls["count"] += 1
+                if sleep_calls["count"] == 1:
+                    iface._fatal_disconnect = True
 
             # Should return False when interrupted
-            result = iface._sleep_reconnect_delay(10.0)
-            thread.join(timeout=1.0)
-            assert (
-                not thread.is_alive()
-            ), "Thread should complete after _fatal_disconnect is set"
+            with patch(
+                "meshtastic.tcp_interface.time.sleep",
+                side_effect=_trigger_fatal_after_first_sleep,
+            ):
+                result = iface._sleep_reconnect_delay(10.0)
 
             assert result is False
         finally:

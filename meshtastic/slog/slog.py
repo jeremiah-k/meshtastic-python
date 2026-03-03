@@ -29,10 +29,10 @@ logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
 
-# PyArrow typing stubs vary across versions: some model DataType as generic
-# (requiring a type argument), others as non-generic.
+# PyArrow typing stubs may differ across versions; keep this alias non-generic
+# so strict type-checking stays compatible across stub variants.
 if TYPE_CHECKING:
-    ArrowDataType: TypeAlias = pa.DataType[Any]  # type: ignore[type-arg,unused-ignore]
+    ArrowDataType: TypeAlias = pa.DataType
 else:
     ArrowDataType = pa.DataType
 

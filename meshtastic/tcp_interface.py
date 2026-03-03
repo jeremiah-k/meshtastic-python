@@ -209,7 +209,8 @@ class TCPInterface(StreamInterface):
             if not reconnect_in_progress:
                 return
             # Give the in-flight reconnect attempt a chance to finish before
-            # reevaluating socket state.
+            # reevaluating socket state. A condition variable would avoid polling,
+            # but the small sleep keeps this path simple and lock-order-safe.
             time.sleep(self.DEFAULT_RECONNECT_SLEEP_SLICE)
 
     def _close_socket_if_current(self, sock: socket.socket | None) -> bool:
@@ -290,6 +291,8 @@ class TCPInterface(StreamInterface):
 
         signal_set = getattr(pending_entry, "set", None)
         if callable(signal_set):
+            # Event-style waiters only receive wakeup semantics; callers must check
+            # reconnect/error state separately for failure details.
             signal_set()
             return True
         return False
@@ -347,6 +350,8 @@ class TCPInterface(StreamInterface):
         OSError
             If the underlying socket write fails.
         """
+        # Intentionally snapshot without _reconnect_lock; concurrent close/reconnect
+        # is handled by sendall() exceptions and _close_socket_if_current().
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
@@ -579,6 +584,8 @@ class TCPInterface(StreamInterface):
                     )
                 return b""
             with self._reconnect_lock:
+                # Reset reconnect backoff after any successful read from the active
+                # socket so transient disconnects do not keep stale penalties.
                 self._reconnect_attempts = 0
                 self._fatal_disconnect = False
             return data

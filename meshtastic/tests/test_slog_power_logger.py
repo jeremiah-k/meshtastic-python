@@ -69,6 +69,23 @@ class _FakeWriter:
         """No-op close used by tests."""
 
 
+def _extract_row_from_add_row_call(writer: MagicMock) -> dict[str, Any]:
+    """Return the row payload passed to writer.addRow(...)."""
+    call = writer.addRow.call_args
+    assert call is not None
+    return _extract_row_from_call(call)
+
+
+def _extract_row_from_call(call: Any) -> dict[str, Any]:
+    """Return row payload from a single writer.addRow call object."""
+    row = call.kwargs.get("row")
+    if row is None:
+        assert call.args, "Expected addRow to include row payload"
+        row = call.args[0]
+    assert isinstance(row, dict), "Expected addRow row payload to be a dict"
+    return typing.cast(dict[str, Any], row)
+
+
 @pytest.mark.unit
 def test_power_logger_sets_schema_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     """PowerLogger should stamp compatibility metadata on its writer schema."""
@@ -163,7 +180,10 @@ def test_slog_arrow_data_type_type_checking_alias_branch(
     finally:
         monkeypatch.setattr(typing, "TYPE_CHECKING", False)
         monkeypatch.setattr(pa, "DataType", original_data_type)
-        importlib.reload(slog_module)
+        try:
+            importlib.reload(slog_module)
+        except Exception:
+            pytest.fail("Failed to restore slog_module state after TYPE_CHECKING test")
 
 
 @pytest.mark.unit
@@ -216,12 +236,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     now = datetime(2026, 1, 1, 12, 0, 0)
     power_logger.storeCurrentReading(now=now)
 
-    call = writer.addRow.call_args
-    assert call is not None
-    row = call.kwargs.get("row")
-    if row is None:
-        assert call.args, "Expected addRow to include row payload"
-        row = call.args[0]
+    row = _extract_row_from_add_row_call(writer)
     assert row["time"] == now
     assert row["average_mA"] == 10.0
     assert row["max_mA"] == 20.0
@@ -264,13 +279,7 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
         assert len(deprecations) == 1
         assert "store_current_reading()" in str(deprecations[0].message)
 
-    rows = []
-    for call in writer.addRow.call_args_list:
-        row = call.kwargs.get("row")
-        if row is None:
-            assert call.args, "Expected addRow to include row payload"
-            row = call.args[0]
-        rows.append(row)
+    rows = [_extract_row_from_call(call) for call in writer.addRow.call_args_list]
     assert len(rows) == 2
     for row in rows:
         assert row["average_mW"] == row["average_mA"]

@@ -141,6 +141,7 @@ class BLECoroutineRunner:
             self._loop_ready = threading.Event()
             self._stop_requested = False
             self._initialized = True
+            self._warned_timeout_alias = False
 
             # Track pending futures for cleanup
             self._pending_futures = weakref.WeakSet()
@@ -414,7 +415,13 @@ class BLECoroutineRunner:
 
     @staticmethod
     def _close_coroutine_safely(coro: Coroutine[Any, Any, Any]) -> None:
-        """Best-effort close to suppress never-awaited coroutine warnings."""
+        """Best-effort close to suppress never-awaited coroutine warnings.
+
+        Parameters
+        ----------
+        coro : Coroutine[Any, Any, Any]
+            Coroutine object to close.
+        """
         with contextlib.suppress(Exception):
             coro.close()
 
@@ -451,12 +458,17 @@ class BLECoroutineRunner:
         if timeout is not None and startup_timeout is not None:
             raise ValueError(BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT)
         if timeout is not None and startup_timeout is None:
-            warnings.warn(
-                "run_coroutine_threadsafe(timeout=...) is deprecated; "
-                "use startup_timeout=<seconds> instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            with self._instance_lock:
+                should_warn_timeout_alias = not self._warned_timeout_alias
+                if should_warn_timeout_alias:
+                    self._warned_timeout_alias = True
+            if should_warn_timeout_alias:
+                warnings.warn(
+                    "run_coroutine_threadsafe(timeout=...) is deprecated; "
+                    "use startup_timeout=<seconds> instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         effective_startup_timeout = (
             startup_timeout if startup_timeout is not None else timeout

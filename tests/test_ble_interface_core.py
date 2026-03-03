@@ -384,7 +384,7 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager._is_closing is False
 
 
-def test_state_manager_allows_error_to_disconnecting_shutdown():
+def test_state_manager_allows_error_to_disconnecting_shutdown() -> None:
     """State manager should support ERROR -> DISCONNECTING for deterministic close paths."""
     state_manager = BLEStateManager()
 
@@ -410,7 +410,9 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
     iface.close()
 
 
-def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
+def test_handle_disconnect_ignores_stale_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Stale disconnect callbacks must not clear the current active client."""
     stale_client = DummyClient()
     iface = _build_interface(monkeypatch, stale_client)

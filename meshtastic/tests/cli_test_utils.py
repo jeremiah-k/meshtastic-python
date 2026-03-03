@@ -3,15 +3,16 @@
 import re
 import shlex
 import subprocess
+from typing import NoReturn
 
 import pytest
 
 EMPTY_SHELL_COMMAND_ERROR = "Empty command passed to CLI shell helper"
-EMPTY_ARGV_COMMAND_ERROR = "cmd must not be empty"
+EMPTY_ARGV_COMMAND_ERROR = "Empty command list passed to CLI argv helper"
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 
 
-def _fail_masked_timeout(command_name: str, timeout_s: int | float) -> None:
+def _fail_masked_timeout(command_name: str, timeout_s: int | float) -> NoReturn:
     """Fail a test with a redacted timeout message for a CLI command."""
     masked = f"{command_name!r} +REDACTED_ARGS"
     pytest.fail(f"CLI command timed out after {timeout_s}s: {masked}")
@@ -29,7 +30,7 @@ def _shell_executable_for_timeout(command: str) -> str:
     return "<shell-command>"
 
 
-def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
+def run_cli_with_timeout(command: str, timeout: int | float = 120) -> tuple[int, str]:
     """Run a shell CLI command and return (exit_code, combined_output).
 
     Parameters
@@ -39,7 +40,7 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
         a command string (rather than argv tokens) for compatibility with
         existing test call sites; use `shlex.quote` for path quoting
         when constructing commands that may include spaces.
-    timeout : int
+    timeout : int | float
         Maximum time to allow command execution before failing the test.
         (Default value = 120)
 
@@ -70,12 +71,11 @@ def run_cli_with_timeout(command: str, timeout: int = 120) -> tuple[int, str]:
     except subprocess.TimeoutExpired:
         executable = _shell_executable_for_timeout(command)
         _fail_masked_timeout(executable, timeout)
-        raise  # pragma: no cover - pytest.fail always raises
     return result.returncode, result.stdout
 
 
 def run_cli_argv_with_timeout(
-    cmd: list[str], timeout: int = 30
+    cmd: list[str], timeout: int | float = 30
 ) -> subprocess.CompletedProcess[str]:
     """Run a CLI command using argv list and return CompletedProcess.
 
@@ -83,7 +83,7 @@ def run_cli_argv_with_timeout(
     ----------
     cmd : list[str]
         Command and arguments as a list (e.g., ["meshtastic", "--info"]).
-    timeout : int
+    timeout : int | float
         Maximum time to allow command execution before failing the test.
         (Default value = 30)
 
@@ -111,4 +111,3 @@ def run_cli_argv_with_timeout(
         cmd_name = cmd[0]
         timeout_value = e.timeout if e.timeout is not None else timeout
         _fail_masked_timeout(cmd_name, timeout_value)
-        raise  # pragma: no cover - pytest.fail always raises

@@ -41,7 +41,7 @@ from meshtastic.interfaces.ble.constants import (
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
-from meshtastic.interfaces.ble.utils import with_timeout
+from meshtastic.interfaces.ble.utils import withTimeout
 
 T = TypeVar("T")
 
@@ -111,7 +111,7 @@ class BLEClient:
         BLEClient.BLEError
             If the awaitable does not complete before the timeout elapses.
         """
-        return await with_timeout(
+        return await withTimeout(
             awaitable,
             timeout,
             label,

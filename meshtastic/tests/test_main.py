@@ -2800,7 +2800,21 @@ def _build_configure_interface(
     target_local: localonly_pb2.LocalConfig | None = None,
     target_module: localonly_pb2.LocalModuleConfig | None = None,
 ) -> tuple[MagicMock, MagicMock]:
-    """Build a minimal interface mock compatible with --configure operations."""
+    """Build a minimal interface mock compatible with --configure operations.
+
+    Parameters
+    ----------
+    target_local : localonly_pb2.LocalConfig | None
+        LocalConfig message to mutate during configure; when None, a fresh message is created.
+    target_module : localonly_pb2.LocalModuleConfig | None
+        LocalModuleConfig message to mutate during configure; when None, a fresh message is created.
+
+    Returns
+    -------
+    tuple[MagicMock, MagicMock]
+        Tuple of ``(iface, target_node)`` where ``iface`` is a SerialInterface-like mock
+        and ``target_node`` is the node mock returned by ``iface.getNode()``.
+    """
     if target_local is None:
         target_local = localonly_pb2.LocalConfig()
     if target_module is None:

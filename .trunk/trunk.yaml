@@ -51,7 +51,6 @@ lint:
           disable_upstream: true
           success_codes: [0, 1]
           batch: true
-          cache_results: false
           stdin: false
     - name: pylint-poetry
       description: Run pylint via Poetry with the project's CI arguments.
@@ -71,7 +70,6 @@ lint:
           disable_upstream: true
           success_codes: [0]
           batch: true
-          cache_results: false
           stdin: false
   enabled:
     - actionlint@1.7.10

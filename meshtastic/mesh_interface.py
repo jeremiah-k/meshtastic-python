@@ -411,16 +411,21 @@ class MeshInterface:  # pylint: disable=R0902
             keys_to_remove = ("raw", "decoded", "payload")
             n2 = remove_keys_from_dict(keys_to_remove, n)
 
+            user = n2.get("user")
+            if not isinstance(user, dict):
+                continue
+
             # if we have 'macaddr', re-format it
-            if "macaddr" in n2["user"]:
-                val = n2["user"]["macaddr"]
+            if "macaddr" in user:
+                val = user["macaddr"]
                 # decode the base64 value
                 addr = convert_mac_addr(val)
-                n2["user"]["macaddr"] = addr
+                user["macaddr"] = addr
 
             # use id as dictionary key for correct json format in list of nodes
-            nodeid = n2["user"]["id"]
-            nodes[nodeid] = n2
+            node_id = user.get("id")
+            if node_id is not None:
+                nodes[str(node_id)] = n2
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
         if file is None:
             file = sys.stdout
