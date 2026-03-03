@@ -39,8 +39,8 @@ def main() -> None:
                 return
 
             print(position)
-    except OSError as exc:
-        logger.exception("Could not connect to %s: %s", RADIO_HOSTNAME, exc)
+    except OSError:
+        logger.exception("Could not connect to %s", RADIO_HOSTNAME)
         sys.exit(1)
 
 

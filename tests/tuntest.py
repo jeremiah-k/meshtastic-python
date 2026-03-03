@@ -37,7 +37,18 @@ PROTOCOL_BLACKLIST: set[int] = {
 
 
 def _hexstr(barray: bytes | bytearray) -> str:
-    """Print a string of hex digits (kept for ad-hoc debug printouts)."""
+    """Render bytes as colon-delimited lowercase hex.
+
+    Parameters
+    ----------
+    barray : bytes | bytearray
+        Byte sequence to render.
+
+    Returns
+    -------
+    str
+        Colon-delimited hex string.
+    """
     return ":".join(f"{x:02x}" for x in barray)
 
 
@@ -106,9 +117,9 @@ def _readtest(tap: TapDevice) -> None:
                 continue
             icmp_type = p[icmp_offset]
             if icmp_type == 0x08:  # echo request -> echo reply
-                if len(p) < icmp_offset + 4:
+                if len(p) < icmp_offset + 8:
                     logging.debug(
-                        "Ignoring malformed ICMP echo request: too short for checksum"
+                        "Ignoring malformed ICMP echo request: too short for header"
                     )
                     continue
                 logging.warning("Generating fake ping reply")

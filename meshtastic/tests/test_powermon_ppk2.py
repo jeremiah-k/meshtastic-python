@@ -8,6 +8,7 @@ import pytest
 
 try:
     from meshtastic.powermon.ppk2 import PPK2PowerSupply
+    from meshtastic.powermon.power_supply import PowerSupply
 except ImportError:
     pytest.skip("Can't import PPK2PowerSupply", allow_module_level=True)
 
@@ -259,10 +260,10 @@ def test_close_always_attempts_transport_cleanup(
 
 
 @pytest.mark.unit
-def test_ppk2_constructor_initializes_measurement_thread_and_warning_flags(
+def test_ppk2_constructor_initializes_measurement_thread_and_compatibility_wrappers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PPK2PowerSupply.__init__ should configure thread and warning-tracking flags."""
+    """PPK2PowerSupply.__init__ should configure thread and rely on shared PowerSupply wrappers."""
 
     class _FakePPK2Api:
         def __init__(self, port_name: str) -> None:
@@ -282,6 +283,6 @@ def test_ppk2_constructor_initializes_measurement_thread_and_warning_flags(
 
     assert ppk.measurement_thread.name == "ppk2 measurement"
     assert ppk.measurement_thread.daemon is True
-    assert ppk._warned_get_min_current_lowercase_m is False
-    assert ppk._warned_get_max_current_lowercase_m is False
-    assert ppk._warned_get_average_current_lowercase_m is False
+    assert PPK2PowerSupply.getMinCurrentmA is PowerSupply.getMinCurrentmA
+    assert PPK2PowerSupply.getMaxCurrentmA is PowerSupply.getMaxCurrentmA
+    assert PPK2PowerSupply.getAverageCurrentmA is PowerSupply.getAverageCurrentmA

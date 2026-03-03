@@ -33,7 +33,7 @@ def test_examples_hello_world_serial_no_arg(
         _run_hello_world_serial(monkeypatch)
 
     out, err = capsys.readouterr()
-    assert exc_info.value.code == 3
+    assert exc_info.value.code == 2
     assert out == ""
     assert err.startswith("usage: ")
     assert err.strip().endswith("hello_world_serial.py message")

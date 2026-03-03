@@ -193,7 +193,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            Name of the event to set.
+            Name of the event to retrieve.
 
         Returns
         -------
@@ -312,7 +312,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            Name of the event to check and clear.
+            Name of the event to set.
         """
         if __debug__:
             self._assert_lock_owned()

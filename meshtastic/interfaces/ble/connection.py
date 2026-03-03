@@ -465,7 +465,7 @@ class ConnectionOrchestrator:
 
         normalized_target = sanitizeAddress(target_address)
         # Note: normalized_target can be None for discovery mode - this is intentional
-        # The discovery fallback in find_device() will scan for any Meshtastic device
+        # The discovery fallback in findDevice() will scan for any Meshtastic device
 
         if target_address:
             logger.info("Attempting to connect to %s", target_address)

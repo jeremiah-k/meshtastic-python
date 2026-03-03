@@ -17,6 +17,16 @@ from meshtastic.interfaces.ble.runner import (
 )
 
 
+def _fake_submit_completed_none(
+    coro: Any, _loop: asyncio.AbstractEventLoop
+) -> Future[None]:
+    """Close a coroutine and return an already-completed Future with result None."""
+    coro.close()
+    future: Future[None] = Future()
+    future.set_result(None)
+    return future
+
+
 @pytest.fixture(autouse=True)
 def ensure_runner_running() -> Generator[None, None, None]:
     """Ensure the BLECoroutineRunner singleton is running for the duration of a test.
@@ -224,27 +234,9 @@ class TestBLECoroutineRunner:
             runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro: Any, _loop: asyncio.AbstractEventLoop) -> Future[None]:
-            """Close the provided coroutine without executing it and return a completed Future with result None.
-
-            Parameters
-            ----------
-            coro : coroutine
-                Coroutine object to be closed and not scheduled for execution.
-            _loop : asyncio.AbstractEventLoop
-                Ignored; present for signature compatibility.
-
-            Returns
-            -------
-            concurrent.futures.Future
-                A Future already completed with result `None`.
-            """
-            coro.close()
-            future = Future()
-            future.set_result(None)
-            return future
-
-        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
 
         async def _noop():
             """Run a coroutine that does nothing."""
@@ -265,7 +257,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             runner,
             "_ensure_running",
-            lambda timeout=None: timeout is None or timeout >= 0,
+            lambda timeout=None: None,
         )
 
         class _LoopStub:
@@ -287,27 +279,9 @@ class TestBLECoroutineRunner:
             runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro: Any, _loop: asyncio.AbstractEventLoop) -> Future[None]:
-            """Close the provided coroutine without executing it and return a completed Future with result None.
-
-            Parameters
-            ----------
-            coro : coroutine
-                Coroutine object to be closed and not scheduled for execution.
-            _loop : asyncio.AbstractEventLoop
-                Ignored; present for signature compatibility.
-
-            Returns
-            -------
-            concurrent.futures.Future
-                A Future already completed with result `None`.
-            """
-            coro.close()
-            future = Future()
-            future.set_result(None)
-            return future
-
-        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
 
         async def _noop():
             """Run a coroutine that does nothing."""
@@ -329,7 +303,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             runner,
             "_ensure_running",
-            lambda timeout=None: timeout is None or timeout >= 0,
+            lambda timeout=None: None,
         )
 
         class _LoopStub:
@@ -351,27 +325,9 @@ class TestBLECoroutineRunner:
             runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro: Any, _loop: asyncio.AbstractEventLoop) -> Future[None]:
-            """Close the provided coroutine without executing it and return a completed Future with result None.
-
-            Parameters
-            ----------
-            coro : coroutine
-                Coroutine object to be closed and not scheduled for execution.
-            _loop : asyncio.AbstractEventLoop
-                Ignored; present for signature compatibility.
-
-            Returns
-            -------
-            concurrent.futures.Future
-                A Future already completed with result `None`.
-            """
-            coro.close()
-            future = Future()
-            future.set_result(None)
-            return future
-
-        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
 
         async def _noop():
             """Run a coroutine that does nothing."""

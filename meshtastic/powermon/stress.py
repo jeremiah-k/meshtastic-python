@@ -18,6 +18,9 @@ DEFAULT_STRESS_STATE_DURATION_S: Final[float] = (
 INVALID_ACK_TIMEOUT_ERROR: Final[str] = (
     "ack_timeout must be a finite number > 0 seconds"
 )
+INTERFACE_NOT_INITIALIZED_ERROR: Final[str] = (
+    "Interface not initialized; myInfo.my_node_num unavailable"
+)
 
 
 def handlePowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
@@ -54,7 +57,7 @@ class PowerStressClient:
         if node_id is None:
             my_info = getattr(iface, "myInfo", None)
             if my_info is None or not hasattr(my_info, "my_node_num"):
-                raise ValueError("Interface not initialized; myInfo.my_node_num unavailable")
+                raise ValueError(INTERFACE_NOT_INITIALIZED_ERROR)
             node_id = my_info.my_node_num
 
         self.node_id = node_id

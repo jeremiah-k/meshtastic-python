@@ -335,7 +335,6 @@ class FeatherWriter(ArrowWriter):
             try:
                 super().close()
             except Exception:
-                self._conversion_done = True
                 raise
             src_name = self.base_file_name + ".arrow"
             dest_name = self.base_file_name + ".feather"

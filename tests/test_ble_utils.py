@@ -69,7 +69,7 @@ def test_with_timeout_alias_delegates() -> None:
 @pytest.mark.unit
 def test_resolve_ble_module_alias_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
     """resolve_ble_module should delegate to resolveBleModule."""
-    sentinel = object()
+    sentinel = ModuleType("sentinel_ble_module")
     monkeypatch.setattr(ble_utils, "resolveBleModule", lambda: sentinel)
 
     assert resolve_ble_module() is sentinel

@@ -53,7 +53,7 @@ def test_mesh_interface_import_handles_missing_print_color(
         level: int = 0,
     ) -> Any:
         if name == "print_color":
-            raise ImportError("simulated missing print_color")
+            raise ImportError("simulated missing print_color") from None
         return real_import(name, globals_dict, locals_dict, from_list, level)
 
     monkeypatch.setattr(builtins, "__import__", _import_with_print_color_failure)

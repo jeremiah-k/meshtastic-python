@@ -488,7 +488,7 @@ class TestPhase3LockConsolidation:
         # Verify state is consistent
         assert manager._current_state == ConnectionState.CONNECTED
 
-    def test_lock_contention_resolution(self):
+    def test_lock_contention_resolution(self) -> None:
         """Ensure BLEStateManager's state lock handles concurrent contention without raising exceptions and leaves the manager in DISCONNECTED.
 
         Spawns multiple threads that each acquire the manager's state lock and perform state transitions; the test asserts no contention-related exceptions occurred and that the final manager._current_state equals ConnectionState.DISCONNECTED.
@@ -496,6 +496,7 @@ class TestPhase3LockConsolidation:
 
         manager = BLEStateManager()
         contention_count = 0
+        contention_count_lock = threading.Lock()
 
         def contending_worker() -> None:
             """Perform a short lock-holding workload against the shared manager to exercise lock contention.
@@ -513,7 +514,8 @@ class TestPhase3LockConsolidation:
                     manager._transition_to(ConnectionState.CONNECTING)
                     manager._transition_to(ConnectionState.DISCONNECTED)
             except Exception:  # noqa: BLE001 - contention counts any unexpected failure
-                contention_count += 1
+                with contention_count_lock:
+                    contention_count += 1
 
         # Create multiple contending threads
         threads = []
