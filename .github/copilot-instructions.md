@@ -9,7 +9,7 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 - **Language**: Python 3.10+
 - **Package Manager**: Poetry
 - **Testing**: pytest with hypothesis for property-based testing
-- **Linting**: pylint
+- **Linting**: pylint, Ruff
 - **Type Checking**: mypy (working toward strict mode)
 - **Documentation**: pdoc3
 - **License**: GPL-3.0

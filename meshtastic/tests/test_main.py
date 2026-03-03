@@ -230,6 +230,14 @@ def test_parse_host_port_rejects_non_numeric_port() -> None:
 
 
 @pytest.mark.unit
+def test_parse_host_port_rejects_missing_hostname() -> None:
+    """Test _parse_host_port rejects host:port values with missing host."""
+    with pytest.raises(SystemExit) as exc_info:
+        _parse_host_port(":4403", default_port=4403)
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_host_argument_passes_parsed_port_to_tcp_interface() -> None:
     """Test --host host:port passes parsed host and port to TCPInterface."""

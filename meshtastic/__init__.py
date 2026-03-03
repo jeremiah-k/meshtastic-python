@@ -46,7 +46,7 @@ unicode scripts they can be different.
 ```
 import meshtastic
 import meshtastic.serial_interface
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 def onReceive(packet, interface): # called when a packet arrives
     print(f"Received: {packet}")
@@ -70,7 +70,7 @@ from importlib import import_module
 from typing import Any, Callable, NamedTuple, TypeGuard
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 from meshtastic.node import Node
 from meshtastic.util import (
@@ -321,8 +321,9 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         logger.debug("position payload received from=%s", sender)
         p = iface._fixup_position(p)
         logger.debug("position payload normalized from=%s", sender)
-        # update node DB as needed
-        iface._get_or_create_by_num(sender)["position"] = p
+        node = iface._get_or_create_by_num(sender)
+        with iface._node_db_lock:
+            node["position"] = p
 
 
 def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -347,6 +348,7 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         return
     sender, decoded = packet_guard
     if "user" in decoded:
+        _receive_info_update(iface, as_dict)
         p = decoded["user"]
         # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
         # update node DB as needed
@@ -358,7 +360,6 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
             nodes_by_id = iface.nodes
             if isinstance(node_id, str) and node_id and isinstance(nodes_by_id, dict):
                 nodes_by_id[node_id] = n
-            _receive_info_update(iface, as_dict)
 
 
 def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -410,12 +411,13 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     if not isinstance(update_obj, dict):
         return
     node = iface._get_or_create_by_num(sender)
-    new_metrics = node.get(to_update, {})
-    if not isinstance(new_metrics, dict):
-        new_metrics = {}
-    new_metrics.update(update_obj)
-    logger.debug("updating %s metrics for %s to %s", to_update, sender, new_metrics)
-    node[to_update] = new_metrics
+    with iface._node_db_lock:
+        new_metrics = node.get(to_update, {})
+        if not isinstance(new_metrics, dict):
+            new_metrics = {}
+        new_metrics.update(update_obj)
+        logger.debug("updating %s metrics for %s to %s", to_update, sender, new_metrics)
+        node[to_update] = new_metrics
 
 
 def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -442,10 +444,11 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
             )
         return
     node = iface._get_or_create_by_num(sender)
-    node["lastReceived"] = _sanitize_last_received(as_dict)
-    node["lastHeard"] = as_dict.get("rxTime")
-    node["snr"] = as_dict.get("rxSnr")
-    node["hopLimit"] = as_dict.get("hopLimit")
+    with iface._node_db_lock:
+        node["lastReceived"] = _sanitize_last_received(as_dict)
+        node["lastHeard"] = as_dict.get("rxTime")
+        node["snr"] = as_dict.get("rxSnr")
+        node["hopLimit"] = as_dict.get("hopLimit")
 
 
 def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -495,7 +498,9 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         )
         return
 
-    iface._get_or_create_by_num(sender)["adminSessionPassKey"] = session_passkey
+    node = iface._get_or_create_by_num(sender)
+    with iface._node_db_lock:
+        node["adminSessionPassKey"] = session_passkey
 
 
 """Well known message payloads can register decoders for automatic protobuf parsing"""

@@ -5,7 +5,8 @@ POETRY_RUN := poetry run
 all: test
 
 clean:
-	rm -rf htmlcov .coverage coverage.xml
+	rm -rf htmlcov .coverage coverage.xml .mypy_cache .pytest_cache dist build *.egg-info
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # only run the fast unit tests
 test:
@@ -26,6 +27,7 @@ ci:
 ci-strict:
 	$(MAKE) ci-base
 	$(POETRY_RUN) mypy meshtastic/ --strict
+
 # only run the smoke tests against the virtual device
 virt:
 	$(POETRY_RUN) pytest -m smokevirt

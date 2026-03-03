@@ -24,7 +24,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 from tabulate import tabulate
 
 import meshtastic.node
@@ -830,7 +830,7 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> mesh_pb2.MeshPacket:
         """Send a high-priority alert text to a node, which may trigger special notifications on clients.
 
-        Parameters.
+        Parameters
         ----------
         text : str
             Alert text to send.
@@ -1685,7 +1685,13 @@ class MeshInterface:  # pylint: disable=R0902
                 node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
             if node is not None:
-                nodeNum = node["num"]
+                node_num = node.get("num") if isinstance(node, dict) else None
+                if isinstance(node_num, int):
+                    nodeNum = node_num
+                else:
+                    raise MeshInterface.MeshInterfaceError(
+                        f"NodeId {destinationId} has no numeric 'num' in DB"
+                    )
             elif has_nodes:
                 raise MeshInterface.MeshInterfaceError(
                     f"NodeId {destinationId} not found in DB"
@@ -1699,8 +1705,9 @@ class MeshInterface:  # pylint: disable=R0902
         if hopLimit is not None:
             meshPacket.hop_limit = hopLimit
         else:
-            loraConfig = self.localNode.localConfig.lora
-            meshPacket.hop_limit = loraConfig.hop_limit
+            with self._node_db_lock:
+                default_hop_limit = self.localNode.localConfig.lora.hop_limit
+            meshPacket.hop_limit = default_hop_limit
 
         if pkiEncrypted:
             meshPacket.pki_encrypted = True

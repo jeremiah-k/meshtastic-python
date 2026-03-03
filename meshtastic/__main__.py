@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -795,7 +795,7 @@ def onConnected(interface: MeshInterface) -> None:
             waitForAckNak = True
 
             if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "Error: OTA update currently requires a TCP connection to the node (use --host)."
                 )
 
@@ -818,7 +818,7 @@ def onConnected(interface: MeshInterface) -> None:
                 except Exception as e:
                     retries -= 1
                     if retries == 0:
-                        meshtastic.util.our_exit(f"\nOTA update failed: {e}")
+                        _cli_exit(f"OTA update failed: {e}")
 
                     time.sleep(2)
 
@@ -1997,6 +1997,11 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     if ":" in host_str and host_str.count(":") == 1:
         # Exactly one colon -> host:port
         candidate_host, tcp_port_str = host_str.rsplit(":", 1)
+        if not candidate_host:
+            _cli_exit(
+                f"Error: missing hostname in --host '{host_str}'.",
+                1,
+            )
         try:
             parsed_port = int(tcp_port_str)
         except ValueError:

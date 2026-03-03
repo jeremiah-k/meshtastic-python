@@ -458,7 +458,7 @@ class ConnectionOrchestrator:
         self.validator._validate_connection_request()
 
         target_address = address if address is not None else current_address
-        # Allow None target_address for discovery mode - find_device() handles this
+        # Allow None target_address for discovery mode - findDevice() handles this
         # Only reject empty/whitespace-only strings that are explicitly provided
         if target_address is not None and not target_address.strip():
             raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)

@@ -80,7 +80,14 @@ def _readtest(tap: TapDevice) -> None:
                 checksum = _internet_checksum(bytes(icmp_reply))
                 icmp_reply[2] = (checksum >> 8) & 0xFF
                 icmp_reply[3] = checksum & 0xFF
-                pingback = p[:12] + p[16:20] + p[12:16] + bytes(icmp_reply)
+                ip_header = bytearray(p[:subheader])
+                ip_header[10:12] = b"\x00\x00"
+                ip_header[12:16] = p[16:20]
+                ip_header[16:20] = p[12:16]
+                ip_checksum = _internet_checksum(bytes(ip_header))
+                ip_header[10] = (ip_checksum >> 8) & 0xFF
+                ip_header[11] = ip_checksum & 0xFF
+                pingback = bytes(ip_header) + bytes(icmp_reply)
                 tap.write(pingback)
             else:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)

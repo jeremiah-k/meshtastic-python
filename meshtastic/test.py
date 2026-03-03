@@ -8,7 +8,7 @@ import time
 from contextlib import ExitStack, suppress
 from typing import Any, NoReturn
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
@@ -134,7 +134,23 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_portnum(portnum: Any) -> str | None:
-    """Normalize a port number value to its protobuf enum-name representation."""
+    """Normalize ``portnum`` for comparisons in test helpers.
+
+    Parameters
+    ----------
+    portnum : Any
+        Port value to normalize. Supported inputs are enum/int-like values,
+        strings, and ``None``.
+
+    Returns
+    -------
+    str | None
+        For enum/int-like inputs, returns the canonical protobuf enum-name
+        string when resolvable.
+        For string inputs, returns the original string representation unchanged.
+        Returns ``None`` when ``portnum`` is ``None`` or when an integer value
+        is not a known ``PortNum`` enum member.
+    """
     if isinstance(portnum, int):
         with suppress(ValueError):
             return portnums_pb2.PortNum.Name(portnum)  # type: ignore[arg-type]

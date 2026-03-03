@@ -4,7 +4,7 @@ import logging
 import math
 from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -391,7 +391,18 @@ class ReconnectWorker:
                     return
                 attempt_num = 0
                 try:
-                    attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
+                    attempt_count = self._call_policy("get_attempt_count")
+                    if attempt_count is None:
+                        return
+                    if isinstance(attempt_count, bool) or not isinstance(
+                        attempt_count, int
+                    ):
+                        logger.error(
+                            "Reconnect policy get_attempt_count() returned non-int value: %r",
+                            attempt_count,
+                        )
+                        return
+                    attempt_num = attempt_count + 1
                     if interface._is_connection_connected:
                         return
                     gate_result = self._handle_connected_elsewhere_gate(

@@ -13,12 +13,12 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
 import pyarrow as pa
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter
@@ -28,6 +28,13 @@ from .arrow import FeatherWriter
 logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
+
+# PyArrow typing stubs vary across versions: some model DataType as generic
+# (requiring a type argument), others as non-generic.
+if TYPE_CHECKING:
+    ArrowDataType: TypeAlias = pa.DataType[Any]  # type: ignore[type-arg,unused-ignore]
+else:
+    ArrowDataType = pa.DataType
 
 
 def _root_dir_impl() -> str:
@@ -75,10 +82,12 @@ class LogDef:
     """Log definition."""
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
-    fields: list[tuple[str, pa.DataType]]  # A list of field names and their arrow types
+    fields: list[
+        tuple[str, ArrowDataType]
+    ]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, ArrowDataType]]) -> None:
         """Create a LogDef for the given code and fields and compile a parser for those fields.
 
         Parameters
@@ -456,7 +465,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, pa.DataType]] = [
+        all_fields: list[tuple[str, ArrowDataType]] = [
             field for logdef in log_defs.values() for field in logdef.fields
         ]
 

@@ -62,7 +62,7 @@ def test_bleclient_context_manager():
     """BLEClient should work as a context manager."""
     with BLEClient(address=None) as client:
         assert client is not None
-    # Client should be closed after exiting context
+    assert not client.isConnected()
 
 
 @pytest.mark.unit

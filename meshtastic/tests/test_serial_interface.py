@@ -82,6 +82,14 @@ def test_SerialInterface_multiple_ports(mocked_findPorts: MagicMock) -> None:
 
 
 @pytest.mark.unit
+def test_SerialInterface_rejects_empty_explicit_port_path() -> None:
+    """Explicit empty/whitespace serial paths should fail fast with MeshInterfaceError."""
+    with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
+        SerialInterface(devPath="   ", noProto=True)
+    assert "Serial port path cannot be empty" in str(exc_info.value)
+
+
+@pytest.mark.unit
 @patch("time.sleep")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")

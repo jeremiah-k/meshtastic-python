@@ -9,7 +9,7 @@ import logging
 import sys
 import time
 import types
-from typing import IO, Any, Callable
+from typing import IO, Any, BinaryIO, Callable
 
 import serial  # type: ignore[import-untyped]
 
@@ -38,6 +38,10 @@ class SerialInterface(StreamInterface):
     def _resolve_dev_path(self) -> str | None:
         """Return an explicit or auto-detected serial device path."""
         if self.devPath is not None:
+            if not self.devPath.strip():
+                raise self.MeshInterfaceError(
+                    "Serial port path cannot be empty; pass None to auto-detect."
+                )
             return self.devPath
 
         ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
@@ -92,7 +96,9 @@ class SerialInterface(StreamInterface):
             When multiple serial ports are detected and none was explicitly specified.
         """
         self.noProto = noProto
-        self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
+        self.stream: serial.Serial | BinaryIO | None = (
+            None  # Initialize early for safe cleanup
+        )
 
         self.devPath: str | None = devPath
         resolved_dev_path = self._resolve_dev_path()

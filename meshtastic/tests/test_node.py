@@ -25,6 +25,8 @@ from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Acknowledgment
 
+CHANNEL_LIMIT = 8
+
 
 class _FakeSendAdminProtocol(Protocol):
     """Callable protocol for fake _send_admin helpers with optional parameters."""
@@ -254,7 +256,9 @@ def test_setURL_ignores_channels_over_device_limit(
     """Test that setURL ignores channels beyond the fixed device channel limit."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
-    anode.channels = [Channel(index=i, role=Channel.Role.DISABLED) for i in range(8)]
+    anode.channels = [
+        Channel(index=i, role=Channel.Role.DISABLED) for i in range(CHANNEL_LIMIT)
+    ]
 
     channel_set = apponly_pb2.ChannelSet()
     for i in range(9):
@@ -269,10 +273,33 @@ def test_setURL_ignores_channels_over_device_limit(
     with caplog.at_level(logging.WARNING):
         anode.setURL(url)
 
-    assert re.search(r"URL contains more than 8 channels", caplog.text, re.MULTILINE)
-    assert len(anode.channels) == 8
+    assert re.search(
+        rf"URL contains more than {CHANNEL_LIMIT} channels",
+        caplog.text,
+        re.MULTILINE,
+    )
+    assert len(anode.channels) == CHANNEL_LIMIT
     assert anode.channels[0].settings.name == "ch0"
     assert anode.channels[7].settings.name == "ch7"
+
+
+@pytest.mark.unit
+def test_setChannels_copies_input_channel_objects(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetChannels should snapshot caller-provided channels instead of storing shared references."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    source_channel = Channel(index=0, role=Channel.Role.PRIMARY)
+    source_channel.settings.name = "source"
+    source_channel.settings.psk = b"\x01"
+
+    anode.setChannels([source_channel])
+    source_channel.settings.name = "mutated-after-set"
+
+    assert anode.channels is not None
+    assert len(anode.channels) == CHANNEL_LIMIT
+    assert anode.channels[0] is not source_channel
+    assert anode.channels[0].settings.name == "source"
 
 
 def _configure_immediate_admin_timeout(anode: Node) -> None:

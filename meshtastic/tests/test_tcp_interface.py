@@ -128,12 +128,12 @@ def test_TCPInterface_accepts_none_connect_timeout() -> None:
             connectNow=False,
             connectTimeout=None,
         )
-
-        iface.myConnect()
-
-        mock_connect.assert_called_once_with(("localhost", 4403))
-        connected_socket.settimeout.assert_called_once_with(None)
-        iface.close()
+        try:
+            iface.myConnect()
+            mock_connect.assert_called_once_with(("localhost", 4403))
+            connected_socket.settimeout.assert_called_once_with(None)
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
@@ -141,13 +141,13 @@ def test_TCPInterface_write_uses_sendall() -> None:
     """Test that _write_bytes uses sendall to avoid partial writes."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        mock_socket = MagicMock()
-        iface.socket = mock_socket
-
-        iface._write_bytes(b"abc")
-
-        mock_socket.sendall.assert_called_once_with(b"abc")
-        iface.close()
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+            iface._write_bytes(b"abc")
+            mock_socket.sendall.assert_called_once_with(b"abc")
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
@@ -443,7 +443,9 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_shutdown() -> None:
             # Should return False when interrupted
             result = iface._sleep_reconnect_delay(10.0)
             thread.join(timeout=1.0)
-            assert not thread.is_alive(), "Thread should complete after _wantExit is set"
+            assert (
+                not thread.is_alive()
+            ), "Thread should complete after _wantExit is set"
 
             assert result is False
         finally:
