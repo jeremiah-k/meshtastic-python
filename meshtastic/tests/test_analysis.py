@@ -64,8 +64,8 @@ def test_analysis(
 ) -> None:
     """Test analysis processing."""
 
-    cur_dir = os.path.dirname(os.path.abspath(__file__))
-    slog_input_dir = os.path.join(cur_dir, "slog-test-input")
+    cur_dir = Path(__file__).resolve().parent
+    slog_input_dir = str(cur_dir / "slog-test-input")
 
     monkeypatch.setattr(
         sys, "argv", ["fakescriptname", "--no-server", "--slog", slog_input_dir]

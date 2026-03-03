@@ -2847,7 +2847,17 @@ def _run_main_configure_file(
     iface: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run main() for --configure against a supplied YAML file and interface mock."""
+    """Run main() for --configure against a supplied YAML file and interface mock.
+
+    Parameters
+    ----------
+    config_path : Path
+        Path to the YAML configuration file consumed by ``--configure``.
+    iface : MagicMock
+        Mocked SerialInterface object returned by the patched constructor.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch ``time.sleep`` for deterministic tests.
+    """
     monkeypatch.setattr("time.sleep", lambda _: None)
     sys.argv = ["", "--configure", str(config_path)]
     mt_config.args = cast(Any, sys.argv)

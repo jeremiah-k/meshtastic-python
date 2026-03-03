@@ -109,7 +109,7 @@ class ESP32WiFiOTA:
         self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
         try:
             self._socket.connect((self._hostname, self._port))
-            logger.debug(f"Connected to {self._hostname}:{self._port}")
+            logger.debug("Connected to %s:%d", self._hostname, self._port)
 
             # Send start command
             self._socket.sendall(f"OTA {size} {self.hashHex()}\n".encode("utf-8"))
@@ -125,7 +125,7 @@ class ESP32WiFiOTA:
                 elif response.startswith("ERR "):
                     raise OTAError(f"Device reported error: {response}")
                 else:
-                    logger.warning(f"Unexpected response: {response}")
+                    logger.warning("Unexpected response: %s", response)
 
             # Stream firmware
             sent_bytes = 0
@@ -156,7 +156,7 @@ class ESP32WiFiOTA:
                 if response.startswith("ERR "):
                     raise OTAError(f"OTA update failed: {response}")
                 elif response != "ACK":
-                    logger.warning(f"Unexpected final response: {response}")
+                    logger.warning("Unexpected final response: %s", response)
 
         finally:
             if self._socket:

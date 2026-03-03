@@ -503,7 +503,7 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         node["adminSessionPassKey"] = session_passkey
 
 
-"""Well known message payloads can register decoders for automatic protobuf parsing"""
+# Well known message payloads can register decoders for automatic protobuf parsing.
 protocols = {
     portnums_pb2.PortNum.TEXT_MESSAGE_APP: KnownProtocol(
         "text", onReceive=_on_text_receive

@@ -117,12 +117,12 @@ def test_smoke1_debug() -> None:
 def test_smoke1_seriallog_to_file() -> None:
     """Test --seriallog to a file creates a file."""
     filename = "tmpoutput.txt"
-    if os.path.exists(f"{filename}"):
-        os.remove(f"{filename}")
+    if os.path.exists(filename):
+        os.remove(filename)
     return_value, _ = run_cli_with_timeout(f"meshtastic --info --seriallog {filename}")
-    assert os.path.exists(f"{filename}")
+    assert os.path.exists(filename)
     assert return_value == 0
-    os.remove(f"{filename}")
+    os.remove(filename)
 
 
 @pytest.mark.smoke1
@@ -611,6 +611,7 @@ def test_smoke1_seturl_invalid_url() -> None:
 def test_smoke1_configure() -> None:
     """Test --configure."""
     config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
+    assert config_path.exists(), f"Config file not found: {config_path}"
     return_value, out = run_cli_with_timeout(
         f"meshtastic --configure {_quote_shell_path(str(config_path))}"
     )

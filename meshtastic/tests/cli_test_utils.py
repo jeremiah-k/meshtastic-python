@@ -30,7 +30,7 @@ def _shell_executable_for_timeout(command: str) -> str:
     return "<shell-command>"
 
 
-def run_cli_with_timeout(command: str, timeout: int | float = 120) -> tuple[int, str]:
+def runCliWithTimeout(command: str, timeout: int | float = 120) -> tuple[int, str]:
     """Run a shell CLI command and return (exit_code, combined_output).
 
     Parameters
@@ -74,7 +74,7 @@ def run_cli_with_timeout(command: str, timeout: int | float = 120) -> tuple[int,
     return result.returncode, result.stdout
 
 
-def run_cli_argv_with_timeout(
+def runCliArgvWithTimeout(
     cmd: list[str], timeout: int | float = 30
 ) -> subprocess.CompletedProcess[str]:
     """Run a CLI command using argv list and return CompletedProcess.
@@ -111,3 +111,17 @@ def run_cli_argv_with_timeout(
         cmd_name = cmd[0]
         timeout_value = e.timeout if e.timeout is not None else timeout
         _fail_masked_timeout(cmd_name, timeout_value)
+
+
+# COMPAT_STABLE_SHIM: historical snake_case helper names used by tests.
+def run_cli_with_timeout(command: str, timeout: int | float = 120) -> tuple[int, str]:
+    """Compatibility alias for runCliWithTimeout()."""
+    return runCliWithTimeout(command, timeout=timeout)
+
+
+# COMPAT_STABLE_SHIM: historical snake_case helper names used by tests.
+def run_cli_argv_with_timeout(
+    cmd: list[str], timeout: int | float = 30
+) -> subprocess.CompletedProcess[str]:
+    """Compatibility alias for runCliArgvWithTimeout()."""
+    return runCliArgvWithTimeout(cmd, timeout=timeout)

@@ -1,12 +1,18 @@
-# delete me eventually
+"""Manual TUN packet-read utility used for ad-hoc interactive debugging.
+
+This script intentionally lives in tests/ for historical reasons, but it is not a
+pytest-driven unit test.
+"""
+
 # Note python-pytuntap was too buggy
 # using pip3 install pytap2
-# make sure to "sudo setcap cap_net_admin+eip /usr/bin/python3.10" so python can access tun device without being root
+# make sure to "sudo setcap cap_net_admin+eip /usr/bin/python3.10" so python can
+# access tun device without being root
 # sudo ip tuntap del mode tun tun0
 
-# FIXME: set MTU correctly
-# select local ip address based on nodeid
-# print known node ids as IP addresses
+# TODO: set MTU correctly
+# TODO: select local ip address based on nodeid
+# TODO: print known node ids as IP addresses
 
 import logging
 import threading
@@ -32,12 +38,12 @@ PROTOCOL_BLACKLIST: set[int] = {
 
 def _hexstr(barray: bytes | bytearray) -> str:
     """Print a string of hex digits."""
-    return ":".join("{:02x}".format(x) for x in barray)
+    return ":".join(f"{x:02x}" for x in barray)
 
 
 def _ipstr(barray: bytes | bytearray) -> str:
     """Print a string of ip digits."""
-    return ".".join("{}".format(x) for x in barray)
+    return ".".join(str(x) for x in barray)
 
 
 def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
@@ -46,7 +52,18 @@ def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
 
 
 def _internet_checksum(payload: bytes) -> int:
-    """Compute RFC 1071 Internet checksum for the provided payload."""
+    """Compute RFC 1071 Internet checksum for the provided payload.
+
+    Parameters
+    ----------
+    payload : bytes
+        Payload bytes to checksum.
+
+    Returns
+    -------
+    int
+        16-bit one's-complement checksum value.
+    """
     if len(payload) % 2:
         payload += b"\x00"
     checksum = 0
@@ -87,6 +104,11 @@ def _readtest(tap: TapDevice) -> None:
                 continue
             icmp_type = p[icmp_offset]
             if icmp_type == 0x08:  # echo request -> echo reply
+                if len(p) < icmp_offset + 4:
+                    logging.debug(
+                        "Ignoring malformed ICMP echo request: too short for checksum"
+                    )
+                    continue
                 logging.warning("Generating fake ping reply")
                 icmp_reply = bytearray(p[icmp_offset:])
                 icmp_reply[0] = 0x00  # Echo reply type

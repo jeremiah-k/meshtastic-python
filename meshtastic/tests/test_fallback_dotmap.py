@@ -59,6 +59,7 @@ def test_fallback_dotmap_delattr_and_missing_access() -> None:
     dmap.x = 1
 
     delattr(dmap, "x")
+    assert "x" not in dmap
 
     with pytest.raises(AttributeError, match="x"):
         delattr(dmap, "x")

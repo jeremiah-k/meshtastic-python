@@ -121,10 +121,27 @@ def test_sim_power_supply_snake_case_aliases_are_stable_shims(
 
 
 @pytest.mark.unit
-def test_sim_power_supply_reset_measurements_snake_case_alias() -> None:
+def test_sim_power_supply_reset_measurements_snake_case_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """reset_measurements() should delegate to resetMeasurements() without warnings."""
     supply = SimPowerSupply()
-    supply.reset_measurements()
+    called = {"count": 0}
+
+    def _fake_reset() -> None:
+        called["count"] += 1
+
+    monkeypatch.setattr(supply, "resetMeasurements", _fake_reset)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        supply.reset_measurements()
+
+    assert called["count"] == 1
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]
 
 
 @pytest.mark.unit

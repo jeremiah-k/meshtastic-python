@@ -72,9 +72,14 @@ def mock_pubsub(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     The injected module exposes a `pub` attribute (a SimpleNamespace) with
     `subscribe` and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
 
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to inject the mock module.
+
     Returns
     -------
-    module
+    types.ModuleType
         The injected `pubsub` module.
     """
     pubsub_module: Any = types.ModuleType("pubsub")

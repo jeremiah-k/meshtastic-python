@@ -80,6 +80,8 @@ def _extract_row_from_call(call: Any) -> dict[str, Any]:
     """Return row payload from a single writer.addRow call object."""
     row = call.kwargs.get("row")
     if row is None:
+        row = call.kwargs.get("row_dict")
+    if row is None:
         assert call.args, "Expected addRow to include row payload"
         row = call.args[0]
     assert isinstance(row, dict), "Expected addRow row payload to be a dict"
@@ -163,6 +165,7 @@ def test_slog_arrow_data_type_type_checking_alias_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reload slog with TYPE_CHECKING enabled to exercise ArrowDataType type-alias branch."""
+    original_type_checking = typing.TYPE_CHECKING
     original_data_type = pa.DataType
 
     class _SubscriptableDataType:
@@ -178,7 +181,7 @@ def test_slog_arrow_data_type_type_checking_alias_branch(
         reloaded = importlib.reload(slog_module)
         assert reloaded.ArrowDataType is _SubscriptableDataType
     finally:
-        monkeypatch.setattr(typing, "TYPE_CHECKING", False)
+        monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
         monkeypatch.setattr(pa, "DataType", original_data_type)
         try:
             importlib.reload(slog_module)

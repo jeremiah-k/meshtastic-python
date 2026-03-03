@@ -50,11 +50,12 @@ class SerialInterface(StreamInterface):
             detected without an explicit ``--port`` selection.
         """
         if self.devPath is not None:
-            if not self.devPath.strip():
+            stripped_dev_path = self.devPath.strip()
+            if not stripped_dev_path:
                 raise self.MeshInterfaceError(
                     "Serial port path cannot be empty; pass None to auto-detect."
                 )
-            return self.devPath
+            return stripped_dev_path
 
         ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
         logger.debug("ports: %s", ports)

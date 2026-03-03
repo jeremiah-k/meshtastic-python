@@ -487,9 +487,23 @@ def test_TCPInterface_sleep_reconnect_delay_completes_full_delay() -> None:
             iface._wantExit = False
             iface._fatal_disconnect = False
 
-            # Small delay should complete
-            result = iface._sleep_reconnect_delay(0.3)
+            monotonic_time = {"value": 0.0}
 
+            def _fake_monotonic() -> float:
+                value = monotonic_time["value"]
+                monotonic_time["value"] += 0.1
+                return value
+
+            with (
+                patch("meshtastic.tcp_interface.time.sleep") as mock_sleep,
+                patch(
+                    "meshtastic.tcp_interface.time.monotonic",
+                    side_effect=_fake_monotonic,
+                ),
+            ):
+                result = iface._sleep_reconnect_delay(0.3)
+
+            assert mock_sleep.call_count == 2
             assert result is True
         finally:
             iface.close()

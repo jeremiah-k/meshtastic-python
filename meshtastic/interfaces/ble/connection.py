@@ -71,11 +71,10 @@ class ConnectionValidator:
         with self.state_lock:
             can_connect = self.state_manager._can_connect
             is_closing = self.state_manager._is_closing
-
-        if not can_connect:
-            if is_closing:
-                raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
-            raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
+            if not can_connect:
+                if is_closing:
+                    raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
+                raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
 
     def _check_existing_client(
         self,

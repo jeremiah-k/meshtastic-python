@@ -14,9 +14,7 @@ import meshtastic.tcp_interface
 _CONNECTED = threading.Event()
 
 
-def onConnection(  # pylint: disable=unused-argument
-    interface: Any, _topic: Any = pub.AUTO_TOPIC
-) -> None:
+def onConnection(interface: Any, _topic: Any = pub.AUTO_TOPIC) -> None:
     """Handle (re)connection to the radio."""
     print(interface.myInfo)
     _CONNECTED.set()

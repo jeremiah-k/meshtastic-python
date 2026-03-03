@@ -1082,6 +1082,7 @@ def test_timeago_fuzz(seconds: int) -> None:
 
 # Concurrent access edge case tests
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_concurrent_packet_id_generation() -> None:
     """Test that packet ID generation is thread-safe."""
     with MeshInterface(noProto=True) as iface:
@@ -1114,6 +1115,7 @@ def test_concurrent_packet_id_generation() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_concurrent_node_database_access() -> None:
     """Test that node database access is thread-safe."""
     with MeshInterface(noProto=True) as iface:
@@ -1147,6 +1149,7 @@ def test_concurrent_node_database_access() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_concurrent_queue_operations() -> None:
     """Test that queue operations are thread-safe."""
     with MeshInterface(noProto=True) as iface:

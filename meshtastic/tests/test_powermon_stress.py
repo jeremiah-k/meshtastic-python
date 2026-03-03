@@ -66,6 +66,15 @@ def test_power_stress_client_defaults_node_id_from_iface() -> None:
 
 
 @pytest.mark.unit
+def test_power_stress_client_raises_when_iface_not_initialized() -> None:
+    """PowerStressClient should fail fast when myInfo.my_node_num is unavailable."""
+    iface = MagicMock()
+    iface.myInfo = None
+    with pytest.raises(ValueError, match="myInfo.my_node_num unavailable"):
+        PowerStressClient(iface)
+
+
+@pytest.mark.unit
 def test_send_power_stress_calls_send_data_with_expected_args() -> None:
     """Test that sendPowerStress sends a POWERSTRESS_APP message with ack/response."""
     iface = MagicMock()
@@ -260,5 +269,5 @@ def test_power_stress_run_completes_all_states() -> None:
             powermon_pb2.PowerStressMessage.PRINT_INFO,
             ack_timeout=DEFAULT_STRESS_STATE_DURATION_S,
         )
-    ] + [call(state, 5.0) for state in ps.states]
+    ] + [call(state, DEFAULT_STRESS_STATE_DURATION_S) for state in ps.states]
     ps.client.syncPowerStress.assert_has_calls(expected_calls, any_order=False)

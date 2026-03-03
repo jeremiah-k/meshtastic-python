@@ -3,6 +3,7 @@
 import gc
 
 import pytest
+from hypothesis import given, strategies as st
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
@@ -45,13 +46,22 @@ class TestAddrKey:
         assert _addr_key("   ") is None
         assert _addr_key("\t\n") is None
 
-    def test_different_empty_inputs_have_different_keys(self) -> None:
-        """Test that different empty/None inputs all return None (not same key)."""
-        # This ensures they don't share the same registry key
+    def test_empty_inputs_normalize_to_none(self) -> None:
+        """Test that None/empty/whitespace inputs all normalize to None."""
         assert _addr_key(None) is None
         assert _addr_key("") is None
         assert _addr_key("   ") is None
-        # All return None, which is handled specially by gating functions
+
+    @given(
+        st.from_regex(r"[0-9a-fA-F]{2}([:_\- ][0-9a-fA-F]{2}){5}", fullmatch=True)
+    )
+    def test_valid_address_formats_normalize_to_lower_hex(self, addr: str) -> None:
+        """Any valid MAC-like address should normalize to 12 lowercase hex chars."""
+        normalized = _addr_key(addr)
+        assert normalized is not None
+        assert len(normalized) == 12
+        assert normalized == normalized.lower()
+        assert all(char in "0123456789abcdef" for char in normalized)
 
 
 @pytest.mark.usefixtures("clear_registry")

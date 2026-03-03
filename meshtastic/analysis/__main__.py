@@ -40,7 +40,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     util.our_exit(message, return_value)
 
 
-def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
+def toPmonNames(arr: Iterable[Any]) -> list[str | None]:
     """Map power-monitor state values (including bitmasks) to enum name strings.
 
     Parameters
@@ -101,6 +101,12 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
             return s if s != "None" else None
 
     return [_to_pmon_name(x) for x in arr]
+
+
+# COMPAT_STABLE_SHIM: historical snake_case helper name.
+def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
+    """Compatibility alias for toPmonNames()."""
+    return toPmonNames(arr)
 
 
 def read_pandas(filepath: str) -> pd.DataFrame:

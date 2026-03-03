@@ -13,7 +13,7 @@ import pytest
 from pytest import CaptureFixture, LogCaptureFixture
 
 from ..mesh_interface import MeshInterface
-from ..node import Node
+from ..node import MAX_CHANNELS, Node
 from ..protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -25,7 +25,7 @@ from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Acknowledgment, fromPSK
 
-CHANNEL_LIMIT = 8
+CHANNEL_LIMIT = MAX_CHANNELS
 
 
 class _FakeSendAdminProtocol(Protocol):

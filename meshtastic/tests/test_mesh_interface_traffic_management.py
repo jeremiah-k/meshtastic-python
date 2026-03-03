@@ -11,12 +11,14 @@ from ..protobuf import mesh_pb2
 def test_handle_from_radio_with_traffic_management_module_config() -> None:
     """Test _handle_from_radio with moduleConfig.traffic_management."""
     iface = MeshInterface(noProto=True)
-    from_radio = mesh_pb2.FromRadio()
-    from_radio.moduleConfig.traffic_management.enabled = True
-    from_radio.moduleConfig.traffic_management.rate_limit_enabled = True
+    try:
+        from_radio = mesh_pb2.FromRadio()
+        from_radio.moduleConfig.traffic_management.enabled = True
+        from_radio.moduleConfig.traffic_management.rate_limit_enabled = True
 
-    iface._handle_from_radio(from_radio.SerializeToString())
+        iface._handle_from_radio(from_radio.SerializeToString())
 
-    assert iface.localNode.moduleConfig.traffic_management.enabled is True
-    assert iface.localNode.moduleConfig.traffic_management.rate_limit_enabled is True
-    iface.close()
+        assert iface.localNode.moduleConfig.traffic_management.enabled is True
+        assert iface.localNode.moduleConfig.traffic_management.rate_limit_enabled is True
+    finally:
+        iface.close()

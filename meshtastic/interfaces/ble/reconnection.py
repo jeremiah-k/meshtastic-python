@@ -393,6 +393,10 @@ class ReconnectWorker:
                 try:
                     attempt_count = self._call_policy("get_attempt_count")
                     if attempt_count is None:
+                        logger.error(
+                            "Reconnect policy get_attempt_count() returned None for address %r; aborting reconnect loop.",
+                            interface.address,
+                        )
                         return
                     if isinstance(attempt_count, bool) or not isinstance(
                         attempt_count, int

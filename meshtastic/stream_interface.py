@@ -259,6 +259,8 @@ class StreamInterface(MeshInterface):
             If no stream is configured or the configured stream is closed.
         """
         s = self.stream
+        # Treat stream objects without is_open as open for backward compatibility
+        # with test doubles and wrappers that expose only write/flush.
         if s is None or not getattr(s, "is_open", True):
             raise StreamInterface.StreamClosedError()
         payload = memoryview(b)

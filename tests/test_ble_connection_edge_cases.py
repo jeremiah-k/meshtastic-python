@@ -1,6 +1,7 @@
 """Edge case tests for BLE connection management."""
 
 import importlib
+import logging
 import typing
 from threading import Event, RLock
 from unittest.mock import MagicMock
@@ -471,7 +472,7 @@ def test_reconnect_worker_logs_and_returns_when_attempt_count_is_non_int(
     worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
     on_exit = MagicMock()
 
-    with caplog.at_level("ERROR"):
+    with caplog.at_level(logging.ERROR):
         worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
 
     assert "returned non-int value" in caplog.text

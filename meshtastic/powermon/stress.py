@@ -52,7 +52,10 @@ class PowerStressClient:
         self.iface = iface
 
         if node_id is None:
-            node_id = iface.myInfo.my_node_num
+            my_info = getattr(iface, "myInfo", None)
+            if my_info is None or not hasattr(my_info, "my_node_num"):
+                raise ValueError("Interface not initialized; myInfo.my_node_num unavailable")
+            node_id = my_info.my_node_num
 
         self.node_id = node_id
         # No need to subscribe - because we

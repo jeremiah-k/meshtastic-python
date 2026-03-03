@@ -42,15 +42,12 @@ class LockLike(Protocol):
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         """Acquire the lock."""
-        raise NotImplementedError
 
     def release(self) -> None:
         """Release the lock."""
-        raise NotImplementedError
 
     def __enter__(self) -> bool:
         """Enter context manager and acquire lock."""
-        raise NotImplementedError
 
     def __exit__(
         self,
@@ -59,7 +56,6 @@ class LockLike(Protocol):
         tb: Any,
     ) -> None:
         """Exit context manager and release lock."""
-        raise NotImplementedError
 
 
 def _get_mesh_interface_error() -> type[Exception]:

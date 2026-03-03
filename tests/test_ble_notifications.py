@@ -35,17 +35,19 @@ def test_resubscribe_all_stops_after_cleanup_epoch_change() -> None:
     manager._subscribe("char-2", lambda _sender, _data: None)
 
     class _Client:
+        """Stub BLE client that triggers cleanup on first characteristic."""
+
         def __init__(self) -> None:
             self.calls: list[str] = []
 
         def start_notify(
             self,
             characteristic: str,
-            callback: Any,
+            _callback: Any,
             *,
             timeout: float | None = None,
         ) -> None:
-            _ = callback, timeout
+            _ = timeout
             self.calls.append(characteristic)
             if characteristic == "char-1":
                 manager._cleanup_all()

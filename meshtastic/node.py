@@ -604,6 +604,7 @@ class Node:
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
+        adminIndex = self.iface.localNode._get_admin_channel_index()
         with self._channels_lock:
             channels = self.channels
             if channels is None:
@@ -620,9 +621,8 @@ class Node:
                 self._raise_interface_error(
                     "Only SECONDARY or DISABLED channels can be deleted"
                 )
-            # we are careful here because if we move the "admin" channel the
-            # channelIndex we need to use for sending admin channels will also change
-            adminIndex = self.iface.localNode._get_admin_channel_index()
+            # If we move the "admin" channel, the index used for admin writes
+            # will need to be recomputed as writes progress.
             channels.pop(channelIndex)
             self._fixup_channels_locked()
 

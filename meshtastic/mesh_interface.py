@@ -3,6 +3,7 @@
 # pylint: disable=R0917,C0302
 
 import collections
+import copy
 import json
 import logging
 import math
@@ -404,7 +405,11 @@ class MeshInterface:  # pylint: disable=R0902
         mesh = "\n\nNodes in mesh: "
         nodes: dict[str, dict[str, Any]] = {}
         with self._node_db_lock:
-            nodes_snapshot = list(self.nodes.values()) if self.nodes else []
+            nodes_snapshot = (
+                [copy.deepcopy(node) for node in self.nodes.values()]
+                if self.nodes
+                else []
+            )
         for n in nodes_snapshot:
             # when the TBeam is first booted, it sometimes shows the raw data
             # so, we will just remove any raw keys
@@ -416,11 +421,10 @@ class MeshInterface:  # pylint: disable=R0902
                 continue
 
             # if we have 'macaddr', re-format it
-            if "macaddr" in user:
-                val = user["macaddr"]
+            val = user.get("macaddr")
+            if isinstance(val, str):
                 # decode the base64 value
-                addr = convert_mac_addr(val)
-                user["macaddr"] = addr
+                user["macaddr"] = convert_mac_addr(val)
 
             # use id as dictionary key for correct json format in list of nodes
             node_id = user.get("id")
@@ -2218,7 +2222,7 @@ class MeshInterface:  # pylint: disable=R0902
         toRadio : mesh_pb2.ToRadio
             Protobuf describing the action or packet to send to the radio.
         """
-        logger.error(f"Subclass must provide toradio: {toRadio}")
+        logger.error("Subclass must provide toradio: %s", toRadio)
 
     def _handle_config_complete(self) -> None:
         """Finalize initial configuration by applying collected local channels and marking the interface as connected.

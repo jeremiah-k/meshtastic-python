@@ -14,6 +14,7 @@ _INERT_THREAD_START_ERROR = (
 _EVENT_CREATE_AFTER_CLEANUP_ERROR = (
     "Cannot create event '{name}': coordinator has been cleaned up"
 )
+_LOCK_NOT_OWNED_ERROR = "Expected ThreadCoordinator._lock to be held"
 
 
 class _InertThread:
@@ -290,10 +291,16 @@ class ThreadCoordinator:
             thread.join(timeout=timeout)
 
     def _assert_lock_owned(self) -> None:
-        """Best-effort debug assertion that the coordinator lock is currently held."""
+        """Best-effort debug assertion that the coordinator lock is currently held.
+
+        Note
+        ----
+        This uses CPython's private ``RLock._is_owned()`` probe when available.
+        On runtimes without that attribute, this check becomes a no-op.
+        """
         is_owned = getattr(self._lock, "_is_owned", None)
         if callable(is_owned) and not is_owned():
-            raise RuntimeError("Expected ThreadCoordinator._lock to be held")
+            raise RuntimeError(_LOCK_NOT_OWNED_ERROR)
 
     def _set_event_no_lock(self, name: str) -> None:
         """Set the named tracked event without acquiring the coordinator lock.

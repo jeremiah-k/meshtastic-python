@@ -486,7 +486,8 @@ def test_supported_devices_list() -> None:
 @pytest.mark.unit
 def test_supported_devices_no_duplicates() -> None:
     """Test that supported_devices has no duplicate device definitions."""
-    assert len(supported_devices) == len(set(map(repr, supported_devices)))
+    identifiers = [(d.name, d.version, d.for_firmware) for d in supported_devices]
+    assert len(identifiers) == len(set(identifiers))
 
 
 @pytest.mark.unit

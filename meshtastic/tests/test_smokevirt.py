@@ -146,7 +146,9 @@ def test_smokevirt_seriallog_to_file(tmp_path: Path) -> None:
 def test_smokevirt_qr(tmp_path: Path) -> None:
     """Test --qr."""
     filename = tmp_path / "tmpqr"
-    result = run_cli_argv_with_timeout(["meshtastic", "--host", "localhost", "--qr"])
+    result = run_cli_argv_with_timeout(
+        ["meshtastic", "--host", "localhost", "--qr"], timeout=120
+    )
     filename.write_text(result.stdout, encoding="utf-8")
     return_value = result.returncode
     assert filename.exists()

@@ -90,7 +90,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
                 FROMNUM_UUID: True,  # Only have the critical one
             }
 
-        def has_characteristic(self, uuid):
+        def has_characteristic(self, uuid: str) -> bool:
             """Return whether the client reports a characteristic with the given UUID.
 
             Parameters
@@ -105,7 +105,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, *_args, **_kwargs):
+        def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
             """Record a notification registration by appending a (uuid, handler) tuple to self.start_notify_calls.
 
             If called with at least two positional arguments, the first is treated as the characteristic UUID and the second as the notification handler; any additional positional or keyword arguments are ignored.
@@ -938,11 +938,12 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     class MockPublishingThread2:
         """Mock publishingThread that raises ValueError in queueWork."""
 
-        def queueWork(self, _callback):
+        def queueWork(self, _callback: Any) -> None:
             """Refuse enqueued callbacks by always raising a ValueError with message "invalid state".
 
             Parameters
             ----------
+            _callback : Any
                 The callback that would have been queued (ignored).
 
             Raises

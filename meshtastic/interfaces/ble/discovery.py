@@ -44,7 +44,6 @@ class DiscoveryClientProtocol(Protocol):
 
     def _discover(self, **kwargs: Any) -> Any:
         """Run a BLE scan and return raw backend response data."""
-        ...
 
 
 def _is_unexpected_keyword_error(exc: TypeError, kwarg_name: str) -> bool:
@@ -483,9 +482,12 @@ class DiscoveryManager:
                         ["_discover"],
                     )
 
+            client: BLEClient | DiscoveryClientProtocol | None = None
             if self._client is None:
-                raise DiscoveryClientError.factory_returned_none(resolved_factory)
-            client = cast(BLEClient | DiscoveryClientProtocol, self._client)
+                if invalid_client_error is None:
+                    raise DiscoveryClientError.factory_returned_none(resolved_factory)
+            else:
+                client = cast(BLEClient | DiscoveryClientProtocol, self._client)
 
         seen_stale_ids: set[int] = set()
         for stale_client in stale_clients:
@@ -497,6 +499,8 @@ class DiscoveryManager:
 
         if invalid_client_error is not None:
             raise invalid_client_error
+        if client is None:
+            raise DiscoveryClientError.factory_returned_none(resolved_factory)
         devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:

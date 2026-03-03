@@ -239,7 +239,7 @@ def onNode(node: Any) -> None:
     logger.info("Node changed: %s", node)
 
 
-def subscribe() -> None:
+def subscribeToNodeUpdates() -> None:
     """Subscribe to node update notifications.
 
     Registers only `onNode` on the ``meshtastic.node`` topic.
@@ -248,6 +248,12 @@ def subscribe() -> None:
     """
 
     pub.subscribe(onNode, "meshtastic.node")
+
+
+# COMPAT_STABLE_SHIM: historical helper name.
+def subscribe() -> None:
+    """Compatibility alias for subscribeToNodeUpdates()."""
+    subscribeToNodeUpdates()
 
 
 def testSend(
