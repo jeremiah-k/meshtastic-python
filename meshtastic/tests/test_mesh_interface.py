@@ -1013,8 +1013,8 @@ def test_concurrent_node_database_access() -> None:
             try:
                 for i in range(50):
                     node_id = f"!{node_num:08x}"
+                    node = iface._get_or_create_by_num(node_num)
                     with iface._node_db_lock:
-                        node = iface._get_or_create_by_num(node_num)
                         node["lastHeard"] = i
                         if iface.nodes is not None:
                             iface.nodes[node_id] = node
