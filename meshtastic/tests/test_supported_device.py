@@ -216,7 +216,7 @@ def test_supported_device_usb_id_aliases_list() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=(("303A", "1001"), ("1A86", "55D4")),  # type: ignore[arg-type]
+        usb_id_aliases=(("303A", "1001"), ("1A86", "55D4")),
     )
     assert device.usb_id_aliases == (("303a", "1001"), ("1a86", "55d4"))
 
@@ -228,7 +228,7 @@ def test_supported_device_usb_id_aliases_none() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=(),  # type: ignore[arg-type]
+        usb_id_aliases=(),
     )
     assert device.usb_id_aliases == ()
 
@@ -240,7 +240,7 @@ def test_supported_device_usb_id_aliases_deduplication() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=(  # type: ignore[arg-type]
+        usb_id_aliases=(
             ("303A", "1001"),
             ("303a", "1001"),  # Duplicate after normalization
             ("1A86", "55D4"),
@@ -290,7 +290,7 @@ def test_supported_device_usb_id_aliases_non_string() -> None:
             name="Test",
             usb_vendor_id_in_hex="10c4",
             usb_product_id_in_hex="ea60",
-            usb_id_aliases=((1234, "1001"),),  # type: ignore[list-item]
+            usb_id_aliases=((1234, "1001"),),  # type: ignore[arg-type]
         )
 
 

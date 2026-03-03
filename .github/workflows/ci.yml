@@ -66,9 +66,9 @@ jobs:
       - name: Run tests with pytest
         run: |
           if [ "${{ matrix.python-version }}" = "3.13" ]; then
-            poetry run pytest --cov=meshtastic --cov-report=xml
+            poetry run pytest --cov=meshtastic --cov-report=xml --junitxml=junit.xml
           else
-            poetry run pytest --cov=meshtastic
+            poetry run pytest --cov=meshtastic --junitxml=junit.xml
           fi
       - name: Upload coverage reports to Codecov
         if: ${{ matrix.python-version == '3.13' }}
@@ -76,6 +76,11 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: jeremiah-k/meshtastic-python
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && matrix.python-version == '3.13' }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
   pylint:
     name: Pylint (py3.13)
     runs-on: ubuntu-latest
