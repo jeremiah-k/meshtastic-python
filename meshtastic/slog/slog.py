@@ -338,11 +338,7 @@ class PowerLogger:
     # COMPAT_DEPRECATE: snake_case alias for storeCurrentReading (warns once)
     def store_current_reading(self, now: datetime | None = None) -> None:
         """Use `storeCurrentReading()` instead."""
-        deprecation_warning_lock = getattr(self, "_deprecation_warning_lock", None)
-        if deprecation_warning_lock is None:
-            deprecation_warning_lock = threading.Lock()
-            self._deprecation_warning_lock = deprecation_warning_lock
-        with deprecation_warning_lock:
+        with self._deprecation_warning_lock:
             if not self._warned_store_current_reading_deprecation:
                 warnings.warn(
                     "store_current_reading() is deprecated; use storeCurrentReading() instead.",

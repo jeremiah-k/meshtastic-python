@@ -200,7 +200,8 @@ class MeshInterface:  # pylint: disable=R0902
         self.responseHandlers: dict[int, ResponseHandler] = (
             {}
         )  # A map from request ID to the handler
-        self.failure: BaseException | None = (
+        self._failure_lock = threading.Lock()
+        self._failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
         self._timeout: Timeout = Timeout(maxSecs=timeout)
@@ -234,6 +235,18 @@ class MeshInterface:  # pylint: disable=R0902
         # for any external consumers of the library.
         if debugOut:
             pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
+
+    @property
+    def failure(self) -> BaseException | None:
+        """Get the stored fatal connection error, if any, in a thread-safe way."""
+        with self._failure_lock:
+            return self._failure
+
+    @failure.setter
+    def failure(self, value: BaseException | None) -> None:
+        """Store a fatal connection error in a thread-safe way."""
+        with self._failure_lock:
+            self._failure = value
 
     def close(self) -> None:
         """Shut down the interface and send a disconnect to the radio.
@@ -753,9 +766,7 @@ class MeshInterface:  # pylint: disable=R0902
                 while retries_left > 0:
                     retries_left -= 1
                     if not n.waitForConfig():
-                        new_index: int = (
-                            len(n.partialChannels) if n.partialChannels else 0
-                        )
+                        new_index = n._get_partial_channel_count()
                         # each time we get a new channel, reset the counter
                         if new_index != last_index:
                             retries_left = requestChannelAttempts - 1
@@ -1710,8 +1721,9 @@ class MeshInterface:  # pylint: disable=R0902
         if hopLimit is not None:
             meshPacket.hop_limit = hopLimit
         else:
-            loraConfig = self.localNode.localConfig.lora
-            meshPacket.hop_limit = loraConfig.hop_limit
+            with self._node_db_lock:
+                default_hop_limit = self.localNode.localConfig.lora.hop_limit
+            meshPacket.hop_limit = default_hop_limit
 
         if pkiEncrypted:
             meshPacket.pki_encrypted = True

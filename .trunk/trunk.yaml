@@ -34,6 +34,78 @@ lint:
         - tests/**
         - meshtastic/tests/**
   definitions:
+    - name: actionlint
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: black
+      commands:
+        - name: format
+          disable_upstream: true
+    - name: checkov
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: git-diff-check
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: gitleaks
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: isort
+      commands:
+        - name: format
+          disable_upstream: true
+    - name: markdownlint
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: osv-scanner
+      commands:
+        - name: scan
+          disable_upstream: true
+    - name: prettier
+      commands:
+        - name: format
+          disable_upstream: true
+    - name: ruff
+      commands:
+        - name: lint
+          disable_upstream: true
+        - name: format
+          disable_upstream: true
+    - name: shellcheck
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: shfmt
+      commands:
+        - name: format
+          disable_upstream: true
+    - name: taplo
+      commands:
+        - name: lint
+          disable_upstream: true
+        - name: format
+          disable_upstream: true
+    - name: trivy
+      commands:
+        - name: fs-vuln
+          disable_upstream: true
+        - name: fs-secret
+          disable_upstream: true
+        - name: config
+          disable_upstream: true
+    - name: trufflehog
+      commands:
+        - name: lint
+          disable_upstream: true
+    - name: yamllint
+      commands:
+        - name: lint
+          disable_upstream: true
     - name: mypy-poetry
       description: Run mypy via Poetry using the project's pinned dependencies.
       files: [python, python-interface]

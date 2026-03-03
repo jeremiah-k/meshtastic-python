@@ -470,19 +470,22 @@ class Tunnel:
                 pub.unsubscribe(onTunnelReceive, TUNNEL_TOPIC)
             self._subscribed = False
 
-    # Backward-compatible aliases for existing callers/tests.
+    # COMPAT_STABLE_SHIM: historical internal helper alias for legacy callers/tests.
     def _shouldFilterPacket(self, p: bytes) -> bool:
         """Compatibility wrapper for _should_filter_packet."""
         return self._should_filter_packet(p)
 
+    # COMPAT_STABLE_SHIM: historical internal helper alias for legacy callers/tests.
     def _ipToNodeId(self, ipAddr: bytes) -> str | None:
         """Compatibility wrapper for _ip_to_node_id."""
         return self._ip_to_node_id(ipAddr)
 
+    # COMPAT_STABLE_SHIM: historical internal helper alias for legacy callers/tests.
     def _nodeNumToIp(self, nodeNum: int) -> str:
         """Compatibility wrapper for _node_num_to_ip."""
         return self._node_num_to_ip(nodeNum)
 
+    # COMPAT_STABLE_SHIM: historical public alias for _send_packet.
     def sendPacket(self, destAddr: bytes, p: bytes) -> None:
         """Compatibility wrapper for _send_packet."""
         self._send_packet(destAddr, p)
