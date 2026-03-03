@@ -77,6 +77,7 @@ class StreamInterface(MeshInterface):
 
         DEFAULT_MSG = "stream is not available"
         WRITE_NO_PROGRESS_MSG = "stream write returned no bytes"
+        WRITE_TIMEOUT_MSG = "stream write timed out waiting for progress"
 
         def __init__(self, message: str = DEFAULT_MSG) -> None:
             """Initialize with a provided or default stream-closed message."""
@@ -99,7 +100,11 @@ class StreamInterface(MeshInterface):
         noProto : bool
             If True, skip protocol-specific startup and allow using this class without a concrete stream implementation. (Default value = False)
         connectNow : bool
-            If True, call connect() after initialization and, unless `noProto` is True, wait for protocol configuration. (Default value = True)
+            If True, call connect() after initialization when a concrete stream
+            is available (or subclass provides its own stream I/O). If no
+            stream is configured in noProto mode, connect() is intentionally
+            deferred. Unless `noProto` is True, wait for protocol configuration.
+            (Default value = True)
         noNodes : bool
             Passed to the MeshInterface initializer to control node discovery behavior. (Default value = False)
         timeout : float
@@ -270,7 +275,7 @@ class StreamInterface(MeshInterface):
             while bytes_written < len(payload):
                 if time.monotonic() >= write_deadline:
                     raise StreamInterface.StreamClosedError(
-                        "stream write timed out waiting for progress"
+                        StreamInterface.StreamClosedError.WRITE_TIMEOUT_MSG
                     )
                 written = s.write(payload[bytes_written:])
                 if written is None:

@@ -70,7 +70,7 @@ def test_power_stress_client_raises_when_iface_not_initialized() -> None:
     """PowerStressClient should fail fast when myInfo.my_node_num is unavailable."""
     iface = MagicMock()
     iface.myInfo = None
-    with pytest.raises(ValueError, match="myInfo.my_node_num unavailable"):
+    with pytest.raises(ValueError, match=r"myInfo\.my_node_num unavailable"):
         PowerStressClient(iface)
 
 

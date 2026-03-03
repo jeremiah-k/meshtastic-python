@@ -117,7 +117,7 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
 
     # flush can be called during __init__ for setup; we only guarantee close()
     # won't raise and still performs underlying cleanup.
-    assert mocked_findPorts.called
+    mocked_findPorts.assert_called()
     stream.close.assert_called()
     if sys.platform != "win32":
         mocked_open.assert_called()

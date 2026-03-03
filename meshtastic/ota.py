@@ -16,12 +16,15 @@ class _SHA256Digest(Protocol):
 
     def update(self, data: bytes) -> None:
         """Update the digest with bytes."""
+        ...
 
     def digest(self) -> bytes:
         """Return raw digest bytes."""
+        ...
 
     def hexdigest(self) -> str:
         """Return digest as hexadecimal string."""
+        ...
 
 
 def _file_sha256(filename: str) -> _SHA256Digest:
@@ -92,7 +95,11 @@ class ESP32WiFiOTA:
     ) -> None:
         """Perform the OTA update.
 
-        When ``progress_callback`` is not provided, progress is printed to stdout.
+        Parameters
+        ----------
+        progress_callback : Callable[[int, int], None] | None, optional
+            Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
+            When not provided, progress is printed to stdout.
         """
         with open(self._filename, "rb") as f:
             data = f.read()

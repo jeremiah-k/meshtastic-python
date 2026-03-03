@@ -179,7 +179,7 @@ class ThreadCoordinator:
                 inert_event.set()
                 return inert_event
             if name in self._events:
-                logger.warning(
+                logger.debug(
                     "Event already exists: %s, returning existing instance", name
                 )
                 return self._events[name]
@@ -193,7 +193,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            Name of the event to retrieve.
+            Name of the event to set.
 
         Returns
         -------
@@ -312,7 +312,7 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            Name of the event to retrieve.
+            Name of the event to check and clear.
         """
         if __debug__:
             self._assert_lock_owned()

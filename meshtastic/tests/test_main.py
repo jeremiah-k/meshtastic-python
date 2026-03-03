@@ -5,7 +5,6 @@
 import base64
 import importlib.util
 import logging
-import os
 import platform
 import re
 import sys
@@ -597,9 +596,11 @@ def test_main_info_with_seriallog_stdout(capsys: pytest.CaptureFixture[str]) -> 
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info_with_seriallog_output_txt(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     """Test --info."""
-    sys.argv = ["", "--info", "--seriallog", "output.txt"]
+    output_file = tmp_path / "output.txt"
+    sys.argv = ["", "--info", "--seriallog", str(output_file)]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -621,8 +622,6 @@ def test_main_info_with_seriallog_output_txt(
         assert re.search(r"inside mocked showInfo", out, re.MULTILINE)
         assert err == ""
         mo.assert_called()
-    # do some cleanup
-    os.remove("output.txt")
 
 
 @pytest.mark.unit

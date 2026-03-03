@@ -604,8 +604,15 @@ class Node:
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        adminIndex = self.iface.localNode._get_admin_channel_index()
+        if self.iface.localNode != self:
+            # Local admin channel index is unrelated to this node's channel lock.
+            adminIndex = self.iface.localNode._get_admin_channel_index()
+        else:
+            adminIndex = 0
         with self._channels_lock:
+            if self.iface.localNode == self:
+                # Keep admin-index selection in the same critical section as local mutation.
+                adminIndex = self._get_admin_channel_index()
             channels = self.channels
             if channels is None:
                 self._raise_interface_error("Error: No channels have been read")

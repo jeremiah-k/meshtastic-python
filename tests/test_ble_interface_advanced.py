@@ -95,7 +95,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
 
             Parameters
             ----------
-            uuid : uuid.UUID | str | Any
+            uuid : str
                 Characteristic UUID to check in the client's characteristic map.
 
             Returns
@@ -346,7 +346,9 @@ def test_auto_reconnect_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     iface.close()
 
 
-def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
+def test_send_to_radio_specific_exceptions(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     """Verify that _send_to_radio_impl wraps write failures for specific exception types as BLEInterface.BLEError and logs the underlying error.
 
     This test exercises three failure modes (BleakError, RuntimeError, OSError) by using a mock client that raises the configured exception from write_gatt_char. For each case it asserts that BLEInterface.BLEError is raised and that the log contains the name of the original exception.
@@ -360,18 +362,18 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
     class ExceptionClient(DummyClient):
         """Mock client that raises exceptions during write operations."""
 
-        def __init__(self, exception_type):
+        def __init__(self, exception_type: type[Exception]) -> None:
             """Create a test client that raises a specified exception type for BLE operations.
 
             Parameters
             ----------
-            exception_type : type
+            exception_type : type[Exception]
                 Exception class that the client's BLE methods will raise when invoked.
             """
             super().__init__()
             self.exception_type = exception_type
 
-        def write_gatt_char(self, *_args, **_kwargs):
+        def write_gatt_char(self, *_args: Any, **_kwargs: Any) -> None:
             """Simulate a failing GATT characteristic write.
 
             Raises
@@ -740,7 +742,9 @@ def test_rapid_connect_disconnect_stress_test(caplog):
     ), f"Critical errors found in logs: {[r.message for r in critical]}"
 
 
-def test_ble_client_is_connected_exception_handling(caplog):
+def test_ble_client_is_connected_exception_handling(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test that BLEClient.isConnected handles exceptions gracefully."""
     # logging already imported at top
     # BLEClient already imported at top as ble_mod.BLEClient
@@ -751,17 +755,17 @@ def test_ble_client_is_connected_exception_handling(caplog):
     class ExceptionBleakClient:
         """Mock bleak client that raises exceptions during connection checks."""
 
-        def __init__(self, exception_type):
+        def __init__(self, exception_type: type[Exception]) -> None:
             """Test BLE client constructor storing an exception type used to simulate failures in BLE operations.
 
             Parameters
             ----------
-            exception_type : type
+            exception_type : type[Exception]
                 Exception class that this test client will raise from its BLE method stubs.
             """
             self.exception_type = exception_type
 
-        def is_connected(self):
+        def is_connected(self) -> bool:
             """Simulate a failing connection-state check by raising the configured exception.
 
             Raises
@@ -802,7 +806,9 @@ def test_ble_client_is_connected_exception_handling(caplog):
         ble_client.close()
 
 
-def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
+def test_ble_client_async_timeout_maps_to_ble_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """BLEClient._async_await should wrap FutureTimeoutError in BLEInterface.BLEError."""
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
@@ -888,7 +894,9 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
         coro_obj.close()
 
 
-def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
+def test_wait_for_disconnect_notifications_exceptions(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test that _wait_for_disconnect_notifications handles exceptions gracefully."""
     # logging already imported at top
 
@@ -908,7 +916,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     class MockPublishingThread:
         """Mock publishingThread that raises RuntimeError in queueWork."""
 
-        def queueWork(self, _callback):
+        def queueWork(self, _callback: Any) -> None:
             """Simulate a publishing thread failure by raising a RuntimeError.
 
             This mock implementation ignores the provided callback and unconditionally raises an error to emulate a thread failure.

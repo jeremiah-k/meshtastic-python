@@ -88,6 +88,7 @@ class BLECoroutineRunner:
     _thread: threading.Thread | None
     _loop_ready: threading.Event
     _stop_requested: bool
+    _warned_timeout_alias: bool
     _pending_futures: weakref.WeakSet[Future[Any]]
     _atexit_handler: Callable[[], None]
     _atexit_registered: bool

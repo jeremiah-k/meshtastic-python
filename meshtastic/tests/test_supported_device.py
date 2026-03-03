@@ -1,7 +1,5 @@
 """Meshtastic unit tests for supported_device.py."""
 
-from typing import cast
-
 import pytest
 
 from meshtastic.supported_device import (
@@ -533,14 +531,11 @@ def test_usb_id_aliases_preserve_order() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=cast(
-            tuple[tuple[str, str], ...],
-            (
-                ("1111", "2222"),
-                ("3333", "4444"),
-                ("1111", "2222"),  # Duplicate
-                ("5555", "6666"),
-            ),
+        usb_id_aliases=(
+            ("1111", "2222"),
+            ("3333", "4444"),
+            ("1111", "2222"),  # Duplicate
+            ("5555", "6666"),
         ),
     )
     assert device.usb_id_aliases == (
@@ -557,12 +552,9 @@ def test_usb_ids_property_preserves_order() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=cast(
-            tuple[tuple[str, str], ...],
-            (
-                ("3333", "4444"),
-                ("5555", "6666"),
-            ),
+        usb_id_aliases=(
+            ("3333", "4444"),
+            ("5555", "6666"),
         ),
     )
     usb_ids = device.usb_ids

@@ -556,7 +556,11 @@ class StructuredLogger:
                 logger.warning("Failed to close raw log file: %s", exc, exc_info=True)
         if unsubscribe_exc is not None:
             if writer_close_exc is not None:
-                raise unsubscribe_exc from writer_close_exc
+                logger.warning(
+                    "Writer close also failed after unsubscribe error: %s",
+                    writer_close_exc,
+                    exc_info=True,
+                )
             raise unsubscribe_exc
         if writer_close_exc is not None:
             raise writer_close_exc
@@ -789,9 +793,13 @@ class LogSet:
 
             if slog_close_exc is not None:
                 if power_close_exc is not None:
-                    # Python 3.10 has no ExceptionGroup, so preserve slog close
-                    # as primary and chain power close as the explicit cause.
-                    raise slog_close_exc from power_close_exc
+                    # Python 3.10 has no ExceptionGroup, so preserve the
+                    # primary error and log the secondary one.
+                    logger.warning(
+                        "Power logger close also failed: %s",
+                        power_close_exc,
+                        exc_info=True,
+                    )
                 raise slog_close_exc
             if power_close_exc is not None:
                 raise power_close_exc

@@ -5,9 +5,9 @@ import threading
 from typing import Any
 
 import pytest
-from bleak.exc import BleakError
 
 try:
+    from bleak.exc import BleakError
     from meshtastic.interfaces.ble.client import (
         SERVICE_CHARACTERISTIC_RETRY_COUNT,
         BLEClient,

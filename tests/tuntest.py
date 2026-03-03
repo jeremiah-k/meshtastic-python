@@ -37,7 +37,7 @@ PROTOCOL_BLACKLIST: set[int] = {
 
 
 def _hexstr(barray: bytes | bytearray) -> str:
-    """Print a string of hex digits."""
+    """Print a string of hex digits (kept for ad-hoc debug printouts)."""
     return ":".join(f"{x:02x}" for x in barray)
 
 
@@ -86,11 +86,13 @@ def _readtest(tap: TapDevice) -> None:
         protocol = p[8 + 1]
         srcaddr = p[12:16]
         destaddr = p[16:20]
-        subheader = (p[0] & 0x0F) * 4
-        if subheader < 20 or len(p) < subheader:
+        version = p[0] >> 4
+        ip_header_len = (p[0] & 0x0F) * 4
+        if version != 4 or ip_header_len < 20 or len(p) < ip_header_len:
             logging.debug(
-                "Dropping malformed IPv4 packet: invalid header length %d",
-                subheader,
+                "Dropping malformed IPv4 packet: version=%d, header length=%d",
+                version,
+                ip_header_len,
             )
             continue
         ignore = False  # Assume we will be forwarding the packet
@@ -98,7 +100,7 @@ def _readtest(tap: TapDevice) -> None:
             ignore = True
             logging.debug("Ignoring blacklisted protocol 0x%02x", protocol)
         elif protocol == 0x01:  # ICMP
-            icmp_offset = subheader
+            icmp_offset = ip_header_len
             if len(p) <= icmp_offset:
                 logging.debug("Ignoring malformed ICMP packet: missing type byte")
                 continue
@@ -116,7 +118,7 @@ def _readtest(tap: TapDevice) -> None:
                 checksum = _internet_checksum(bytes(icmp_reply))
                 icmp_reply[2] = (checksum >> 8) & 0xFF
                 icmp_reply[3] = checksum & 0xFF
-                ip_header = bytearray(p[:subheader])
+                ip_header = bytearray(p[:ip_header_len])
                 ip_header[10:12] = b"\x00\x00"
                 ip_header[12:16] = p[16:20]
                 ip_header[16:20] = p[12:16]
@@ -130,21 +132,21 @@ def _readtest(tap: TapDevice) -> None:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)
                 ignore = True  # Don't forward unsupported ICMP types.
         elif protocol == 0x11:  # UDP
-            if len(p) < subheader + 4:
+            if len(p) < ip_header_len + 4:
                 logging.debug("Ignoring malformed UDP packet: too short for ports")
                 continue
-            srcport = _readnet_u16(p, subheader)
-            destport = _readnet_u16(p, subheader + 2)
+            srcport = _readnet_u16(p, ip_header_len)
+            destport = _readnet_u16(p, ip_header_len + 2)
             logging.debug("udp srcport=%d, destport=%d", srcport, destport)
             if destport in UDP_BLACKLIST:
                 ignore = True
                 logging.debug("ignoring blacklisted UDP port %d", destport)
         elif protocol == 0x06:  # TCP
-            if len(p) < subheader + 4:
+            if len(p) < ip_header_len + 4:
                 logging.debug("Ignoring malformed TCP packet: too short for ports")
                 continue
-            srcport = _readnet_u16(p, subheader)
-            destport = _readnet_u16(p, subheader + 2)
+            srcport = _readnet_u16(p, ip_header_len)
+            destport = _readnet_u16(p, ip_header_len + 2)
             logging.debug("tcp srcport=%d, destport=%d", srcport, destport)
             if destport in TCP_BLACKLIST:
                 ignore = True
@@ -159,7 +161,7 @@ def _readtest(tap: TapDevice) -> None:
 
         if not ignore:
             logging.debug(
-                "Forwarding packet bytelen=%d src=%s, dest=%s",
+                "Packet eligible for forwarding bytelen=%d src=%s, dest=%s",
                 len(p),
                 _ipstr(srcaddr),
                 _ipstr(destaddr),

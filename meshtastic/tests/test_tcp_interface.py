@@ -446,6 +446,7 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_shutdown() -> None:
                 result = iface._sleep_reconnect_delay(10.0)
 
             assert result is False
+            assert sleep_calls["count"] == 1
         finally:
             iface.close()
 
@@ -474,6 +475,7 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_fatal_disconnect() ->
                 result = iface._sleep_reconnect_delay(10.0)
 
             assert result is False
+            assert sleep_calls["count"] == 1
         finally:
             iface.close()
 

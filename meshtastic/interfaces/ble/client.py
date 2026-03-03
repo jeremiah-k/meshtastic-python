@@ -465,10 +465,6 @@ class BLEClient:
                     time.sleep(SERVICE_CHARACTERISTIC_RETRY_DELAY)
         return False
 
-    def hasCharacteristic(self, specifier: str | UUID) -> bool:
-        """CamelCase alias for has_characteristic()."""
-        return self.has_characteristic(specifier)
-
     def start_notify(
         self, *args: Any, timeout: float | None = None, **kwargs: Any
     ) -> None:

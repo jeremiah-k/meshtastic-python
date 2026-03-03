@@ -8,6 +8,7 @@ import sys
 import meshtastic.tcp_interface
 
 RADIO_HOSTNAME = "meshtastic.local"  # Can also be an IP
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +40,7 @@ def main() -> None:
 
             print(position)
     except OSError as exc:
-        logger.error("Could not connect to %s: %s", RADIO_HOSTNAME, exc)
+        logger.exception("Could not connect to %s: %s", RADIO_HOSTNAME, exc)
         sys.exit(1)
 
 

@@ -1105,10 +1105,7 @@ def _discover_unix_ports(bp: str) -> set[str]:
     set[str]
         Matching absolute device paths, or an empty set.
     """
-    discovered_ports: set[str] = set()
-    for path in glob.glob(f"/dev/{bp}*"):
-        discovered_ports.add(path)
-    return discovered_ports
+    return set(glob.glob(f"/dev/{bp}*"))
 
 
 def active_ports_on_supported_devices(

@@ -136,7 +136,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
-def support_info() -> None:
+def supportInfo() -> None:
     """Print troubleshooting guidance and environment details useful for reporting CLI or library issues.
 
     Specifically prints the issue tracker URL and the running environment: system,
@@ -170,6 +170,12 @@ def support_info() -> None:
     )
     print("")
     print("Please add the output from the command: meshtastic --info")
+
+
+# COMPAT_STABLE_SHIM: historical snake_case helper name.
+def support_info() -> None:
+    """Compatibility alias for supportInfo()."""
+    supportInfo()
 
 
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
@@ -1755,7 +1761,7 @@ MODULE_TRUE_DEFAULTS: set[tuple[str, ...]] = {
 }
 
 
-def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
+def exportConfig(interface: MeshInterface) -> str:
     """Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
 
     Produces a YAML document containing selected top-level metadata (owner, owner_short, channel
@@ -1767,7 +1773,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 
     Parameters
     ----------
-    interface : meshtastic.mesh_interface.MeshInterface
+    interface : MeshInterface
         The connected interface whose local node and module configuration will be exported.
 
     Returns
@@ -1872,7 +1878,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 export_config = exportConfig
 
 
-def create_power_meter() -> None:
+def _create_power_meter() -> None:
     """Initialize and configure the global power meter from parsed CLI arguments.
 
     Validates an optional voltage (must be between MIN_SUPPLY_VOLTAGE_V and MAX_SUPPLY_VOLTAGE_V), instantiates the
@@ -1891,7 +1897,7 @@ def create_power_meter() -> None:
     args = mt_config.args
     if args is None:
         raise RuntimeError(
-            "mt_config.args must be initialized before calling create_power_meter()"
+            "mt_config.args must be initialized before calling _create_power_meter()"
         )
 
     # If the user specified a voltage, make sure it is valid
@@ -1926,6 +1932,10 @@ def create_power_meter() -> None:
         else:
             logger.info("Powered-on, waiting for device to boot")
             time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+
+
+# COMPAT_STABLE_SHIM: legacy snake_case helper for callers importing this module.
+create_power_meter = _create_power_meter
 
 
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
@@ -2066,7 +2076,7 @@ def common() -> None:
         _cli_exit("", 1)
     else:
         if args.support:
-            support_info()
+            supportInfo()
             _cli_exit("", 0)
 
         if args.list_fields:
@@ -2096,7 +2106,7 @@ def common() -> None:
                 )
 
         if have_powermon:
-            create_power_meter()
+            _create_power_meter()
 
         if args.ch_index is not None:
             channelIndex = int(args.ch_index)

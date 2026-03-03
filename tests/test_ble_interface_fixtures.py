@@ -625,6 +625,7 @@ def _build_interface(
         Parameters
         ----------
         name : str
+            Thread name (unused; kept for signature compatibility).
 
         Returns
         -------

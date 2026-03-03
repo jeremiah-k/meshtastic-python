@@ -783,6 +783,8 @@ def test_smokevirt_set_wifi_settings() -> None:
 def test_smokevirt_factory_reset() -> None:
     """Test factory reset.
 
+    Notes
+    -----
     The virtual radio may need restart after this command.
     """
     return_value, out = run_cli_with_timeout(

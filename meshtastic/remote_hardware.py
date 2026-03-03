@@ -116,7 +116,7 @@ def _parse_node_number(text: str) -> int | None:
         # Fall back to explicit decimal parsing so plain numeric strings with
         # leading zeros (for example "00123") are still accepted.
         signless = normalized[1:] if normalized[:1] in "+-" else normalized
-        if signless.isdigit() and signless:
+        if signless.isdigit():
             return int(normalized, 10)
         return None
 

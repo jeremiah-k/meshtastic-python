@@ -12,15 +12,12 @@ from pubsub import pub
 import meshtastic.tcp_interface
 
 
-def onReceive(packet: Any, interface: Any) -> None:
+def onReceive(packet: Any, _interface: Any) -> None:
     """Handle an incoming packet."""
-    _ = interface
     print(f"Received: {packet}")
 
 
-def onConnection(  # pylint: disable=unused-argument
-    interface: Any, _topic: Any = pub.AUTO_TOPIC
-) -> None:
+def onConnection(interface: Any, _topic: Any = pub.AUTO_TOPIC) -> None:
     """Handle (re)connection to the radio."""
     # defaults to broadcast, specify a destination ID if you wish
     interface.sendText("hello mesh")

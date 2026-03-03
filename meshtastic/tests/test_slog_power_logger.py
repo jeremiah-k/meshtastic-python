@@ -183,10 +183,7 @@ def test_slog_arrow_data_type_type_checking_alias_branch(
     finally:
         monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
         monkeypatch.setattr(pa, "DataType", original_data_type)
-        try:
-            importlib.reload(slog_module)
-        except Exception:
-            pytest.fail("Failed to restore slog_module state after TYPE_CHECKING test")
+        importlib.reload(slog_module)
 
 
 @pytest.mark.unit
@@ -350,8 +347,9 @@ def test_on_log_message_keeps_running_when_raw_write_raises_non_oserror(
 @pytest.mark.unit
 def test_log_set_close_preserves_primary_exception(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """LogSet.close should preserve slog close failure and chain power close as cause."""
+    """LogSet.close should raise slog close failure and log secondary power-close failure."""
     log_set = object.__new__(LogSet)
     log_set.dir_name = "tmp"
     log_set.atexit_handler = lambda: None
@@ -364,9 +362,11 @@ def test_log_set_close_preserves_primary_exception(
     log_set.power_logger.close.side_effect = power_error
     monkeypatch.setattr("meshtastic.slog.slog.atexit.unregister", lambda _: None)
 
-    with pytest.raises(ValueError, match="slog close failed") as exc_info:
-        log_set.close()
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError, match="slog close failed") as exc_info:
+            log_set.close()
 
-    assert exc_info.value.__cause__ is power_error
+    assert exc_info.value.__cause__ is None
+    assert "Power logger close also failed" in caplog.text
     assert log_set.slog_logger is None
     assert log_set.power_logger is None

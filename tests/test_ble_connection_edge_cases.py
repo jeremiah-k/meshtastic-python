@@ -406,7 +406,8 @@ def test_reconnect_worker_returns_when_should_abort_is_true() -> None:
     """_attempt_reconnect_loop should exit immediately when _should_abort_reconnect is true."""
 
     class _Policy:
-        def _reset(self) -> None:
+        @staticmethod
+        def _reset() -> None:
             pass
 
         @staticmethod

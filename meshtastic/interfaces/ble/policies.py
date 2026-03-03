@@ -8,6 +8,7 @@ from meshtastic.interfaces.ble.utils import _sleep
 
 RETRY_BACKOFF = 1.5
 RETRY_JITTER_RATIO = 0.1
+MIN_DELAY_FLOOR = 0.001
 
 
 class _RandomLike(Protocol):
@@ -150,8 +151,8 @@ class ReconnectPolicy:
         delay = min(exp_delay, self.max_delay)
         jitter = delay * self.jitter_ratio * (self._random.random() * 2.0 - 1.0)
         return min(
-            self.max_delay, max(0.001, delay + jitter)
-        )  # Clamp to [0.001, max_delay]
+            self.max_delay, max(MIN_DELAY_FLOOR, delay + jitter)
+        )  # Clamp to [MIN_DELAY_FLOOR, max_delay]
 
     def _should_retry(self, attempt: int | None = None) -> bool:
         """Return whether another retry attempt is permitted.

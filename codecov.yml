@@ -162,4 +162,4 @@ component_management:
 comment:
   layout: header, diff, flags, components, files
   behavior: default
-  require_changes: false
+  require_changes: true

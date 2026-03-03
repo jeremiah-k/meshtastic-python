@@ -49,6 +49,7 @@ def test_get_active_version_falls_back_to_meshtastic(
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
+    assert version_module.getActiveVersion() == "2.7.8"
 
 
 @pytest.mark.unit
@@ -63,6 +64,7 @@ def test_get_active_version_returns_unknown_when_not_installed(
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "unknown"
+    assert version_module.getActiveVersion() == "unknown"
 
 
 @pytest.mark.unit

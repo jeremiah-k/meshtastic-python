@@ -38,6 +38,6 @@ def test_assert_lock_owned_raises_when_lock_not_owned() -> None:
     coordinator._lock = _LockStub()  # type: ignore[assignment]
 
     with pytest.raises(
-        RuntimeError, match="Expected ThreadCoordinator._lock to be held"
+        RuntimeError, match=r"Expected ThreadCoordinator\._lock to be held"
     ):
         coordinator._assert_lock_owned()

@@ -48,8 +48,8 @@ def test_state_manager_error_recovery_path() -> None:
     state_manager = BLEStateManager()
 
     # Simulate connection attempt that fails
-    state_manager._transition_to(ConnectionState.CONNECTING)
-    state_manager._transition_to(ConnectionState.ERROR)
+    assert state_manager._transition_to(ConnectionState.CONNECTING)
+    assert state_manager._transition_to(ConnectionState.ERROR)
 
     # Should be able to recover
     assert state_manager._transition_to(ConnectionState.DISCONNECTING)
@@ -257,8 +257,8 @@ def test_error_state_allows_transition_to_disconnecting() -> None:
     state_manager = BLEStateManager()
 
     # Get to ERROR state
-    state_manager._transition_to(ConnectionState.CONNECTING)
-    state_manager._transition_to(ConnectionState.ERROR)
+    assert state_manager._transition_to(ConnectionState.CONNECTING)
+    assert state_manager._transition_to(ConnectionState.ERROR)
 
     # Critical: Should allow DISCONNECTING from ERROR for cleanup
     assert state_manager._transition_to(ConnectionState.DISCONNECTING)

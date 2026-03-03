@@ -368,7 +368,7 @@ def test_ble_package_and_legacy_facade_exports_match() -> None:
     assert canonical_exports.isdisjoint(compat_bleak_exports)
 
 
-def test_state_manager_closing_only_for_disconnect():
+def test_state_manager_closing_only_for_disconnect() -> None:
     """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()
     assert state_manager._is_closing is False
@@ -458,7 +458,9 @@ def test_handle_disconnect_ignores_stale_callbacks(
     iface.close()
 
 
-def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_registry):
+def test_concurrent_connect_and_disconnect_do_not_deadlock(
+    monkeypatch: pytest.MonkeyPatch, clear_registry: Any
+) -> None:
     """Concurrent connect/disconnect should complete without deadlocking under address-lock contention.
 
     This test forces connect() to hold the per-address lock while _handle_disconnect()
@@ -1150,7 +1152,7 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
     monkeypatch.setattr(
         discovery_mod.asyncio,
         "wait_for",
-        lambda awaitable, _timeout: awaitable,
+        lambda awaitable, timeout=None, **_kwargs: awaitable,
     )
     monkeypatch.setattr(
         discovery_mod.inspect,
@@ -1806,7 +1808,9 @@ def test_reconnect_worker_successful_attempt():
 
             Attributes
             ----------
+            reset_called : bool
                 True if reset() has been invoked.
+            _attempt_count : int
                 Number of connection attempts recorded.
             """
             self.reset_called = False
@@ -1872,6 +1876,7 @@ def test_reconnect_worker_successful_attempt():
                 Simulates an active connection state.
             address : str
                 Device address used for connect attempts.
+            client : object
                 Placeholder BLE client object.
             connect_calls : list
                 Records addresses passed to `connect` for assertions in tests.
@@ -2021,6 +2026,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
                 Indicates whether the interface is currently connected.
             address : str
                 Remote device address used for connection attempts.
+            client : object | None
                 Placeholder for the BLE client instance (initially None).
             connect_attempts : int
                 Counter of connect() invocation attempts.

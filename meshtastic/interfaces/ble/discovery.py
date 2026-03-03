@@ -36,6 +36,7 @@ _BLE_ADDRESS_SHAPE_RE = re.compile(
 _DISCOVERY_FACTORY_LOG_KWARG = "log_if_no_address"
 _UNEXPECTED_KEYWORD_FRAGMENT = "unexpected keyword argument"
 _PENDING_DISCOVERY_CLOSE_TASKS: set[asyncio.Task[None]] = set()
+_PENDING_DISCOVERY_CLOSE_TASKS_LOCK = threading.Lock()
 
 
 @runtime_checkable
@@ -62,7 +63,8 @@ def _looks_like_ble_address(identifier: str) -> bool:
 
 def _finalize_discovery_close_task(task: asyncio.Task[None]) -> None:
     """Release retained close tasks and log failures in best-effort cleanup paths."""
-    _PENDING_DISCOVERY_CLOSE_TASKS.discard(task)
+    with _PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        _PENDING_DISCOVERY_CLOSE_TASKS.discard(task)
     with contextlib.suppress(asyncio.CancelledError):
         close_exc = task.exception()
         if close_exc is not None:
@@ -134,7 +136,8 @@ def _close_discovery_client_best_effort(client: Any) -> None:
                     timeout=close_timeout,
                 )
             )
-            _PENDING_DISCOVERY_CLOSE_TASKS.add(close_task)
+            with _PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+                _PENDING_DISCOVERY_CLOSE_TASKS.add(close_task)
             close_task.add_done_callback(_finalize_discovery_close_task)
         except Exception:  # noqa: BLE001 - best effort cleanup path
             logger.debug(
@@ -387,6 +390,9 @@ class DiscoveryManager:
         """
         stale_clients: list[Any] = []
         invalid_client_error: DiscoveryClientError | None = None
+        resolved_factory: Callable[..., Any] = cast(
+            Callable[..., Any], self.client_factory or BLEClient
+        )
         with self._client_lock:
 
             def _discard_cached_client() -> None:
@@ -427,7 +433,7 @@ class DiscoveryManager:
                 ble_mod = resolveBleModule()
                 if ble_mod is None:
                     logger.debug("No BLE module found; using default BLEClient")
-                resolved_factory: Callable[..., Any] = cast(
+                resolved_factory = cast(
                     Callable[..., Any],
                     self.client_factory or getattr(ble_mod, "BLEClient", BLEClient),
                 )

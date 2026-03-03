@@ -33,24 +33,10 @@ class TestAddrKey:
         assert _addr_key("AA_BB_CC_DD_EE_FF") == "aabbccddeeff"
         assert _addr_key("aa bb cc dd ee ff") == "aabbccddeeff"
 
-    def test_none_address(self) -> None:
-        """Test that None address returns None."""
-        assert _addr_key(None) is None
-
-    def test_empty_address(self) -> None:
-        """Test that empty address returns None."""
-        assert _addr_key("") is None
-
-    def test_whitespace_address(self) -> None:
-        """Test that whitespace-only address returns None."""
-        assert _addr_key("   ") is None
-        assert _addr_key("\t\n") is None
-
-    def test_empty_inputs_normalize_to_none(self) -> None:
+    @pytest.mark.parametrize("input_val", [None, "", "   ", "\t\n"])
+    def test_empty_like_inputs_normalize_to_none(self, input_val: str | None) -> None:
         """Test that None/empty/whitespace inputs all normalize to None."""
-        assert _addr_key(None) is None
-        assert _addr_key("") is None
-        assert _addr_key("   ") is None
+        assert _addr_key(input_val) is None
 
     @given(
         st.from_regex(r"[0-9a-fA-F]{2}([:_\- ][0-9a-fA-F]{2}){5}", fullmatch=True)
@@ -70,15 +56,20 @@ class TestAddrLock:
 
     def test_get_lock_for_valid_address(self) -> None:
         """Test that locks are created for valid addresses."""
-        lock1 = _get_addr_lock("aabbccddeeff")
+        addr = "aabbccddeeff"
+        lock1 = _get_addr_lock(addr)
         assert lock1 is not None
         # Check that it's a reentrant lock by attempting to acquire twice
         lock1.acquire()
+        acquired_twice = False
         try:
-            assert lock1.acquire(blocking=False)
+            acquired_twice = lock1.acquire(blocking=False)
+            assert acquired_twice
         finally:
+            if acquired_twice:
+                lock1.release()
             lock1.release()
-            lock1.release()
+            _release_addr_lock(addr)
 
     def test_get_lock_for_none_address(self) -> None:
         """Test that None address returns registry lock."""
@@ -100,13 +91,14 @@ class TestAddrLock:
 
     def test_lock_cleanup_removes_from_registry(self) -> None:
         """Test that _cleanup_addr_lock removes the lock from registry when no holders remain."""
-        key = _addr_key("testaddress")
-        _get_addr_lock("testaddress")
+        address = "aabbccddeeff"
+        key = _addr_key(address)
+        _get_addr_lock(address)
         assert key in _ADDR_LOCKS
         # Release the holder count that was incremented by _get_addr_lock
-        _release_addr_lock("testaddress")
+        _release_addr_lock(address)
         # Now cleanup should work since no holders remain
-        _cleanup_addr_lock("testaddress")
+        _cleanup_addr_lock(address)
         assert key not in _ADDR_LOCKS
 
     def test_addr_lock_context_cleans_unconnected_lock(self) -> None:
@@ -188,19 +180,20 @@ class TestMarkDisconnected:
     def test_mark_disconnected_cleanup_lock(self) -> None:
         """Verify marking an address disconnected removes its per-address lock.
 
-        The test enters `_addr_lock_context` for "testaddress", marks it
+        The test enters `_addr_lock_context` for "aabbccddeeff", marks it
         connected, and asserts the lock remains after the context exits. After
-        calling `_mark_disconnected("testaddress")`, the test asserts the lock
+        calling `_mark_disconnected("aabbccddeeff")`, the test asserts the lock
         has been removed from `_ADDR_LOCKS`.
         """
-        key = _addr_key("testaddress")
+        address = "aabbccddeeff"
+        key = _addr_key(address)
         assert key is not None
         # Use context manager for proper holder count management
-        with _addr_lock_context("testaddress") as lock:
+        with _addr_lock_context(address) as lock:
             with lock:
-                _mark_connected("testaddress")
+                _mark_connected(address)
         assert key in _ADDR_LOCKS  # Lock still exists
-        _mark_disconnected("testaddress")
+        _mark_disconnected(address)
         assert key not in _ADDR_LOCKS  # Lock cleaned up
 
     def test_mark_disconnected_ignores_non_owner(self) -> None:
@@ -208,8 +201,6 @@ class TestMarkDisconnected:
 
         class Owner:
             """Test owner stub."""
-
-            pass
 
         owner_a = Owner()
         owner_b = Owner()
