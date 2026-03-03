@@ -1048,13 +1048,11 @@ def test_get_url_requests_lora_config_when_local_config_empty(
         _make_channel(0, Channel.Role.PRIMARY, name="primary", psk=b"\x01")
     ]
     anode.localConfig.Clear()
-    anode.requestConfig = MagicMock()
-
-    anode.getURL(includeAll=False)
-
-    anode.requestConfig.assert_called_once_with(
-        anode.localConfig.DESCRIPTOR.fields_by_name["lora"]
-    )
+    with patch.object(anode, "requestConfig") as request_config_mock:
+        anode.getURL(includeAll=False)
+        request_config_mock.assert_called_once_with(
+            anode.localConfig.DESCRIPTOR.fields_by_name["lora"]
+        )
 
 
 @pytest.mark.unit
