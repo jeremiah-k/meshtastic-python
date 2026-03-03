@@ -286,3 +286,63 @@ def test_ip_to_node_id_all(
         tun = Tunnel(iface)
         nodeid = tun._ip_to_node_id(b"\x00\x00\xff\xff")
         assert nodeid == "^all"
+
+
+@pytest.mark.unit
+def test_tun_reader_forwards_unfiltered_packets(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_tun_reader should forward packets when filtering says they are allowed."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    tun = Tunnel(iface)
+    try:
+        packet = b"\x45\x00\x00\x28\x00\x00\x00\x00\x40\x11\x00\x00\x0a\x73\x01\x01\x0a\x73\x02\x02"
+        tap = MagicMock()
+        tap.read.return_value = packet
+        tun.tun = tap
+        tun._should_filter_packet = MagicMock(return_value=False)  # type: ignore[method-assign]
+
+        def _capture_and_stop(dest_addr: bytes, payload: bytes) -> None:
+            assert payload == packet
+            assert dest_addr == packet[16:20]
+            tun._stop_event.set()
+
+        tun._send_packet = MagicMock(side_effect=_capture_and_stop)  # type: ignore[method-assign]
+        tun._tun_reader()
+        tun._send_packet.assert_called_once()
+    finally:
+        tun.close()
+
+
+@pytest.mark.unit
+def test_ip_to_node_id_returns_none_when_nodes_unavailable(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_ip_to_node_id should return None when iface.nodes is missing/empty."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    iface.nodes = None
+    tun = Tunnel(iface)
+    try:
+        assert tun._ip_to_node_id(b"\x00\x00\x12\x34") is None
+    finally:
+        tun.close()
+
+
+@pytest.mark.unit
+def test_ip_to_node_id_returns_matching_user_id(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_ip_to_node_id should return user.id for matching node-number low bits."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    iface.nodes = {
+        "!candidate": {"num": 0xABCD1234, "user": {"id": "!candidate"}},
+        "!ignored": {"num": 0xABCD1111, "user": {"id": "!ignored"}},
+    }
+    tun = Tunnel(iface)
+    try:
+        assert tun._ip_to_node_id(b"\x00\x00\x12\x34") == "!candidate"
+    finally:
+        tun.close()

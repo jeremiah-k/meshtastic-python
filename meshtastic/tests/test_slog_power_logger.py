@@ -1,7 +1,9 @@
 """Unit tests for power logging behavior in slog.py."""
 
+import importlib
 import logging
 import threading
+import typing
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -137,6 +139,31 @@ def test_root_dir_legacy_alias_warns_once(
     ]
     assert len(deprecations) == 1
     assert "root_dir()" in str(deprecations[0].message)
+
+
+@pytest.mark.unit
+def test_slog_arrow_data_type_type_checking_alias_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reload slog with TYPE_CHECKING enabled to exercise ArrowDataType type-alias branch."""
+    original_data_type = pa.DataType
+
+    class _SubscriptableDataType:
+        """Minimal stand-in that supports class subscription syntax."""
+
+        @classmethod
+        def __class_getitem__(cls, _item: Any) -> type["_SubscriptableDataType"]:
+            return cls
+
+    try:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+        monkeypatch.setattr(pa, "DataType", _SubscriptableDataType)
+        reloaded = importlib.reload(slog_module)
+        assert reloaded.ArrowDataType is _SubscriptableDataType
+    finally:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", False)
+        monkeypatch.setattr(pa, "DataType", original_data_type)
+        importlib.reload(slog_module)
 
 
 @pytest.mark.unit

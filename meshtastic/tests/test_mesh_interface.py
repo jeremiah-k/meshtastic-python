@@ -1,5 +1,7 @@
 """Meshtastic unit tests for mesh_interface.py."""
 
+import builtins
+import importlib.util
 import logging
 import re
 import threading
@@ -12,6 +14,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import meshtastic.mesh_interface as mesh_interface_module
+
 from .. import BROADCAST_ADDR, LOCAL_ADDR
 from ..mesh_interface import MeshInterface, _timeago
 from ..node import Node
@@ -23,6 +27,37 @@ from ..util import Timeout
 
 if TYPE_CHECKING:
     from .conftest import FakeTimer
+
+
+@pytest.mark.unit
+def test_mesh_interface_import_handles_missing_print_color(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Import should gracefully set print_color to None when dependency is unavailable."""
+    module_path = Path(mesh_interface_module.__file__)
+    spec = importlib.util.spec_from_file_location(
+        "meshtastic.mesh_interface_import_fallback_test", module_path
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    isolated_module = importlib.util.module_from_spec(spec)
+
+    real_import = builtins.__import__
+
+    def _import_with_print_color_failure(
+        name: str,
+        globals_dict: Any = None,
+        locals_dict: Any = None,
+        from_list: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
+        if name == "print_color":
+            raise ImportError("simulated missing print_color")
+        return real_import(name, globals_dict, locals_dict, from_list, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import_with_print_color_failure)
+    spec.loader.exec_module(isolated_module)
+    assert isolated_module.print_color is None
 
 
 @pytest.mark.unit
@@ -692,6 +727,53 @@ def test_sendPacket_with_destination_is_blank_without_nodes(
     with caplog.at_level(logging.WARNING):
         iface._send_packet(meshPacket, destinationId="")
     assert re.search(r"Warning: There were no self.nodes.", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_raises_when_node_record_lacks_numeric_num(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_send_packet should reject DB node records that do not provide an integer num."""
+    iface = iface_with_nodes
+    iface.nodes = {"bad": {"user": {"id": "bad"}}}
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId bad has no numeric 'num' in DB",
+    ):
+        iface._send_packet(mesh_packet, destinationId="bad")
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_uses_numeric_num_from_node_record(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_send_packet should use node['num'] when destination resolves via DB lookup."""
+    iface = iface_with_nodes
+    iface.nodes = {"dst": {"num": 4242}}
+    mesh_packet = mesh_pb2.MeshPacket()
+
+    sent = iface._send_packet(mesh_packet, destinationId="dst")
+
+    assert sent.to == 4242
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_applies_explicit_hoplimit_and_pki_encrypted_flag() -> None:
+    """_send_packet should honor explicit hopLimit and pkiEncrypted parameters."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+        sent = iface._send_packet(
+            mesh_packet,
+            destinationId=123,
+            hopLimit=5,
+            pkiEncrypted=True,
+        )
+    assert sent.hop_limit == 5
+    assert sent.pki_encrypted is True
 
 
 @pytest.mark.unit

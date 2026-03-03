@@ -13,6 +13,7 @@ from meshtastic import (
     _on_admin_receive,
     _on_node_info_receive,
     _on_position_receive,
+    _on_telemetry_receive,
     _on_text_receive,
     _receive_info_update,
     mt_config,
@@ -65,6 +66,27 @@ def test_init_on_position_receive(
 
 
 @pytest.mark.unit
+def test_init_on_position_receive_updates_node_position(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Position payloads with a valid sender should update the node's cached position."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"position": {"latitudeI": 123456, "longitudeI": 654321}},
+    }
+
+    _on_position_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "position" in node
+    assert node["position"]["latitudeI"] == 123456
+
+
+@pytest.mark.unit
 def test_init_on_node_info_receive(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
@@ -95,6 +117,21 @@ def test_init_on_node_info_receive(
 
 
 @pytest.mark.unit
+def test_init_on_node_info_receive_returns_when_sender_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_on_node_info_receive should return early when packet lacks sender metadata."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = create_autospec(SerialInterface, instance=True)
+    packet = {"decoded": {"user": {"id": "bar"}}}
+
+    _on_node_info_receive(iface, packet)
+
+    iface._get_or_create_by_num.assert_not_called()
+
+
+@pytest.mark.unit
 def test_init_on_admin_receive_redacts_last_received(
     iface_with_nodes: MeshInterface,
 ) -> None:
@@ -119,6 +156,87 @@ def test_init_on_admin_receive_redacts_last_received(
     assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
     # Input packet should remain unchanged for callback consumers.
     assert packet["decoded"]["admin"]["raw"].session_passkey == b"abc123"
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_updates_metrics_dict(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry metrics should merge into the node database under the matching key."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"deviceMetrics": {"batteryLevel": 95}}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["deviceMetrics"]["batteryLevel"] == 95
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_ignores_non_dict_metric_payload(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry update should return early when selected metric payload is not a dict."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"deviceMetrics": 123}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "deviceMetrics" not in node
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_replaces_non_dict_existing_metrics(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry update should replace non-dict cached metrics before merging."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    node = iface._get_or_create_by_num(4808675309)
+    node["deviceMetrics"] = "invalid"
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"deviceMetrics": {"voltage": 4.2}}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    metrics = node["deviceMetrics"]
+    assert isinstance(metrics, dict)
+    assert metrics.get("voltage") == 4.2
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_returns_when_passkey_missing(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin handler should return without mutating passkey when payload lacks one."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": {}}},
+        "rxTime": 100,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "adminSessionPassKey" not in node
 
 
 @pytest.mark.unit
