@@ -252,7 +252,7 @@ def test_concurrent_access_thread_safety() -> None:
             # Access the deprecated alias (warns once per process)
             _ = mt_config.tunnelInstance  # pyright: ignore[reportAttributeAccessIssue]
             results.append("success")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - test captures thread errors
             results.append(f"error: {e}")
 
     threads = [threading.Thread(target=access_deprecated_alias) for _ in range(20)]

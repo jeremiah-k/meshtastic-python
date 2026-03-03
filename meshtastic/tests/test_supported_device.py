@@ -173,30 +173,30 @@ def test_supported_device_usb_id_too_long() -> None:
 
 @pytest.mark.unit
 def test_supported_device_usb_vendor_id_non_string() -> None:
-    """Test that non-string vendor ID is handled by type checker."""
-    # Type hints prevent passing non-string values at type-check time.
-    # Runtime behavior is covered by other tests.
-    # This test is a placeholder for type safety documentation.
-    device = SupportedDevice(
-        name="Test",
-        usb_vendor_id_in_hex="1234",
-        usb_product_id_in_hex="ea60",
-    )
-    assert device.usb_vendor_id_in_hex == "1234"
+    """Test that non-string vendor ID raises a validation error at runtime."""
+    with pytest.raises(
+        SupportedDeviceValidationError,
+        match="expected str or None",
+    ):
+        SupportedDevice(
+            name="Test",
+            usb_vendor_id_in_hex=1234,  # type: ignore[arg-type]
+            usb_product_id_in_hex="ea60",
+        )
 
 
 @pytest.mark.unit
 def test_supported_device_usb_product_id_non_string() -> None:
-    """Test that non-string product ID is handled by type checker."""
-    # Type hints prevent passing non-string values at type-check time.
-    # Runtime behavior is covered by other tests.
-    # This test is a placeholder for type safety documentation.
-    device = SupportedDevice(
-        name="Test",
-        usb_vendor_id_in_hex="10c4",
-        usb_product_id_in_hex="ea60",
-    )
-    assert device.usb_product_id_in_hex == "ea60"
+    """Test that non-string product ID raises a validation error at runtime."""
+    with pytest.raises(
+        SupportedDeviceValidationError,
+        match="expected str or None",
+    ):
+        SupportedDevice(
+            name="Test",
+            usb_vendor_id_in_hex="10c4",
+            usb_product_id_in_hex=0xEA60,  # type: ignore[arg-type]
+        )
 
 
 @pytest.mark.unit
@@ -218,7 +218,7 @@ def test_supported_device_usb_id_aliases_list() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=(("303A", "1001"), ("1A86", "55D4")),
+        usb_id_aliases=[("303A", "1001"), ("1A86", "55D4")],  # type: ignore[arg-type]
     )
     assert device.usb_id_aliases == (("303a", "1001"), ("1a86", "55d4"))
 
@@ -230,8 +230,9 @@ def test_supported_device_usb_id_aliases_none() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=(),
+        usb_id_aliases=None,  # type: ignore[arg-type]
     )
+    assert isinstance(device.usb_id_aliases, tuple)
     assert not device.usb_id_aliases
 
 
@@ -485,8 +486,7 @@ def test_supported_devices_list() -> None:
 @pytest.mark.unit
 def test_supported_devices_no_duplicates() -> None:
     """Test that supported_devices list has no duplicate entries."""
-    # With eq=False, all instances are different, so just check count
-    assert len(supported_devices) == len(supported_devices)
+    assert len(supported_devices) == len(set(map(repr, supported_devices)))
 
 
 @pytest.mark.unit

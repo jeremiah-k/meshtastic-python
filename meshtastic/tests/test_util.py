@@ -5,7 +5,8 @@ import binascii
 import json
 import logging
 import re
-import time
+import threading
+import warnings
 from collections import Counter
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -1344,19 +1345,14 @@ def test_our_exit_empty_message(capsys: pytest.CaptureFixture[str]) -> None:
 def test_deferred_execution_runs_closure() -> None:
     """Test that DeferredExecution runs closures in background thread."""
 
-    result_list: list[int] = []
+    first = threading.Event()
+    second = threading.Event()
     de = DeferredExecution(name="test_thread")
 
-    # Queue some work
-    de.queueWork(lambda: result_list.append(1))
-    de.queueWork(lambda: result_list.append(2))
-
-    # Wait for work to complete
-
-    time.sleep(0.2)
-
-    assert 1 in result_list
-    assert 2 in result_list
+    de.queueWork(first.set)
+    de.queueWork(second.set)
+    assert first.wait(timeout=1.0)
+    assert second.wait(timeout=1.0)
 
 
 @pytest.mark.unit
@@ -1365,17 +1361,20 @@ def test_deferred_execution_handles_exceptions(
 ) -> None:
     """Test that DeferredExecution logs exceptions without crashing."""
 
+    completion = threading.Event()
     de = DeferredExecution(name="test_exception_thread")
 
     # Queue work that raises exception
     def bad_closure() -> None:
         raise ValueError("Test exception")
 
+    def signal_completion() -> None:
+        completion.set()
+
     with caplog.at_level(logging.DEBUG):
         de.queueWork(bad_closure)
-
-        # Wait for work to complete
-        time.sleep(0.2)
+        de.queueWork(signal_completion)
+        assert completion.wait(timeout=1.0)
 
     # Should have logged the exception
     assert "Unexpected error in deferred execution" in caplog.text
@@ -1556,9 +1555,13 @@ def test_dotdict_missing_attr_returns_none() -> None:
 
 @pytest.mark.unit
 def test_dotdict_deprecated_warns() -> None:
-    """Test dotdict deprecated alias warns."""
+    """Test dotdict deprecated alias warns once per process."""
 
-    with pytest.warns(DeprecationWarning):
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("once", DeprecationWarning)
         dd = dotdict()  # pyright: ignore[reportDeprecated]
-
+        _ = dotdict()  # pyright: ignore[reportDeprecated]
     assert isinstance(dd, dict)
+    assert len(captured) == 1
+    assert issubclass(captured[0].category, DeprecationWarning)
+    assert "dotdict" in str(captured[0].message).lower()

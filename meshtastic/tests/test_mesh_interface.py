@@ -1039,16 +1039,18 @@ def test_concurrent_queue_operations() -> None:
                 for i in range(50):
                     packet_id = start_id * 100 + i
                     packet = mesh_pb2.ToRadio()
-                    iface.queue[packet_id] = packet
+                    with iface._queue_lock:
+                        iface.queue[packet_id] = packet
             except Exception as e:
                 errors.append(e)
 
         def remove_from_queue() -> None:
             try:
                 for _ in range(25):
-                    if iface.queue:
-                        key = next(iter(iface.queue))
-                        iface.queue.pop(key, None)
+                    with iface._queue_lock:
+                        if iface.queue:
+                            key = next(iter(iface.queue))
+                            iface.queue.pop(key, None)
             except Exception as e:
                 errors.append(e)
 
@@ -1112,7 +1114,7 @@ def test_concurrent_close_with_packet_id_generation() -> None:
             except Exception as e:
                 errors.append(e)
 
-        threads = [threading.Thread(target=generate_ids, daemon=True) for _ in range(5)]
+        threads = [threading.Thread(target=generate_ids) for _ in range(5)]
         for t in threads:
             t.start()
 
@@ -1121,6 +1123,9 @@ def test_concurrent_close_with_packet_id_generation() -> None:
 
         # Signal threads to stop
         stop_flag.set()
+        for t in threads:
+            t.join(timeout=1.0)
+        assert all(not t.is_alive() for t in threads)
 
     # Close is implicit in context manager exit
     assert len(errors) == 0
@@ -1189,8 +1194,15 @@ def test_concurrent_getNode() -> None:
 
 
 @pytest.mark.unit
-def test_packet_id_no_collision_after_many_generations() -> None:
+def test_packet_id_no_collision_after_many_generations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that packet IDs don't collide after many generations."""
+    next_random = iter(range(1_000_000))
+    monkeypatch.setattr(
+        "meshtastic.mesh_interface.random.randint",
+        lambda _a, _b: next(next_random),
+    )
     with MeshInterface(noProto=True) as iface:
         packet_ids = set()
 
