@@ -2,6 +2,7 @@
 
 import builtins
 import importlib.util
+import io
 import logging
 import re
 import threading
@@ -115,6 +116,22 @@ def test_MeshInterface(
     assert re.search(r"Channels", out, re.MULTILINE)
     assert re.search(r"Primary channel URL", out, re.MULTILINE)
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_showInfo_skips_nodes_without_user_dict() -> None:
+    """ShowInfo should ignore node records whose user payload is not a dict."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!bad": {"num": 1, "user": "invalid"},
+            "!good": {"num": 2, "user": {"id": "!good"}},
+        }
+        output = io.StringIO()
+        summary = iface.showInfo(file=output)
+
+    assert '"!good"' in summary
+    assert '"!bad"' not in summary
 
 
 @pytest.mark.unit
@@ -773,6 +790,21 @@ def test_sendPacket_applies_explicit_hoplimit_and_pki_encrypted_flag() -> None:
         )
     assert sent.hop_limit == 5
     assert sent.pki_encrypted is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_sets_public_key_when_provided() -> None:
+    """_send_packet should populate meshPacket.public_key when provided."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+        sent = iface._send_packet(
+            mesh_packet,
+            destinationId=123,
+            publicKey=b"\xaa\xbb",
+        )
+
+    assert sent.public_key == b"\xaa\xbb"
 
 
 @pytest.mark.unit

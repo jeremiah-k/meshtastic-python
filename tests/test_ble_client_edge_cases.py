@@ -5,9 +5,13 @@ import threading
 from typing import Any
 
 import pytest
+from bleak.exc import BleakError
 
 try:
-    from meshtastic.interfaces.ble.client import BLEClient
+    from meshtastic.interfaces.ble.client import (
+        SERVICE_CHARACTERISTIC_RETRY_COUNT,
+        BLEClient,
+    )
     from meshtastic.interfaces.ble.constants import (
         BLECLIENT_ERROR_ASYNC_TIMEOUT,
         BLECLIENT_ERROR_CANCELLED,
@@ -183,6 +187,50 @@ def test_bleclient_discover_method_exists() -> None:
         assert hasattr(client, "_discover")
         assert callable(client.discover)
         assert callable(client._discover)
+    finally:
+        client.close()
+
+
+@pytest.mark.unit
+def test_bleclient_with_timeout_delegates_to_utils_wrapper() -> None:
+    """_with_timeout should execute through the shared withTimeout utility."""
+
+    async def _done() -> str:
+        return "ok"
+
+    assert (
+        asyncio.run(BLEClient._with_timeout(_done(), timeout=1.0, label="test")) == "ok"
+    )
+
+
+@pytest.mark.unit
+def test_bleclient_has_characteristic_retries_and_skips_final_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """has_characteristic should retry BleakError reads and avoid sleeping after final retry."""
+
+    class _Services:
+        def get_characteristic(self, _specifier: str) -> object:
+            raise BleakError("transient services lookup failure")
+
+    client = BLEClient(address=None, log_if_no_address=False)
+    try:
+        services = _Services()
+        sleep_calls: list[float] = []
+        client.bleak_client = type("_BleakClient", (), {"services": services})()
+        monkeypatch.setattr(client, "_get_services", lambda: services)
+        monkeypatch.setattr(
+            client.error_handler,
+            "_safe_execute",
+            lambda operation, **_kwargs: operation(),
+        )
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.client.time.sleep",
+            lambda delay: sleep_calls.append(delay),
+        )
+
+        assert client.has_characteristic("0000") is False
+        assert len(sleep_calls) == SERVICE_CHARACTERISTIC_RETRY_COUNT - 1
     finally:
         client.close()
 

@@ -349,6 +349,26 @@ def test_tun_reader_forwards_unfiltered_packets(
 
 
 @pytest.mark.unit
+def test_tun_reader_stops_on_read_failure(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_tun_reader should log and stop when tap.read raises unexpectedly."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    tun = Tunnel(iface)
+    try:
+        tap = MagicMock()
+        tap.read.side_effect = OSError("read failed")
+        tun.tun = tap
+        with caplog.at_level(logging.ERROR):
+            tun._tun_reader()
+        assert "TUN reader terminating due to read failure" in caplog.text
+    finally:
+        tun.close()
+
+
+@pytest.mark.unit
 def test_ip_to_node_id_returns_none_when_nodes_unavailable(
     iface_with_nodes: MeshInterface,
 ) -> None:
@@ -359,6 +379,23 @@ def test_ip_to_node_id_returns_none_when_nodes_unavailable(
     tun = Tunnel(iface)
     try:
         assert tun._ip_to_node_id(b"\x00\x00\x12\x34") is None
+    finally:
+        tun.close()
+
+
+@pytest.mark.unit
+def test_ip_to_node_id_short_destination_is_ignored(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_ip_to_node_id should ignore short destination addresses."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    tun = Tunnel(iface)
+    try:
+        with caplog.at_level(logging.DEBUG):
+            assert tun._ip_to_node_id(b"\x00\x01\x02") is None
+        assert "Ignoring short destination address" in caplog.text
     finally:
         tun.close()
 
@@ -377,5 +414,36 @@ def test_ip_to_node_id_returns_matching_user_id(
     tun = Tunnel(iface)
     try:
         assert tun._ip_to_node_id(b"\x00\x00\x12\x34") == "!candidate"
+    finally:
+        tun.close()
+
+
+@pytest.mark.unit
+def test_ip_to_node_id_skips_nodes_without_integer_num(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_ip_to_node_id should ignore node entries that do not expose integer num values."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    tun = Tunnel(iface)
+    try:
+        iface.nodes = {"!bad": {"num": "not-an-int", "user": {"id": "!bad"}}}
+        assert tun._ip_to_node_id(b"\x00\x00\x12\x34") is None
+    finally:
+        tun.close()
+
+
+@pytest.mark.unit
+def test_should_filter_packet_alias_delegates(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_shouldFilterPacket should delegate to _should_filter_packet."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    tun = Tunnel(iface)
+    try:
+        tun._should_filter_packet = MagicMock(return_value=True)  # type: ignore[method-assign]
+        assert tun._shouldFilterPacket(b"\x00" * 20) is True
+        tun._should_filter_packet.assert_called_once()
     finally:
         tun.close()

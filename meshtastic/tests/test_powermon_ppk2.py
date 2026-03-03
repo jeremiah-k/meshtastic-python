@@ -256,3 +256,32 @@ def test_close_always_attempts_transport_cleanup(
     ppk.r.stop_measuring.assert_called_once()
     ppk.r.close.assert_called_once()
     ppk.r.ser.close.assert_called_once()
+
+
+@pytest.mark.unit
+def test_ppk2_constructor_initializes_measurement_thread_and_warning_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PPK2PowerSupply.__init__ should configure thread and warning-tracking flags."""
+
+    class _FakePPK2Api:
+        def __init__(self, port_name: str) -> None:
+            self.port_name = port_name
+            self.modifiers_called = False
+
+        def get_modifiers(self) -> None:
+            """Simulate loading PPK2 modifiers during construction."""
+            self.modifiers_called = True
+
+    monkeypatch.setattr(
+        "meshtastic.powermon.ppk2.ppk2_api.PPK2_API",
+        _FakePPK2Api,
+    )
+
+    ppk = PPK2PowerSupply(portName="COM9")
+
+    assert ppk.measurement_thread.name == "ppk2 measurement"
+    assert ppk.measurement_thread.daemon is True
+    assert ppk._warned_get_min_current_lowercase_m is False
+    assert ppk._warned_get_max_current_lowercase_m is False
+    assert ppk._warned_get_average_current_lowercase_m is False

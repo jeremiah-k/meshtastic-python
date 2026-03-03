@@ -1,5 +1,7 @@
 """Edge case tests for BLE connection management."""
 
+import importlib
+import typing
 from threading import Event, RLock
 from unittest.mock import MagicMock
 
@@ -310,3 +312,192 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
     client_manager._safe_close_client.assert_called_once_with(mock_client)
+
+
+@pytest.mark.unit
+def test_connection_module_type_checking_branch_imports_bleak_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reloading with TYPE_CHECKING=True should execute the guarded BleakRootClient import."""
+    import meshtastic.interfaces.ble.connection as connection_module
+
+    monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+    reloaded = importlib.reload(connection_module)
+    try:
+        assert "BleakRootClient" in reloaded.__dict__
+    finally:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", False)
+        importlib.reload(connection_module)
+
+
+@pytest.mark.unit
+def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address() -> (
+    None
+):
+    """_finalize_connection should call on_connected and set reconnected_event for prior sessions."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    assert state_manager._transition_to(ConnectionState.CONNECTING)
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._ever_connected = True
+    thread_coordinator = MagicMock()
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=MagicMock(),
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=thread_coordinator,
+    )
+    client = MagicMock()
+    client.isConnected.return_value = True
+    on_connected = MagicMock()
+
+    with pytest.MonkeyPatch.context() as patch_ctx:
+        patch_ctx.setattr(
+            "meshtastic.interfaces.ble.connection.sanitizeAddress",
+            lambda _address: "aa:bb:cc:dd:ee:ff",
+        )
+        orchestrator._finalize_connection(
+            client=client,
+            device_address="AA-BB-CC-DD-EE-FF",
+            register_notifications_func=lambda _client: None,
+            on_connected_func=on_connected,
+        )
+
+    on_connected.assert_called_once_with()
+    thread_coordinator._set_event.assert_called_once_with("reconnected_event")
+
+
+@pytest.mark.unit
+def test_establish_connection_rejects_whitespace_target_address() -> None:
+    """_establish_connection should fail fast for empty/whitespace target addresses."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=MagicMock(),
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError):
+        orchestrator._establish_connection(
+            address="   ",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+
+@pytest.mark.unit
+def test_reconnect_worker_returns_when_should_abort_is_true() -> None:
+    """_attempt_reconnect_loop should exit immediately when _should_abort_reconnect is true."""
+
+    class _Policy:
+        def _reset(self) -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> int:
+            return 0
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    worker._should_abort_reconnect = MagicMock(return_value=True)  # type: ignore[method-assign]
+    on_exit = MagicMock()
+
+    worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_returns_when_attempt_count_is_none() -> None:
+    """_attempt_reconnect_loop should exit when policy get_attempt_count returns None."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> None:
+            return None
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    interface._is_connection_connected = False
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    on_exit = MagicMock()
+
+    worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_logs_and_returns_when_attempt_count_is_non_int(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_attempt_reconnect_loop should log and exit on non-int attempt counts."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> float:
+            return 1.5
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    interface._is_connection_connected = False
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    on_exit = MagicMock()
+
+    with caplog.at_level("ERROR"):
+        worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    assert "returned non-int value" in caplog.text
+    on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_returns_when_interface_already_connected() -> None:
+    """_attempt_reconnect_loop should stop when interface is already connected."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> int:
+            return 0
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    interface._is_connection_connected = True
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    on_exit = MagicMock()
+
+    worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    on_exit.assert_called_once_with()

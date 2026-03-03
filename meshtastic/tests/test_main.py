@@ -10,6 +10,7 @@ import platform
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, cast
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -28,6 +29,7 @@ from meshtastic.__main__ import (
     onConnection,
     onNode,
     onReceive,
+    printConfig,
     traverseConfig,
     tunnelMain,
 )
@@ -4284,3 +4286,91 @@ def test_main_set_ham_empty_string(capsys: pytest.CaptureFixture[str]) -> None:
         in err
     )
     assert excinfo.value.code == 1
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_requires_tcp_interface(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should fail fast when not using a TCP interface."""
+    sys.argv = ["", "--ota-update", "firmware.bin"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=iface),
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert "OTA update currently requires a TCP connection" in err
+    assert excinfo.value.code == 1
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_retries_then_exits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should retry OTA failures and exit after the final failed attempt."""
+    sys.argv = ["", "--host", "localhost", "--ota-update", "firmware.bin"]
+    mt_config.args = cast(Any, sys.argv)
+
+    node = MagicMock(autospec=Node)
+
+    class _FakeTCPInterface:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            self.hostname = "localhost"
+
+        def __enter__(self) -> "_FakeTCPInterface":
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        @staticmethod
+        def getNode(*_args: Any, **_kwargs: Any) -> MagicMock:
+            """Return the mocked node used by this OTA retry test."""
+            return node
+
+    ota = MagicMock()
+    ota.hash_bytes.return_value = b"\x01\x02"
+    ota.update.side_effect = RuntimeError("boom")
+
+    with (
+        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
+        patch("meshtastic.__main__.time.sleep") as sleep_mock,
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _, err = capsys.readouterr()
+    assert "OTA update failed: boom" in err
+    assert excinfo.value.code == 1
+    assert ota.update.call_count == 5
+    assert any(call.args == (2,) for call in sleep_mock.call_args_list)
+
+
+@pytest.mark.unit
+def test_printConfig_skips_non_message_sections(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PrintConfig should skip sections that have no message descriptor."""
+    config = SimpleNamespace(
+        DESCRIPTOR=SimpleNamespace(
+            fields=[SimpleNamespace(name="telemetry")],
+            fields_by_name={"telemetry": SimpleNamespace(message_type=None)},
+        )
+    )
+
+    printConfig(config)
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err == ""

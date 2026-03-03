@@ -204,6 +204,83 @@ def test_set_canned_message_over_limit_raises(mock_serial_interface: MagicMock) 
 
 
 @pytest.mark.unit
+def test_on_response_request_settings_copies_local_config_from_raw_response(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """OnResponseRequestSettings should copy recognized LocalConfig payloads from admin.raw."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.iface._acknowledgment = Acknowledgment()
+    raw_admin = admin_pb2.AdminMessage()
+    raw_admin.get_config_response.lora.hop_limit = 7
+
+    payload = {
+        "decoded": {
+            "admin": {
+                "getConfigResponse": {"lora": {}},
+                "raw": raw_admin,
+            }
+        }
+    }
+
+    with caplog.at_level(logging.INFO):
+        anode.onResponseRequestSettings(payload)
+
+    assert anode.localConfig.lora.hop_limit == 7
+    assert "lora:" in caplog.text
+
+
+@pytest.mark.unit
+def test_set_ringtone_returns_none_when_module_unavailable(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """_set_ringtone should return None when the ext notification module is unavailable."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=False)  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = anode._set_ringtone("tone")
+
+    assert result is None
+    anode.ensureSessionKey.assert_not_called()
+    assert "External Notification module not present" in caplog.text
+
+
+@pytest.mark.unit
+def test_set_canned_message_returns_none_when_module_unavailable(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """_set_canned_message should return None when the canned message module is unavailable."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=False)  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = anode._set_canned_message("hello")
+
+    assert result is None
+    anode.ensureSessionKey.assert_not_called()
+    assert "Canned Message module not present" in caplog.text
+
+
+@pytest.mark.unit
+def test_get_channels_with_hash_alias_delegates_to_canonical(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """get_channels_with_hash should delegate to getChannelsWithHash()."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    expected = [{"index": 0, "role": "PRIMARY", "name": "x", "hash": 1}]
+
+    with patch.object(anode, "getChannelsWithHash", return_value=expected) as wrapped:
+        assert anode.get_channels_with_hash() == expected
+
+    wrapped.assert_called_once_with()
+
+
+@pytest.mark.unit
 def test_exitSimulator(caplog: LogCaptureFixture) -> None:
     """Verify that calling exitSimulator logs an indicative debug message.
 

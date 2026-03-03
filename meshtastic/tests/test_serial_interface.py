@@ -124,3 +124,30 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
         mock_hupcl.assert_called()
     stream.flush.assert_not_called()
     mock_sleep.assert_not_called()
+
+
+@pytest.mark.unit
+def test_resolve_dev_path_returns_explicit_non_empty_path() -> None:
+    """_resolve_dev_path should return an explicit non-empty path unchanged."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+
+    assert iface._resolve_dev_path() == "/dev/ttyUSB0"
+
+
+@pytest.mark.unit
+def test_serial_interface_repr_includes_optional_fields() -> None:
+    """__repr__ should include debugOut/noProto/noNodes when they are set."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    iface.debugOut = lambda _line: None
+    iface.noProto = True
+    iface.noNodes = True
+
+    rendered = repr(iface)
+
+    assert "SerialInterface(devPath='/dev/ttyUSB0'" in rendered
+    assert "debugOut=" in rendered
+    assert "noProto=True" in rendered
+    assert "noNodes=True" in rendered
+    assert rendered.endswith(")")

@@ -11,6 +11,7 @@ from ..powermon.stress import (
     DEFAULT_STRESS_STATE_DURATION_S,
     PowerStress,
     PowerStressClient,
+    handle_power_stress_response,
     handlePowerStressResponse,
     onPowerStressResponse,
 )
@@ -43,6 +44,15 @@ def test_on_power_stress_response_alias_sets_flag() -> None:
     iface = MagicMock()
     iface.gotResponse = False
     onPowerStressResponse({"decoded": {}}, iface)
+    assert iface.gotResponse is True
+
+
+@pytest.mark.unit
+def test_handle_power_stress_response_alias_sets_flag() -> None:
+    """snake_case compatibility alias should preserve callback behavior."""
+    iface = MagicMock()
+    iface.gotResponse = False
+    handle_power_stress_response({"decoded": {}}, iface)
     assert iface.gotResponse is True
 
 

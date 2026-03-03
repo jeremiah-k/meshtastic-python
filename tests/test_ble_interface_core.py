@@ -21,6 +21,7 @@ from bleak.exc import BleakError
 
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
+import meshtastic.interfaces.ble.discovery as discovery_mod
 from meshtastic.interfaces.ble import (
     FROMNUM_UUID,
     LEGACY_LOGRADIO_UUID,
@@ -33,6 +34,7 @@ from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryClientError,
     DiscoveryManager,
+    _close_discovery_client_best_effort,
     _filter_devices_for_target_identifier,
     _looks_like_ble_address,
     _parse_scan_response,
@@ -1038,6 +1040,129 @@ def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() ->
     assert factory_calls == 1
 
 
+def test_discovery_manager_uses_default_bleclient_when_ble_module_missing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """DiscoveryManager should fall back to default BLEClient when module resolution fails."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    class _DefaultClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            self.bleak_client = None
+
+        @staticmethod
+        def _discover(**_kwargs: Any) -> dict[str, Any]:
+            return discover_result
+
+    monkeypatch.setattr(discovery_mod, "resolveBleModule", lambda: None)
+    monkeypatch.setattr(discovery_mod, "BLEClient", _DefaultClient)
+    manager = DiscoveryManager()
+
+    with caplog.at_level(logging.DEBUG):
+        devices = manager._discover_devices(address=None)
+
+    assert devices == [filtered_device]
+    assert "No BLE module found; using default BLEClient" in caplog.text
+
+
+def test_discovery_manager_deduplicates_stale_client_cleanup_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Duplicate stale-client references should be closed only once."""
+
+    class _ManagerWithStickySecondNone(DiscoveryManager):
+        """DiscoveryManager test double that preserves _client on second None assignment."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._none_assignments = 0
+            super().__init__(*args, **kwargs)
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name == "_client" and value is None and "_client" in self.__dict__:
+                self._none_assignments += 1
+                if self._none_assignments >= 2:
+                    return
+            super().__setattr__(name, value)
+
+    class _InvalidDiscoveryClient:
+        def __init__(self) -> None:
+            self.bleak_client = object()
+
+        @staticmethod
+        def isConnected() -> bool:
+            return False
+
+    invalid_client = _InvalidDiscoveryClient()
+    manager = _ManagerWithStickySecondNone(client_factory=lambda: invalid_client)
+    manager._client = cast(Any, invalid_client)
+    closed: list[int] = []
+    monkeypatch.setattr(
+        discovery_mod,
+        "_close_discovery_client_best_effort",
+        lambda stale_client: closed.append(id(stale_client)),
+    )
+
+    with pytest.raises(DiscoveryClientError, match="invalid type"):
+        manager._discover_devices(address=None)
+
+    assert closed == [id(invalid_client)]
+
+
+def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Best-effort cleanup should close the coroutine when create_task fails."""
+
+    class _AwaitableClose:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def __await__(self) -> Any:
+            if False:
+                yield None
+            return None
+
+        def close(self) -> None:
+            self.closed = True
+
+    awaitable = _AwaitableClose()
+
+    class _Client:
+        def close(self) -> Any:
+            return awaitable
+
+    class _Loop:
+        @staticmethod
+        def create_task(_task: Any) -> None:
+            _task.close()
+            raise RuntimeError("cannot schedule task")
+
+    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        discovery_mod, "_await_close_result", lambda awaitable: awaitable
+    )
+    monkeypatch.setattr(
+        discovery_mod.asyncio,
+        "wait_for",
+        lambda awaitable, _timeout: awaitable,
+    )
+    monkeypatch.setattr(
+        discovery_mod.inspect,
+        "iscoroutine",
+        lambda value: isinstance(value, _AwaitableClose),
+    )
+
+    _close_discovery_client_best_effort(_Client())
+
+    assert awaitable.closed is True
+
+
 def test_parse_scan_response_prefers_exact_name_before_normalized_match():
     """Targeted scan should prefer an exact name match over normalized-name candidates."""
     exact_name_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "My Device")
@@ -1089,6 +1214,31 @@ def test_filter_devices_rejects_ambiguous_normalized_name_matches():
     matches = _filter_devices_for_target_identifier(devices, "MY DEVICE")
 
     assert matches == []
+
+
+def test_ble_interface_with_timeout_wrapper_returns_result() -> None:
+    """BLEInterface._with_timeout should delegate to withTimeout and return the awaited value."""
+
+    async def _ready() -> str:
+        return "ok"
+
+    assert (
+        asyncio.run(BLEInterface._with_timeout(_ready(), timeout=1.0, label="ble-op"))
+        == "ok"
+    )
+
+
+def test_ble_interface_sanitize_address_wrapper_delegates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_sanitize_address should delegate to sanitizeAddress helper."""
+    iface = object.__new__(BLEInterface)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.sanitizeAddress",
+        lambda address: "normalized" if address else None,
+    )
+
+    assert iface._sanitize_address("AA-BB-CC-DD-EE-FF") == "normalized"
 
 
 def test_discovery_manager_destructor_does_not_close_client():
