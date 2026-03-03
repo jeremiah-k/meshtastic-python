@@ -53,6 +53,8 @@ EMPTY_SHORT_NAME_MSG = (
 )
 # Maximum length for long_name (per protobuf definition in mesh.options)
 MAX_LONG_NAME_LEN = 40
+DEFAULT_NODE_TIMEOUT_SECONDS = 300.0
+DEFAULT_REBOOT_DELAY_SECONDS = 10
 
 
 class Node:
@@ -66,7 +68,7 @@ class Node:
         iface: "MeshInterface",
         nodeNum: int | str,
         noProto: bool = False,
-        timeout: float = 300.0,
+        timeout: float = DEFAULT_NODE_TIMEOUT_SECONDS,
     ) -> None:
         """Create and initialize a Node instance that holds configuration, channel state, and runtime flags for a mesh node.
 
@@ -109,7 +111,7 @@ class Node:
         r = f"Node({self.iface!r}, 0x{self.nodeNum:08x}"
         if self.noProto:
             r += ", noProto=True"
-        if self._timeout.expireTimeout != 300.0:
+        if self._timeout.expireTimeout != DEFAULT_NODE_TIMEOUT_SECONDS:
             r += f", timeout={self._timeout.expireTimeout!r}"
         r += ")"
         return r
@@ -1309,7 +1311,9 @@ class Node:
 
         return self._send_admin(p)
 
-    def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
+    def reboot(
+        self, secs: int = DEFAULT_REBOOT_DELAY_SECONDS
+    ) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
 
         Parameters
@@ -1380,7 +1384,9 @@ class Node:
             onResponse = self.onAckNak
         return self._send_admin(p, onResponse=onResponse)
 
-    def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
+    def rebootOTA(
+        self, secs: int = DEFAULT_REBOOT_DELAY_SECONDS
+    ) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
 
         Parameters
@@ -1496,7 +1502,9 @@ class Node:
             onResponse = self.onAckNak
         return self._send_admin(p, onResponse=onResponse)
 
-    def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
+    def shutdown(
+        self, secs: int = DEFAULT_REBOOT_DELAY_SECONDS
+    ) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
 
         Parameters

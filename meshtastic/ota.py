@@ -8,6 +8,10 @@ from typing import Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
+FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
+OTA_SOCKET_TIMEOUT_SECONDS = 15
+OTA_CHUNK_SIZE_BYTES = 1024
+
 
 class _SHA256Digest(Protocol):
     """Minimal digest protocol returned by hashlib.sha256()."""
@@ -27,7 +31,7 @@ def _file_sha256(filename: str) -> _SHA256Digest:
     sha256_hash = hashlib.sha256()
 
     with open(filename, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
+        for byte_block in iter(lambda: f.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""):
             sha256_hash.update(byte_block)
 
     return sha256_hash
@@ -88,7 +92,7 @@ class ESP32WiFiOTA:
         )
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(15)
+        self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
         try:
             self._socket.connect((self._hostname, self._port))
             logger.debug(f"Connected to {self._hostname}:{self._port}")
@@ -111,9 +115,8 @@ class ESP32WiFiOTA:
 
             # Stream firmware
             sent_bytes = 0
-            chunk_size = 1024
             while sent_bytes < size:
-                chunk = data[sent_bytes : sent_bytes + chunk_size]
+                chunk = data[sent_bytes : sent_bytes + OTA_CHUNK_SIZE_BYTES]
                 self._socket.sendall(chunk)
                 sent_bytes += len(chunk)
 

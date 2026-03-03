@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 # Heartbeat interval for keeping the interface alive (5 minutes)
 HEARTBEAT_INTERVAL_SECONDS = 300
 
+# Default timeout for interface and node operations.
+DEFAULT_INTERFACE_TIMEOUT_SECONDS = 300.0
+
 # Packet-id generation constants
 PACKET_ID_MASK = 0xFFFFFFFF
 PACKET_ID_COUNTER_MASK = 0x3FF
@@ -140,7 +143,7 @@ class MeshInterface:  # pylint: disable=R0902
         debugOut: IO[str] | Callable[[str], Any] | None = None,
         noProto: bool = False,
         noNodes: bool = False,
-        timeout: float = 300.0,
+        timeout: float = DEFAULT_INTERFACE_TIMEOUT_SECONDS,
     ) -> None:
         """Initialize the MeshInterface and configure runtime options.
 
@@ -704,7 +707,7 @@ class MeshInterface:  # pylint: disable=R0902
         nodeId: str,
         requestChannels: bool = True,
         requestChannelAttempts: int = 3,
-        timeout: float = 300.0,
+        timeout: float = DEFAULT_INTERFACE_TIMEOUT_SECONDS,
     ) -> meshtastic.node.Node:
         """Get the Node object for the given node identifier.
 
@@ -1684,8 +1687,13 @@ class MeshInterface:  # pylint: disable=R0902
             with self._node_db_lock:
                 node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
-            if node is not None:
-                nodeNum = node["num"]
+                node_num_from_db: int | None = None
+                if isinstance(node, dict):
+                    node_num_candidate = node.get("num")
+                    if isinstance(node_num_candidate, int):
+                        node_num_from_db = node_num_candidate
+            if node_num_from_db is not None:
+                nodeNum = node_num_from_db
             elif has_nodes:
                 raise MeshInterface.MeshInterfaceError(
                     f"NodeId {destinationId} not found in DB"
@@ -1926,8 +1934,9 @@ class MeshInterface:  # pylint: disable=R0902
                 )
 
         # If we failed while connecting, raise the connection to the client
-        if self.failure is not None:
-            raise self.failure
+        failure = self.failure
+        if failure is not None:
+            raise failure
 
     def _generate_packet_id(self) -> int:
         """Generate a new 32-bit packet identifier combining a 10-bit monotonic counter with randomized upper bits.

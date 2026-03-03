@@ -4,6 +4,7 @@ from collections import OrderedDict
 import logging
 import re
 import threading
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
@@ -215,6 +216,30 @@ def test_getNode_not_local_timeout(
                     caplog.text,
                     re.MULTILINE,
                 )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendTelemetry_unsupported_type_warns_every_call() -> None:
+    """Unsupported telemetryType should emit semantic deprecation warnings on every call."""
+    with MeshInterface(noProto=True) as iface:
+        with patch.object(iface, "sendData", return_value=None) as send_data_mock:
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always", DeprecationWarning)
+                iface.sendTelemetry(telemetryType="invalid_telemetry")
+                iface.sendTelemetry(telemetryType="invalid_telemetry")
+
+    deprecation_warnings = [
+        warning
+        for warning in captured
+        if issubclass(warning.category, DeprecationWarning)
+    ]
+    assert len(deprecation_warnings) == 2
+    assert all(
+        "Unsupported telemetryType" in str(warning.message)
+        for warning in deprecation_warnings
+    )
+    assert send_data_mock.call_count == 2
 
 
 @pytest.mark.unit

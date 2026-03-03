@@ -311,6 +311,72 @@ class TestBLECoroutineRunner:
             with runner._instance_lock:
                 runner._loop = original_loop
 
+    def test_run_coroutine_threadsafe_timeout_alias_warns_every_call(
+        self, monkeypatch
+    ):
+        """Legacy timeout alias is a semantic migration and should warn on each call."""
+        runner = BLECoroutineRunner()
+        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+
+        class _LoopStub:
+            """Loop stub that always reports a running event loop."""
+
+            @staticmethod
+            def is_running():
+                """Report whether the BLE coroutine runner is currently active.
+
+                Returns
+                -------
+                    True if the runner is active, False otherwise.
+                """
+                return True
+
+        with runner._instance_lock:
+            original_loop = runner._loop
+            runner._loop = cast(Any, _LoopStub())
+
+        def _fake_submit(coro, _loop):
+            """Close the provided coroutine without executing it and return a completed Future with result None.
+
+            Parameters
+            ----------
+            coro : coroutine
+                Coroutine object to be closed and not scheduled for execution.
+            _loop : asyncio.AbstractEventLoop
+                Ignored; present for signature compatibility.
+
+            Returns
+            -------
+            asyncio.Future
+                A Future already completed with result `None`.
+            """
+            coro.close()
+            future = Future()
+            future.set_result(None)
+            return future
+
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+
+        async def _noop():
+            """Run a coroutine that does nothing."""
+            return None
+
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", DeprecationWarning)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+            deprecated = [
+                warning
+                for warning in caught
+                if issubclass(warning.category, DeprecationWarning)
+            ]
+            assert len(deprecated) == 2
+            assert all("startup_timeout" in str(warning.message) for warning in deprecated)
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
+
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
     ):

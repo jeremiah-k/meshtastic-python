@@ -201,3 +201,45 @@ Current `COMPAT_DEPRECATE` methods:
   `mypy meshtastic/ --strict` locally to catch regressions.
 - `make ci` runs the same checks as CI (no `--strict`).
 - `make ci-strict` runs CI checks with strict mypy (for maintainers).
+
+## Command Execution Tips (Poetry + Trunk)
+
+Use these commands to avoid repeated local environment/sandbox friction.
+
+### Environment setup
+
+- Install/update environment: `poetry install`
+- Run tools in project env: `poetry run <command>`
+- Optional shell activation:
+  - `source "$(poetry env info --path)/bin/activate"`
+
+### Cache-safe defaults (recommended)
+
+Use writable cache paths when running locally in restricted environments:
+
+- `export PYLINTHOME=/tmp/pylint`
+- `export MYPY_CACHE_DIR=/tmp/mypy_cache`
+- `export XDG_CACHE_HOME=/tmp/.cache`
+- `export TRUNK_INTERACTIVE=0`
+
+### Common checks
+
+- Mypy (CI-equivalent): `poetry run mypy meshtastic/`
+- Mypy strict (targeted): `poetry run mypy meshtastic/<path>.py --strict`
+- Pyright (targeted): `poetry run pyright meshtastic/<path>.py`
+- Pylint: `PYLINTHOME=/tmp/pylint poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$"`
+- Pytest targeted: `poetry run pytest -q meshtastic/tests/test_<module>.py -k "<expr>"`
+
+### Trunk commands
+
+- Full pass (project policy command):
+  - `TRUNK_INTERACTIVE=0 .trunk/trunk check --fix --show-existing`
+- Targeted linters/files:
+  - `TRUNK_INTERACTIVE=0 .trunk/trunk check --filter=mypy-poetry,pylint-poetry --show-existing --no-progress --ci --print-failures <paths...>`
+  - `TRUNK_INTERACTIVE=0 .trunk/trunk check --filter=ruff <paths...>`
+
+### Practical workflow
+
+- First pass: run the full trunk command once.
+- After first pass: run only targeted checks/tests for changed files.
+- Prefer `poetry run` for direct tool invocations to avoid wrong-venv issues.
