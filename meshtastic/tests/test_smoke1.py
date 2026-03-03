@@ -3,7 +3,6 @@
 import os
 import platform
 import re
-import shlex
 import time
 from pathlib import Path
 
@@ -12,19 +11,11 @@ from pathlib import Path
 import pytest
 
 from ..util import findPorts
-from .cli_test_utils import run_cli_with_timeout
+from .cli_test_utils import _quote_shell_path, run_cli_with_timeout
 
 # seconds to pause after running a meshtastic command
 PAUSE_AFTER_COMMAND = 2
 PAUSE_AFTER_REBOOT = 7
-
-
-def _quote_shell_path(path: str) -> str:
-    """Quote a filesystem path for shell command usage in run_cli_with_timeout."""
-    if os.name == "nt":
-        escaped = path.replace('"', '""')
-        return f'"{escaped}"'
-    return shlex.quote(path)
 
 
 @pytest.mark.smoke1
@@ -613,7 +604,7 @@ def test_smoke1_configure() -> None:
     config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
     assert config_path.exists(), f"Config file not found: {config_path}"
     return_value, out = run_cli_with_timeout(
-        f"meshtastic --configure {_quote_shell_path(str(config_path))}"
+        f"meshtastic --configure {_quote_shell_path(config_path)}"
     )
     assert re.match(r"Connected to radio", out)
     assert re.search("^Setting device owner to Bob TBeam", out, re.MULTILINE)

@@ -9,6 +9,10 @@ import meshtastic.util as util_module
 import meshtastic.version as version_module
 
 
+class PackageNotPublishedError(requests.RequestException):
+    """Simulated PyPI lookup failure for unpublished distribution names."""
+
+
 def _make_fake_response(version: str) -> object:
     """Create a minimal fake response object for PyPI version checks."""
 
@@ -79,7 +83,7 @@ def test_check_if_newer_version_falls_back_to_second_distribution(
         _ = timeout
         calls.append(url)
         if "/mtjk/" in url:
-            raise requests.RequestException("package not published yet")
+            raise PackageNotPublishedError
         return _make_fake_response("2.7.9")
 
     monkeypatch.setattr(

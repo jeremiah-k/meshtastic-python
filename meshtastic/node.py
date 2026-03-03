@@ -604,15 +604,7 @@ class Node:
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        if self.iface.localNode != self:
-            # Local admin channel index is unrelated to this node's channel lock.
-            adminIndex = self.iface.localNode._get_admin_channel_index()
-        else:
-            adminIndex = 0
         with self._channels_lock:
-            if self.iface.localNode == self:
-                # Keep admin-index selection in the same critical section as local mutation.
-                adminIndex = self._get_admin_channel_index()
             channels = self.channels
             if channels is None:
                 self._raise_interface_error("Error: No channels have been read")
@@ -633,17 +625,15 @@ class Node:
             channels.pop(channelIndex)
             self._fixup_channels_locked()
 
+        is_local_node = self.iface.localNode == self
         index = channelIndex
         while index < MAX_CHANNELS:
-            self.writeChannel(index, adminIndex=adminIndex)
+            if is_local_node:
+                admin_index_for_write = self._get_admin_channel_index()
+            else:
+                admin_index_for_write = self.iface.localNode._get_admin_channel_index()
+            self.writeChannel(index, adminIndex=admin_index_for_write)
             index += 1
-
-            # if we are updating the local node, we might end up
-            # *moving* the admin channel index as we are writing
-            if (self.iface.localNode == self) and index >= adminIndex:
-                # We've now passed the old location for admin index
-                # (and written it), so we can start finding it by name again
-                adminIndex = 0
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.

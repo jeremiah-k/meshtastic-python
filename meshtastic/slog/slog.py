@@ -28,6 +28,7 @@ from .arrow import FeatherWriter
 logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
+LOG_DIR_COLLISION_MAX_RETRIES = 100
 
 # PyArrow typing stubs may differ across versions; keep this alias non-generic
 # so strict type-checking stays compatible across stub variants.
@@ -698,7 +699,18 @@ class LogSet:
         if dir_name is None:
             app_dir = rootDir()
             app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
-            app_time_dir.mkdir(exist_ok=False)
+            for _ in range(LOG_DIR_COLLISION_MAX_RETRIES):
+                try:
+                    app_time_dir.mkdir(exist_ok=False)
+                    break
+                except FileExistsError:
+                    app_time_dir = Path(
+                        app_dir, datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+                    )
+            else:
+                raise FileExistsError(
+                    "Unable to create unique slog run directory after retries"
+                )
             dir_name = str(app_time_dir)
 
             # Also make a 'latest' directory that always points to the most recent logs

@@ -977,7 +977,7 @@ def test_deleteChannel_rejects_non_secondary_or_disabled(
 def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """DeleteChannel should rewrite channels and reset admin index after crossing old position."""
+    """DeleteChannel should rewrite channels and use fresh admin-index resolution per write."""
     iface = autospec_local_node_iface(MeshInterface)
     anode = Node(iface, "!12345678", noProto=True)
     iface.localNode = anode
@@ -995,11 +995,7 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode.writeChannel.call_count == CHANNEL_LIMIT - 1
-    first_call = anode.writeChannel.call_args_list[0]
-    assert first_call.kwargs["adminIndex"] == 1
-    assert all(
-        call.kwargs["adminIndex"] == 0 for call in anode.writeChannel.call_args_list[1:]
-    )
+    assert all(call.kwargs["adminIndex"] == 0 for call in anode.writeChannel.call_args_list)
 
 
 @pytest.mark.unit

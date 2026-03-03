@@ -8,10 +8,8 @@ This smoke test runs against that localhost.
 
 """
 
-import os
 import platform
 import re
-import shlex
 import time
 from pathlib import Path
 
@@ -20,20 +18,15 @@ from pathlib import Path
 import pytest
 
 from ..util import findPorts
-from .cli_test_utils import run_cli_argv_with_timeout, run_cli_with_timeout
+from .cli_test_utils import (
+    _quote_shell_path,
+    run_cli_argv_with_timeout,
+    run_cli_with_timeout,
+)
 
 # seconds to pause after running a meshtastic command
 PAUSE_AFTER_COMMAND = 0.1
 PAUSE_AFTER_REBOOT = 0.2
-
-
-def _quote_shell_path(path: Path) -> str:
-    """Quote a filesystem path for shell command usage in run_cli_with_timeout."""
-    path_str = str(path)
-    if os.name == "nt":
-        escaped = path_str.replace('"', '""')
-        return f'"{escaped}"'
-    return shlex.quote(path_str)
 
 
 # TODO: need to fix the virtual device to have a reboot. When you issue the command

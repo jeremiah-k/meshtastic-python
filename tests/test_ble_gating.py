@@ -1,7 +1,6 @@
 """Tests for BLE gating utilities."""
 
 import gc
-
 import pytest
 from hypothesis import given, strategies as st
 
@@ -45,9 +44,10 @@ class TestAddrKey:
         """Any valid MAC-like address should normalize to 12 lowercase hex chars."""
         normalized = _addr_key(addr)
         assert normalized is not None
-        assert len(normalized) == 12
-        assert normalized == normalized.lower()
-        assert all(char in "0123456789abcdef" for char in normalized)
+        normalized_str = str(normalized)
+        assert len(normalized_str) == 12
+        assert normalized_str == normalized_str.lower()
+        assert all(char in "0123456789abcdef" for char in normalized_str)
 
 
 @pytest.mark.usefixtures("clear_registry")

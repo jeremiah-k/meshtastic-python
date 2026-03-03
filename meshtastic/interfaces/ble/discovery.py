@@ -505,8 +505,7 @@ class DiscoveryManager:
 
         if invalid_client_error is not None:
             raise invalid_client_error
-        if client is None:
-            raise DiscoveryClientError.factory_returned_none(resolved_factory)
+        client = cast(BLEClient | DiscoveryClientProtocol, client)
         devices: list[BLEDevice] = []
         target_identifier = address.strip() if address else None
         try:

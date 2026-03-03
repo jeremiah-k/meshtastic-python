@@ -27,11 +27,17 @@ def _fake_submit_completed_none(
     return future
 
 
+def _noop_ensure_running(timeout: float | None = None) -> None:
+    """Test stub for _ensure_running that accepts timeout kwargs."""
+    _ = timeout
+
+
 @pytest.fixture(autouse=True)
 def ensure_runner_running() -> Generator[None, None, None]:
     """Ensure the BLECoroutineRunner singleton is running for the duration of a test.
 
-    Start the BLECoroutineRunner before the test and re-validate or restart it after the test to prevent singleton state leakage between tests. Intended for use as an autouse pytest fixture.
+    Start the BLECoroutineRunner before the test and re-validate or restart it
+    after the test to prevent singleton state leakage between tests.
     """
     runner = BLECoroutineRunner()
     runner._ensure_running()
@@ -151,6 +157,7 @@ class TestBLECoroutineRunner:
                 self.seen_contexts: list[dict[str, Any]] = []
 
             def default_exception_handler(self, context: dict[str, Any]) -> None:
+                """Record contexts forwarded to the loop default exception handler."""
                 self.seen_contexts.append(context)
 
         def _capture_error(_message: str, *args: Any, **kwargs: Any) -> None:
@@ -257,7 +264,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             runner,
             "_ensure_running",
-            lambda timeout=None: None,
+            _noop_ensure_running,
         )
 
         class _LoopStub:
@@ -303,7 +310,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             runner,
             "_ensure_running",
-            lambda timeout=None: None,
+            _noop_ensure_running,
         )
 
         class _LoopStub:
@@ -472,9 +479,12 @@ class TestBLECoroutineRunner:
         runner._ensure_running()
         unregister_calls = []
 
+        def _record_unregister(func: Any) -> None:
+            unregister_calls.append(func)
+
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.atexit.unregister",
-            lambda func: unregister_calls.append(func),
+            _record_unregister,
         )
 
         assert runner._stop() is True
@@ -488,13 +498,19 @@ class TestBLECoroutineRunner:
         register_calls = []
         unregister_calls = []
 
+        def _record_register(func: Any) -> None:
+            register_calls.append(func)
+
+        def _record_unregister(func: Any) -> None:
+            unregister_calls.append(func)
+
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.atexit.register",
-            lambda func: register_calls.append(func),
+            _record_register,
         )
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.atexit.unregister",
-            lambda func: unregister_calls.append(func),
+            _record_unregister,
         )
 
         assert runner._stop() is True

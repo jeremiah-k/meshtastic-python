@@ -53,12 +53,36 @@ def _hexstr(barray: bytes | bytearray) -> str:
 
 
 def _ipstr(barray: bytes | bytearray) -> str:
-    """Print a string of ip digits."""
+    """Render IPv4 bytes as dotted-decimal text.
+
+    Parameters
+    ----------
+    barray : bytes | bytearray
+        IPv4 address bytes.
+
+    Returns
+    -------
+    str
+        Dotted-decimal IPv4 string.
+    """
     return ".".join(str(x) for x in barray)
 
 
 def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
-    """Read big endian u16 (network byte order)."""
+    """Read a network-order unsigned 16-bit integer.
+
+    Parameters
+    ----------
+    p : bytes | bytearray | memoryview
+        Packet buffer.
+    offset : int
+        Start offset for the 16-bit field.
+
+    Returns
+    -------
+    int
+        Parsed unsigned 16-bit value.
+    """
     return p[offset] * 256 + p[offset + 1]
 
 
@@ -172,7 +196,7 @@ def _readtest(tap: TapDevice) -> None:
 
         if not ignore:
             logging.debug(
-                "Packet eligible for forwarding bytelen=%d src=%s, dest=%s",
+                "Packet eligible for forwarding byte_len=%d src=%s, dest=%s",
                 len(p),
                 _ipstr(srcaddr),
                 _ipstr(destaddr),

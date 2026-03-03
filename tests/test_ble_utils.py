@@ -1,21 +1,20 @@
 """Targeted tests for BLE utility wrappers and error branches."""
+# pylint: disable=wrong-import-position
 
 import asyncio
 from types import ModuleType
 
 import pytest
 
-try:
-    import meshtastic.interfaces.ble.utils as ble_utils
-    from meshtastic.interfaces.ble.utils import (
-        resolve_ble_module,
-        resolveBleModule,
-        sanitize_address,
-        with_timeout,
-        withTimeout,
-    )
-except ImportError:
-    pytest.skip("BLE dependencies not available", allow_module_level=True)
+pytest.importorskip("bleak")
+import meshtastic.interfaces.ble.utils as ble_utils
+from meshtastic.interfaces.ble.utils import (
+    resolve_ble_module,
+    resolveBleModule,
+    sanitize_address,
+    with_timeout,
+    withTimeout,
+)
 
 
 @pytest.mark.unit

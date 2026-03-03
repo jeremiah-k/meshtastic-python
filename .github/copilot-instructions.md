@@ -226,7 +226,6 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 - `tabulate` - Table formatting
 - `pyyaml` - YAML config support
 - `requests` - HTTP requests
-- `platformdirs` - Platform-specific user data/cache directory resolution
 - `packaging` - Version parsing and comparison helpers
 
 ### Optional (extras)
@@ -234,6 +233,7 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 - `cli` extra: `pyqrcode`, `print-color`, `dotmap`, `argcomplete`
 - `tunnel` extra: `pytap2`
 - `analysis` extra: `dash`, `pandas`
+- `powermon` extra: `platformdirs` for platform-specific user data/cache directory resolution
 
 ## Important Notes
 

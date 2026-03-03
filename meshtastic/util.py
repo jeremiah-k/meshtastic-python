@@ -439,8 +439,9 @@ class Timeout:
 
         Parameters
         ----------
-        expireTimeout : float
-            Seconds from now until expiration. If omitted, the instance's configured expireTimeout is used. (Default value = None)
+        expireTimeout : float | None
+            Seconds from now until expiration. If ``None`` (the default), the
+            instance's configured ``expireTimeout`` is used.
         """
         self.expireTime = time.time() + (
             self.expireTimeout if expireTimeout is None else expireTimeout
@@ -1080,7 +1081,7 @@ def get_devices_with_vendor_id(vid: str) -> set[SupportedDevice]:
         if any(
             isinstance(vendor_id, str)
             and vendor_id.lower().removeprefix("0x") == normalized_vid
-            for vendor_id, _ in d.usb_ids
+            for vendor_id, _ in d.usb_ids or ()
         ):
             sd.add(d)
             continue

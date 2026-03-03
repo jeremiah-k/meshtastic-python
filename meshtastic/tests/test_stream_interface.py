@@ -335,9 +335,10 @@ def test_write_bytes_times_out_when_no_progress_deadline_expires() -> None:
         ):
             with pytest.raises(
                 StreamInterface.StreamClosedError,
-                match="stream write timed out waiting for progress",
+                match=StreamInterface.StreamClosedError.WRITE_TIMEOUT_MSG,
             ):
                 iface._write_bytes(b"hello")
+        stream.write.assert_not_called()
     finally:
         iface.close()
 

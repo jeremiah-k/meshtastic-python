@@ -20,6 +20,8 @@ try:
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
+TRANSIENT_SERVICES_LOOKUP_FAILURE = "transient services lookup failure"
+
 
 @pytest.mark.unit
 def test_bleclient_discovery_mode_without_address() -> None:
@@ -211,7 +213,8 @@ def test_bleclient_has_characteristic_retries_and_skips_final_sleep(
 
     class _Services:
         def get_characteristic(self, _specifier: str) -> object:
-            raise BleakError("transient services lookup failure")
+            """Raise a transient lookup error to trigger retry logic."""
+            raise BleakError(TRANSIENT_SERVICES_LOOKUP_FAILURE)
 
     client = BLEClient(address=None, log_if_no_address=False)
     try:
@@ -224,9 +227,13 @@ def test_bleclient_has_characteristic_retries_and_skips_final_sleep(
             "_safe_execute",
             lambda operation, **_kwargs: operation(),
         )
+
+        def _record_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.client.time.sleep",
-            lambda delay: sleep_calls.append(delay),
+            _record_sleep,
         )
 
         assert client.has_characteristic("0000") is False
@@ -243,6 +250,7 @@ def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
 
     class _CancelledFuture:
         def result(self, _timeout: float | None = None) -> None:
+            """Raise asyncio.CancelledError to simulate cancelled future result retrieval."""
             raise asyncio.CancelledError()
 
     async def _dummy_coro() -> None:

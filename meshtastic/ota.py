@@ -9,6 +9,7 @@ from typing import Callable, Protocol
 logger = logging.getLogger(__name__)
 OTA_SOCKET_TIMEOUT_SECONDS = 15
 OTA_CHUNK_SIZE_BYTES = 1024
+FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
 
 
 class _SHA256Digest(Protocol):
@@ -32,7 +33,7 @@ def _file_sha256(filename: str) -> _SHA256Digest:
     sha256_hash = hashlib.sha256()
 
     with open(filename, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
+        for byte_block in iter(lambda: f.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""):
             sha256_hash.update(byte_block)
 
     return sha256_hash

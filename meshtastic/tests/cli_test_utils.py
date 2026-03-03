@@ -1,8 +1,10 @@
 """Helpers for invoking CLI commands in tests with bounded execution time."""
 
+import os
 import re
 import shlex
 import subprocess
+from pathlib import Path
 from typing import NoReturn
 
 import pytest
@@ -28,6 +30,26 @@ def _shell_executable_for_timeout(command: str) -> str:
         if not _ENV_ASSIGNMENT_RE.fullmatch(token):
             return token
     return "<shell-command>"
+
+
+def _quote_shell_path(path: str | Path) -> str:
+    """Quote a filesystem path for shell command usage in run_cli_with_timeout.
+
+    Parameters
+    ----------
+    path : str | Path
+        Filesystem path to quote.
+
+    Returns
+    -------
+    str
+        Shell-escaped path suitable for the current platform.
+    """
+    path_str = str(path)
+    if os.name == "nt":
+        escaped = path_str.replace('"', '""')
+        return f'"{escaped}"'
+    return shlex.quote(path_str)
 
 
 def runCliWithTimeout(command: str, timeout: int | float = 120) -> tuple[int, str]:
