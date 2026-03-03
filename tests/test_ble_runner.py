@@ -262,7 +262,11 @@ class TestBLECoroutineRunner:
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: timeout is None or timeout >= 0,
+        )
 
         class _LoopStub:
             """Loop stub that always reports a running event loop."""
@@ -320,7 +324,11 @@ class TestBLECoroutineRunner:
     def test_run_coroutine_threadsafe_timeout_alias_warns_once(self, monkeypatch):
         """Legacy timeout alias should warn once to avoid warning spam."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: timeout is None or timeout >= 0,
+        )
 
         class _LoopStub:
             """Loop stub that always reports a running event loop."""
@@ -391,7 +399,11 @@ class TestBLECoroutineRunner:
     ):
         """Explicit startup_timeout should not emit timeout-alias deprecation warnings."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: timeout is None or timeout >= 0,
+        )
 
         class _LoopStub:
             """Loop stub that always reports a running event loop."""

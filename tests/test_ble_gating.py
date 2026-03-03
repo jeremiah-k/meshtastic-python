@@ -197,8 +197,9 @@ class TestMarkDisconnected:
         key = _addr_key("testaddress")
         assert key is not None
         # Use context manager for proper holder count management
-        with _addr_lock_context("testaddress"):
-            _mark_connected("testaddress")
+        with _addr_lock_context("testaddress") as addr_lock:
+            with addr_lock:
+                _mark_connected("testaddress")
         assert key in _ADDR_LOCKS  # Lock still exists
         _mark_disconnected("testaddress")
         assert key not in _ADDR_LOCKS  # Lock cleaned up

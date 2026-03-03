@@ -895,6 +895,19 @@ def test_turn_off_encryption_on_primary_channel_raises_without_channels(
 
 
 @pytest.mark.unit
+def test_turn_off_encryption_on_primary_channel_raises_with_empty_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should fail when channels list is empty."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = []
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.turnOffEncryptionOnPrimaryChannel()
+
+
+@pytest.mark.unit
 def test_write_channel_out_of_range_raises_mesh_error(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:

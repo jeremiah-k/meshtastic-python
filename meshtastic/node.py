@@ -397,9 +397,10 @@ class Node:
             if channel data has not been loaded.
         """
         with self._channels_lock:
-            if self.channels is None:
+            channels = self.channels
+            if not channels:
                 self._raise_interface_error("Error: No channels have been read")
-            self.channels[0].settings.psk = fromPSK("none")
+            channels[0].settings.psk = fromPSK("none")
         logger.info("Writing modified channels to device")
         self.writeChannel(0)
 
@@ -849,19 +850,33 @@ class Node:
             # Add new channels with names not already present
             # Don't change existing channels
             for chs in channelSet.settings:
-                channelExists = self.getChannelByName(chs.name)
-                if channelExists or chs.name == "":
-                    logger.info(
-                        f'Ignoring existing or empty channel "{chs.name}" from add URL'
-                    )
-                    continue
-                ch = self.getDisabledChannel()
-                if not ch:
-                    self._raise_interface_error("No free channels were found")
                 with self._channels_lock:
-                    ch.settings.CopyFrom(chs)
-                    ch.role = channel_pb2.Channel.Role.SECONDARY
-                    channel_index = ch.index
+                    channels = self.channels
+                    if channels is None:
+                        self._raise_interface_error("Config or channels not loaded")
+                    channel_exists = any(
+                        c.settings and c.settings.name == chs.name for c in channels
+                    )
+                    if channel_exists or chs.name == "":
+                        logger.info(
+                            f'Ignoring existing or empty channel "{chs.name}" from add URL'
+                        )
+                        continue
+
+                    disabled_channel = next(
+                        (
+                            c
+                            for c in channels
+                            if c.role == channel_pb2.Channel.Role.DISABLED
+                        ),
+                        None,
+                    )
+                    if disabled_channel is None:
+                        self._raise_interface_error("No free channels were found")
+
+                    disabled_channel.settings.CopyFrom(chs)
+                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
+                    channel_index = disabled_channel.index
                 logger.info(f"Adding new channel '{chs.name}' to device")
                 self.writeChannel(channel_index)
         else:

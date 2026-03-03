@@ -43,7 +43,8 @@ BLACKLIST_VIDS: set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 0x303a Heltec tracker"""
 WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
 
-# COMPAT_STABLE_SHIM: Backward compatibility aliases (prefer UPPER_SNAKE_CASE names).
+# COMPAT_STABLE_SHIM: BLACKLIST_VIDS/WHITELIST_VIDS are canonical UPPER_SNAKE_CASE constants;
+# keep blacklistVids/whitelistVids as legacy compatibility aliases.
 blacklistVids = BLACKLIST_VIDS
 whitelistVids = WHITELIST_VIDS
 

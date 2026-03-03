@@ -1008,9 +1008,7 @@ def test_concurrent_packet_id_generation() -> None:
                     packet_id = iface._generate_packet_id()
                     with packet_ids_lock:
                         packet_ids.append(packet_id)
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1047,9 +1045,7 @@ def test_concurrent_node_database_access() -> None:
                             iface.nodes[node_id] = node
                         if iface.nodesByNum is not None:
                             iface.nodesByNum[node_num] = node
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1077,9 +1073,7 @@ def test_concurrent_queue_operations() -> None:
                     packet = mesh_pb2.ToRadio()
                     with iface._queue_lock:
                         iface.queue[packet_id] = packet
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1090,9 +1084,7 @@ def test_concurrent_queue_operations() -> None:
                         if iface.queue:
                             key = next(iter(iface.queue))
                             iface.queue.pop(key, None)
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1127,9 +1119,7 @@ def test_concurrent_response_handler_registration() -> None:
                     iface._add_response_handler(request_id, handler)
                     with added_ids_lock:
                         added_ids.append(request_id)
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1162,9 +1152,7 @@ def test_concurrent_close_with_packet_id_generation() -> None:
                 while not stop_flag.is_set():
                     iface._generate_packet_id()
                     started.set()
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1211,9 +1199,7 @@ def test_concurrent_showNodes() -> None:
             try:
                 for _ in range(10):
                     iface.showNodes()
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1243,9 +1229,7 @@ def test_concurrent_getNode() -> None:
                     # validates concurrent access safety for getNode().
                     node = iface.getNode(f"!{i:08x}", requestChannels=False)
                     assert node is not None
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1295,9 +1279,7 @@ def test_concurrent_sendText_with_queue() -> None:
             try:
                 for i in range(10):
                     iface.sendText(f"message_{i}", wantAck=True)
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
