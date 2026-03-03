@@ -385,6 +385,9 @@ class Tunnel:
             The mesh node ID string if a matching node is found, "^all" for
             broadcast address 255.255, or None if no matching node exists.
         """
+        if len(ip_addr) < 4:
+            logger.debug("Ignoring short destination address (len=%d)", len(ip_addr))
+            return None
         ip_bits = ip_addr[2] * OCTET_MULTIPLIER + ip_addr[3]
 
         if ip_bits == NODE_NUM_MASK:

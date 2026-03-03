@@ -21,7 +21,7 @@ def main() -> None:
                 )
                 return
 
-            if my_info.my_node_num < 0:
+            if my_info.my_node_num == 0:
                 print("Local node has not joined the mesh yet.", file=sys.stderr)
                 return
 

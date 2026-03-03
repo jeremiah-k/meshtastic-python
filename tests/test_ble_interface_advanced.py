@@ -417,13 +417,7 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 
 @pytest.mark.slow
 def test_rapid_connect_disconnect_stress_test(caplog):
-    """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic.
-
-    Raises
-    ------
-    RuntimeError
-    RuntimeError
-    """
+    """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
     # logging, threading, and time already imported at top
     # MagicMock, patch already imported at top
 
@@ -792,12 +786,7 @@ def test_ble_client_is_connected_exception_handling(caplog):
 
 
 def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
-    """BLEClient._async_await should wrap FutureTimeoutError in BLEInterface.BLEError.
-
-    Raises
-    ------
-    FutureTimeoutError
-    """
+    """BLEClient._async_await should wrap FutureTimeoutError in BLEInterface.BLEError."""
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
@@ -904,12 +893,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
 
 
 def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
-    """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error.
-
-    Raises
-    ------
-    RuntimeError
-    """
+    """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
     client = ble_mod.BLEClient()
 
     class _FakeFuture:
@@ -993,13 +977,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
 
 
 def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
-    """Test that _wait_for_disconnect_notifications handles exceptions gracefully.
-
-    Raises
-    ------
-    RuntimeError
-    ValueError
-    """
+    """Test that _wait_for_disconnect_notifications handles exceptions gracefully."""
     # logging already imported at top
 
     # Set logging level to DEBUG to capture debug messages
@@ -1072,12 +1050,7 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
 
 
 def test_drain_publish_queue_exceptions(monkeypatch, caplog):
-    """Test that _drain_publish_queue handles exceptions gracefully.
-
-    Raises
-    ------
-    ValueError
-    """
+    """Test that _drain_publish_queue handles exceptions gracefully."""
     # logging, threading, and Queue already imported at top
 
     # Set logging level to DEBUG to capture debug messages

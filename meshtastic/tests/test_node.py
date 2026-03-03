@@ -280,7 +280,7 @@ def test_setURL_ignores_channels_over_device_limit(
     ]
 
     channel_set = apponly_pb2.ChannelSet()
-    for i in range(9):
+    for i in range(CHANNEL_LIMIT + 1):
         settings = channel_set.settings.add()
         settings.name = f"ch{i}"
         settings.psk = b"\x01"
@@ -299,7 +299,7 @@ def test_setURL_ignores_channels_over_device_limit(
     )
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode.channels[0].settings.name == "ch0"
-    assert anode.channels[7].settings.name == "ch7"
+    assert anode.channels[CHANNEL_LIMIT - 1].settings.name == f"ch{CHANNEL_LIMIT - 1}"
 
 
 @pytest.mark.unit

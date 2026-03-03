@@ -94,7 +94,7 @@ class LogDef:
         ----------
         code : str
             Short log code (e.g., "B", "PM", "PS").
-        fields : list[tuple[str, pa.DataType]]
+        fields : list[tuple[str, ArrowDataType]]
             Ordered (name, type) pairs
             describing each field. String and integer Arrow fields are supported.
             Unsupported field types raise ValueError.

@@ -60,17 +60,32 @@ def _readtest(tap: TapDevice) -> None:
     """Read packets from a TapDevice and log/filter protocol details."""
     while True:
         p = bytes(tap.read())
+        if len(p) < 20:
+            logging.debug(
+                "Dropping malformed IPv4 packet: too short (%d bytes)", len(p)
+            )
+            continue
 
         protocol = p[8 + 1]
         srcaddr = p[12:16]
         destaddr = p[16:20]
-        subheader = 20
+        subheader = (p[0] & 0x0F) * 4
+        if subheader < 20 or len(p) < subheader:
+            logging.debug(
+                "Dropping malformed IPv4 packet: invalid header length %d",
+                subheader,
+            )
+            continue
         ignore = False  # Assume we will be forwarding the packet
         if protocol in PROTOCOL_BLACKLIST:
             ignore = True
             logging.debug("Ignoring blacklisted protocol 0x%02x", protocol)
         elif protocol == 0x01:  # ICMP
             icmp_offset = subheader
+            if len(p) <= icmp_offset:
+                logging.debug("Ignoring malformed ICMP packet: missing type byte")
+                ignore = True
+                continue
             icmp_type = p[icmp_offset]
             if icmp_type == 0x08:  # echo request -> echo reply
                 logging.warning("Generating fake ping reply")
@@ -89,8 +104,10 @@ def _readtest(tap: TapDevice) -> None:
                 ip_header[11] = ip_checksum & 0xFF
                 pingback = bytes(ip_header) + bytes(icmp_reply)
                 tap.write(pingback)
+                ignore = True  # Don't forward the original request.
             else:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)
+                ignore = True  # Don't forward unsupported ICMP types.
         elif protocol == 0x11:  # UDP
             srcport = readnet_u16(p, subheader)
             destport = readnet_u16(p, subheader + 2)

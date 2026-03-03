@@ -176,10 +176,12 @@ class ReconnectPolicy:
         3. `_should_retry(consumed_attempt)` computes whether the consumed/current
            attempt index is permitted by the retry budget.
 
-        `max_retries` counts retries after the initial attempt, so total
-        attempts are `1 + max_retries`. The returned boolean indicates whether
-        the attempt whose delay was just computed is allowed, not whether an
-        additional attempt remains after this call.
+        `max_retries` is compared against the zero-based attempt index
+        (`attempt < max_retries`). For example, `max_retries=3` permits
+        consumed attempts 0, 1, and 2; consumed attempt 3 returns False.
+        The returned boolean indicates whether the attempt whose delay was just
+        computed is allowed, not whether an additional attempt remains after
+        this call.
 
         Returns
         -------

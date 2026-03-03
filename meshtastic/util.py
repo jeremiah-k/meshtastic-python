@@ -45,8 +45,8 @@ WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
 
 # COMPAT_STABLE_SHIM: BLACKLIST_VIDS/WHITELIST_VIDS are canonical UPPER_SNAKE_CASE
 # constants; blacklistVids/whitelistVids are legacy compatibility aliases.
-blacklistVids = BLACKLIST_VIDS
-whitelistVids = WHITELIST_VIDS
+blacklistVids: set[int] = BLACKLIST_VIDS
+whitelistVids: set[int] = WHITELIST_VIDS
 
 logger = logging.getLogger(__name__)
 
@@ -1064,7 +1064,8 @@ def get_devices_with_vendor_id(vid: str) -> set[SupportedDevice]:
     sd: set[SupportedDevice] = set()
     for d in supported_devices:
         if any(
-            isinstance(vendor_id, str) and vendor_id.lower() == normalized_vid
+            isinstance(vendor_id, str)
+            and vendor_id.lower().removeprefix("0x") == normalized_vid
             for vendor_id, _ in d.usb_ids
         ):
             sd.add(d)
