@@ -6,8 +6,8 @@ import base64
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, Protocol, cast
-from unittest.mock import MagicMock, patch
+from typing import Any, Literal, Protocol, cast
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from pytest import CaptureFixture, LogCaptureFixture
@@ -23,7 +23,7 @@ from ..protobuf import (
 )
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
-from ..util import Acknowledgment
+from ..util import Acknowledgment, fromPSK, generate_channel_hash
 
 
 class _FakeSendAdminProtocol(Protocol):
@@ -70,6 +70,53 @@ def _make_fake_send_admin(
         return return_packet
 
     return _fake_send_admin
+
+
+def _make_channel(
+    index: int,
+    role: Channel.Role.ValueType,
+    *,
+    name: str = "",
+    psk: bytes = b"",
+) -> Channel:
+    """Build a channel fixture with optional settings fields."""
+    channel = Channel(index=index, role=role)
+    if name:
+        channel.settings.name = name
+    if psk:
+        channel.settings.psk = psk
+    return channel
+
+
+def _make_channel_set_url(
+    settings: list[tuple[str, bytes]],
+    *,
+    add_only: bool = False,
+) -> str:
+    """Build a meshtastic URL with encoded channel settings."""
+    channel_set = apponly_pb2.ChannelSet()
+    channel_set.lora_config.hop_limit = 3
+    for name, psk in settings:
+        chs = channel_set.settings.add()
+        chs.name = name
+        chs.psk = psk
+    encoded = base64.urlsafe_b64encode(channel_set.SerializeToString()).decode("ascii")
+    encoded = encoded.replace("=", "")
+    if add_only:
+        return f"https://meshtastic.org/e/?add=true#{encoded}"
+    return f"https://meshtastic.org/e/#{encoded}"
+
+
+def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
+    """Decode and parse a ChannelSet from a meshtastic URL."""
+    b64 = url.split("/#")[-1]
+    missing_padding = len(b64) % 4
+    if missing_padding:
+        b64 += "=" * (4 - missing_padding)
+    decoded = base64.urlsafe_b64decode(b64)
+    channel_set = apponly_pb2.ChannelSet()
+    channel_set.ParseFromString(decoded)
+    return channel_set
 
 
 @pytest.mark.unit
@@ -762,3 +809,529 @@ def test_requestConfig_with_module_config_descriptor(
     sent_msg = sent_messages[0]
     # mqtt field has index 0, should be set as get_module_config_request
     assert sent_msg.get_module_config_request == 0
+
+
+@pytest.mark.unit
+def test_node_repr_includes_non_default_flags(mock_serial_interface: MagicMock) -> None:
+    """__repr__ should include noProto and non-default timeout when set."""
+    anode = Node(mock_serial_interface, 0x12345678, noProto=True, timeout=12.5)
+    assert repr(anode) == (
+        "Node("
+        f"{mock_serial_interface!r}, "
+        "0x12345678, "
+        "noProto=True, "
+        "timeout=12.5"
+        ")"
+    )
+
+
+@pytest.mark.unit
+def test_set_channels_then_show_channels_lists_non_disabled_entries(
+    capsys: CaptureFixture[str],
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetChannels should normalize entries and showChannels should print active channels."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    anode.localConfig.lora.hop_limit = 3
+
+    anode.setChannels(
+        [
+            _make_channel(99, Channel.Role.PRIMARY, name="primary", psk=b"\x01" * 32),
+            _make_channel(
+                42, Channel.Role.SECONDARY, name="secondary", psk=b"\x02" * 32
+            ),
+        ]
+    )
+
+    assert anode.channels is not None
+    assert len(anode.channels) == 8
+    assert [ch.index for ch in anode.channels] == list(range(8))
+
+    anode.showChannels()
+    out, err = capsys.readouterr()
+    assert "Index 0: PRIMARY" in out
+    assert "Index 1: SECONDARY" in out
+    assert "Complete URL (includes all channels):" in out
+    assert err == ""
+
+
+@pytest.mark.unit
+def test_get_partial_channel_count_reflects_partial_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_partial_channel_count should return the current partial channel size."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.partialChannels = [Channel(), Channel(), Channel()]
+    assert anode._get_partial_channel_count() == 3
+
+
+@pytest.mark.unit
+def test_turn_off_encryption_on_primary_channel_sets_none_psk_and_writes(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should update PSK and write channel 0."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [_make_channel(0, Channel.Role.PRIMARY, name="p", psk=b"\x01")]
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    anode.turnOffEncryptionOnPrimaryChannel()
+
+    assert anode.channels[0].settings.psk == fromPSK("none")
+    anode.writeChannel.assert_called_once_with(0)
+
+
+@pytest.mark.unit
+def test_turn_off_encryption_on_primary_channel_raises_without_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """TurnOffEncryptionOnPrimaryChannel should fail when channels are not loaded."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.turnOffEncryptionOnPrimaryChannel()
+
+
+@pytest.mark.unit
+def test_write_channel_out_of_range_raises_mesh_error(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """WriteChannel should reject indexes outside the current channel range."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="p"),
+        _make_channel(1, Channel.Role.SECONDARY, name="s"),
+    ]
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"Channel index 2 out of range \(0-1\)",
+    ):
+        anode.writeChannel(2)
+
+
+@pytest.mark.unit
+def test_delete_channel_local_node_resets_admin_index_after_write(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should rewrite remaining channels and reset admin index."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="primary", psk=b"\x01"),
+        _make_channel(1, Channel.Role.SECONDARY, name="admin", psk=b"\x02"),
+        _make_channel(2, Channel.Role.SECONDARY, name="ops", psk=b"\x03"),
+        _make_channel(3, Channel.Role.DISABLED),
+        _make_channel(4, Channel.Role.DISABLED),
+        _make_channel(5, Channel.Role.DISABLED),
+        _make_channel(6, Channel.Role.DISABLED),
+        _make_channel(7, Channel.Role.DISABLED),
+    ]
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    anode.deleteChannel(1)
+
+    assert anode.channels is not None
+    assert len(anode.channels) == 8
+    assert anode.channels[1].settings.name == "ops"
+    assert anode.writeChannel.call_args_list == [
+        call(1, adminIndex=1),
+        call(2, adminIndex=0),
+        call(3, adminIndex=0),
+        call(4, adminIndex=0),
+        call(5, adminIndex=0),
+        call(6, adminIndex=0),
+        call(7, adminIndex=0),
+    ]
+
+
+@pytest.mark.unit
+def test_delete_channel_out_of_range_raises_mesh_error(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should reject indexes that are not present."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [_make_channel(0, Channel.Role.PRIMARY, name="primary")]
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"Channel index 9 out of range \(0-0\)",
+    ):
+        anode.deleteChannel(9)
+
+
+@pytest.mark.unit
+def test_delete_channel_raises_when_channels_not_loaded(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should fail fast when channels are not yet available."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = None
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
+    ):
+        anode.deleteChannel(0)
+
+
+@pytest.mark.unit
+def test_delete_channel_rejects_non_secondary_and_non_disabled_roles(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """DeleteChannel should only allow SECONDARY or DISABLED roles."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="primary"),
+        _make_channel(1, Channel.Role.PRIMARY, name="also-primary"),
+    ]
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match="Only SECONDARY or DISABLED channels can be deleted",
+    ):
+        anode.deleteChannel(1)
+
+
+@pytest.mark.unit
+def test_channel_lookup_helpers_handle_found_missing_and_none(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Channel helper lookups should return expected values across edge cases."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="primary"),
+        _make_channel(1, Channel.Role.SECONDARY, name="admin"),
+        _make_channel(2, Channel.Role.DISABLED),
+    ]
+
+    by_name = anode.getChannelByName("admin")
+    disabled = anode.getDisabledChannel()
+    assert by_name is not None
+    assert by_name.index == 1
+    assert anode.getChannelByName("missing") is None
+    assert disabled is not None
+    assert disabled.index == 2
+    assert anode._get_admin_channel_index() == 1
+    anode.channels[1].settings.name = "control"
+    assert anode._get_admin_channel_index() == 0
+
+    anode.channels = None
+    assert anode.getDisabledChannel() is None
+
+
+@pytest.mark.unit
+def test_get_url_conditionally_includes_secondary_channels(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """GetURL should include SECONDARY channels only when includeAll is True."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.localConfig.lora.hop_limit = 3
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="primary", psk=b"\x01"),
+        _make_channel(1, Channel.Role.SECONDARY, name="secondary", psk=b"\x02"),
+        _make_channel(2, Channel.Role.DISABLED),
+    ]
+
+    primary_only = _decode_channel_set_from_url(anode.getURL(includeAll=False))
+    with_secondary = _decode_channel_set_from_url(anode.getURL(includeAll=True))
+
+    assert [s.name for s in primary_only.settings] == ["primary"]
+    assert [s.name for s in with_secondary.settings] == ["primary", "secondary"]
+
+
+@pytest.mark.unit
+def test_set_url_add_only_raises_when_no_disabled_channels_available(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should fail when no free channel slot exists."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="p0", psk=b"\x01"),
+        _make_channel(1, Channel.Role.SECONDARY, name="s1", psk=b"\x02"),
+        _make_channel(2, Channel.Role.SECONDARY, name="s2", psk=b"\x03"),
+        _make_channel(3, Channel.Role.SECONDARY, name="s3", psk=b"\x04"),
+        _make_channel(4, Channel.Role.SECONDARY, name="s4", psk=b"\x05"),
+        _make_channel(5, Channel.Role.SECONDARY, name="s5", psk=b"\x06"),
+        _make_channel(6, Channel.Role.SECONDARY, name="s6", psk=b"\x07"),
+        _make_channel(7, Channel.Role.SECONDARY, name="s7", psk=b"\x08"),
+    ]
+    url = _make_channel_set_url([("new", b"\x09")], add_only=True)
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="No free channels were found"
+    ):
+        anode.setURL(url, addOnly=True)
+
+
+@pytest.mark.unit
+def test_set_url_add_only_adds_new_channel_to_first_disabled_slot(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """setURL(addOnly=True) should insert new channels into disabled slots."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="primary", psk=b"\x01"),
+        _make_channel(1, Channel.Role.DISABLED),
+        _make_channel(2, Channel.Role.DISABLED),
+        _make_channel(3, Channel.Role.DISABLED),
+        _make_channel(4, Channel.Role.DISABLED),
+        _make_channel(5, Channel.Role.DISABLED),
+        _make_channel(6, Channel.Role.DISABLED),
+        _make_channel(7, Channel.Role.DISABLED),
+    ]
+    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+
+    url = _make_channel_set_url([("new-slot", b"\xaa")], add_only=True)
+    anode.setURL(url, addOnly=True)
+
+    assert anode.channels[1].settings.name == "new-slot"
+    assert anode.channels[1].role == Channel.Role.SECONDARY
+    anode.writeChannel.assert_any_call(1)
+
+
+@pytest.mark.unit
+def test_set_url_replace_raises_if_channels_become_none_during_update(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL should fail safely if channels are cleared between lock snapshots."""
+
+    class _FlipChannelsToNoneLock:
+        """Lock stub that clears channels on the third acquisition."""
+
+        def __init__(self, node: Node) -> None:
+            self.node = node
+            self.enters = 0
+
+        def __enter__(self) -> "_FlipChannelsToNoneLock":
+            self.enters += 1
+            if self.enters == 3:
+                self.node.channels = None
+            return self
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+            return False
+
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=i, role=Channel.Role.DISABLED) for i in range(8)]
+    anode._channels_lock = _FlipChannelsToNoneLock(anode)  # type: ignore[assignment]
+
+    url = _make_channel_set_url([("primary", b"\x01")])
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
+        anode.setURL(url)
+
+
+@pytest.mark.unit
+def test_set_url_replace_raises_if_channels_become_none_before_max_channel_snapshot(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """SetURL should fail safely if channels disappear before max-channel snapshot."""
+
+    class _DropChannelsOnSecondLock:
+        """Lock stub that clears channels on the second acquisition."""
+
+        def __init__(self, node: Node) -> None:
+            self.node = node
+            self.enters = 0
+
+        def __enter__(self) -> "_DropChannelsOnSecondLock":
+            self.enters += 1
+            if self.enters == 2:
+                self.node.channels = None
+            return self
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+            return False
+
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [Channel(index=i, role=Channel.Role.DISABLED) for i in range(8)]
+    anode._channels_lock = _DropChannelsOnSecondLock(anode)  # type: ignore[assignment]
+
+    url = _make_channel_set_url([("primary", b"\x01")])
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError, match="Config or channels not loaded"
+    ):
+        anode.setURL(url)
+
+
+@pytest.mark.unit
+def test_commit_settings_transaction_remote_uses_ack_callback(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Remote commitSettingsTransaction should send with onAckNak callback."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
+
+    anode.commitSettingsTransaction()
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    on_response = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
+    assert sent_msg.commit_edit_settings is True
+    assert on_response.__name__ == "onAckNak"
+
+
+@pytest.mark.unit
+def test_enter_dfu_mode_remote_uses_ack_callback(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Remote enterDFUMode should send with onAckNak callback."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    captured: dict[str, object] = {}
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured
+    )
+
+    anode.enterDFUMode()
+
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    on_response = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
+    assert sent_msg.enter_dfu_mode_request is True
+    assert on_response.__name__ == "onAckNak"
+
+
+@pytest.mark.unit
+def test_fixup_and_fill_channel_helpers_cover_none_truncate_and_pad(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Fixup/fill helpers should safely handle None, truncation, and padding."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+
+    anode.channels = None
+    anode._fixup_channels()
+    anode._fill_channels()
+
+    anode.channels = [
+        _make_channel(i, Channel.Role.SECONDARY, name=f"ch{i}") for i in range(10)
+    ]
+    anode._fixup_channels()
+    assert anode.channels is not None
+    assert len(anode.channels) == 8
+    assert [ch.index for ch in anode.channels] == list(range(8))
+
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="p"),
+        _make_channel(1, Channel.Role.SECONDARY, name="s"),
+    ]
+    anode._fill_channels()
+    assert anode.channels is not None
+    assert len(anode.channels) == 8
+    assert all(ch.role == Channel.Role.DISABLED for ch in anode.channels[2:])
+    assert [ch.index for ch in anode.channels] == list(range(8))
+
+
+@pytest.mark.unit
+def test_on_response_request_channel_routing_error_expires_timeout_and_stops(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Routing errors in channel responses should expire timeout and return early."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode._request_channel = MagicMock()  # type: ignore[method-assign]
+
+    packet = {
+        "decoded": {
+            "portnum": "ROUTING_APP",
+            "routing": {"errorReason": "NO_RESPONSE"},
+        }
+    }
+    with patch("meshtastic.node.time.time", return_value=1234.5):
+        anode.onResponseRequestChannel(packet)
+
+    assert anode._timeout.expireTime == 1234.5
+    anode._request_channel.assert_not_called()
+
+
+@pytest.mark.unit
+def test_on_response_request_channel_routing_retry_uses_last_partial_index(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Routing retry path should re-request the last in-progress channel index."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.partialChannels = [_make_channel(3, Channel.Role.SECONDARY, name="p3")]
+    anode._request_channel = MagicMock()  # type: ignore[method-assign]
+
+    packet = {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
+    anode.onResponseRequestChannel(packet)
+
+    anode._request_channel.assert_called_once_with(3)
+
+
+@pytest.mark.unit
+def test_on_response_request_channel_non_final_requests_next_channel(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Non-final channel responses should request the next channel index."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    timeout_mock = MagicMock()
+    anode._timeout = timeout_mock
+    anode._request_channel = MagicMock()  # type: ignore[method-assign]
+
+    raw = admin_pb2.AdminMessage()
+    raw.get_channel_response.index = 4
+    raw.get_channel_response.role = Channel.Role.SECONDARY
+    packet = {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
+    anode.onResponseRequestChannel(packet)
+
+    assert len(anode.partialChannels) == 1
+    assert anode.partialChannels[0].index == 4
+    timeout_mock.reset.assert_called_once_with()
+    anode._request_channel.assert_called_once_with(5)
+
+
+@pytest.mark.unit
+def test_on_response_request_channel_final_response_sets_channel_cache(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """Final channel response should finalize node channels and normalize them."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    timeout_mock = MagicMock()
+    anode._timeout = timeout_mock
+    anode._request_channel = MagicMock()  # type: ignore[method-assign]
+    anode.partialChannels = [
+        _make_channel(i, Channel.Role.SECONDARY, name=f"ch{i}") for i in range(7)
+    ]
+
+    raw = admin_pb2.AdminMessage()
+    raw.get_channel_response.index = 7
+    raw.get_channel_response.role = Channel.Role.SECONDARY
+    raw.get_channel_response.settings.name = "ch7"
+    packet = {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
+    anode.onResponseRequestChannel(packet)
+
+    assert anode.channels is not None
+    assert len(anode.channels) == 8
+    assert [ch.index for ch in anode.channels] == list(range(8))
+    timeout_mock.reset.assert_called_once_with()
+    anode._request_channel.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_channels_with_hash_computes_hash_when_name_and_psk_present(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_get_channels_with_hash should include hashes only for named channels with PSK."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="alpha", psk=b"\x01\x02"),
+        _make_channel(1, Channel.Role.SECONDARY, name="", psk=b"\x03\x04"),
+    ]
+
+    channels_with_hash = anode._get_channels_with_hash()
+    assert channels_with_hash == [
+        {
+            "index": 0,
+            "role": "PRIMARY",
+            "name": "alpha",
+            "hash": generate_channel_hash("alpha", b"\x01\x02"),
+        },
+        {
+            "index": 1,
+            "role": "SECONDARY",
+            "name": "",
+            "hash": None,
+        },
+    ]
