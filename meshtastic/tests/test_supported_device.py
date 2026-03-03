@@ -1,5 +1,7 @@
 """Meshtastic unit tests for supported_device.py."""
 
+from typing import cast
+
 import pytest
 
 from meshtastic.supported_device import (
@@ -29,7 +31,7 @@ def test_supported_device_creation_minimal() -> None:
     assert device.baseport_on_windows == "COM"
     assert device.usb_vendor_id_in_hex is None
     assert device.usb_product_id_in_hex is None
-    assert device.usb_id_aliases == ()
+    assert not device.usb_id_aliases
 
 
 @pytest.mark.unit
@@ -230,7 +232,7 @@ def test_supported_device_usb_id_aliases_none() -> None:
         usb_product_id_in_hex="ea60",
         usb_id_aliases=(),
     )
-    assert device.usb_id_aliases == ()
+    assert not device.usb_id_aliases
 
 
 @pytest.mark.unit
@@ -355,7 +357,7 @@ def test_supported_device_usb_ids_property_with_aliases() -> None:
 def test_supported_device_usb_ids_property_no_ids() -> None:
     """Test usb_ids property with no USB IDs."""
     device = SupportedDevice(name="Test")
-    assert device.usb_ids == ()
+    assert not device.usb_ids
 
 
 @pytest.mark.unit
@@ -526,8 +528,6 @@ def test_device_with_special_chars_in_usb_id() -> None:
 @pytest.mark.unit
 def test_usb_id_aliases_preserve_order() -> None:
     """Test that USB ID aliases preserve insertion order after deduplication."""
-    from typing import cast
-
     device = SupportedDevice(
         name="Test",
         usb_vendor_id_in_hex="10c4",
@@ -552,8 +552,6 @@ def test_usb_id_aliases_preserve_order() -> None:
 @pytest.mark.unit
 def test_usb_ids_property_preserves_order() -> None:
     """Test that usb_ids property preserves primary-then-aliases order."""
-    from typing import cast
-
     device = SupportedDevice(
         name="Test",
         usb_vendor_id_in_hex="10c4",

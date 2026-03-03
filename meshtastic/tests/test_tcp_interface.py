@@ -2,6 +2,7 @@
 
 import re
 import threading
+import time
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -433,12 +434,8 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_shutdown() -> None:
 
             # Start a delay and trigger shutdown during it
             def trigger_shutdown_during_sleep() -> None:
-                import time
-
                 time.sleep(0.1)  # Small delay before triggering
                 iface._wantExit = True
-
-            import threading
 
             thread = threading.Thread(target=trigger_shutdown_during_sleep)
             thread.start()
@@ -463,12 +460,8 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_fatal_disconnect() ->
 
             # Start a delay and trigger fatal disconnect during it
             def trigger_fatal_during_sleep() -> None:
-                import time
-
                 time.sleep(0.1)  # Small delay before triggering
                 iface._fatal_disconnect = True
-
-            import threading
 
             thread = threading.Thread(target=trigger_fatal_during_sleep)
             thread.start()

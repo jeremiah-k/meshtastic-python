@@ -1,8 +1,10 @@
 """Meshtastic unit tests for mesh_interface.py."""
 
+from collections import OrderedDict
 import logging
 import re
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
@@ -1028,10 +1030,8 @@ def test_concurrent_node_database_access() -> None:
 @pytest.mark.unit
 def test_concurrent_queue_operations() -> None:
     """Test that queue operations are thread-safe."""
-    import collections
-
     with MeshInterface(noProto=True) as iface:
-        iface.queue = collections.OrderedDict()
+        iface.queue = OrderedDict()
         errors = []
 
         def add_to_queue(start_id: int) -> None:
@@ -1117,8 +1117,6 @@ def test_concurrent_close_with_packet_id_generation() -> None:
             t.start()
 
         # Let threads run for a bit
-        import time
-
         time.sleep(0.1)
 
         # Signal threads to stop
@@ -1174,7 +1172,9 @@ def test_concurrent_getNode() -> None:
         def get_nodes() -> None:
             try:
                 for i in range(50):
-                    node = iface.getNode(f"!{i:08x}")
+                    # Avoid channel/config waits in noProto mode; this test only
+                    # validates concurrent access safety for getNode().
+                    node = iface.getNode(f"!{i:08x}", requestChannels=False)
                     assert node is not None
             except Exception as e:
                 errors.append(e)

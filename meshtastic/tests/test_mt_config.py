@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import threading
+import types
+import warnings
 from typing import Any
 
 import pytest
@@ -84,8 +86,6 @@ def test_getattr_compat_alias_warn_once() -> None:
         _ = mt_config.tunnelInstance  # pyright: ignore[reportAttributeAccessIssue]
 
     # Second access does not warn
-    import warnings
-
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _ = mt_config.tunnelInstance  # pyright: ignore[reportAttributeAccessIssue]
@@ -116,8 +116,6 @@ def test_setattr_compat_alias_warn_once() -> None:
         )
 
     # Second set does not warn
-    import warnings
-
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         mt_config.tunnelInstance = (
@@ -154,7 +152,6 @@ def test_delattr_compat_alias_warn_once() -> None:
 
     # Reset and set again for second delete
     mt_config.tunnel_instance = marker
-    import warnings
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -273,8 +270,6 @@ def test_concurrent_access_thread_safety() -> None:
 @pytest.mark.usefixtures("mt_config_state")
 def test_setattr_normal_attribute() -> None:
     """Setting normal attributes should work without warnings."""
-    import warnings
-
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         mt_config.channel_index = 99
@@ -287,8 +282,6 @@ def test_setattr_normal_attribute() -> None:
 @pytest.mark.usefixtures("mt_config_state")
 def test_getattr_normal_attribute() -> None:
     """Getting normal attributes should work without warnings."""
-    import warnings
-
     mt_config.channel_index = 99
 
     with warnings.catch_warnings(record=True) as caught:
@@ -301,7 +294,5 @@ def test_getattr_normal_attribute() -> None:
 @pytest.mark.usefixtures("mt_config_state")
 def test_module_class_is_mt_config_module() -> None:
     """Module should use custom _MtConfigModule class."""
-    import types
-
     assert isinstance(mt_config, types.ModuleType)
     assert mt_config.__class__.__name__ == "_MtConfigModule"

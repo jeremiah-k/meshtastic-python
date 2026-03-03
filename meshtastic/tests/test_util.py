@@ -1228,12 +1228,16 @@ def test_flagsToList_single_flag() -> None:
 
     # Create a simple mock enum wrapper
     class MockEnum:
+        """Minimal enum-like wrapper used by flagsToList tests."""
+
         @staticmethod
         def keys() -> list[str]:
+            """Return enum key names."""
             return ["FLAG_A", "FLAG_B", "EXCLUDED_NONE"]
 
         @staticmethod
         def Value(name: str) -> int:
+            """Return integer value for enum key."""
             return {"FLAG_A": 1, "FLAG_B": 2, "EXCLUDED_NONE": 0}[name]
 
     result = flagsToList(MockEnum, 1)  # pyright: ignore[reportArgumentType]
@@ -1245,16 +1249,20 @@ def test_flagsToList_zero_flags() -> None:
     """Test flagsToList with zero flags."""
 
     class MockEnum:
+        """Minimal enum-like wrapper used by flagsToList tests."""
+
         @staticmethod
         def keys() -> list[str]:
+            """Return enum key names."""
             return ["FLAG_A", "FLAG_B"]
 
         @staticmethod
         def Value(name: str) -> int:
+            """Return integer value for enum key."""
             return {"FLAG_A": 1, "FLAG_B": 2}[name]
 
     result = flagsToList(MockEnum, 0)  # pyright: ignore[reportArgumentType]
-    assert result == []
+    assert not result
 
 
 @pytest.mark.unit
@@ -1262,12 +1270,16 @@ def test_flagsToList_unknown_flags() -> None:
     """Test flagsToList with unknown flag bits."""
 
     class MockEnum:
+        """Minimal enum-like wrapper used by flagsToList tests."""
+
         @staticmethod
         def keys() -> list[str]:
+            """Return enum key names."""
             return ["FLAG_A"]
 
         @staticmethod
         def Value(name: str) -> int:
+            """Return integer value for enum key."""
             return {"FLAG_A": 1}[name]
 
     # Use a value with unknown bits
@@ -1363,8 +1375,6 @@ def test_deferred_execution_handles_exceptions(
         de.queueWork(bad_closure)
 
         # Wait for work to complete
-        import time
-
         time.sleep(0.2)
 
     # Should have logged the exception
