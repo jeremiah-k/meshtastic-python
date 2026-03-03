@@ -160,6 +160,7 @@ class MeshInterface:  # pylint: disable=R0902
             only other configuration will be requested. (Default value = False)
         timeout : float
             Default timeout in seconds for operations that wait for replies.
+            (Default value = DEFAULT_INTERFACE_TIMEOUT_SECONDS)
         """
         self.debugOut = debugOut
         self.nodes: dict[str, dict[str, Any]] | None = None
@@ -725,7 +726,9 @@ class MeshInterface:  # pylint: disable=R0902
         requestChannelAttempts : int
             Number of attempts to retrieve channel info before giving up. (Default value = 3)
         timeout : float
-            Timeout in seconds passed to the Node constructor and used while waiting for responses. (Default value = 300.0)
+            Timeout in seconds passed to the Node constructor and used while
+            waiting for responses. (Default value =
+            DEFAULT_INTERFACE_TIMEOUT_SECONDS)
 
         Returns
         -------

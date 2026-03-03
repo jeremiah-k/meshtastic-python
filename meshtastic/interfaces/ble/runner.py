@@ -91,6 +91,7 @@ class BLECoroutineRunner:
     _pending_futures: weakref.WeakSet[Future[Any]]
     _atexit_handler: Callable[[], None]
     _atexit_registered: bool
+    _timeout_alias_warned: bool
 
     def __new__(cls) -> "BLECoroutineRunner":
         """Return the singleton BLECoroutineRunner instance, creating it on first access.
@@ -144,6 +145,8 @@ class BLECoroutineRunner:
 
             # Track pending futures for cleanup
             self._pending_futures = weakref.WeakSet()
+            # Warn once per process (singleton runner) for legacy timeout alias.
+            self._timeout_alias_warned = False
 
             self._atexit_handler = self._atexit_shutdown
             self._atexit_registered = False
@@ -432,7 +435,8 @@ class BLECoroutineRunner:
         coro : Coroutine[Any, Any, T]
             Coroutine to execute on the runner loop.
         timeout : float | None
-            Deprecated alias for `startup_timeout`; if provided a DeprecationWarning is emitted. (Default value = None)
+            Deprecated alias for `startup_timeout`; emits a warn-once
+            `DeprecationWarning` when used. (Default value = None)
         startup_timeout : float | None
             Maximum seconds to wait for the runner loop to become ready before submission. If omitted, the runner's default startup timeout is used.
 
@@ -451,12 +455,18 @@ class BLECoroutineRunner:
         if timeout is not None and startup_timeout is not None:
             raise ValueError(BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT)
         if timeout is not None and startup_timeout is None:
-            warnings.warn(
-                "run_coroutine_threadsafe(timeout=...) is deprecated; "
-                "use startup_timeout=<seconds> instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            should_warn_timeout_alias = False
+            with self._instance_lock:
+                if not self._timeout_alias_warned:
+                    self._timeout_alias_warned = True
+                    should_warn_timeout_alias = True
+            if should_warn_timeout_alias:
+                warnings.warn(
+                    "run_coroutine_threadsafe(timeout=...) is deprecated; "
+                    "use startup_timeout=<seconds> instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         effective_startup_timeout = (
             startup_timeout if startup_timeout is not None else timeout

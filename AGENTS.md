@@ -46,6 +46,7 @@ package are not historical compatibility surface by default and should not get
 - `find_device` is a historical compatibility shim to `findDevice` and should remain silent.
 - Do not add deprecation warnings to other BLE compatibility entrypoints unless explicitly approved.
 - Current approved BLE deprecation: `BLECoroutineRunner.run_coroutine_threadsafe(timeout=...)` as alias for `startup_timeout=...` (semantic API migration, not naming-only).
+- The BLE `timeout` alias warning should be **warn-once** per process (singleton runner) to avoid loop-path warning spam.
 
 ### BLE internal orchestration naming
 

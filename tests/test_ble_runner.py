@@ -220,6 +220,8 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_timeout_alias_warned = runner._timeout_alias_warned
+            runner._timeout_alias_warned = False
             runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
@@ -255,6 +257,7 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._timeout_alias_warned = original_timeout_alias_warned
 
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
@@ -276,6 +279,8 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_timeout_alias_warned = runner._timeout_alias_warned
+            runner._timeout_alias_warned = False
             runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
@@ -310,11 +315,10 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._timeout_alias_warned = original_timeout_alias_warned
 
-    def test_run_coroutine_threadsafe_timeout_alias_warns_every_call(
-        self, monkeypatch
-    ):
-        """Legacy timeout alias is a semantic migration and should warn on each call."""
+    def test_run_coroutine_threadsafe_timeout_alias_warns_once(self, monkeypatch):
+        """Legacy timeout alias should warn once to avoid warning spam."""
         runner = BLECoroutineRunner()
         monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
 
@@ -333,6 +337,8 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_timeout_alias_warned = runner._timeout_alias_warned
+            runner._timeout_alias_warned = False
             runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
@@ -371,11 +377,14 @@ class TestBLECoroutineRunner:
                 for warning in caught
                 if issubclass(warning.category, DeprecationWarning)
             ]
-            assert len(deprecated) == 2
-            assert all("startup_timeout" in str(warning.message) for warning in deprecated)
+            assert len(deprecated) == 1
+            assert all(
+                "startup_timeout" in str(warning.message) for warning in deprecated
+            )
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._timeout_alias_warned = original_timeout_alias_warned
 
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch

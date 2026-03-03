@@ -27,7 +27,7 @@ try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
-    from meshtastic.analysis.__main__ import (  # type: ignore[attr-defined]
+    from meshtastic.analysis.__main__ import (
         choose_power_column,
         create_argparser,
         get_board_info,
@@ -38,7 +38,7 @@ try:
     )
 
     # Import private function for testing
-    _is_loopback_host = analysis_main._is_loopback_host  # type: ignore[attr-defined]
+    _is_loopback_host = analysis_main._is_loopback_host
 except ModuleNotFoundError as exc:
     missing = (exc.name or "").split(".")[0]
     if missing in OPTIONAL_ANALYSIS_DEPS:
@@ -73,7 +73,7 @@ def test_analysis(
     monkeypatch.setattr(logging.getLogger(), "propagate", True)
 
     with caplog.at_level(logging.DEBUG):
-        main()  # type: ignore[no-untyped-call]
+        main()
 
     assert "Exiting without running visualization server" in caplog.text
 
@@ -100,7 +100,7 @@ def test_main_routes_load_errors_through_cli_exit(
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
-        main()  # type: ignore[no-untyped-call]
+        main()
 
     assert "Error loading slog data: bad slog" in cli_exit_capture["message"]
     assert cli_exit_capture["code"] == 1
@@ -127,7 +127,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
-        main()  # type: ignore[no-untyped-call]
+        main()
 
     assert "Error starting Dash server on 127.0.0.1:" in cli_exit_capture["message"]
     assert ADDRESS_IN_USE_ERROR in cli_exit_capture["message"]

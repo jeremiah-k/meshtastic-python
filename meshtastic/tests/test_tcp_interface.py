@@ -443,7 +443,9 @@ def test_TCPInterface_sleep_reconnect_delay_interrupted_by_shutdown() -> None:
             # Should return False when interrupted
             result = iface._sleep_reconnect_delay(10.0)
             thread.join(timeout=1.0)
-            assert not thread.is_alive(), "Thread should complete after _wantExit is set"
+            assert (
+                not thread.is_alive()
+            ), "Thread should complete after _wantExit is set"
 
             assert result is False
         finally:
