@@ -246,14 +246,17 @@ def test_compat_aliases_mapping() -> None:
 def test_concurrent_access_thread_safety() -> None:
     """Concurrent access to deprecation tracking should be thread-safe."""
     results = []
+    results_lock = threading.Lock()
 
     def access_deprecated_alias() -> None:
         try:
             # Access the deprecated alias (warns once per process)
             _ = mt_config.tunnelInstance  # pyright: ignore[reportAttributeAccessIssue]
-            results.append("success")
+            with results_lock:
+                results.append("success")
         except Exception as e:  # noqa: BLE001 - test captures thread errors
-            results.append(f"error: {e}")
+            with results_lock:
+                results.append(f"error: {e}")
 
     threads = [threading.Thread(target=access_deprecated_alias) for _ in range(20)]
     for t in threads:

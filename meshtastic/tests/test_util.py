@@ -1558,7 +1558,7 @@ def test_dotdict_deprecated_warns() -> None:
     """Test dotdict deprecated alias warns once per process."""
 
     with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("once", DeprecationWarning)
+        warnings.simplefilter("always", DeprecationWarning)
         dd = dotdict()  # pyright: ignore[reportDeprecated]
         _ = dotdict()  # pyright: ignore[reportDeprecated]
     assert isinstance(dd, dict)
