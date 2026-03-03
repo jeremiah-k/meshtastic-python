@@ -4,7 +4,7 @@ import logging
 import math
 from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
+THREAD_START_GRACE_POLL_INTERVAL_SECONDS = 0.01
+THREAD_START_GRACE_MAX_POLLS = 5
 
 
 def _camel_to_snake(name: str) -> str:
@@ -139,10 +141,19 @@ class ReconnectScheduler:
         # schedulers will see a non-None _reconnect_thread and exit early.
         try:
             self.thread_coordinator._start_thread(thread)
-            thread_ident = getattr(thread, "ident", None)
-            thread_is_alive = bool(
-                callable(getattr(thread, "is_alive", None)) and thread.is_alive()
-            )
+            thread_ident = None
+            thread_is_alive = False
+            for _ in range(THREAD_START_GRACE_MAX_POLLS):
+                thread_ident = getattr(thread, "ident", None)
+                thread_is_alive = bool(
+                    callable(getattr(thread, "is_alive", None)) and thread.is_alive()
+                )
+                if thread_ident is not None or thread_is_alive:
+                    break
+                if shutdown_event.wait(
+                    timeout=THREAD_START_GRACE_POLL_INTERVAL_SECONDS
+                ):
+                    break
             if thread_ident is None and not thread_is_alive:
                 logger.debug(
                     "Auto-reconnect thread did not start; clearing stale thread reference."
@@ -321,6 +332,32 @@ class ReconnectWorker:
             return None
         return self._validate_next_attempt(next_attempt)
 
+    def _get_validated_attempt_count(self) -> int | None:
+        """Call and validate reconnect policy `get_attempt_count()` output."""
+        try:
+            raw_attempt_count = self._call_policy("get_attempt_count")
+        except ReconnectPolicyMissingMethodError as err:
+            logger.exception(
+                "Reconnect policy missing required method '%s'",
+                err.method_name,
+            )
+            return None
+        if not isinstance(raw_attempt_count, int) or isinstance(
+            raw_attempt_count, bool
+        ):
+            logger.error(
+                "Reconnect policy get_attempt_count returned invalid value: %r",
+                raw_attempt_count,
+            )
+            return None
+        if raw_attempt_count < 0:
+            logger.error(
+                "Reconnect policy get_attempt_count returned negative value: %r",
+                raw_attempt_count,
+            )
+            return None
+        return raw_attempt_count
+
     def _handle_connected_elsewhere_gate(
         self, interface: "BLEInterface", attempt_num: int, shutdown_event: Event
     ) -> bool | None:
@@ -391,7 +428,10 @@ class ReconnectWorker:
                     return
                 attempt_num = 0
                 try:
-                    attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
+                    attempt_count = self._get_validated_attempt_count()
+                    if attempt_count is None:
+                        return
+                    attempt_num = attempt_count + 1
                     if interface._is_connection_connected:
                         return
                     gate_result = self._handle_connected_elsewhere_gate(

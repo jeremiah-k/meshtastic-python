@@ -189,6 +189,11 @@ class TCPInterface(StreamInterface):
                 self.RECONNECT_DISABLED_AFTER_FATAL_ERROR.format(self.hostname)
             )
 
+    def _is_shutdown_requested(self) -> bool:
+        """Return whether shutdown/fatal-disconnect has been requested."""
+        with self._reconnect_lock:
+            return self._wantExit or self._fatal_disconnect
+
     def _connect_socket_if_needed(self) -> None:
         """Open a TCP socket when none is active, with reconnect-safe serialization."""
         while True:
@@ -380,7 +385,7 @@ class TCPInterface(StreamInterface):
         """
         deadline = time.monotonic() + delay
         while True:
-            if self._wantExit or self._fatal_disconnect:
+            if self._is_shutdown_requested():
                 return False
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -475,7 +480,7 @@ class TCPInterface(StreamInterface):
                         "myConnect() returned without setting socket for %s",
                         self.hostname,
                     )
-                elif self._wantExit:
+                elif self._is_shutdown_requested():
                     # close() may race while we reconnect; tear down the new socket.
                     reconnect_sock = self.socket
                     self._close_socket_if_current(reconnect_sock)
@@ -585,7 +590,7 @@ class TCPInterface(StreamInterface):
 
         # Socket may be briefly nulled by a concurrent writer failure; try to
         # recover unless shutdown was explicitly requested.
-        if not self._wantExit and not self._fatal_disconnect:
+        if not self._is_shutdown_requested():
             logger.debug("Socket unavailable, attempting reconnect")
             self._attempt_reconnect()
         return b""

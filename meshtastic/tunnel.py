@@ -21,7 +21,7 @@ import threading
 from contextlib import suppress
 from typing import Any
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 from pytap2 import TapDevice
 
 from meshtastic import mt_config
@@ -180,7 +180,7 @@ class Tunnel:
         self.TCP_BLACKLIST: set[int] = set(self.TCP_BLACKLIST_DEFAULT)
         self.PROTOCOL_BLACKLIST: set[int] = set(self.PROTOCOL_BLACKLIST_DEFAULT)
 
-        # Legacy compatibility aliases
+        # COMPAT_STABLE_SHIM: Legacy compatibility aliases for historical callers.
         self.udpBlacklist = self.UDP_BLACKLIST
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
@@ -368,7 +368,7 @@ class Tunnel:
             if not self._should_filter_packet(p):
                 self._send_packet(dest_addr, p)
 
-    def _ip_to_node_id(self, ipAddr: bytes) -> str | None:
+    def _ip_to_node_id(self, ip_addr: bytes) -> str | None:
         """Convert a 4-byte IP address to the corresponding mesh node ID.
 
         Uses the last 16 bits of the IP address to match against the low 16 bits
@@ -376,7 +376,7 @@ class Tunnel:
 
         Parameters
         ----------
-        ipAddr : bytes
+        ip_addr : bytes
             4-byte IPv4 address in network byte order.
 
         Returns
@@ -385,7 +385,7 @@ class Tunnel:
             The mesh node ID string if a matching node is found, "^all" for
             broadcast address 255.255, or None if no matching node exists.
         """
-        ip_bits = ipAddr[2] * OCTET_MULTIPLIER + ipAddr[3]
+        ip_bits = ip_addr[2] * OCTET_MULTIPLIER + ip_addr[3]
 
         if ip_bits == NODE_NUM_MASK:
             return "^all"
@@ -400,12 +400,12 @@ class Tunnel:
                 return str(node["user"]["id"])
         return None
 
-    def _node_num_to_ip(self, nodeNum: int) -> str:
+    def _node_num_to_ip(self, node_num: int) -> str:
         """Construct an IPv4 address in the tunnel subnet for a given node number.
 
         Parameters
         ----------
-        nodeNum : int
+        node_num : int
             Node number; the low 16 bits are used to form the final two octets of the returned address.
 
         Returns
@@ -413,7 +413,7 @@ class Tunnel:
         str
             IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
         """
-        return f"{self.subnetPrefix}.{(nodeNum >> 8) & IP_OCTET_MASK}.{nodeNum & IP_OCTET_MASK}"
+        return f"{self.subnetPrefix}.{(node_num >> 8) & IP_OCTET_MASK}.{node_num & IP_OCTET_MASK}"
 
     def _send_packet(self, dest_addr: bytes, p: bytes) -> None:
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
@@ -470,19 +470,22 @@ class Tunnel:
                 pub.unsubscribe(onTunnelReceive, TUNNEL_TOPIC)
             self._subscribed = False
 
-    # Backward-compatible aliases for existing callers/tests.
+    # COMPAT_STABLE_SHIM: historical internal helper alias for legacy callers/tests.
     def _shouldFilterPacket(self, p: bytes) -> bool:
         """Compatibility wrapper for _should_filter_packet."""
         return self._should_filter_packet(p)
 
+    # COMPAT_STABLE_SHIM: historical internal helper alias for legacy callers/tests.
     def _ipToNodeId(self, ipAddr: bytes) -> str | None:
         """Compatibility wrapper for _ip_to_node_id."""
         return self._ip_to_node_id(ipAddr)
 
+    # COMPAT_STABLE_SHIM: historical internal helper alias for legacy callers/tests.
     def _nodeNumToIp(self, nodeNum: int) -> str:
         """Compatibility wrapper for _node_num_to_ip."""
         return self._node_num_to_ip(nodeNum)
 
+    # COMPAT_STABLE_SHIM: historical public alias for _send_packet.
     def sendPacket(self, destAddr: bytes, p: bytes) -> None:
         """Compatibility wrapper for _send_packet."""
         self._send_packet(destAddr, p)

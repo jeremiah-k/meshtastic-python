@@ -214,8 +214,6 @@ class PPK2PowerSupply(PowerSupply):
                 self.last_reported_max = self.current_max
             self.current_sum = 0
             self.current_num_samples = 0
-            # if self.num_data_reads:
-            #    logging.debug(f"max data len = {self.max_data_len},avg {self.total_data_len/self.num_data_reads}, num reads={self.num_data_reads}")
             # Summary stats for performance monitoring
             self.num_data_reads = 0
             self.total_data_len = 0

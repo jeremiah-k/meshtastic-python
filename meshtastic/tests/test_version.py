@@ -9,6 +9,17 @@ import meshtastic.util as util_module
 import meshtastic.version as version_module
 
 
+class _FakeResponse:
+    """Stub response payload for the PyPI version endpoint."""
+
+    def __init__(self, version: str) -> None:
+        self._version = version
+
+    def json(self) -> dict[str, dict[str, str]]:
+        """Return fake PyPI response JSON."""
+        return {"info": {"version": self._version}}
+
+
 @pytest.mark.unit
 def test_get_active_version_prefers_mtjk(monkeypatch: pytest.MonkeyPatch) -> None:
     """The active version lookup should prefer the fork distribution name."""
@@ -59,19 +70,12 @@ def test_check_if_newer_version_falls_back_to_second_distribution(
 
     calls: list[str] = []
 
-    class _FakeResponse:
-        """Stub response payload for the PyPI version endpoint."""
-
-        def json(self) -> dict[str, dict[str, str]]:
-            """Return fake PyPI response JSON."""
-            return {"info": {"version": "2.7.9"}}
-
     def _fake_get(url: str, timeout: float) -> _FakeResponse:
         _ = timeout
         calls.append(url)
         if "/mtjk/" in url:
             raise requests.RequestException("package not published yet")
-        return _FakeResponse()
+        return _FakeResponse("2.7.9")
 
     monkeypatch.setattr(
         util_module,
@@ -94,16 +98,9 @@ def test_check_if_newer_version_returns_none_when_not_newer(
 ) -> None:
     """PyPI checks should return None when the fetched version is not newer."""
 
-    class _FakeResponse:
-        """Stub response payload for the PyPI version endpoint."""
-
-        def json(self) -> dict[str, dict[str, str]]:
-            """Return fake PyPI response JSON."""
-            return {"info": {"version": "2.7.8"}}
-
     def _fake_get(url: str, timeout: float) -> _FakeResponse:
         _ = (url, timeout)
-        return _FakeResponse()
+        return _FakeResponse("2.7.8")
 
     monkeypatch.setattr(
         util_module,

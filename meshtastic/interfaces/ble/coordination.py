@@ -178,7 +178,7 @@ class ThreadCoordinator:
                 inert_event.set()
                 return inert_event
             if name in self._events:
-                logger.warning(
+                logger.debug(
                     "Event already exists: %s, returning existing instance", name
                 )
                 return self._events[name]

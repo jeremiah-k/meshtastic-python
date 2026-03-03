@@ -5,7 +5,6 @@
 import base64
 import importlib.util
 import logging
-import os
 import platform
 import re
 import sys
@@ -226,6 +225,14 @@ def test_parse_host_port_rejects_non_numeric_port() -> None:
     """Test _parse_host_port rejects non-numeric host:port values."""
     with pytest.raises(SystemExit) as exc_info:
         _parse_host_port("hostname.example:notaport", default_port=4403)
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.unit
+def test_parse_host_port_rejects_missing_hostname() -> None:
+    """Test _parse_host_port rejects :port values with an empty hostname."""
+    with pytest.raises(SystemExit) as exc_info:
+        _parse_host_port(":4403", default_port=4403)
     assert exc_info.value.code == 1
 
 
@@ -587,9 +594,11 @@ def test_main_info_with_seriallog_stdout(capsys: pytest.CaptureFixture[str]) -> 
 @pytest.mark.usefixtures("reset_mt_config")
 def test_main_info_with_seriallog_output_txt(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     """Test --info."""
-    sys.argv = ["", "--info", "--seriallog", "output.txt"]
+    output_file = tmp_path / "output.txt"
+    sys.argv = ["", "--info", "--seriallog", str(output_file)]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     iface = MagicMock(autospec=SerialInterface)
@@ -611,8 +620,6 @@ def test_main_info_with_seriallog_output_txt(
         assert re.search(r"inside mocked showInfo", out, re.MULTILINE)
         assert err == ""
         mo.assert_called()
-    # do some cleanup
-    os.remove("output.txt")
 
 
 @pytest.mark.unit
@@ -1656,7 +1663,8 @@ def test_main_configure_with_snake_case(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --configure with valid file."""
-    sys.argv = ["", "--configure", "example_config.yaml"]
+    config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
+    sys.argv = ["", "--configure", str(config_path)]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     with SerialInterface(noProto=True, connectNow=False) as serialInterface:
@@ -1696,7 +1704,8 @@ def test_main_configure_with_camel_case_keys(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test --configure with valid file."""
-    sys.argv = ["", "--configure", "exampleConfig.yaml"]
+    config_path = Path(__file__).resolve().parents[2] / "exampleConfig.yaml"
+    sys.argv = ["", "--configure", str(config_path)]
     mt_config.args = sys.argv  # type: ignore[assignment]
 
     with SerialInterface(noProto=True, connectNow=False) as serialInterface:

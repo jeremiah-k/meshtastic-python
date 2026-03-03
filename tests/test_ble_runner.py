@@ -153,7 +153,7 @@ class TestBLECoroutineRunner:
         loop = _LoopStub()
 
         runner._handle_loop_exception(
-            loop, {"message": "test error", "exception": None}
+            cast(Any, loop), {"message": "test error", "exception": None}
         )
 
         assert observed_exc_info == [False]
@@ -220,6 +220,8 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_timeout_alias_warned = runner._timeout_alias_warned
+            runner._timeout_alias_warned = False
             runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
@@ -234,7 +236,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -255,11 +257,16 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._timeout_alias_warned = original_timeout_alias_warned
 
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: timeout is None or timeout >= 0,
+        )
 
         class _LoopStub:
             """Loop stub that always reports a running event loop."""
@@ -276,6 +283,8 @@ class TestBLECoroutineRunner:
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_timeout_alias_warned = runner._timeout_alias_warned
+            runner._timeout_alias_warned = False
             runner._loop = cast(Any, _LoopStub())
 
         def _fake_submit(coro, _loop):
@@ -290,7 +299,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -310,13 +319,91 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._timeout_alias_warned = original_timeout_alias_warned
+
+    def test_run_coroutine_threadsafe_timeout_alias_warns_once(self, monkeypatch):
+        """Legacy timeout alias should warn once to avoid warning spam."""
+        runner = BLECoroutineRunner()
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: timeout is None or timeout >= 0,
+        )
+
+        class _LoopStub:
+            """Loop stub that always reports a running event loop."""
+
+            @staticmethod
+            def is_running():
+                """Report whether the BLE coroutine runner is currently active.
+
+                Returns
+                -------
+                    True if the runner is active, False otherwise.
+                """
+                return True
+
+        with runner._instance_lock:
+            original_loop = runner._loop
+            original_timeout_alias_warned = runner._timeout_alias_warned
+            runner._timeout_alias_warned = False
+            runner._loop = cast(Any, _LoopStub())
+
+        def _fake_submit(coro, _loop):
+            """Close the provided coroutine without executing it and return a completed Future with result None.
+
+            Parameters
+            ----------
+            coro : coroutine
+                Coroutine object to be closed and not scheduled for execution.
+            _loop : asyncio.AbstractEventLoop
+                Ignored; present for signature compatibility.
+
+            Returns
+            -------
+            concurrent.futures.Future
+                A Future already completed with result `None`.
+            """
+            coro.close()
+            future = Future()
+            future.set_result(None)
+            return future
+
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
+
+        async def _noop():
+            """Run a coroutine that does nothing."""
+            return None
+
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", DeprecationWarning)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+            deprecated = [
+                warning
+                for warning in caught
+                if issubclass(warning.category, DeprecationWarning)
+            ]
+            assert len(deprecated) == 1
+            assert all(
+                "startup_timeout" in str(warning.message) for warning in deprecated
+            )
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
+                runner._timeout_alias_warned = original_timeout_alias_warned
 
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
     ):
         """Explicit startup_timeout should not emit timeout-alias deprecation warnings."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            lambda timeout=None: timeout is None or timeout >= 0,
+        )
 
         class _LoopStub:
             """Loop stub that always reports a running event loop."""
@@ -347,7 +434,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -696,7 +783,7 @@ class TestBLEClientWithRunner:
         class FailingBleakClient:
             """Bleak client stub whose disconnect always raises."""
 
-            isConnected = True
+            is_connected = True
 
             @staticmethod
             async def disconnect():

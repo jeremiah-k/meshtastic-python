@@ -53,6 +53,8 @@ EMPTY_SHORT_NAME_MSG = (
 )
 # Maximum length for long_name (per protobuf definition in mesh.options)
 MAX_LONG_NAME_LEN = 40
+DEFAULT_NODE_TIMEOUT_SECONDS = 300.0
+DEFAULT_REBOOT_DELAY_SECONDS = 10
 
 
 class Node:
@@ -66,7 +68,7 @@ class Node:
         iface: "MeshInterface",
         nodeNum: int | str,
         noProto: bool = False,
-        timeout: float = 300.0,
+        timeout: float = DEFAULT_NODE_TIMEOUT_SECONDS,
     ) -> None:
         """Create and initialize a Node instance that holds configuration, channel state, and runtime flags for a mesh node.
 
@@ -79,7 +81,8 @@ class Node:
         noProto : bool
             If True, protocol-based operations are disabled for this node. (Default value = False)
         timeout : float
-            Maximum seconds used for operations that wait for responses. (Default value = 300.0)
+            Maximum seconds used for operations that wait for responses.
+            (Default value = DEFAULT_NODE_TIMEOUT_SECONDS)
         """
         self.iface = iface
         self.nodeNum = toNodeNum(nodeNum) if isinstance(nodeNum, str) else nodeNum
@@ -93,6 +96,7 @@ class Node:
         self.cannedPluginMessageMessages: str | None = None
         self.ringtone: str | None = None
         self.ringtonePart: str | None = None
+        self._channels_lock = threading.RLock()
         self._ringtone_lock = threading.Lock()
         self._canned_message_lock = threading.Lock()
 
@@ -109,7 +113,7 @@ class Node:
         r = f"Node({self.iface!r}, 0x{self.nodeNum:08x}"
         if self.noProto:
             r += ", noProto=True"
-        if self._timeout.expireTimeout != 300.0:
+        if self._timeout.expireTimeout != DEFAULT_NODE_TIMEOUT_SECONDS:
             r += f", timeout={self._timeout.expireTimeout!r}"
         r += ")"
         return r
@@ -196,9 +200,11 @@ class Node:
         all channels differs, it is printed as the "Complete URL".
         """
         print("Channels:")
-        if self.channels:
-            logger.debug(f"self.channels:{self.channels}")
-            for c in self.channels:
+        with self._channels_lock:
+            channels_snapshot = list(self.channels) if self.channels else []
+        if channels_snapshot:
+            logger.debug(f"self.channels:{channels_snapshot}")
+            for c in channels_snapshot:
                 cStr = messageToJson(c.settings)
                 # don't show disabled channels
                 if channel_pb2.Channel.Role.Name(c.role) != "DISABLED":
@@ -237,8 +243,9 @@ class Node:
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
         """
-        self.channels = list(channels)
-        self._fixup_channels()
+        with self._channels_lock:
+            self.channels = list(channels)
+            self._fixup_channels_locked()
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -255,10 +262,16 @@ class Node:
         logger.debug(f"requestChannels for nodeNum:{self.nodeNum}")
         # only initialize if we're starting out fresh
         if startingIndex == 0:
-            self.channels = None
-            # We keep our channels in a temp array until finished
-            self.partialChannels = []
+            with self._channels_lock:
+                self.channels = None
+                # We keep our channels in a temp array until finished
+                self.partialChannels = []
         self._request_channel(startingIndex)
+
+    def _get_partial_channel_count(self) -> int:
+        """Return the current number of partially received channels."""
+        with self._channels_lock:
+            return len(self.partialChannels)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
         """Process an admin response for a settings request and update the node's config objects.
@@ -383,9 +396,11 @@ class Node:
         MeshInterfaceError
             if channel data has not been loaded.
         """
-        if self.channels is None:
-            self._raise_interface_error("Error: No channels have been read")
-        self.channels[0].settings.psk = fromPSK("none")
+        with self._channels_lock:
+            channels = self.channels
+            if not channels:
+                self._raise_interface_error("Error: No channels have been read")
+            channels[0].settings.psk = fromPSK("none")
         logger.info("Writing modified channels to device")
         self.writeChannel(0)
 
@@ -527,15 +542,19 @@ class Node:
         MeshInterfaceError
             If channels have not been loaded (no channels to write).
         """
-        if self.channels is None:
-            self._raise_interface_error("Error: No channels have been read")
-        if channelIndex < 0 or channelIndex >= len(self.channels):
-            self._raise_interface_error(
-                f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
-            )
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                self._raise_interface_error("Error: No channels have been read")
+            if channelIndex < 0 or channelIndex >= len(channels):
+                self._raise_interface_error(
+                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
+                )
+            channel_to_write = channel_pb2.Channel()
+            channel_to_write.CopyFrom(channels[channelIndex])
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(self.channels[channelIndex])
+        p.set_channel.CopyFrom(channel_to_write)
         self._send_admin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
@@ -552,10 +571,11 @@ class Node:
         channel_pb2.Channel | None
             The channel at the specified index, or None if channels are unset or the index is out of range.
         """
-        ch = None
-        if self.channels and 0 <= channelIndex < len(self.channels):
-            ch = self.channels[channelIndex]
-        return ch
+        with self._channels_lock:
+            channels = self.channels
+            if channels and 0 <= channelIndex < len(channels):
+                return channels[channelIndex]
+            return None
 
     def deleteChannel(self, channelIndex: int) -> None:
         """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
@@ -578,27 +598,28 @@ class Node:
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        if self.channels is None:
-            self._raise_interface_error("Error: No channels have been read")
-        if channelIndex < 0 or channelIndex >= len(self.channels):
-            self._raise_interface_error(
-                f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
-            )
-        ch = self.channels[channelIndex]
-        if ch.role not in (
-            channel_pb2.Channel.Role.SECONDARY,
-            channel_pb2.Channel.Role.DISABLED,
-        ):
-            self._raise_interface_error(
-                "Only SECONDARY or DISABLED channels can be deleted"
-            )
-
-        # we are careful here because if we move the "admin" channel the channelIndex we need to use
-        # for sending admin channels will also change
+        # We are careful here because if we move the "admin" channel, the
+        # channelIndex we need to use for sending admin channels will also change.
         adminIndex = self.iface.localNode._get_admin_channel_index()
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                self._raise_interface_error("Error: No channels have been read")
+            if channelIndex < 0 or channelIndex >= len(channels):
+                self._raise_interface_error(
+                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
+                )
+            ch = channels[channelIndex]
+            if ch.role not in (
+                channel_pb2.Channel.Role.SECONDARY,
+                channel_pb2.Channel.Role.DISABLED,
+            ):
+                self._raise_interface_error(
+                    "Only SECONDARY or DISABLED channels can be deleted"
+                )
 
-        self.channels.pop(channelIndex)
-        self._fixup_channels()  # expand back to 8 channels
+            channels.pop(channelIndex)
+            self._fixup_channels_locked()  # expand back to 8 channels
 
         index = channelIndex
         while index < 8:
@@ -625,9 +646,10 @@ class Node:
         channel_pb2.Channel | None
             The matching channel object if found, `None` otherwise.
         """
-        for c in self.channels or []:
-            if c.settings and c.settings.name == name:
-                return c
+        with self._channels_lock:
+            for c in self.channels or []:
+                if c.settings and c.settings.name == name:
+                    return c
         return None
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
@@ -638,11 +660,12 @@ class Node:
         channel_pb2.Channel | None
             The first disabled channel if present, `None` otherwise.
         """
-        if self.channels is None:
-            return None
-        for c in self.channels:
-            if c.role == channel_pb2.Channel.Role.DISABLED:
-                return c
+        with self._channels_lock:
+            if self.channels is None:
+                return None
+            for c in self.channels:
+                if c.role == channel_pb2.Channel.Role.DISABLED:
+                    return c
         return None
 
     def _get_admin_channel_index(self) -> int:
@@ -653,9 +676,10 @@ class Node:
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        for c in self.channels or []:
-            if c.settings and c.settings.name.lower() == "admin":
-                return c.index
+        with self._channels_lock:
+            for c in self.channels or []:
+                if c.settings and c.settings.name.lower() == "admin":
+                    return c.index
         return 0
 
     def setOwner(
@@ -750,15 +774,17 @@ class Node:
         """
         # Only keep the primary/secondary channels, assume primary is first
         channelSet = apponly_pb2.ChannelSet()
-        if self.channels:
-            for c in self.channels:
+        with self._channels_lock:
+            channels_snapshot = list(self.channels) if self.channels else []
+        if channels_snapshot:
+            for c in channels_snapshot:
                 if c.role == channel_pb2.Channel.Role.PRIMARY or (
                     includeAll and c.role == channel_pb2.Channel.Role.SECONDARY
                 ):
                     channelSet.settings.append(c.settings)
 
         if len(self.localConfig.ListFields()) == 0:
-            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name.get("lora"))
+            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name["lora"])
         channelSet.lora_config.CopyFrom(self.localConfig.lora)
         some_bytes = channelSet.SerializeToString()
         s = base64.urlsafe_b64encode(some_bytes).decode("ascii")
@@ -786,18 +812,15 @@ class Node:
             If channels or configuration are not loaded, the URL is invalid or
             contains no settings, or no free channel slot is available when adding.
         """
-        if self.channels is None:
-            self._raise_interface_error("Config or channels not loaded")
+        with self._channels_lock:
+            if self.channels is None:
+                self._raise_interface_error("Config or channels not loaded")
 
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
-        # Split on '/#' to find the base64 encoded channel settings
-        if addOnly:
-            splitURL = url.split("/?add=true#")
-        else:
-            splitURL = url.split("/#")
-        if len(splitURL) == 1:
+        # Parse from '#' to support optional query parameters before the fragment.
+        if "#" not in url:
             self._raise_interface_error(f"Invalid URL '{url}'")
-        b64 = splitURL[-1]
+        b64 = url.split("#")[-1]
         if not b64:
             self._raise_interface_error(f"Invalid URL '{url}': no channel data found")
 
@@ -827,21 +850,41 @@ class Node:
             # Add new channels with names not already present
             # Don't change existing channels
             for chs in channelSet.settings:
-                channelExists = self.getChannelByName(chs.name)
-                if channelExists or chs.name == "":
-                    logger.info(
-                        f'Ignoring existing or empty channel "{chs.name}" from add URL'
+                with self._channels_lock:
+                    channels = self.channels
+                    if channels is None:
+                        self._raise_interface_error("Config or channels not loaded")
+                    channel_exists = any(
+                        c.settings and c.settings.name == chs.name for c in channels
                     )
-                    continue
-                ch = self.getDisabledChannel()
-                if not ch:
-                    self._raise_interface_error("No free channels were found")
-                ch.settings.CopyFrom(chs)
-                ch.role = channel_pb2.Channel.Role.SECONDARY
+                    if channel_exists or chs.name == "":
+                        logger.info(
+                            f'Ignoring existing or empty channel "{chs.name}" from add URL'
+                        )
+                        continue
+
+                    disabled_channel = next(
+                        (
+                            c
+                            for c in channels
+                            if c.role == channel_pb2.Channel.Role.DISABLED
+                        ),
+                        None,
+                    )
+                    if disabled_channel is None:
+                        self._raise_interface_error("No free channels were found")
+
+                    disabled_channel.settings.CopyFrom(chs)
+                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
+                    channel_index = disabled_channel.index
                 logger.info(f"Adding new channel '{chs.name}' to device")
-                self.writeChannel(ch.index)
+                self.writeChannel(channel_index)
         else:
-            max_channels = len(self.channels)
+            with self._channels_lock:
+                channels = self.channels
+                if channels is None:
+                    self._raise_interface_error("Config or channels not loaded")
+                max_channels = len(channels)
             for i, chs in enumerate(channelSet.settings):
                 if i >= max_channels:
                     logger.warning(
@@ -857,7 +900,11 @@ class Node:
                 )
                 ch.index = i
                 ch.settings.CopyFrom(chs)
-                self.channels[ch.index] = ch
+                with self._channels_lock:
+                    channels = self.channels
+                    if channels is None:
+                        self._raise_interface_error("Config or channels not loaded")
+                    channels[ch.index] = ch
                 logger.debug(f"Channel i:{i} ch:{ch}")
                 self.writeChannel(ch.index)
 
@@ -1309,7 +1356,9 @@ class Node:
 
         return self._send_admin(p)
 
-    def reboot(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
+    def reboot(
+        self, secs: int = DEFAULT_REBOOT_DELAY_SECONDS
+    ) -> mesh_pb2.MeshPacket | None:
         """Request the node to reboot after a delay.
 
         Parameters
@@ -1380,7 +1429,9 @@ class Node:
             onResponse = self.onAckNak
         return self._send_admin(p, onResponse=onResponse)
 
-    def rebootOTA(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
+    def rebootOTA(
+        self, secs: int = DEFAULT_REBOOT_DELAY_SECONDS
+    ) -> mesh_pb2.MeshPacket | None:
         """Request the node to perform an OTA reboot after a given delay.
 
         Parameters
@@ -1496,7 +1547,9 @@ class Node:
             onResponse = self.onAckNak
         return self._send_admin(p, onResponse=onResponse)
 
-    def shutdown(self, secs: int = 10) -> mesh_pb2.MeshPacket | None:
+    def shutdown(
+        self, secs: int = DEFAULT_REBOOT_DELAY_SECONDS
+    ) -> mesh_pb2.MeshPacket | None:
         """Request the node to shut down after a given number of seconds.
 
         Parameters
@@ -1817,6 +1870,11 @@ class Node:
         field to its position in the list (starting at 0) and then appends disabled channels as
         needed so the channel list reaches the required length.
         """
+        with self._channels_lock:
+            self._fixup_channels_locked()
+
+    def _fixup_channels_locked(self) -> None:
+        """Normalize channel entries while holding `_channels_lock`."""
         channels = self.channels
         if channels is None:
             return
@@ -1827,12 +1885,12 @@ class Node:
             )
             del channels[8:]
 
-        # Add extra disabled channels as needed
-        # This is needed because the protobufs will have index **missing** if the channel number is zero
+        # Add extra disabled channels as needed.
+        # This is needed because the protobufs will have index **missing** if the channel number is zero.
         for index, ch in enumerate(channels):
             ch.index = index  # fixup indexes
 
-        self._fill_channels()
+        self._fill_channels_locked()
 
     def _fill_channels(self) -> None:
         """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
@@ -1840,11 +1898,16 @@ class Node:
         If `self.channels` is None this is a no-op. Appends new Channel objects with
         role `DISABLED` and sequential `index` values until the list length reaches 8.
         """
+        with self._channels_lock:
+            self._fill_channels_locked()
+
+    def _fill_channels_locked(self) -> None:
+        """Append disabled channels while holding `_channels_lock`."""
         channels = self.channels
         if channels is None:
             return
 
-        # Add extra disabled channels as needed
+        # Add extra disabled channels as needed.
         index = len(channels)
         while index < 8:
             ch = channel_pb2.Channel()
@@ -1941,23 +2004,25 @@ class Node:
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 return  # Don't try to parse this routing message
             lastTried = 0
-            if len(self.partialChannels) > 0:
-                lastTried = self.partialChannels[-1].index
+            with self._channels_lock:
+                if len(self.partialChannels) > 0:
+                    lastTried = self.partialChannels[-1].index
             logger.debug("Retrying previous channel request.")
             self._request_channel(lastTried)
             return
 
         c = p["decoded"]["admin"]["raw"].get_channel_response
-        self.partialChannels.append(c)
+        with self._channels_lock:
+            self.partialChannels.append(c)
         self._timeout.reset()  # We made forward progress
         logger.debug(f"Received channel {stripnl(c)}")
         index = c.index
 
         if index >= 8 - 1:
             logger.debug("Finished downloading channels")
-
-            self.channels = self.partialChannels
-            self._fixup_channels()
+            with self._channels_lock:
+                self.channels = list(self.partialChannels)
+                self._fixup_channels_locked()
         else:
             self._request_channel(index + 1)
 
@@ -2124,8 +2189,10 @@ class Node:
             - "hash" (int or None): Computed channel hash when both name and PSK are present, otherwise None.
         """
         result: list[dict[str, Any]] = []
-        if self.channels:
-            for c in self.channels:
+        with self._channels_lock:
+            channels_snapshot = list(self.channels) if self.channels else []
+        if channels_snapshot:
+            for c in channels_snapshot:
                 settings = getattr(c, "settings", None)
                 name = getattr(settings, "name", "")
                 psk = getattr(settings, "psk", b"")

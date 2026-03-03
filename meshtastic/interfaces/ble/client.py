@@ -35,11 +35,12 @@ from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     SERVICE_CHARACTERISTIC_RETRY_COUNT,
+    SERVICE_CHARACTERISTIC_RETRY_DELAY,
     logger,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.runner import BLECoroutineRunner
-from meshtastic.interfaces.ble.utils import with_timeout
+from meshtastic.interfaces.ble.utils import _sleep, with_timeout
 
 T = TypeVar("T")
 
@@ -459,6 +460,7 @@ class BLEClient:
                     "Unable to populate services before has_characteristic after "
                     "BleakError from get_characteristic"
                 )
+                _sleep(SERVICE_CHARACTERISTIC_RETRY_DELAY)
         return False
 
     def start_notify(
@@ -628,7 +630,13 @@ class BLEClient:
 
     @staticmethod
     def _close_coroutine_safely(coro: Coroutine[Any, Any, Any]) -> None:
-        """Best-effort close to suppress never-awaited coroutine warnings."""
+        """Best-effort close to suppress never-awaited coroutine warnings.
+
+        Parameters
+        ----------
+        coro : Coroutine[Any, Any, Any]
+            The coroutine object to close.
+        """
         with contextlib.suppress(Exception):
             coro.close()
 
@@ -721,6 +729,7 @@ class BLEClient:
             # Defensive coverage: Future.result() typically raises
             # concurrent.futures.CancelledError (handled above), but this keeps
             # direct coroutine cancellation mapping consistent.
+            self._cleanup_future_best_effort(future, "asyncio cancellation")
             raise self.BLEError(BLECLIENT_ERROR_CANCELLED) from e
         finally:
             self._with_pending_futures(

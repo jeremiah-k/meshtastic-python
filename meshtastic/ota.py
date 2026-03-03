@@ -4,22 +4,29 @@ import hashlib
 import logging
 import os
 import socket
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
+
+FILE_HASH_READ_CHUNK_SIZE_BYTES = 4096
+OTA_SOCKET_TIMEOUT_SECONDS = 15
+OTA_CHUNK_SIZE_BYTES = 1024
 
 
 class _SHA256Digest(Protocol):
     """Minimal digest protocol returned by hashlib.sha256()."""
 
-    def update(self, data: bytes) -> None:
+    def update(self, data: Any, /) -> None:
         """Update the digest with bytes."""
+        raise NotImplementedError
 
     def digest(self) -> bytes:
         """Return raw digest bytes."""
+        raise NotImplementedError
 
     def hexdigest(self) -> str:
         """Return digest as hexadecimal string."""
+        raise NotImplementedError
 
 
 def _file_sha256(filename: str) -> _SHA256Digest:
@@ -27,7 +34,7 @@ def _file_sha256(filename: str) -> _SHA256Digest:
     sha256_hash = hashlib.sha256()
 
     with open(filename, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
+        for byte_block in iter(lambda: f.read(FILE_HASH_READ_CHUNK_SIZE_BYTES), b""):
             sha256_hash.update(byte_block)
 
     return sha256_hash
@@ -67,34 +74,51 @@ class ESP32WiFiOTA:
 
         return line.decode("utf-8").strip()
 
-    def hash_bytes(self) -> bytes:
+    def hashBytes(self) -> bytes:
         """Return the hash as bytes."""
         return self._file_hash.digest()
 
-    def hash_hex(self) -> str:
+    def hashHex(self) -> str:
         """Return the hash as a hex string."""
         return self._file_hash.hexdigest()
+
+    # COMPAT_STABLE_SHIM: snake_case alias for historical callers.
+    def hash_bytes(self) -> bytes:
+        """Compatibility alias for hashBytes()."""
+        return self.hashBytes()
+
+    # COMPAT_STABLE_SHIM: snake_case alias for historical callers.
+    def hash_hex(self) -> str:
+        """Compatibility alias for hashHex()."""
+        return self.hashHex()
 
     def update(
         self, progress_callback: Callable[[int, int], None] | None = None
     ) -> None:
-        """Perform the OTA update."""
+        """Perform the OTA update.
+
+        Parameters
+        ----------
+        progress_callback : Callable[[int, int], None] | None
+            Optional callback invoked with ``(sent_bytes, total_bytes)`` after
+            each chunk. When omitted, progress is printed to stdout.
+        """
         with open(self._filename, "rb") as f:
             data = f.read()
         size = len(data)
 
         logger.info(
-            f"Starting OTA update with {self._filename} ({size} bytes, hash {self.hash_hex()})"
+            f"Starting OTA update with {self._filename} ({size} bytes, hash {self.hashHex()})"
         )
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(15)
+        self._socket.settimeout(OTA_SOCKET_TIMEOUT_SECONDS)
         try:
             self._socket.connect((self._hostname, self._port))
             logger.debug(f"Connected to {self._hostname}:{self._port}")
 
             # Send start command
-            self._socket.sendall(f"OTA {size} {self.hash_hex()}\n".encode("utf-8"))
+            self._socket.sendall(f"OTA {size} {self.hashHex()}\n".encode("utf-8"))
 
             # Wait for OK from the device
             while True:
@@ -111,9 +135,8 @@ class ESP32WiFiOTA:
 
             # Stream firmware
             sent_bytes = 0
-            chunk_size = 1024
             while sent_bytes < size:
-                chunk = data[sent_bytes : sent_bytes + chunk_size]
+                chunk = data[sent_bytes : sent_bytes + OTA_CHUNK_SIZE_BYTES]
                 self._socket.sendall(chunk)
                 sent_bytes += len(chunk)
 

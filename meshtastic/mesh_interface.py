@@ -24,7 +24,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
 
 import meshtastic.node
@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 # Heartbeat interval for keeping the interface alive (5 minutes)
 HEARTBEAT_INTERVAL_SECONDS = 300
+
+# Default timeout for interface and node operations.
+DEFAULT_INTERFACE_TIMEOUT_SECONDS = 300.0
 
 # Packet-id generation constants
 PACKET_ID_MASK = 0xFFFFFFFF
@@ -140,7 +143,7 @@ class MeshInterface:  # pylint: disable=R0902
         debugOut: IO[str] | Callable[[str], Any] | None = None,
         noProto: bool = False,
         noNodes: bool = False,
-        timeout: float = 300.0,
+        timeout: float = DEFAULT_INTERFACE_TIMEOUT_SECONDS,
     ) -> None:
         """Initialize the MeshInterface and configure runtime options.
 
@@ -157,6 +160,7 @@ class MeshInterface:  # pylint: disable=R0902
             only other configuration will be requested. (Default value = False)
         timeout : float
             Default timeout in seconds for operations that wait for replies.
+            (Default value = DEFAULT_INTERFACE_TIMEOUT_SECONDS)
         """
         self.debugOut = debugOut
         self.nodes: dict[str, dict[str, Any]] | None = None
@@ -196,7 +200,8 @@ class MeshInterface:  # pylint: disable=R0902
         self.responseHandlers: dict[int, ResponseHandler] = (
             {}
         )  # A map from request ID to the handler
-        self.failure: BaseException | None = (
+        self._failure_lock = threading.Lock()
+        self._failure: BaseException | None = (
             None  # If we've encountered a fatal exception it will be kept here
         )
         self._timeout: Timeout = Timeout(maxSecs=timeout)
@@ -230,6 +235,18 @@ class MeshInterface:  # pylint: disable=R0902
         # for any external consumers of the library.
         if debugOut:
             pub.subscribe(MeshInterface._print_log_line, "meshtastic.log.line")
+
+    @property
+    def failure(self) -> BaseException | None:
+        """Get the stored fatal connection error, if any, in a thread-safe way."""
+        with self._failure_lock:
+            return self._failure
+
+    @failure.setter
+    def failure(self, value: BaseException | None) -> None:
+        """Store a fatal connection error in a thread-safe way."""
+        with self._failure_lock:
+            self._failure = value
 
     def close(self) -> None:
         """Shut down the interface and send a disconnect to the radio.
@@ -704,7 +721,7 @@ class MeshInterface:  # pylint: disable=R0902
         nodeId: str,
         requestChannels: bool = True,
         requestChannelAttempts: int = 3,
-        timeout: float = 300.0,
+        timeout: float = DEFAULT_INTERFACE_TIMEOUT_SECONDS,
     ) -> meshtastic.node.Node:
         """Get the Node object for the given node identifier.
 
@@ -722,7 +739,9 @@ class MeshInterface:  # pylint: disable=R0902
         requestChannelAttempts : int
             Number of attempts to retrieve channel info before giving up. (Default value = 3)
         timeout : float
-            Timeout in seconds passed to the Node constructor and used while waiting for responses. (Default value = 300.0)
+            Timeout in seconds passed to the Node constructor and used while
+            waiting for responses. (Default value =
+            DEFAULT_INTERFACE_TIMEOUT_SECONDS)
 
         Returns
         -------
@@ -747,9 +766,7 @@ class MeshInterface:  # pylint: disable=R0902
                 while retries_left > 0:
                     retries_left -= 1
                     if not n.waitForConfig():
-                        new_index: int = (
-                            len(n.partialChannels) if n.partialChannels else 0
-                        )
+                        new_index = n._get_partial_channel_count()
                         # each time we get a new channel, reset the counter
                         if new_index != last_index:
                             retries_left = requestChannelAttempts - 1
@@ -1684,8 +1701,13 @@ class MeshInterface:  # pylint: disable=R0902
             with self._node_db_lock:
                 node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
-            if node is not None:
-                nodeNum = node["num"]
+                node_num_from_db: int | None = None
+                if isinstance(node, dict):
+                    node_num_candidate = node.get("num")
+                    if isinstance(node_num_candidate, int):
+                        node_num_from_db = node_num_candidate
+            if node_num_from_db is not None:
+                nodeNum = node_num_from_db
             elif has_nodes:
                 raise MeshInterface.MeshInterfaceError(
                     f"NodeId {destinationId} not found in DB"
@@ -1699,8 +1721,9 @@ class MeshInterface:  # pylint: disable=R0902
         if hopLimit is not None:
             meshPacket.hop_limit = hopLimit
         else:
-            loraConfig = self.localNode.localConfig.lora
-            meshPacket.hop_limit = loraConfig.hop_limit
+            with self._node_db_lock:
+                default_hop_limit = self.localNode.localConfig.lora.hop_limit
+            meshPacket.hop_limit = default_hop_limit
 
         if pkiEncrypted:
             meshPacket.pki_encrypted = True
@@ -1926,8 +1949,9 @@ class MeshInterface:  # pylint: disable=R0902
                 )
 
         # If we failed while connecting, raise the connection to the client
-        if self.failure is not None:
-            raise self.failure
+        failure = self.failure
+        if failure is not None:
+            raise failure
 
     def _generate_packet_id(self) -> int:
         """Generate a new 32-bit packet identifier combining a 10-bit monotonic counter with randomized upper bits.

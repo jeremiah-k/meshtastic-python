@@ -1,9 +1,10 @@
 """Meshtastic unit tests for mesh_interface.py."""
 
-from collections import OrderedDict
 import logging
 import re
 import threading
+import warnings
+from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
@@ -219,6 +220,31 @@ def test_getNode_not_local_timeout(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_sendTelemetry_unsupported_type_warns_every_call() -> None:
+    """Unsupported telemetryType should emit semantic deprecation warnings on every call."""
+    # AGENTS.md mesh_interface warning policy requires per-call warning emission.
+    with MeshInterface(noProto=True) as iface:
+        with patch.object(iface, "sendData", return_value=None) as send_data_mock:
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always", DeprecationWarning)
+                iface.sendTelemetry(telemetryType="invalid_telemetry")
+                iface.sendTelemetry(telemetryType="invalid_telemetry")
+
+    deprecation_warnings = [
+        warning
+        for warning in captured
+        if issubclass(warning.category, DeprecationWarning)
+    ]
+    assert len(deprecation_warnings) == 2
+    assert all(
+        "Unsupported telemetryType" in str(warning.message)
+        for warning in deprecation_warnings
+    )
+    assert send_data_mock.call_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_sendPosition(caplog: pytest.LogCaptureFixture) -> None:
     """Verify that MeshInterface.sendPosition() executes without error and emits position-related debug logs.
 
@@ -308,7 +334,6 @@ def test_close_waits_for_inflight_heartbeat_send(
         # close() should block until the in-flight heartbeat send completes.
         # Use a generous timeout (0.2s) to avoid flakiness on slow CI runners.
         assert not close_done.wait(timeout=0.2)
-        assert not close_done.wait(timeout=0.05)
 
         release_send.set()
         close_thread.join(timeout=1.0)
@@ -983,7 +1008,7 @@ def test_concurrent_packet_id_generation() -> None:
                     packet_id = iface._generate_packet_id()
                     with packet_ids_lock:
                         packet_ids.append(packet_id)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1020,7 +1045,7 @@ def test_concurrent_node_database_access() -> None:
                             iface.nodes[node_id] = node
                         if iface.nodesByNum is not None:
                             iface.nodesByNum[node_num] = node
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1048,7 +1073,7 @@ def test_concurrent_queue_operations() -> None:
                     packet = mesh_pb2.ToRadio()
                     with iface._queue_lock:
                         iface.queue[packet_id] = packet
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1059,7 +1084,7 @@ def test_concurrent_queue_operations() -> None:
                         if iface.queue:
                             key = next(iter(iface.queue))
                             iface.queue.pop(key, None)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1094,7 +1119,7 @@ def test_concurrent_response_handler_registration() -> None:
                     iface._add_response_handler(request_id, handler)
                     with added_ids_lock:
                         added_ids.append(request_id)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1127,7 +1152,7 @@ def test_concurrent_close_with_packet_id_generation() -> None:
                 while not stop_flag.is_set():
                     iface._generate_packet_id()
                     started.set()
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1137,6 +1162,8 @@ def test_concurrent_close_with_packet_id_generation() -> None:
 
         assert started.wait(timeout=1.0)
         # Exercise close() while packet-id generation is active.
+        # _generate_packet_id() may still race briefly after close(), but this
+        # test asserts no exceptions escape those concurrent calls.
         iface.close()
 
         # Signal threads to stop
@@ -1172,7 +1199,7 @@ def test_concurrent_showNodes() -> None:
             try:
                 for _ in range(10):
                     iface.showNodes()
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1202,7 +1229,7 @@ def test_concurrent_getNode() -> None:
                     # validates concurrent access safety for getNode().
                     node = iface.getNode(f"!{i:08x}", requestChannels=False)
                     assert node is not None
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1252,7 +1279,7 @@ def test_concurrent_sendText_with_queue() -> None:
             try:
                 for i in range(10):
                     iface.sendText(f"message_{i}", wantAck=True)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 

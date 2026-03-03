@@ -151,11 +151,8 @@ def test_should_filter_packet_short_header(
     packet = b"\x00" * 10
     with caplog.at_level(logging.DEBUG):
         tun = Tunnel(iface)
-        try:
-            ignore = tun._should_filter_packet(packet)
-            assert ignore
-        finally:
-            tun.close()
+        ignore = tun._should_filter_packet(packet)
+        assert ignore
     assert re.search(r"Ignoring short IP packet", caplog.text, re.MULTILINE)
 
 

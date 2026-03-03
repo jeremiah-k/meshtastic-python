@@ -366,7 +366,7 @@ def test_ble_package_and_legacy_facade_exports_match() -> None:
     assert canonical_exports.isdisjoint(compat_bleak_exports)
 
 
-def test_state_manager_closing_only_for_disconnect():
+def test_state_manager_closing_only_for_disconnect() -> None:
     """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()
     assert state_manager._is_closing is False
@@ -384,7 +384,7 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager._is_closing is False
 
 
-def test_state_manager_allows_error_to_disconnecting_shutdown():
+def test_state_manager_allows_error_to_disconnecting_shutdown() -> None:
     """State manager should support ERROR -> DISCONNECTING for deterministic close paths."""
     state_manager = BLEStateManager()
 

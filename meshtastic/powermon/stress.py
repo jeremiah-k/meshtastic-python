@@ -58,7 +58,23 @@ class PowerStressClient:
         num_seconds: float = 0.0,
         onResponse: Callable[[dict[str, Any]], None] | None = None,
     ) -> Any:
-        """Client goo for talking with the device side agent."""
+        """Send a power stress command to the device.
+
+        Parameters
+        ----------
+        cmd : powermon_pb2.PowerStressMessage.Opcode.ValueType
+            Power stress command opcode to send.
+        num_seconds : float
+            Duration for timed stress commands in seconds. (Default value = 0.0)
+        onResponse : Callable[[dict[str, Any]], None] | None
+            Optional callback invoked when a response is received.
+            (Default value = None)
+
+        Returns
+        -------
+        Any
+            Result from the underlying ``sendData()`` call.
+        """
         r = powermon_pb2.PowerStressMessage()
         r.cmd = cmd
         r.num_seconds = num_seconds

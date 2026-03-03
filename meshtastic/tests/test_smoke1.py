@@ -3,7 +3,9 @@
 import os
 import platform
 import re
+import shlex
 import time
+from pathlib import Path
 
 # Do not like using hard coded sleeps, but it probably makes
 # sense to pause for the radio at appropriate times
@@ -600,8 +602,9 @@ def test_smoke1_seturl_invalid_url() -> None:
 @pytest.mark.smoke1
 def test_smoke1_configure() -> None:
     """Test --configure."""
+    config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
     return_value, out = run_cli_with_timeout(
-        "meshtastic --configure example_config.yaml"
+        f"meshtastic --configure {shlex.quote(str(config_path))}"
     )
     assert re.match(r"Connected to radio", out)
     assert re.search("^Setting device owner to Bob TBeam", out, re.MULTILINE)
@@ -653,6 +656,7 @@ def test_smoke1_set_wifi_settings() -> None:
 
 
 @pytest.mark.smoke1
+@pytest.mark.smoke1_destructive
 def test_smoke1_factory_reset() -> None:
     """Test factory reset."""
     return_value, out = run_cli_with_timeout("meshtastic --set factory_reset true")

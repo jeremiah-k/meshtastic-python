@@ -3,6 +3,8 @@
 import gc
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
@@ -52,6 +54,15 @@ class TestAddrKey:
         assert _addr_key("") is None
         assert _addr_key("   ") is None
         # All return None, which is handled specially by gating functions
+
+    @given(st.from_regex(r"[0-9a-fA-F]{2}([:_\- ][0-9a-fA-F]{2}){5}", fullmatch=True))
+    def test_valid_address_formats_property(self, addr: str) -> None:
+        """Valid MAC-like address formats should normalize to 12 lowercase hex chars."""
+        result = _addr_key(addr)
+        assert result is not None
+        assert len(result) == 12
+        assert result == result.lower()
+        assert all(char in "0123456789abcdef" for char in result)
 
 
 @pytest.mark.usefixtures("clear_registry")
@@ -186,8 +197,8 @@ class TestMarkDisconnected:
         key = _addr_key("testaddress")
         assert key is not None
         # Use context manager for proper holder count management
-        with _addr_lock_context("testaddress") as lock:
-            with lock:
+        with _addr_lock_context("testaddress") as addr_lock:
+            with addr_lock:
                 _mark_connected("testaddress")
         assert key in _ADDR_LOCKS  # Lock still exists
         _mark_disconnected("testaddress")

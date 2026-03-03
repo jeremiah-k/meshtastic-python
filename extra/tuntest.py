@@ -30,23 +30,34 @@ PROTOCOL_BLACKLIST: set[int] = {
 }
 
 
-def hexstr(barray: bytes | bytearray) -> str:
+def _hexstr(barray: bytes | bytearray) -> str:
     """Print a string of hex digits."""
     return ":".join("{:02x}".format(x) for x in barray)
 
 
-def ipstr(barray: bytes | bytearray) -> str:
+def _ipstr(barray: bytes | bytearray) -> str:
     """Print a string of ip digits."""
     return ".".join("{}".format(x) for x in barray)
 
 
-def readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
+def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
     """Read big endian u16 (network byte order)."""
     return p[offset] * 256 + p[offset + 1]
 
 
 def _internet_checksum(payload: bytes) -> int:
-    """Compute RFC 1071 Internet checksum for the provided payload."""
+    """Compute RFC 1071 Internet checksum for the provided payload.
+
+    Parameters
+    ----------
+    payload : bytes
+        Data to checksum.
+
+    Returns
+    -------
+    int
+        The 16-bit one's-complement checksum.
+    """
     if len(payload) % 2:
         payload += b"\x00"
     checksum = 0
@@ -85,15 +96,15 @@ def _readtest(tap: TapDevice) -> None:
             else:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)
         elif protocol == 0x11:  # UDP
-            srcport = readnet_u16(p, subheader)
-            destport = readnet_u16(p, subheader + 2)
+            srcport = _readnet_u16(p, subheader)
+            destport = _readnet_u16(p, subheader + 2)
             logging.debug("udp srcport=%d, destport=%d", srcport, destport)
             if destport in UDP_BLACKLIST:
                 ignore = True
                 logging.debug("ignoring blacklisted UDP port %d", destport)
         elif protocol == 0x06:  # TCP
-            srcport = readnet_u16(p, subheader)
-            destport = readnet_u16(p, subheader + 2)
+            srcport = _readnet_u16(p, subheader)
+            destport = _readnet_u16(p, subheader + 2)
             logging.debug("tcp srcport=%d, destport=%d", srcport, destport)
             if destport in TCP_BLACKLIST:
                 ignore = True
@@ -102,16 +113,16 @@ def _readtest(tap: TapDevice) -> None:
             logging.warning(
                 "unexpected protocol 0x%02x, src=%s, dest=%s",
                 protocol,
-                ipstr(srcaddr),
-                ipstr(destaddr),
+                _ipstr(srcaddr),
+                _ipstr(destaddr),
             )
 
         if not ignore:
             logging.debug(
                 "Forwarding packet bytelen=%d src=%s, dest=%s",
                 len(p),
-                ipstr(srcaddr),
-                ipstr(destaddr),
+                _ipstr(srcaddr),
+                _ipstr(destaddr),
             )
 
 

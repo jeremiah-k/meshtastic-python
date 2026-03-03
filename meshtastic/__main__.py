@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -136,7 +136,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
-def support_info() -> None:
+def supportInfo() -> None:
     """Print troubleshooting guidance and environment details useful for reporting CLI or library issues.
 
     Specifically prints the issue tracker URL and the running environment: system,
@@ -170,6 +170,12 @@ def support_info() -> None:
     )
     print("")
     print("Please add the output from the command: meshtastic --info")
+
+
+# COMPAT_STABLE_SHIM: snake_case alias for historical callers/tests.
+def support_info() -> None:
+    """Compatibility alias for supportInfo()."""
+    supportInfo()
 
 
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
@@ -795,7 +801,7 @@ def onConnected(interface: MeshInterface) -> None:
             waitForAckNak = True
 
             if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "Error: OTA update currently requires a TCP connection to the node (use --host)."
                 )
 
@@ -803,7 +809,7 @@ def onConnected(interface: MeshInterface) -> None:
 
             print(f"Triggering OTA update on {interface.hostname}...")
             interface.getNode(args.dest, False, **getNode_kwargs).startOTA(
-                ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hash_bytes()
+                ota_mode=admin_pb2.OTAMode.OTA_WIFI, ota_file_hash=ota.hashBytes()
             )
 
             print("Waiting for device to reboot into OTA mode...")
@@ -818,7 +824,7 @@ def onConnected(interface: MeshInterface) -> None:
                 except Exception as e:
                     retries -= 1
                     if retries == 0:
-                        meshtastic.util.our_exit(f"\nOTA update failed: {e}")
+                        _cli_exit(f"OTA update failed: {e}")
 
                     time.sleep(2)
 
@@ -1349,9 +1355,7 @@ def onConnected(interface: MeshInterface) -> None:
             # Overwrite modem_preset
             node = interface.getNode(args.dest, False, **getNode_kwargs)
             if len(node.localConfig.ListFields()) == 0:
-                node.requestConfig(
-                    node.localConfig.DESCRIPTOR.fields_by_name.get("lora")
-                )
+                node.requestConfig(node.localConfig.DESCRIPTOR.fields_by_name["lora"])
             node.localConfig.lora.modem_preset = modem_preset
             node.writeConfig("lora")
 
@@ -1684,9 +1688,9 @@ def _is_repeated_field(field_desc: Any) -> bool:
 def _set_missing_flags_false(
     config_dict: dict[str, Any], true_defaults: set[tuple[str, ...]]
 ) -> None:
-    """Ensure specific boolean flags exist in a nested configuration dictionary by creating any.
+    """Ensure specific boolean flags exist in a nested configuration dictionary.
 
-    missing path components and setting missing final keys to False.
+    Creates any missing path components and sets missing final keys to False.
 
     Parameters
     ----------
@@ -1870,7 +1874,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 export_config = exportConfig
 
 
-def create_power_meter() -> None:
+def createPowerMeter() -> None:
     """Initialize and configure the global power meter from parsed CLI arguments.
 
     Validates an optional voltage (must be between MIN_SUPPLY_VOLTAGE_V and MAX_SUPPLY_VOLTAGE_V), instantiates the
@@ -1889,7 +1893,7 @@ def create_power_meter() -> None:
     args = mt_config.args
     if args is None:
         raise RuntimeError(
-            "mt_config.args must be initialized before calling create_power_meter()"
+            "mt_config.args must be initialized before calling createPowerMeter()"
         )
 
     # If the user specified a voltage, make sure it is valid
@@ -1924,6 +1928,12 @@ def create_power_meter() -> None:
         else:
             logger.info("Powered-on, waiting for device to boot")
             time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+
+
+# COMPAT_STABLE_SHIM: snake_case alias retained for backwards compatibility.
+def create_power_meter() -> None:
+    """Compatibility alias for createPowerMeter()."""
+    createPowerMeter()
 
 
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
@@ -1997,6 +2007,11 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     if ":" in host_str and host_str.count(":") == 1:
         # Exactly one colon -> host:port
         candidate_host, tcp_port_str = host_str.rsplit(":", 1)
+        if not candidate_host:
+            _cli_exit(
+                f"Error: missing hostname in --host '{host_str}'.",
+                1,
+            )
         try:
             parsed_port = int(tcp_port_str)
         except ValueError:
@@ -2059,7 +2074,7 @@ def common() -> None:
         _cli_exit("", 1)
     else:
         if args.support:
-            support_info()
+            supportInfo()
             _cli_exit("", 0)
 
         if args.list_fields:
@@ -2089,7 +2104,7 @@ def common() -> None:
                 )
 
         if have_powermon:
-            create_power_meter()
+            createPowerMeter()
 
         if args.ch_index is not None:
             channelIndex = int(args.ch_index)

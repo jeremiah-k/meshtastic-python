@@ -184,6 +184,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     power_logger.writer = writer
     power_logger._warned_legacy_mw_without_voltage = False
     power_logger._warned_store_current_reading_deprecation = False
+    power_logger._deprecation_warning_lock = threading.Lock()
     power_logger._reading_lock = threading.Lock()
 
     now = datetime(2026, 1, 1, 12, 0, 0)
@@ -222,6 +223,7 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
     power_logger.writer = writer
     power_logger._warned_legacy_mw_without_voltage = False
     power_logger._warned_store_current_reading_deprecation = False
+    power_logger._deprecation_warning_lock = threading.Lock()
     power_logger._reading_lock = threading.Lock()
 
     with caplog.at_level(logging.WARNING):

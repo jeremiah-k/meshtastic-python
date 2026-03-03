@@ -1,6 +1,6 @@
 """Unit tests for BLE notification subscription management."""
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -35,6 +35,8 @@ def test_resubscribe_all_stops_after_cleanup_epoch_change() -> None:
     manager._subscribe("char-2", lambda _sender, _data: None)
 
     class _Client:
+        """Stub BLE client that triggers cleanup on the first characteristic."""
+
         def __init__(self) -> None:
             self.calls: list[str] = []
 
@@ -51,7 +53,7 @@ def test_resubscribe_all_stops_after_cleanup_epoch_change() -> None:
                 manager._cleanup_all()
 
     client = _Client()
-    manager._resubscribe_all(client, timeout=1.0)
+    manager._resubscribe_all(cast(Any, client), timeout=1.0)
 
     assert client.calls == ["char-1"]
     assert len(manager) == 0
