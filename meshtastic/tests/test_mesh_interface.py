@@ -974,14 +974,18 @@ def test_concurrent_packet_id_generation() -> None:
     with MeshInterface(noProto=True) as iface:
         packet_ids = []
         errors = []
+        packet_ids_lock = threading.Lock()
+        errors_lock = threading.Lock()
 
         def generate_packet_ids() -> None:
             try:
                 for _ in range(100):
                     packet_id = iface._generate_packet_id()
-                    packet_ids.append(packet_id)
+                    with packet_ids_lock:
+                        packet_ids.append(packet_id)
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [threading.Thread(target=generate_packet_ids) for _ in range(10)]
         for t in threads:
@@ -1003,6 +1007,7 @@ def test_concurrent_node_database_access() -> None:
         iface.nodes = {}
         iface.nodesByNum = {}
         errors = []
+        errors_lock = threading.Lock()
 
         def update_nodes(node_num: int) -> None:
             try:
@@ -1016,7 +1021,8 @@ def test_concurrent_node_database_access() -> None:
                         if iface.nodesByNum is not None:
                             iface.nodesByNum[node_num] = node
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [threading.Thread(target=update_nodes, args=(i,)) for i in range(20)]
         for t in threads:
@@ -1033,6 +1039,7 @@ def test_concurrent_queue_operations() -> None:
     with MeshInterface(noProto=True) as iface:
         iface.queue = OrderedDict()
         errors = []
+        errors_lock = threading.Lock()
 
         def add_to_queue(start_id: int) -> None:
             try:
@@ -1042,7 +1049,8 @@ def test_concurrent_queue_operations() -> None:
                     with iface._queue_lock:
                         iface.queue[packet_id] = packet
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         def remove_from_queue() -> None:
             try:
@@ -1052,7 +1060,8 @@ def test_concurrent_queue_operations() -> None:
                             key = next(iter(iface.queue))
                             iface.queue.pop(key, None)
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         add_threads = [
             threading.Thread(target=add_to_queue, args=(i,)) for i in range(4)
@@ -1075,6 +1084,7 @@ def test_concurrent_response_handler_registration() -> None:
         errors = []
         added_ids = []
         added_ids_lock = threading.Lock()
+        errors_lock = threading.Lock()
 
         def register_handlers(start_id: int) -> None:
             try:
@@ -1085,7 +1095,8 @@ def test_concurrent_response_handler_registration() -> None:
                     with added_ids_lock:
                         added_ids.append(request_id)
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [
             threading.Thread(target=register_handlers, args=(i,)) for i in range(10)
@@ -1107,6 +1118,7 @@ def test_concurrent_close_with_packet_id_generation() -> None:
     errors = []
     stop_flag = threading.Event()
     started = threading.Event()
+    errors_lock = threading.Lock()
 
     with MeshInterface(noProto=True) as iface:
 
@@ -1116,13 +1128,16 @@ def test_concurrent_close_with_packet_id_generation() -> None:
                     iface._generate_packet_id()
                     started.set()
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [threading.Thread(target=generate_ids) for _ in range(5)]
         for t in threads:
             t.start()
 
         assert started.wait(timeout=1.0)
+        # Exercise close() while packet-id generation is active.
+        iface.close()
 
         # Signal threads to stop
         stop_flag.set()
@@ -1151,13 +1166,15 @@ def test_concurrent_showNodes() -> None:
         iface.myInfo.my_node_num = 0
 
         errors = []
+        errors_lock = threading.Lock()
 
         def call_show_nodes() -> None:
             try:
                 for _ in range(10):
                     iface.showNodes()
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [threading.Thread(target=call_show_nodes) for _ in range(10)]
         for t in threads:
@@ -1176,6 +1193,7 @@ def test_concurrent_getNode() -> None:
             i: {"num": i, "user": {"id": f"!{i:08x}"}} for i in range(100)
         }
         errors = []
+        errors_lock = threading.Lock()
 
         def get_nodes() -> None:
             try:
@@ -1185,7 +1203,8 @@ def test_concurrent_getNode() -> None:
                     node = iface.getNode(f"!{i:08x}", requestChannels=False)
                     assert node is not None
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [threading.Thread(target=get_nodes) for _ in range(10)]
         for t in threads:
@@ -1227,13 +1246,15 @@ def test_concurrent_sendText_with_queue() -> None:
         iface.myInfo.my_node_num = 12345
         iface._localChannels = [channel_pb2.Channel(index=0)]
         errors = []
+        errors_lock = threading.Lock()
 
         def send_texts() -> None:
             try:
                 for i in range(10):
                     iface.sendText(f"message_{i}", wantAck=True)
             except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
-                errors.append(e)
+                with errors_lock:
+                    errors.append(e)
 
         threads = [threading.Thread(target=send_texts) for _ in range(5)]
         for t in threads:
