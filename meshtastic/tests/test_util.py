@@ -5,6 +5,8 @@ import binascii
 import json
 import logging
 import re
+import threading
+import warnings
 from collections import Counter
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -24,6 +26,8 @@ from meshtastic.supported_device import (
 from meshtastic.util import (
     DEFAULT_KEY,
     Acknowledgment,
+    DeferredExecution,
+    DotDict,
     FixmeError,
     Timeout,
     active_ports_on_supported_devices,
@@ -31,9 +35,11 @@ from meshtastic.util import (
     catchAndIgnore,
     channel_hash,
     convert_mac_addr,
+    dotdict,
     eliminate_duplicate_port,
     findPorts,
     fixme,
+    flagsToList,
     fromPSK,
     fromStr,
     generate_channel_hash,
@@ -45,12 +51,15 @@ from meshtastic.util import (
     is_windows11,
     message_to_json,
     messageToJson,
+    our_exit,
     pskToString,
     quoteBooleans,
     readnet_u16,
     remove_keys_from_dict,
     snake_to_camel,
     stripnl,
+    toNodeNum,
+    toStr,
 )
 
 _BASE64_ALLOWED_CHARS = (
@@ -635,9 +644,9 @@ def test_messageToJson_shows_all() -> None:
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert (
-            actual.get(key) == value
-        ), f"Key {key}: expected {value}, got {actual.get(key)}"
+        assert actual.get(key) == value, (
+            f"Key {key}: expected {value}, got {actual.get(key)}"
+        )
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
 
@@ -946,15 +955,15 @@ def test_tdeck_vid_pid_mapping() -> None:
         for d in supported_devices
         if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
     ]
-    assert (
-        len(tdeck_devices) == 1
-    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
-    assert (
-        tdeck_devices[0].name == "T-Deck"
-    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
-    assert (
-        tdeck_devices[0].for_firmware == "t-deck"
-    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    assert len(tdeck_devices) == 1, (
+        "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    )
+    assert tdeck_devices[0].name == "T-Deck", (
+        f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    )
+    assert tdeck_devices[0].for_firmware == "t-deck", (
+        f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
+    )
 
 
 @pytest.mark.unit
@@ -1094,3 +1103,465 @@ def test_vendor_lookup_uses_alias_vids() -> None:
     assert "303a" in vids
     alias_devices = get_devices_with_vendor_id("303a")
     assert any(device.name == "Seeed Xiao ESP32-S3" for device in alias_devices)
+
+
+# Tests for toStr
+@pytest.mark.unit
+def test_toStr_bytes() -> None:
+    """Test toStr with bytes input."""
+
+    result = toStr(b"hello")
+    assert result == "base64:aGVsbG8="
+    assert isinstance(result, str)
+
+
+@pytest.mark.unit
+def test_toStr_string() -> None:
+    """Test toStr with string input."""
+
+    result = toStr("hello")
+    assert result == "hello"
+
+
+@pytest.mark.unit
+def test_toStr_int() -> None:
+    """Test toStr with int input."""
+
+    result = toStr(123)
+    assert result == "123"
+
+
+@pytest.mark.unit
+def test_toStr_float() -> None:
+    """Test toStr with float input."""
+
+    result = toStr(3.14)
+    assert result == "3.14"
+
+
+@pytest.mark.unit
+def test_toStr_bool() -> None:
+    """Test toStr with bool input."""
+
+    assert toStr(True) == "True"
+    assert toStr(False) == "False"
+
+
+@pytest.mark.unit
+def test_toStr_none() -> None:
+    """Test toStr with None input."""
+
+    result = toStr(None)
+    assert result == "None"
+
+
+@pytest.mark.unitslow
+@given(st.binary())
+def test_fuzz_toStr_bytes_roundtrip(raw_bytes: bytes) -> None:
+    """Test that toStr produces valid base64 for any bytes."""
+
+    result = toStr(raw_bytes)
+    assert result.startswith("base64:")
+    # Verify it's valid base64
+    encoded = result[7:]  # Remove "base64:" prefix
+    decoded = base64.b64decode(encoded)
+    assert decoded == raw_bytes
+
+
+# Tests for toNodeNum
+@pytest.mark.unit
+def test_toNodeNum_int() -> None:
+    """Test toNodeNum with int input."""
+
+    assert toNodeNum(123456789) == 123456789
+
+
+@pytest.mark.unit
+def test_toNodeNum_string_decimal() -> None:
+    """Test toNodeNum with decimal string."""
+
+    assert toNodeNum("123456789") == 123456789
+
+
+@pytest.mark.unit
+def test_toNodeNum_string_hex_with_prefix() -> None:
+    """Test toNodeNum with hex string with 0x prefix."""
+
+    assert toNodeNum("0x1234abcd") == 0x1234ABCD
+
+
+@pytest.mark.unit
+def test_toNodeNum_string_hex_without_prefix() -> None:
+    """Test toNodeNum with hex string without 0x prefix (falls back to hex)."""
+
+    # When decimal parse fails, it should try hex
+    assert toNodeNum("deadbeef") == 0xDEADBEEF
+
+
+@pytest.mark.unit
+def test_toNodeNum_string_with_bang_prefix() -> None:
+    """Test toNodeNum with ! prefix (node ID format)."""
+
+    assert toNodeNum("!12345678") == 12345678
+    assert toNodeNum("!0xabcdef") == 0xABCDEF
+
+
+@pytest.mark.unit
+def test_toNodeNum_string_with_bang_and_hex() -> None:
+    """Test toNodeNum with !0x prefix."""
+
+    assert toNodeNum("!0x1234") == 0x1234
+
+
+@pytest.mark.unitslow
+@given(st.integers(min_value=0, max_value=0xFFFFFFFF))
+def test_fuzz_toNodeNum_int_roundtrip(node_num: int) -> None:
+    """Test that toNodeNum preserves any valid node number."""
+
+    result = toNodeNum(node_num)
+    assert result == node_num
+
+
+# Tests for flagsToList
+@pytest.mark.unit
+def test_flagsToList_single_flag() -> None:
+    """Test flagsToList with single flag."""
+
+    # Create a simple mock enum wrapper
+    class MockEnum:
+        """Minimal enum-like wrapper used by flagsToList tests."""
+
+        @staticmethod
+        def keys() -> list[str]:
+            """Return enum key names."""
+            return ["FLAG_A", "FLAG_B", "EXCLUDED_NONE"]
+
+        @staticmethod
+        def Value(name: str) -> int:
+            """Return integer value for enum key."""
+            return {"FLAG_A": 1, "FLAG_B": 2, "EXCLUDED_NONE": 0}[name]
+
+    result = flagsToList(MockEnum, 1)  # pyright: ignore[reportArgumentType]
+    assert "FLAG_A" in result
+
+
+@pytest.mark.unit
+def test_flagsToList_zero_flags() -> None:
+    """Test flagsToList with zero flags."""
+
+    class MockEnum:
+        """Minimal enum-like wrapper used by flagsToList tests."""
+
+        @staticmethod
+        def keys() -> list[str]:
+            """Return enum key names."""
+            return ["FLAG_A", "FLAG_B"]
+
+        @staticmethod
+        def Value(name: str) -> int:
+            """Return integer value for enum key."""
+            return {"FLAG_A": 1, "FLAG_B": 2}[name]
+
+    result = flagsToList(MockEnum, 0)  # pyright: ignore[reportArgumentType]
+    assert not result
+
+
+@pytest.mark.unit
+def test_flagsToList_unknown_flags() -> None:
+    """Test flagsToList with unknown flag bits."""
+
+    class MockEnum:
+        """Minimal enum-like wrapper used by flagsToList tests."""
+
+        @staticmethod
+        def keys() -> list[str]:
+            """Return enum key names."""
+            return ["FLAG_A"]
+
+        @staticmethod
+        def Value(name: str) -> int:
+            """Return integer value for enum key."""
+            return {"FLAG_A": 1}[name]
+
+    # Use a value with unknown bits
+    result = flagsToList(MockEnum, 0xFFFF)  # pyright: ignore[reportArgumentType]
+    assert "FLAG_A" in result
+    assert any("UNKNOWN_ADDITIONAL_FLAGS" in item for item in result)
+
+
+# Tests for our_exit
+@pytest.mark.unit
+def test_our_exit_default_return_code(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test our_exit with default return code (1)."""
+
+    with pytest.raises(SystemExit) as exc_info:
+        our_exit("Error message")
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Error message" in captured.err
+
+
+@pytest.mark.unit
+def test_our_exit_custom_return_code(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test our_exit with custom return code."""
+
+    with pytest.raises(SystemExit) as exc_info:
+        our_exit("Error message", return_value=42)
+
+    assert exc_info.value.code == 42
+    captured = capsys.readouterr()
+    assert "Error message" in captured.err
+
+
+@pytest.mark.unit
+def test_our_exit_zero_return_code(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test our_exit with return code 0 (success)."""
+
+    with pytest.raises(SystemExit) as exc_info:
+        our_exit("Success", return_value=0)
+
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    # Return code 0 should write to stdout
+    assert "Success" in captured.out
+
+
+@pytest.mark.unit
+def test_our_exit_empty_message(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test our_exit with empty message."""
+
+    with pytest.raises(SystemExit) as exc_info:
+        our_exit("")
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    # Empty message still emits newline
+    assert captured.err == "\n"
+
+
+# Tests for DeferredExecution
+@pytest.mark.unit
+def test_deferred_execution_runs_closure() -> None:
+    """Test that DeferredExecution runs closures in background thread."""
+
+    first = threading.Event()
+    second = threading.Event()
+    de = DeferredExecution(name="test_thread")
+
+    de.queueWork(first.set)
+    de.queueWork(second.set)
+    assert first.wait(timeout=1.0)
+    assert second.wait(timeout=1.0)
+
+
+@pytest.mark.unit
+def test_deferred_execution_handles_exceptions(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that DeferredExecution logs exceptions without crashing."""
+
+    completion = threading.Event()
+    de = DeferredExecution(name="test_exception_thread")
+
+    # Queue work that raises exception
+    def bad_closure() -> None:
+        raise ValueError("Test exception")
+
+    def signal_completion() -> None:
+        completion.set()
+
+    with caplog.at_level(logging.DEBUG):
+        de.queueWork(bad_closure)
+        de.queueWork(signal_completion)
+        assert completion.wait(timeout=1.0)
+
+    # Should have logged the exception
+    assert "Unexpected error in deferred execution" in caplog.text
+
+
+# Tests for Timeout.waitForAckNak
+@pytest.mark.unit
+def test_timeout_waitForAckNak_timeout() -> None:
+    """Test Timeout.waitForAckNak when timeout expires."""
+
+    to = Timeout(0.1)  # Very short timeout
+    ack = Acknowledgment()
+
+    result = to.waitForAckNak(ack)
+    assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_waitForAckNak_received() -> None:
+    """Test Timeout.waitForAckNak when ack received."""
+
+    to = Timeout(5.0)  # Long timeout
+    ack = Acknowledgment()
+
+    # Set ack flag immediately
+    ack.receivedAck = True
+
+    result = to.waitForAckNak(ack)
+    assert result is True
+    # Should reset after reading
+    assert ack.receivedAck is False
+
+
+@pytest.mark.unit
+def test_timeout_waitForAckNak_custom_attrs() -> None:
+    """Test Timeout.waitForAckNak with custom attribute names."""
+
+    to = Timeout(5.0)
+    ack = Acknowledgment()
+
+    # Set nak flag
+    ack.receivedNak = True
+
+    result = to.waitForAckNak(ack, attrs=("receivedNak",))
+    assert result is True
+
+
+# Tests for Timeout.waitForTelemetry
+@pytest.mark.unit
+def test_timeout_waitForTelemetry_timeout() -> None:
+    """Test Timeout.waitForTelemetry when timeout expires."""
+
+    to = Timeout(0.1)
+    ack = Acknowledgment()
+
+    result = to.waitForTelemetry(ack)
+    assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_waitForTelemetry_received() -> None:
+    """Test Timeout.waitForTelemetry when telemetry received."""
+
+    to = Timeout(5.0)
+    ack = Acknowledgment()
+    ack.receivedTelemetry = True
+
+    result = to.waitForTelemetry(ack)
+    assert result is True
+
+
+# Tests for Timeout.waitForPosition
+@pytest.mark.unit
+def test_timeout_waitForPosition_timeout() -> None:
+    """Test Timeout.waitForPosition when timeout expires."""
+
+    to = Timeout(0.1)
+    ack = Acknowledgment()
+
+    result = to.waitForPosition(ack)
+    assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_waitForPosition_received() -> None:
+    """Test Timeout.waitForPosition when position received."""
+
+    to = Timeout(5.0)
+    ack = Acknowledgment()
+    ack.receivedPosition = True
+
+    result = to.waitForPosition(ack)
+    assert result is True
+
+
+# Tests for Timeout.waitForWaypoint
+@pytest.mark.unit
+def test_timeout_waitForWaypoint_timeout() -> None:
+    """Test Timeout.waitForWaypoint when timeout expires."""
+
+    to = Timeout(0.1)
+    ack = Acknowledgment()
+
+    result = to.waitForWaypoint(ack)
+    assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_waitForWaypoint_received() -> None:
+    """Test Timeout.waitForWaypoint when waypoint received."""
+
+    to = Timeout(5.0)
+    ack = Acknowledgment()
+    ack.receivedWaypoint = True
+
+    result = to.waitForWaypoint(ack)
+    assert result is True
+
+
+# Tests for Timeout.waitForTraceRoute
+@pytest.mark.unit
+def test_timeout_waitForTraceRoute_timeout() -> None:
+    """Test Timeout.waitForTraceRoute when timeout expires."""
+
+    to = Timeout(0.1)
+    ack = Acknowledgment()
+
+    result = to.waitForTraceRoute(1.0, ack)
+    assert result is False
+
+
+@pytest.mark.unit
+def test_timeout_waitForTraceRoute_received() -> None:
+    """Test Timeout.waitForTraceRoute when traceroute received."""
+
+    to = Timeout(5.0)
+    ack = Acknowledgment()
+    ack.receivedTraceRoute = True
+
+    result = to.waitForTraceRoute(1.0, ack)
+    assert result is True
+
+
+# Tests for DotDict
+@pytest.mark.unit
+def test_dotdict_getattr() -> None:
+    """Test DotDict attribute access."""
+
+    dd = DotDict({"key": "value"})
+    assert dd.key == "value"  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
+def test_dotdict_setattr() -> None:
+    """Test DotDict attribute setting."""
+
+    dd = DotDict()
+    dd.key = "value"  # type: ignore[attr-defined]
+    assert dd["key"] == "value"
+
+
+@pytest.mark.unit
+def test_dotdict_delattr() -> None:
+    """Test DotDict attribute deletion."""
+
+    dd = DotDict({"key": "value"})
+    del dd.key  # type: ignore[attr-defined]
+    assert "key" not in dd
+
+
+@pytest.mark.unit
+def test_dotdict_missing_attr_returns_none() -> None:
+    """Test DotDict returns None for missing attributes."""
+
+    dd = DotDict()
+    assert dd.nonexistent is None  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
+def test_dotdict_deprecated_warns() -> None:
+    """Test dotdict deprecated alias warns once per process."""
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", DeprecationWarning)
+        dd = dotdict()  # pyright: ignore[reportDeprecated]
+        _ = dotdict()  # pyright: ignore[reportDeprecated]
+    assert isinstance(dd, dict)
+    assert len(captured) == 1
+    assert issubclass(captured[0].category, DeprecationWarning)
+    assert "dotdict" in str(captured[0].message).lower()

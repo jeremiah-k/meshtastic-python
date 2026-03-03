@@ -14,7 +14,13 @@ from pytest import CaptureFixture, LogCaptureFixture
 
 from ..mesh_interface import MeshInterface
 from ..node import Node
-from ..protobuf import admin_pb2, apponly_pb2, config_pb2, localonly_pb2, mesh_pb2
+from ..protobuf import (
+    admin_pb2,
+    apponly_pb2,
+    config_pb2,
+    localonly_pb2,
+    mesh_pb2,
+)
 from ..protobuf.channel_pb2 import Channel  # pylint: disable=E0611
 from ..serial_interface import SerialInterface
 from ..util import Acknowledgment
@@ -727,3 +733,32 @@ def test_start_ota_remote_node_raises_error() -> None:
         MeshInterface.MeshInterfaceError, match="startOTA only possible on local node"
     ):
         remote_node.startOTA(mode=admin_pb2.OTAMode.OTA_WIFI, hash=test_hash)
+
+
+@pytest.mark.unit
+def test_requestConfig_with_module_config_descriptor(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """Verify requestConfig sets get_module_config_request for LocalModuleConfig fields.
+
+    Tests line 370: when configType is a field descriptor with containing_type.name
+    != 'LocalConfig', it should set get_module_config_request to the field index.
+    """
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    mock_serial_interface.localNode = anode
+
+    # Get a field descriptor from LocalModuleConfig (not LocalConfig)
+    module_config = localonly_pb2.LocalModuleConfig()
+    mqtt_field = module_config.DESCRIPTOR.fields_by_name["mqtt"]
+
+    sent_messages: list[admin_pb2.AdminMessage] = []
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        sent_messages=sent_messages
+    )
+
+    anode.requestConfig(mqtt_field)
+
+    assert len(sent_messages) == 1
+    sent_msg = sent_messages[0]
+    # mqtt field has index 0, should be set as get_module_config_request
+    assert sent_msg.get_module_config_request == 0

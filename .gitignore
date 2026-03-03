@@ -17,5 +17,6 @@ examples/__pycache__
 meshtastic.spec
 .hypothesis/
 coverage.xml
+junit.xml
 .ipynb_checkpoints
 .cursor/

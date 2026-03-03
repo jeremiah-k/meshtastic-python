@@ -1,5 +1,6 @@
 """Meshtastic unit tests for mesh_interface.py."""
 
+from collections import OrderedDict
 import logging
 import re
 import threading
@@ -14,7 +15,7 @@ from hypothesis import strategies as st
 from .. import BROADCAST_ADDR, LOCAL_ADDR
 from ..mesh_interface import MeshInterface, _timeago
 from ..node import Node
-from ..protobuf import config_pb2, mesh_pb2, portnums_pb2
+from ..protobuf import channel_pb2, config_pb2, mesh_pb2, portnums_pb2
 
 # TODO
 # from ..config import Config
@@ -964,3 +965,301 @@ def test_timeago_fuzz(seconds: int) -> None:
     """Fuzz _timeago to ensure it works with any integer."""
     val = _timeago(seconds)
     assert re.fullmatch(r"now|\d+ (secs?|mins?|hours?|days?|months?|years?) ago", val)
+
+
+# Concurrent access edge case tests
+@pytest.mark.unit
+def test_concurrent_packet_id_generation() -> None:
+    """Test that packet ID generation is thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        packet_ids = []
+        errors = []
+        packet_ids_lock = threading.Lock()
+        errors_lock = threading.Lock()
+
+        def generate_packet_ids() -> None:
+            try:
+                for _ in range(100):
+                    packet_id = iface._generate_packet_id()
+                    with packet_ids_lock:
+                        packet_ids.append(packet_id)
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=generate_packet_ids) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        # All packet IDs should be unique
+        assert len(packet_ids) == len(set(packet_ids))
+        # All packet IDs should be within valid range
+        assert all(0 <= pid <= 0xFFFFFFFF for pid in packet_ids)
+
+
+@pytest.mark.unit
+def test_concurrent_node_database_access() -> None:
+    """Test that node database access is thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {}
+        iface.nodesByNum = {}
+        errors = []
+        errors_lock = threading.Lock()
+
+        def update_nodes(node_num: int) -> None:
+            try:
+                for i in range(50):
+                    node_id = f"!{node_num:08x}"
+                    node = iface._get_or_create_by_num(node_num)
+                    with iface._node_db_lock:
+                        node["lastHeard"] = i
+                        if iface.nodes is not None:
+                            iface.nodes[node_id] = node
+                        if iface.nodesByNum is not None:
+                            iface.nodesByNum[node_num] = node
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=update_nodes, args=(i,)) for i in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+@pytest.mark.unit
+def test_concurrent_queue_operations() -> None:
+    """Test that queue operations are thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        iface.queue = OrderedDict()
+        errors = []
+        errors_lock = threading.Lock()
+
+        def add_to_queue(start_id: int) -> None:
+            try:
+                for i in range(50):
+                    packet_id = start_id * 100 + i
+                    packet = mesh_pb2.ToRadio()
+                    with iface._queue_lock:
+                        iface.queue[packet_id] = packet
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        def remove_from_queue() -> None:
+            try:
+                for _ in range(25):
+                    with iface._queue_lock:
+                        if iface.queue:
+                            key = next(iter(iface.queue))
+                            iface.queue.pop(key, None)
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        add_threads = [
+            threading.Thread(target=add_to_queue, args=(i,)) for i in range(4)
+        ]
+        remove_threads = [threading.Thread(target=remove_from_queue) for _ in range(4)]
+
+        for t in add_threads + remove_threads:
+            t.start()
+        for t in add_threads + remove_threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+@pytest.mark.unit
+def test_concurrent_response_handler_registration() -> None:
+    """Test that response handler registration is thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        iface.responseHandlers = {}
+        errors = []
+        added_ids = []
+        added_ids_lock = threading.Lock()
+        errors_lock = threading.Lock()
+
+        def register_handlers(start_id: int) -> None:
+            try:
+                for i in range(50):
+                    request_id = start_id * 100 + i
+                    handler = MagicMock()
+                    iface._add_response_handler(request_id, handler)
+                    with added_ids_lock:
+                        added_ids.append(request_id)
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [
+            threading.Thread(target=register_handlers, args=(i,)) for i in range(10)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        # All registered IDs should be in responseHandlers
+        for request_id in added_ids:
+            assert request_id in iface.responseHandlers
+
+
+@pytest.mark.unit
+def test_concurrent_close_with_packet_id_generation() -> None:
+    """Test that close() properly handles concurrent packet ID generation."""
+    errors = []
+    stop_flag = threading.Event()
+    started = threading.Event()
+    errors_lock = threading.Lock()
+
+    with MeshInterface(noProto=True) as iface:
+
+        def generate_ids() -> None:
+            try:
+                while not stop_flag.is_set():
+                    iface._generate_packet_id()
+                    started.set()
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=generate_ids) for _ in range(5)]
+        for t in threads:
+            t.start()
+
+        assert started.wait(timeout=1.0)
+        # Exercise close() while packet-id generation is active.
+        iface.close()
+
+        # Signal threads to stop
+        stop_flag.set()
+        for t in threads:
+            t.join(timeout=1.0)
+        assert all(not t.is_alive() for t in threads)
+
+    # Close is implicit in context manager exit
+    assert len(errors) == 0
+
+
+@pytest.mark.unit
+def test_concurrent_showNodes() -> None:
+    """Test that showNodes() is thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            f"!{i:08x}": {
+                "num": i,
+                "user": {"id": f"!{i:08x}", "longName": f"Node{i}"},
+                "position": {},
+            }
+            for i in range(100)
+        }
+        iface.nodesByNum = {i: iface.nodes[f"!{i:08x}"] for i in range(100)}
+        iface.myInfo = MagicMock()
+        iface.myInfo.my_node_num = 0
+
+        errors = []
+        errors_lock = threading.Lock()
+
+        def call_show_nodes() -> None:
+            try:
+                for _ in range(10):
+                    iface.showNodes()
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=call_show_nodes) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+@pytest.mark.unit
+def test_concurrent_getNode() -> None:
+    """Test that getNode() is thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodesByNum = {
+            i: {"num": i, "user": {"id": f"!{i:08x}"}} for i in range(100)
+        }
+        errors = []
+        errors_lock = threading.Lock()
+
+        def get_nodes() -> None:
+            try:
+                for i in range(50):
+                    # Avoid channel/config waits in noProto mode; this test only
+                    # validates concurrent access safety for getNode().
+                    node = iface.getNode(f"!{i:08x}", requestChannels=False)
+                    assert node is not None
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=get_nodes) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+@pytest.mark.unit
+def test_packet_id_no_collision_after_many_generations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that packet IDs don't collide after many generations."""
+    next_random = iter(range(1_000_000))
+    monkeypatch.setattr(
+        "meshtastic.mesh_interface.random.randint",
+        lambda _a, _b: next(next_random),
+    )
+    with MeshInterface(noProto=True) as iface:
+        packet_ids = set()
+
+        # Generate many packet IDs
+        for _ in range(10000):
+            packet_id = iface._generate_packet_id()
+            assert packet_id not in packet_ids
+            packet_ids.add(packet_id)
+
+        # Verify all are unique
+        assert len(packet_ids) == 10000
+
+
+@pytest.mark.unit
+def test_concurrent_sendText_with_queue() -> None:
+    """Test that sendText() with queue is thread-safe."""
+    with MeshInterface(noProto=True) as iface:
+        iface.myInfo = MagicMock()
+        iface.myInfo.my_node_num = 12345
+        iface._localChannels = [channel_pb2.Channel(index=0)]
+        errors = []
+        errors_lock = threading.Lock()
+
+        def send_texts() -> None:
+            try:
+                for i in range(10):
+                    iface.sendText(f"message_{i}", wantAck=True)
+            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+                with errors_lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=send_texts) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0

@@ -2,6 +2,7 @@
 
 import re
 import threading
+import time
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -323,5 +324,248 @@ def test_TCPInterface_attempt_reconnect_does_not_wait_connected() -> None:
             mock_connect.assert_called_once()
             mock_start_config.assert_called_once()
             mock_wait_connected.assert_not_called()
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_compute_reconnect_delay_exponential_backoff() -> None:
+    """Test _compute_reconnect_delay implements exponential backoff correctly."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            # Test defaults: base=1.0, backoff=1.6, max=30.0
+            # Attempt 1: exponent = max(0, 1-1) = 0, delay = 1.0 * 1.6^0 = 1.0
+            iface._reconnect_attempts = 1
+            assert iface._compute_reconnect_delay() == 1.0
+
+            # Attempt 2: exponent = max(0, 2-1) = 1, delay = 1.0 * 1.6^1 = 1.6
+            iface._reconnect_attempts = 2
+            assert iface._compute_reconnect_delay() == 1.6
+
+            # Attempt 3: exponent = 2, delay = 1.0 * 1.6^2 = 2.56
+            iface._reconnect_attempts = 3
+            assert abs(iface._compute_reconnect_delay() - 2.56) < 0.001
+
+            # Attempt 4: exponent = 3, delay = 1.0 * 1.6^3 = 4.096
+            iface._reconnect_attempts = 4
+            assert abs(iface._compute_reconnect_delay() - 4.096) < 0.001
+
+            # Attempt 8: should cap at max_delay (30.0)
+            iface._reconnect_attempts = 8
+            # Without cap: 1.0 * 1.6^7 = 26.8435456
+            # With cap: min(30.0, 26.8435456) = 26.8435456
+            expected = 1.0 * (1.6**7)
+            assert abs(iface._compute_reconnect_delay() - expected) < 0.001
+
+            # Attempt 10: would exceed max_delay without cap
+            iface._reconnect_attempts = 10
+            # Without cap: 1.0 * 1.6^9 = 68.719476736
+            # With cap: min(30.0, 68.719476736) = 30.0
+            assert iface._compute_reconnect_delay() == 30.0
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_compute_reconnect_delay_custom_parameters() -> None:
+    """Test _compute_reconnect_delay with custom backoff parameters."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            # Customize parameters
+            iface._reconnect_base_delay = 2.0
+            iface._reconnect_backoff = 2.0
+            iface._reconnect_max_delay = 60.0
+
+            # Attempt 1: exponent = 0, delay = 2.0 * 2.0^0 = 2.0
+            iface._reconnect_attempts = 1
+            assert iface._compute_reconnect_delay() == 2.0
+
+            # Attempt 2: exponent = 1, delay = 2.0 * 2.0^1 = 4.0
+            iface._reconnect_attempts = 2
+            assert iface._compute_reconnect_delay() == 4.0
+
+            # Attempt 3: exponent = 2, delay = 2.0 * 2.0^2 = 8.0
+            iface._reconnect_attempts = 3
+            assert iface._compute_reconnect_delay() == 8.0
+
+            # Attempt 5: exponent = 4, delay = 2.0 * 2.0^4 = 32.0
+            iface._reconnect_attempts = 5
+            assert iface._compute_reconnect_delay() == 32.0
+
+            # Attempt 6: should cap at max_delay (60.0)
+            iface._reconnect_attempts = 6
+            # Without cap: 2.0 * 2.0^5 = 64.0
+            # With cap: min(60.0, 64.0) = 60.0
+            assert iface._compute_reconnect_delay() == 60.0
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_attempt_reconnect_max_attempts_triggers_fatal() -> None:
+    """Test that exceeding max reconnect attempts triggers fatal disconnect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            # Set up to trigger max attempts (already at max)
+            iface._reconnect_attempts = iface._max_reconnect_attempts
+            assert iface._fatal_disconnect is False
+
+            result = iface._attempt_reconnect()
+
+            # Should return False and mark fatal disconnect
+            assert result is False
+            assert iface._fatal_disconnect is True
+            assert iface._wantExit is True
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_sleep_reconnect_delay_interrupted_by_shutdown() -> None:
+    """Test that _sleep_reconnect_delay returns False when shutdown is requested."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._wantExit = False
+            iface._fatal_disconnect = False
+
+            # Start a delay and trigger shutdown during it
+            def trigger_shutdown_during_sleep() -> None:
+                time.sleep(0.1)  # Small delay before triggering
+                iface._wantExit = True
+
+            thread = threading.Thread(target=trigger_shutdown_during_sleep)
+            thread.start()
+
+            # Should return False when interrupted
+            result = iface._sleep_reconnect_delay(10.0)
+            thread.join(timeout=1.0)
+            assert not thread.is_alive(), "Thread should complete after _wantExit is set"
+
+            assert result is False
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_sleep_reconnect_delay_interrupted_by_fatal_disconnect() -> None:
+    """Test that _sleep_reconnect_delay returns False on fatal disconnect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._wantExit = False
+            iface._fatal_disconnect = False
+
+            # Start a delay and trigger fatal disconnect during it
+            def trigger_fatal_during_sleep() -> None:
+                time.sleep(0.1)  # Small delay before triggering
+                iface._fatal_disconnect = True
+
+            thread = threading.Thread(target=trigger_fatal_during_sleep)
+            thread.start()
+
+            # Should return False when interrupted
+            result = iface._sleep_reconnect_delay(10.0)
+            thread.join(timeout=1.0)
+            assert (
+                not thread.is_alive()
+            ), "Thread should complete after _fatal_disconnect is set"
+
+            assert result is False
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_sleep_reconnect_delay_completes_full_delay() -> None:
+    """Test that _sleep_reconnect_delay returns True when delay completes."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._wantExit = False
+            iface._fatal_disconnect = False
+
+            # Small delay should complete
+            result = iface._sleep_reconnect_delay(0.3)
+
+            assert result is True
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_attempt_reconnect_already_in_progress() -> None:
+    """Test that _attempt_reconnect returns False if already in progress."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            # Mark reconnect as in progress
+            iface._reconnect_attempt_in_progress = True
+
+            result = iface._attempt_reconnect()
+
+            # Should return False without attempting
+            assert result is False
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_attempt_reconnect_aborted_by_shutdown() -> None:
+    """Test that _attempt_reconnect returns False when shutdown is requested."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._wantExit = True
+            iface._reconnect_attempt_in_progress = False
+
+            result = iface._attempt_reconnect()
+
+            # Should return False without attempting
+            assert result is False
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_attempt_reconnect_aborted_by_fatal_disconnect() -> None:
+    """Test that _attempt_reconnect returns False on fatal disconnect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._wantExit = False
+            iface._fatal_disconnect = True
+            iface._reconnect_attempt_in_progress = False
+
+            result = iface._attempt_reconnect()
+
+            # Should return False without attempting
+            assert result is False
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_on_fatal_disconnect_idempotent() -> None:
+    """Test that _on_fatal_disconnect is idempotent."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface._fatal_disconnect = False
+            iface._wantExit = False
+            iface._reconnect_attempts = 5
+
+            # First call should set flags
+            iface._on_fatal_disconnect("test reason")
+            assert iface._fatal_disconnect is True
+            assert iface._wantExit is True
+
+            # Second call should be no-op
+            iface._on_fatal_disconnect("another reason")
+            assert iface._fatal_disconnect is True
+            assert iface._wantExit is True
         finally:
             iface.close()
