@@ -696,8 +696,9 @@ def test_smokevirt_seturl_invalid_url() -> None:
 @pytest.mark.smokevirt
 def test_smokevirt_configure() -> None:
     """Test --configure."""
+    config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
     return_value, out = run_cli_with_timeout(
-        "meshtastic --host localhost --configure example_config.yaml"
+        f"meshtastic --host localhost --configure {_quote_shell_path(config_path)}"
     )
     assert re.match(r"Connected to radio", out)
     assert re.search("^Setting device owner to Bob TBeam", out, re.MULTILINE)

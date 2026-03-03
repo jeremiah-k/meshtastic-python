@@ -5,7 +5,6 @@ import os
 import tempfile
 import threading
 import types
-import warnings
 
 import pyarrow as pa
 
@@ -77,8 +76,6 @@ class ArrowWriter:
         # Re-entrant: _write() can call set_schema() while the same lock is held.
         self._lock = threading.RLock()
         self._closed = False
-        self._warned_set_schema_deprecation = False
-        self._warned_add_row_deprecation = False
 
     def __enter__(self) -> "ArrowWriter":
         """Return self for context-manager usage."""
@@ -183,22 +180,15 @@ class ArrowWriter:
     def set_schema(self, schema: pa.Schema) -> None:
         """Wrap _set_schema() for backwards compatibility.
 
-        Delegates to ``_set_schema()`` and preserves previous behavior. Use
-        ``setSchema()`` instead.
+        Delegates to ``_set_schema()`` and preserves previous behavior.
+        Prefer ``setSchema()`` for new code.
 
         Parameters
         ----------
         schema : pa.Schema
             Schema to set for the Arrow stream.
         """
-        with self._lock:
-            if not self._warned_set_schema_deprecation:
-                warnings.warn(
-                    "set_schema() is deprecated; use setSchema() instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                self._warned_set_schema_deprecation = True
+        # COMPAT_STABLE_SHIM: naming-only snake_case wrapper.
         self._set_schema(schema)
 
     def setSchema(self, schema: pa.Schema) -> None:
@@ -258,22 +248,15 @@ class ArrowWriter:
     def add_row(self, row_dict: dict[str, object]) -> None:
         """Wrap _add_row() for backwards compatibility.
 
-        Delegates to ``_add_row()`` and preserves previous behavior. Use
-        ``addRow()`` instead.
+        Delegates to ``_add_row()`` and preserves previous behavior.
+        Prefer ``addRow()`` for new code.
 
         Parameters
         ----------
         row_dict : dict[str, object]
             Row payload to append to the buffered Arrow writer.
         """
-        with self._lock:
-            if not self._warned_add_row_deprecation:
-                warnings.warn(
-                    "add_row() is deprecated; use addRow() instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                self._warned_add_row_deprecation = True
+        # COMPAT_STABLE_SHIM: naming-only snake_case wrapper.
         self._add_row(row_dict)
 
     def addRow(self, row_dict: dict[str, object]) -> None:

@@ -58,11 +58,11 @@ def test_bleclient_close_is_idempotent():
 
 
 @pytest.mark.unit
-def test_bleclient_context_manager():
+def test_bleclient_context_manager() -> None:
     """BLEClient should work as a context manager."""
     with BLEClient(address=None) as client:
         assert client is not None
-    # Client should be closed after exiting context
+    assert not client.isConnected()
 
 
 @pytest.mark.unit

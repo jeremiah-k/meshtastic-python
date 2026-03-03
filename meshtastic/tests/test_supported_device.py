@@ -486,7 +486,22 @@ def test_supported_devices_list() -> None:
 @pytest.mark.unit
 def test_supported_devices_no_duplicates() -> None:
     """Test that supported_devices has no duplicate device definitions."""
-    assert len(supported_devices) == len(set(map(repr, supported_devices)))
+    identifiers = {
+        (
+            device.name,
+            device.version,
+            device.for_firmware,
+            device.device_class,
+            device.baseport_on_linux,
+            device.baseport_on_mac,
+            device.baseport_on_windows,
+            device.usb_vendor_id_in_hex,
+            device.usb_product_id_in_hex,
+            device.usb_id_aliases,
+        )
+        for device in supported_devices
+    }
+    assert len(supported_devices) == len(identifiers)
 
 
 @pytest.mark.unit
@@ -575,7 +590,9 @@ def test_nrf52_device_class() -> None:
     """Test that nrf52 devices have correct device_class."""
     nrf52_devices = [d for d in supported_devices if d.device_class == "nrf52"]
     assert len(nrf52_devices) > 0
-    assert all(d.device_class == "nrf52" for d in nrf52_devices)
+    nrf52_names = {device.name for device in nrf52_devices}
+    assert "RAK 4631 5005" in nrf52_names
+    assert "RAK 4631 19003" in nrf52_names
 
 
 @pytest.mark.unit

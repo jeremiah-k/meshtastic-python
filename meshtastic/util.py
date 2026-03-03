@@ -43,7 +43,7 @@ BLACKLIST_VIDS: set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 0x303a Heltec tracker"""
 WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
 
-# Backward compatibility aliases (deprecated; use UPPER_SNAKE_CASE names).
+# COMPAT_STABLE_SHIM: Backward compatibility aliases (prefer UPPER_SNAKE_CASE names).
 blacklistVids = BLACKLIST_VIDS
 whitelistVids = WHITELIST_VIDS
 
@@ -362,7 +362,7 @@ def findPorts(eliminate_duplicates: bool = False) -> list[str]:
 
     ports.sort()
     if eliminate_duplicates:
-        ports = eliminate_duplicate_port(ports)
+        ports = eliminateDuplicatePort(ports)
     return ports
 
 
@@ -849,7 +849,7 @@ def camel_to_snake(a_string: str) -> str:
     )
 
 
-def detect_supported_devices() -> set[SupportedDevice]:
+def detectSupportedDevices() -> set[SupportedDevice]:  # pylint: disable=invalid-name
     """Detect available supported USB devices on the host by matching discovered vendor IDs against known supported vendor IDs.
 
     Searches the host OS for attached USB devices (Linux: lsusb, Windows: Get-PnpDevice
@@ -919,7 +919,15 @@ def detect_supported_devices() -> set[SupportedDevice]:
     return possible_devices
 
 
-def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
+# COMPAT_STABLE_SHIM: snake_case alias for historical callers.
+def detect_supported_devices() -> set[SupportedDevice]:
+    """Compatibility alias for detectSupportedDevices()."""
+    return detectSupportedDevices()
+
+
+def detectWindowsNeedsDriver(  # pylint: disable=invalid-name
+    sd: Any, print_reason: bool = False
+) -> bool:
     """Determine whether Windows reports a failed driver installation for the given supported device.
 
     Parameters
@@ -960,7 +968,15 @@ def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
     return need_to_install_driver
 
 
-def eliminate_duplicate_port(ports: list[str]) -> list[str]:
+# COMPAT_STABLE_SHIM: snake_case alias for historical callers.
+def detect_windows_needs_driver(sd: Any, print_reason: bool = False) -> bool:
+    """Compatibility alias for detectWindowsNeedsDriver()."""
+    return detectWindowsNeedsDriver(sd, print_reason=print_reason)
+
+
+def eliminateDuplicatePort(
+    ports: list[str],
+) -> list[str]:  # pylint: disable=invalid-name
     """Reduce paired serial port paths to a single representative when they likely refer to the same physical device.
 
     This function examines a list of serial port path strings and, when the list contains exactly two entries
@@ -1002,6 +1018,12 @@ def eliminate_duplicate_port(ports: list[str]) -> list[str]:
         else:
             new_ports = ports
     return new_ports
+
+
+# COMPAT_STABLE_SHIM: snake_case alias for historical callers.
+def eliminate_duplicate_port(ports: list[str]) -> list[str]:
+    """Compatibility alias for eliminateDuplicatePort()."""
+    return eliminateDuplicatePort(ports)
 
 
 def is_windows11() -> bool:
@@ -1138,7 +1160,7 @@ def active_ports_on_supported_devices(
             for com_port in com_ports:
                 ports.add(com_port)
     if eliminate_duplicates:
-        portlist: list[str] = eliminate_duplicate_port(list(ports))
+        portlist: list[str] = eliminateDuplicatePort(list(ports))
         portlist.sort()
         ports = set(portlist)
     return ports

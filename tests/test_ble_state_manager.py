@@ -52,6 +52,7 @@ class TestBLEStateManager:
         """Test state-based property methods."""
         manager = BLEStateManager()
 
+        # Direct state assignment isolates property behavior from transition rules.
         # Test DISCONNECTED state
         manager._state = ConnectionState.DISCONNECTED
         assert not manager._is_connected
@@ -139,7 +140,9 @@ class TestBLEStateManager:
         )
     )
     @settings(max_examples=100, deadline=None)
-    def test_transition_sequence_invariants(self, sequence):
+    def test_transition_sequence_invariants(
+        self, sequence: list[ConnectionState]
+    ) -> None:
         """Verify that arbitrary sequences of state transition requests preserve BLEStateManager invariants.
 
         For each target in `sequence` this test asserts three invariants:
@@ -168,16 +171,8 @@ class TestBLEStateManager:
         results = []
         errors = []
 
-        def worker(worker_id):
-            """Worker loop that performs alternating state transition attempts and records outcomes to shared lists.
-
-            On each of 100 iterations the worker attempts ConnectionState.CONNECTING for even indices and ConnectionState.DISCONNECTED for odd indices, appending (worker_id, iteration_index, success, current_state_value) to the shared `results` list. If an exception occurs it is appended to the shared `errors` list as (worker_id, error_message).
-
-            Parameters
-            ----------
-            worker_id : Any
-                Identifier used when recording results and errors.
-            """
+        def worker(worker_id: int) -> None:
+            """Perform alternating transitions and record outcomes."""
             try:
                 for i in range(100):
                     # Try to transition states concurrently
@@ -360,7 +355,9 @@ class TestBLEInterfaceStateIntegration:
     def test_client_management_with_states(self):
         """Verify client lifecycle behavior across state transitions.
 
-        Asserts that transitioning from CONNECTING to CONNECTED marks the manager as connected, that transitioning to DISCONNECTED clears the client and sets the state to DISCONNECTED, and that performing a no-op transition to the current DISCONNECTED state is considered valid.
+        Asserts that transitioning from CONNECTING to CONNECTED marks the manager
+        as connected, transitioning to DISCONNECTED updates state correctly, and
+        a no-op transition to DISCONNECTED remains valid.
         """
         manager = BLEStateManager()
 
@@ -412,16 +409,8 @@ class TestPhase3LockConsolidation:
         results = []
         errors = []
 
-        def worker(worker_id):
-            """Perform a short sequence of state transitions on a shared BLEStateManager and record outcomes.
-
-            Runs 10 iterations requesting CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order. Appends a tuple (worker_id, iteration, manager._current_state, success) to the shared `results` list for each iteration; on exception appends (worker_id, error_message) to the shared `errors` list. Intended for invocation from concurrent threads to exercise transition behavior.
-
-            Parameters
-            ----------
-            worker_id : Any
-                Identifier included in entries added to `results` and `errors` to distinguish this worker.
-            """
+        def worker(worker_id: int) -> None:
+            """Perform alternating transitions and record outcomes."""
             try:
                 for i in range(10):
                     # Simulate state transitions

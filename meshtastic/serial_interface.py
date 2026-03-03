@@ -9,7 +9,7 @@ import logging
 import sys
 import time
 import types
-from typing import IO, Any, Callable
+from typing import IO, Any, BinaryIO, Callable
 
 import serial  # type: ignore[import-untyped]
 
@@ -35,10 +35,28 @@ SERIAL_SETTLING_DELAY = 0.1
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
-    def _resolve_dev_path(self) -> str | None:
-        """Return an explicit or auto-detected serial device path."""
-        if self.devPath is not None:
-            return self.devPath
+    def _resolve_dev_path(self, dev_path: str | None) -> str | None:
+        """Return an explicit or auto-detected serial device path.
+
+        Parameters
+        ----------
+        dev_path : str | None
+            Explicit serial device path from the constructor.
+
+        Returns
+        -------
+        str | None
+            The explicit path or a single auto-detected path, or None when no
+            compatible serial devices are found.
+
+        Raises
+        ------
+        MeshInterfaceError
+            When multiple compatible serial ports are detected and no explicit
+            port was provided.
+        """
+        if dev_path is not None:
+            return dev_path
 
         ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
         logger.debug("ports: %s", ports)
@@ -92,10 +110,12 @@ class SerialInterface(StreamInterface):
             When multiple serial ports are detected and none was explicitly specified.
         """
         self.noProto = noProto
-        self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
+        self.stream: serial.Serial | BinaryIO | None = (
+            None  # Initialize early for safe cleanup
+        )
 
-        self.devPath: str | None = devPath
-        resolved_dev_path = self._resolve_dev_path()
+        self.devPath: str | None = None
+        resolved_dev_path = self._resolve_dev_path(devPath)
         if resolved_dev_path is None:
             logger.warning(
                 "No serial Meshtastic device detected; creating StreamInterface fallback without a serial connection."

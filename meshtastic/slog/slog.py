@@ -18,7 +18,7 @@ from typing import Any
 import parse  # type: ignore[import-untyped]
 import platformdirs
 import pyarrow as pa
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter
@@ -75,10 +75,12 @@ class LogDef:
     """Log definition."""
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
-    fields: list[tuple[str, pa.DataType]]  # A list of field names and their arrow types
+    fields: list[
+        tuple[str, pa.DataType[Any]]
+    ]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, pa.DataType[Any]]]) -> None:
         """Create a LogDef for the given code and fields and compile a parser for those fields.
 
         Parameters
@@ -452,7 +454,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, pa.DataType]] = [
+        all_fields: list[tuple[str, pa.DataType[Any]]] = [
             field for logdef in log_defs.values() for field in logdef.fields
         ]
 

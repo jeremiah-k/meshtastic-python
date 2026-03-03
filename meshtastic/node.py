@@ -783,7 +783,7 @@ class Node:
                     channelSet.settings.append(c.settings)
 
         if len(self.localConfig.ListFields()) == 0:
-            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name.get("lora"))
+            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name["lora"])
         channelSet.lora_config.CopyFrom(self.localConfig.lora)
         some_bytes = channelSet.SerializeToString()
         s = base64.urlsafe_b64encode(some_bytes).decode("ascii")
@@ -816,14 +816,10 @@ class Node:
                 self._raise_interface_error("Config or channels not loaded")
 
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
-        # Split on '/#' to find the base64 encoded channel settings
-        if addOnly:
-            splitURL = url.split("/?add=true#")
-        else:
-            splitURL = url.split("/#")
-        if len(splitURL) == 1:
+        # Parse from '#' to support optional query parameters before the fragment.
+        if "#" not in url:
             self._raise_interface_error(f"Invalid URL '{url}'")
-        b64 = splitURL[-1]
+        b64 = url.split("#")[-1]
         if not b64:
             self._raise_interface_error(f"Invalid URL '{url}': no channel data found")
 

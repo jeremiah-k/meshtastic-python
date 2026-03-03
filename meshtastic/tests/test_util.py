@@ -270,7 +270,8 @@ def test_Timeout_not_found() -> None:
     """Test Timeout()."""
     to = Timeout(1)
     attrs = "foo"
-    to.waitForSet("bar", attrs)
+    result = to.waitForSet("bar", attrs)
+    assert result is False
 
 
 @pytest.mark.unitslow
@@ -278,7 +279,8 @@ def test_Timeout_found() -> None:
     """Test Timeout()."""
     to = Timeout(1)
     attrs = ()
-    to.waitForSet("bar", attrs)
+    result = to.waitForSet("bar", attrs)
+    assert result is True
 
 
 @pytest.mark.unitslow

@@ -128,12 +128,13 @@ def test_TCPInterface_accepts_none_connect_timeout() -> None:
             connectNow=False,
             connectTimeout=None,
         )
+        try:
+            iface.myConnect()
 
-        iface.myConnect()
-
-        mock_connect.assert_called_once_with(("localhost", 4403))
-        connected_socket.settimeout.assert_called_once_with(None)
-        iface.close()
+            mock_connect.assert_called_once_with(("localhost", 4403))
+            connected_socket.settimeout.assert_called_once_with(None)
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit
@@ -141,13 +142,15 @@ def test_TCPInterface_write_uses_sendall() -> None:
     """Test that _write_bytes uses sendall to avoid partial writes."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
-        mock_socket = MagicMock()
-        iface.socket = mock_socket
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
 
-        iface._write_bytes(b"abc")
+            iface._write_bytes(b"abc")
 
-        mock_socket.sendall.assert_called_once_with(b"abc")
-        iface.close()
+            mock_socket.sendall.assert_called_once_with(b"abc")
+        finally:
+            iface.close()
 
 
 @pytest.mark.unit

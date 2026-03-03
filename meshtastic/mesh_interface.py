@@ -24,7 +24,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 from tabulate import tabulate
 
 import meshtastic.node

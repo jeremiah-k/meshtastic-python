@@ -46,7 +46,39 @@ def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
     return cast(list[str | None], getattr(iface, "_connect_stub_calls", []))
 
 
-def test_log_notification_registration_missing_characteristics(monkeypatch):
+class _ConfigurableFakeFuture:
+    """Simple Future stub that raises a configured exception from result()."""
+
+    def __init__(self, exception_to_raise: Exception) -> None:
+        self._exception_to_raise = exception_to_raise
+        self.cancelled = False
+        self.coro = None
+        self.callbacks: list[Callable[..., Any]] = []
+
+    def result(self, _timeout: float | None = None) -> Any:
+        _ = _timeout
+        raise self._exception_to_raise
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+    def add_done_callback(self, callback: Callable[..., Any]) -> None:
+        self.callbacks.append(callback)
+
+
+def _make_mock_publishing_thread(exception_type: type[Exception], message: str) -> Any:
+    """Create a publishingThread-like object that raises in queueWork()."""
+
+    class _MockPublishingThread:
+        def queueWork(self, _callback: Any) -> None:
+            raise exception_type(message)  # noqa: TRY003
+
+    return _MockPublishingThread()
+
+
+def test_log_notification_registration_missing_characteristics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that log notification registration handles missing characteristics gracefully."""
     # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
@@ -69,7 +101,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
                 FROMNUM_UUID: True,  # Only have the critical one
             }
 
-        def has_characteristic(self, uuid):
+        def has_characteristic(self, uuid: str) -> bool:
             """Return whether the client reports a characteristic with the given UUID.
 
             Parameters
@@ -84,7 +116,7 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
             """
             return self.has_characteristic_map.get(uuid, False)
 
-        def start_notify(self, *_args, **_kwargs):
+        def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
             """Record a notification registration by appending a (uuid, handler) tuple to self.start_notify_calls.
 
             If called with at least two positional arguments, the first is treated as the characteristic UUID and the second as the notification handler; any additional positional or keyword arguments are ignored.
@@ -201,18 +233,15 @@ def test_auto_reconnect_behavior(monkeypatch, caplog):
     # Track published events
     published_events = []
 
-    def _capture_events(topic, **kwargs):
+    def _capture_events(topic: Any, **kwargs: Any) -> None:
         """Record a pub/sub event for test inspection.
 
         Parameters
         ----------
         topic : Any
             The event topic name.
-            Key/value pairs comprising the event payload; stored as a dict.
-
-        Notes
-        -----
-        Appends a tuple (topic, kwargs) to the module-level `published_events` list.
+        **kwargs : Any
+            Key/value pairs comprising the event payload.
         """
         published_events.append((topic, kwargs))
 
@@ -419,10 +448,8 @@ def test_send_to_radio_specific_exceptions(monkeypatch, caplog):
 def test_rapid_connect_disconnect_stress_test(caplog):
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic.
 
-    Raises
-    ------
-    RuntimeError
-    RuntimeError
+    This test intentionally exercises internal paths that may raise transient
+    RuntimeError values and verifies graceful handling without critical logs.
     """
     # logging, threading, and time already imported at top
     # MagicMock, patch already imported at top
@@ -740,7 +767,7 @@ def test_ble_client_is_connected_exception_handling(caplog):
     class ExceptionBleakClient:
         """Mock bleak client that raises exceptions during connection checks."""
 
-        def __init__(self, exception_type):
+        def __init__(self, exception_type: type[Exception]) -> None:
             """Test BLE client constructor storing an exception type used to simulate failures in BLE operations.
 
             Parameters
@@ -748,7 +775,7 @@ def test_ble_client_is_connected_exception_handling(caplog):
             exception_type : type
                 Exception class that this test client will raise from its BLE method stubs.
             """
-            self.exception_type = exception_type
+            self.exception_type: type[Exception] = exception_type
 
         def is_connected(self):
             """Simulate a failing connection-state check by raising the configured exception.
@@ -791,84 +818,18 @@ def test_ble_client_is_connected_exception_handling(caplog):
         ble_client.close()
 
 
-def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
-    """BLEClient._async_await should wrap FutureTimeoutError in BLEInterface.BLEError.
-
-    Raises
-    ------
-    FutureTimeoutError
-    """
+def test_ble_client_async_timeout_maps_to_ble_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEClient._async_await should map FutureTimeoutError to BLEClient.BLEError."""
 
     # BLEClient and BLEInterface already imported at top as ble_mod.BLEClient, ble_mod.BLEInterface
 
     client = ble_mod.BLEClient()  # address=None keeps underlying bleak client unset
 
-    class _FakeFuture:
-        """Future stub that simulates timeout behavior for _async_await tests.
+    fake_future = _ConfigurableFakeFuture(FutureTimeoutError())
 
-        Methods
-        -------
-        result(_timeout=None)
-            Raises FutureTimeoutError to emulate timeout on wait.
-        cancel()
-            Marks the fake future as cancelled.
-        add_done_callback(callback)
-            Stores completion callbacks for later inspection.
-        """
-
-        def __init__(self):
-            """Create a cancellation tracker for an asynchronous operation.
-
-            Tracks cancellation state, the associated coroutine (if any), and completion callbacks.
-
-            Attributes
-            ----------
-            cancelled : bool
-                True if the operation has been cancelled.
-            coro : Coroutine | None
-                The associated coroutine, or None.
-            callbacks : list[Callable]
-                Callables invoked when the operation or future completes.
-            """
-            self.cancelled = False
-            self.coro = None
-            self.callbacks: list[Callable[..., Any]] = []
-
-        def result(self, _timeout=None):
-            """Raise FutureTimeoutError to simulate a future timing out.
-
-            Parameters
-            ----------
-            _timeout : float | None
-                Ignored; accepted for interface compatibility.
-
-            Raises
-            ------
-            FutureTimeoutError
-                Always raised to represent a timeout condition.
-            """
-            raise FutureTimeoutError()
-
-        def cancel(self):
-            """Mark the future as cancelled.
-
-            Sets the object's `cancelled` flag so callers can detect that the future was cancelled.
-            """
-            self.cancelled = True
-
-        def add_done_callback(self, callback):
-            """Register a callable to be invoked with this future when it completes.
-
-            Parameters
-            ----------
-            callback : callable
-                Callable that will be called with this future as its sole argument when the future completes.
-            """
-            self.callbacks.append(callback)
-
-    fake_future = _FakeFuture()
-
-    def _fake_async_run(coro):
+    def _fake_async_run(coro: Any) -> _ConfigurableFakeFuture:
         """Attach a coroutine to the shared test future and return that future.
 
         Parameters
@@ -903,58 +864,15 @@ def test_ble_client_async_timeout_maps_to_ble_error(monkeypatch):
         coro_obj.close()
 
 
-def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
-    """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error.
-
-    Raises
-    ------
-    RuntimeError
-    """
+def test_ble_client_async_runtime_error_maps_to_ble_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
     client = ble_mod.BLEClient()
 
-    class _FakeFuture:
-        """Future stub that simulates runtime-failure behavior for _async_await tests.
+    fake_future = _ConfigurableFakeFuture(RuntimeError("loop is closed"))
 
-        Methods
-        -------
-        result(_timeout=None)
-            Raises RuntimeError("loop is closed").
-        cancel()
-            Marks the fake future as cancelled.
-        """
-
-        def __init__(self):
-            """Initialize the fake future object.
-
-            Sets `cancelled` to False and `coro` to None to represent an active, not-yet-completed future.
-            """
-            self.cancelled = False
-            self.coro = None
-
-        def result(self, _timeout=None):
-            """Signal that the future's result cannot be retrieved because the event loop is closed.
-
-            Parameters
-            ----------
-                Ignored; present for API compatibility.
-
-            Raises
-            ------
-            RuntimeError
-                Always raised with message "loop is closed".
-            """
-            raise RuntimeError("loop is closed")  # noqa: TRY003 - test signal
-
-        def cancel(self):
-            """Mark the object as cancelled.
-
-            Sets the instance attribute `cancelled` to True so callers can detect that the operation was cancelled.
-            """
-            self.cancelled = True
-
-    fake_future = _FakeFuture()
-
-    def _fake_async_run(coro):
+    def _fake_async_run(coro: Any) -> _ConfigurableFakeFuture:
         """Attach a coroutine to the shared test future and return that future.
 
         Parameters
@@ -992,14 +910,10 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
         coro_obj.close()
 
 
-def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
-    """Test that _wait_for_disconnect_notifications handles exceptions gracefully.
-
-    Raises
-    ------
-    RuntimeError
-    ValueError
-    """
+def test_wait_for_disconnect_notifications_exceptions(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that _wait_for_disconnect_notifications handles exceptions gracefully."""
     # logging already imported at top
 
     # Set logging level to DEBUG to capture debug messages
@@ -1015,27 +929,11 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     # Mock publishingThread to raise RuntimeError
     # meshtastic.ble_interface already imported at top as ble_mod
 
-    class MockPublishingThread:
-        """Mock publishingThread that raises RuntimeError in queueWork."""
-
-        def queueWork(self, _callback):
-            """Simulate a publishing thread failure by raising a RuntimeError.
-
-            This mock implementation ignores the provided callback and unconditionally raises an error to emulate a thread failure.
-
-            Parameters
-            ----------
-            _callback : callable
-                Work callback to queue; ignored by this mock.
-
-            Raises
-            ------
-            RuntimeError
-                Always raised with the message "thread error in queueWork".
-            """
-            raise RuntimeError("thread error in queueWork")  # noqa: TRY003
-
-    monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread())
+    monkeypatch.setattr(
+        ble_mod,
+        "publishingThread",
+        _make_mock_publishing_thread(RuntimeError, "thread error in queueWork"),
+    )
 
     # Should handle RuntimeError gracefully
     iface._wait_for_disconnect_notifications()
@@ -1044,25 +942,11 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     # Clear caplog
     caplog.clear()
 
-    # Mock publishingThread to raise ValueError
-    class MockPublishingThread2:
-        """Mock publishingThread that raises ValueError in queueWork."""
-
-        def queueWork(self, _callback):
-            """Refuse enqueued callbacks by always raising a ValueError with message "invalid state".
-
-            Parameters
-            ----------
-                The callback that would have been queued (ignored).
-
-            Raises
-            ------
-            ValueError
-                Always raised with the message "invalid state".
-            """
-            raise ValueError("invalid state")  # noqa: TRY003
-
-    monkeypatch.setattr(ble_mod, "publishingThread", MockPublishingThread2())
+    monkeypatch.setattr(
+        ble_mod,
+        "publishingThread",
+        _make_mock_publishing_thread(ValueError, "invalid state"),
+    )
 
     # Should handle ValueError gracefully
     iface._wait_for_disconnect_notifications()
@@ -1071,13 +955,10 @@ def test_wait_for_disconnect_notifications_exceptions(monkeypatch, caplog):
     iface.close()
 
 
-def test_drain_publish_queue_exceptions(monkeypatch, caplog):
-    """Test that _drain_publish_queue handles exceptions gracefully.
-
-    Raises
-    ------
-    ValueError
-    """
+def test_drain_publish_queue_exceptions(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that _drain_publish_queue handles exceptions gracefully."""
     # logging, threading, and Queue already imported at top
 
     # Set logging level to DEBUG to capture debug messages

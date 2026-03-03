@@ -13,6 +13,10 @@ except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
 
+class _TestError(Exception):
+    """Test exception for BLE integration validation paths."""
+
+
 @pytest.mark.unit
 def test_state_manager_full_connection_lifecycle() -> None:
     """Test complete connection state machine lifecycle from DISCONNECTED to DISCONNECTED."""
@@ -65,27 +69,24 @@ def test_validator_and_state_manager_integration() -> None:
     state_manager = BLEStateManager()
     lock = RLock()
 
-    class TestError(Exception):
-        pass
-
-    validator = ConnectionValidator(state_manager, lock, TestError)
+    validator = ConnectionValidator(state_manager, lock, _TestError)
 
     # Can validate when disconnected
     validator._validate_connection_request()
 
     # Block during connecting
     state_manager._transition_to(ConnectionState.CONNECTING)
-    with pytest.raises(TestError, match="Already connected or connection in progress"):
+    with pytest.raises(_TestError, match="Already connected or connection in progress"):
         validator._validate_connection_request()
 
     # Block during connected
     state_manager._transition_to(ConnectionState.CONNECTED)
-    with pytest.raises(TestError, match="Already connected or connection in progress"):
+    with pytest.raises(_TestError, match="Already connected or connection in progress"):
         validator._validate_connection_request()
 
     # Block during closing
     state_manager._transition_to(ConnectionState.DISCONNECTING)
-    with pytest.raises(TestError, match="Cannot connect while interface is closing"):
+    with pytest.raises(_TestError, match="Cannot connect while interface is closing"):
         validator._validate_connection_request()
 
     # Can validate again after disconnect
@@ -204,10 +205,7 @@ def test_connection_validator_with_normalized_addresses() -> None:
     state_manager = BLEStateManager()
     lock = RLock()
 
-    class TestError(Exception):
-        pass
-
-    validator = ConnectionValidator(state_manager, lock, TestError)
+    validator = ConnectionValidator(state_manager, lock, _TestError)
 
     # Create mock client with various address formats
     mock_client = MagicMock()

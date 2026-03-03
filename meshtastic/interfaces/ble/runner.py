@@ -417,7 +417,13 @@ class BLECoroutineRunner:
 
     @staticmethod
     def _close_coroutine_safely(coro: Coroutine[Any, Any, Any]) -> None:
-        """Best-effort close to suppress never-awaited coroutine warnings."""
+        """Best-effort close to suppress never-awaited coroutine warnings.
+
+        Parameters
+        ----------
+        coro : Coroutine[Any, Any, Any]
+            The coroutine object to close.
+        """
         with contextlib.suppress(Exception):
             coro.close()
 

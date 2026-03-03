@@ -334,7 +334,6 @@ def test_close_waits_for_inflight_heartbeat_send(
         # close() should block until the in-flight heartbeat send completes.
         # Use a generous timeout (0.2s) to avoid flakiness on slow CI runners.
         assert not close_done.wait(timeout=0.2)
-        assert not close_done.wait(timeout=0.05)
 
         release_send.set()
         close_thread.join(timeout=1.0)
@@ -1175,6 +1174,8 @@ def test_concurrent_close_with_packet_id_generation() -> None:
 
         assert started.wait(timeout=1.0)
         # Exercise close() while packet-id generation is active.
+        # _generate_packet_id() may still race briefly after close(), but this
+        # test asserts no exceptions escape those concurrent calls.
         iface.close()
 
         # Signal threads to stop

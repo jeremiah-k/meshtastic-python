@@ -153,7 +153,7 @@ class TestBLECoroutineRunner:
         loop = _LoopStub()
 
         runner._handle_loop_exception(
-            loop, {"message": "test error", "exception": None}
+            cast(Any, loop), {"message": "test error", "exception": None}
         )
 
         assert observed_exc_info == [False]
@@ -236,7 +236,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -295,7 +295,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -353,7 +353,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -422,7 +422,7 @@ class TestBLECoroutineRunner:
 
             Returns
             -------
-            asyncio.Future
+            concurrent.futures.Future
                 A Future already completed with result `None`.
             """
             coro.close()
@@ -771,7 +771,7 @@ class TestBLEClientWithRunner:
         class FailingBleakClient:
             """Bleak client stub whose disconnect always raises."""
 
-            isConnected = True
+            is_connected = True
 
             @staticmethod
             async def disconnect():

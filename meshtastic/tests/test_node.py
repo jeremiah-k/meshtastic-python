@@ -109,7 +109,7 @@ def _make_channel_set_url(
 
 def _decode_channel_set_from_url(url: str) -> apponly_pb2.ChannelSet:
     """Decode and parse a ChannelSet from a meshtastic URL."""
-    b64 = url.split("/#")[-1]
+    b64 = url.split("#")[-1]
     missing_padding = len(b64) % 4
     if missing_padding:
         b64 += "=" * (4 - missing_padding)
@@ -1036,6 +1036,25 @@ def test_get_url_conditionally_includes_secondary_channels(
 
     assert [s.name for s in primary_only.settings] == ["primary"]
     assert [s.name for s in with_secondary.settings] == ["primary", "secondary"]
+
+
+@pytest.mark.unit
+def test_get_url_requests_lora_config_when_local_config_empty(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """getURL() should request lora config before encoding when localConfig is empty."""
+    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    anode.channels = [
+        _make_channel(0, Channel.Role.PRIMARY, name="primary", psk=b"\x01")
+    ]
+    anode.localConfig.Clear()
+    anode.requestConfig = MagicMock()
+
+    anode.getURL(includeAll=False)
+
+    anode.requestConfig.assert_called_once_with(
+        anode.localConfig.DESCRIPTOR.fields_by_name["lora"]
+    )
 
 
 @pytest.mark.unit

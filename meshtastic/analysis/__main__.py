@@ -40,7 +40,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     util.our_exit(message, return_value)
 
 
-def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
+def toPmonNames(arr: Iterable[Any]) -> list[str | None]:  # pylint: disable=invalid-name
     """Map power-monitor state values (including bitmasks) to enum name strings.
 
     Parameters
@@ -103,6 +103,12 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
     return [_to_pmon_name(x) for x in arr]
 
 
+# COMPAT_STABLE_SHIM: snake_case alias for historical callers.
+def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
+    """Compatibility alias for toPmonNames()."""
+    return toPmonNames(arr)
+
+
 def read_pandas(filepath: str) -> pd.DataFrame:
     """Load a Feather file and map Arrow column types to pandas nullable dtypes to preserve nullability.
 
@@ -139,7 +145,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 
     def _types_mapper(
         data_type: Any,
-    ) -> pd.api.extensions.ExtensionDtype | None:
+    ) -> pd.api.extensions.ExtensionDtype:
         """Map a PyArrow DataType to a pandas nullable ExtensionDtype.
 
         Parameters
@@ -149,7 +155,7 @@ def read_pandas(filepath: str) -> pd.DataFrame:
 
         Returns
         -------
-        pd.api.extensions.ExtensionDtype | None
+        pd.api.extensions.ExtensionDtype
             The corresponding pandas nullable extension
             dtype if a predefined mapping exists; otherwise a pandas ArrowDtype wrapping
             the provided Arrow type.
@@ -236,7 +242,7 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     ]
     pm_raises = [(pm_masks[i] & x) for i, x in enumerate(pm_changes)]
 
-    pmon_events["pm_raises"] = to_pmon_names(pm_raises)
+    pmon_events["pm_raises"] = toPmonNames(pm_raises)
 
     pmon_raises = pmon_events[pmon_events["pm_raises"].notnull()][["time", "pm_raises"]]
     return pmon_raises

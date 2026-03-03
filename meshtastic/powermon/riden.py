@@ -28,7 +28,10 @@ class RidenPowerSupply(PowerSupply):
     def __init__(self, portName: str = "/dev/ttyUSB0") -> None:
         """Initialize the RidenPowerSupply object.
 
-        portName (str, optional): The port name of the power supply. Defaults to "/dev/ttyUSB0".
+        Parameters
+        ----------
+        portName : str, optional
+            The port name of the power supply. Defaults to ``"/dev/ttyUSB0"``.
         """
         self.r = r = Riden(
             port=portName,
