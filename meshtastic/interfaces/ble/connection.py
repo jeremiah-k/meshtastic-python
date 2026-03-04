@@ -496,6 +496,7 @@ class ConnectionOrchestrator:
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
         client: BLEClient | None = None
         skip_discovery_scan = False
+        should_attempt_discovery_after_retry = False
         try:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
@@ -561,7 +562,36 @@ class ConnectionOrchestrator:
             client = self.client_manager._create_client(
                 resolved_address, on_disconnect_func
             )
-            self.client_manager._connect_client(client, timeout=fallback_timeout)
+            try:
+                self.client_manager._connect_client(client, timeout=fallback_timeout)
+            except (
+                BleakError,
+                BLEClient.BLEError,
+                OSError,
+                TimeoutError,
+            ) as retry_err:
+                should_attempt_discovery_after_retry = (
+                    skip_discovery_scan
+                    and target_address is not None
+                    and _is_device_not_found_error(retry_err)
+                )
+                if not should_attempt_discovery_after_retry:
+                    raise
+                logger.debug(
+                    "Direct retry also reported device-not-found for %s; attempting discovery scan fallback.",
+                    normalized_target,
+                )
+                self.client_manager._safe_close_client(client)
+                client = None
+                self._raise_if_interface_closing()
+                device = self.interface.findDevice(target_address)
+                self._raise_if_interface_closing()
+                resolved_address = device.address
+                client = self.client_manager._create_client(
+                    resolved_address, on_disconnect_func
+                )
+                self.client_manager._connect_client(client)
+
             self._raise_if_interface_closing()
             self._finalize_connection(
                 client, resolved_address, register_notifications_func, on_connected_func
