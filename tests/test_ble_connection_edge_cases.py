@@ -3,12 +3,12 @@
 import logging
 from types import SimpleNamespace
 from threading import Event, RLock
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
 try:
-    from bleak.exc import BleakDBusError
+    from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
     from meshtastic.interfaces.ble.connection import (
         AWAIT_TIMEOUT_BUFFER_SECONDS,
         DIRECT_CONNECT_TIMEOUT_SECONDS,
@@ -531,6 +531,109 @@ def test_connection_orchestrator_returns_after_successful_direct_connect() -> No
     assert result is direct_client
     interface.findDevice.assert_not_called()
     orchestrator._finalize_connection.assert_called_once()
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_explicit_address() -> (
+    None
+):
+    """Explicit-address direct device-not-found should skip discovery scan fallback."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    fallback_client = MagicMock()
+    client_manager._create_client.side_effect = [direct_client, fallback_client]
+    client_manager._connect_client.side_effect = [
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is fallback_client
+    interface.findDevice.assert_not_called()
+    assert client_manager._connect_client.call_count == 2
+    orchestrator._finalize_connection.assert_called_once_with(
+        fallback_client,
+        "AA:BB:CC:DD:EE:FF",
+        ANY,
+        ANY,
+    )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after_direct_failure() -> (
+    None
+):
+    """Non-address identifiers should still use discovery fallback after direct failures."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager._create_client.side_effect = [direct_client, discovered_client]
+    client_manager._connect_client.side_effect = [
+        BleakDeviceNotFoundError("mesh-node", "not found"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = SimpleNamespace(address="11:22:33:44:55:66")
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="mesh-node",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface.findDevice.assert_called_once_with("mesh-node")
+    assert client_manager._connect_client.call_count == 2
+    orchestrator._finalize_connection.assert_called_once_with(
+        discovered_client,
+        "11:22:33:44:55:66",
+        ANY,
+        ANY,
+    )
 
 
 @pytest.mark.unit

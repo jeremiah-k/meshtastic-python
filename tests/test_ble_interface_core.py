@@ -17,7 +17,7 @@ from typing import (
 
 import pytest
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakError
+from bleak.exc import BleakDBusError, BleakError
 
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
@@ -1826,6 +1826,72 @@ def test_log_notification_registration(monkeypatch):
     assert callable(
         fromnum_call[1]
     ), "FROMNUM notification should register a callable handler"
+
+    iface.close()
+
+
+def test_register_notifications_retries_fromnum_notify_acquired_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_register_notifications should retry FROMNUM notify once on BlueZ 'Notify acquired'."""
+
+    class MockClientNotifyAcquired(DummyClient):
+        """Mock client that fails the first FROMNUM notify start with Notify acquired."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.fromnum_start_attempts = 0
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == FROMNUM_UUID
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if args and args[0] == FROMNUM_UUID:
+                self.fromnum_start_attempts += 1
+                if self.fromnum_start_attempts == 1:
+                    raise BleakDBusError(
+                        "org.bluez.Error.Failed",
+                        ["Notify acquired"],
+                    )
+
+    client = MockClientNotifyAcquired()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    iface._register_notifications(cast(BLEClient, client))
+
+    assert client.fromnum_start_attempts == 2
+    assert client.stop_notify_calls == [FROMNUM_UUID]
+
+    iface.close()
+
+
+def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_register_notifications should re-raise FROMNUM start_notify DBus errors not matching Notify acquired."""
+
+    class MockClientFatalFromNumNotify(DummyClient):
+        """Mock client that always raises a non-recoverable DBus notify error."""
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == FROMNUM_UUID
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if args and args[0] == FROMNUM_UUID:
+                raise BleakDBusError(
+                    "org.bluez.Error.Failed",
+                    ["AlreadyConnected"],
+                )
+
+    client = MockClientFatalFromNumNotify()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    with pytest.raises(BleakDBusError):
+        iface._register_notifications(cast(BLEClient, client))
+
+    assert client.stop_notify_calls == []
 
     iface.close()
 

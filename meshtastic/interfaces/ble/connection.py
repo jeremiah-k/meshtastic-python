@@ -5,7 +5,7 @@ import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable
 
-from bleak.exc import BleakDBusError, BleakError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
@@ -21,6 +21,7 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import sanitize_address
@@ -32,6 +33,14 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
+_DEVICE_NOT_FOUND_FRAGMENT = "not found"
+
+
+def _is_device_not_found_error(err: Exception) -> bool:
+    """Return True when an exception indicates the target BLE device was not found."""
+    if isinstance(err, BleakDeviceNotFoundError):
+        return True
+    return _DEVICE_NOT_FOUND_FRAGMENT in str(err).casefold()
 
 
 class ConnectionValidator:
@@ -486,6 +495,7 @@ class ConnectionOrchestrator:
             if not self.state_manager._transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
         client: BLEClient | None = None
+        skip_discovery_scan = False
         try:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
@@ -514,6 +524,15 @@ class ConnectionOrchestrator:
                         direct_err,
                         exc_info=True,
                     )
+                    skip_discovery_scan = (
+                        _looks_like_ble_address(target_address)
+                        and _is_device_not_found_error(direct_err)
+                    )
+                    if skip_discovery_scan:
+                        logger.debug(
+                            "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
+                            normalized_target,
+                        )
                     if client:
                         self.client_manager._safe_close_client(client)
                     client = None
@@ -527,16 +546,21 @@ class ConnectionOrchestrator:
                     )
                     return client
 
-            self._raise_if_interface_closing()
-            device = self.interface.findDevice(target_address)
+            if skip_discovery_scan and target_address is not None:
+                resolved_address = target_address
+            else:
+                self._raise_if_interface_closing()
+                device = self.interface.findDevice(target_address)
+                resolved_address = device.address
+
             self._raise_if_interface_closing()
             client = self.client_manager._create_client(
-                device.address, on_disconnect_func
+                resolved_address, on_disconnect_func
             )
             self.client_manager._connect_client(client)
             self._raise_if_interface_closing()
             self._finalize_connection(
-                client, device.address, register_notifications_func, on_connected_func
+                client, resolved_address, register_notifications_func, on_connected_func
             )
             return client
         except BleakDBusError:

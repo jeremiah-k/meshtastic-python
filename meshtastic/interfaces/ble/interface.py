@@ -104,6 +104,7 @@ from meshtastic.mesh_interface import MeshInterface
 from meshtastic.protobuf import mesh_pb2
 
 T = TypeVar("T")
+_NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
 
 
 class BLEInterface(MeshInterface):
@@ -921,6 +922,10 @@ class BLEInterface(MeshInterface):
                 self._notification_manager._subscribe(uuid, handler)
             return handler
 
+        def _is_notify_acquired_error(err: BaseException) -> bool:
+            """Return True when a notification-start error indicates an acquired notify state."""
+            return _NOTIFY_ACQUIRED_FRAGMENT in str(err).casefold()
+
         # Optional log notifications - failures are non-fatal.
         try:
             if client.has_characteristic(LEGACY_LOGRADIO_UUID):
@@ -971,11 +976,36 @@ class BLEInterface(MeshInterface):
         from_num_handler = _get_or_create_handler(
             FROMNUM_UUID, lambda: _safe_from_num_handler
         )
-        client.start_notify(
-            FROMNUM_UUID,
-            from_num_handler,
-            timeout=NOTIFICATION_START_TIMEOUT,
-        )
+        try:
+            client.start_notify(
+                FROMNUM_UUID,
+                from_num_handler,
+                timeout=NOTIFICATION_START_TIMEOUT,
+            )
+        except BleakDBusError as e:
+            if not _is_notify_acquired_error(e):
+                raise
+            logger.debug(
+                "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify",
+                FROMNUM_UUID,
+            )
+            with contextlib.suppress(
+                BleakError,
+                BleakDBusError,
+                RuntimeError,
+                BLEClient.BLEError,
+                self.BLEError,
+            ):
+                client.stop_notify(
+                    FROMNUM_UUID,
+                    timeout=NOTIFICATION_START_TIMEOUT,
+                )
+            _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY)
+            client.start_notify(
+                FROMNUM_UUID,
+                from_num_handler,
+                timeout=NOTIFICATION_START_TIMEOUT,
+            )
 
     def _log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
