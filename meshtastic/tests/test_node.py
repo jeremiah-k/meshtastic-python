@@ -1229,7 +1229,7 @@ def test_onResponseRequestChannel_handles_partial_and_final_channel(
     )
     anode._request_channel.assert_called_once_with(3)
 
-    final = Channel(index=7, role=Channel.Role.SECONDARY)
+    final = Channel(index=CHANNEL_LIMIT - 1, role=Channel.Role.SECONDARY)
     anode._request_channel.reset_mock()
     anode.onResponseRequestChannel(
         {

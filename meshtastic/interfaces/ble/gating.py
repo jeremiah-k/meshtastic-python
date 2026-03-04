@@ -34,7 +34,7 @@ from threading import RLock
 from typing import Any
 
 from meshtastic.interfaces.ble.constants import BLEConfig
-from meshtastic.interfaces.ble.utils import sanitizeAddress
+from meshtastic.interfaces.ble.utils import sanitize_address
 
 logger = logging.getLogger("meshtastic.ble")
 
@@ -78,7 +78,7 @@ def _addr_key(addr: str | None) -> str | None:
     str | None
         The sanitized address string, or None if the input is None, empty, or contains only whitespace.
     """
-    sanitized = sanitizeAddress(addr)
+    sanitized = sanitize_address(addr)
     return sanitized if sanitized else None
 
 

@@ -60,7 +60,7 @@ def runCliWithTimeout(command: str, timeout: int | float = 120) -> tuple[int, st
     command : str
         Full shell command to execute. This helper intentionally accepts
         a command string (rather than argv tokens) for compatibility with
-        existing test call sites; use `shlex.quote` for path quoting
+        existing test call sites; use `_quote_shell_path` for path quoting
         when constructing commands that may include spaces.
     timeout : int | float
         Maximum time to allow command execution before failing the test.

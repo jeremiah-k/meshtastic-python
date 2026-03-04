@@ -64,7 +64,7 @@ lint:
         - name: lint
           output: pylint
           run: poetry -C ${workspace} run pylint meshtastic examples/ --exit-zero --output ${tmpfile} --output-format json
-          target: .
+          target: [meshtastic, examples]
           read_output_from: tmp_file
           run_from: ${root_or_parent_with_any_config}
           disable_upstream: true

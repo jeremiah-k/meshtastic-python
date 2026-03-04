@@ -20,8 +20,8 @@ from meshtastic.interfaces.ble.constants import (
     logger,
 )
 from meshtastic.interfaces.ble.utils import (
-    resolveBleModule,
-    sanitizeAddress,
+    resolve_ble_module,
+    sanitize_address,
 )
 
 _BLE_ADDRESS_KEY_RE = re.compile(r"^(?:[0-9a-f]{12}|[0-9a-f]{32})$")
@@ -228,12 +228,12 @@ def _filter_devices_for_target_identifier(
     """
     target_key: str | None = None
     if _looks_like_ble_address(target_identifier):
-        target_key = sanitizeAddress(target_identifier)
+        target_key = sanitize_address(target_identifier)
     if target_key and _BLE_ADDRESS_KEY_RE.fullmatch(target_key):
         address_matches = [
             device
             for device in devices
-            if sanitizeAddress(getattr(device, "address", None)) == target_key
+            if sanitize_address(getattr(device, "address", None)) == target_key
         ]
         if address_matches:
             return address_matches
@@ -430,7 +430,7 @@ class DiscoveryManager:
                 #   1. Explicit self.client_factory (injected for testing)
                 #   2. Monkeypatched ble_mod.BLEClient (legacy/back-compat shim)
                 #   3. Directly imported BLEClient (default)
-                ble_mod = resolveBleModule()
+                ble_mod = resolve_ble_module()
                 if ble_mod is None:
                     logger.debug("No BLE module found; using default BLEClient")
                 resolved_factory = cast(

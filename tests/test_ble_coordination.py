@@ -6,8 +6,11 @@ import pytest
 
 try:
     from meshtastic.interfaces.ble.coordination import ThreadCoordinator
-except ImportError:
-    pytest.skip("BLE dependencies not available", allow_module_level=True)
+except ModuleNotFoundError as exc:
+    missing_name = exc.name or ""
+    if missing_name == "bleak" or missing_name.startswith("bleak."):
+        pytest.skip("BLE dependencies not available", allow_module_level=True)
+    raise
 
 
 @pytest.mark.unit

@@ -12,6 +12,7 @@ from pubsub import pub
 import meshtastic.tcp_interface
 
 _CONNECTED = threading.Event()
+CONNECTION_WAIT_TIMEOUT_SEC = 30
 
 
 def onConnection(interface: Any, _topic: Any = pub.AUTO_TOPIC) -> None:
@@ -33,7 +34,7 @@ def main() -> None:
     try:
         # Wait until the connection callback runs, then exit.
         with meshtastic.tcp_interface.TCPInterface(hostname=hostname):
-            if not _CONNECTED.wait(timeout=30):
+            if not _CONNECTED.wait(timeout=CONNECTION_WAIT_TIMEOUT_SEC):
                 print(
                     "Error: Timed out waiting for connection callback",
                     file=sys.stderr,

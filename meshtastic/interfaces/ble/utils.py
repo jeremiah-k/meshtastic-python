@@ -9,7 +9,7 @@ from typing import Awaitable, Callable, TypeVar
 T = TypeVar("T")
 
 
-def sanitizeAddress(address: str | None) -> str | None:
+def sanitize_address(address: str | None) -> str | None:
     """Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 
     Parameters
@@ -49,7 +49,7 @@ def _sleep(delay: float) -> None:
     time.sleep(delay)
 
 
-async def withTimeout(
+async def with_timeout(
     awaitable: Awaitable[T],
     timeout: float | None,
     label: str,
@@ -91,7 +91,7 @@ async def withTimeout(
         raise timeout_error_factory(label, timeout) from exc
 
 
-def resolveBleModule() -> ModuleType | None:
+def resolve_ble_module() -> ModuleType | None:
     """Locate and return the first available BLE-related module for the package.
 
     Checks for available modules in priority order and returns the first successfully imported module.
@@ -120,21 +120,21 @@ def resolveBleModule() -> ModuleType | None:
     return None
 
 
-# COMPAT_STABLE_SHIM: historical snake_case alias.
-def sanitize_address(address: str | None) -> str | None:
-    """Compatibility alias for sanitizeAddress()."""
-    return sanitizeAddress(address)
+# COMPAT_STABLE_SHIM: historical camelCase alias.
+def sanitizeAddress(address: str | None) -> str | None:
+    """Compatibility alias for sanitize_address()."""
+    return sanitize_address(address)
 
 
-# COMPAT_STABLE_SHIM: historical snake_case alias.
-async def with_timeout(
+# COMPAT_STABLE_SHIM: historical camelCase alias.
+async def withTimeout(
     awaitable: Awaitable[T],
     timeout: float | None,
     label: str,
     timeout_error_factory: Callable[[str, float], Exception] | None = None,
 ) -> T:
-    """Compatibility alias for withTimeout()."""
-    return await withTimeout(
+    """Compatibility alias for with_timeout()."""
+    return await with_timeout(
         awaitable,
         timeout,
         label,
@@ -142,7 +142,7 @@ async def with_timeout(
     )
 
 
-# COMPAT_STABLE_SHIM: historical snake_case alias.
-def resolve_ble_module() -> ModuleType | None:
-    """Compatibility alias for resolveBleModule()."""
-    return resolveBleModule()
+# COMPAT_STABLE_SHIM: historical camelCase alias.
+def resolveBleModule() -> ModuleType | None:
+    """Compatibility alias for resolve_ble_module()."""
+    return resolve_ble_module()

@@ -150,9 +150,10 @@ class ReconnectPolicy:
             exp_delay = self.max_delay
         delay = min(exp_delay, self.max_delay)
         jitter = delay * self.jitter_ratio * (self._random.random() * 2.0 - 1.0)
+        effective_lower = min(MIN_DELAY_FLOOR, self.max_delay)
         return min(
-            self.max_delay, max(MIN_DELAY_FLOOR, delay + jitter)
-        )  # Clamp to [MIN_DELAY_FLOOR, max_delay]
+            self.max_delay, max(effective_lower, delay + jitter)
+        )  # Clamp to [effective_lower, max_delay]
 
     def _should_retry(self, attempt: int | None = None) -> bool:
         """Return whether another retry attempt is permitted.

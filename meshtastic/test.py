@@ -252,7 +252,18 @@ def subscribeToNodeUpdates() -> None:
 
 # COMPAT_STABLE_SHIM: historical helper name.
 def subscribe() -> None:
-    """Compatibility alias for subscribeToNodeUpdates()."""
+    """Compatibility alias for subscribeToNodeUpdates().
+
+    Returns
+    -------
+    None
+        This function returns no value.
+
+    See Also
+    --------
+    subscribeToNodeUpdates
+        Canonical helper for subscribing to node-update notifications.
+    """
     subscribeToNodeUpdates()
 
 

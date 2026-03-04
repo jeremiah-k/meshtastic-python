@@ -195,7 +195,7 @@ def test_bleclient_discover_method_exists() -> None:
 
 @pytest.mark.unit
 def test_bleclient_with_timeout_delegates_to_utils_wrapper() -> None:
-    """_with_timeout should execute through the shared withTimeout utility."""
+    """_with_timeout should execute through the shared with_timeout utility."""
 
     async def _done() -> str:
         return "ok"

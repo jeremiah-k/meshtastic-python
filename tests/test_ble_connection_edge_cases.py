@@ -359,7 +359,7 @@ def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address(
 
     with pytest.MonkeyPatch.context() as patch_ctx:
         patch_ctx.setattr(
-            "meshtastic.interfaces.ble.connection.sanitizeAddress",
+            "meshtastic.interfaces.ble.connection.sanitize_address",
             lambda _address: "aa:bb:cc:dd:ee:ff",
         )
         orchestrator._finalize_connection(

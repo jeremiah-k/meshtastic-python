@@ -1062,7 +1062,7 @@ def test_discovery_manager_uses_default_bleclient_when_ble_module_missing(
         def _discover(**_kwargs: Any) -> dict[str, Any]:
             return discover_result
 
-    monkeypatch.setattr(discovery_mod, "resolveBleModule", lambda: None)
+    monkeypatch.setattr(discovery_mod, "resolve_ble_module", lambda: None)
     monkeypatch.setattr(discovery_mod, "BLEClient", _DefaultClient)
     manager = DiscoveryManager()
 
@@ -1219,7 +1219,7 @@ def test_filter_devices_rejects_ambiguous_normalized_name_matches():
 
 
 def test_ble_interface_with_timeout_wrapper_returns_result() -> None:
-    """BLEInterface._with_timeout should delegate to withTimeout and return the awaited value."""
+    """BLEInterface._with_timeout should delegate to with_timeout and return the awaited value."""
 
     async def _ready() -> str:
         return "ok"
@@ -1233,10 +1233,10 @@ def test_ble_interface_with_timeout_wrapper_returns_result() -> None:
 def test_ble_interface_sanitize_address_wrapper_delegates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_sanitize_address should delegate to sanitizeAddress helper."""
+    """_sanitize_address should delegate to sanitize_address helper."""
     iface = object.__new__(BLEInterface)
     monkeypatch.setattr(
-        "meshtastic.interfaces.ble.interface.sanitizeAddress",
+        "meshtastic.interfaces.ble.interface.sanitize_address",
         lambda address: "normalized" if address else None,
     )
 

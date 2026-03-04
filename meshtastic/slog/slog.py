@@ -698,15 +698,20 @@ class LogSet:
 
         if dir_name is None:
             app_dir = rootDir()
-            app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
-            for _ in range(LOG_DIR_COLLISION_MAX_RETRIES):
+            base_stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            app_time_dir = Path(app_dir, base_stamp)
+            for attempt in range(LOG_DIR_COLLISION_MAX_RETRIES):
+                candidate = (
+                    Path(app_dir, base_stamp)
+                    if attempt == 0
+                    else Path(app_dir, f"{base_stamp}-{attempt}")
+                )
                 try:
-                    app_time_dir.mkdir(exist_ok=False)
+                    candidate.mkdir(exist_ok=False)
+                    app_time_dir = candidate
                     break
                 except FileExistsError:
-                    app_time_dir = Path(
-                        app_dir, datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-                    )
+                    continue
             else:
                 raise FileExistsError(
                     "Unable to create unique slog run directory after retries"

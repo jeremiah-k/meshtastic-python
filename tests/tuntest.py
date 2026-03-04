@@ -146,7 +146,7 @@ def _readtest(tap: TapDevice) -> None:
                         "Ignoring malformed ICMP echo request: too short for header"
                     )
                     continue
-                logging.warning("Generating fake ping reply")
+                logging.debug("Generating fake ping reply")
                 icmp_reply = bytearray(p[icmp_offset:])
                 icmp_reply[0] = 0x00  # Echo reply type
                 icmp_reply[2:4] = b"\x00\x00"
