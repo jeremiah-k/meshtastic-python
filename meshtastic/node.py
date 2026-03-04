@@ -17,6 +17,7 @@ from typing import (
     Callable,
     NoReturn,
     Sequence,
+    cast,
 )
 
 from google.protobuf.descriptor import FieldDescriptor
@@ -204,7 +205,10 @@ class Node:
         )
         role = getattr(metadata, "role", 0)
         if role in config_pb2.Config.DeviceConfig.Role.values():
-            self._emit_metadata_line(f"role: {config_pb2.Config.DeviceConfig.Role.Name(role)}")
+            role_value = cast(config_pb2.Config.DeviceConfig.Role.ValueType, role)
+            self._emit_metadata_line(
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(role_value)}"
+            )
         else:
             self._emit_metadata_line(f"role: {role}")
         self._emit_metadata_line(
@@ -212,7 +216,10 @@ class Node:
         )
         hw_model = getattr(metadata, "hw_model", 0)
         if hw_model in mesh_pb2.HardwareModel.values():
-            self._emit_metadata_line(f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model)}")
+            hw_model_value = cast(mesh_pb2.HardwareModel.ValueType, hw_model)
+            self._emit_metadata_line(
+                f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model_value)}"
+            )
         else:
             self._emit_metadata_line(f"hw_model: {hw_model}")
         self._emit_metadata_line(f"hasPKC: {getattr(metadata, 'hasPKC', False)}")
