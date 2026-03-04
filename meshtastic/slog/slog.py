@@ -31,9 +31,9 @@ _warned_deprecations_lock: threading.Lock = threading.Lock()
 LOG_DIR_COLLISION_MAX_RETRIES = 100
 
 # PyArrow typing stubs vary across versions (generic vs non-generic DataType).
-# Keep one alias usable under strict typing across both forms.
+# Use Any for type-check-time compatibility across both variants.
 if TYPE_CHECKING:
-    ArrowDataType: TypeAlias = pa.DataType[Any]
+    ArrowDataType: TypeAlias = Any
 else:
     ArrowDataType = pa.DataType
 
