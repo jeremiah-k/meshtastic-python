@@ -30,6 +30,17 @@ _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
 LOG_DIR_COLLISION_MAX_RETRIES = 100
 
+
+class SlogDirectoryCollisionError(FileExistsError):
+    """Raised when slog cannot create a unique run directory."""
+
+    def __init__(self, app_dir: str, attempts: int) -> None:
+        super().__init__(
+            f"Unable to create unique slog run directory under '{app_dir}' "
+            f"after {attempts} attempts"
+        )
+
+
 # PyArrow typing stubs vary across versions (generic vs non-generic DataType).
 # Keep the runtime alias stable while using a broad static alias for mypy
 # compatibility across both stub families.
@@ -98,7 +109,7 @@ class LogDef:
         ----------
         code : str
             Short log code (e.g., "B", "PM", "PS").
-        fields : list[tuple[str, ArrowDataType]]
+        fields : list[tuple[str, ArrowDataTypeLike]]
             Ordered (name, type) pairs
             describing each field. String and integer Arrow fields are supported.
             Unsupported field types raise ValueError.
@@ -247,6 +258,8 @@ class PowerLogger:
         """Set the underlying PowerMeter."""
         reading_lock = getattr(self, "_reading_lock", None)
         if reading_lock is None:
+            # Defensive path for unusual construction/testing flows where the
+            # lock is not initialized yet.
             self._p_meter = value
             return
         with reading_lock:
@@ -716,9 +729,9 @@ class LogSet:
                 except FileExistsError:
                     continue
             else:
-                raise FileExistsError(
-                    f"Unable to create unique slog run directory under '{app_dir}' "
-                    f"after {LOG_DIR_COLLISION_MAX_RETRIES} attempts"
+                raise SlogDirectoryCollisionError(
+                    app_dir,
+                    LOG_DIR_COLLISION_MAX_RETRIES,
                 )
             dir_name = str(app_time_dir)
 

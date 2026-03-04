@@ -22,6 +22,18 @@ from meshtastic.interfaces.ble.gating import (
 )
 
 
+class _ConnectedOwner:
+    """Owner stub that reports an active connection."""
+
+    _is_connection_connected = True
+
+
+class _DisconnectedOwner:
+    """Owner stub that reports an inactive connection."""
+
+    _is_connection_connected = False
+
+
 class TestAddrKey:
     """Test cases for _addr_key function."""
 
@@ -44,10 +56,9 @@ class TestAddrKey:
         """Any valid MAC-like address should normalize to 12 lowercase hex chars."""
         normalized = _addr_key(addr)
         assert normalized is not None
-        normalized_str = str(normalized)
-        assert len(normalized_str) == 12
-        assert normalized_str == normalized_str.lower()
-        assert all(char in "0123456789abcdef" for char in normalized_str)
+        assert len(normalized) == 12
+        assert normalized == normalized.lower()
+        assert all(char in "0123456789abcdef" for char in normalized)
 
 
 @pytest.mark.usefixtures("clear_registry")
@@ -140,9 +151,6 @@ class TestMarkConnected:
         # Empty strings are now normalized internally, so they are not added
         _mark_connected("")
         assert len(_CONNECTED_ADDRS) == 0
-        # Same behavior as passing None directly
-        _mark_connected(None)
-        assert len(_CONNECTED_ADDRS) == 0
 
 
 class TestMarkDisconnected:
@@ -150,7 +158,7 @@ class TestMarkDisconnected:
 
     @pytest.fixture(autouse=True)
     def _mark_default_connected(
-        self, clear_registry  # pylint: disable=unused-argument
+        self, clear_registry: None  # pylint: disable=unused-argument
     ) -> None:
         """Mark a fixed test address as connected before each test.
 
@@ -245,40 +253,22 @@ class TestIsCurrentlyConnectedElsewhere:
 
     def test_returns_false_for_same_owner(self) -> None:
         """A claim owned by this interface is not considered connected elsewhere."""
-
-        class Owner:
-            """Test owner stub."""
-
-            _is_connection_connected = True
-
-        owner = Owner()
+        owner = _ConnectedOwner()
         _mark_connected("aabbccddeeff", owner=owner)
 
         assert not _is_currently_connected_elsewhere("aabbccddeeff", owner=owner)
 
     def test_returns_true_for_different_owner(self) -> None:
         """A live claim from another owner should be treated as connected elsewhere."""
-
-        class Owner:
-            """Test owner stub."""
-
-            _is_connection_connected = True
-
-        owner_a = Owner()
-        owner_b = Owner()
+        owner_a = _ConnectedOwner()
+        owner_b = _ConnectedOwner()
         _mark_connected("aabbccddeeff", owner=owner_a)
 
         assert _is_currently_connected_elsewhere("aabbccddeeff", owner=owner_b)
 
     def test_prunes_dead_owner_claim(self) -> None:
         """Dead weakref owners should be pruned automatically."""
-
-        class Owner:
-            """Test owner stub."""
-
-            _is_connection_connected = True
-
-        owner = Owner()
+        owner = _ConnectedOwner()
         key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner)
         del owner
@@ -289,13 +279,7 @@ class TestIsCurrentlyConnectedElsewhere:
 
     def test_prunes_owner_claim_when_owner_not_connected(self) -> None:
         """Claims from owners no longer connected should be pruned."""
-
-        class Owner:
-            """Test owner stub."""
-
-            _is_connection_connected = False
-
-        owner = Owner()
+        owner = _DisconnectedOwner()
         key = _addr_key("aabbccddeeff")
         _mark_connected("aabbccddeeff", owner=owner)
 

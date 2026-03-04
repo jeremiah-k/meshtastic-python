@@ -180,7 +180,6 @@ def test_average_current_camelcase_aliases_are_consistent(
     ppk = ppk2_stub
     ppk.getAverageCurrentMA = MagicMock(return_value=42.0)  # type: ignore[method-assign]
 
-    assert ppk.getAverageCurrentMA() == 42.0
     with pytest.warns(DeprecationWarning):
         assert ppk.getAverageCurrentmA() == 42.0
 

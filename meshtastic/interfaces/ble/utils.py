@@ -9,7 +9,7 @@ from typing import Awaitable, Callable, TypeVar
 T = TypeVar("T")
 
 
-def sanitize_address(address: str | None) -> str | None:
+def sanitizeAddress(address: str | None) -> str | None:
     """Normalize a BLE address or identifier by removing common separators and converting to lowercase.
 
     Parameters
@@ -38,6 +38,12 @@ def sanitize_address(address: str | None) -> str | None:
     return cleaned if cleaned else None
 
 
+# COMPAT_STABLE_SHIM: historical/internal snake_case alias.
+def sanitize_address(address: str | None) -> str | None:
+    """Compatibility alias for sanitizeAddress()."""
+    return sanitizeAddress(address)
+
+
 def _sleep(delay: float) -> None:
     """Pause execution for the specified number of seconds.
 
@@ -49,7 +55,7 @@ def _sleep(delay: float) -> None:
     time.sleep(delay)
 
 
-async def with_timeout(
+async def withTimeout(
     awaitable: Awaitable[T],
     timeout: float | None,
     label: str,
@@ -91,7 +97,18 @@ async def with_timeout(
         raise timeout_error_factory(label, timeout) from exc
 
 
-def resolve_ble_module() -> ModuleType | None:
+# COMPAT_STABLE_SHIM: historical/internal snake_case alias.
+async def with_timeout(
+    awaitable: Awaitable[T],
+    timeout: float | None,
+    label: str,
+    timeout_error_factory: Callable[[str, float], Exception] | None = None,
+) -> T:
+    """Compatibility alias for withTimeout()."""
+    return await withTimeout(awaitable, timeout, label, timeout_error_factory)
+
+
+def resolveBleModule() -> ModuleType | None:
     """Locate and return the first available BLE-related module for the package.
 
     Checks for available modules in priority order and returns the first successfully imported module.
@@ -118,3 +135,9 @@ def resolve_ble_module() -> ModuleType | None:
                 raise
             continue
     return None
+
+
+# COMPAT_STABLE_SHIM: historical/internal snake_case alias.
+def resolve_ble_module() -> ModuleType | None:
+    """Compatibility alias for resolveBleModule()."""
+    return resolveBleModule()

@@ -12,6 +12,8 @@ try:
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
+MAX_REASONABLE_JOIN_TIMEOUT_SECONDS = 10
+
 
 @pytest.mark.unit
 def test_state_manager_full_connection_lifecycle() -> None:
@@ -157,8 +159,8 @@ def test_connection_timeout_configuration_consistency() -> None:
     assert AWAIT_TIMEOUT_BUFFER_SECONDS < BLEConfig.CONNECTION_TIMEOUT
 
     # Join timeouts should be reasonable (not too long)
-    assert RECEIVE_THREAD_JOIN_TIMEOUT < 10
-    assert EVENT_THREAD_JOIN_TIMEOUT < 10
+    assert RECEIVE_THREAD_JOIN_TIMEOUT < MAX_REASONABLE_JOIN_TIMEOUT_SECONDS
+    assert EVENT_THREAD_JOIN_TIMEOUT < MAX_REASONABLE_JOIN_TIMEOUT_SECONDS
 
 
 @pytest.mark.unit
@@ -231,7 +233,7 @@ def test_connection_validator_with_normalized_addresses() -> None:
 
 @pytest.mark.unit
 def test_ble_config_can_be_modified_at_runtime() -> None:
-    """Test that BLEConfig attributes can be modified for testing/tuning."""
+    """Test that BLEConfig attributes can be modified; module-level aliases are snapshots."""
     original_timeout = BLEConfig.CONNECTION_TIMEOUT
 
     try:
@@ -239,13 +241,11 @@ def test_ble_config_can_be_modified_at_runtime() -> None:
         BLEConfig.CONNECTION_TIMEOUT = 120.0
         assert BLEConfig.CONNECTION_TIMEOUT == 120.0
 
-        # Module-level alias won't change (it's a snapshot)
-        # but __getattr__ should return the new value
+        # Module-level alias won't change (it's an import-time snapshot).
         from meshtastic.interfaces.ble import constants
 
         via_getattr = constants.CONNECTION_TIMEOUT
-        # via_getattr might be the old snapshot value, which is expected
-        assert isinstance(via_getattr, float)
+        assert via_getattr == original_timeout
     finally:
         # Restore
         BLEConfig.CONNECTION_TIMEOUT = original_timeout

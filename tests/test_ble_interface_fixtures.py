@@ -138,8 +138,14 @@ def mock_tabulate(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
     The fake module exposes a `tabulate(*args, **kwargs)` function that always returns an empty string.
 
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to inject the mock module.
+
     Returns
     -------
+    types.ModuleType
         The fake `tabulate` module inserted into `sys.modules`.
     """
     tabulate_module: Any = types.ModuleType("tabulate")
@@ -648,3 +654,13 @@ def _build_interface(
     iface = BleInterfaceClass(address="dummy", noProto=True)
     iface._connect_stub_calls = connect_calls
     return iface
+
+
+@pytest.fixture
+def build_interface(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_atexit: None,
+) -> Callable[..., "BLEInterface"]:
+    """Return a fixture-backed factory for creating configured BLEInterface instances."""
+    _ = stub_atexit
+    return lambda client, **kwargs: _build_interface(monkeypatch, client, **kwargs)

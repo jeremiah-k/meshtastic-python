@@ -55,6 +55,12 @@ def _clear_all_registries() -> None:
     Acquires the module-wide registry lock to perform a thread-safe clear of:
     per-address lock mapping, connected-address set, connection timestamps,
     owner id and weak-ref mappings, and per-address lock holder counts.
+
+    Warning
+    -------
+    Ensure no active BLE connections are in progress before calling this
+    helper, because it force-clears global ownership and lock state.
+    Intended for tests and full process-level reset paths.
     """
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()

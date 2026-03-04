@@ -79,6 +79,13 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
     "device_metrics",
 )
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
+UNKNOWN_SNR_QUARTER_DB = -128
+MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
+
+
+def _format_missing_node_num_error(destination_id: int | str) -> str:
+    """Return a consistent error message for nodes missing numeric IDs."""
+    return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
 
 
 def _timeago(delta_secs: int) -> str:
@@ -1176,8 +1183,6 @@ class MeshInterface:  # pylint: disable=R0902
         -----
         Prints formatted route strings to stdout and sets self._acknowledgment.receivedTraceRoute to True.
         """
-        UNK_SNR = -128  # Value representing unknown SNR
-
         routeDiscovery = mesh_pb2.RouteDiscovery()
         routeDiscovery.ParseFromString(p["decoded"]["payload"])
         asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
@@ -1204,7 +1209,7 @@ class MeshInterface:  # pylint: disable=R0902
             ----------
             snr_value : int | None
                 SNR expressed as an integer number of quarter dB units,
-                or `None`/`UNK_SNR` to indicate an unknown value.
+                or `None`/`UNKNOWN_SNR_QUARTER_DB` to indicate an unknown value.
 
             Returns
             -------
@@ -1213,7 +1218,7 @@ class MeshInterface:  # pylint: disable=R0902
             """
             return (
                 str(snr_value / 4)
-                if snr_value is not None and snr_value != UNK_SNR
+                if snr_value is not None and snr_value != UNKNOWN_SNR_QUARTER_DB
                 else "?"
             )
 
@@ -1699,7 +1704,7 @@ class MeshInterface:  # pylint: disable=R0902
                     nodeNum = node_num
                 else:
                     raise MeshInterface.MeshInterfaceError(
-                        f"NodeId {destinationId} has no numeric 'num' in DB"
+                        _format_missing_node_num_error(destinationId)
                     )
             elif has_nodes:
                 raise MeshInterface.MeshInterfaceError(

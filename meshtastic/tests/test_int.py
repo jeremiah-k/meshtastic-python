@@ -49,6 +49,6 @@ def test_int_help(meshtastic_bin: str) -> None:
 def test_int_support(meshtastic_bin: str) -> None:
     """Test '--support'."""
     returncode, output = _run_and_collect([meshtastic_bin, "--support"])
-    assert re.search(r"System", output)
-    assert re.search(r"Python", output)
+    assert "System" in output
+    assert "Python" in output
     assert returncode == 0

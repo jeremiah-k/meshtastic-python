@@ -16,6 +16,7 @@ from .cli_test_utils import _quote_shell_path, run_cli_with_timeout
 # seconds to pause after running a meshtastic command
 PAUSE_AFTER_COMMAND = 2
 PAUSE_AFTER_REBOOT = 7
+PAUSE_AFTER_REBOOT_COMMAND = 18
 
 
 @pytest.mark.smoke1
@@ -24,7 +25,7 @@ def test_smoke1_reboot() -> None:
     return_value, _ = run_cli_with_timeout("meshtastic --reboot")
     assert return_value == 0
     # pause for the radio to reset (10 seconds for the pause, and a few more seconds to be back up)
-    time.sleep(18)
+    time.sleep(PAUSE_AFTER_REBOOT_COMMAND)
 
 
 @pytest.mark.smoke1
@@ -107,28 +108,33 @@ def test_smoke1_debug() -> None:
 @pytest.mark.smoke1
 def test_smoke1_seriallog_to_file() -> None:
     """Test --seriallog to a file creates a file."""
-    filename = "tmpoutput.txt"
-    if os.path.exists(filename):
-        os.remove(filename)
-    return_value, _ = run_cli_with_timeout(f"meshtastic --info --seriallog {filename}")
-    assert os.path.exists(filename)
-    assert return_value == 0
-    os.remove(filename)
+    filepath = Path("tmpoutput.txt")
+    try:
+        if filepath.exists():
+            filepath.unlink()
+        return_value, _ = run_cli_with_timeout(
+            f"meshtastic --info --seriallog {filepath}"
+        )
+        assert filepath.exists()
+        assert return_value == 0
+    finally:
+        if filepath.exists():
+            filepath.unlink()
 
 
 @pytest.mark.smoke1
 def test_smoke1_qr() -> None:
     """Test --qr."""
     filename = "tmpqr"
-    if os.path.exists(f"{filename}"):
-        os.remove(f"{filename}")
+    if os.path.exists(filename):
+        os.remove(filename)
     return_value, _ = run_cli_with_timeout(f"meshtastic --qr > {filename}")
-    assert os.path.exists(f"{filename}")
+    assert os.path.exists(filename)
     # not really testing that a valid qr code is created, just that the file size
     # is reasonably big enough for a qr code
-    assert os.stat(f"{filename}").st_size > 20000
+    assert os.stat(filename).st_size > 20000
     assert return_value == 0
-    os.remove(f"{filename}")
+    os.remove(filename)
 
 
 @pytest.mark.smoke1

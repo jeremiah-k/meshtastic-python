@@ -10,9 +10,9 @@ pytest-driven unit test.
 # access tun device without being root
 # sudo ip tuntap del mode tun tun0
 
-# TODO: set MTU correctly
-# TODO: select local ip address based on nodeid
-# TODO: print known node ids as IP addresses
+# TODO: set MTU correctly (issue #9001)
+# TODO: select local ip address based on nodeid (issue #9002)
+# TODO: print known node ids as IP addresses (issue #9003)
 
 import logging
 import threading
@@ -34,23 +34,6 @@ PROTOCOL_BLACKLIST: set[int] = {
     0x02,  # IGMP
     0x80,  # Service-Specific Connection-Oriented Protocol in a Multilink and Connectionless Environment
 }
-
-
-def _hexstr(barray: bytes | bytearray) -> str:
-    """Render bytes as colon-delimited lowercase hex.
-
-    Parameters
-    ----------
-    barray : bytes | bytearray
-        Byte sequence to render.
-
-    Returns
-    -------
-    str
-        Colon-delimited hex string.
-    """
-    return ":".join(f"{x:02x}" for x in barray)
-
 
 def _ipstr(barray: bytes | bytearray) -> str:
     """Render IPv4 bytes as dotted-decimal text.

@@ -529,6 +529,8 @@ class ConnectionOrchestrator:
             self._transition_failure_to_disconnected("BleakDBusError during connect")
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            # Transition first so concurrent callers immediately observe the
+            # interrupted state before teardown work begins.
             self._transition_failure_to_disconnected(
                 "connect interrupted by SystemExit/KeyboardInterrupt"
             )

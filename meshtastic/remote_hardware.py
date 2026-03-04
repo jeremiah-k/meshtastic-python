@@ -42,12 +42,15 @@ class LockLike(Protocol):
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         """Acquire the lock."""
+        ...
 
     def release(self) -> None:
         """Release the lock."""
+        ...
 
     def __enter__(self) -> bool:
         """Enter context manager and acquire lock."""
+        ...
 
     def __exit__(
         self,
@@ -56,6 +59,7 @@ class LockLike(Protocol):
         tb: Any,
     ) -> None:
         """Exit context manager and release lock."""
+        ...
 
 
 def _get_mesh_interface_error() -> type[Exception]:
@@ -79,7 +83,19 @@ def _get_mesh_interface_error() -> type[Exception]:
 
 
 def _normalize_node_key(nodeid: Any) -> str | None:
-    """Normalize a node identifier to a stable string key for internal mask tracking."""
+    """Normalize a node identifier to a stable string key for internal mask tracking.
+
+    Parameters
+    ----------
+    nodeid : Any
+        Node identifier candidate (numeric node number, node ID string, or None).
+
+    Returns
+    -------
+    str | None
+        Normalized key prefixed with ``num:`` or ``id:``, or ``None`` for
+        unsupported/empty values.
+    """
     key: str | None = None
     if nodeid is None or isinstance(nodeid, bool):
         return key
@@ -340,10 +356,8 @@ class RemoteHardwareClient:
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         if isinstance(nodeid, str):
             return nodeid.strip()
-        if isinstance(nodeid, int) and not isinstance(nodeid, bool):
-            return nodeid
-        mesh_interface_error = _get_mesh_interface_error()
-        raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+        # bool inputs are rejected above; non-string valid values are ints.
+        return cast(int, nodeid)
 
     def _send_hardware(
         self,

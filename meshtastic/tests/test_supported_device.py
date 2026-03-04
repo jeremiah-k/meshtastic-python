@@ -334,6 +334,7 @@ def test_supported_device_usb_ids_property_primary_only() -> None:
         usb_product_id_in_hex="ea60",
     )
     assert device.usb_ids == (("10c4", "ea60"),)
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -350,6 +351,7 @@ def test_supported_device_usb_ids_property_with_aliases() -> None:
         ("303a", "1001"),
         ("1a86", "55d4"),
     )
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -357,6 +359,7 @@ def test_supported_device_usb_ids_property_no_ids() -> None:
     """Test usb_ids property with no USB IDs."""
     device = SupportedDevice(name="Test")
     assert not device.usb_ids
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -370,6 +373,7 @@ def test_supported_device_usb_ids_property_deduplicates() -> None:
     )
     # Should deduplicate while preserving order
     assert device.usb_ids == (("303a", "1001"),)
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -505,7 +509,7 @@ def test_tdeck_and_xiao_s3_shared_alias() -> None:
 
 @pytest.mark.unit
 def test_device_with_whitespace_in_name() -> None:
-    """Test that device names with whitespace are preserved."""
+    """Device display names intentionally preserve surrounding whitespace."""
     device = SupportedDevice(name="  Test Device  ")
     assert device.name == "  Test Device  "
 

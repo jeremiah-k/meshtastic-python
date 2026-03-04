@@ -67,7 +67,9 @@ def _make_fake_future(exception_to_raise: Exception) -> Any:
     return _FakeFuture()
 
 
-def test_log_notification_registration_missing_characteristics(monkeypatch):
+def test_log_notification_registration_missing_characteristics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that log notification registration handles missing characteristics gracefully."""
     # UUID constants already imported at top as ble_mod.FROMNUM_UUID, ble_mod.LEGACY_LOGRADIO_UUID, ble_mod.LOGRADIO_UUID
 
@@ -137,7 +139,10 @@ def test_log_notification_registration_missing_characteristics(monkeypatch):
     iface.close()
 
 
-def test_receive_loop_handles_decode_error(monkeypatch, caplog):
+def test_receive_loop_handles_decode_error(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test that the receive loop handles DecodeError gracefully without closing."""
     # logging, threading, and time already imported at top
     # FROMRADIO_UUID already imported at top as ble_mod.FROMRADIO_UUID
@@ -576,14 +581,11 @@ def test_rapid_connect_disconnect_stress_test(caplog):
 
         Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mocked device and receives a StressTestClient. Yields a tuple (iface, client). On generator exit the interface is closed and all patches are undone.
 
-        Returns
-        -------
-        tuple
-            (iface, client) where `iface` is the configured BLEInterface and `client` is the attached StressTestClient.
-
         Yields
         ------
         tuple[BLEInterface, 'StressTestClient']
+            (iface, client) where `iface` is the configured BLEInterface and
+            `client` is the attached StressTestClient.
         """
 
         outer_client = StressTestClient()
@@ -851,7 +853,9 @@ def test_ble_client_async_timeout_maps_to_ble_error(
         coro_obj.close()
 
 
-def test_ble_client_async_runtime_error_maps_to_ble_error(monkeypatch):
+def test_ble_client_async_runtime_error_maps_to_ble_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
     client = ble_mod.BLEClient()
     fake_future = _make_fake_future(RuntimeError("loop is closed"))
@@ -970,7 +974,10 @@ def test_wait_for_disconnect_notifications_exceptions(
     iface.close()
 
 
-def test_drain_publish_queue_exceptions(monkeypatch, caplog):
+def test_drain_publish_queue_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test that _drain_publish_queue handles exceptions gracefully."""
     # logging, threading, and Queue already imported at top
 

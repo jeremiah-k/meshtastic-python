@@ -640,7 +640,9 @@ class Node:
         with self._channels_lock:
             channels = self.channels
             if channels and 0 <= channelIndex < len(channels):
-                return channels[channelIndex]
+                copied = channel_pb2.Channel()
+                copied.CopyFrom(channels[channelIndex])
+                return copied
             return None
 
     def deleteChannel(self, channelIndex: int) -> None:
@@ -695,7 +697,7 @@ class Node:
             if is_local_node:
                 admin_index_for_write = self._get_admin_channel_index()
             else:
-                admin_index_for_write = self.iface.localNode._get_admin_channel_index()
+                admin_index_for_write = self.iface.localNode.getAdminChannelIndex()
             self.ensureSessionKey()
             p = admin_pb2.AdminMessage()
             p.set_channel.CopyFrom(channel_snapshot)
@@ -718,7 +720,9 @@ class Node:
         with self._channels_lock:
             for c in self.channels or []:
                 if c.settings and c.settings.name == name:
-                    return c
+                    copied = channel_pb2.Channel()
+                    copied.CopyFrom(c)
+                    return copied
             return None
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
@@ -735,8 +739,14 @@ class Node:
                 return None
             for c in channels:
                 if c.role == channel_pb2.Channel.Role.DISABLED:
-                    return c
+                    copied = channel_pb2.Channel()
+                    copied.CopyFrom(c)
+                    return copied
             return None
+
+    def getAdminChannelIndex(self) -> int:
+        """Public accessor for the admin channel index on this node."""
+        return self._get_admin_channel_index()
 
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.

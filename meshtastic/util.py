@@ -1384,7 +1384,7 @@ def _flags_to_list(flag_type: Any, flags: int) -> list[str]:
             continue
         if flags & flag_type.Value(key):
             ret.append(key)
-            flags = flags - flag_type.Value(key)
+            flags &= ~flag_type.Value(key)
     if flags > 0:
         ret.append(f"UNKNOWN_ADDITIONAL_FLAGS({flags})")
     return ret

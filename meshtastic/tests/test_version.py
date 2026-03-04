@@ -2,6 +2,7 @@
 
 import warnings
 from importlib.metadata import PackageNotFoundError
+from typing import Protocol
 
 import pytest
 import requests
@@ -14,7 +15,15 @@ class PackageNotPublishedError(requests.RequestException):
     """Simulated PyPI lookup failure for unpublished distribution names."""
 
 
-def _make_fake_response(version: str) -> object:
+class ResponseLike(Protocol):
+    """Small response protocol used by version-check tests."""
+
+    def json(self) -> dict[str, dict[str, str]]:
+        """Return a mapping containing the PyPI version payload."""
+        ...
+
+
+def _make_fake_response(version: str) -> ResponseLike:
     """Create a minimal fake response object for PyPI version checks."""
 
     class _FakeResponse:
@@ -24,7 +33,8 @@ def _make_fake_response(version: str) -> object:
             """Return fake PyPI response JSON."""
             return {"info": {"version": version}}
 
-    return _FakeResponse()
+    fake_response: ResponseLike = _FakeResponse()
+    return fake_response
 
 
 @pytest.mark.unit
@@ -107,7 +117,13 @@ def test_check_if_newer_version_falls_back_to_second_distribution(
         ("mtjk", "meshtastic"),
     )
     monkeypatch.setattr("meshtastic.util.requests.get", _fake_get)
-    monkeypatch.setattr(util_module, "get_active_version", lambda: "2.7.8")
+
+    def _fake_version(distribution_name: str) -> str:
+        if distribution_name == "mtjk":
+            return "2.7.8"
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(version_module, "version", _fake_version)
 
     assert util_module.check_if_newer_version() == "2.7.9"
     assert calls == [
@@ -132,6 +148,12 @@ def test_check_if_newer_version_returns_none_when_not_newer(
         ("mtjk",),
     )
     monkeypatch.setattr("meshtastic.util.requests.get", _fake_get)
-    monkeypatch.setattr(util_module, "get_active_version", lambda: "2.7.8")
+
+    def _fake_version(distribution_name: str) -> str:
+        if distribution_name == "mtjk":
+            return "2.7.8"
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(version_module, "version", _fake_version)
 
     assert util_module.check_if_newer_version() is None

@@ -278,7 +278,7 @@ class RetryPolicy:
     def _empty_read() -> ReconnectPolicy:
         """Policy configured for retrying empty BLE read responses.
 
-        Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to 1.0 second, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
+        Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to BLEConfig.EMPTY_READ_MAX_DELAY, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
 
         Returns
         -------
@@ -287,7 +287,7 @@ class RetryPolicy:
         """
         return ReconnectPolicy(
             initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
-            max_delay=1.0,
+            max_delay=BLEConfig.EMPTY_READ_MAX_DELAY,
             backoff=RETRY_BACKOFF,
             jitter_ratio=RETRY_JITTER_RATIO,
             max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
@@ -300,11 +300,11 @@ class RetryPolicy:
         Returns
         -------
         ReconnectPolicy
-            ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay 2.0, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
+            ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay BLEConfig.TRANSIENT_READ_MAX_DELAY, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
         """
         return ReconnectPolicy(
             initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
-            max_delay=2.0,
+            max_delay=BLEConfig.TRANSIENT_READ_MAX_DELAY,
             backoff=RETRY_BACKOFF,
             jitter_ratio=RETRY_JITTER_RATIO,
             max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,

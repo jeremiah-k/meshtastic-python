@@ -33,7 +33,7 @@ def _shell_executable_for_timeout(command: str) -> str:
 
 
 def _quote_shell_path(path: str | Path) -> str:
-    """Quote a filesystem path for shell command usage in run_cli_with_timeout.
+    """Quote a filesystem path for shell command usage in runCliWithTimeout.
 
     Parameters
     ----------
@@ -60,8 +60,10 @@ def runCliWithTimeout(command: str, timeout: int | float = 120) -> tuple[int, st
     command : str
         Full shell command to execute. This helper intentionally accepts
         a command string (rather than argv tokens) for compatibility with
-        existing test call sites; use `_quote_shell_path` for path quoting
-        when constructing commands that may include spaces.
+        existing test call sites. Prefer `runCliWithTimeout`; the
+        `run_cli_with_timeout` name remains as a compatibility alias. Use
+        `_quote_shell_path` for path quoting when constructing commands that may
+        include spaces.
     timeout : int | float
         Maximum time to allow command execution before failing the test.
         (Default value = 120)

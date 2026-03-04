@@ -29,6 +29,8 @@ from meshtastic.protobuf import portnums_pb2
 from meshtastic.util import ipstr, readnet_u16
 
 logger = logging.getLogger(__name__)
+TRACE_LEVEL = 5
+logging.addLevelName(TRACE_LEVEL, "TRACE")
 TUNNEL_TOPIC = "meshtastic.receive.data.IP_TUNNEL_APP"
 
 # IP Protocol numbers (RFC 790)
@@ -75,7 +77,7 @@ def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
 class Tunnel:
     """A TUN based IP tunnel over meshtastic."""
 
-    LOG_TRACE = 5
+    LOG_TRACE = TRACE_LEVEL
     # Default packet filters (copied into instance-level compatibility attributes).
     UDP_BLACKLIST_DEFAULT: frozenset[int] = frozenset(
         {
@@ -245,23 +247,31 @@ class Tunnel:
             return
 
         my_info = self.iface.myInfo
-        p = packet["decoded"]["payload"]
-        if packet["from"] == my_info.my_node_num:
+        if packet.get("from") == my_info.my_node_num:
             logger.debug("Ignoring message we sent")
-        else:
-            logger.debug(
-                "Received mesh tunnel message type=%s len=%d",
-                type(p),
-                len(p),
-            )
-            # we don't really need to check for filtering here (sender should have checked),
-            # but this provides useful debug printing on types of packets received
-            if not self.iface.noProto:
-                if self.tun is not None and not self._should_filter_packet(p):
-                    try:
-                        self.tun.write(p)
-                    except OSError:
-                        logger.debug("TUN write skipped: device closed during shutdown")
+            return
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.debug("Ignoring tunnel packet with missing/invalid decoded field")
+            return
+        p = decoded.get("payload")
+        if not isinstance(p, (bytes, bytearray)):
+            logger.debug("Ignoring tunnel packet with missing/invalid payload field")
+            return
+        payload = bytes(p)
+        logger.debug(
+            "Received mesh tunnel message type=%s len=%d",
+            type(payload),
+            len(payload),
+        )
+        # we don't really need to check for filtering here (sender should have checked),
+        # but this provides useful debug printing on types of packets received
+        if not self.iface.noProto:
+            if self.tun is not None and not self._should_filter_packet(payload):
+                try:
+                    self.tun.write(payload)
+                except OSError:
+                    logger.debug("TUN write skipped: device closed during shutdown")
 
     def _should_filter_packet(self, p: bytes) -> bool:
         """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.

@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,26 @@ def clear_registry() -> Iterator[None]:
     gating._clear_all_registries()
     yield
     gating._clear_all_registries()
+
+
+@pytest.fixture
+def ble_client() -> Iterator[Any]:
+    """Create and clean up a discovery-mode BLEClient for edge-case tests."""
+    from meshtastic.interfaces.ble.client import BLEClient
+
+    client = BLEClient(address=None, log_if_no_address=False)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture
+def notification_manager() -> Any:
+    """Create a NotificationManager test instance."""
+    from meshtastic.interfaces.ble.notifications import NotificationManager
+
+    return NotificationManager()
 
 
 @pytest.fixture(scope="session", autouse=True)

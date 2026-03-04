@@ -384,9 +384,8 @@ class ReconnectWorker:
         try:
             self._call_policy("reset")
             interface = self.interface
-            override_delay: float | None = None
             while not shutdown_event.is_set():
-                override_delay = None
+                override_delay: float | None = None
                 if self._should_abort_reconnect(context="loop start"):
                     return
                 attempt_num = 0

@@ -24,44 +24,31 @@ TRANSIENT_SERVICES_LOOKUP_FAILURE = "transient services lookup failure"
 
 
 @pytest.mark.unit
-def test_bleclient_discovery_mode_without_address() -> None:
+def test_bleclient_discovery_mode_without_address(ble_client: BLEClient) -> None:
     """BLEClient should support discovery-only mode when initialized without an address."""
-    client = BLEClient(address=None)
-    try:
-        assert client.address is None
-        assert client.bleak_client is None
-        assert not client.isConnected()
-    finally:
-        client.close()
+    assert ble_client.address is None
+    assert ble_client.bleak_client is None
+    assert not ble_client.isConnected()
 
 
 @pytest.mark.unit
-def test_bleclient_isConnected_handles_missing_bleak_client() -> None:
+def test_bleclient_isConnected_handles_missing_bleak_client(ble_client: BLEClient) -> None:
     """IsConnected should return False when bleak_client is None."""
-    client = BLEClient(address=None)
-    try:
-        assert not client.isConnected()
-    finally:
-        client.close()
+    assert not ble_client.isConnected()
 
 
 @pytest.mark.unit
-def test_bleclient_is_connected_alias() -> None:
+def test_bleclient_is_connected_alias(ble_client: BLEClient) -> None:
     """is_connected should be an alias for isConnected."""
-    client = BLEClient(address=None)
-    try:
-        assert client.is_connected() == client.isConnected()
-    finally:
-        client.close()
+    assert ble_client.is_connected() == ble_client.isConnected()
 
 
 @pytest.mark.unit
-def test_bleclient_close_is_idempotent() -> None:
+def test_bleclient_close_is_idempotent(ble_client: BLEClient) -> None:
     """close() should be idempotent and safe to call multiple times."""
-    client = BLEClient(address=None)
-    client.close()
-    client.close()  # Should not raise
-    client.close()  # Should not raise
+    ble_client.close()
+    ble_client.close()  # Should not raise
+    ble_client.close()  # Should not raise
 
 
 @pytest.mark.unit
@@ -80,82 +67,59 @@ def test_bleclient_error_class_exists() -> None:
 
 
 @pytest.mark.unit
-def test_bleclient_operations_require_initialized_client() -> None:
+def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) -> None:
     """BLEClient operations should raise BLEError when bleak_client is not initialized."""
-    client = BLEClient(address=None)
-    try:
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot connect: BLE client not initialized"
-        ):
-            client.connect()
+    with pytest.raises(BLEClient.BLEError, match="Cannot connect: BLE client not initialized"):
+        ble_client.connect()
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot disconnect: BLE client not initialized"
-        ):
-            client.disconnect()
+    with pytest.raises(BLEClient.BLEError, match="Cannot disconnect: BLE client not initialized"):
+        ble_client.disconnect()
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot read: BLE client not initialized"
-        ):
-            client.read_gatt_char("uuid")
+    with pytest.raises(BLEClient.BLEError, match="Cannot read: BLE client not initialized"):
+        ble_client.read_gatt_char("uuid")
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot write: BLE client not initialized"
-        ):
-            client.write_gatt_char("uuid", b"data")
+    with pytest.raises(BLEClient.BLEError, match="Cannot write: BLE client not initialized"):
+        ble_client.write_gatt_char("uuid", b"data")
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot pair: BLE client not initialized"
-        ):
-            client.pair()
+    with pytest.raises(BLEClient.BLEError, match="Cannot pair: BLE client not initialized"):
+        ble_client.pair()
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot get services: BLE client not initialized"
-        ):
-            client._get_services()
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot get services: BLE client not initialized"
+    ):
+        ble_client._get_services()
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot start notify: BLE client not initialized"
-        ):
-            client.start_notify("uuid", lambda *args: None)
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot start notify: BLE client not initialized"
+    ):
+        ble_client.start_notify("uuid", lambda *args: None)
 
-        with pytest.raises(
-            BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"
-        ):
-            client.stopNotify("uuid")
-    finally:
-        client.close()
+    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"):
+        ble_client.stopNotify("uuid")
 
 
 @pytest.mark.unit
-def test_bleclient_has_characteristic_returns_false_without_client() -> None:
+def test_bleclient_has_characteristic_returns_false_without_client(
+    ble_client: BLEClient,
+) -> None:
     """has_characteristic should return False when bleak_client is None."""
-    client = BLEClient(address=None)
-    try:
-        assert not client.has_characteristic("some-uuid")
-    finally:
-        client.close()
+    assert not ble_client.has_characteristic("some-uuid")
 
 
 @pytest.mark.unit
-def test_bleclient_stop_notify_alias() -> None:
+def test_bleclient_stop_notify_alias(ble_client: BLEClient) -> None:
     """stop_notify should be an alias for stopNotify."""
-    client = BLEClient(address=None)
-    try:
-        # Both should raise the same error
-        with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
-            client.stopNotify("uuid")
-        with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
-            client.stop_notify("uuid")
-    finally:
-        client.close()
+    # Both should raise the same error
+    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
+        ble_client.stopNotify("uuid")
+    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify"):
+        ble_client.stop_notify("uuid")
 
 
 @pytest.mark.unit
-def test_bleclient_operations_fail_when_closed() -> None:
+def test_bleclient_operations_fail_when_closed(ble_client: BLEClient) -> None:
     """Operations should fail with clear error when client is closed."""
-    client = BLEClient(address=None, log_if_no_address=False)
-    client.close()
+    ble_client.close()
 
     # Create a simple coroutine to test
     async def dummy_coro() -> str:
@@ -164,12 +128,12 @@ def test_bleclient_operations_fail_when_closed() -> None:
     with pytest.raises(
         BLEClient.BLEError, match="Cannot schedule operation: BLE client is closed"
     ):
-        client._async_await(dummy_coro())
+        ble_client._async_await(dummy_coro())
 
 
 @pytest.mark.unit
 def test_bleclient_async_await_static_method() -> None:
-    """BLEClient should have _with_timeout static method."""
+    """BLEClient should have _with_timeout method."""
     assert hasattr(BLEClient, "_with_timeout")
     assert callable(BLEClient._with_timeout)
 
@@ -181,16 +145,16 @@ def test_bleclient_error_constant() -> None:
 
 
 @pytest.mark.unit
-def test_bleclient_discover_method_exists() -> None:
+def test_bleclient_discover_method_exists(ble_client: BLEClient) -> None:
     """BLEClient should have discover and _discover methods."""
-    client = BLEClient(address=None, log_if_no_address=False)
-    try:
-        assert hasattr(client, "discover")
-        assert hasattr(client, "_discover")
-        assert callable(client.discover)
-        assert callable(client._discover)
-    finally:
-        client.close()
+    assert hasattr(ble_client, "discover")
+    assert hasattr(ble_client, "_discover")
+    assert hasattr(ble_client, "find_device")
+    assert hasattr(ble_client, "findDevice")
+    assert callable(ble_client.discover)
+    assert callable(ble_client._discover)
+    assert callable(ble_client.find_device)
+    assert callable(ble_client.findDevice)
 
 
 @pytest.mark.unit
@@ -208,6 +172,7 @@ def test_bleclient_with_timeout_delegates_to_utils_wrapper() -> None:
 @pytest.mark.unit
 def test_bleclient_has_characteristic_retries_and_skips_final_sleep(
     monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
 ) -> None:
     """has_characteristic should retry BleakError reads and avoid sleeping after final retry."""
 
@@ -216,35 +181,32 @@ def test_bleclient_has_characteristic_retries_and_skips_final_sleep(
             """Raise a transient lookup error to trigger retry logic."""
             raise BleakError(TRANSIENT_SERVICES_LOOKUP_FAILURE)
 
-    client = BLEClient(address=None, log_if_no_address=False)
-    try:
-        services = _Services()
-        sleep_calls: list[float] = []
-        client.bleak_client = type("_BleakClient", (), {"services": services})()
-        monkeypatch.setattr(client, "_get_services", lambda: services)
-        monkeypatch.setattr(
-            client.error_handler,
-            "_safe_execute",
-            lambda operation, **_kwargs: operation(),
-        )
+    services = _Services()
+    sleep_calls: list[float] = []
+    ble_client.bleak_client = type("_BleakClient", (), {"services": services})()
+    monkeypatch.setattr(ble_client, "_get_services", lambda: services)
+    monkeypatch.setattr(
+        ble_client.error_handler,
+        "_safe_execute",
+        lambda operation, **_kwargs: operation(),
+    )
 
-        def _record_sleep(delay: float) -> None:
-            sleep_calls.append(delay)
+    def _record_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
 
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.client.time.sleep",
-            _record_sleep,
-        )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.client.time.sleep",
+        _record_sleep,
+    )
 
-        assert client.has_characteristic("0000") is False
-        assert len(sleep_calls) == SERVICE_CHARACTERISTIC_RETRY_COUNT - 1
-    finally:
-        client.close()
+    assert ble_client.has_characteristic("0000") is False
+    assert len(sleep_calls) == SERVICE_CHARACTERISTIC_RETRY_COUNT - 1
 
 
 @pytest.mark.unit
 def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
     monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
 ) -> None:
     """_async_await should map asyncio cancellation to BLE cancelled error."""
 
@@ -256,23 +218,19 @@ def test_bleclient_async_await_maps_asyncio_cancelled_to_cancelled_error(
     async def _dummy_coro() -> None:
         pass
 
-    client = BLEClient(address=None, log_if_no_address=False)
-    try:
+    def _fake_async_run(coro: Any) -> _CancelledFuture:
+        coro.close()
+        return _CancelledFuture()
 
-        def _fake_async_run(coro: Any) -> _CancelledFuture:
-            coro.close()
-            return _CancelledFuture()
-
-        monkeypatch.setattr(client, "_async_run", _fake_async_run)
-        with pytest.raises(BLEClient.BLEError, match=BLECLIENT_ERROR_CANCELLED):
-            client._async_await(_dummy_coro())
-    finally:
-        client.close()
+    monkeypatch.setattr(ble_client, "_async_run", _fake_async_run)
+    with pytest.raises(BLEClient.BLEError, match=BLECLIENT_ERROR_CANCELLED):
+        ble_client._async_await(_dummy_coro())
 
 
 @pytest.mark.unit
 def test_bleclient_async_await_rejects_wait_from_runner_thread(
     monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
 ) -> None:
     """_async_await should fail fast when invoked from the runner thread."""
 
@@ -283,21 +241,14 @@ def test_bleclient_async_await_rejects_wait_from_runner_thread(
     async def _dummy_coro() -> None:
         pass
 
-    client = BLEClient(address=None, log_if_no_address=False)
-    try:
+    def _fake_async_run(coro: Any) -> _FutureLike:
+        coro.close()
+        return _FutureLike()
 
-        def _fake_async_run(coro: Any) -> _FutureLike:
-            coro.close()
-            return _FutureLike()
+    monkeypatch.setattr(ble_client, "_async_run", _fake_async_run)
 
-        monkeypatch.setattr(client, "_async_run", _fake_async_run)
+    fake_runner = type("_Runner", (), {"_thread": threading.current_thread()})()
+    monkeypatch.setattr(ble_client, "_runner", fake_runner)
 
-        fake_runner = type("_Runner", (), {"_thread": threading.current_thread()})()
-        monkeypatch.setattr(client, "_runner", fake_runner)
-
-        with pytest.raises(
-            BLEClient.BLEError, match=BLECLIENT_ERROR_RUNNER_THREAD_WAIT
-        ):
-            client._async_await(_dummy_coro())
-    finally:
-        client.close()
+    with pytest.raises(BLEClient.BLEError, match=BLECLIENT_ERROR_RUNNER_THREAD_WAIT):
+        ble_client._async_await(_dummy_coro())

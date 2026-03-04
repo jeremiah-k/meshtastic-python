@@ -63,8 +63,6 @@ interface = meshtastic.serial_interface.SerialInterface()
 ```
 """
 
-# ruff: noqa: F401
-
 import copy
 import logging
 from importlib import import_module
@@ -253,15 +251,38 @@ def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
                 )
             admin_sanitized["raw"] = raw_sanitized_dict
         elif hasattr(raw_admin, "session_passkey"):
+            raw_sanitized_obj: Any | None
             try:
-                raw_sanitized_obj: Any = copy.deepcopy(raw_admin)
+                raw_sanitized_obj = copy.deepcopy(raw_admin)
             except Exception:  # noqa: BLE001 - preserve packet flow on odd payloads
-                raw_sanitized_obj = raw_admin
-            try:
-                raw_sanitized_obj.session_passkey = REDACTED_BYTES
-            except Exception:  # noqa: BLE001 - best effort redaction only
-                pass
-            admin_sanitized["raw"] = raw_sanitized_obj
+                logger.debug(
+                    "deepcopy failed during admin payload redaction; using sentinel payload",
+                    exc_info=True,
+                )
+                raw_sanitized_obj = None
+            if raw_sanitized_obj is None:
+                admin_sanitized["raw"] = {"session_passkey": REDACTED_BYTES}
+            else:
+                try:
+                    raw_sanitized_obj.session_passkey = REDACTED_BYTES
+                except Exception:  # noqa: BLE001 - best effort redaction only
+                    logger.debug(
+                        "session_passkey assignment redaction failed; forcing fallback redaction",
+                        exc_info=True,
+                    )
+                    redaction_applied = False
+                    try:
+                        delattr(raw_sanitized_obj, "session_passkey")
+                        redaction_applied = True
+                    except Exception:  # noqa: BLE001 - final fallback below
+                        redaction_applied = False
+                    admin_sanitized["raw"] = (
+                        raw_sanitized_obj
+                        if redaction_applied
+                        else {"session_passkey": REDACTED_BYTES}
+                    )
+                else:
+                    admin_sanitized["raw"] = raw_sanitized_obj
         decoded_sanitized["admin"] = admin_sanitized
     else:
         decoded_sanitized["admin"] = REDACTED_TEXT

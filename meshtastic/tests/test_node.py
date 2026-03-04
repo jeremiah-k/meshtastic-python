@@ -475,7 +475,11 @@ def test_getChannelByChannelIndex(
     anode.channels = channels
 
     # test primary
-    assert anode.getChannelByChannelIndex(0) is not None
+    selected_primary = anode.getChannelByChannelIndex(0)
+    assert selected_primary is not None
+    assert selected_primary is not channel1
+    selected_primary.role = Channel.Role.DISABLED
+    assert channel1.role == Channel.Role.PRIMARY
     # test secondary
     assert anode.getChannelByChannelIndex(1) is not None
     # test disabled
@@ -1014,9 +1018,22 @@ def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, admin_channel, disabled]
 
-    assert anode.getChannelByName("main") is primary
-    assert anode.getDisabledChannel() is disabled
+    named_channel = anode.getChannelByName("main")
+    assert named_channel is not None
+    assert named_channel is not primary
+    assert named_channel.index == primary.index
+
+    disabled_channel = anode.getDisabledChannel()
+    assert disabled_channel is not None
+    assert disabled_channel is not disabled
+    assert disabled_channel.index == disabled.index
+
+    named_channel.role = Channel.Role.DISABLED
+    assert primary.role == Channel.Role.PRIMARY
+    disabled_channel.role = Channel.Role.PRIMARY
+    assert disabled.role == Channel.Role.DISABLED
     assert anode._get_admin_channel_index() == 1
+    assert anode.getAdminChannelIndex() == 1
 
     anode.channels = None
     assert anode.getDisabledChannel() is None
@@ -1623,7 +1640,7 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
 ) -> None:
-    """getMetadata should keep redirected stdout active until metadata callback emits."""
+    """GetMetadata should keep redirected stdout active until metadata callback emits."""
     iface = autospec_local_node_iface(MeshInterface)
     iface._acknowledgment = Acknowledgment()
     iface.waitForAckNak = MagicMock()
@@ -1673,7 +1690,7 @@ def test_getMetadata_emits_cached_metadata_when_callback_never_arrives(
     capsys: CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """getMetadata should emit cached interface metadata for redirected stdout parsers."""
+    """GetMetadata should emit cached interface metadata for redirected stdout parsers."""
     iface = autospec_local_node_iface(MeshInterface)
     iface._acknowledgment = Acknowledgment()
     iface.waitForAckNak = MagicMock()

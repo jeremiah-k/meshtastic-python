@@ -619,6 +619,15 @@ def test_main_info_with_seriallog_output_txt(
     def _serial_interface_factory(*_args: Any, **kwargs: Any) -> SerialInterface:
         """Capture debugOut argument and return mocked interface."""
         debug_out = kwargs.get("debugOut")
+        if debug_out is None:
+            debug_out = next(
+                (
+                    arg
+                    for arg in _args
+                    if hasattr(arg, "write") and hasattr(arg, "flush")
+                ),
+                None,
+            )
         debug_out_stream[0] = (
             debug_out
             if hasattr(debug_out, "write") and hasattr(debug_out, "flush")

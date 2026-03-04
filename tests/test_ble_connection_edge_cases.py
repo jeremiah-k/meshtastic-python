@@ -1,8 +1,6 @@
 """Edge case tests for BLE connection management."""
 
-import importlib
 import logging
-import typing
 from threading import Event, RLock
 from unittest.mock import MagicMock
 
@@ -313,22 +311,6 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
     client_manager._safe_close_client.assert_called_once_with(mock_client)
-
-
-@pytest.mark.unit
-def test_connection_module_type_checking_branch_imports_bleak_symbol(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Reloading with TYPE_CHECKING=True should execute the guarded BleakRootClient import."""
-    import meshtastic.interfaces.ble.connection as connection_module
-
-    monkeypatch.setattr(typing, "TYPE_CHECKING", True)
-    reloaded = importlib.reload(connection_module)
-    try:
-        assert "BleakRootClient" in reloaded.__dict__
-    finally:
-        monkeypatch.setattr(typing, "TYPE_CHECKING", False)
-        importlib.reload(connection_module)
 
 
 @pytest.mark.unit

@@ -87,11 +87,8 @@ def test_Tunnel_with_interface(
     assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
     with caplog.at_level(logging.WARNING):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             assert tun == mt_config.tunnel_instance
-        finally:
-            tun.close()
     assert re.search(r"Not creating a TapDevice\(\)", caplog.text, re.MULTILINE)
     assert re.search(r"Not starting TUN reader", caplog.text, re.MULTILINE)
 
@@ -110,11 +107,8 @@ def test_onTunnelReceive_from_ourselves(
     monkeypatch.setattr(mt_config, "args", argparse.Namespace())
     packet = {"decoded": {"payload": "foo"}, "from": 2475227164}
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface):
             onTunnelReceive(packet, iface)
-        finally:
-            tun.close()
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
     assert re.search(r"Ignoring message we sent", caplog.text, re.MULTILINE)
 
@@ -133,11 +127,8 @@ def test_onTunnelReceive_from_someone_else(
     monkeypatch.setattr(mt_config, "args", argparse.Namespace())
     packet = {"decoded": {"payload": "foo"}, "from": 123}
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface):
             onTunnelReceive(packet, iface)
-        finally:
-            tun.close()
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
 
 
@@ -146,18 +137,15 @@ def test_should_filter_packet_random(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should allow unrecognized protocols by default."""
     iface = iface_with_nodes
     iface.noProto = True
     # random packet
     packet = b"1234567890123456789012345678901234567890"
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert not ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unit
@@ -170,12 +158,9 @@ def test_should_filter_packet_short_header(
     iface.noProto = True
     packet = b"\x00" * 10
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert ignore
-        finally:
-            tun.close()
     assert re.search(r"Ignoring short IP packet", caplog.text, re.MULTILINE)
 
 
@@ -184,18 +169,15 @@ def test_should_filter_packet_in_blacklist(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should drop packets with blacklisted protocols."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked IGMP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unitslow
@@ -203,19 +185,16 @@ def test_should_filter_packet_icmp(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should allow ICMP packets and log forwarding details."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked ICMP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert re.search(r"forwarding ICMP message", caplog.text, re.MULTILINE)
             assert not ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unit
@@ -223,19 +202,16 @@ def test_should_filter_packet_udp(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should allow non-blacklisted UDP packets."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked UDP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert re.search(r"forwarding udp", caplog.text, re.MULTILINE)
             assert not ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unitslow
@@ -243,19 +219,16 @@ def test_should_filter_packet_udp_blacklisted(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should drop UDP packets targeting blocked ports."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked UDP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x6c\x07\x6c\x00\x00\x00"
     with caplog.at_level(LOG_TRACE):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert re.search(r"ignoring blacklisted UDP", caplog.text, re.MULTILINE)
             assert ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unit
@@ -263,19 +236,16 @@ def test_should_filter_packet_tcp(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should allow non-blacklisted TCP packets."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked TCP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert re.search(r"forwarding tcp", caplog.text, re.MULTILINE)
             assert not ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unitslow
@@ -283,19 +253,16 @@ def test_should_filter_packet_tcp_blacklisted(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _should_filter_packet()."""
+    """_should_filter_packet should drop TCP packets targeting blocked ports."""
     iface = iface_with_nodes
     iface.noProto = True
     # faked TCP
     packet = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x0c\x17\x0c\x00\x00\x00"
     with caplog.at_level(LOG_TRACE):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             ignore = tun._should_filter_packet(packet)
             assert re.search(r"ignoring blacklisted TCP", caplog.text, re.MULTILINE)
             assert ignore
-        finally:
-            tun.close()
 
 
 @pytest.mark.unitslow
@@ -303,16 +270,13 @@ def test_ip_to_node_id_none(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _ip_to_node_id()."""
+    """_ip_to_node_id should return None for all-zero addresses."""
     iface = iface_with_nodes
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             nodeid = tun._ip_to_node_id(b"\x00\x00\x00\x00")
             assert nodeid is None
-        finally:
-            tun.close()
 
 
 @pytest.mark.unitslow
@@ -320,16 +284,13 @@ def test_ip_to_node_id_all(
     caplog: pytest.LogCaptureFixture,
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Test _ip_to_node_id()."""
+    """_ip_to_node_id should map broadcast-style suffixes to '^all'."""
     iface = iface_with_nodes
     iface.noProto = True
     with caplog.at_level(logging.DEBUG):
-        tun = Tunnel(iface)
-        try:
+        with _managed_tunnel(iface) as tun:
             nodeid = tun._ip_to_node_id(b"\x00\x00\xff\xff")
             assert nodeid == "^all"
-        finally:
-            tun.close()
 
 
 @pytest.mark.unit
@@ -339,8 +300,7 @@ def test_tun_reader_forwards_unfiltered_packets(
     """_tun_reader should forward packets when filtering says they are allowed."""
     iface = iface_with_nodes
     iface.noProto = True
-    tun = Tunnel(iface)
-    try:
+    with _managed_tunnel(iface) as tun:
         packet = b"\x45\x00\x00\x28\x00\x00\x00\x00\x40\x11\x00\x00\x0a\x73\x01\x01\x0a\x73\x02\x02"
         tap = MagicMock()
         tap.read.return_value = packet
@@ -355,8 +315,6 @@ def test_tun_reader_forwards_unfiltered_packets(
         tun._send_packet = MagicMock(side_effect=_capture_and_stop)  # type: ignore[method-assign]
         tun._tun_reader()
         tun._send_packet.assert_called_once()
-    finally:
-        tun.close()
 
 
 @pytest.mark.unit

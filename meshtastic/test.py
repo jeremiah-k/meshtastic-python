@@ -159,7 +159,18 @@ def _normalize_portnum(portnum: Any) -> str | None:
 
 
 def _normalize_node_id(node_id: Any) -> int | None:
-    """Normalize a node id value to integer when coercible."""
+    """Normalize a node ID value to integer when coercible.
+
+    Parameters
+    ----------
+    node_id : Any
+        Node identifier value to normalize.
+
+    Returns
+    -------
+    int | None
+        The integer value when coercible, otherwise ``None``.
+    """
     if node_id is None:
         return None
     with suppress(TypeError, ValueError):

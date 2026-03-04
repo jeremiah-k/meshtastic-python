@@ -23,6 +23,10 @@ This document tracks coding standards and API refactoring decisions for the Mesh
 ### Internal Helpers (\_snake_case)
 
 - All internal methods and helpers should be prefixed with an underscore and use `snake_case` (e.g., `_send_packet`, `_handle_disconnect`).
+- Exception for BLE compatibility: underscore-prefixed wrappers listed in the BLE
+  2.7.7 compatibility matrix (for example `_async_await`, `_async_run`,
+  `_from_num_handler`, `_log_radio_handler`, `_legacy_log_radio_handler`) are
+  intentionally preserved compatibility entrypoints, not new internal helpers.
 
 ## BLE API Refactoring Decisions
 
@@ -126,6 +130,12 @@ Current `COMPAT_DEPRECATE` methods:
 | `PowerLogger` | `store_current_reading` | Compatibility shim      |
 | `slog module` | `rootDir`               | Primary helper function |
 | `slog module` | `root_dir`              | Compatibility shim      |
+
+### Slog warning policy (explicit)
+
+- `root_dir` and `PowerLogger.store_current_reading` are maintained
+  compatibility shims and currently emit warn-once `DeprecationWarning`.
+- Canonical names `rootDir` and `storeCurrentReading` do not warn.
 
 ## mt_config API Refactoring Decisions
 

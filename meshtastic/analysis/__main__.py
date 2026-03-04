@@ -248,6 +248,11 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     return pmon_raises
 
 
+def getPmonRaises(dslog: pd.DataFrame) -> pd.DataFrame:
+    """Preferred camelCase alias for get_pmon_raises()."""
+    return get_pmon_raises(dslog)
+
+
 def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """Retrieve board model name and software version from a slog DataFrame.
 
@@ -301,6 +306,11 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     return (board_model_name, sw_version)
 
 
+def getBoardInfo(dslog: pd.DataFrame) -> tuple[str, str]:
+    """Preferred camelCase alias for get_board_info()."""
+    return get_board_info(dslog)
+
+
 def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) -> str:
     """Choose a power-series column while preserving compatibility.
 
@@ -339,6 +349,11 @@ def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) ->
         f"{legacy_name!r} or {new_name!r}; available columns: {list(frame.columns)!r}"
     )
     raise ValueError(error_msg)
+
+
+def choosePowerColumn(frame: pd.DataFrame, legacy_name: str, new_name: str) -> str:
+    """Preferred camelCase alias for choose_power_column()."""
+    return choose_power_column(frame, legacy_name, new_name)
 
 
 def _parse_port(value: str) -> int:

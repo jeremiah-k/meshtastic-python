@@ -2257,6 +2257,9 @@ def common() -> None:
                         message += f"\nOriginal error: {ex}"
                         _cli_exit(message)
                     if client is None or client.devPath is None:
+                        logger.info(
+                            "Serial device unavailable after initialization; falling back to localhost TCP interface."
+                        )
                         try:
                             client = stack.enter_context(
                                 meshtastic.tcp_interface.TCPInterface(

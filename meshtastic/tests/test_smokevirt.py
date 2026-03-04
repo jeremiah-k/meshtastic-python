@@ -738,7 +738,7 @@ def test_smokevirt_export_config_and_restore_round_trip(tmp_path: Path) -> None:
 
 @pytest.mark.smokevirt
 def test_smokevirt_set_ham() -> None:
-    """Test --set-ham (followed by factory reset in later test)."""
+    """Test --set-ham updates owner callsign immediately."""
     return_value, out = run_cli_with_timeout(
         "meshtastic --host localhost --set-ham KI1234"
     )

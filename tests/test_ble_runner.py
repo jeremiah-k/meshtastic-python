@@ -32,6 +32,20 @@ def _noop_ensure_running(timeout: float | None = None) -> None:
     _ = timeout
 
 
+class _LoopStub:
+    """Loop stub that always reports a running event loop."""
+
+    @staticmethod
+    def is_running() -> bool:
+        """Report whether the BLE coroutine runner is currently active."""
+        return True
+
+
+async def _noop() -> None:
+    """Run a coroutine that does nothing."""
+    return None
+
+
 @pytest.fixture(autouse=True)
 def ensure_runner_running() -> Generator[None, None, None]:
     """Ensure the BLECoroutineRunner singleton is running for the duration of a test.
@@ -224,19 +238,6 @@ class TestBLECoroutineRunner:
             lambda timeout=None: observed_timeouts.append(timeout),
         )
 
-        class _LoopStub:
-            """Loop stub that always reports a running event loop."""
-
-            @staticmethod
-            def is_running():
-                """Report whether the BLE coroutine runner is currently active.
-
-                Returns
-                -------
-                    True if the runner is active, False otherwise.
-                """
-                return True
-
         with runner._instance_lock:
             original_loop = runner._loop
             original_warned_timeout_alias = runner._warned_timeout_alias
@@ -246,10 +247,6 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
         )
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
 
         try:
             runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
@@ -269,19 +266,6 @@ class TestBLECoroutineRunner:
             _noop_ensure_running,
         )
 
-        class _LoopStub:
-            """Loop stub that always reports a running event loop."""
-
-            @staticmethod
-            def is_running():
-                """Report whether the BLE coroutine runner is currently active.
-
-                Returns
-                -------
-                    True if the runner is active, False otherwise.
-                """
-                return True
-
         with runner._instance_lock:
             original_loop = runner._loop
             original_warned_timeout_alias = runner._warned_timeout_alias
@@ -291,10 +275,6 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
         )
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
 
         try:
             with pytest.warns(DeprecationWarning, match="startup_timeout"):
@@ -315,19 +295,6 @@ class TestBLECoroutineRunner:
             _noop_ensure_running,
         )
 
-        class _LoopStub:
-            """Loop stub that always reports a running event loop."""
-
-            @staticmethod
-            def is_running():
-                """Report whether the BLE coroutine runner is currently active.
-
-                Returns
-                -------
-                    True if the runner is active, False otherwise.
-                """
-                return True
-
         with runner._instance_lock:
             original_loop = runner._loop
             original_warned_timeout_alias = runner._warned_timeout_alias
@@ -337,10 +304,6 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
         )
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
 
         try:
             with warnings.catch_warnings(record=True) as caught:
@@ -355,10 +318,6 @@ class TestBLECoroutineRunner:
     def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
         """Passing both timeout names should raise to avoid ambiguous behavior."""
         runner = BLECoroutineRunner()
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
 
         coro = _noop()
         try:

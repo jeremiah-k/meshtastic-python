@@ -54,7 +54,7 @@ def test_init_on_position_receive(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test _on_position_receive."""
+    """_on_position_receive should skip node lookup when sender is not numeric."""
     args = SimpleNamespace(camel_case=False)
     monkeypatch.setattr(mt_config, "args", args)
     iface = create_autospec(SerialInterface, instance=True)
@@ -195,6 +195,49 @@ def test_init_on_admin_receive_redacts_last_received_dict_raw_payload(
     )
     # Input packet should remain unchanged for callback consumers.
     assert packet["decoded"]["admin"]["raw"]["session_passkey"] == b"abc123"
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_uses_sentinel_when_object_redaction_fails(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Failing object redaction should still guarantee a redacted sentinel payload."""
+
+    class _UnredactableRaw:
+        def __init__(self) -> None:
+            self._session_passkey = b"abc123"
+
+        @property
+        def session_passkey(self) -> bytes:
+            return self._session_passkey
+
+        @session_passkey.setter
+        def session_passkey(self, _value: bytes) -> None:
+            raise RuntimeError("session_passkey is read-only")
+
+        def __delattr__(self, name: str) -> None:
+            if name == "session_passkey":
+                raise RuntimeError("cannot delete session_passkey")
+            super().__delattr__(name)
+
+        def __deepcopy__(self, _memo: dict[int, Any]) -> "_UnredactableRaw":
+            return self
+
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": _UnredactableRaw()}},
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    assert isinstance(last_received_admin, dict)
+    assert last_received_admin["raw"] == {"session_passkey": b"<redacted>"}
 
 
 @pytest.mark.unit

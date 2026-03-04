@@ -17,15 +17,15 @@ class _SHA256Digest(Protocol):
 
     def update(self, data: bytes) -> None:
         """Update the digest with bytes."""
-        pass  # pylint: disable=unnecessary-pass
+        ...
 
     def digest(self) -> bytes:
         """Return raw digest bytes."""
-        pass  # pylint: disable=unnecessary-pass
+        ...
 
     def hexdigest(self) -> str:
         """Return digest as hexadecimal string."""
-        pass  # pylint: disable=unnecessary-pass
+        ...
 
 
 def _file_sha256(filename: str) -> _SHA256Digest:

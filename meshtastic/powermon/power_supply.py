@@ -10,16 +10,19 @@ from typing import cast
 
 from .constants import MAX_SUPPLY_VOLTAGE_V
 
-_warned_deprecations: set[str] = set()
-_warned_deprecations_lock: threading.Lock = threading.Lock()
+_WARNED_DEPRECATIONS: set[str] = set()
+_WARNED_DEPRECATIONS_LOCK: threading.Lock = threading.Lock()
+# COMPAT_STABLE_SHIM: retained for tests/tools that inspect warn-once state directly.
+_warned_deprecations = _WARNED_DEPRECATIONS
+_warned_deprecations_lock = _WARNED_DEPRECATIONS_LOCK
 
 
 def _warn_deprecated_once(key: str, message: str) -> None:
     """Emit a deprecation warning once per process for a given key."""
-    with _warned_deprecations_lock:
-        if key in _warned_deprecations:
+    with _WARNED_DEPRECATIONS_LOCK:
+        if key in _WARNED_DEPRECATIONS:
             return
-        _warned_deprecations.add(key)
+        _WARNED_DEPRECATIONS.add(key)
     warnings.warn(
         message,
         DeprecationWarning,
@@ -56,7 +59,13 @@ class PowerMeter:
         """Close the power meter."""
 
     def getAverageCurrentMA(self) -> float:
-        """Return average current of last measurement in mA (since last call to this method)."""
+        """Return average current of last measurement in mA (since last call to this method).
+
+        Returns
+        -------
+        float
+            Average current in milliamperes.
+        """
         return math.nan
 
     def _deprecated_alias_current_method(

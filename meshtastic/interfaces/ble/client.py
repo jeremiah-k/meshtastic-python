@@ -191,6 +191,15 @@ class BLEClient:
         """
         return self._discover(**kwargs)
 
+    # COMPAT_STABLE_SHIM: historical BLE snake_case name.
+    def find_device(self, **kwargs: Any) -> Any:
+        """Backward-compatible snake_case alias for discover()."""
+        return self.discover(**kwargs)
+
+    def findDevice(self, **kwargs: Any) -> Any:
+        """Promoted camelCase alias for find_device()."""
+        return self.find_device(**kwargs)
+
     def pair(self, **kwargs: Any) -> Any:
         """Pair the BLE client with the remote device.
 

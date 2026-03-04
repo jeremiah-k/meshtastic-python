@@ -27,10 +27,14 @@ try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
+    from meshtastic.protobuf import mesh_pb2
     from meshtastic.analysis.__main__ import (
+        choosePowerColumn,
         choose_power_column,
         create_argparser,
+        getBoardInfo,
         get_board_info,
+        getPmonRaises,
         get_pmon_raises,
         main,
         read_pandas,
@@ -426,3 +430,22 @@ def test_choose_power_column_uses_legacy_when_only_legacy_present() -> None:
     """choose_power_column should use legacy column even if all null when it's the only option."""
     frame = pd.DataFrame({"average_mW": [None, None]})
     assert choose_power_column(frame, "average_mW", "average_mA") == "average_mW"
+
+
+@pytest.mark.unit
+def test_analysis_camelcase_aliases_delegate() -> None:
+    """CamelCase analysis helpers should delegate to snake_case implementations."""
+    frame = pd.DataFrame({"average_mA": [1.0]})
+    assert choosePowerColumn(frame, "average_mW", "average_mA") == "average_mA"
+
+    known_board_id = mesh_pb2.HardwareModel.DESCRIPTOR.values[0].number
+    dslog = pd.DataFrame(
+        {
+            "time": [1],
+            "pm_mask": [0],
+            "sw_version": ["2.7.8"],
+            "board_id": [known_board_id],
+        }
+    )
+    assert getPmonRaises(dslog).equals(get_pmon_raises(dslog))
+    assert getBoardInfo(dslog) == get_board_info(dslog)
