@@ -593,7 +593,11 @@ def test_rapid_connect_disconnect_stress_test(
     ):
         """Create and yield a BLEInterface configured for stress testing with auto-reconnect enabled.
 
-        Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mocked device and receives a StressTestClient. Yields a tuple (iface, client). On generator exit the interface is closed and all patches are undone.
+        Patches BLEInterface.connect so the interface receives a StressTestClient.
+        The interface is created with an explicit address to exercise reconnect
+        scheduling against a concrete target address. Yields a tuple
+        `(iface, client)`. On generator exit the interface is closed and all
+        patches are undone.
 
         Yields
         ------
@@ -606,11 +610,6 @@ def test_rapid_connect_disconnect_stress_test(
         connect_calls: list[str | None] = []
 
         stack = ExitStack()
-
-        # Mock the scan method to return our test device
-        stack.enter_context(
-            patch.object(BLEInterface, "scan", return_value=[mock_device])
-        )
 
         def _patched_connect(
             self: BLEInterface,

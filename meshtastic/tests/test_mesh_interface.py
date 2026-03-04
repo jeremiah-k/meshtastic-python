@@ -2413,9 +2413,9 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
             on_receive_calls.append(1)
 
         def _raising_callback(_packet: dict[str, Any]) -> None:
-            raise RuntimeError(
+            raise RuntimeError(  # noqa: TRY003 - intentional test sentinel
                 "handler boom"
-            )  # noqa: TRY003 - intentional test sentinel
+            )
 
         def onAckNak(_packet: dict[str, Any]) -> None:  # noqa: N802
             on_ack_calls.append(1)

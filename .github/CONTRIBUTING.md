@@ -20,5 +20,6 @@
 - or run all locally:
   - run `poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2.pyi?$"`
   - run `poetry run mypy meshtastic/`
+  - run `poetry run mypy meshtastic/ --strict` (the codebase is currently strict-compatible)
   - run `poetry run pytest`
   - more commands see [CI workflow](https://github.com/meshtastic/python/blob/master/.github/workflows/ci.yml)

@@ -13,7 +13,7 @@ if [[ -z ${POETRYDIR} ]]; then
 fi
 
 # protoc looks for mypy plugin in the python path
-source $(poetry env info --path)/bin/activate
+source "${POETRYDIR}/bin/activate"
 
 # Put our temp files in the poetry build directory
 TMPDIR=./build/meshtastic/protofixup
