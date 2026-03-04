@@ -204,23 +204,30 @@ def test_init_on_admin_receive_uses_sentinel_when_object_redaction_fails(
     """Failing object redaction should still guarantee a redacted sentinel payload."""
 
     class _UnredactableRaw:
+        """Raw admin payload stand-in that refuses passkey redaction mutation."""
+
         def __init__(self) -> None:
+            """Initialize with a non-redacted session passkey value."""
             self._session_passkey = b"abc123"
 
         @property
         def session_passkey(self) -> bytes:
+            """Return the current session passkey bytes."""
             return self._session_passkey
 
         @session_passkey.setter
         def session_passkey(self, _value: bytes) -> None:
+            """Reject writes to simulate an immutable field."""
             raise RuntimeError("session_passkey is read-only")
 
         def __delattr__(self, name: str) -> None:
+            """Reject deletion of the session passkey attribute."""
             if name == "session_passkey":
                 raise RuntimeError("cannot delete session_passkey")
             super().__delattr__(name)
 
         def __deepcopy__(self, _memo: dict[int, Any]) -> "_UnredactableRaw":
+            """Return self so deepcopy cannot produce a mutable clone."""
             return self
 
     iface = iface_with_nodes

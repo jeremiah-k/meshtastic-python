@@ -10,9 +10,7 @@ pytest.importorskip("bleak")
 import meshtastic.interfaces.ble.utils as ble_utils
 from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
-    resolveBleModule,
     with_timeout,
-    withTimeout,
 )
 
 
@@ -53,7 +51,6 @@ def test_with_timeout_returns_result() -> None:
         return "ok"
 
     assert asyncio.run(with_timeout(_done(), timeout=1.0, label="alias")) == "ok"
-    assert asyncio.run(withTimeout(_done(), timeout=1.0, label="alias")) == "ok"
 
 
 @pytest.mark.unit
@@ -63,4 +60,3 @@ def test_resolve_ble_module_returns_module(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(ble_utils.importlib, "import_module", lambda _name: sentinel)
 
     assert resolve_ble_module() is sentinel
-    assert resolveBleModule() is sentinel

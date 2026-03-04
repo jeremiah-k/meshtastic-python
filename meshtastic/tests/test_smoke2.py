@@ -2,11 +2,19 @@
 
 import re
 import subprocess
+from typing import NoReturn
 
 import pytest
 
 INFO_TIMEOUT_SECONDS = 30
 TEST_TIMEOUT_SECONDS = 60
+
+
+def _fail_timeout(
+    cmd: list[str], timeout_seconds: int, exc: subprocess.TimeoutExpired
+) -> NoReturn:
+    """Abort the current test with a consistent timeout error message."""
+    pytest.fail(f"{' '.join(cmd)} timed out after {timeout_seconds} seconds: {exc}")
 
 
 def _run_meshtastic(
@@ -24,7 +32,7 @@ def _run_meshtastic(
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
-        pytest.fail(f"{' '.join(cmd)} timed out after {timeout_seconds} seconds: {exc}")
+        _fail_timeout(cmd, timeout_seconds, exc)
 
 
 @pytest.mark.smoke2

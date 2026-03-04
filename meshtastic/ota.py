@@ -17,15 +17,12 @@ class _SHA256Digest(Protocol):
 
     def update(self, data: bytes) -> None:
         """Update the digest with bytes."""
-        ...
 
     def digest(self) -> bytes:
         """Return raw digest bytes."""
-        ...
 
     def hexdigest(self) -> str:
         """Return digest as hexadecimal string."""
-        ...
 
 
 def _file_sha256(filename: str) -> _SHA256Digest:

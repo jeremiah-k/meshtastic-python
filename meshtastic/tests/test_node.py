@@ -477,9 +477,7 @@ def test_getChannelByChannelIndex(
     # test primary
     selected_primary = anode.getChannelByChannelIndex(0)
     assert selected_primary is not None
-    assert selected_primary is not channel1
-    selected_primary.role = Channel.Role.DISABLED
-    assert channel1.role == Channel.Role.PRIMARY
+    assert selected_primary is channel1
     # test secondary
     assert anode.getChannelByChannelIndex(1) is not None
     # test disabled
@@ -1020,18 +1018,18 @@ def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
 
     named_channel = anode.getChannelByName("main")
     assert named_channel is not None
-    assert named_channel is not primary
+    assert named_channel is primary
     assert named_channel.index == primary.index
 
     disabled_channel = anode.getDisabledChannel()
     assert disabled_channel is not None
-    assert disabled_channel is not disabled
+    assert disabled_channel is disabled
     assert disabled_channel.index == disabled.index
 
     named_channel.role = Channel.Role.DISABLED
-    assert primary.role == Channel.Role.PRIMARY
+    assert primary.role == Channel.Role.DISABLED
     disabled_channel.role = Channel.Role.PRIMARY
-    assert disabled.role == Channel.Role.DISABLED
+    assert disabled.role == Channel.Role.PRIMARY
     assert anode._get_admin_channel_index() == 1
     assert anode.getAdminChannelIndex() == 1
 

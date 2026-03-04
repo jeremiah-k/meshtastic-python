@@ -636,13 +636,18 @@ class Node:
         -------
         channel_pb2.Channel | None
             The channel at the specified index, or None if channels are unset or the index is out of range.
+
+        Notes
+        -----
+        Returns a live channel object by design for backward compatibility with
+        existing callers that mutate a selected channel and then persist via
+        `writeChannel()`.
         """
         with self._channels_lock:
             channels = self.channels
             if channels and 0 <= channelIndex < len(channels):
-                copied = channel_pb2.Channel()
-                copied.CopyFrom(channels[channelIndex])
-                return copied
+                # Compatibility: return the live object, not a defensive copy.
+                return channels[channelIndex]
             return None
 
     def deleteChannel(self, channelIndex: int) -> None:
@@ -716,13 +721,18 @@ class Node:
         -------
         channel_pb2.Channel | None
             The matching channel object if found, `None` otherwise.
+
+        Notes
+        -----
+        Returns a live channel object by design for backward compatibility with
+        existing callers that mutate a selected channel and then persist via
+        `writeChannel()`.
         """
         with self._channels_lock:
             for c in self.channels or []:
                 if c.settings and c.settings.name == name:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(c)
-                    return copied
+                    # Compatibility: return the live object, not a defensive copy.
+                    return c
             return None
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
@@ -732,6 +742,12 @@ class Node:
         -------
         channel_pb2.Channel | None
             The first disabled channel if present, `None` otherwise.
+
+        Notes
+        -----
+        Returns a live channel object by design for backward compatibility with
+        existing callers that mutate a selected channel and then persist via
+        `writeChannel()`.
         """
         with self._channels_lock:
             channels = self.channels
@@ -739,9 +755,8 @@ class Node:
                 return None
             for c in channels:
                 if c.role == channel_pb2.Channel.Role.DISABLED:
-                    copied = channel_pb2.Channel()
-                    copied.CopyFrom(c)
-                    return copied
+                    # Compatibility: return the live object, not a defensive copy.
+                    return c
             return None
 
     def getAdminChannelIndex(self) -> int:
