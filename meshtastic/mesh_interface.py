@@ -1839,7 +1839,6 @@ class MeshInterface:  # pylint: disable=R0902
         with self._node_db_lock:
             if self.myInfo is None or self.nodesByNum is None:
                 return None
-            logger.debug("self.nodesByNum:%s", self.nodesByNum)
             return self.nodesByNum.get(self.myInfo.my_node_num)
 
     def getMyUser(self) -> dict[str, Any] | None:

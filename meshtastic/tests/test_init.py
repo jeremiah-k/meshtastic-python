@@ -135,7 +135,7 @@ def test_init_on_node_info_receive_returns_when_sender_missing(
 def test_init_on_admin_receive_redacts_last_received(
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Admin packets should store redacted lastReceived while keeping passkey state."""
+    """Admin packets should preserve payload shape and redact only session passkey."""
     iface = iface_with_nodes
     packet: dict[str, Any] = {
         "from": 4808675309,
@@ -153,9 +153,48 @@ def test_init_on_admin_receive_redacts_last_received(
 
     node = iface._get_or_create_by_num(4808675309)
     assert node["adminSessionPassKey"] == b"abc123"
-    assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    assert isinstance(last_received_admin, dict)
+    assert isinstance(last_received_admin.get("raw"), SimpleNamespace)
+    assert last_received_admin["raw"].session_passkey == b"<redacted>"
     # Input packet should remain unchanged for callback consumers.
     assert packet["decoded"]["admin"]["raw"].session_passkey == b"abc123"
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_redacts_last_received_dict_raw_payload(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin packets with dict raw payload should redact session passkey only."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {
+            "admin": {
+                "raw": {
+                    "session_passkey": b"abc123",
+                    "get_device_metadata_response": {"firmware_version": "2.7.18"},
+                }
+            }
+        },
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    assert isinstance(last_received_admin, dict)
+    assert isinstance(last_received_admin.get("raw"), dict)
+    assert last_received_admin["raw"]["session_passkey"] == b"<redacted>"
+    assert (
+        last_received_admin["raw"]["get_device_metadata_response"]["firmware_version"]
+        == "2.7.18"
+    )
+    # Input packet should remain unchanged for callback consumers.
+    assert packet["decoded"]["admin"]["raw"]["session_passkey"] == b"abc123"
 
 
 @pytest.mark.unit
