@@ -1572,6 +1572,7 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
             {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": valid_raw}}}
         )
     assert iface._acknowledgment.receivedAck is True
+    assert iface.metadata.firmware_version == "fw"
     anode._timeout.reset.assert_called()
 
     iface._acknowledgment = Acknowledgment()
@@ -1588,6 +1589,7 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
         {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": unknown_raw}}}
     )
     assert iface._acknowledgment.receivedAck is True
+    assert iface.metadata.firmware_version == "fw2"
 
 
 @pytest.mark.unit

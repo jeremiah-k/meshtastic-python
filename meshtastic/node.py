@@ -1660,6 +1660,10 @@ class Node:
                 )
                 if not saw_metadata_response:
                     self._emit_cached_metadata_for_stdout()
+                else:
+                    # Ensure redirected-stdout parsers receive a deterministic metadata line
+                    # even if callback printing raced with redirect teardown.
+                    self._emit_cached_metadata_for_stdout()
         finally:
             with self._metadata_stdout_event_lock:
                 if self._metadata_stdout_event is metadata_stdout_event:
@@ -2039,6 +2043,9 @@ class Node:
 
         self.iface._acknowledgment.receivedAck = True
         c = decoded["admin"]["raw"].get_device_metadata_response
+        metadata_snapshot = mesh_pb2.DeviceMetadata()
+        metadata_snapshot.CopyFrom(c)
+        self.iface.metadata = metadata_snapshot
         self._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(c))
         self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
