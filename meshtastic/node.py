@@ -8,6 +8,7 @@ in the mesh, including methods for localConfig, moduleConfig, and channels manag
 import base64
 import binascii
 import logging
+import sys
 import threading
 import time
 from typing import (
@@ -169,6 +170,14 @@ class Node:
     def excluded_modules_list(excluded_modules: int) -> list[str]:
         """Backward-compatible alias for excludedModulesList."""
         return Node.excludedModulesList(excluded_modules)
+
+    @staticmethod
+    def _emit_metadata_line(line: str) -> None:
+        """Log a metadata line and mirror it to redirected stdout for compatibility."""
+        logger.info("%s", line)
+        # Historical callers parse getMetadata() output from redirected stdout.
+        if sys.stdout is not sys.__stdout__:
+            print(line)
 
     def moduleAvailable(self, excluded_bit: int) -> bool:
         """Determine whether a specific module bit is allowed by the interface metadata.
@@ -1966,22 +1975,25 @@ class Node:
         c = decoded["admin"]["raw"].get_device_metadata_response
         self._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(c))
-        logger.info("\nfirmware_version: %s", c.firmware_version)
-        logger.info("device_state_version: %s", c.device_state_version)
+        self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
+        self._emit_metadata_line(f"device_state_version: {c.device_state_version}")
         if c.role in config_pb2.Config.DeviceConfig.Role.values():
-            logger.info("role: %s", config_pb2.Config.DeviceConfig.Role.Name(c.role))
+            self._emit_metadata_line(
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}"
+            )
         else:
-            logger.info("role: %s", c.role)
-        logger.info("position_flags: %s", self.position_flags_list(c.position_flags))
+            self._emit_metadata_line(f"role: {c.role}")
+        self._emit_metadata_line(
+            f"position_flags: {self.position_flags_list(c.position_flags)}"
+        )
         if c.hw_model in mesh_pb2.HardwareModel.values():
-            logger.info("hw_model: %s", mesh_pb2.HardwareModel.Name(c.hw_model))
+            self._emit_metadata_line(f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}")
         else:
-            logger.info("hw_model: %s", c.hw_model)
-        logger.info("hasPKC: %s", c.hasPKC)
+            self._emit_metadata_line(f"hw_model: {c.hw_model}")
+        self._emit_metadata_line(f"hasPKC: {c.hasPKC}")
         if c.excluded_modules > 0:
-            logger.info(
-                "excluded_modules: %s",
-                self.excluded_modules_list(c.excluded_modules),
+            self._emit_metadata_line(
+                f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
             )
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:

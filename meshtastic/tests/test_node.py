@@ -1586,3 +1586,29 @@ def test_onRequestGetMetadata_logs_valid_and_fallback_enum_values(
         {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": unknown_raw}}}
     )
     assert iface._acknowledgment.receivedAck is True
+
+
+@pytest.mark.unit
+def test_onRequestGetMetadata_emits_stdout_when_redirected(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    capsys: CaptureFixture[str],
+) -> None:
+    """Metadata response should still emit stdout lines for legacy redirect parsers."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    anode = Node(iface, "!12345678", noProto=True)
+    anode._timeout = MagicMock()
+
+    raw = admin_pb2.AdminMessage()
+    resp = raw.get_device_metadata_response
+    resp.firmware_version = "2.7.18"
+    resp.device_state_version = 24
+    resp.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+    resp.position_flags = 0
+    resp.hw_model = mesh_pb2.HardwareModel.PORTDUINO
+    resp.hasPKC = True
+
+    anode.onRequestGetMetadata({"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}})
+
+    out, _err = capsys.readouterr()
+    assert "firmware_version: 2.7.18" in out
