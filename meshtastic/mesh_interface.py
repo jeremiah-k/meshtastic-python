@@ -1751,6 +1751,26 @@ class MeshInterface:  # pylint: disable=R0902
             self._send_to_radio(toRadio)
         return meshPacket
 
+    # COMPAT_STABLE_SHIM: historical private camelCase helper used by external integrations.
+    def _sendPacket(
+        self,
+        meshPacket: mesh_pb2.MeshPacket,
+        destinationId: int | str = BROADCAST_ADDR,
+        wantAck: bool = False,
+        hopLimit: int | None = None,
+        pkiEncrypted: bool | None = False,
+        publicKey: bytes | None = None,
+    ) -> mesh_pb2.MeshPacket:
+        """Backward-compatible alias for `_send_packet`."""
+        return self._send_packet(
+            meshPacket=meshPacket,
+            destinationId=destinationId,
+            wantAck=wantAck,
+            hopLimit=hopLimit,
+            pkiEncrypted=pkiEncrypted,
+            publicKey=publicKey,
+        )
+
     def waitForConfig(self) -> None:
         """Block until the radio configuration and the local node's configuration are available.
 

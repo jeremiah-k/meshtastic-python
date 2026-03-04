@@ -128,6 +128,7 @@ Semantic deprecation:
 | Module                      | Compatibility symbol                                   | Canonical symbol                        |
 | --------------------------- | ------------------------------------------------------ | --------------------------------------- |
 | `meshtastic.mesh_interface` | `_generatePacketId()`                                  | `_generate_packet_id()`                 |
+| `meshtastic.mesh_interface` | `_sendPacket()`                                        | `_send_packet()`                        |
 | `meshtastic.node`           | `position_flags_list()`                                | `positionFlagsList()`                   |
 | `meshtastic.node`           | `excluded_modules_list()`                              | `excludedModulesList()`                 |
 | `meshtastic.node`           | `module_available()`                                   | `moduleAvailable()`                     |

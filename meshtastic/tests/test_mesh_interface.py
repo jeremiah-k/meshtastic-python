@@ -678,6 +678,19 @@ def test_sendPacket_with_destination_as_int(caplog: pytest.LogCaptureFixture) ->
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_alias_with_destination_as_int(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test _sendPacket() compatibility alias delegates to _send_packet()."""
+    with MeshInterface(noProto=True) as iface:
+        with caplog.at_level(logging.DEBUG):
+            meshPacket = mesh_pb2.MeshPacket()
+            iface._sendPacket(meshPacket, destinationId=123)
+            assert re.search(r"Not sending packet", caplog.text, re.MULTILINE)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_sendPacket_with_destination_starting_with_a_bang(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -883,6 +896,19 @@ def test_generatePacketId() -> None:
             iface._generatePacketId()
     assert "Not connected yet, can not generate packet" in str(excinfo.value)
     assert "Not connected yet, can not generate packet" in str(excinfo_alias.value)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_alias_with_no_destination() -> None:
+    """Test _sendPacket() alias raises MeshInterfaceError when destinationId is None."""
+    with MeshInterface(noProto=True) as iface:
+        with pytest.raises(
+            MeshInterface.MeshInterfaceError,
+            match="destinationId must not be None",
+        ):
+            mesh_packet = mesh_pb2.MeshPacket()
+            iface._sendPacket(mesh_packet, destinationId=None)  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
