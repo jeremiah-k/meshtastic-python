@@ -63,6 +63,9 @@ MAX_RINGTONE_LENGTH = 230
 MAX_CANNED_MESSAGE_LENGTH = 200
 # Maximum number of channels a node can hold.
 MAX_CHANNELS = 8
+# Extra wait used only when getMetadata() runs under redirected stdout for
+# historical callers that parse printed metadata lines.
+METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
 
 
 class Node:
@@ -106,6 +109,8 @@ class Node:
         self.ringtonePart: str | None = None
         self._ringtone_lock = threading.Lock()
         self._canned_message_lock = threading.Lock()
+        self._metadata_stdout_event_lock = threading.Lock()
+        self._metadata_stdout_event: threading.Event | None = None
 
     def __repr__(self) -> str:
         """Return a developer-oriented string identifying the Node.
@@ -178,6 +183,13 @@ class Node:
         # Historical callers parse getMetadata() output from redirected stdout.
         if sys.stdout is not sys.__stdout__:
             print(line)
+
+    def _signal_metadata_stdout_event(self) -> None:
+        """Signal redirected-stdout metadata waiters that a terminal response arrived."""
+        with self._metadata_stdout_event_lock:
+            metadata_stdout_event = self._metadata_stdout_event
+        if metadata_stdout_event is not None:
+            metadata_stdout_event.set()
 
     def moduleAvailable(self, excluded_bit: int) -> bool:
         """Determine whether a specific module bit is allowed by the interface metadata.
@@ -1597,9 +1609,18 @@ class Node:
         p = admin_pb2.AdminMessage()
         p.get_device_metadata_request = True
         logger.info("Requesting device metadata")
-
-        self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
-        self.iface.waitForAckNak()
+        metadata_stdout_event = threading.Event()
+        with self._metadata_stdout_event_lock:
+            self._metadata_stdout_event = metadata_stdout_event
+        try:
+            self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
+            self.iface.waitForAckNak()
+            if sys.stdout is not sys.__stdout__:
+                metadata_stdout_event.wait(METADATA_STDOUT_COMPAT_WAIT_SECONDS)
+        finally:
+            with self._metadata_stdout_event_lock:
+                if self._metadata_stdout_event is metadata_stdout_event:
+                    self._metadata_stdout_event = None
 
     def factoryReset(self, full: bool = False) -> mesh_pb2.MeshPacket | None:
         """Request a factory reset on the node.
@@ -1961,6 +1982,7 @@ class Node:
                 )
                 self.iface._acknowledgment.receivedNak = True
                 self._timeout.expireTime = time.time()  # Do not wait any longer
+                self._signal_metadata_stdout_event()
                 return  # Don't try to parse this routing message
             logger.debug("Retrying metadata request.")
             self.getMetadata()
@@ -1969,6 +1991,7 @@ class Node:
         if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
             logger.error("Error on response: %s", decoded["routing"]["errorReason"])
             self.iface._acknowledgment.receivedNak = True
+            self._signal_metadata_stdout_event()
             return
 
         self.iface._acknowledgment.receivedAck = True
@@ -1995,6 +2018,7 @@ class Node:
             self._emit_metadata_line(
                 f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
             )
+        self._signal_metadata_stdout_event()
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.

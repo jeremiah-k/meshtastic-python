@@ -5,6 +5,7 @@
 import base64
 import logging
 import re
+import threading
 from collections.abc import Callable
 from typing import Any, Literal, Protocol, cast
 from unittest.mock import MagicMock, patch
@@ -1609,6 +1610,55 @@ def test_onRequestGetMetadata_emits_stdout_when_redirected(
     resp.hasPKC = True
 
     anode.onRequestGetMetadata({"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}})
+
+    out, _err = capsys.readouterr()
+    assert "firmware_version: 2.7.18" in out
+
+
+@pytest.mark.unit
+def test_getMetadata_waits_for_redirected_stdout_callback_output(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    capsys: CaptureFixture[str],
+) -> None:
+    """getMetadata should keep redirected stdout active until metadata callback emits."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    iface.waitForAckNak = MagicMock()
+    anode = Node(iface, "!12345678", noProto=True)
+
+    def _fake_send_admin(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> None:
+        _ = (wantResponse, adminIndex)
+        assert onResponse is not None
+        raw = admin_pb2.AdminMessage()
+        response = raw.get_device_metadata_response
+        response.firmware_version = "2.7.18"
+        response.device_state_version = 24
+        response.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+        response.position_flags = 0
+        response.hw_model = mesh_pb2.HardwareModel.PORTDUINO
+        response.hasPKC = True
+
+        timer = threading.Timer(
+            0.05,
+            lambda: onResponse(
+                {
+                    "decoded": {
+                        "portnum": "ADMIN_APP",
+                        "admin": {"raw": raw},
+                    }
+                }
+            ),
+        )
+        timer.daemon = True
+        timer.start()
+
+    anode._send_admin = _fake_send_admin  # type: ignore[assignment]
+    anode.getMetadata()
 
     out, _err = capsys.readouterr()
     assert "firmware_version: 2.7.18" in out
