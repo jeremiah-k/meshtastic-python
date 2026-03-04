@@ -252,3 +252,53 @@ def test_bleclient_async_await_rejects_wait_from_runner_thread(
 
     with pytest.raises(BLEClient.BLEError, match=BLECLIENT_ERROR_RUNNER_THREAD_WAIT):
         ble_client._async_await(_dummy_coro())
+
+
+@pytest.mark.unit
+def test_bleclient_find_device_aliases_delegate_to_expected_targets(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """find_device and findDevice aliases should delegate to discover/find_device respectively."""
+    discover_calls: list[dict[str, Any]] = []
+    find_device_calls: list[dict[str, Any]] = []
+
+    def _discover_stub(**kwargs: Any) -> list[str]:
+        discover_calls.append(kwargs)
+        return ["discovered"]
+
+    def _find_device_stub(**kwargs: Any) -> list[str]:
+        find_device_calls.append(kwargs)
+        return ["found"]
+
+    monkeypatch.setattr(ble_client, "discover", _discover_stub)
+    assert ble_client.find_device(address="AA:BB") == ["discovered"]
+    assert discover_calls == [{"address": "AA:BB"}]
+
+    monkeypatch.setattr(ble_client, "find_device", _find_device_stub)
+    assert ble_client.findDevice(name="node") == ["found"]
+    assert find_device_calls == [{"name": "node"}]
+
+
+@pytest.mark.unit
+def test_bleclient_has_characteristic_returns_false_when_services_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """has_characteristic should return False when services cannot be resolved."""
+
+    class _BleakClientWithBrokenServices:
+        @property
+        def services(self) -> Any:
+            """Simulate a services property that fails at access time."""
+            raise BleakError("services unavailable")
+
+    ble_client.bleak_client = _BleakClientWithBrokenServices()
+    monkeypatch.setattr(ble_client, "_get_services", lambda: None)
+    monkeypatch.setattr(
+        ble_client.error_handler,
+        "_safe_execute",
+        lambda operation, **_kwargs: operation(),
+    )
+
+    assert ble_client.has_characteristic("0000") is False

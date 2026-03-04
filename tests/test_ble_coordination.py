@@ -44,3 +44,14 @@ def test_assert_lock_owned_raises_when_lock_not_owned() -> None:
         RuntimeError, match=r"Expected ThreadCoordinator\._lock to be held"
     ):
         coordinator._assert_lock_owned()
+
+
+@pytest.mark.unit
+def test_create_event_returns_existing_event_for_duplicate_name() -> None:
+    """_create_event should return the same Event instance when called with an existing name."""
+    coordinator = ThreadCoordinator()
+
+    first = coordinator._create_event("reconnected_event")
+    second = coordinator._create_event("reconnected_event")
+
+    assert first is second

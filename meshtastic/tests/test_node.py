@@ -251,6 +251,28 @@ def test_set_ringtone_returns_none_when_module_unavailable(
 
 
 @pytest.mark.unit
+def test_set_ringtone_rejects_payloads_longer_than_max(
+    mock_serial_interface: MagicMock,
+) -> None:
+    """_set_ringtone should reject values exceeding MAX_RINGTONE_LENGTH."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.module_available = MagicMock(return_value=True)  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
+
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=(
+            f"The ringtone must be {node_module.MAX_RINGTONE_LENGTH} characters or fewer"
+        ),
+    ):
+        anode._set_ringtone("x" * (node_module.MAX_RINGTONE_LENGTH + 1))
+
+    anode.ensureSessionKey.assert_not_called()
+    anode._send_admin.assert_not_called()
+
+
+@pytest.mark.unit
 def test_set_canned_message_returns_none_when_module_unavailable(
     mock_serial_interface: MagicMock,
     caplog: LogCaptureFixture,
@@ -1634,6 +1656,44 @@ def test_onRequestGetMetadata_emits_stdout_when_redirected(
 
 
 @pytest.mark.unit
+def test_emit_cached_metadata_returns_false_without_firmware_version(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """_emit_cached_metadata_for_stdout should return False when firmware_version is missing."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.metadata = mesh_pb2.DeviceMetadata()
+    anode = Node(iface, "!12345678", noProto=True)
+
+    assert anode._emit_cached_metadata_for_stdout() is False
+
+
+@pytest.mark.unit
+def test_emit_cached_metadata_uses_fallback_values_for_unknown_enums(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_emit_cached_metadata_for_stdout should emit numeric fallback values for unknown enum members."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface.metadata = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.18",
+        device_state_version=24,
+        role=cast(config_pb2.Config.DeviceConfig.Role.ValueType, 999),
+        position_flags=0,
+        hw_model=cast(mesh_pb2.HardwareModel.ValueType, 999),
+        hasPKC=False,
+        excluded_modules=1,
+    )
+    anode = Node(iface, "!12345678", noProto=True)
+    emitted: list[str] = []
+    monkeypatch.setattr(anode, "_emit_metadata_line", emitted.append)
+
+    assert anode._emit_cached_metadata_for_stdout() is True
+    assert "role: 999" in emitted
+    assert "hw_model: 999" in emitted
+    assert any(line.startswith("excluded_modules:") for line in emitted)
+
+
+@pytest.mark.unit
 def test_getMetadata_waits_for_redirected_stdout_callback_output(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
     capsys: CaptureFixture[str],
@@ -1717,3 +1777,20 @@ def test_getMetadata_emits_cached_metadata_when_callback_never_arrives(
 
     out, _err = capsys.readouterr()
     assert "firmware_version: 2.7.18" in out
+
+
+@pytest.mark.unit
+def test_on_response_request_settings_warns_for_unrecognized_payload_shape(
+    mock_serial_interface: MagicMock,
+    caplog: LogCaptureFixture,
+) -> None:
+    """onResponseRequestSettings should warn and return for unsupported response payloads."""
+    anode = Node(mock_serial_interface, "!12345678", noProto=True)
+    anode.iface._acknowledgment = Acknowledgment()
+
+    with caplog.at_level(logging.WARNING):
+        anode.onResponseRequestSettings(
+            {"decoded": {"admin": {"raw": admin_pb2.AdminMessage()}}}
+        )
+
+    assert "Did not receive a valid response" in caplog.text

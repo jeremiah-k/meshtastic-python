@@ -248,6 +248,58 @@ def test_init_on_admin_receive_uses_sentinel_when_object_redaction_fails(
 
 
 @pytest.mark.unit
+def test_init_on_admin_receive_uses_delattr_fallback_when_assignment_fails(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin redaction should keep object payloads when delattr fallback succeeds."""
+
+    class _DelattrOnlyRaw:
+        def __init__(self) -> None:
+            self.session_passkey = b"abc123"
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name == "session_passkey" and hasattr(self, "session_passkey"):
+                raise RuntimeError("session_passkey is immutable")  # noqa: TRY003 - intentional test sentinel
+            object.__setattr__(self, name, value)
+
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": _DelattrOnlyRaw()}},
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    redacted_raw = last_received_admin["raw"]
+    assert not hasattr(redacted_raw, "session_passkey")
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_redacts_non_dict_admin_payload(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Non-dict admin payloads should be replaced with the redacted text sentinel."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": "not-a-dict"},
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
+
+
+@pytest.mark.unit
 def test_init_on_telemetry_receive_updates_metrics_dict(
     iface_with_nodes: MeshInterface,
     monkeypatch: pytest.MonkeyPatch,
@@ -308,6 +360,30 @@ def test_init_on_telemetry_receive_replaces_non_dict_existing_metrics(
     metrics = node["deviceMetrics"]
     assert isinstance(metrics, dict)
     assert metrics.get("voltage") == 4.2
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_ignores_unknown_metrics_payloads(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry update should return early when no known metrics object is present."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"mysteryMetrics": {"value": 1}}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "deviceMetrics" not in node
+    assert "environmentMetrics" not in node
+    assert "airQualityMetrics" not in node
+    assert "powerMetrics" not in node
+    assert "localStats" not in node
 
 
 @pytest.mark.unit

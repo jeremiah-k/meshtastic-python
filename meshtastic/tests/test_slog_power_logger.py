@@ -161,6 +161,14 @@ def test_root_dir_legacy_alias_warns_once(
 
 
 @pytest.mark.unit
+def test_slog_directory_collision_error_includes_path_and_attempts() -> None:
+    """SlogDirectoryCollisionError should include app dir and retry count context."""
+    error = slog_module.SlogDirectoryCollisionError("/tmp/slog-root", 7)
+    assert "under '/tmp/slog-root'" in str(error)
+    assert "after 7 attempts" in str(error)
+
+
+@pytest.mark.unit
 def test_slog_arrow_data_type_type_checking_alias_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -214,6 +222,20 @@ def test_power_logger_rejects_non_positive_interval(
     meter = MagicMock()
     with pytest.raises(ValueError, match="interval must be > 0 seconds"):
         PowerLogger(meter, "unused-path", interval=interval)
+
+
+@pytest.mark.unit
+def test_power_logger_pmeter_setter_uses_initialized_reading_lock() -> None:
+    """PowerLogger.pMeter setter should update through the lock path when initialized."""
+    power_logger = object.__new__(PowerLogger)
+    power_logger._reading_lock = threading.Lock()
+    original_meter = MagicMock()
+    replacement_meter = MagicMock()
+    power_logger._p_meter = original_meter
+
+    power_logger.pMeter = replacement_meter
+
+    assert power_logger.pMeter is replacement_meter
 
 
 @pytest.mark.unit
@@ -368,5 +390,89 @@ def test_log_set_close_preserves_primary_exception(
 
     assert exc_info.value.__cause__ is None
     assert "Power logger close also failed" in caplog.text
+    assert log_set.slog_logger is None
+    assert log_set.power_logger is None
+
+
+@pytest.mark.unit
+def test_structured_logger_close_raises_unsubscribe_and_logs_secondary_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """StructuredLogger.close should raise unsubscribe error and log writer/raw close failures."""
+    logger_obj = object.__new__(StructuredLogger)
+    logger_obj._listen_glue = MagicMock()
+    logger_obj.writer = MagicMock()
+    logger_obj.writer.close.side_effect = RuntimeError("writer close failed")
+    logger_obj._raw_file_lock = threading.Lock()
+    logger_obj.raw_file = MagicMock()
+    logger_obj.raw_file.close.side_effect = OSError("raw close failed")
+
+    monkeypatch.setattr(
+        "meshtastic.slog.slog.pub.unsubscribe",
+        MagicMock(side_effect=ValueError("unsubscribe failed")),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError, match="unsubscribe failed"):
+            logger_obj.close()
+
+    assert "Failed to close raw log file" in caplog.text
+    assert "Writer close also failed after unsubscribe error" in caplog.text
+
+
+@pytest.mark.unit
+def test_structured_logger_close_raises_writer_error_when_unsubscribe_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """StructuredLogger.close should raise writer close failures when unsubscribe succeeds."""
+    logger_obj = object.__new__(StructuredLogger)
+    logger_obj._listen_glue = MagicMock()
+    logger_obj.writer = MagicMock()
+    logger_obj.writer.close.side_effect = RuntimeError("writer close failed")
+    logger_obj._raw_file_lock = threading.Lock()
+    logger_obj.raw_file = MagicMock()
+
+    monkeypatch.setattr("meshtastic.slog.slog.pub.unsubscribe", MagicMock())
+
+    with pytest.raises(RuntimeError, match="writer close failed"):
+        logger_obj.close()
+
+
+@pytest.mark.unit
+def test_log_set_init_raises_collision_error_after_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """LogSet should raise SlogDirectoryCollisionError when unique dir retries are exhausted."""
+    monkeypatch.setattr(slog_module, "LOG_DIR_COLLISION_MAX_RETRIES", 3)
+    monkeypatch.setattr(slog_module, "rootDir", lambda: str(tmp_path))
+
+    mkdir_mock = MagicMock(side_effect=FileExistsError("collision"))
+    monkeypatch.setattr("meshtastic.slog.slog.Path.mkdir", mkdir_mock)
+
+    with pytest.raises(slog_module.SlogDirectoryCollisionError, match="after 3 attempts"):
+        LogSet(MagicMock(), dir_name=None)
+
+    assert mkdir_mock.call_count == 3
+
+
+@pytest.mark.unit
+def test_log_set_close_raises_power_close_error_when_slog_close_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LogSet.close should raise power logger close errors when slog close succeeds."""
+    log_set = object.__new__(LogSet)
+    log_set.dir_name = "tmp"
+    log_set.atexit_handler = lambda: None
+    log_set.slog_logger = MagicMock()
+    log_set.power_logger = MagicMock()
+    log_set.power_logger.close.side_effect = RuntimeError("power close failed")
+
+    monkeypatch.setattr("meshtastic.slog.slog.atexit.unregister", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="power close failed"):
+        log_set.close()
+
     assert log_set.slog_logger is None
     assert log_set.power_logger is None

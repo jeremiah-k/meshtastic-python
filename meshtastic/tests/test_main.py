@@ -16,9 +16,11 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 import yaml
 
+import meshtastic.__main__ as main_module
 from meshtastic import mt_config
 from meshtastic.__main__ import (
     _normalize_pref_name,
+    _create_power_meter,
     _parse_host_port,
     _prefix_base64_key,
     _set_missing_flags_false,
@@ -29,6 +31,7 @@ from meshtastic.__main__ import (
     onNode,
     onReceive,
     printConfig,
+    support_info,
     traverseConfig,
     tunnelMain,
 )
@@ -195,6 +198,19 @@ def test_main_list_fields_includes_all_descriptor_fields(
     missing = [field for field in expected if field not in out]
     assert missing == []
     assert err == ""
+
+
+@pytest.mark.unit
+def test_support_info_alias_delegates_to_supportInfo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """support_info should delegate to supportInfo for compatibility."""
+    support_info_mock = MagicMock()
+    monkeypatch.setattr(main_module, "supportInfo", support_info_mock)
+
+    support_info()
+
+    support_info_mock.assert_called_once_with()
 
 
 @pytest.mark.unit
@@ -1061,6 +1077,35 @@ def test_main_reboot(capsys: pytest.CaptureFixture[str]) -> None:
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)
         assert re.search(r"inside mocked reboot", out, re.MULTILINE)
+        assert err == ""
+        mo.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_reboot_ota(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test --reboot-ota."""
+    sys.argv = ["", "--reboot-ota"]
+    mt_config.args = sys.argv  # type: ignore[assignment]
+
+    mocked_node = MagicMock(autospec=Node)
+
+    def mock_reboot_ota() -> None:
+        """Simulate node reboot OTA command."""
+        print("inside mocked rebootOTA")
+
+    mocked_node.rebootOTA.side_effect = mock_reboot_ota
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.__enter__ = MagicMock(return_value=iface)
+    iface.__exit__ = MagicMock(return_value=None)
+    iface.getNode.return_value = mocked_node
+
+    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r"Connected to radio", out, re.MULTILINE)
+        assert re.search(r"inside mocked rebootOTA", out, re.MULTILINE)
         assert err == ""
         mo.assert_called()
 
@@ -4401,6 +4446,122 @@ def test_main_ota_update_retries_then_exits(
     assert excinfo.value.code == 1
     assert ota.update.call_count == 5
     assert any(call.args == (2,) for call in sleep_mock.call_args_list)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_ota_update_succeeds_and_prints_completion(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ota-update should break on first successful update and print completion."""
+    sys.argv = ["", "--host", "localhost", "--ota-update", "firmware.bin"]
+    mt_config.args = cast(Any, sys.argv)
+
+    node = MagicMock(autospec=Node)
+
+    class _FakeTCPInterface:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            self.hostname = "localhost"
+
+        def __enter__(self) -> "_FakeTCPInterface":
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def close(self) -> None:
+            """No-op close used by onConnected cleanup path."""
+            return None
+
+        @staticmethod
+        def getNode(*_args: Any, **_kwargs: Any) -> MagicMock:
+            """Return the mocked node used by this OTA success test."""
+            return node
+
+    ota = MagicMock()
+    ota.hash_bytes.return_value = b"\x01\x02"
+    ota.update.return_value = None
+
+    with (
+        patch("meshtastic.tcp_interface.TCPInterface", _FakeTCPInterface),
+        patch("meshtastic.ota.ESP32WiFiOTA", return_value=ota),
+        patch("meshtastic.__main__.time.sleep") as sleep_mock,
+    ):
+        main()
+
+    out, err = capsys.readouterr()
+    assert "OTA update completed successfully!" in out
+    assert err == ""
+    assert ota.update.call_count == 1
+    node.startOTA.assert_called_once()
+    assert any(call.args == (5,) for call in sleep_mock.call_args_list)
+
+
+@pytest.mark.unit
+def test_create_power_meter_requires_initialized_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_create_power_meter should fail fast if mt_config.args is uninitialized."""
+    monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(mt_config, "args", None)
+
+    with pytest.raises(
+        RuntimeError,
+        match="mt_config.args must be initialized before calling _create_power_meter",
+    ):
+        _create_power_meter()
+
+
+@pytest.mark.unit
+def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_create_power_meter should sleep for boot delay when power_wait is disabled."""
+    fake_meter = MagicMock()
+    args = SimpleNamespace(
+        power_voltage="3.3",
+        power_riden=None,
+        power_ppk2_supply=False,
+        power_ppk2_meter=False,
+        power_sim=True,
+        power_wait=False,
+    )
+
+    monkeypatch.setattr(main_module, "meter", None)
+    monkeypatch.setattr(main_module, "SimPowerSupply", lambda: fake_meter)
+    monkeypatch.setattr(mt_config, "args", args)
+    sleep_mock = MagicMock()
+    monkeypatch.setattr(main_module.time, "sleep", sleep_mock)
+
+    _create_power_meter()
+
+    fake_meter.setVoltage.assert_called_once_with(3.3)
+    fake_meter.powerOn.assert_called_once_with()
+    sleep_mock.assert_called_once_with(main_module.POWER_ON_BOOT_DELAY_SECONDS)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_main_serial_oserror_includes_original_error_message(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Serial OSError startup failures should include the original exception text."""
+    sys.argv = ["", "--port", "/dev/ttyUSB999", "--set-time", "1"]
+    mt_config.args = cast(Any, sys.argv)
+
+    with (
+        patch(
+            "meshtastic.serial_interface.SerialInterface",
+            side_effect=OSError("device busy"),
+        ),
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        main()
+
+    _out, err = capsys.readouterr()
+    assert "OS Error:" in err
+    assert "Original error: device busy" in err
+    assert excinfo.value.code == 1
 
 
 @pytest.mark.unit

@@ -132,6 +132,63 @@ def test_onTunnelReceive_from_someone_else(
     assert re.search(r"in onTunnelReceive", caplog.text, re.MULTILINE)
 
 
+@pytest.mark.unit
+def test_onTunnelReceive_ignores_packet_when_myinfo_unavailable(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Tunnel receive should safely ignore packets until iface.myInfo is available."""
+    iface = iface_with_nodes
+    packet = {"decoded": {"payload": b"abc"}, "from": 123}
+
+    with caplog.at_level(logging.DEBUG):
+        with _managed_tunnel(iface) as tun:
+            iface.myInfo = None
+            tun.onReceive(packet)
+
+    assert "Ignoring tunnel packet because iface.myInfo is unavailable" in caplog.text
+
+
+@pytest.mark.unit
+def test_onTunnelReceive_ignores_invalid_decoded_or_payload(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Tunnel receive should reject malformed decoded/payload packet shapes."""
+    iface = iface_with_nodes
+    assert iface.myInfo is not None
+    iface.myInfo.my_node_num = 2475227164
+
+    with caplog.at_level(logging.DEBUG):
+        with _managed_tunnel(iface) as tun:
+            tun.onReceive({"decoded": "not-a-dict", "from": 123})
+            tun.onReceive({"decoded": {"payload": "not-bytes"}, "from": 123})
+
+    assert "missing/invalid decoded field" in caplog.text
+    assert "missing/invalid payload field" in caplog.text
+
+
+@pytest.mark.unit
+def test_onTunnelReceive_tun_write_oserror_is_swallowed(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Tunnel receive should log and continue if TUN write fails during shutdown races."""
+    iface = iface_with_nodes
+    assert iface.myInfo is not None
+    iface.myInfo.my_node_num = 2475227164
+
+    with caplog.at_level(logging.DEBUG):
+        with _managed_tunnel(iface) as tun:
+            tun.iface.noProto = False
+            tun.tun = MagicMock()
+            tun.tun.write.side_effect = OSError("device closed")
+            tun._should_filter_packet = MagicMock(return_value=False)  # type: ignore[method-assign]
+            tun.onReceive({"decoded": {"payload": b"\x45" * 20}, "from": 123})
+
+    assert "TUN write skipped: device closed during shutdown" in caplog.text
+
+
 @pytest.mark.unitslow
 def test_should_filter_packet_random(
     caplog: pytest.LogCaptureFixture,
@@ -332,6 +389,39 @@ def test_tun_reader_stops_on_read_failure(
         with caplog.at_level(logging.ERROR):
             tun._tun_reader()
         assert "TUN reader terminating due to read failure" in caplog.text
+
+
+@pytest.mark.unit
+def test_tun_reader_exits_when_tun_is_unavailable(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_tun_reader should exit immediately when no active TUN device is present."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    with _managed_tunnel(iface) as tun:
+        tun.tun = None
+        with caplog.at_level(logging.DEBUG):
+            tun._tun_reader()
+        assert "TUN reader exiting: no active TUN device" in caplog.text
+
+
+@pytest.mark.unit
+def test_tun_reader_stops_quietly_when_stop_requested_during_read_error(
+    caplog: pytest.LogCaptureFixture,
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_tun_reader should break without error logging when stop was already requested."""
+    iface = iface_with_nodes
+    iface.noProto = True
+    with _managed_tunnel(iface) as tun:
+        tap = MagicMock()
+        tap.read.side_effect = OSError("read failed while stopping")
+        tun.tun = tap
+        tun._stop_event.set()
+        with caplog.at_level(logging.ERROR):
+            tun._tun_reader()
+        assert "TUN reader terminating due to read failure" not in caplog.text
 
 
 @pytest.mark.unit

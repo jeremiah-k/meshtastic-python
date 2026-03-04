@@ -302,6 +302,52 @@ def test_TCPInterface_connect_fails_fast_after_fatal_disconnect() -> None:
 
 
 @pytest.mark.unit
+def test_TCPInterface_connect_socket_waits_for_inflight_reconnect_then_connects() -> None:
+    """_connect_socket_if_needed should poll while reconnect is in-flight and then connect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            iface.socket = None
+            with iface._reconnect_attempt_lock:
+                with iface._reconnect_lock:
+                    iface._reconnect_attempt_in_progress = True
+
+            def _finish_reconnect_slice(_delay: float) -> None:
+                with iface._reconnect_attempt_lock:
+                    with iface._reconnect_lock:
+                        iface._reconnect_attempt_in_progress = False
+
+            with (
+                patch("meshtastic.tcp_interface.time.sleep", side_effect=_finish_reconnect_slice) as sleep_mock,
+                patch.object(iface, "myConnect") as my_connect_mock,
+            ):
+                iface._connect_socket_if_needed()
+
+            sleep_mock.assert_called_once_with(iface.DEFAULT_RECONNECT_SLEEP_SLICE)
+            my_connect_mock.assert_called_once_with()
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_notify_pending_sender_failure_sets_event() -> None:
+    """_notify_pending_sender_failure should signal Event-like waiters."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            pending_event = threading.Event()
+            assert (
+                iface._notify_pending_sender_failure(
+                    pending_event, "connect failed during test"
+                )
+                is True
+            )
+            assert pending_event.is_set()
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_attempt_reconnect_reader_thread_clears_queue() -> None:
     """Ensure reader-thread reconnect clears queued packets before _start_config().
 
@@ -444,6 +490,47 @@ def test_TCPInterface_compute_reconnect_delay_custom_parameters() -> None:
             # Without cap: 2.0 * 2.0^5 = 64.0
             # With cap: min(60.0, 64.0) = 60.0
             assert iface._compute_reconnect_delay() == 60.0
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_write_times_out_before_select_when_deadline_elapsed() -> None:
+    """_write_bytes should raise TimeoutError when no write budget remains."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+            with (
+                patch(
+                    "meshtastic.tcp_interface.time.monotonic",
+                    side_effect=[0.0, 9999.0],
+                ),
+                pytest.raises(TimeoutError, match="timed out waiting for socket readiness"),
+            ):
+                iface._write_bytes(b"abc")
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_write_raises_when_send_returns_zero_bytes() -> None:
+    """_write_bytes should treat zero-byte sends as a socket write failure."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            mock_socket.send.return_value = 0
+            iface.socket = mock_socket
+
+            with (
+                patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])),
+                pytest.raises(OSError, match="TCP write returned no bytes"),
+            ):
+                iface._write_bytes(b"abc")
+
+            assert iface.socket is None
         finally:
             iface.close()
 

@@ -1126,33 +1126,43 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
             self.closed = False
 
         def __await__(self) -> Any:
-            if False:
-                yield None
-            return None
+            """Return an empty awaitable iterator that completes immediately."""
+            return iter(())
 
         def close(self) -> None:
+            """Track explicit coroutine close calls."""
             self.closed = True
 
     awaitable = _AwaitableClose()
 
     class _Client:
         def close(self) -> Any:
+            """Return the awaitable close result used by this test."""
             return awaitable
 
     class _Loop:
         @staticmethod
         def create_task(_task: Any) -> None:
+            """Simulate loop task scheduling failure."""
             raise RuntimeError("cannot schedule task")
 
-    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", lambda: _Loop())
-    monkeypatch.setattr(
-        discovery_mod, "_await_close_result", lambda awaitable: awaitable
-    )
-    monkeypatch.setattr(
-        discovery_mod.asyncio,
-        "wait_for",
-        lambda awaitable, _timeout=None, **_kwargs: awaitable,
-    )
+    def _get_running_loop() -> _Loop:
+        """Return the fake running event loop."""
+        return _Loop()
+
+    def _await_close_result_passthrough(awaitable: Any) -> Any:
+        """Keep awaitable unchanged for deterministic unit-test behavior."""
+        return awaitable
+
+    def _wait_for_passthrough(
+        awaitable: Any, _timeout: float | None = None, **_kwargs: Any
+    ) -> Any:
+        """Bypass timeout wrapping to keep this branch deterministic."""
+        return awaitable
+
+    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
+    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
     monkeypatch.setattr(
         discovery_mod.inspect,
         "iscoroutine",
@@ -1163,6 +1173,100 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
     _close_discovery_client_best_effort(_Client())
 
     assert awaitable.closed is True
+
+
+def test_finalize_discovery_close_task_discards_task_and_logs_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_finalize_discovery_close_task should drop retained tasks and log non-cancel exceptions."""
+
+    class _Task:
+        def exception(self) -> Exception:
+            """Return a deterministic task failure for log assertion."""
+            return RuntimeError("close task failed")
+
+    task = _Task()
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.add(task)
+
+    with caplog.at_level(logging.DEBUG):
+        discovery_mod._finalize_discovery_close_task(task)  # type: ignore[arg-type]
+
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+    assert "Async close/disconnect failed for discarded discovery client." in caplog.text
+
+
+def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Best-effort async close should retain task until done callback executes."""
+
+    class _AwaitableClose:
+        def __await__(self) -> Any:
+            """Return an empty awaitable iterator that completes immediately."""
+            return iter(())
+
+    class _Client:
+        def close(self) -> Any:
+            """Return an awaitable close result for scheduling."""
+            return _AwaitableClose()
+
+    class _Task:
+        def __init__(self) -> None:
+            self._callbacks: list[Callable[[Any], None]] = []
+
+        def add_done_callback(self, callback: Callable[[Any], None]) -> None:
+            """Store done callbacks for explicit invocation by the test."""
+            self._callbacks.append(callback)
+
+        def exception(self) -> None:
+            """Expose successful task completion."""
+            return None
+
+    task = _Task()
+
+    class _Loop:
+        @staticmethod
+        def create_task(_awaitable: Any) -> _Task:
+            """Return the retained task used for callback assertions."""
+            return task
+
+    def _get_running_loop() -> _Loop:
+        """Return the fake running event loop."""
+        return _Loop()
+
+    def _await_close_result_passthrough(awaitable: Any) -> Any:
+        """Keep awaitable unchanged for deterministic unit-test behavior."""
+        return awaitable
+
+    def _wait_for_passthrough(
+        awaitable: Any, _timeout: float | None = None, **_kwargs: Any
+    ) -> Any:
+        """Bypass timeout wrapping to keep this branch deterministic."""
+        return awaitable
+
+    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
+    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
+
+    _close_discovery_client_best_effort(_Client())
+
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        assert task in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+    assert len(task._callbacks) == 1
+
+    task._callbacks[0](task)
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+
+
+def test_discovery_manager_raises_when_factory_returns_none() -> None:
+    """DiscoveryManager should raise DiscoveryClientError for None-returning factories."""
+    manager = DiscoveryManager(client_factory=lambda: None)
+
+    with pytest.raises(DiscoveryClientError, match="returned None"):
+        manager._discover_devices(address=None)
 
 
 def test_parse_scan_response_prefers_exact_name_before_normalized_match():

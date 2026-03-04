@@ -133,6 +133,16 @@ class TestBLEStateManager:
         )  # Can't go back to CONNECTING from CONNECTED
         assert manager._current_state == ConnectionState.CONNECTED
 
+    def test_transition_if_in_returns_false_for_unexpected_state(self) -> None:
+        """_transition_if_in should reject transitions when state is outside expected set."""
+        manager = BLEStateManager()
+        manager._state = ConnectionState.CONNECTED
+
+        assert not manager._transition_if_in(
+            {ConnectionState.DISCONNECTED}, ConnectionState.CONNECTING
+        )
+        assert manager._current_state == ConnectionState.CONNECTED
+
     @given(
         st.lists(
             st.sampled_from(list(ConnectionState)),
