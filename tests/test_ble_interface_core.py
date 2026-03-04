@@ -1557,19 +1557,29 @@ def test_close_closes_discovery_manager_before_receive_thread_join(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
     discovery_closed = threading.Event()
+    join_called = threading.Event()
+    stop_worker = threading.Event()
 
     class _DiscoveryManager:
         def close(self) -> None:
             discovery_closed.set()
 
     iface._discovery_manager = _DiscoveryManager()  # type: ignore[assignment]
-    iface._receiveThread = threading.Thread(target=lambda: None, name="BLEReceiveTest")
+    receive_thread = threading.Thread(
+        target=lambda: stop_worker.wait(1.0),
+        name="BLEReceiveTest",
+    )
+    receive_thread.start()
+    iface._receiveThread = receive_thread
 
     def _assert_join_after_discovery_close(
         _thread: threading.Thread, timeout: float | None = None
     ) -> None:
-        _ = (_thread, timeout)
+        """Assert discovery closes before join and then join the receive thread."""
         assert discovery_closed.is_set()
+        join_called.set()
+        stop_worker.set()
+        _thread.join(timeout=timeout)
 
     monkeypatch.setattr(
         iface.thread_coordinator,
@@ -1579,6 +1589,9 @@ def test_close_closes_discovery_manager_before_receive_thread_join(
 
     iface.close()
     assert discovery_closed.is_set()
+    assert join_called.is_set()
+    receive_thread.join(timeout=0.5)
+    assert not receive_thread.is_alive()
 
 
 def test_close_clears_ble_threads(monkeypatch):
@@ -1948,9 +1961,12 @@ def test_read_from_radio_with_retries_polling_mode_does_single_read(
         def __init__(self) -> None:
             super().__init__()
             self.read_count = 0
+            self.last_timeout: float | None = None
 
         def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
             self.read_count += 1
+            timeout_value = _kwargs.get("timeout")
+            self.last_timeout = cast(float | None, timeout_value)
             return b""
 
     client = EmptyReadClient()
@@ -1963,6 +1979,7 @@ def test_read_from_radio_with_retries_polling_mode_does_single_read(
 
     assert result is None
     assert client.read_count == 1
+    assert client.last_timeout == ble_mod.BLEConfig.RECEIVE_WAIT_TIMEOUT
 
     iface.close()
 

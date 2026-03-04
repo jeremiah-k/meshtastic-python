@@ -224,6 +224,17 @@ class PPK2PowerSupply(PowerSupply):
         with self._want_measurement:
             self._want_measurement.notify()  # notify the measurement loop to read immediately
 
+    # COMPAT_STABLE_SHIM: snake_case compatibility shim
+    def reset_measurements(self) -> None:
+        """Call `resetMeasurements` using the stable snake_case compatibility name.
+
+        Returns
+        -------
+        None
+            This method delegates directly to :meth:`resetMeasurements`.
+        """
+        self.resetMeasurements()
+
     def close(self) -> None:
         """Close the power meter and release resources."""
         with self._measurement_state_lock:

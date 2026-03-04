@@ -1862,7 +1862,8 @@ class BLEInterface(MeshInterface):
             The connected BLE client to read from.
         retry_on_empty : bool
             Whether to retry and back off on empty reads. When False, performs
-            a single non-blocking poll read. (Default value = True)
+            a single short-duration poll read using
+            ``BLEConfig.RECEIVE_WAIT_TIMEOUT``. (Default value = True)
 
         Returns
         -------
@@ -1870,8 +1871,11 @@ class BLEInterface(MeshInterface):
             The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
         """
         max_retries = BLEConfig.EMPTY_READ_MAX_RETRIES if retry_on_empty else 0
+        read_timeout = (
+            GATT_IO_TIMEOUT if retry_on_empty else BLEConfig.RECEIVE_WAIT_TIMEOUT
+        )
         for attempt in range(max_retries + 1):
-            payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
+            payload = client.read_gatt_char(FROMRADIO_UUID, timeout=read_timeout)
             if payload:
                 self._suppressed_empty_read_warnings = 0
                 return payload
@@ -2032,8 +2036,10 @@ class BLEInterface(MeshInterface):
             discovery_manager = self._discovery_manager
             self._discovery_manager = None
             if discovery_manager is not None:
-                # Close discovery early so in-flight scan/connect waits can be canceled
-                # promptly during process shutdown.
+                # Close discovery early to request graceful cleanup of the
+                # persistent discovery client/resources before downstream
+                # shutdown steps. This does not guarantee immediate cancellation
+                # of all in-flight scan/connect operations.
                 self.error_handler._safe_cleanup(
                     discovery_manager.close, "discovery manager close"
                 )

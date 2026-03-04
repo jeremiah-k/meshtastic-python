@@ -642,6 +642,8 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
         client_manager._connect_client.call_args_list[0].kwargs["timeout"]
         == expected_timeout
     )
+    # Discovery fallback in this path uses _connect_client(..., timeout=None)
+    # to explicitly disable the direct-connect timeout budget.
     assert client_manager._connect_client.call_args_list[1].kwargs["timeout"] is None
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
@@ -710,6 +712,8 @@ def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_devi
         client_manager._connect_client.call_args_list[1].kwargs["timeout"]
         == expected_timeout
     )
+    # After two explicit-address failures, the discovery-scan retry path calls
+    # _connect_client(client) without a timeout kwarg to use default behavior.
     assert "timeout" not in client_manager._connect_client.call_args_list[2].kwargs
     assert client_manager._safe_close_client.call_count == 2
     orchestrator._finalize_connection.assert_called_once_with(
@@ -757,6 +761,8 @@ def test_connection_orchestrator_handles_bleak_dbus_error_during_connect() -> No
         )
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
+    # BleakDBusError is a BleakError: one cleanup happens on direct-connect
+    # failure path, then outer BleakDBusError handling performs final cleanup.
     assert client_manager._safe_close_client.call_count == 2
 
 
