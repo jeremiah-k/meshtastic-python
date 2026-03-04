@@ -1014,9 +1014,7 @@ class BLEInterface(MeshInterface):
                         timeout=NOTIFICATION_START_TIMEOUT,
                     )
                 if attempt + 1 < max_attempts:
-                    _sleep(
-                        BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1)
-                    )
+                    _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1))
                     continue
                 logger.warning(
                     "Unable to start FROMNUM notifications for %s after %d attempts due to BlueZ 'Notify acquired'; falling back to polling reads.",

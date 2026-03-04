@@ -30,9 +30,10 @@ This document tracks coding standards and API refactoring decisions for the Mesh
 
 ## BLE API Refactoring Decisions
 
-Canonical BLE compatibility baseline and matrix now live in
-`CONTRIBUTING.md` under **API naming and compatibility policy**.
-Use that section as the single source of truth for:
+Canonical compatibility/deprecation inventory now lives in
+`COMPATIBILITY.md`.
+`CONTRIBUTING.md` keeps the policy summary and links to the inventory.
+Use `COMPATIBILITY.md` as the single source of truth for:
 
 - pinned BLE baseline (`2.7.7`),
 - required historical BLE compatibility shims (including
@@ -90,9 +91,12 @@ Quick inventory command:
 
 ### Compatibility Alias Inventory (source of truth)
 
-- Treat the pinned BLE 2.7.7 matrix in `CONTRIBUTING.md` as authoritative for historical BLE compatibility names.
-- Treat `COMPAT_STABLE_SHIM` / `COMPAT_DEPRECATE` markers as the grep-able inventory for intentionally maintained aliases elsewhere in the codebase.
-- If a symbol is not in the BLE matrix and is not marked with a `COMPAT_*` marker, do not add compatibility aliases by default.
+- Treat `COMPATIBILITY.md` as authoritative for maintained compatibility names,
+  warning policy, and status.
+- Treat `COMPAT_STABLE_SHIM` / `COMPAT_DEPRECATE` markers as the grep-able
+  implementation inventory for intentionally maintained aliases.
+- If a symbol is not listed in `COMPATIBILITY.md` and is not marked with a
+  `COMPAT_*` marker in code, do not add compatibility aliases by default.
 - `meshtastic.interfaces.ble.runner.get_zombie_runner_count()` is internal diagnostics and intentionally remains snake_case-only unless explicitly approved to expand public surface.
 
 Current `COMPAT_DEPRECATE` methods:
@@ -101,6 +105,7 @@ Current `COMPAT_DEPRECATE` methods:
 - util: `dotdict` (class alias to `DotDict`, warn-once)
 - Slog: `root_dir`, `PowerLogger.store_current_reading` (warn-once)
 - Powermon: `PowerMeter.getAverageCurrentmA`, `PowerMeter.getMinCurrentmA`, `PowerMeter.getMaxCurrentmA`
+- BLE runner: `_run_coroutine_threadsafe(timeout=...)` alias for `startup_timeout=...` (warn-once)
 
 ## Powermon API Refactoring Decisions
 

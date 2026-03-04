@@ -1,11 +1,11 @@
 """Utilities for Apache Arrow serialization."""
 
-from copy import deepcopy
 import logging
 import os
 import tempfile
 import threading
 import types
+from copy import deepcopy
 
 import pyarrow as pa
 
@@ -356,7 +356,9 @@ class FeatherWriter(ArrowWriter):
                 conversion_succeeded = True
                 return
             if os.path.getsize(src_name) == 0:
-                self._discard_empty_source(src_name, dest_name, DISCARD_EMPTY_FILE_MESSAGE)
+                self._discard_empty_source(
+                    src_name, dest_name, DISCARD_EMPTY_FILE_MESSAGE
+                )
                 conversion_succeeded = True
                 return
 

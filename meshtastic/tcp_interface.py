@@ -14,7 +14,7 @@ import threading
 import time
 from typing import IO, Any, Callable
 
-from meshtastic.stream_interface import StreamInterface, WRITE_PROGRESS_TIMEOUT_SECONDS
+from meshtastic.stream_interface import WRITE_PROGRESS_TIMEOUT_SECONDS, StreamInterface
 
 DEFAULT_TCP_PORT = 4403
 logger = logging.getLogger(__name__)

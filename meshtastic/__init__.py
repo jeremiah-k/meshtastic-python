@@ -46,7 +46,7 @@ unicode scripts they can be different.
 ```
 import meshtastic
 import meshtastic.serial_interface
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 def onReceive(packet, interface): # called when a packet arrives
     print(f"Received: {packet}")
@@ -62,15 +62,15 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 ```
 """
+
 # ruff: noqa: F401
 
 import copy
 import logging
 from importlib import import_module
-from typing import Any, Callable, NamedTuple, TypeGuard
+from typing import Any, Callable, NamedTuple, TypeGuard, cast
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub
 
 from meshtastic.node import Node
 from meshtastic.util import (
@@ -95,6 +95,8 @@ from .protobuf import (
     storeforward_pb2,
     telemetry_pb2,
 )
+
+pub = cast(Any, import_module("pubsub.pub"))
 
 # Keep this module aligned with historical master behavior by intentionally not
 # defining __all__. Public names remain available as module attributes.
@@ -123,6 +125,7 @@ def __getattr__(name: str) -> Any:
     AttributeError
         If the requested attribute is not provided by this lazy loader.
     """
+    # COMPAT_STABLE_SHIM: preserve historical `meshtastic.serial` module access.
     if name == "serial":
         # Keep historical `meshtastic.serial` access, but map it to our
         # internal serial interface module (not the third-party pyserial module).

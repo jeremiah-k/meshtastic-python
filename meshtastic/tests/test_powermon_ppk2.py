@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 
 try:
-    from meshtastic.powermon.ppk2 import PPK2PowerSupply
     from meshtastic.powermon.power_supply import PowerSupply
+    from meshtastic.powermon.ppk2 import PPK2PowerSupply
 except ImportError:
     pytest.skip("Can't import PPK2PowerSupply", allow_module_level=True)
 

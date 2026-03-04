@@ -1,5 +1,7 @@
 """Meshtastic unit tests for mesh_interface.py."""
 
+# pylint: disable=too-many-lines
+
 import builtins
 import importlib.util
 import io
@@ -10,7 +12,7 @@ import time
 import types
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -55,7 +57,9 @@ def test_mesh_interface_import_handles_missing_print_color(
         level: int = 0,
     ) -> Any:
         if name == "print_color":
-            raise ImportError("simulated missing print_color") from None  # noqa: TRY003 - intentional test sentinel
+            raise ImportError(
+                "simulated missing print_color"
+            ) from None  # noqa: TRY003 - intentional test sentinel
         return real_import(name, globals_dict, locals_dict, from_list, level)
 
     monkeypatch.setattr(builtins, "__import__", _import_with_print_color_failure)
@@ -1408,7 +1412,11 @@ def test_init_subscribes_log_line_when_debug_output_enabled(
     def _subscribe(handler: Any, topic: str) -> None:
         subscribed.append((handler, topic))
 
-    monkeypatch.setattr(mesh_interface_module.pub, "subscribe", _subscribe)
+    monkeypatch.setattr(
+        mesh_interface_module.pub,  # type: ignore[attr-defined]
+        "subscribe",
+        _subscribe,
+    )
 
     with MeshInterface(noProto=True, debugOut=io.StringIO()):
         pass
@@ -1447,7 +1455,7 @@ def test_print_log_line_and_record_handlers(monkeypatch: pytest.MonkeyPatch) -> 
     MeshInterface._print_log_line("callable", interface)
     assert captured_callable == ["callable"]
 
-    interface.debugOut = mesh_interface_module.sys.stdout
+    interface.debugOut = mesh_interface_module.sys.stdout  # type: ignore[attr-defined]
     MeshInterface._print_log_line("DEBUG log", interface)
     MeshInterface._print_log_line("INFO log", interface)
     MeshInterface._print_log_line("WARN log", interface)
@@ -1460,7 +1468,7 @@ def test_print_log_line_and_record_handlers(monkeypatch: pytest.MonkeyPatch) -> 
 
     sent_lines: list[str] = []
     monkeypatch.setattr(
-        mesh_interface_module.pub,
+        mesh_interface_module.pub,  # type: ignore[attr-defined]
         "sendMessage",
         lambda _topic, **kwargs: sent_lines.append(kwargs["line"]),
     )
@@ -1493,10 +1501,12 @@ def test_show_nodes_nested_value_helper_paths() -> None:
         for const in MeshInterface.showNodes.__code__.co_consts
         if isinstance(const, types.CodeType) and const.co_name == "_get_nested_value"
     )
-    get_nested_value = types.FunctionType(code_obj, {})
+    get_nested_value = cast(Callable[[Any, str], Any], types.FunctionType(code_obj, {}))
 
+    # pylint: disable=not-callable
     assert get_nested_value("not-a-dict", "user.id") is None
     assert get_nested_value({"shortName": "N1"}, "shortName") == "N1"
+    # pylint: enable=not-callable
 
 
 @pytest.mark.unit
@@ -1545,9 +1555,11 @@ def test_get_node_resets_retry_budget_on_new_channel_progress() -> None:
             self.wait_calls = 0
 
         def requestChannels(self, startingIndex: int = 0) -> None:
+            """Track channel request starting indexes."""
             self.request_calls.append(startingIndex)
 
         def waitForConfig(self) -> bool:
+            """Return False once before succeeding to simulate partial progress."""
             self.wait_calls += 1
             if self.wait_calls == 1:
                 self.partialChannels = [1]
@@ -1559,7 +1571,7 @@ def test_get_node_resets_retry_budget_on_new_channel_progress() -> None:
         with patch("meshtastic.node.Node", return_value=fake_node):
             result = iface.getNode("!00112233", requestChannelAttempts=2)
 
-    assert result is fake_node
+    assert cast(Any, result) is fake_node
     assert fake_node.request_calls == [0, 1]
 
 
@@ -1586,9 +1598,7 @@ def test_send_alert_and_mqtt_proxy_paths(monkeypatch: pytest.MonkeyPatch) -> Non
         assert send_args.kwargs["priority"] == mesh_pb2.MeshPacket.Priority.ALERT
 
         sent_to_radio: list[mesh_pb2.ToRadio] = []
-        monkeypatch.setattr(
-            iface, "_send_to_radio", lambda msg: sent_to_radio.append(msg)
-        )
+        monkeypatch.setattr(iface, "_send_to_radio", sent_to_radio.append)
         iface.sendMqttClientProxyMessage("mesh/topic", b"payload")
 
         assert sent_to_radio
@@ -1624,7 +1634,11 @@ def test_send_position_waits_when_response_requested(
             wantResponse=True,
         )
 
-        assert send_data.call_args.kwargs["onResponse"] == iface.onResponsePosition
+        on_response = send_data.call_args.kwargs["onResponse"]
+        assert getattr(on_response, "__self__", None) is iface
+        assert (
+            getattr(on_response, "__func__", None) is MeshInterface.onResponsePosition
+        )
         wait_for_position.assert_called_once()
 
 
@@ -1772,7 +1786,7 @@ def test_send_telemetry_supported_and_fallback_paths(
         iface.sendTelemetry(telemetryType="local_stats")
         iface.sendTelemetry(telemetryType="device_metrics")
         with pytest.warns(DeprecationWarning):
-            iface.sendTelemetry(telemetryType="invalid")  # type: ignore[arg-type]
+            iface.sendTelemetry(telemetryType="invalid")
         iface.sendTelemetry(telemetryType="device_metrics", wantResponse=True)
 
     assert telemetry_calls[0][0].HasField("environment_metrics")
@@ -1882,14 +1896,16 @@ def test_send_and_delete_waypoint_response_paths(
         monkeypatch.setattr(iface, "waitForWaypoint", wait_for_waypoint)
 
         def _capture_send_data(
-            payload: mesh_pb2.Waypoint, *args: Any, **kwargs: Any
+            payload: mesh_pb2.Waypoint, *_args: Any, **_kwargs: Any
         ) -> mesh_pb2.MeshPacket:
             sent_payloads.append(payload)
             return mesh_pb2.MeshPacket()
 
         monkeypatch.setattr(iface, "sendData", _capture_send_data)
         monkeypatch.setattr(
-            mesh_interface_module.secrets, "randbits", lambda _n: (1 << 32) - 1
+            mesh_interface_module.secrets,  # type: ignore[attr-defined]
+            "randbits",
+            lambda _n: (1 << 32) - 1,
         )
 
         iface.sendWaypoint(
@@ -1933,7 +1949,7 @@ def test_send_packet_calls_transport_when_proto_enabled(
         iface.myInfo = MagicMock()
         iface.myInfo.my_node_num = 1
         sent: list[mesh_pb2.ToRadio] = []
-        monkeypatch.setattr(iface, "_send_to_radio", lambda msg: sent.append(msg))
+        monkeypatch.setattr(iface, "_send_to_radio", sent.append)
         iface._send_packet(mesh_pb2.MeshPacket(), destinationId=1)
         assert sent
 
@@ -1967,10 +1983,11 @@ def test_wait_helpers_raise_expected_timeout_errors() -> None:
 def test_public_key_and_optional_getters_none_paths(
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """getPublicKey should return user key while optional local-node getters return None when absent."""
+    """GetPublicKey should return user key while optional local-node getters return None when absent."""
     iface = iface_with_nodes
     assert iface.myInfo is not None
     iface.myInfo.my_node_num = 2475227164
+    assert iface.nodesByNum is not None
     node = iface.nodesByNum[2475227164]
     node["user"]["publicKey"] = b"abc"
     assert iface.getPublicKey() == b"abc"
@@ -1992,7 +2009,7 @@ def test_send_heartbeat_builds_to_radio_heartbeat(
     """sendHeartbeat() should send a ToRadio with heartbeat field populated."""
     with MeshInterface(noProto=True) as iface:
         sent: list[mesh_pb2.ToRadio] = []
-        monkeypatch.setattr(iface, "_send_to_radio", lambda msg: sent.append(msg))
+        monkeypatch.setattr(iface, "_send_to_radio", sent.append)
         iface.sendHeartbeat()
         assert sent[0].HasField("heartbeat")
 
@@ -2005,12 +2022,12 @@ def test_start_config_skips_reserved_nodeless_id(
     """_start_config() should bump generated config id if it equals NODELESS_WANT_CONFIG_ID."""
     with MeshInterface(noProto=True) as iface:
         monkeypatch.setattr(
-            mesh_interface_module.random,
+            mesh_interface_module.random,  # type: ignore[attr-defined]
             "randint",
             lambda _a, _b: NODELESS_WANT_CONFIG_ID,
         )
         sent: list[mesh_pb2.ToRadio] = []
-        monkeypatch.setattr(iface, "_send_to_radio", lambda msg: sent.append(msg))
+        monkeypatch.setattr(iface, "_send_to_radio", sent.append)
         iface._start_config()
     assert iface.configId == NODELESS_WANT_CONFIG_ID + 1
     assert sent[0].want_config_id == NODELESS_WANT_CONFIG_ID + 1
@@ -2072,7 +2089,11 @@ def test_send_to_radio_waits_resends_and_tracks_requeue(
             assert iface.queueStatus is not None
             iface.queueStatus.free = 10
 
-        monkeypatch.setattr(mesh_interface_module.time, "sleep", _sleep_and_free)
+        monkeypatch.setattr(
+            mesh_interface_module.time,  # type: ignore[attr-defined]
+            "sleep",
+            _sleep_and_free,
+        )
 
         with caplog.at_level(logging.DEBUG):
             iface._send_to_radio(incoming)
@@ -2085,7 +2106,7 @@ def test_send_to_radio_waits_resends_and_tracks_requeue(
         def __bool__(self) -> bool:
             return False
 
-        def pop(
+        def pop(  # type: ignore[override]
             self, key: int, default: mesh_pb2.ToRadio | bool = False
         ) -> mesh_pb2.ToRadio | bool:
             if key == 123:
@@ -2123,17 +2144,17 @@ def test_handle_config_complete_and_queue_status_branches() -> None:
         queued.packet.id = 111
         iface.queue[111] = queued
 
-        status_hit = mesh_pb2.QueueStatus(free=1, maxlen=4, res=False, mesh_packet_id=111)
+        status_hit = mesh_pb2.QueueStatus(free=1, maxlen=4, res=0, mesh_packet_id=111)
         iface._handle_queue_status_from_radio(status_hit)
         assert 111 not in iface.queue
 
         status_unexpected = mesh_pb2.QueueStatus(
-            free=1, maxlen=4, res=False, mesh_packet_id=222
+            free=1, maxlen=4, res=0, mesh_packet_id=222
         )
         iface._handle_queue_status_from_radio(status_unexpected)
         assert iface.queue[222] is False
 
-        status_res = mesh_pb2.QueueStatus(free=1, maxlen=4, res=True, mesh_packet_id=222)
+        status_res = mesh_pb2.QueueStatus(free=1, maxlen=4, res=1, mesh_packet_id=222)
         iface._handle_queue_status_from_radio(status_res)
         assert iface.queue[222] is False
 
@@ -2147,10 +2168,12 @@ def test_handle_from_radio_branch_matrix(
     """_handle_from_radio() should handle metadata/node-info and non-config branch dispatch paths."""
     published_topics: list[str] = []
     monkeypatch.setattr(
-        mesh_interface_module.publishingThread, "queueWork", lambda callback: callback()
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
     )
     monkeypatch.setattr(
-        mesh_interface_module.pub,
+        mesh_interface_module.pub,  # type: ignore[attr-defined]
         "sendMessage",
         lambda topic, **_kwargs: published_topics.append(topic),
     )
@@ -2182,7 +2205,9 @@ def test_handle_from_radio_branch_matrix(
         monkeypatch.setattr(iface, "_handle_channel", handle_channel)
         monkeypatch.setattr(iface, "_handle_packet_from_radio", handle_packet)
         monkeypatch.setattr(iface, "_handle_log_record", handle_log_record)
-        monkeypatch.setattr(iface, "_handle_queue_status_from_radio", handle_queue_status)
+        monkeypatch.setattr(
+            iface, "_handle_queue_status_from_radio", handle_queue_status
+        )
 
         config_complete_msg = mesh_pb2.FromRadio()
         assert iface.configId is not None
@@ -2220,7 +2245,7 @@ def test_handle_from_radio_branch_matrix(
         iface._handle_from_radio(mqtt_msg.SerializeToString())
 
         xmodem_msg = mesh_pb2.FromRadio()
-        xmodem_msg.xmodemPacket.control = 1
+        xmodem_msg.xmodemPacket.control = cast(Any, 1)
         iface._handle_from_radio(xmodem_msg.SerializeToString())
 
         disconnected_calls: list[int] = []
@@ -2282,13 +2307,13 @@ def test_handle_from_radio_config_and_module_config_branches() -> None:
             msg = mesh_pb2.FromRadio()
             getattr(msg.config, field).SetInParent()
             iface._handle_from_radio(msg.SerializeToString())
-            assert iface.localNode.localConfig.HasField(field)
+            assert iface.localNode.localConfig.HasField(cast(Any, field))
 
         for field in module_fields:
             msg = mesh_pb2.FromRadio()
             getattr(msg.moduleConfig, field).SetInParent()
             iface._handle_from_radio(msg.SerializeToString())
-            assert iface.localNode.moduleConfig.HasField(field)
+            assert iface.localNode.moduleConfig.HasField(cast(Any, field))
 
 
 @pytest.mark.unit
@@ -2332,7 +2357,9 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
 ) -> None:
     """_handle_packet_from_radio() should log toId failures and execute protobuf/response-handler paths."""
     monkeypatch.setattr(
-        mesh_interface_module.publishingThread, "queueWork", lambda callback: callback()
+        mesh_interface_module.publishingThread,  # type: ignore[attr-defined]
+        "queueWork",
+        lambda callback: callback(),
     )
 
     with MeshInterface(noProto=True) as iface:

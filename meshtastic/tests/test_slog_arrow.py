@@ -183,7 +183,9 @@ def test_feather_writer_discard_empty_source_logs_remove_failure(
             )
 
     assert "Failed to remove empty Arrow source file" in caplog.text
-    writer._remove_stale_dest_file.assert_called_once_with(str(tmp_path / "dest.feather"))
+    writer._remove_stale_dest_file.assert_called_once_with(
+        str(tmp_path / "dest.feather")
+    )
 
 
 @pytest.mark.unit
@@ -196,7 +198,7 @@ def test_feather_writer_close_returns_early_when_conversion_already_set(
     conversion_in_progress: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """close should return early when conversion is already done or in-progress."""
+    """Close should return early when conversion is already done or in-progress."""
     writer = object.__new__(FeatherWriter)
     writer._lock = threading.RLock()
     writer._conversion_done = conversion_done
@@ -215,7 +217,7 @@ def test_feather_writer_close_treats_missing_source_as_success(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """close should remove stale destination and finish when source file is missing."""
+    """Close should remove stale destination and finish when source file is missing."""
     writer = object.__new__(FeatherWriter)
     writer._lock = threading.RLock()
     writer._conversion_done = False
@@ -224,7 +226,7 @@ def test_feather_writer_close_treats_missing_source_as_success(
     writer._remove_stale_dest_file = MagicMock()  # type: ignore[method-assign]
 
     monkeypatch.setattr(arrow_module.ArrowWriter, "close", lambda _self: None)
-    monkeypatch.setattr(arrow_module.os.path, "exists", lambda _path: False)
+    monkeypatch.setattr(arrow_module.os.path, "exists", lambda _path: False)  # type: ignore[attr-defined]
 
     writer.close()
 
@@ -240,7 +242,7 @@ def test_feather_writer_close_discards_zero_size_source(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """close should route zero-size Arrow sources through discard helper."""
+    """Close should route zero-size Arrow sources through discard helper."""
     writer = object.__new__(FeatherWriter)
     writer._lock = threading.RLock()
     writer._conversion_done = False
@@ -249,8 +251,8 @@ def test_feather_writer_close_discards_zero_size_source(
     writer._discard_empty_source = MagicMock()  # type: ignore[method-assign]
 
     monkeypatch.setattr(arrow_module.ArrowWriter, "close", lambda _self: None)
-    monkeypatch.setattr(arrow_module.os.path, "exists", lambda _path: True)
-    monkeypatch.setattr(arrow_module.os.path, "getsize", lambda _path: 0)
+    monkeypatch.setattr(arrow_module.os.path, "exists", lambda _path: True)  # type: ignore[attr-defined]
+    monkeypatch.setattr(arrow_module.os.path, "getsize", lambda _path: 0)  # type: ignore[attr-defined]
 
     writer.close()
 
@@ -268,7 +270,7 @@ def test_feather_writer_close_logs_when_temp_remove_fails_for_empty_batches(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    """close should warn when temp Feather cleanup fails in empty-batch conversion path."""
+    """Close should warn when temp Feather cleanup fails in empty-batch conversion path."""
     base_path = tmp_path / "empty-batches"
     writer = FeatherWriter(str(base_path))
     writer.setSchema(_test_schema())
@@ -280,7 +282,9 @@ def test_feather_writer_close_logs_when_temp_remove_fails_for_empty_batches(
         original_remove(path)
 
     with caplog.at_level(logging.WARNING):
-        with patch("meshtastic.slog.arrow.os.remove", side_effect=_remove_with_temp_failure):
+        with patch(
+            "meshtastic.slog.arrow.os.remove", side_effect=_remove_with_temp_failure
+        ):
             writer.close()
 
     assert "Failed to remove temporary Feather file" in caplog.text
@@ -291,7 +295,7 @@ def test_feather_writer_close_logs_when_temp_remove_fails_after_conversion_excep
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    """close should warn if temp Feather file cannot be removed after conversion failure."""
+    """Close should warn if temp Feather file cannot be removed after conversion failure."""
     base_path = tmp_path / "conversion-exception"
     writer = FeatherWriter(str(base_path))
     writer.setSchema(_test_schema())
@@ -309,7 +313,9 @@ def test_feather_writer_close_logs_when_temp_remove_fails_after_conversion_excep
                 "meshtastic.slog.arrow.pa.memory_map",
                 side_effect=RuntimeError("conversion failed"),
             ),
-            patch("meshtastic.slog.arrow.os.remove", side_effect=_remove_with_temp_failure),
+            patch(
+                "meshtastic.slog.arrow.os.remove", side_effect=_remove_with_temp_failure
+            ),
             pytest.raises(RuntimeError, match="conversion failed"),
         ):
             writer.close()
@@ -322,7 +328,7 @@ def test_feather_writer_close_logs_when_source_remove_fails_after_success(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    """close should warn and continue if temporary Arrow source removal fails."""
+    """Close should warn and continue if temporary Arrow source removal fails."""
     base_path = tmp_path / "source-remove-fail"
     writer = FeatherWriter(str(base_path))
     writer.setSchema(_test_schema())
@@ -336,7 +342,9 @@ def test_feather_writer_close_logs_when_source_remove_fails_after_success(
         original_remove(path)
 
     with caplog.at_level(logging.WARNING):
-        with patch("meshtastic.slog.arrow.os.remove", side_effect=_remove_with_source_failure):
+        with patch(
+            "meshtastic.slog.arrow.os.remove", side_effect=_remove_with_source_failure
+        ):
             writer.close()
 
     assert "Failed to remove temporary Arrow source file" in caplog.text

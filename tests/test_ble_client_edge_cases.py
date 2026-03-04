@@ -8,6 +8,7 @@ import pytest
 
 try:
     from bleak.exc import BleakError
+
     from meshtastic.interfaces.ble.client import (
         SERVICE_CHARACTERISTIC_RETRY_COUNT,
         BLEClient,
@@ -32,7 +33,9 @@ def test_bleclient_discovery_mode_without_address(ble_client: BLEClient) -> None
 
 
 @pytest.mark.unit
-def test_bleclient_isConnected_handles_missing_bleak_client(ble_client: BLEClient) -> None:
+def test_bleclient_isConnected_handles_missing_bleak_client(
+    ble_client: BLEClient,
+) -> None:
     """IsConnected should return False when bleak_client is None."""
     assert not ble_client.isConnected()
 
@@ -69,19 +72,29 @@ def test_bleclient_error_class_exists() -> None:
 @pytest.mark.unit
 def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) -> None:
     """BLEClient operations should raise BLEError when bleak_client is not initialized."""
-    with pytest.raises(BLEClient.BLEError, match="Cannot connect: BLE client not initialized"):
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot connect: BLE client not initialized"
+    ):
         ble_client.connect()
 
-    with pytest.raises(BLEClient.BLEError, match="Cannot disconnect: BLE client not initialized"):
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot disconnect: BLE client not initialized"
+    ):
         ble_client.disconnect()
 
-    with pytest.raises(BLEClient.BLEError, match="Cannot read: BLE client not initialized"):
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot read: BLE client not initialized"
+    ):
         ble_client.read_gatt_char("uuid")
 
-    with pytest.raises(BLEClient.BLEError, match="Cannot write: BLE client not initialized"):
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot write: BLE client not initialized"
+    ):
         ble_client.write_gatt_char("uuid", b"data")
 
-    with pytest.raises(BLEClient.BLEError, match="Cannot pair: BLE client not initialized"):
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot pair: BLE client not initialized"
+    ):
         ble_client.pair()
 
     with pytest.raises(
@@ -94,7 +107,9 @@ def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) 
     ):
         ble_client.start_notify("uuid", lambda *_args: None)
 
-    with pytest.raises(BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"):
+    with pytest.raises(
+        BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"
+    ):
         ble_client.stopNotify("uuid")
 
 

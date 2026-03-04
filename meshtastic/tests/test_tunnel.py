@@ -4,8 +4,8 @@ import argparse
 import logging
 import re
 import sys
-from contextlib import contextmanager
 from collections.abc import Generator
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest

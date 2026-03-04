@@ -40,55 +40,53 @@ class BLEStateManager:
     for clearer connection management and reduced complexity.
     """
 
-    _VALID_TRANSITIONS: ClassVar[
-        dict[ConnectionState, frozenset[ConnectionState]]
-    ] = {
+    _VALID_TRANSITIONS: ClassVar[dict[ConnectionState, frozenset[ConnectionState]]] = {
         ConnectionState.DISCONNECTED: frozenset(
             {
-            ConnectionState.CONNECTING,
-            ConnectionState.ERROR,
-            # Note: DISCONNECTING is intentionally NOT allowed from DISCONNECTED.
-            # A disconnected interface cannot "begin disconnecting" - it's already disconnected.
-            # close() explicitly checks for DISCONNECTED state and skips the transition.
+                ConnectionState.CONNECTING,
+                ConnectionState.ERROR,
+                # Note: DISCONNECTING is intentionally NOT allowed from DISCONNECTED.
+                # A disconnected interface cannot "begin disconnecting" - it's already disconnected.
+                # close() explicitly checks for DISCONNECTED state and skips the transition.
             }
         ),
         ConnectionState.CONNECTING: frozenset(
             {
-            ConnectionState.CONNECTED,
-            ConnectionState.DISCONNECTING,
-            ConnectionState.ERROR,
-            ConnectionState.DISCONNECTED,
+                ConnectionState.CONNECTED,
+                ConnectionState.DISCONNECTING,
+                ConnectionState.ERROR,
+                ConnectionState.DISCONNECTED,
             }
         ),
         ConnectionState.CONNECTED: frozenset(
             {
-            ConnectionState.DISCONNECTING,
-            ConnectionState.RECONNECTING,
-            ConnectionState.DISCONNECTED,
-            ConnectionState.ERROR,
+                ConnectionState.DISCONNECTING,
+                ConnectionState.RECONNECTING,
+                ConnectionState.DISCONNECTED,
+                ConnectionState.ERROR,
             }
         ),
         ConnectionState.DISCONNECTING: frozenset(
             {
-            ConnectionState.DISCONNECTED,
-            ConnectionState.ERROR,
+                ConnectionState.DISCONNECTED,
+                ConnectionState.ERROR,
             }
         ),
         ConnectionState.RECONNECTING: frozenset(
             {
-            ConnectionState.CONNECTED,
-            ConnectionState.DISCONNECTING,
-            ConnectionState.CONNECTING,
-            ConnectionState.ERROR,
-            ConnectionState.DISCONNECTED,
+                ConnectionState.CONNECTED,
+                ConnectionState.DISCONNECTING,
+                ConnectionState.CONNECTING,
+                ConnectionState.ERROR,
+                ConnectionState.DISCONNECTED,
             }
         ),
         ConnectionState.ERROR: frozenset(
             {
-            ConnectionState.DISCONNECTED,
-            ConnectionState.DISCONNECTING,
-            ConnectionState.CONNECTING,
-            ConnectionState.RECONNECTING,
+                ConnectionState.DISCONNECTED,
+                ConnectionState.DISCONNECTING,
+                ConnectionState.CONNECTING,
+                ConnectionState.RECONNECTING,
             }
         ),
     }

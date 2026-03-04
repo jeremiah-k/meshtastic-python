@@ -18,7 +18,9 @@ def main() -> None:
         with meshtastic.tcp_interface.TCPInterface(RADIO_HOSTNAME) as iface:
             my_info = iface.myInfo
             if my_info is None:
-                logger.error("myInfo is not available - radio may not yet have joined a mesh.")
+                logger.error(
+                    "myInfo is not available - radio may not yet have joined a mesh."
+                )
                 return
 
             if my_info.my_node_num <= 0:

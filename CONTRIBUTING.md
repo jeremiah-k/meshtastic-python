@@ -30,10 +30,12 @@
 
 Use this policy for all code changes (especially AI-assisted refactors):
 
+- Canonical compatibility/deprecation inventory is maintained in
+  `COMPATIBILITY.md`.
 - New public API names should prefer `camelCase` (for example `sendText`,
   `sendData`).
 - Existing public compatibility names must remain callable, including legacy BLE
-  `snake_case` names documented below.
+  `snake_case` names documented in `COMPATIBILITY.md`.
 - Internal helpers should be underscore-prefixed `snake_case` (for example
   `_send_packet`).
 - Do not break existing public API names for compatibility.
@@ -60,7 +62,7 @@ When modernizing BLE naming:
 5. Do not silently remove or hard-rename legacy methods.
 6. Update tests/monkeypatch points if alias names are introduced.
 
-#### Historical BLE compatibility baseline (source of truth)
+#### Historical BLE compatibility baseline
 
 Use this pinned baseline for BLE compatibility decisions:
 
@@ -68,17 +70,8 @@ Use this pinned baseline for BLE compatibility decisions:
 - Commit: `b26d80f1866ffa765467e5cb7688c59dee7f2bb2`
 - Baseline file: `meshtastic/ble_interface.py`
 
-Historical names below must remain callable as compatibility wrappers over
-canonical internal helpers (`_async_await`, `_async_run`, `_from_num_handler`,
-`_log_radio_handler`, `_legacy_log_radio_handler`):
-
-| Symbol                                  | Status                        | Warning policy | Notes                                  |
-| --------------------------------------- | ----------------------------- | -------------- | -------------------------------------- |
-| `BLEClient.async_await`                 | Required callable compat shim | Silent         | Keep historical argument behavior.     |
-| `BLEClient.async_run`                   | Required callable compat shim | Silent         | Keep historical argument behavior.     |
-| `BLEInterface.from_num_handler`         | Required callable compat shim | Silent         | Delegates to `_from_num_handler`.      |
-| `BLEInterface.log_radio_handler`        | Required callable compat shim | Silent         | Keep historical `async def` signature. |
-| `BLEInterface.legacy_log_radio_handler` | Required callable compat shim | Silent         | Keep historical `async def` signature. |
+Historical required BLE wrappers and warning policy are tracked in
+`COMPATIBILITY.md` under **BLE Historical Baseline (2.7.7)**.
 
 ## How to check your code (pytest/pylint/mypy) before a PR
 

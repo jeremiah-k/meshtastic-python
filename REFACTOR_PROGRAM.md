@@ -327,8 +327,10 @@ Security signal from trunk was also monitored with `osv-scanner`.
 
 ## 11) Documentation and Policy Artifacts
 
-Two key documents now serve different levels:
+Three key documents now serve different levels:
 
+- `COMPATIBILITY.md`: canonical compatibility/deprecation inventory
+  (symbols, status, warning policy, and boundary rules).
 - `BLE.md`: BLE-specific architecture and integration details.
 - `AGENTS.md`: coding/refactor policy, naming/typing conventions, and
   compatibility marker discipline.
@@ -351,6 +353,7 @@ When touching APIs after this refactor:
 
 - Confirm whether the symbol is historical public surface.
 - Use `COMPAT_STABLE_SHIM` or `COMPAT_DEPRECATE` intentionally.
+- Update `COMPATIBILITY.md` in the same change when compatibility behavior changes.
 - Prefer warn-once for deprecated hot-path aliases.
 - Add or update regression tests when changing compatibility behavior.
 - Avoid broad behavior changes unless clearly justified and documented.

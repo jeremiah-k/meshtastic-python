@@ -19,6 +19,8 @@ def test_handle_from_radio_with_traffic_management_module_config() -> None:
         iface._handle_from_radio(from_radio.SerializeToString())
 
         assert iface.localNode.moduleConfig.traffic_management.enabled is True
-        assert iface.localNode.moduleConfig.traffic_management.rate_limit_enabled is True
+        assert (
+            iface.localNode.moduleConfig.traffic_management.rate_limit_enabled is True
+        )
     finally:
         iface.close()

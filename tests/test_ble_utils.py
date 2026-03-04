@@ -1,4 +1,5 @@
 """Targeted tests for BLE utility wrappers and error branches."""
+
 # pylint: disable=wrong-import-position
 
 import asyncio

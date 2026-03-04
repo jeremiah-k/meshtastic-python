@@ -383,6 +383,7 @@ class DotDict(dict[str, Any]):
 
 # Track warn-once state for dotdict deprecation (process-wide).
 _warned_deprecations: set[str] = set()
+_warned_deprecations_lock = threading.Lock()
 
 
 # COMPAT_DEPRECATE: snake_case alias for DotDict (warns once)
@@ -400,13 +401,17 @@ class dotdict(DotDict):  # pylint: disable=invalid-name
         **kwargs : Any
             Keyword arguments passed to dict constructor.
         """
-        if "dotdict" not in _warned_deprecations:
+        should_warn = False
+        with _warned_deprecations_lock:
+            if "dotdict" not in _warned_deprecations:
+                _warned_deprecations.add("dotdict")
+                should_warn = True
+        if should_warn:
             warnings.warn(
                 "dotdict is deprecated; use DotDict instead",
                 DeprecationWarning,
                 stacklevel=2,
             )
-            _warned_deprecations.add("dotdict")
         super().__init__(*args, **kwargs)
 
 

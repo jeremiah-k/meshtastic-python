@@ -1161,7 +1161,9 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
         return awaitable
 
     monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
-    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(
+        discovery_mod, "_await_close_result", _await_close_result_passthrough
+    )
     monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
     monkeypatch.setattr(
         discovery_mod.inspect,
@@ -1194,7 +1196,9 @@ def test_finalize_discovery_close_task_discards_task_and_logs_exception(
 
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
         assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
-    assert "Async close/disconnect failed for discarded discovery client." in caplog.text
+    assert (
+        "Async close/disconnect failed for discarded discovery client." in caplog.text
+    )
 
 
 def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
@@ -1247,7 +1251,9 @@ def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
         return awaitable
 
     monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
-    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(
+        discovery_mod, "_await_close_result", _await_close_result_passthrough
+    )
     monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
 
     _close_discovery_client_best_effort(_Client())
