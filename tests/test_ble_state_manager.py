@@ -52,6 +52,8 @@ class TestBLEStateManager:
         """Test state-based property methods."""
         manager = BLEStateManager()
 
+        # Direct internal assignment keeps this test focused on property semantics
+        # instead of transition-validation behavior.
         # Test DISCONNECTED state
         manager._state = ConnectionState.DISCONNECTED
         assert not manager._is_connected
@@ -131,6 +133,16 @@ class TestBLEStateManager:
         )  # Can't go back to CONNECTING from CONNECTED
         assert manager._current_state == ConnectionState.CONNECTED
 
+    def test_transition_if_in_returns_false_for_unexpected_state(self) -> None:
+        """_transition_if_in should reject transitions when state is outside expected set."""
+        manager = BLEStateManager()
+        manager._state = ConnectionState.CONNECTED
+
+        assert not manager._transition_if_in(
+            {ConnectionState.DISCONNECTED}, ConnectionState.CONNECTING
+        )
+        assert manager._current_state == ConnectionState.CONNECTED
+
     @given(
         st.lists(
             st.sampled_from(list(ConnectionState)),
@@ -139,7 +151,9 @@ class TestBLEStateManager:
         )
     )
     @settings(max_examples=100, deadline=None)
-    def test_transition_sequence_invariants(self, sequence):
+    def test_transition_sequence_invariants(
+        self, sequence: list[ConnectionState]
+    ) -> None:
         """Verify that arbitrary sequences of state transition requests preserve BLEStateManager invariants.
 
         For each target in `sequence` this test asserts three invariants:
@@ -149,34 +163,31 @@ class TestBLEStateManager:
 
         Parameters
         ----------
-        sequence : iterable[ConnectionState]
+        sequence : list[ConnectionState]
             Ordered collection of target states to request on the manager.
         """
         manager = BLEStateManager()
         for target_state in sequence:
             previous_state = manager._current_state
-            expected_success = manager._transition_to(target_state)
+            transition_succeeded = manager._transition_to(target_state)
             current_state = manager._current_state
-            assert expected_success == (current_state == target_state)
-            if not expected_success:
+            assert transition_succeeded == (current_state == target_state)
+            if not transition_succeeded:
                 assert current_state == previous_state
             assert current_state in ConnectionState
 
-    def test_thread_safety(self):
+    def test_thread_safety(self) -> None:
         """Test concurrent state access is thread-safe."""
         manager = BLEStateManager()
         results = []
         errors = []
+        append_lock = threading.Lock()
 
-        def worker(worker_id):
-            """Worker loop that performs alternating state transition attempts and records outcomes to shared lists.
+        def worker(worker_id: int) -> None:
+            """Perform alternating transitions and record outcomes.
 
-            On each of 100 iterations the worker attempts ConnectionState.CONNECTING for even indices and ConnectionState.DISCONNECTED for odd indices, appending (worker_id, iteration_index, success, current_state_value) to the shared `results` list. If an exception occurs it is appended to the shared `errors` list as (worker_id, error_message).
-
-            Parameters
-            ----------
-            worker_id : Any
-                Identifier used when recording results and errors.
+            On each of 100 iterations, tries CONNECTING on even indices and
+            DISCONNECTED on odd indices.
             """
             try:
                 for i in range(100):
@@ -185,12 +196,14 @@ class TestBLEStateManager:
                         success = manager._transition_to(ConnectionState.CONNECTING)
                     else:
                         success = manager._transition_to(ConnectionState.DISCONNECTED)
-                    results.append(
-                        (worker_id, i, success, manager._current_state.value)
-                    )
+                    with append_lock:
+                        results.append(
+                            (worker_id, i, success, manager._current_state.value)
+                        )
                     time.sleep(0.001)  # Small delay to increase contention
             except Exception as e:  # noqa: BLE001 - errors collected for assertion
-                errors.append((worker_id, str(e)))
+                with append_lock:
+                    errors.append((worker_id, str(e)))
 
         # Start multiple threads
         threads = []
@@ -239,12 +252,11 @@ class TestBLEStateManager:
         # Check that invalid transition was logged as warning
         assert "Invalid state transition: disconnected → connected" in caplog.text
 
-    def test_reentrant_lock_behavior(self):
+    def test_reentrant_lock_behavior(self) -> None:
         """Test that reentrant lock allows nested acquisitions."""
         manager = BLEStateManager()
 
-        def nested_operation():
-            # This should work with reentrant lock
+        def nested_operation() -> ConnectionState:
             """Read and return the manager's current connection state while holding its reentrant state lock.
 
             Returns
@@ -252,6 +264,7 @@ class TestBLEStateManager:
             ConnectionState
                 The current connection state.
             """
+            # This should work with reentrant lock
             with manager._state_lock:
                 with manager._state_lock:
                     return manager._current_state
@@ -358,9 +371,12 @@ class TestBLEInterfaceStateIntegration:
         assert manager._can_connect  # ERROR state allows reconnection
 
     def test_client_management_with_states(self):
-        """Verify client lifecycle behavior across state transitions.
+        """Verify state transitions through the connection lifecycle.
 
-        Asserts that transitioning from CONNECTING to CONNECTED marks the manager as connected, that transitioning to DISCONNECTED clears the client and sets the state to DISCONNECTED, and that performing a no-op transition to the current DISCONNECTED state is considered valid.
+        Asserts that transitioning from CONNECTING to CONNECTED marks the
+        manager as connected, that transitioning to DISCONNECTED resets the
+        state, and that a no-op transition to the current DISCONNECTED state
+        is considered valid.
         """
         manager = BLEStateManager()
 
@@ -406,20 +422,21 @@ class TestBLEInterfaceStateIntegration:
 class TestPhase3LockConsolidation:
     """Test Phase 3 lock consolidation and concurrent scenarios."""
 
-    def test_unified_lock_thread_safety(self):
+    def test_unified_lock_thread_safety(self) -> None:
         """Test that unified state lock provides thread safety for concurrent operations."""
         manager = BLEStateManager()
         results = []
         errors = []
+        append_lock = threading.Lock()
 
-        def worker(worker_id):
+        def worker(worker_id: int) -> None:
             """Perform a short sequence of state transitions on a shared BLEStateManager and record outcomes.
 
             Runs 10 iterations requesting CONNECTING, CONNECTED (with a mock client), or DISCONNECTED in round-robin order. Appends a tuple (worker_id, iteration, manager._current_state, success) to the shared `results` list for each iteration; on exception appends (worker_id, error_message) to the shared `errors` list. Intended for invocation from concurrent threads to exercise transition behavior.
 
             Parameters
             ----------
-            worker_id : Any
+            worker_id : int
                 Identifier included in entries added to `results` and `errors` to distinguish this worker.
             """
             try:
@@ -432,10 +449,12 @@ class TestPhase3LockConsolidation:
                     else:
                         success = manager._transition_to(ConnectionState.DISCONNECTED)
 
-                    results.append((worker_id, i, manager._current_state, success))
+                    with append_lock:
+                        results.append((worker_id, i, manager._current_state, success))
                     time.sleep(0.001)  # Small delay to encourage interleaving
             except Exception as e:  # noqa: BLE001
-                errors.append((worker_id, str(e)))
+                with append_lock:
+                    errors.append((worker_id, str(e)))
 
         # Create multiple threads
         threads = []
@@ -457,7 +476,7 @@ class TestPhase3LockConsolidation:
         # Verify final state is valid
         assert manager._current_state in ConnectionState
 
-    def test_reentrant_lock_behavior(self):
+    def test_reentrant_lock_with_transitions(self) -> None:
         """Verify that the manager's state lock is reentrant and allows nested transitions without deadlock.
 
         Acquires the manager's internal lock, performs nested CONNECTING → CONNECTED transitions, and asserts the manager is connected and ends in ConnectionState.CONNECTED.
@@ -465,12 +484,12 @@ class TestPhase3LockConsolidation:
         manager = BLEStateManager()
 
         # Test nested lock acquisition through state manager methods
-        def nested_operation():
-            # This should work without deadlock due to reentrant lock
+        def nested_operation() -> None:
             """Validate that nested state transitions under the manager's reentrant lock complete without deadlock and leave the manager connected.
 
             Performs a CONNECTING → CONNECTED sequence while the manager's reentrant lock is held (using a mock client) and verifies the manager reports connected and retains the client.
             """
+            # This should work without deadlock due to reentrant lock
             assert manager._transition_to(ConnectionState.CONNECTING)
             assert manager._transition_to(ConnectionState.CONNECTED)
             assert manager._is_connected
@@ -482,20 +501,24 @@ class TestPhase3LockConsolidation:
         # Verify state is consistent
         assert manager._current_state == ConnectionState.CONNECTED
 
-    def test_lock_contention_resolution(self):
+    def test_lock_contention_resolution(self) -> None:
         """Ensure BLEStateManager's state lock handles concurrent contention without raising exceptions and leaves the manager in DISCONNECTED.
 
         Spawns multiple threads that each acquire the manager's state lock and perform state transitions; the test asserts no contention-related exceptions occurred and that the final manager._current_state equals ConnectionState.DISCONNECTED.
         """
 
         manager = BLEStateManager()
-        contention_count = [0]
+        contention_count = 0
+        contention_count_lock = threading.Lock()
 
-        def contending_worker():
+        def contending_worker() -> None:
             """Perform a short lock-holding workload against the shared manager to exercise lock contention.
 
-            Acquires manager._state_lock, sleeps briefly, transitions the manager to ConnectionState.CONNECTING and then to ConnectionState.DISCONNECTED. If an unexpected exception occurs, increments contention_count[0].
+            Acquires manager._state_lock, sleeps briefly, transitions the manager to
+            ConnectionState.CONNECTING and then to ConnectionState.DISCONNECTED. If an
+            unexpected exception occurs, increments ``contention_count``.
             """
+            nonlocal contention_count
             try:
                 # Try to acquire lock and perform operation
                 with manager._state_lock:
@@ -504,7 +527,8 @@ class TestPhase3LockConsolidation:
                     manager._transition_to(ConnectionState.CONNECTING)
                     manager._transition_to(ConnectionState.DISCONNECTED)
             except Exception:  # noqa: BLE001 - contention counts any unexpected failure
-                contention_count[0] += 1
+                with contention_count_lock:
+                    contention_count += 1
 
         # Create multiple contending threads
         threads = []
@@ -518,7 +542,7 @@ class TestPhase3LockConsolidation:
             thread.join()
 
         # Verify no contention errors
-        assert contention_count[0] == 0
+        assert contention_count == 0
 
         # Verify final state is consistent
         assert manager._current_state == ConnectionState.DISCONNECTED
@@ -576,15 +600,16 @@ def test_lock_contention_performance() -> None:
 
     manager = BLEStateManager()
     results = []
+    results_lock = threading.Lock()
 
-    def worker(worker_id):
+    def worker(worker_id: int) -> None:
         """Run a fixed sequence of BLE state transitions while measuring this worker's operations and elapsed time.
 
         Executes 200 iterations where the outer-scope `manager` is asked to transition to CONNECTING, CONNECTED, and DISCONNECTED in sequence; each successful transition increments an operation count. After completion, appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed seconds).
 
         Parameters
         ----------
-        worker_id : Any
+        worker_id : int
             Identifier used in the appended result to distinguish this worker.
         """
         start_time = time.perf_counter()
@@ -603,13 +628,14 @@ def test_lock_contention_performance() -> None:
             time.sleep(0.001)
 
         end_time = time.perf_counter()
-        results.append(
-            {
-                "worker_id": worker_id,
-                "operations": operations,
-                "time": end_time - start_time,
-            }
-        )
+        with results_lock:
+            results.append(
+                {
+                    "worker_id": worker_id,
+                    "operations": operations,
+                    "time": end_time - start_time,
+                }
+            )
 
     # Create multiple contending threads
     threads = []

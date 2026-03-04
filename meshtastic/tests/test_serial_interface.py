@@ -82,6 +82,14 @@ def test_SerialInterface_multiple_ports(mocked_findPorts: MagicMock) -> None:
 
 
 @pytest.mark.unit
+def test_SerialInterface_rejects_empty_explicit_port_path() -> None:
+    """Explicit empty/whitespace serial paths should fail fast with MeshInterfaceError."""
+    with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
+        SerialInterface(devPath="   ", noProto=True)
+    assert "Serial port path cannot be empty" in str(exc_info.value)
+
+
+@pytest.mark.unit
 @patch("time.sleep")
 @patch("meshtastic.serial_interface.SerialInterface._set_hupcl_with_termios")
 @patch("builtins.open", new_callable=mock_open, read_data="data")
@@ -109,10 +117,40 @@ def test_SerialInterface_close_skips_flush_when_stream_closed(
 
     # flush can be called during __init__ for setup; we only guarantee close()
     # won't raise and still performs underlying cleanup.
-    assert mocked_findPorts.called
+    mocked_findPorts.assert_called()
     stream.close.assert_called()
     if sys.platform != "win32":
         mocked_open.assert_called()
         mock_hupcl.assert_called()
     stream.flush.assert_not_called()
     mock_sleep.assert_not_called()
+
+
+@pytest.mark.unit
+def test_resolve_dev_path_returns_explicit_non_empty_path() -> None:
+    """_resolve_dev_path should return an explicit non-empty path unchanged."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+
+    assert iface._resolve_dev_path() == "/dev/ttyUSB0"
+
+    iface.devPath = "  /dev/ttyUSB0  "
+    assert iface._resolve_dev_path() == "/dev/ttyUSB0"
+
+
+@pytest.mark.unit
+def test_serial_interface_repr_includes_optional_fields() -> None:
+    """__repr__ should include debugOut/noProto/noNodes when they are set."""
+    iface = object.__new__(SerialInterface)
+    iface.devPath = "/dev/ttyUSB0"
+    iface.debugOut = lambda _line: None
+    iface.noProto = True
+    iface.noNodes = True
+
+    rendered = repr(iface)
+
+    assert "SerialInterface(devPath='/dev/ttyUSB0'" in rendered
+    assert "debugOut=" in rendered
+    assert "noProto=True" in rendered
+    assert "noNodes=True" in rendered
+    assert rendered.endswith(")")

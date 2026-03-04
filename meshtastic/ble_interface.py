@@ -56,8 +56,10 @@ from meshtastic.interfaces.ble import (  # noqa: F401  # pylint: disable=unused-
 )
 
 _BLE_PUBLIC_ALL = tuple(getattr(_ble, "__all__", ()))
-for _symbol in _BLE_PUBLIC_ALL:
-    globals().setdefault(_symbol, getattr(_ble, _symbol))
+for _ble_public_symbol in _BLE_PUBLIC_ALL:
+    globals().setdefault(_ble_public_symbol, getattr(_ble, _ble_public_symbol))
+if _BLE_PUBLIC_ALL:
+    del _ble_public_symbol
 
 # Retained module-level Bleak compatibility exports from pre-refactor API.
 _COMPAT_BLEAK_EXPORTS = (

@@ -9,7 +9,7 @@ This is the Meshtastic Python library and CLI - a Python API for interacting wit
 - **Language**: Python 3.10+
 - **Package Manager**: Poetry
 - **Testing**: pytest with hypothesis for property-based testing
-- **Linting**: pylint
+- **Linting**: pylint, Ruff
 - **Type Checking**: mypy (working toward strict mode)
 - **Documentation**: pdoc3
 - **License**: GPL-3.0
@@ -198,6 +198,8 @@ pub.subscribe(on_receive, "meshtastic.receive")
 
 ## Development Workflow
 
+Trunk is the repository's linter orchestrator (ruff, pylint, mypy, markdownlint, etc.).
+
 1. Install dependencies: `poetry install --all-extras --with dev`
 2. Make changes
 3. Run unified lint/type checks: `TRUNK_INTERACTIVE=0 .trunk/trunk check --fix --show-existing`
@@ -224,12 +226,14 @@ The CLI is in `meshtastic/__main__.py`. When adding new CLI commands:
 - `tabulate` - Table formatting
 - `pyyaml` - YAML config support
 - `requests` - HTTP requests
+- `packaging` - Version parsing and comparison helpers
 
 ### Optional (extras)
 
-- `cli` extra: `pyqrcode`, `print-color`, `dotmap`, `argcomplete`
+- `cli` extra: `pyqrcode`, `print-color`, `dotmap`, `argcomplete`, `wcwidth`
 - `tunnel` extra: `pytap2`
-- `analysis` extra: `dash`, `pandas`
+- `analysis` extra: `dash`, `dash-bootstrap-components`, `pandas`, `pandas-stubs`
+- `powermon` extra: `platformdirs` for platform-specific user data/cache directory resolution
 
 ## Important Notes
 

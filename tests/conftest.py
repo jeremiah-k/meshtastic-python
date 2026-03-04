@@ -2,12 +2,19 @@
 
 import logging
 from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from meshtastic.interfaces.ble import gating
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from meshtastic.interfaces.ble.notifications import NotificationManager
+
+# tests/tuntest.py is an interactive manual utility and not part of pytest runs.
+collect_ignore = ["tuntest.py"]
 
 
 @pytest.fixture
@@ -16,6 +23,26 @@ def clear_registry() -> Iterator[None]:
     gating._clear_all_registries()
     yield
     gating._clear_all_registries()
+
+
+@pytest.fixture
+def ble_client() -> Iterator[Any]:
+    """Create and clean up a discovery-mode BLEClient for edge-case tests."""
+    from meshtastic.interfaces.ble.client import BLEClient
+
+    client = BLEClient(address=None, log_if_no_address=False)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture
+def notification_manager() -> "NotificationManager":
+    """Create a NotificationManager test instance."""
+    from meshtastic.interfaces.ble.notifications import NotificationManager
+
+    return NotificationManager()
 
 
 @pytest.fixture(scope="session", autouse=True)

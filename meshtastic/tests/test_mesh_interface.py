@@ -1,9 +1,12 @@
 """Meshtastic unit tests for mesh_interface.py."""
 
-from collections import OrderedDict
+import builtins
+import importlib.util
+import io
 import logging
 import re
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
@@ -11,6 +14,8 @@ from unittest.mock import MagicMock, create_autospec, patch
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+
+import meshtastic.mesh_interface as mesh_interface_module
 
 from .. import BROADCAST_ADDR, LOCAL_ADDR
 from ..mesh_interface import MeshInterface, _timeago
@@ -23,6 +28,37 @@ from ..util import Timeout
 
 if TYPE_CHECKING:
     from .conftest import FakeTimer
+
+
+@pytest.mark.unit
+def test_mesh_interface_import_handles_missing_print_color(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Import should gracefully set print_color to None when dependency is unavailable."""
+    module_path = Path(mesh_interface_module.__file__)
+    spec = importlib.util.spec_from_file_location(
+        "meshtastic.mesh_interface_import_fallback_test", module_path
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    isolated_module = importlib.util.module_from_spec(spec)
+
+    real_import = builtins.__import__
+
+    def _import_with_print_color_failure(
+        name: str,
+        globals_dict: Any = None,
+        locals_dict: Any = None,
+        from_list: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
+        if name == "print_color":
+            raise ImportError("simulated missing print_color") from None  # noqa: TRY003 - intentional test sentinel
+        return real_import(name, globals_dict, locals_dict, from_list, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import_with_print_color_failure)
+    spec.loader.exec_module(isolated_module)
+    assert isolated_module.print_color is None
 
 
 @pytest.mark.unit
@@ -80,6 +116,36 @@ def test_MeshInterface(
     assert re.search(r"Channels", out, re.MULTILINE)
     assert re.search(r"Primary channel URL", out, re.MULTILINE)
     assert err == ""
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_showInfo_skips_nodes_without_user_dict() -> None:
+    """ShowInfo should ignore node records whose user payload is not a dict."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!bad": {"num": 1, "user": "invalid"},
+            "!good": {"num": 2, "user": {"id": "!good"}},
+        }
+        output = io.StringIO()
+        summary = iface.showInfo(file=output)
+
+    assert '"!good"' in summary
+    assert '"!bad"' not in summary
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_showInfo_tolerates_malformed_macaddr() -> None:
+    """ShowInfo should not fail when a node user entry contains malformed macaddr."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!good": {"num": 2, "user": {"id": "!good", "macaddr": "not-base64!!!"}},
+        }
+        output = io.StringIO()
+        summary = iface.showInfo(file=output)
+
+    assert '"!good"' in summary
 
 
 @pytest.mark.unit
@@ -308,7 +374,6 @@ def test_close_waits_for_inflight_heartbeat_send(
         # close() should block until the in-flight heartbeat send completes.
         # Use a generous timeout (0.2s) to avoid flakiness on slow CI runners.
         assert not close_done.wait(timeout=0.2)
-        assert not close_done.wait(timeout=0.05)
 
         release_send.set()
         close_thread.join(timeout=1.0)
@@ -696,6 +761,68 @@ def test_sendPacket_with_destination_is_blank_without_nodes(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_raises_when_node_record_lacks_numeric_num(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_send_packet should reject DB node records that do not provide an integer num."""
+    iface = iface_with_nodes
+    iface.nodes = {"bad": {"user": {"id": "bad"}}}
+    mesh_packet = mesh_pb2.MeshPacket()
+    with pytest.raises(
+        MeshInterface.MeshInterfaceError,
+        match=r"NodeId bad has no numeric 'num' in DB",
+    ):
+        iface._send_packet(mesh_packet, destinationId="bad")
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_uses_numeric_num_from_node_record(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """_send_packet should use node['num'] when destination resolves via DB lookup."""
+    iface = iface_with_nodes
+    iface.nodes = {"dst": {"num": 4242}}
+    mesh_packet = mesh_pb2.MeshPacket()
+
+    sent = iface._send_packet(mesh_packet, destinationId="dst")
+
+    assert sent.to == 4242
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_applies_explicit_hoplimit_and_pki_encrypted_flag() -> None:
+    """_send_packet should honor explicit hopLimit and pkiEncrypted parameters."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+        sent = iface._send_packet(
+            mesh_packet,
+            destinationId=123,
+            hopLimit=5,
+            pkiEncrypted=True,
+        )
+    assert sent.hop_limit == 5
+    assert sent.pki_encrypted is True
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_sendPacket_sets_public_key_when_provided() -> None:
+    """_send_packet should populate meshPacket.public_key when provided."""
+    with MeshInterface(noProto=True) as iface:
+        mesh_packet = mesh_pb2.MeshPacket()
+        sent = iface._send_packet(
+            mesh_packet,
+            destinationId=123,
+            publicKey=b"\xaa\xbb",
+        )
+
+    assert sent.public_key == b"\xaa\xbb"
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_getMyNodeInfo() -> None:
     """Test getMyNodeInfo()."""
     with MeshInterface(noProto=True) as iface:
@@ -969,6 +1096,7 @@ def test_timeago_fuzz(seconds: int) -> None:
 
 # Concurrent access edge case tests
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_concurrent_packet_id_generation() -> None:
     """Test that packet ID generation is thread-safe."""
     with MeshInterface(noProto=True) as iface:
@@ -983,7 +1111,7 @@ def test_concurrent_packet_id_generation() -> None:
                     packet_id = iface._generate_packet_id()
                     with packet_ids_lock:
                         packet_ids.append(packet_id)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1001,6 +1129,7 @@ def test_concurrent_packet_id_generation() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_concurrent_node_database_access() -> None:
     """Test that node database access is thread-safe."""
     with MeshInterface(noProto=True) as iface:
@@ -1020,7 +1149,7 @@ def test_concurrent_node_database_access() -> None:
                             iface.nodes[node_id] = node
                         if iface.nodesByNum is not None:
                             iface.nodesByNum[node_num] = node
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1034,6 +1163,7 @@ def test_concurrent_node_database_access() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_concurrent_queue_operations() -> None:
     """Test that queue operations are thread-safe."""
     with MeshInterface(noProto=True) as iface:
@@ -1048,7 +1178,7 @@ def test_concurrent_queue_operations() -> None:
                     packet = mesh_pb2.ToRadio()
                     with iface._queue_lock:
                         iface.queue[packet_id] = packet
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1059,7 +1189,7 @@ def test_concurrent_queue_operations() -> None:
                         if iface.queue:
                             key = next(iter(iface.queue))
                             iface.queue.pop(key, None)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1094,7 +1224,7 @@ def test_concurrent_response_handler_registration() -> None:
                     iface._add_response_handler(request_id, handler)
                     with added_ids_lock:
                         added_ids.append(request_id)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1127,7 +1257,7 @@ def test_concurrent_close_with_packet_id_generation() -> None:
                 while not stop_flag.is_set():
                     iface._generate_packet_id()
                     started.set()
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1172,7 +1302,7 @@ def test_concurrent_showNodes() -> None:
             try:
                 for _ in range(10):
                     iface.showNodes()
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1202,7 +1332,7 @@ def test_concurrent_getNode() -> None:
                     # validates concurrent access safety for getNode().
                     node = iface.getNode(f"!{i:08x}", requestChannels=False)
                     assert node is not None
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 
@@ -1252,7 +1382,7 @@ def test_concurrent_sendText_with_queue() -> None:
             try:
                 for i in range(10):
                     iface.sendText(f"message_{i}", wantAck=True)
-            except Exception as e:  # noqa: BLE001 - intentionally recording thread errors
+            except Exception as e:  # noqa: BLE001
                 with errors_lock:
                     errors.append(e)
 

@@ -141,9 +141,11 @@ should_go = policy._should_retry(count)  # bool, respects max_retries
 delay, ok = policy.next_attempt()        # combined: compute delay + advance counter
 ```
 
-Compatibility note: if a downstream wrapper exposes camelCase aliases
-(`emptyRead`, `transientError`, `autoReconnect`), treat those as compatibility
-helpers rather than canonical names in `RetryPolicy` / `ReconnectPolicy`.
+Compatibility note: the core library does not currently expose camelCase policy
+aliases (`emptyRead`, `transientError`, `autoReconnect`) on `RetryPolicy`.
+If a downstream wrapper chooses to expose those names, treat them as
+compatibility helpers rather than canonical names in
+`RetryPolicy` / `ReconnectPolicy`.
 
 For compatibility with existing Python projects, the stable BLE surface exposed
 through `meshtastic.ble_interface` keeps the legacy snake_case method names

@@ -38,7 +38,7 @@ class SupportedDevice:
         raise SupportedDeviceValidationError(message)
 
     def __post_init__(self) -> None:
-        """Normalize USB ID fields to canonical lowercase tuple form."""
+        """Validate and normalize USB ID fields to canonical lowercase tuple form."""
 
         def _normalize_primary_usb_id(raw_value: object, field_name: str) -> str | None:
             if raw_value is None:
@@ -112,13 +112,19 @@ class SupportedDevice:
         self.usb_id_aliases = tuple(normalized_aliases)
 
     @property
-    def usb_ids(self) -> tuple[tuple[str, str], ...]:
+    def usbIds(self) -> tuple[tuple[str, str], ...]:
         """Return primary and alternate normalized VID/PID pairs for detection."""
         usb_ids: list[tuple[str, str]] = []
         if self.usb_vendor_id_in_hex and self.usb_product_id_in_hex:
             usb_ids.append((self.usb_vendor_id_in_hex, self.usb_product_id_in_hex))
         usb_ids.extend(self.usb_id_aliases)
         return tuple(dict.fromkeys(usb_ids))
+
+    # COMPAT_STABLE_SHIM: historical snake_case property name.
+    @property
+    def usb_ids(self) -> tuple[tuple[str, str], ...]:
+        """Compatibility alias for usbIds."""
+        return self.usbIds
 
 
 # supported devices

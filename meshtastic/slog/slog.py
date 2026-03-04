@@ -13,12 +13,12 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import parse  # type: ignore[import-untyped]
 import platformdirs
 import pyarrow as pa
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 from meshtastic.mesh_interface import MeshInterface
 from meshtastic.powermon import PowerMeter
@@ -28,6 +28,28 @@ from .arrow import FeatherWriter
 logger = logging.getLogger(__name__)
 _warned_deprecations: set[str] = set()
 _warned_deprecations_lock: threading.Lock = threading.Lock()
+LOG_DIR_COLLISION_MAX_RETRIES = 100
+
+
+class SlogDirectoryCollisionError(FileExistsError):
+    """Raised when slog cannot create a unique run directory."""
+
+    def __init__(self, app_dir: str, attempts: int) -> None:
+        super().__init__(
+            f"Unable to create unique slog run directory under '{app_dir}' "
+            f"after {attempts} attempts"
+        )
+
+
+# PyArrow typing stubs vary across versions (generic vs non-generic DataType).
+# Keep the runtime alias stable while using a broad static alias for mypy
+# compatibility across both stub families.
+if TYPE_CHECKING:
+    ArrowDataType = pa.DataType
+    ArrowDataTypeLike: TypeAlias = Any
+else:
+    ArrowDataType = pa.DataType
+    ArrowDataTypeLike = pa.DataType
 
 
 def _root_dir_impl() -> str:
@@ -75,17 +97,19 @@ class LogDef:
     """Log definition."""
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
-    fields: list[tuple[str, pa.DataType]]  # A list of field names and their arrow types
+    fields: list[
+        tuple[str, ArrowDataTypeLike]
+    ]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: list[tuple[str, pa.DataType]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, ArrowDataTypeLike]]) -> None:
         """Create a LogDef for the given code and fields and compile a parser for those fields.
 
         Parameters
         ----------
         code : str
             Short log code (e.g., "B", "PM", "PS").
-        fields : list[tuple[str, pa.DataType]]
+        fields : list[tuple[str, ArrowDataTypeLike]]
             Ordered (name, type) pairs
             describing each field. String and integer Arrow fields are supported.
             Unsupported field types raise ValueError.
@@ -234,6 +258,8 @@ class PowerLogger:
         """Set the underlying PowerMeter."""
         reading_lock = getattr(self, "_reading_lock", None)
         if reading_lock is None:
+            # Defensive path for unusual construction/testing flows where the
+            # lock is not initialized yet.
             self._p_meter = value
             return
         with reading_lock:
@@ -456,7 +482,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, pa.DataType]] = [
+        all_fields: list[tuple[str, ArrowDataTypeLike]] = [
             field for logdef in log_defs.values() for field in logdef.fields
         ]
 
@@ -547,7 +573,11 @@ class StructuredLogger:
                 logger.warning("Failed to close raw log file: %s", exc, exc_info=True)
         if unsubscribe_exc is not None:
             if writer_close_exc is not None:
-                raise unsubscribe_exc from writer_close_exc
+                logger.warning(
+                    "Writer close also failed after unsubscribe error: %s",
+                    writer_close_exc,
+                    exc_info=True,
+                )
             raise unsubscribe_exc
         if writer_close_exc is not None:
             raise writer_close_exc
@@ -684,8 +714,25 @@ class LogSet:
 
         if dir_name is None:
             app_dir = rootDir()
-            app_time_dir = Path(app_dir, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
-            app_time_dir.mkdir(exist_ok=False)
+            base_stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            app_time_dir = Path(app_dir, base_stamp)
+            for attempt in range(LOG_DIR_COLLISION_MAX_RETRIES):
+                candidate = (
+                    Path(app_dir, base_stamp)
+                    if attempt == 0
+                    else Path(app_dir, f"{base_stamp}-{attempt}")
+                )
+                try:
+                    candidate.mkdir(exist_ok=False)
+                    app_time_dir = candidate
+                    break
+                except FileExistsError:
+                    continue
+            else:
+                raise SlogDirectoryCollisionError(
+                    app_dir,
+                    LOG_DIR_COLLISION_MAX_RETRIES,
+                )
             dir_name = str(app_time_dir)
 
             # Also make a 'latest' directory that always points to the most recent logs
@@ -780,9 +827,13 @@ class LogSet:
 
             if slog_close_exc is not None:
                 if power_close_exc is not None:
-                    # Python 3.10 has no ExceptionGroup, so preserve slog close
-                    # as primary and chain power close as the explicit cause.
-                    raise slog_close_exc from power_close_exc
+                    # Python 3.10 has no ExceptionGroup, so preserve the
+                    # primary error and log the secondary one.
+                    logger.warning(
+                        "Power logger close also failed: %s",
+                        power_close_exc,
+                        exc_info=True,
+                    )
                 raise slog_close_exc
             if power_close_exc is not None:
                 raise power_close_exc

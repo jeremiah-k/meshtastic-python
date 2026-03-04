@@ -252,6 +252,22 @@ def test_connect_skips_wake_bytes_for_own_stream_interfaces() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_constructor_defers_connect_when_no_stream_available(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """__init__ should defer connect() when connectNow=True and no stream exists."""
+    with patch.object(StreamInterface, "connect", autospec=True) as connect_mock:
+        with caplog.at_level("DEBUG"):
+            iface = StreamInterface(noProto=True, connectNow=True)
+        try:
+            connect_mock.assert_not_called()
+            assert "deferring connect()" in caplog.text
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_connect_cleans_up_when_start_config_fails() -> None:
     """connect() should tear down reader/connection state if _start_config fails."""
     iface = StreamInterface(noProto=True, connectNow=False)
@@ -282,6 +298,7 @@ def test_connect_cleans_up_when_wait_connected_fails() -> None:
     try:
         iface._provides_own_stream = True  # type: ignore[attr-defined]
         iface.stream = None
+        # Force protocol mode so connect() executes _wait_connected() path.
         iface.noProto = False
         iface._rxThread = MagicMock()
         iface._rxThread.is_alive.return_value = False
@@ -300,6 +317,49 @@ def test_connect_cleans_up_when_wait_connected_fails() -> None:
         join_reader.assert_called_once()
     finally:
         iface.noProto = True
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_times_out_when_no_progress_deadline_expires() -> None:
+    """_write_bytes should raise StreamClosedError when progress deadline expires."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    iface.stream = stream
+    try:
+        monotonic_calls = iter([0.0, 9999.0])
+        with patch(
+            "meshtastic.stream_interface.time.monotonic",
+            side_effect=lambda: next(monotonic_calls, 9999.0),
+        ):
+            with pytest.raises(
+                StreamInterface.StreamClosedError,
+                match=StreamInterface.StreamClosedError.WRITE_TIMEOUT_MSG,
+            ):
+                iface._write_bytes(b"hello")
+        stream.write.assert_not_called()
+    finally:
+        iface.close()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
+def test_write_bytes_raises_when_backend_reports_none_written() -> None:
+    """_write_bytes should treat a None write result as no progress."""
+    iface = StreamInterface(noProto=True, connectNow=False)
+    stream = MagicMock()
+    stream.is_open = True
+    stream.write.return_value = None
+    iface.stream = stream
+    try:
+        with pytest.raises(
+            StreamInterface.StreamClosedError,
+            match=StreamInterface.StreamClosedError.WRITE_NO_PROGRESS_MSG,
+        ):
+            iface._write_bytes(b"hello")
+    finally:
         iface.close()
 
 

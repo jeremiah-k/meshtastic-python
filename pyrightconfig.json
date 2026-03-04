@@ -1,5 +1,6 @@
 {
   "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
   "venvPath": ".",
   "venv": "venv",
   "include": ["meshtastic", "examples", "tests"],

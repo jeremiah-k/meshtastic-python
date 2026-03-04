@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 import meshtastic.ota
 import meshtastic.serial_interface
@@ -136,7 +136,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     meshtastic.util.our_exit(message, return_value)
 
 
-def support_info() -> None:
+def supportInfo() -> None:
     """Print troubleshooting guidance and environment details useful for reporting CLI or library issues.
 
     Specifically prints the issue tracker URL and the running environment: system,
@@ -170,6 +170,12 @@ def support_info() -> None:
     )
     print("")
     print("Please add the output from the command: meshtastic --info")
+
+
+# COMPAT_STABLE_SHIM: historical snake_case helper name.
+def support_info() -> None:
+    """Compatibility alias for supportInfo()."""
+    supportInfo()
 
 
 def onReceive(packet: dict[str, Any], interface: MeshInterface) -> None:
@@ -256,7 +262,10 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     bool
         `True` if the channel exists and its role is not DISABLED, `False` otherwise.
     """
-    ch = interface.localNode.getChannelByChannelIndex(channelIndex)
+    if hasattr(type(interface.localNode), "getChannelCopyByChannelIndex"):
+        ch = interface.localNode.getChannelCopyByChannelIndex(channelIndex)
+    else:
+        ch = interface.localNode.getChannelByChannelIndex(channelIndex)
     logger.debug("ch:%s", ch)
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
@@ -795,7 +804,7 @@ def onConnected(interface: MeshInterface) -> None:
             waitForAckNak = True
 
             if not isinstance(interface, meshtastic.tcp_interface.TCPInterface):
-                meshtastic.util.our_exit(
+                _cli_exit(
                     "Error: OTA update currently requires a TCP connection to the node (use --host)."
                 )
 
@@ -818,7 +827,7 @@ def onConnected(interface: MeshInterface) -> None:
                 except Exception as e:
                     retries -= 1
                     if retries == 0:
-                        meshtastic.util.our_exit(f"\nOTA update failed: {e}")
+                        _cli_exit(f"OTA update failed: {e}")
 
                     time.sleep(2)
 
@@ -1614,6 +1623,8 @@ def printConfig(config: Any) -> None:
     for config_section in objDesc.fields:
         if config_section.name != "version":
             section_field = objDesc.fields_by_name.get(config_section.name)
+            if section_field is None or section_field.message_type is None:
+                continue
             print(f"{config_section.name}:")
             names = []
             for field in section_field.message_type.fields:
@@ -1670,7 +1681,10 @@ def subscribe() -> None:
 
 def _is_repeated_field(field_desc: Any) -> bool:
     """Return True if the protobuf field is repeated.
-    Protobuf 6.31.0 and later use an is_repeated property, while older versions compare against the label field.
+
+    Newer protobuf runtimes expose a boolean ``is_repeated`` property, while
+    older generated descriptors require comparing ``label`` to
+    ``LABEL_REPEATED``.
     """
     is_repeated = getattr(field_desc, "is_repeated", None)
     if isinstance(is_repeated, bool):
@@ -1753,7 +1767,7 @@ MODULE_TRUE_DEFAULTS: set[tuple[str, ...]] = {
 }
 
 
-def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
+def exportConfig(interface: MeshInterface) -> str:
     """Export local node and module configuration as a YAML-formatted Meshtastic configuration string.
 
     Produces a YAML document containing selected top-level metadata (owner, owner_short, channel
@@ -1765,7 +1779,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 
     Parameters
     ----------
-    interface : meshtastic.mesh_interface.MeshInterface
+    interface : MeshInterface
         The connected interface whose local node and module configuration will be exported.
 
     Returns
@@ -1870,7 +1884,7 @@ def exportConfig(interface: meshtastic.mesh_interface.MeshInterface) -> str:
 export_config = exportConfig
 
 
-def create_power_meter() -> None:
+def _create_power_meter() -> None:
     """Initialize and configure the global power meter from parsed CLI arguments.
 
     Validates an optional voltage (must be between MIN_SUPPLY_VOLTAGE_V and MAX_SUPPLY_VOLTAGE_V), instantiates the
@@ -1889,7 +1903,7 @@ def create_power_meter() -> None:
     args = mt_config.args
     if args is None:
         raise RuntimeError(
-            "mt_config.args must be initialized before calling create_power_meter()"
+            "mt_config.args must be initialized before calling _create_power_meter()"
         )
 
     # If the user specified a voltage, make sure it is valid
@@ -1924,6 +1938,10 @@ def create_power_meter() -> None:
         else:
             logger.info("Powered-on, waiting for device to boot")
             time.sleep(POWER_ON_BOOT_DELAY_SECONDS)
+
+
+# COMPAT_STABLE_SHIM: legacy snake_case helper for callers importing this module.
+create_power_meter = _create_power_meter
 
 
 def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
@@ -1967,6 +1985,11 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
             )
         else:
             tcp_hostname = host_str[1:bracket_end]
+            if not tcp_hostname:
+                _cli_exit(
+                    f"Error: missing hostname in --host '{host_str}'.",
+                    1,
+                )
             remainder = host_str[bracket_end + 1 :]
             if remainder:
                 if not remainder.startswith(":"):
@@ -1997,6 +2020,11 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
     if ":" in host_str and host_str.count(":") == 1:
         # Exactly one colon -> host:port
         candidate_host, tcp_port_str = host_str.rsplit(":", 1)
+        if not candidate_host:
+            _cli_exit(
+                f"Error: missing hostname in --host '{host_str}'.",
+                1,
+            )
         try:
             parsed_port = int(tcp_port_str)
         except ValueError:
@@ -2059,7 +2087,7 @@ def common() -> None:
         _cli_exit("", 1)
     else:
         if args.support:
-            support_info()
+            supportInfo()
             _cli_exit("", 0)
 
         if args.list_fields:
@@ -2089,7 +2117,7 @@ def common() -> None:
                 )
 
         if have_powermon:
-            create_power_meter()
+            _create_power_meter()
 
         if args.ch_index is not None:
             channelIndex = int(args.ch_index)
@@ -2131,7 +2159,7 @@ def common() -> None:
                     logger.debug("Not logging serial output")
                     logfile = None
                 else:
-                    logger.info(f"Logging serial output to {args.seriallog}")
+                    logger.info("Logging serial output to %s", args.seriallog)
                     # Note: using line buffering.
                     logfile = stack.enter_context(
                         open(args.seriallog, "w+", buffering=1, encoding="utf8")
@@ -2232,6 +2260,9 @@ def common() -> None:
                         message += f"\nOriginal error: {ex}"
                         _cli_exit(message)
                     if client is None or client.devPath is None:
+                        logger.info(
+                            "Serial device unavailable after initialization; falling back to localhost TCP interface."
+                        )
                         try:
                             client = stack.enter_context(
                                 meshtastic.tcp_interface.TCPInterface(

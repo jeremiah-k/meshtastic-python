@@ -8,12 +8,13 @@ Meshtastic devices via TCP/IP network connections.
 import contextlib
 import logging
 import math
+import select
 import socket
 import threading
 import time
 from typing import IO, Any, Callable
 
-from meshtastic.stream_interface import StreamInterface
+from meshtastic.stream_interface import StreamInterface, WRITE_PROGRESS_TIMEOUT_SECONDS
 
 DEFAULT_TCP_PORT = 4403
 logger = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ class TCPInterface(StreamInterface):
         "got {0!r} (type: {1})"
     )
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
+    WRITE_TIMEOUT_ERROR = "TCP write timed out waiting for socket readiness"
+    WRITE_NO_PROGRESS_ERROR = "TCP write returned no bytes"
     CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
     RECONNECT_DISABLED_AFTER_FATAL_ERROR = (
         "Cannot connect to {}: reconnect disabled after fatal disconnect"
@@ -209,7 +212,8 @@ class TCPInterface(StreamInterface):
             if not reconnect_in_progress:
                 return
             # Give the in-flight reconnect attempt a chance to finish before
-            # reevaluating socket state.
+            # reevaluating socket state. A condition variable would avoid polling,
+            # but the small sleep keeps this path simple and lock-order-safe.
             time.sleep(self.DEFAULT_RECONNECT_SLEEP_SLICE)
 
     def _close_socket_if_current(self, sock: socket.socket | None) -> bool:
@@ -290,6 +294,8 @@ class TCPInterface(StreamInterface):
 
         signal_set = getattr(pending_entry, "set", None)
         if callable(signal_set):
+            # Event-style waiters only receive wakeup semantics; callers must check
+            # reconnect/error state separately for failure details.
             signal_set()
             return True
         return False
@@ -330,10 +336,11 @@ class TCPInterface(StreamInterface):
         super().connect()
 
     def _write_bytes(self, b: bytes) -> None:
-        """Send the full byte sequence over the TCP socket.
+        """Send the full byte sequence over the TCP socket with progress timeout protection.
 
-        Attempts to transmit all bytes; if an OSError occurs, logs a warning, shuts
-        down and closes the socket, and clears the stored socket reference.
+        Uses ``select.select`` to wait for socket writability before each partial
+        send so this method cannot block indefinitely inside a single ``send()``
+        call.
 
         Parameters
         ----------
@@ -347,13 +354,28 @@ class TCPInterface(StreamInterface):
         OSError
             If the underlying socket write fails.
         """
+        # Intentionally snapshot without _reconnect_lock; concurrent close/reconnect
+        # is handled by sendall() exceptions and _close_socket_if_current().
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
         try:
-            # sendall() guarantees full payload transmission or raises.
-            sock.sendall(b)
-        except OSError as ex:
+            payload = memoryview(b)
+            total_sent = 0
+            write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
+            while total_sent < len(payload):
+                remaining = write_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(self.WRITE_TIMEOUT_ERROR)
+                _, writable, _ = select.select([], [sock], [], remaining)
+                if not writable:
+                    raise TimeoutError(self.WRITE_TIMEOUT_ERROR)
+                sent = sock.send(payload[total_sent:])
+                if sent <= 0:
+                    raise OSError(self.WRITE_NO_PROGRESS_ERROR)
+                total_sent += sent
+                write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
+        except (OSError, ValueError) as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -362,6 +384,8 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
+            if isinstance(ex, ValueError):
+                raise OSError(str(ex)) from ex
             raise
 
     def _compute_reconnect_delay(self) -> float:
@@ -579,6 +603,8 @@ class TCPInterface(StreamInterface):
                     )
                 return b""
             with self._reconnect_lock:
+                # Reset reconnect backoff after any successful read from the active
+                # socket so transient disconnects do not keep stale penalties.
                 self._reconnect_attempts = 0
                 self._fatal_disconnect = False
             return data

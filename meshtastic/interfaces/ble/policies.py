@@ -6,6 +6,10 @@ from typing import Any, Callable, Protocol
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.utils import _sleep
 
+RETRY_BACKOFF = 1.5
+RETRY_JITTER_RATIO = 0.1
+MIN_DELAY_FLOOR = 0.001
+
 
 class _RandomLike(Protocol):
     """Protocol for objects that provide a random() method."""
@@ -136,7 +140,9 @@ class ReconnectPolicy:
         -------
         float
             Delay in seconds — exponential-backoff value with symmetric jitter
-            applied, clamped to at least 0.001 and not exceeding the policy's max_delay.
+            applied, clamped to ``[effective_lower, max_delay]`` where
+            ``effective_lower = min(MIN_DELAY_FLOOR, max_delay)``. Overflow in
+            exponential backoff falls back to ``max_delay``.
         """
         if attempt is None:
             attempt = self._attempt_count
@@ -146,9 +152,10 @@ class ReconnectPolicy:
             exp_delay = self.max_delay
         delay = min(exp_delay, self.max_delay)
         jitter = delay * self.jitter_ratio * (self._random.random() * 2.0 - 1.0)
+        effective_lower = min(MIN_DELAY_FLOOR, self.max_delay)
         return min(
-            self.max_delay, max(0.001, delay + jitter)
-        )  # Clamp to [0.001, max_delay]
+            self.max_delay, max(effective_lower, delay + jitter)
+        )  # Clamp to [effective_lower, max_delay]
 
     def _should_retry(self, attempt: int | None = None) -> bool:
         """Return whether another retry attempt is permitted.
@@ -176,10 +183,12 @@ class ReconnectPolicy:
         3. `_should_retry(consumed_attempt)` computes whether the consumed/current
            attempt index is permitted by the retry budget.
 
-        `max_retries` counts retries after the initial attempt, so total
-        attempts are `1 + max_retries`. The returned boolean indicates whether
-        the attempt whose delay was just computed is allowed, not whether an
-        additional attempt remains after this call.
+        `max_retries` is compared against the zero-based attempt index
+        (`attempt < max_retries`). For example, `max_retries=3` permits
+        consumed attempts 0, 1, and 2; consumed attempt 3 returns False.
+        The returned boolean indicates whether the attempt whose delay was just
+        computed is allowed, not whether an additional attempt remains after
+        this call.
 
         Returns
         -------
@@ -269,7 +278,7 @@ class RetryPolicy:
     def _empty_read() -> ReconnectPolicy:
         """Policy configured for retrying empty BLE read responses.
 
-        Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to 1.0 second, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
+        Uses BLEConfig.EMPTY_READ_RETRY_DELAY as the initial delay, clamps delay to BLEConfig.EMPTY_READ_MAX_DELAY, uses a backoff of 1.5 with a jitter ratio of 0.1, and sets max_retries from BLEConfig.EMPTY_READ_MAX_RETRIES.
 
         Returns
         -------
@@ -278,9 +287,9 @@ class RetryPolicy:
         """
         return ReconnectPolicy(
             initial_delay=BLEConfig.EMPTY_READ_RETRY_DELAY,
-            max_delay=1.0,
-            backoff=1.5,
-            jitter_ratio=0.1,
+            max_delay=BLEConfig.EMPTY_READ_MAX_DELAY,
+            backoff=RETRY_BACKOFF,
+            jitter_ratio=RETRY_JITTER_RATIO,
             max_retries=BLEConfig.EMPTY_READ_MAX_RETRIES,
         )
 
@@ -291,13 +300,13 @@ class RetryPolicy:
         Returns
         -------
         ReconnectPolicy
-            ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay 2.0, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
+            ReconnectPolicy configured with initial_delay from BLEConfig.TRANSIENT_READ_RETRY_DELAY, max_delay BLEConfig.TRANSIENT_READ_MAX_DELAY, backoff 1.5, jitter_ratio 0.1, and max_retries from BLEConfig.TRANSIENT_READ_MAX_RETRIES.
         """
         return ReconnectPolicy(
             initial_delay=BLEConfig.TRANSIENT_READ_RETRY_DELAY,
-            max_delay=2.0,
-            backoff=1.5,
-            jitter_ratio=0.1,
+            max_delay=BLEConfig.TRANSIENT_READ_MAX_DELAY,
+            backoff=RETRY_BACKOFF,
+            jitter_ratio=RETRY_JITTER_RATIO,
             max_retries=BLEConfig.TRANSIENT_READ_MAX_RETRIES,
         )
 

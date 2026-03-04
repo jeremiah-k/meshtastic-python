@@ -33,7 +33,7 @@ def test_examples_hello_world_serial_no_arg(
         _run_hello_world_serial(monkeypatch)
 
     out, err = capsys.readouterr()
-    assert exc_info.value.code == 3
+    assert exc_info.value.code == 2
     assert out == ""
     assert err.startswith("usage: ")
     assert err.strip().endswith("hello_world_serial.py message")
@@ -47,6 +47,7 @@ def test_examples_hello_world_serial_with_arg(
     monkeypatch.setattr(
         serial.tools.list_ports, "comports", lambda *_args, **_kwargs: []
     )
+    # Script logs a warning and returns normally when no serial device is found.
     with caplog.at_level(logging.WARNING):
         _run_hello_world_serial(monkeypatch, "hello")
 

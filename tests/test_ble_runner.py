@@ -17,11 +17,41 @@ from meshtastic.interfaces.ble.runner import (
 )
 
 
+def _fake_submit_completed_none(
+    coro: Any, _loop: asyncio.AbstractEventLoop
+) -> Future[None]:
+    """Close a coroutine and return an already-completed Future with result None."""
+    coro.close()
+    future: Future[None] = Future()
+    future.set_result(None)
+    return future
+
+
+def _noop_ensure_running(timeout: float | None = None) -> None:
+    """Test stub for _ensure_running that accepts timeout kwargs."""
+    _ = timeout
+
+
+class _LoopStub:
+    """Loop stub that always reports a running event loop."""
+
+    @staticmethod
+    def is_running() -> bool:
+        """Report whether the BLE coroutine runner is currently active."""
+        return True
+
+
+async def _noop() -> None:
+    """Run a coroutine that does nothing."""
+    return None
+
+
 @pytest.fixture(autouse=True)
 def ensure_runner_running() -> Generator[None, None, None]:
     """Ensure the BLECoroutineRunner singleton is running for the duration of a test.
 
-    Start the BLECoroutineRunner before the test and re-validate or restart it after the test to prevent singleton state leakage between tests. Intended for use as an autouse pytest fixture.
+    Start the BLECoroutineRunner before the test and re-validate or restart it
+    after the test to prevent singleton state leakage between tests.
     """
     runner = BLECoroutineRunner()
     runner._ensure_running()
@@ -99,6 +129,8 @@ class TestBLECoroutineRunner:
 
         # Force stop the loop to kill the thread
         runner._stop()
+        if thread1 is not None:
+            thread1.join(timeout=1.0)
         assert thread1 is not None
         assert thread1.is_alive() is False
 
@@ -141,6 +173,7 @@ class TestBLECoroutineRunner:
                 self.seen_contexts: list[dict[str, Any]] = []
 
             def default_exception_handler(self, context: dict[str, Any]) -> None:
+                """Record contexts forwarded to the loop default exception handler."""
                 self.seen_contexts.append(context)
 
         def _capture_error(_message: str, *args: Any, **kwargs: Any) -> None:
@@ -153,7 +186,7 @@ class TestBLECoroutineRunner:
         loop = _LoopStub()
 
         runner._handle_loop_exception(
-            loop, {"message": "test error", "exception": None}
+            cast(Any, loop), {"message": "test error", "exception": None}
         )
 
         assert observed_exc_info == [False]
@@ -205,48 +238,15 @@ class TestBLECoroutineRunner:
             lambda timeout=None: observed_timeouts.append(timeout),
         )
 
-        class _LoopStub:
-            """Loop stub that always reports a running event loop."""
-
-            @staticmethod
-            def is_running():
-                """Report whether the BLE coroutine runner is currently active.
-
-                Returns
-                -------
-                    True if the runner is active, False otherwise.
-                """
-                return True
-
         with runner._instance_lock:
             original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro, _loop):
-            """Close the provided coroutine without executing it and return a completed Future with result None.
-
-            Parameters
-            ----------
-            coro : coroutine
-                Coroutine object to be closed and not scheduled for execution.
-            _loop : asyncio.AbstractEventLoop
-                Ignored; present for signature compatibility.
-
-            Returns
-            -------
-            asyncio.Future
-                A Future already completed with result `None`.
-            """
-            coro.close()
-            future = Future()
-            future.set_result(None)
-            return future
-
-        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
 
         try:
             runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
@@ -255,54 +255,26 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
 
     def test_run_coroutine_threadsafe_timeout_alias_warns_deprecated(self, monkeypatch):
         """Legacy timeout alias should emit a deprecation warning."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
-
-        class _LoopStub:
-            """Loop stub that always reports a running event loop."""
-
-            @staticmethod
-            def is_running():
-                """Report whether the BLE coroutine runner is currently active.
-
-                Returns
-                -------
-                    True if the runner is active, False otherwise.
-                """
-                return True
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            _noop_ensure_running,
+        )
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro, _loop):
-            """Close the provided coroutine without executing it and return a completed Future with result None.
-
-            Parameters
-            ----------
-            coro : coroutine
-                Coroutine object to be closed and not scheduled for execution.
-            _loop : asyncio.AbstractEventLoop
-                Ignored; present for signature compatibility.
-
-            Returns
-            -------
-            asyncio.Future
-                A Future already completed with result `None`.
-            """
-            coro.close()
-            future = Future()
-            future.set_result(None)
-            return future
-
-        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
 
         try:
             with pytest.warns(DeprecationWarning, match="startup_timeout"):
@@ -310,56 +282,62 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
+
+    def test_run_coroutine_threadsafe_timeout_alias_warns_once(self, monkeypatch):
+        """Legacy timeout alias should emit at most one warning per runner instance."""
+        runner = BLECoroutineRunner()
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            _noop_ensure_running,
+        )
+
+        with runner._instance_lock:
+            original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
+            runner._loop = cast(Any, _LoopStub())
+
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
+
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", DeprecationWarning)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
+            deprecations = [
+                w for w in caught if issubclass(w.category, DeprecationWarning)
+            ]
+            assert len(deprecations) == 1
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
 
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
     ):
         """Explicit startup_timeout should not emit timeout-alias deprecation warnings."""
         runner = BLECoroutineRunner()
-        monkeypatch.setattr(runner, "_ensure_running", lambda timeout=None: None)
-
-        class _LoopStub:
-            """Loop stub that always reports a running event loop."""
-
-            @staticmethod
-            def is_running():
-                """Report whether the BLE coroutine runner is currently active.
-
-                Returns
-                -------
-                    True if the runner is active, False otherwise.
-                """
-                return True
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            _noop_ensure_running,
+        )
 
         with runner._instance_lock:
             original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
             runner._loop = cast(Any, _LoopStub())
 
-        def _fake_submit(coro, _loop):
-            """Close the provided coroutine without executing it and return a completed Future with result None.
-
-            Parameters
-            ----------
-            coro : coroutine
-                Coroutine object to be closed and not scheduled for execution.
-            _loop : asyncio.AbstractEventLoop
-                Ignored; present for signature compatibility.
-
-            Returns
-            -------
-            asyncio.Future
-                A Future already completed with result `None`.
-            """
-            coro.close()
-            future = Future()
-            future.set_result(None)
-            return future
-
-        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_submit)
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
 
         try:
             with warnings.catch_warnings(record=True) as caught:
@@ -369,14 +347,11 @@ class TestBLECoroutineRunner:
         finally:
             with runner._instance_lock:
                 runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
 
     def test_run_coroutine_threadsafe_rejects_ambiguous_timeout_args(self):
         """Passing both timeout names should raise to avoid ambiguous behavior."""
         runner = BLECoroutineRunner()
-
-        async def _noop():
-            """Run a coroutine that does nothing."""
-            return None
 
         coro = _noop()
         try:
@@ -407,7 +382,7 @@ class TestBLECoroutineRunner:
             assert future not in runner._pending_futures
 
     def test_zombie_runner_count(self):
-        """Verify zombie runner count is tracked."""
+        """Runner shutdown without stop-timeout should not increment zombie count."""
         # Initial count should be 0
         initial_count = get_zombie_runner_count()
 
@@ -433,90 +408,41 @@ class TestBLECoroutineRunner:
         # (zombie count only increments when stop() times out)
         current_count = get_zombie_runner_count()
 
-        # Count should be >= initial (may have incremented if thread didn't exit)
-        assert current_count >= initial_count
+        # This path does not use the stop-timeout logic, so it should not
+        # increment the zombie counter.
+        assert current_count == initial_count
 
     def test_zombie_runner_increments_when_stop_times_out(self):
         """stop() timeout path should increment zombie runner count."""
 
         class FakeLoop:
-            """Loop stub used to exercise runner stop timeout behavior.
-
-            Methods
-            -------
-            is_running()
-            stop()
-            call_soon_threadsafe(fn)
-            """
+            """Loop stub used to exercise runner stop-timeout behavior."""
 
             def is_running(self) -> bool:
-                """Report whether the runner's event loop thread is currently active.
-
-                Returns
-                -------
-                bool
-                    `True` if the runner is active and its thread is alive, `False` otherwise.
-                """
+                """Report active loop state."""
                 return True
 
             def stop(self) -> None:
-                """Stop the background coroutine runner and clean up its resources.
-
-                Stops the runner's event loop and associated thread (if active), unregisters the atexit handler when registered, and marks the runner as not running.
-
-                Returns
-                -------
-                None
-                """
+                """No-op stop used in timeout-path tests."""
                 return None
 
             def call_soon_threadsafe(self, fn):
-                """Execute the provided callable immediately and synchronously.
-
-                Parameters
-                ----------
-                fn : callable
-                    Function or callable object to be invoked with no arguments.
-                """
+                """Invoke callable immediately."""
                 fn()
 
         class FakeThread:
-            """Thread stub that records join timeout calls.
-
-            Methods
-            -------
-            is_alive()
-            join(timeout=None)
-            """
+            """Thread stub that records join timeout calls."""
 
             def __init__(self):
-                """Initialize the fake thread and prepare a list to record calls to `join`.
-
-                Attributes
-                ----------
-                join_calls : list
-                    Appends each call's arguments when `join` is invoked (captures positional and keyword arguments).
-                """
+                """Initialize join-call recorder."""
                 self.join_calls = []
 
             def is_alive(self) -> bool:
-                """Indicate whether the thread is currently alive.
-
-                Returns
-                -------
-                bool
-                    `True` if the thread is alive, `False` otherwise.
-                """
+                """Report thread as alive for timeout-path testing."""
                 return True
 
             def join(self, timeout=None):
-                """Record a join call for this fake thread by storing the provided timeout.
-
-                Parameters
-                ----------
-                timeout : float | None
-                    The maximum number of seconds to wait for the thread to join, or None to wait indefinitely. The value is appended to self.join_calls. (Default value = None)
-                """
+                """Record requested timeout."""
                 self.join_calls.append(timeout)
 
         runner = BLECoroutineRunner()
@@ -549,9 +475,12 @@ class TestBLECoroutineRunner:
         runner._ensure_running()
         unregister_calls = []
 
+        def _record_unregister(func: Any) -> None:
+            unregister_calls.append(func)
+
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.atexit.unregister",
-            lambda func: unregister_calls.append(func),
+            _record_unregister,
         )
 
         assert runner._stop() is True
@@ -565,13 +494,19 @@ class TestBLECoroutineRunner:
         register_calls = []
         unregister_calls = []
 
+        def _record_register(func: Any) -> None:
+            register_calls.append(func)
+
+        def _record_unregister(func: Any) -> None:
+            unregister_calls.append(func)
+
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.atexit.register",
-            lambda func: register_calls.append(func),
+            _record_register,
         )
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.atexit.unregister",
-            lambda func: unregister_calls.append(func),
+            _record_unregister,
         )
 
         assert runner._stop() is True
@@ -696,7 +631,7 @@ class TestBLEClientWithRunner:
         class FailingBleakClient:
             """Bleak client stub whose disconnect always raises."""
 
-            isConnected = True
+            is_connected = True
 
             @staticmethod
             async def disconnect():

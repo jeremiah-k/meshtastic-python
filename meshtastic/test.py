@@ -8,7 +8,7 @@ import time
 from contextlib import ExitStack, suppress
 from typing import Any, NoReturn
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 import meshtastic.util
 from meshtastic import BROADCAST_NUM
@@ -134,7 +134,23 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_portnum(portnum: Any) -> str | None:
-    """Normalize a port number value to its protobuf enum-name representation."""
+    """Normalize ``portnum`` for comparisons in test helpers.
+
+    Parameters
+    ----------
+    portnum : Any
+        Port value to normalize. Supported inputs are enum/int-like values,
+        strings, and ``None``.
+
+    Returns
+    -------
+    str | None
+        For enum/int-like inputs, returns the canonical protobuf enum-name
+        string when resolvable.
+        For string inputs, returns the original string representation unchanged.
+        Returns ``None`` when ``portnum`` is ``None`` or when an integer value
+        is not a known ``PortNum`` enum member.
+    """
     if isinstance(portnum, int):
         with suppress(ValueError):
             return portnums_pb2.PortNum.Name(portnum)  # type: ignore[arg-type]
@@ -143,7 +159,18 @@ def _normalize_portnum(portnum: Any) -> str | None:
 
 
 def _normalize_node_id(node_id: Any) -> int | None:
-    """Normalize a node id value to integer when coercible."""
+    """Normalize a node ID value to integer when coercible.
+
+    Parameters
+    ----------
+    node_id : Any
+        Node identifier value to normalize.
+
+    Returns
+    -------
+    int | None
+        The integer value when coercible, otherwise ``None``.
+    """
     if node_id is None:
         return None
     with suppress(TypeError, ValueError):
@@ -223,7 +250,7 @@ def onNode(node: Any) -> None:
     logger.info("Node changed: %s", node)
 
 
-def subscribe() -> None:
+def subscribeToNodeUpdates() -> None:
     """Subscribe to node update notifications.
 
     Registers only `onNode` on the ``meshtastic.node`` topic.
@@ -232,6 +259,23 @@ def subscribe() -> None:
     """
 
     pub.subscribe(onNode, "meshtastic.node")
+
+
+# COMPAT_STABLE_SHIM: historical helper name.
+def subscribe() -> None:
+    """Compatibility alias for subscribeToNodeUpdates().
+
+    Returns
+    -------
+    None
+        This function returns no value.
+
+    See Also
+    --------
+    subscribeToNodeUpdates
+        Canonical helper for subscribing to node-update notifications.
+    """
+    subscribeToNodeUpdates()
 
 
 def testSend(

@@ -1,7 +1,9 @@
 """Unit tests for power logging behavior in slog.py."""
 
+import importlib
 import logging
 import threading
+import typing
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -65,6 +67,25 @@ class _FakeWriter:
 
     def close(self) -> None:
         """No-op close used by tests."""
+
+
+def _extract_row_from_add_row_call(writer: MagicMock) -> dict[str, Any]:
+    """Return the row payload passed to writer.addRow(...)."""
+    call = writer.addRow.call_args
+    assert call is not None
+    return _extract_row_from_call(call)
+
+
+def _extract_row_from_call(call: Any) -> dict[str, Any]:
+    """Return row payload from a single writer.addRow call object."""
+    row = call.kwargs.get("row")
+    if row is None:
+        row = call.kwargs.get("row_dict")
+    if row is None:
+        assert call.args, "Expected addRow to include row payload"
+        row = call.args[0]
+    assert isinstance(row, dict), "Expected addRow row payload to be a dict"
+    return typing.cast(dict[str, Any], row)
 
 
 @pytest.mark.unit
@@ -140,6 +161,40 @@ def test_root_dir_legacy_alias_warns_once(
 
 
 @pytest.mark.unit
+def test_slog_directory_collision_error_includes_path_and_attempts() -> None:
+    """SlogDirectoryCollisionError should include app dir and retry count context."""
+    error = slog_module.SlogDirectoryCollisionError("/tmp/slog-root", 7)
+    assert "under '/tmp/slog-root'" in str(error)
+    assert "after 7 attempts" in str(error)
+
+
+@pytest.mark.unit
+def test_slog_arrow_data_type_type_checking_alias_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reload slog with TYPE_CHECKING enabled to exercise ArrowDataType type-alias branch."""
+    original_type_checking = typing.TYPE_CHECKING
+    original_data_type = pa.DataType
+
+    class _SubscriptableDataType:
+        """Minimal stand-in that supports class subscription syntax."""
+
+        @classmethod
+        def __class_getitem__(cls, _item: Any) -> type["_SubscriptableDataType"]:
+            return cls
+
+    try:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", True)
+        monkeypatch.setattr(pa, "DataType", _SubscriptableDataType)
+        reloaded = importlib.reload(slog_module)
+        assert reloaded.ArrowDataType is _SubscriptableDataType
+    finally:
+        monkeypatch.setattr(typing, "TYPE_CHECKING", original_type_checking)
+        monkeypatch.setattr(pa, "DataType", original_data_type)
+        importlib.reload(slog_module)
+
+
+@pytest.mark.unit
 def test_slog_public_exports_remain_available() -> None:
     """Slog package should keep expected historical public exports."""
     expected_exports = {"LogSet", "rootDir", "root_dir"}
@@ -170,6 +225,20 @@ def test_power_logger_rejects_non_positive_interval(
 
 
 @pytest.mark.unit
+def test_power_logger_pmeter_setter_uses_initialized_reading_lock() -> None:
+    """PowerLogger.pMeter setter should update through the lock path when initialized."""
+    power_logger = object.__new__(PowerLogger)
+    power_logger._reading_lock = threading.Lock()
+    original_meter = MagicMock()
+    replacement_meter = MagicMock()
+    power_logger._p_meter = original_meter
+
+    power_logger.pMeter = replacement_meter
+
+    assert power_logger.pMeter is replacement_meter
+
+
+@pytest.mark.unit
 def test_store_current_reading_converts_legacy_aliases_when_voltage_present() -> None:
     """StoreCurrentReading should convert legacy *_mW aliases using nominal voltage."""
     meter = MagicMock()
@@ -189,12 +258,7 @@ def test_store_current_reading_converts_legacy_aliases_when_voltage_present() ->
     now = datetime(2026, 1, 1, 12, 0, 0)
     power_logger.storeCurrentReading(now=now)
 
-    call = writer.addRow.call_args
-    assert call is not None
-    row = call.kwargs.get("row")
-    if row is None:
-        assert call.args, "Expected addRow to include row payload"
-        row = call.args[0]
+    row = _extract_row_from_add_row_call(writer)
     assert row["time"] == now
     assert row["average_mA"] == 10.0
     assert row["max_mA"] == 20.0
@@ -237,13 +301,7 @@ def test_store_current_reading_warns_once_when_voltage_unavailable(
         assert len(deprecations) == 1
         assert "store_current_reading()" in str(deprecations[0].message)
 
-    rows = []
-    for call in writer.addRow.call_args_list:
-        row = call.kwargs.get("row")
-        if row is None:
-            assert call.args, "Expected addRow to include row payload"
-            row = call.args[0]
-        rows.append(row)
+    rows = [_extract_row_from_call(call) for call in writer.addRow.call_args_list]
     assert len(rows) == 2
     for row in rows:
         assert row["average_mW"] == row["average_mA"]
@@ -311,8 +369,9 @@ def test_on_log_message_keeps_running_when_raw_write_raises_non_oserror(
 @pytest.mark.unit
 def test_log_set_close_preserves_primary_exception(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """LogSet.close should preserve slog close failure and chain power close as cause."""
+    """LogSet.close should raise slog close failure and log secondary power-close failure."""
     log_set = object.__new__(LogSet)
     log_set.dir_name = "tmp"
     log_set.atexit_handler = lambda: None
@@ -325,9 +384,95 @@ def test_log_set_close_preserves_primary_exception(
     log_set.power_logger.close.side_effect = power_error
     monkeypatch.setattr("meshtastic.slog.slog.atexit.unregister", lambda _: None)
 
-    with pytest.raises(ValueError, match="slog close failed") as exc_info:
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError, match="slog close failed") as exc_info:
+            log_set.close()
+
+    assert exc_info.value.__cause__ is None
+    assert "Power logger close also failed" in caplog.text
+    assert log_set.slog_logger is None
+    assert log_set.power_logger is None
+
+
+@pytest.mark.unit
+def test_structured_logger_close_raises_unsubscribe_and_logs_secondary_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """StructuredLogger.close should raise unsubscribe error and log writer/raw close failures."""
+    logger_obj = object.__new__(StructuredLogger)
+    logger_obj._listen_glue = MagicMock()
+    logger_obj.writer = MagicMock()
+    logger_obj.writer.close.side_effect = RuntimeError("writer close failed")
+    logger_obj._raw_file_lock = threading.Lock()
+    logger_obj.raw_file = MagicMock()
+    logger_obj.raw_file.close.side_effect = OSError("raw close failed")
+
+    monkeypatch.setattr(
+        "meshtastic.slog.slog.pub.unsubscribe",
+        MagicMock(side_effect=ValueError("unsubscribe failed")),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError, match="unsubscribe failed"):
+            logger_obj.close()
+
+    assert "Failed to close raw log file" in caplog.text
+    assert "Writer close also failed after unsubscribe error" in caplog.text
+
+
+@pytest.mark.unit
+def test_structured_logger_close_raises_writer_error_when_unsubscribe_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """StructuredLogger.close should raise writer close failures when unsubscribe succeeds."""
+    logger_obj = object.__new__(StructuredLogger)
+    logger_obj._listen_glue = MagicMock()
+    logger_obj.writer = MagicMock()
+    logger_obj.writer.close.side_effect = RuntimeError("writer close failed")
+    logger_obj._raw_file_lock = threading.Lock()
+    logger_obj.raw_file = MagicMock()
+
+    monkeypatch.setattr("meshtastic.slog.slog.pub.unsubscribe", MagicMock())
+
+    with pytest.raises(RuntimeError, match="writer close failed"):
+        logger_obj.close()
+
+
+@pytest.mark.unit
+def test_log_set_init_raises_collision_error_after_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """LogSet should raise SlogDirectoryCollisionError when unique dir retries are exhausted."""
+    monkeypatch.setattr(slog_module, "LOG_DIR_COLLISION_MAX_RETRIES", 3)
+    monkeypatch.setattr(slog_module, "rootDir", lambda: str(tmp_path))
+
+    mkdir_mock = MagicMock(side_effect=FileExistsError("collision"))
+    monkeypatch.setattr("meshtastic.slog.slog.Path.mkdir", mkdir_mock)
+
+    with pytest.raises(slog_module.SlogDirectoryCollisionError, match="after 3 attempts"):
+        LogSet(MagicMock(), dir_name=None)
+
+    assert mkdir_mock.call_count == 3
+
+
+@pytest.mark.unit
+def test_log_set_close_raises_power_close_error_when_slog_close_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LogSet.close should raise power logger close errors when slog close succeeds."""
+    log_set = object.__new__(LogSet)
+    log_set.dir_name = "tmp"
+    log_set.atexit_handler = lambda: None
+    log_set.slog_logger = MagicMock()
+    log_set.power_logger = MagicMock()
+    log_set.power_logger.close.side_effect = RuntimeError("power close failed")
+
+    monkeypatch.setattr("meshtastic.slog.slog.atexit.unregister", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="power close failed"):
         log_set.close()
 
-    assert exc_info.value.__cause__ is power_error
     assert log_set.slog_logger is None
     assert log_set.power_logger is None

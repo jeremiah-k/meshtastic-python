@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 
 from meshtastic.protobuf import mesh_pb2, portnums_pb2, remote_hardware_pb2
 
@@ -42,15 +42,12 @@ class LockLike(Protocol):
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         """Acquire the lock."""
-        raise NotImplementedError
 
     def release(self) -> None:
         """Release the lock."""
-        raise NotImplementedError
 
     def __enter__(self) -> bool:
         """Enter context manager and acquire lock."""
-        raise NotImplementedError
 
     def __exit__(
         self,
@@ -59,7 +56,6 @@ class LockLike(Protocol):
         tb: Any,
     ) -> None:
         """Exit context manager and release lock."""
-        raise NotImplementedError
 
 
 def _get_mesh_interface_error() -> type[Exception]:
@@ -83,7 +79,19 @@ def _get_mesh_interface_error() -> type[Exception]:
 
 
 def _normalize_node_key(nodeid: Any) -> str | None:
-    """Normalize a node identifier to a stable string key for internal mask tracking."""
+    """Normalize a node identifier to a stable string key for internal mask tracking.
+
+    Parameters
+    ----------
+    nodeid : Any
+        Node identifier candidate (numeric node number, node ID string, or None).
+
+    Returns
+    -------
+    str | None
+        Normalized key prefixed with ``num:`` or ``id:``, or ``None`` for
+        unsupported/empty values.
+    """
     key: str | None = None
     if nodeid is None or isinstance(nodeid, bool):
         return key
@@ -117,8 +125,10 @@ def _parse_node_number(text: str) -> int | None:
     try:
         return int(normalized, 0)
     except ValueError:
+        # Fall back to explicit decimal parsing so plain numeric strings with
+        # leading zeros (for example "00123") are still accepted.
         signless = normalized[1:] if normalized[:1] in "+-" else normalized
-        if signless.isdigit() and signless:
+        if signless.isdigit():
             return int(normalized, 10)
         return None
 
@@ -287,7 +297,10 @@ class RemoteHardwareClient:
             If the local node has no channel named "gpio".
         """
         self.iface = iface
-        ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
+        if hasattr(type(iface.localNode), "getChannelCopyByName"):
+            ch = iface.localNode.getChannelCopyByName(GPIO_CHANNEL_NAME)
+        else:
+            ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
         if ch is None:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)
@@ -342,10 +355,12 @@ class RemoteHardwareClient:
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         if isinstance(nodeid, str):
             return nodeid.strip()
-        if isinstance(nodeid, int) and not isinstance(nodeid, bool):
+        if isinstance(nodeid, int):
             return nodeid
         mesh_interface_error = _get_mesh_interface_error()
-        raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
+        raise mesh_interface_error(
+            f"{MISSING_DEST_NODE_ID_ERROR} (got {type(nodeid).__name__}: {nodeid!r})"
+        )
 
     def _send_hardware(
         self,

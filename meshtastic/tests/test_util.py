@@ -563,7 +563,7 @@ def test_active_ports_on_supported_devices_mac(
 
 
 @pytest.mark.unit
-@patch("meshtastic.util.detect_windows_port", return_value={"COM2"})
+@patch("meshtastic.util.detectWindowsPort", return_value={"COM2"})
 @patch("platform.system", return_value="Windows")
 def test_active_ports_on_supported_devices_win(
     mock_platform: MagicMock,
@@ -644,9 +644,9 @@ def test_messageToJson_shows_all() -> None:
         "nodedbCount": 0,
     }
     for key, value in expected.items():
-        assert actual.get(key) == value, (
-            f"Key {key}: expected {value}, got {actual.get(key)}"
-        )
+        assert (
+            actual.get(key) == value
+        ), f"Key {key}: expected {value}, got {actual.get(key)}"
     # firmwareEdition presence only — value depends on proto enum default name
     assert "firmwareEdition" in actual
 
@@ -664,23 +664,23 @@ def test_message_to_json_alias_matches_messageToJson() -> None:
 @pytest.mark.unit
 def test_acknowledgement_reset() -> None:
     """Test that the reset method can set all fields back to False."""
-    test_ack_obj = Acknowledgment()
+    ack = Acknowledgment()
     # everything's set to False; let's set it to True to get a good test
-    test_ack_obj.receivedAck = True
-    test_ack_obj.receivedNak = True
-    test_ack_obj.receivedImplAck = True
-    test_ack_obj.receivedTraceRoute = True
-    test_ack_obj.receivedTelemetry = True
-    test_ack_obj.receivedPosition = True
-    test_ack_obj.receivedWaypoint = True
-    test_ack_obj.reset()
-    assert test_ack_obj.receivedAck is False
-    assert test_ack_obj.receivedNak is False
-    assert test_ack_obj.receivedImplAck is False
-    assert test_ack_obj.receivedTraceRoute is False
-    assert test_ack_obj.receivedTelemetry is False
-    assert test_ack_obj.receivedPosition is False
-    assert test_ack_obj.receivedWaypoint is False
+    ack.receivedAck = True
+    ack.receivedNak = True
+    ack.receivedImplAck = True
+    ack.receivedTraceRoute = True
+    ack.receivedTelemetry = True
+    ack.receivedPosition = True
+    ack.receivedWaypoint = True
+    ack.reset()
+    assert ack.receivedAck is False
+    assert ack.receivedNak is False
+    assert ack.receivedImplAck is False
+    assert ack.receivedTraceRoute is False
+    assert ack.receivedTelemetry is False
+    assert ack.receivedPosition is False
+    assert ack.receivedWaypoint is False
 
 
 @pytest.mark.unitslow
@@ -955,15 +955,15 @@ def test_tdeck_vid_pid_mapping() -> None:
         for d in supported_devices
         if d.usb_vendor_id_in_hex == "303a" and d.usb_product_id_in_hex == "1001"
     ]
-    assert len(tdeck_devices) == 1, (
-        "Expected exactly one T-Deck device with VID 303a and PID 1001"
-    )
-    assert tdeck_devices[0].name == "T-Deck", (
-        f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
-    )
-    assert tdeck_devices[0].for_firmware == "t-deck", (
-        f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
-    )
+    assert (
+        len(tdeck_devices) == 1
+    ), "Expected exactly one T-Deck device with VID 303a and PID 1001"
+    assert (
+        tdeck_devices[0].name == "T-Deck"
+    ), f"Expected device name 'T-Deck', got '{tdeck_devices[0].name}'"
+    assert (
+        tdeck_devices[0].for_firmware == "t-deck"
+    ), f"Expected for_firmware 't-deck', got '{tdeck_devices[0].for_firmware}'"
 
 
 @pytest.mark.unit

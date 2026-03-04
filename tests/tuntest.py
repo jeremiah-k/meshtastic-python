@@ -1,12 +1,18 @@
-# delete me eventually
+"""Manual TUN packet-read utility used for ad-hoc interactive debugging.
+
+This script intentionally lives in tests/ for historical reasons, but it is not a
+pytest-driven unit test.
+"""
+
 # Note python-pytuntap was too buggy
 # using pip3 install pytap2
-# make sure to "sudo setcap cap_net_admin+eip /usr/bin/python3.10" so python can access tun device without being root
+# make sure to "sudo setcap cap_net_admin+eip /usr/bin/python3.10" so python can
+# access tun device without being root
 # sudo ip tuntap del mode tun tun0
 
-# FIXME: set MTU correctly
-# select local ip address based on nodeid
-# print known node ids as IP addresses
+# TODO: set MTU correctly (issue #9001)
+# TODO: select local ip address based on nodeid (issue #9002)
+# TODO: print known node ids as IP addresses (issue #9003)
 
 import logging
 import threading
@@ -30,23 +36,59 @@ PROTOCOL_BLACKLIST: set[int] = {
 }
 
 
-def hexstr(barray: bytes | bytearray) -> str:
-    """Print a string of hex digits."""
-    return ":".join("{:02x}".format(x) for x in barray)
+def _ipstr(barray: bytes | bytearray) -> str:
+    """Render IPv4 bytes as dotted-decimal text.
+
+    Parameters
+    ----------
+    barray : bytes | bytearray
+        IPv4 address bytes.
+
+    Returns
+    -------
+    str
+        Dotted-decimal IPv4 string.
+    """
+    return ".".join(str(x) for x in barray)
 
 
-def ipstr(barray: bytes | bytearray) -> str:
-    """Print a string of ip digits."""
-    return ".".join("{}".format(x) for x in barray)
+def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
+    """Read a network-order unsigned 16-bit integer.
 
+    Parameters
+    ----------
+    p : bytes | bytearray | memoryview
+        Packet buffer.
+    offset : int
+        Start offset for the 16-bit field.
 
-def readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
-    """Read big endian u16 (network byte order)."""
+    Returns
+    -------
+    int
+        Parsed unsigned 16-bit value.
+    """
+    if not isinstance(offset, int):
+        raise ValueError(f"offset must be int, got {type(offset).__name__}")
+    if offset < 0 or offset + 1 >= len(p):
+        raise ValueError(
+            f"Cannot read u16 at offset {offset}: packet length is {len(p)}"
+        )
     return p[offset] * 256 + p[offset + 1]
 
 
 def _internet_checksum(payload: bytes) -> int:
-    """Compute RFC 1071 Internet checksum for the provided payload."""
+    """Compute RFC 1071 Internet checksum for the provided payload.
+
+    Parameters
+    ----------
+    payload : bytes
+        Payload bytes to checksum.
+
+    Returns
+    -------
+    int
+        16-bit one's-complement checksum value.
+    """
     if len(payload) % 2:
         payload += b"\x00"
     checksum = 0
@@ -60,40 +102,79 @@ def _readtest(tap: TapDevice) -> None:
     """Read packets from a TapDevice and log/filter protocol details."""
     while True:
         p = bytes(tap.read())
+        if len(p) < 20:
+            logging.debug(
+                "Dropping malformed IPv4 packet: too short (%d bytes)", len(p)
+            )
+            continue
 
         protocol = p[8 + 1]
         srcaddr = p[12:16]
         destaddr = p[16:20]
-        subheader = 20
+        version = p[0] >> 4
+        ip_header_len = (p[0] & 0x0F) * 4
+        if version != 4 or ip_header_len < 20 or len(p) < ip_header_len:
+            logging.debug(
+                "Dropping malformed IPv4 packet: version=%d, header length=%d",
+                version,
+                ip_header_len,
+            )
+            continue
         ignore = False  # Assume we will be forwarding the packet
         if protocol in PROTOCOL_BLACKLIST:
             ignore = True
             logging.debug("Ignoring blacklisted protocol 0x%02x", protocol)
         elif protocol == 0x01:  # ICMP
-            icmp_offset = subheader
+            icmp_offset = ip_header_len
+            if len(p) <= icmp_offset:
+                logging.debug("Ignoring malformed ICMP packet: missing type byte")
+                continue
             icmp_type = p[icmp_offset]
             if icmp_type == 0x08:  # echo request -> echo reply
-                logging.warning("Generating fake ping reply")
+                if len(p) < icmp_offset + 8:
+                    logging.debug(
+                        "Ignoring malformed ICMP echo request: too short for header"
+                    )
+                    continue
+                logging.debug("Generating fake ping reply")
                 icmp_reply = bytearray(p[icmp_offset:])
                 icmp_reply[0] = 0x00  # Echo reply type
                 icmp_reply[2:4] = b"\x00\x00"
                 checksum = _internet_checksum(bytes(icmp_reply))
                 icmp_reply[2] = (checksum >> 8) & 0xFF
                 icmp_reply[3] = checksum & 0xFF
-                pingback = p[:12] + p[16:20] + p[12:16] + bytes(icmp_reply)
-                tap.write(pingback)
+                ip_header = bytearray(p[:ip_header_len])
+                ip_header[10:12] = b"\x00\x00"
+                ip_header[12:16] = p[16:20]
+                ip_header[16:20] = p[12:16]
+                ip_checksum = _internet_checksum(bytes(ip_header))
+                ip_header[10] = (ip_checksum >> 8) & 0xFF
+                ip_header[11] = ip_checksum & 0xFF
+                pingback = bytes(ip_header) + bytes(icmp_reply)
+                try:
+                    tap.write(pingback)
+                except OSError as ex:
+                    logging.debug("Ignoring transient TUN write error: %s", ex)
+                ignore = True  # Don't forward the original request.
             else:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)
+                ignore = True  # Don't forward unsupported ICMP types.
         elif protocol == 0x11:  # UDP
-            srcport = readnet_u16(p, subheader)
-            destport = readnet_u16(p, subheader + 2)
+            if len(p) < ip_header_len + 4:
+                logging.debug("Ignoring malformed UDP packet: too short for ports")
+                continue
+            srcport = _readnet_u16(p, ip_header_len)
+            destport = _readnet_u16(p, ip_header_len + 2)
             logging.debug("udp srcport=%d, destport=%d", srcport, destport)
             if destport in UDP_BLACKLIST:
                 ignore = True
                 logging.debug("ignoring blacklisted UDP port %d", destport)
         elif protocol == 0x06:  # TCP
-            srcport = readnet_u16(p, subheader)
-            destport = readnet_u16(p, subheader + 2)
+            if len(p) < ip_header_len + 4:
+                logging.debug("Ignoring malformed TCP packet: too short for ports")
+                continue
+            srcport = _readnet_u16(p, ip_header_len)
+            destport = _readnet_u16(p, ip_header_len + 2)
             logging.debug("tcp srcport=%d, destport=%d", srcport, destport)
             if destport in TCP_BLACKLIST:
                 ignore = True
@@ -102,16 +183,16 @@ def _readtest(tap: TapDevice) -> None:
             logging.warning(
                 "unexpected protocol 0x%02x, src=%s, dest=%s",
                 protocol,
-                ipstr(srcaddr),
-                ipstr(destaddr),
+                _ipstr(srcaddr),
+                _ipstr(destaddr),
             )
 
         if not ignore:
             logging.debug(
-                "Forwarding packet bytelen=%d src=%s, dest=%s",
+                "Packet eligible for forwarding byte_len=%d src=%s, dest=%s",
                 len(p),
-                ipstr(srcaddr),
-                ipstr(destaddr),
+                _ipstr(srcaddr),
+                _ipstr(destaddr),
             )
 
 

@@ -21,7 +21,7 @@ import threading
 from contextlib import suppress
 from typing import Any
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 from pytap2 import TapDevice
 
 from meshtastic import mt_config
@@ -29,6 +29,8 @@ from meshtastic.protobuf import portnums_pb2
 from meshtastic.util import ipstr, readnet_u16
 
 logger = logging.getLogger(__name__)
+TRACE_LEVEL = 5
+logging.addLevelName(TRACE_LEVEL, "TRACE")
 TUNNEL_TOPIC = "meshtastic.receive.data.IP_TUNNEL_APP"
 
 # IP Protocol numbers (RFC 790)
@@ -75,7 +77,7 @@ def onTunnelReceive(packet: dict[str, Any], interface: Any) -> None:
 class Tunnel:
     """A TUN based IP tunnel over meshtastic."""
 
-    LOG_TRACE = 5
+    LOG_TRACE = TRACE_LEVEL
     # Default packet filters (copied into instance-level compatibility attributes).
     UDP_BLACKLIST_DEFAULT: frozenset[int] = frozenset(
         {
@@ -180,7 +182,7 @@ class Tunnel:
         self.TCP_BLACKLIST: set[int] = set(self.TCP_BLACKLIST_DEFAULT)
         self.PROTOCOL_BLACKLIST: set[int] = set(self.PROTOCOL_BLACKLIST_DEFAULT)
 
-        # Legacy compatibility aliases
+        # COMPAT_STABLE_SHIM: legacy instance attribute aliases.
         self.udpBlacklist = self.UDP_BLACKLIST
         self.tcpBlacklist = self.TCP_BLACKLIST
         self.protocolBlacklist = self.PROTOCOL_BLACKLIST
@@ -245,23 +247,31 @@ class Tunnel:
             return
 
         my_info = self.iface.myInfo
-        p = packet["decoded"]["payload"]
-        if packet["from"] == my_info.my_node_num:
+        if packet.get("from") == my_info.my_node_num:
             logger.debug("Ignoring message we sent")
-        else:
-            logger.debug(
-                "Received mesh tunnel message type=%s len=%d",
-                type(p),
-                len(p),
-            )
-            # we don't really need to check for filtering here (sender should have checked),
-            # but this provides useful debug printing on types of packets received
-            if not self.iface.noProto:
-                if self.tun is not None and not self._should_filter_packet(p):
-                    try:
-                        self.tun.write(p)
-                    except OSError:
-                        logger.debug("TUN write skipped: device closed during shutdown")
+            return
+        decoded = packet.get("decoded")
+        if not isinstance(decoded, dict):
+            logger.debug("Ignoring tunnel packet with missing/invalid decoded field")
+            return
+        p = decoded.get("payload")
+        if not isinstance(p, (bytes, bytearray)):
+            logger.debug("Ignoring tunnel packet with missing/invalid payload field")
+            return
+        payload = bytes(p)
+        logger.debug(
+            "Received mesh tunnel message type=%s len=%d",
+            type(payload),
+            len(payload),
+        )
+        # we don't really need to check for filtering here (sender should have checked),
+        # but this provides useful debug printing on types of packets received
+        if not self.iface.noProto:
+            if self.tun is not None and not self._should_filter_packet(payload):
+                try:
+                    self.tun.write(payload)
+                except OSError:
+                    logger.debug("TUN write skipped: device closed during shutdown")
 
     def _should_filter_packet(self, p: bytes) -> bool:
         """Decides whether an IPv4 packet should be ignored based on its protocol and port blacklists.
@@ -368,7 +378,7 @@ class Tunnel:
             if not self._should_filter_packet(p):
                 self._send_packet(dest_addr, p)
 
-    def _ip_to_node_id(self, ipAddr: bytes) -> str | None:
+    def _ip_to_node_id(self, ip_addr: bytes) -> str | None:
         """Convert a 4-byte IP address to the corresponding mesh node ID.
 
         Uses the last 16 bits of the IP address to match against the low 16 bits
@@ -376,7 +386,7 @@ class Tunnel:
 
         Parameters
         ----------
-        ipAddr : bytes
+        ip_addr : bytes
             4-byte IPv4 address in network byte order.
 
         Returns
@@ -385,7 +395,10 @@ class Tunnel:
             The mesh node ID string if a matching node is found, "^all" for
             broadcast address 255.255, or None if no matching node exists.
         """
-        ip_bits = ipAddr[2] * OCTET_MULTIPLIER + ipAddr[3]
+        if len(ip_addr) < 4:
+            logger.debug("Ignoring short destination address (len=%d)", len(ip_addr))
+            return None
+        ip_bits = ip_addr[2] * OCTET_MULTIPLIER + ip_addr[3]
 
         if ip_bits == NODE_NUM_MASK:
             return "^all"
@@ -394,18 +407,25 @@ class Tunnel:
             return None
 
         for node in self.iface.nodes.values():
-            node_num = node["num"] & NODE_NUM_MASK
+            node_num = node.get("num") if isinstance(node, dict) else None
+            if not isinstance(node_num, int):
+                continue
+            node_num &= NODE_NUM_MASK
             # logger.debug(f"Considering nodenum 0x{node_num:x} for ipBits 0x{ip_bits:x}")
             if node_num == ip_bits:
-                return str(node["user"]["id"])
+                user = node.get("user") if isinstance(node, dict) else None
+                if isinstance(user, dict):
+                    node_id = user.get("id")
+                    if isinstance(node_id, str):
+                        return node_id
         return None
 
-    def _node_num_to_ip(self, nodeNum: int) -> str:
+    def _node_num_to_ip(self, node_num: int) -> str:
         """Construct an IPv4 address in the tunnel subnet for a given node number.
 
         Parameters
         ----------
-        nodeNum : int
+        node_num : int
             Node number; the low 16 bits are used to form the final two octets of the returned address.
 
         Returns
@@ -413,7 +433,7 @@ class Tunnel:
         str
             IPv4 address string in the form "<subnetPrefix>.<high octet>.<low octet>".
         """
-        return f"{self.subnetPrefix}.{(nodeNum >> 8) & IP_OCTET_MASK}.{nodeNum & IP_OCTET_MASK}"
+        return f"{self.subnetPrefix}.{(node_num >> 8) & IP_OCTET_MASK}.{node_num & IP_OCTET_MASK}"
 
     def _send_packet(self, dest_addr: bytes, p: bytes) -> None:
         """Forward an IP packet to the corresponding mesh node or drop it if no node mapping exists.
@@ -470,7 +490,7 @@ class Tunnel:
                 pub.unsubscribe(onTunnelReceive, TUNNEL_TOPIC)
             self._subscribed = False
 
-    # Backward-compatible aliases for existing callers/tests.
+    # COMPAT_STABLE_SHIM: backward-compatible aliases for existing callers/tests.
     def _shouldFilterPacket(self, p: bytes) -> bool:
         """Compatibility wrapper for _should_filter_packet."""
         return self._should_filter_packet(p)

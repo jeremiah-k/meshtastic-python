@@ -17,10 +17,11 @@ from typing import (
 
 import pytest
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakError
+from bleak.exc import BleakDBusError, BleakError
 
 # Import meshtastic modules for use in tests
 import meshtastic.interfaces.ble as ble_mod
+import meshtastic.interfaces.ble.discovery as discovery_mod
 from meshtastic.interfaces.ble import (
     FROMNUM_UUID,
     LEGACY_LOGRADIO_UUID,
@@ -33,6 +34,7 @@ from meshtastic.interfaces.ble.connection import ConnectionValidator
 from meshtastic.interfaces.ble.discovery import (
     DiscoveryClientError,
     DiscoveryManager,
+    _close_discovery_client_best_effort,
     _filter_devices_for_target_identifier,
     _looks_like_ble_address,
     _parse_scan_response,
@@ -366,7 +368,7 @@ def test_ble_package_and_legacy_facade_exports_match() -> None:
     assert canonical_exports.isdisjoint(compat_bleak_exports)
 
 
-def test_state_manager_closing_only_for_disconnect():
+def test_state_manager_closing_only_for_disconnect() -> None:
     """is_closing should be true only while disconnecting."""
     state_manager = BLEStateManager()
     assert state_manager._is_closing is False
@@ -384,7 +386,7 @@ def test_state_manager_closing_only_for_disconnect():
     assert state_manager._is_closing is False
 
 
-def test_state_manager_allows_error_to_disconnecting_shutdown():
+def test_state_manager_allows_error_to_disconnecting_shutdown() -> None:
     """State manager should support ERROR -> DISCONNECTING for deterministic close paths."""
     state_manager = BLEStateManager()
 
@@ -410,7 +412,9 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
     iface.close()
 
 
-def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
+def test_handle_disconnect_ignores_stale_callbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Stale disconnect callbacks must not clear the current active client."""
     stale_client = DummyClient()
     iface = _build_interface(monkeypatch, stale_client)
@@ -454,7 +458,9 @@ def test_handle_disconnect_ignores_stale_callbacks(monkeypatch):
     iface.close()
 
 
-def test_concurrent_connect_and_disconnect_do_not_deadlock(monkeypatch, clear_registry):
+def test_concurrent_connect_and_disconnect_do_not_deadlock(
+    monkeypatch: pytest.MonkeyPatch, clear_registry: Any
+) -> None:
     """Concurrent connect/disconnect should complete without deadlocking under address-lock contention.
 
     This test forces connect() to hold the per-address lock while _handle_disconnect()
@@ -1036,6 +1042,233 @@ def test_discovery_manager_supports_factory_without_log_if_no_address_kwarg() ->
     assert factory_calls == 1
 
 
+def test_discovery_manager_uses_default_bleclient_when_ble_module_missing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """DiscoveryManager should fall back to default BLEClient when module resolution fails."""
+    filtered_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "Filtered")
+    discover_result = {
+        "filtered": (
+            filtered_device,
+            SimpleNamespace(service_uuids=[SERVICE_UUID]),
+        ),
+    }
+
+    class _DefaultClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            self.bleak_client = None
+
+        @staticmethod
+        def _discover(**_kwargs: Any) -> dict[str, Any]:
+            return discover_result
+
+    monkeypatch.setattr(discovery_mod, "resolve_ble_module", lambda: None)
+    monkeypatch.setattr(discovery_mod, "BLEClient", _DefaultClient)
+    manager = DiscoveryManager()
+
+    with caplog.at_level(logging.DEBUG):
+        devices = manager._discover_devices(address=None)
+
+    assert devices == [filtered_device]
+    assert "No BLE module found; using default BLEClient" in caplog.text
+
+
+def test_discovery_manager_deduplicates_stale_client_cleanup_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Duplicate stale-client references should be closed only once."""
+
+    class _ManagerWithStickySecondNone(DiscoveryManager):
+        """DiscoveryManager test double that preserves _client on second None assignment."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._none_assignments = 0
+            super().__init__(*args, **kwargs)
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name == "_client" and value is None and "_client" in self.__dict__:
+                self._none_assignments += 1
+                if self._none_assignments >= 2:
+                    return
+            super().__setattr__(name, value)
+
+    class _InvalidDiscoveryClient:
+        def __init__(self) -> None:
+            self.bleak_client = object()
+
+        @staticmethod
+        def isConnected() -> bool:
+            return False
+
+    invalid_client = _InvalidDiscoveryClient()
+    manager = _ManagerWithStickySecondNone(client_factory=lambda: invalid_client)
+    manager._client = cast(Any, invalid_client)
+    closed: list[int] = []
+    monkeypatch.setattr(
+        discovery_mod,
+        "_close_discovery_client_best_effort",
+        lambda stale_client: closed.append(id(stale_client)),
+    )
+
+    with pytest.raises(DiscoveryClientError, match="invalid type"):
+        manager._discover_devices(address=None)
+
+    assert closed == [id(invalid_client)]
+
+
+def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Best-effort cleanup should close the coroutine when create_task fails."""
+
+    class _AwaitableClose:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def __await__(self) -> Any:
+            """Return an empty awaitable iterator that completes immediately."""
+            return iter(())
+
+        def close(self) -> None:
+            """Track explicit coroutine close calls."""
+            self.closed = True
+
+    awaitable = _AwaitableClose()
+
+    class _Client:
+        def close(self) -> Any:
+            """Return the awaitable close result used by this test."""
+            return awaitable
+
+    class _Loop:
+        @staticmethod
+        def create_task(_task: Any) -> None:
+            """Simulate loop task scheduling failure."""
+            raise RuntimeError("cannot schedule task")
+
+    def _get_running_loop() -> _Loop:
+        """Return the fake running event loop."""
+        return _Loop()
+
+    def _await_close_result_passthrough(awaitable: Any) -> Any:
+        """Keep awaitable unchanged for deterministic unit-test behavior."""
+        return awaitable
+
+    def _wait_for_passthrough(
+        awaitable: Any, _timeout: float | None = None, **_kwargs: Any
+    ) -> Any:
+        """Bypass timeout wrapping to keep this branch deterministic."""
+        return awaitable
+
+    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
+    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
+    monkeypatch.setattr(
+        discovery_mod.inspect,
+        "iscoroutine",
+        lambda value: isinstance(value, _AwaitableClose),
+    )
+
+    assert awaitable.closed is False
+    _close_discovery_client_best_effort(_Client())
+
+    assert awaitable.closed is True
+
+
+def test_finalize_discovery_close_task_discards_task_and_logs_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_finalize_discovery_close_task should drop retained tasks and log non-cancel exceptions."""
+
+    class _Task:
+        def exception(self) -> Exception:
+            """Return a deterministic task failure for log assertion."""
+            return RuntimeError("close task failed")
+
+    task = _Task()
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.add(task)
+
+    with caplog.at_level(logging.DEBUG):
+        discovery_mod._finalize_discovery_close_task(task)  # type: ignore[arg-type]
+
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+    assert "Async close/disconnect failed for discarded discovery client." in caplog.text
+
+
+def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Best-effort async close should retain task until done callback executes."""
+
+    class _AwaitableClose:
+        def __await__(self) -> Any:
+            """Return an empty awaitable iterator that completes immediately."""
+            return iter(())
+
+    class _Client:
+        def close(self) -> Any:
+            """Return an awaitable close result for scheduling."""
+            return _AwaitableClose()
+
+    class _Task:
+        def __init__(self) -> None:
+            self._callbacks: list[Callable[[Any], None]] = []
+
+        def add_done_callback(self, callback: Callable[[Any], None]) -> None:
+            """Store done callbacks for explicit invocation by the test."""
+            self._callbacks.append(callback)
+
+        def exception(self) -> None:
+            """Expose successful task completion."""
+            return None
+
+    task = _Task()
+
+    class _Loop:
+        @staticmethod
+        def create_task(_awaitable: Any) -> _Task:
+            """Return the retained task used for callback assertions."""
+            return task
+
+    def _get_running_loop() -> _Loop:
+        """Return the fake running event loop."""
+        return _Loop()
+
+    def _await_close_result_passthrough(awaitable: Any) -> Any:
+        """Keep awaitable unchanged for deterministic unit-test behavior."""
+        return awaitable
+
+    def _wait_for_passthrough(
+        awaitable: Any, _timeout: float | None = None, **_kwargs: Any
+    ) -> Any:
+        """Bypass timeout wrapping to keep this branch deterministic."""
+        return awaitable
+
+    monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
+    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
+
+    _close_discovery_client_best_effort(_Client())
+
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        assert task in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+    assert len(task._callbacks) == 1
+
+    task._callbacks[0](task)
+    with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
+        assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
+
+
+def test_discovery_manager_raises_when_factory_returns_none() -> None:
+    """DiscoveryManager should raise DiscoveryClientError for None-returning factories."""
+    manager = DiscoveryManager(client_factory=lambda: None)
+
+    with pytest.raises(DiscoveryClientError, match="returned None"):
+        manager._discover_devices(address=None)
+
+
 def test_parse_scan_response_prefers_exact_name_before_normalized_match():
     """Targeted scan should prefer an exact name match over normalized-name candidates."""
     exact_name_device = _create_ble_device("AA:BB:CC:DD:EE:FF", "My Device")
@@ -1087,6 +1320,31 @@ def test_filter_devices_rejects_ambiguous_normalized_name_matches():
     matches = _filter_devices_for_target_identifier(devices, "MY DEVICE")
 
     assert matches == []
+
+
+def test_ble_interface_with_timeout_wrapper_returns_result() -> None:
+    """BLEInterface._with_timeout should delegate to with_timeout and return the awaited value."""
+
+    async def _ready() -> str:
+        return "ok"
+
+    assert (
+        asyncio.run(BLEInterface._with_timeout(_ready(), timeout=1.0, label="ble-op"))
+        == "ok"
+    )
+
+
+def test_ble_interface_sanitize_address_wrapper_delegates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_sanitize_address should delegate to sanitize_address helper."""
+    iface = object.__new__(BLEInterface)
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.sanitize_address",
+        lambda address: "normalized" if address else None,
+    )
+
+    assert iface._sanitize_address("AA-BB-CC-DD-EE-FF") == "normalized"
 
 
 def test_discovery_manager_destructor_does_not_close_client():
@@ -1290,6 +1548,50 @@ def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
 
     assert client.disconnect_calls == 0
     assert client.close_calls == 0
+
+
+def test_close_closes_discovery_manager_before_receive_thread_join(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should stop discovery before attempting receive-thread joins."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    discovery_closed = threading.Event()
+    join_called = threading.Event()
+    stop_worker = threading.Event()
+
+    class _DiscoveryManager:
+        def close(self) -> None:
+            discovery_closed.set()
+
+    iface._discovery_manager = _DiscoveryManager()  # type: ignore[assignment]
+    receive_thread = threading.Thread(
+        target=lambda: stop_worker.wait(1.0),
+        name="BLEReceiveTest",
+    )
+    receive_thread.start()
+    iface._receiveThread = receive_thread
+
+    def _assert_join_after_discovery_close(
+        _thread: threading.Thread, timeout: float | None = None
+    ) -> None:
+        """Assert discovery closes before join and then join the receive thread."""
+        assert discovery_closed.is_set()
+        join_called.set()
+        stop_worker.set()
+        _thread.join(timeout=timeout)
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_join_thread",
+        _assert_join_after_discovery_close,
+    )
+
+    iface.close()
+    assert discovery_closed.is_set()
+    assert join_called.is_set()
+    receive_thread.join(timeout=0.5)
+    assert not receive_thread.is_alive()
 
 
 def test_close_clears_ble_threads(monkeypatch):
@@ -1541,6 +1843,147 @@ def test_log_notification_registration(monkeypatch):
     iface.close()
 
 
+def test_register_notifications_retries_fromnum_notify_acquired_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_register_notifications should retry FROMNUM notify once on BlueZ 'Notify acquired'."""
+
+    class MockClientNotifyAcquired(DummyClient):
+        """Mock client that fails the first FROMNUM notify start with Notify acquired."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.fromnum_start_attempts = 0
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == FROMNUM_UUID
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if args and args[0] == FROMNUM_UUID:
+                self.fromnum_start_attempts += 1
+                if self.fromnum_start_attempts == 1:
+                    raise BleakDBusError(
+                        "org.bluez.Error.Failed",
+                        ["Notify acquired"],
+                    )
+
+    client = MockClientNotifyAcquired()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    iface._register_notifications(cast(BLEClient, client))
+
+    assert client.fromnum_start_attempts == 2
+    assert client.stop_notify_calls == [FROMNUM_UUID]
+    with iface._state_lock:
+        assert iface._fromnum_notify_enabled is True
+
+    iface.close()
+
+
+def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_register_notifications should re-raise FROMNUM start_notify DBus errors not matching Notify acquired."""
+
+    class MockClientFatalFromNumNotify(DummyClient):
+        """Mock client that always raises a non-recoverable DBus notify error."""
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == FROMNUM_UUID
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if args and args[0] == FROMNUM_UUID:
+                raise BleakDBusError(
+                    "org.bluez.Error.Failed",
+                    ["AlreadyConnected"],
+                )
+
+    client = MockClientFatalFromNumNotify()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    with pytest.raises(BleakDBusError):
+        iface._register_notifications(cast(BLEClient, client))
+
+    assert client.stop_notify_calls == []
+
+    iface.close()
+
+
+def test_register_notifications_falls_back_to_polling_after_repeated_notify_acquired(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated FROMNUM notify-acquired errors should not fail connect; polling fallback is enabled."""
+
+    class MockClientPersistentNotifyAcquired(DummyClient):
+        """Mock client that always returns Notify acquired for FROMNUM start_notify."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.fromnum_start_attempts = 0
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == FROMNUM_UUID
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if args and args[0] == FROMNUM_UUID:
+                self.fromnum_start_attempts += 1
+                raise BleakDBusError(
+                    "org.bluez.Error.Failed",
+                    ["Notify acquired"],
+                )
+
+    client = MockClientPersistentNotifyAcquired()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    iface._register_notifications(cast(BLEClient, client))
+
+    expected_attempts = ble_mod.BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
+    assert client.fromnum_start_attempts == expected_attempts
+    assert len(client.stop_notify_calls) == expected_attempts
+    assert all(call == FROMNUM_UUID for call in client.stop_notify_calls)
+    with iface._state_lock:
+        assert iface._fromnum_notify_enabled is False
+
+    iface.close()
+
+
+def test_read_from_radio_with_retries_polling_mode_does_single_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polling fallback mode should perform a single read attempt on empty payloads."""
+
+    class EmptyReadClient(DummyClient):
+        """Mock client that records read count and always returns empty payloads."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.read_count = 0
+            self.last_timeout: float | None = None
+
+        def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
+            self.read_count += 1
+            timeout_value = _kwargs.get("timeout")
+            self.last_timeout = cast(float | None, timeout_value)
+            return b""
+
+    client = EmptyReadClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    result = iface._read_from_radio_with_retries(
+        cast(BLEClient, client),
+        retry_on_empty=False,
+    )
+
+    assert result is None
+    assert client.read_count == 1
+    assert client.last_timeout == ble_mod.BLEConfig.RECEIVE_WAIT_TIMEOUT
+
+    iface.close()
+
+
 def test_close_unsubscribes_tracked_notifications(monkeypatch):
     """close() should best-effort stop tracked notifications before client teardown."""
     client = DummyClient()
@@ -1654,7 +2097,9 @@ def test_reconnect_worker_successful_attempt():
 
             Attributes
             ----------
+            reset_called : bool
                 True if reset() has been invoked.
+            _attempt_count : int
                 Number of connection attempts recorded.
             """
             self.reset_called = False
@@ -1720,6 +2165,7 @@ def test_reconnect_worker_successful_attempt():
                 Simulates an active connection state.
             address : str
                 Device address used for connect attempts.
+            client : object
                 Placeholder BLE client object.
             connect_calls : list
                 Records addresses passed to `connect` for assertions in tests.
@@ -1869,6 +2315,7 @@ def test_reconnect_worker_respects_retry_limits(monkeypatch):
                 Indicates whether the interface is currently connected.
             address : str
                 Remote device address used for connection attempts.
+            client : object | None
                 Placeholder for the BLE client instance (initially None).
             connect_attempts : int
                 Counter of connect() invocation attempts.

@@ -40,7 +40,7 @@ def _cli_exit(message: str, return_value: int = 1) -> NoReturn:
     util.our_exit(message, return_value)
 
 
-def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
+def toPmonNames(arr: Iterable[Any]) -> list[str | None]:
     """Map power-monitor state values (including bitmasks) to enum name strings.
 
     Parameters
@@ -101,6 +101,12 @@ def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
             return s if s != "None" else None
 
     return [_to_pmon_name(x) for x in arr]
+
+
+# COMPAT_STABLE_SHIM: historical snake_case helper name.
+def to_pmon_names(arr: Iterable[Any]) -> list[str | None]:
+    """Compatibility alias for toPmonNames()."""
+    return toPmonNames(arr)
 
 
 def read_pandas(filepath: str) -> pd.DataFrame:
@@ -242,6 +248,11 @@ def get_pmon_raises(dslog: pd.DataFrame) -> pd.DataFrame:
     return pmon_raises
 
 
+def getPmonRaises(dslog: pd.DataFrame) -> pd.DataFrame:
+    """Preferred camelCase alias for get_pmon_raises()."""
+    return get_pmon_raises(dslog)
+
+
 def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     """Retrieve board model name and software version from a slog DataFrame.
 
@@ -295,6 +306,11 @@ def get_board_info(dslog: pd.DataFrame) -> tuple[str, str]:
     return (board_model_name, sw_version)
 
 
+def getBoardInfo(dslog: pd.DataFrame) -> tuple[str, str]:
+    """Preferred camelCase alias for get_board_info()."""
+    return get_board_info(dslog)
+
+
 def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) -> str:
     """Choose a power-series column while preserving compatibility.
 
@@ -333,6 +349,11 @@ def choose_power_column(frame: pd.DataFrame, legacy_name: str, new_name: str) ->
         f"{legacy_name!r} or {new_name!r}; available columns: {list(frame.columns)!r}"
     )
     raise ValueError(error_msg)
+
+
+def choosePowerColumn(frame: pd.DataFrame, legacy_name: str, new_name: str) -> str:
+    """Preferred camelCase alias for choose_power_column()."""
+    return choose_power_column(frame, legacy_name, new_name)
 
 
 def _parse_port(value: str) -> int:

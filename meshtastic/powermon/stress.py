@@ -18,12 +18,21 @@ DEFAULT_STRESS_STATE_DURATION_S: Final[float] = (
 INVALID_ACK_TIMEOUT_ERROR: Final[str] = (
     "ack_timeout must be a finite number > 0 seconds"
 )
+INTERFACE_NOT_INITIALIZED_ERROR: Final[str] = (
+    "Interface not initialized; myInfo.my_node_num unavailable"
+)
 
 
 def handlePowerStressResponse(packet: dict[str, Any], interface: Any) -> None:
     """Handle power stress responses and mark interface as having received a response."""
     logging.debug("packet:%s interface:%s", packet, interface)
     interface.gotResponse = True
+
+
+# COMPAT_STABLE_SHIM: snake_case alias for callback users.
+def handle_power_stress_response(packet: dict[str, Any], interface: Any) -> None:
+    """Compatibility alias for handlePowerStressResponse()."""
+    handlePowerStressResponse(packet, interface)
 
 
 # COMPAT_STABLE_SHIM: naming alias for existing callback users.
@@ -46,7 +55,13 @@ class PowerStressClient:
         self.iface = iface
 
         if node_id is None:
-            node_id = iface.myInfo.my_node_num
+            my_info = getattr(iface, "myInfo", None)
+            my_node_num = (
+                getattr(my_info, "my_node_num", None) if my_info is not None else None
+            )
+            if my_node_num is None:
+                raise ValueError(INTERFACE_NOT_INITIALIZED_ERROR)
+            node_id = my_node_num
 
         self.node_id = node_id
         # No need to subscribe - because we
@@ -58,7 +73,23 @@ class PowerStressClient:
         num_seconds: float = 0.0,
         onResponse: Callable[[dict[str, Any]], None] | None = None,
     ) -> Any:
-        """Client goo for talking with the device side agent."""
+        """Send a power stress command to the device.
+
+        Parameters
+        ----------
+        cmd : powermon_pb2.PowerStressMessage.Opcode.ValueType
+            Power stress opcode to send.
+        num_seconds : float
+            Duration for timed stress commands. (Default value = 0.0)
+        onResponse : Callable[[dict[str, Any]], None] | None
+            Optional callback invoked when a response is received.
+            (Default value = None)
+
+        Returns
+        -------
+        Any
+            Return value from ``iface.sendData(...)``.
+        """
         r = powermon_pb2.PowerStressMessage()
         r.cmd = cmd
         r.num_seconds = num_seconds

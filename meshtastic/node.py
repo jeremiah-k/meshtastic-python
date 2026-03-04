@@ -8,6 +8,7 @@ in the mesh, including methods for localConfig, moduleConfig, and channels manag
 import base64
 import binascii
 import logging
+import sys
 import threading
 import time
 from typing import (
@@ -16,8 +17,10 @@ from typing import (
     Callable,
     NoReturn,
     Sequence,
+    cast,
 )
 
+from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.message import DecodeError
 
 from meshtastic.protobuf import (
@@ -53,6 +56,17 @@ EMPTY_SHORT_NAME_MSG = (
 )
 # Maximum length for long_name (per protobuf definition in mesh.options)
 MAX_LONG_NAME_LEN = 40
+# Maximum length for owner short_name.
+MAX_SHORT_NAME_LEN = 4
+# Maximum text length for ringtone messages.
+MAX_RINGTONE_LENGTH = 230
+# Maximum text length for canned-message payloads.
+MAX_CANNED_MESSAGE_LENGTH = 200
+# Maximum number of channels a node can hold.
+MAX_CHANNELS = 8
+# Extra wait used only when getMetadata() runs under redirected stdout for
+# historical callers that parse printed metadata lines.
+METADATA_STDOUT_COMPAT_WAIT_SECONDS = 1.0
 
 
 class Node:
@@ -86,6 +100,7 @@ class Node:
         self.localConfig = localonly_pb2.LocalConfig()
         self.moduleConfig = localonly_pb2.LocalModuleConfig()
         self.channels: list[channel_pb2.Channel] | None = None
+        self._channels_lock = threading.RLock()
         self._timeout = Timeout(maxSecs=timeout)
         self.partialChannels: list[channel_pb2.Channel] = []
         self.noProto = noProto
@@ -95,6 +110,8 @@ class Node:
         self.ringtonePart: str | None = None
         self._ringtone_lock = threading.Lock()
         self._canned_message_lock = threading.Lock()
+        self._metadata_stdout_event_lock = threading.Lock()
+        self._metadata_stdout_event: threading.Event | None = None
 
     def __repr__(self) -> str:
         """Return a developer-oriented string identifying the Node.
@@ -160,6 +177,59 @@ class Node:
         """Backward-compatible alias for excludedModulesList."""
         return Node.excludedModulesList(excluded_modules)
 
+    @staticmethod
+    def _emit_metadata_line(line: str) -> None:
+        """Log a metadata line and mirror it to redirected stdout for compatibility."""
+        logger.info("%s", line)
+        # Historical callers parse getMetadata() output from redirected stdout.
+        if sys.stdout is not sys.__stdout__:
+            print(line)
+
+    def _signal_metadata_stdout_event(self) -> None:
+        """Signal redirected-stdout metadata waiters that a terminal response arrived."""
+        with self._metadata_stdout_event_lock:
+            metadata_stdout_event = self._metadata_stdout_event
+        if metadata_stdout_event is not None:
+            metadata_stdout_event.set()
+
+    def _emit_cached_metadata_for_stdout(self) -> bool:
+        """Emit metadata lines from ``self.iface.metadata`` for stdout parser compatibility."""
+        metadata = getattr(self.iface, "metadata", None)
+        firmware_version = getattr(metadata, "firmware_version", "")
+        if not isinstance(firmware_version, str) or not firmware_version:
+            return False
+
+        self._emit_metadata_line(f"\nfirmware_version: {firmware_version}")
+        self._emit_metadata_line(
+            f"device_state_version: {getattr(metadata, 'device_state_version', 0)}"
+        )
+        role = getattr(metadata, "role", 0)
+        if role in config_pb2.Config.DeviceConfig.Role.values():
+            role_value = cast(config_pb2.Config.DeviceConfig.Role.ValueType, role)
+            self._emit_metadata_line(
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(role_value)}"
+            )
+        else:
+            self._emit_metadata_line(f"role: {role}")
+        self._emit_metadata_line(
+            f"position_flags: {self.position_flags_list(getattr(metadata, 'position_flags', 0))}"
+        )
+        hw_model = getattr(metadata, "hw_model", 0)
+        if hw_model in mesh_pb2.HardwareModel.values():
+            hw_model_value = cast(mesh_pb2.HardwareModel.ValueType, hw_model)
+            self._emit_metadata_line(
+                f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model_value)}"
+            )
+        else:
+            self._emit_metadata_line(f"hw_model: {hw_model}")
+        self._emit_metadata_line(f"hasPKC: {getattr(metadata, 'hasPKC', False)}")
+        excluded_modules = getattr(metadata, "excluded_modules", 0)
+        if excluded_modules > 0:
+            self._emit_metadata_line(
+                f"excluded_modules: {self.excluded_modules_list(excluded_modules)}"
+            )
+        return True
+
     def moduleAvailable(self, excluded_bit: int) -> bool:
         """Determine whether a specific module bit is allowed by the interface metadata.
 
@@ -196,9 +266,11 @@ class Node:
         all channels differs, it is printed as the "Complete URL".
         """
         print("Channels:")
-        if self.channels:
-            logger.debug(f"self.channels:{self.channels}")
-            for c in self.channels:
+        with self._channels_lock:
+            channels_snapshot = list(self.channels) if self.channels else []
+        if channels_snapshot:
+            logger.debug("self.channels:%s", channels_snapshot)
+            for c in channels_snapshot:
                 cStr = messageToJson(c.settings)
                 # don't show disabled channels
                 if channel_pb2.Channel.Role.Name(c.role) != "DISABLED":
@@ -237,8 +309,14 @@ class Node:
             list will be normalized (indices fixed) and padded as needed to meet expected
             channel count.
         """
-        self.channels = list(channels)
-        self._fixup_channels()
+        with self._channels_lock:
+            copied_channels: list[channel_pb2.Channel] = []
+            for source_channel in channels:
+                copied_channel = channel_pb2.Channel()
+                copied_channel.CopyFrom(source_channel)
+                copied_channels.append(copied_channel)
+            self.channels = copied_channels
+            self._fixup_channels_locked()
 
     def requestChannels(self, startingIndex: int = 0) -> None:
         """Request channel definitions from the node, starting at the given channel index.
@@ -255,9 +333,10 @@ class Node:
         logger.debug(f"requestChannels for nodeNum:{self.nodeNum}")
         # only initialize if we're starting out fresh
         if startingIndex == 0:
-            self.channels = None
-            # We keep our channels in a temp array until finished
-            self.partialChannels = []
+            with self._channels_lock:
+                self.channels = None
+                # We keep our channels in a temp array until finished
+                self.partialChannels = []
         self._request_channel(startingIndex)
 
     def onResponseRequestSettings(self, p: dict[str, Any]) -> None:
@@ -333,7 +412,7 @@ class Node:
                 config_values.CopyFrom(raw_config)
                 logger.info("%s:\n%s", camel_to_snake(field), config_values)
 
-    def requestConfig(self, configType: int | Any) -> None:
+    def requestConfig(self, configType: int | FieldDescriptor) -> None:
         """Request a configuration subset or the full configuration from this node.
 
         If `configType` is an int it is treated as a config index. If it is a protobuf
@@ -345,7 +424,7 @@ class Node:
 
         Parameters
         ----------
-        configType : int | Any
+        configType : int | FieldDescriptor
             Numeric config index or a
             protobuf field descriptor indicating which config field to fetch.
         """
@@ -383,9 +462,11 @@ class Node:
         MeshInterfaceError
             if channel data has not been loaded.
         """
-        if self.channels is None:
-            self._raise_interface_error("Error: No channels have been read")
-        self.channels[0].settings.psk = fromPSK("none")
+        with self._channels_lock:
+            channels = self.channels
+            if not channels:
+                self._raise_interface_error("Error: No channels have been read")
+            channels[0].settings.psk = fromPSK("none")
         logger.info("Writing modified channels to device")
         self.writeChannel(0)
 
@@ -527,18 +608,25 @@ class Node:
         MeshInterfaceError
             If channels have not been loaded (no channels to write).
         """
-        if self.channels is None:
-            self._raise_interface_error("Error: No channels have been read")
-        if channelIndex < 0 or channelIndex >= len(self.channels):
-            self._raise_interface_error(
-                f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
-            )
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                self._raise_interface_error("Error: No channels have been read")
+            if channelIndex < 0 or channelIndex >= len(channels):
+                self._raise_interface_error(
+                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
+                )
+            channel_to_write = channel_pb2.Channel()
+            channel_to_write.CopyFrom(channels[channelIndex])
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
-        p.set_channel.CopyFrom(self.channels[channelIndex])
+        p.set_channel.CopyFrom(channel_to_write)
         self._send_admin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
+    # COMPAT_STABLE_SHIM: historical channel lookup helpers return live Channel
+    # objects for mutate-then-write workflows (get*() -> edit -> writeChannel()).
+    # Switching these accessors to defensive copies would be a behavioral break.
     def getChannelByChannelIndex(self, channelIndex: int) -> channel_pb2.Channel | None:
         """Retrieve the channel at the given zero-based index from this node's channels.
 
@@ -551,11 +639,31 @@ class Node:
         -------
         channel_pb2.Channel | None
             The channel at the specified index, or None if channels are unset or the index is out of range.
+
+        Notes
+        -----
+        Returns a live channel object by design for backward compatibility with
+        existing callers that mutate a selected channel and then persist via
+        `writeChannel()`.
         """
-        ch = None
-        if self.channels and 0 <= channelIndex < len(self.channels):
-            ch = self.channels[channelIndex]
-        return ch
+        with self._channels_lock:
+            channels = self.channels
+            if channels and 0 <= channelIndex < len(channels):
+                # Compatibility: return the live object, not a defensive copy.
+                return channels[channelIndex]
+            return None
+
+    def getChannelCopyByChannelIndex(
+        self, channelIndex: int
+    ) -> channel_pb2.Channel | None:
+        """Retrieve a defensive copy of the channel at the given zero-based index."""
+        with self._channels_lock:
+            channels = self.channels
+            if channels and 0 <= channelIndex < len(channels):
+                copied = channel_pb2.Channel()
+                copied.CopyFrom(channels[channelIndex])
+                return copied
+            return None
 
     def deleteChannel(self, channelIndex: int) -> None:
         """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
@@ -578,39 +686,43 @@ class Node:
         MeshInterfaceError
             If the channel at channelIndex is not Role.SECONDARY or Role.DISABLED.
         """
-        if self.channels is None:
-            self._raise_interface_error("Error: No channels have been read")
-        if channelIndex < 0 or channelIndex >= len(self.channels):
-            self._raise_interface_error(
-                f"Channel index {channelIndex} out of range (0-{len(self.channels) - 1})"
-            )
-        ch = self.channels[channelIndex]
-        if ch.role not in (
-            channel_pb2.Channel.Role.SECONDARY,
-            channel_pb2.Channel.Role.DISABLED,
-        ):
-            self._raise_interface_error(
-                "Only SECONDARY or DISABLED channels can be deleted"
-            )
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                self._raise_interface_error("Error: No channels have been read")
+            if channelIndex < 0 or channelIndex >= len(channels):
+                self._raise_interface_error(
+                    f"Channel index {channelIndex} out of range (0-{len(channels) - 1})"
+                )
+            ch = channels[channelIndex]
+            if ch.role not in (
+                channel_pb2.Channel.Role.SECONDARY,
+                channel_pb2.Channel.Role.DISABLED,
+            ):
+                self._raise_interface_error(
+                    "Only SECONDARY or DISABLED channels can be deleted"
+                )
+            # If we move the "admin" channel, the index used for admin writes
+            # will need to be recomputed as writes progress.
+            channels.pop(channelIndex)
+            self._fixup_channels_locked()
+            channels_to_rewrite: list[tuple[int, channel_pb2.Channel]] = []
+            for index in range(channelIndex, MAX_CHANNELS):
+                channel_snapshot = channel_pb2.Channel()
+                channel_snapshot.CopyFrom(channels[index])
+                channels_to_rewrite.append((index, channel_snapshot))
+            is_local_node = self.iface.localNode == self
 
-        # we are careful here because if we move the "admin" channel the channelIndex we need to use
-        # for sending admin channels will also change
-        adminIndex = self.iface.localNode._get_admin_channel_index()
-
-        self.channels.pop(channelIndex)
-        self._fixup_channels()  # expand back to 8 channels
-
-        index = channelIndex
-        while index < 8:
-            self.writeChannel(index, adminIndex=adminIndex)
-            index += 1
-
-            # if we are updating the local node, we might end up
-            # *moving* the admin channel index as we are writing
-            if (self.iface.localNode == self) and index >= adminIndex:
-                # We've now passed the old location for admin index
-                # (and written it), so we can start finding it by name again
-                adminIndex = 0
+        for index, channel_snapshot in channels_to_rewrite:
+            if is_local_node:
+                admin_index_for_write = self._get_admin_channel_index()
+            else:
+                admin_index_for_write = self.iface.localNode.getAdminChannelIndex()
+            self.ensureSessionKey()
+            p = admin_pb2.AdminMessage()
+            p.set_channel.CopyFrom(channel_snapshot)
+            self._send_admin(p, adminIndex=admin_index_for_write)
+            logger.debug(f"Wrote channel {index}")
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.
@@ -624,11 +736,29 @@ class Node:
         -------
         channel_pb2.Channel | None
             The matching channel object if found, `None` otherwise.
+
+        Notes
+        -----
+        Returns a live channel object by design for backward compatibility with
+        existing callers that mutate a selected channel and then persist via
+        `writeChannel()`.
         """
-        for c in self.channels or []:
-            if c.settings and c.settings.name == name:
-                return c
-        return None
+        with self._channels_lock:
+            for c in self.channels or []:
+                if c.settings and c.settings.name == name:
+                    # Compatibility: return the live object, not a defensive copy.
+                    return c
+            return None
+
+    def getChannelCopyByName(self, name: str) -> channel_pb2.Channel | None:
+        """Find a channel by name and return a defensive copy for read-only use."""
+        with self._channels_lock:
+            for channel in self.channels or []:
+                if channel.settings and channel.settings.name == name:
+                    copied = channel_pb2.Channel()
+                    copied.CopyFrom(channel)
+                    return copied
+            return None
 
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
         """Find the first channel whose role is DISABLED.
@@ -637,13 +767,39 @@ class Node:
         -------
         channel_pb2.Channel | None
             The first disabled channel if present, `None` otherwise.
+
+        Notes
+        -----
+        Returns a live channel object by design for backward compatibility with
+        existing callers that mutate a selected channel and then persist via
+        `writeChannel()`.
         """
-        if self.channels is None:
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                return None
+            for c in channels:
+                if c.role == channel_pb2.Channel.Role.DISABLED:
+                    # Compatibility: return the live object, not a defensive copy.
+                    return c
             return None
-        for c in self.channels:
-            if c.role == channel_pb2.Channel.Role.DISABLED:
-                return c
-        return None
+
+    def getDisabledChannelCopy(self) -> channel_pb2.Channel | None:
+        """Find the first disabled channel and return a defensive copy for read-only use."""
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                return None
+            for channel in channels:
+                if channel.role == channel_pb2.Channel.Role.DISABLED:
+                    copied = channel_pb2.Channel()
+                    copied.CopyFrom(channel)
+                    return copied
+            return None
+
+    def getAdminChannelIndex(self) -> int:
+        """Public accessor for the admin channel index on this node."""
+        return self._get_admin_channel_index()
 
     def _get_admin_channel_index(self) -> int:
         """Get the index of the channel named "admin", or 0 if no such channel exists.
@@ -653,10 +809,11 @@ class Node:
         int
             Index of the admin channel, or 0 if no channel with name "admin" is present.
         """
-        for c in self.channels or []:
-            if c.settings and c.settings.name.lower() == "admin":
-                return c.index
-        return 0
+        with self._channels_lock:
+            for c in self.channels or []:
+                if c.settings and c.settings.name.lower() == "admin":
+                    return c.index
+            return 0
 
     def setOwner(
         self,
@@ -694,7 +851,6 @@ class Node:
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
 
-        nChars = 4
         if long_name is not None:
             long_name = long_name.strip()
             # Validate that long_name is not empty or whitespace-only
@@ -712,10 +868,12 @@ class Node:
             # Validate that short_name is not empty or whitespace-only
             if not short_name:
                 self._raise_interface_error(EMPTY_SHORT_NAME_MSG)
-            if len(short_name) > nChars:
-                short_name = short_name[:nChars]
+            if len(short_name) > MAX_SHORT_NAME_LEN:
+                short_name = short_name[:MAX_SHORT_NAME_LEN]
                 logger.warning(
-                    f"Short name is longer than {nChars} characters, truncating to '{short_name}'"
+                    "Short name is longer than %s characters, truncating to '%s'",
+                    MAX_SHORT_NAME_LEN,
+                    short_name,
                 )
             p.set_owner.short_name = short_name
         if is_unmessagable is not None:
@@ -750,15 +908,17 @@ class Node:
         """
         # Only keep the primary/secondary channels, assume primary is first
         channelSet = apponly_pb2.ChannelSet()
-        if self.channels:
-            for c in self.channels:
+        with self._channels_lock:
+            channels_snapshot = list(self.channels) if self.channels else []
+        if channels_snapshot:
+            for c in channels_snapshot:
                 if c.role == channel_pb2.Channel.Role.PRIMARY or (
                     includeAll and c.role == channel_pb2.Channel.Role.SECONDARY
                 ):
                     channelSet.settings.append(c.settings)
 
         if len(self.localConfig.ListFields()) == 0:
-            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name.get("lora"))
+            self.requestConfig(self.localConfig.DESCRIPTOR.fields_by_name["lora"])
         channelSet.lora_config.CopyFrom(self.localConfig.lora)
         some_bytes = channelSet.SerializeToString()
         s = base64.urlsafe_b64encode(some_bytes).decode("ascii")
@@ -786,18 +946,15 @@ class Node:
             If channels or configuration are not loaded, the URL is invalid or
             contains no settings, or no free channel slot is available when adding.
         """
-        if self.channels is None:
-            self._raise_interface_error("Config or channels not loaded")
+        with self._channels_lock:
+            if self.channels is None:
+                self._raise_interface_error("Config or channels not loaded")
 
         # URLs are of the form https://meshtastic.org/d/#{base64_channel_set}
-        # Split on '/#' to find the base64 encoded channel settings
-        if addOnly:
-            splitURL = url.split("/?add=true#")
-        else:
-            splitURL = url.split("/#")
-        if len(splitURL) == 1:
+        # Parse from '#' to support optional query parameters before the fragment.
+        if "#" not in url:
             self._raise_interface_error(f"Invalid URL '{url}'")
-        b64 = splitURL[-1]
+        b64 = url.split("#")[-1]
         if not b64:
             self._raise_interface_error(f"Invalid URL '{url}': no channel data found")
 
@@ -826,22 +983,45 @@ class Node:
         if addOnly:
             # Add new channels with names not already present
             # Don't change existing channels
-            for chs in channelSet.settings:
-                channelExists = self.getChannelByName(chs.name)
-                if channelExists or chs.name == "":
-                    logger.info(
-                        f'Ignoring existing or empty channel "{chs.name}" from add URL'
-                    )
-                    continue
-                ch = self.getDisabledChannel()
-                if not ch:
-                    self._raise_interface_error("No free channels were found")
-                ch.settings.CopyFrom(chs)
-                ch.role = channel_pb2.Channel.Role.SECONDARY
-                logger.info(f"Adding new channel '{chs.name}' to device")
-                self.writeChannel(ch.index)
+            ignored_channel_names: list[str] = []
+            channels_to_write: list[tuple[int, str]] = []
+            with self._channels_lock:
+                channels = self.channels
+                if channels is None:
+                    self._raise_interface_error("Config or channels not loaded")
+                existing_names = {
+                    c.settings.name for c in channels if c.settings and c.settings.name
+                }
+                disabled_channels = [
+                    c for c in channels if c.role == channel_pb2.Channel.Role.DISABLED
+                ]
+                disabled_channel_iter = iter(disabled_channels)
+                for chs in channelSet.settings:
+                    channel_name = chs.name
+                    if channel_name == "" or channel_name in existing_names:
+                        ignored_channel_names.append(channel_name)
+                        continue
+                    disabled_channel = next(disabled_channel_iter, None)
+                    if disabled_channel is None:
+                        self._raise_interface_error("No free channels were found")
+                    disabled_channel.settings.CopyFrom(chs)
+                    disabled_channel.role = channel_pb2.Channel.Role.SECONDARY
+                    channels_to_write.append((disabled_channel.index, channel_name))
+                    existing_names.add(channel_name)
+
+            for ignored_name in ignored_channel_names:
+                logger.info(
+                    f'Ignoring existing or empty channel "{ignored_name}" from add URL'
+                )
+            for channel_index, channel_name in channels_to_write:
+                logger.info(f"Adding new channel '{channel_name}' to device")
+                self.writeChannel(channel_index)
         else:
-            max_channels = len(self.channels)
+            with self._channels_lock:
+                channels = self.channels
+                if channels is None:
+                    self._raise_interface_error("Config or channels not loaded")
+                max_channels = len(channels)
             for i, chs in enumerate(channelSet.settings):
                 if i >= max_channels:
                     logger.warning(
@@ -857,7 +1037,11 @@ class Node:
                 )
                 ch.index = i
                 ch.settings.CopyFrom(chs)
-                self.channels[ch.index] = ch
+                with self._channels_lock:
+                    channels = self.channels
+                    if channels is None:
+                        self._raise_interface_error("Config or channels not loaded")
+                    channels[ch.index] = ch
                 logger.debug(f"Channel i:{i} ch:{ch}")
                 self.writeChannel(ch.index)
 
@@ -997,8 +1181,10 @@ class Node:
             )
             return None
 
-        if len(ringtone) > 230:
-            self._raise_interface_error("The ringtone must be 230 characters or fewer.")
+        if len(ringtone) > MAX_RINGTONE_LENGTH:
+            self._raise_interface_error(
+                f"The ringtone must be {MAX_RINGTONE_LENGTH} characters or fewer."
+            )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
         p.set_ringtone_message = ringtone
@@ -1155,9 +1341,9 @@ class Node:
             logger.warning("Canned Message module not present (excluded by firmware)")
             return None
 
-        if len(message) > 200:
+        if len(message) > MAX_CANNED_MESSAGE_LENGTH:
             self._raise_interface_error(
-                "The canned message must be 200 characters or fewer."
+                f"The canned message must be {MAX_CANNED_MESSAGE_LENGTH} characters or fewer."
             )
         self.ensureSessionKey()
         p = admin_pb2.AdminMessage()
@@ -1530,9 +1716,24 @@ class Node:
         p = admin_pb2.AdminMessage()
         p.get_device_metadata_request = True
         logger.info("Requesting device metadata")
-
-        self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
-        self.iface.waitForAckNak()
+        metadata_stdout_event = threading.Event()
+        with self._metadata_stdout_event_lock:
+            self._metadata_stdout_event = metadata_stdout_event
+        try:
+            self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
+            self.iface.waitForAckNak()
+            if sys.stdout is not sys.__stdout__:
+                callback_completed = metadata_stdout_event.wait(
+                    METADATA_STDOUT_COMPAT_WAIT_SECONDS
+                )
+                # Ensure redirected-stdout parsers receive a deterministic metadata line
+                # only when callback output may have been missed.
+                if not callback_completed:
+                    self._emit_cached_metadata_for_stdout()
+        finally:
+            with self._metadata_stdout_event_lock:
+                if self._metadata_stdout_event is metadata_stdout_event:
+                    self._metadata_stdout_event = None
 
     def factoryReset(self, full: bool = False) -> mesh_pb2.MeshPacket | None:
         """Request a factory reset on the node.
@@ -1817,36 +2018,49 @@ class Node:
         field to its position in the list (starting at 0) and then appends disabled channels as
         needed so the channel list reaches the required length.
         """
+        with self._channels_lock:
+            self._fixup_channels_locked()
+
+    def _fixup_channels_locked(self) -> None:
+        """Normalize channel indices and size while holding ``self._channels_lock``."""
         channels = self.channels
         if channels is None:
             return
 
-        if len(channels) > 8:
+        if len(channels) > MAX_CHANNELS:
             logger.warning(
-                "Truncating channel list from %d to 8 entries", len(channels)
+                "Truncating channel list from %d to %d entries",
+                len(channels),
+                MAX_CHANNELS,
             )
-            del channels[8:]
+            del channels[MAX_CHANNELS:]
 
         # Add extra disabled channels as needed
         # This is needed because the protobufs will have index **missing** if the channel number is zero
         for index, ch in enumerate(channels):
             ch.index = index  # fixup indexes
 
-        self._fill_channels()
+        self._fill_channels_locked()
 
     def _fill_channels(self) -> None:
         """Ensure the node has exactly eight channels by appending DISABLED channels as needed.
 
         If `self.channels` is None this is a no-op. Appends new Channel objects with
-        role `DISABLED` and sequential `index` values until the list length reaches 8.
+        role `DISABLED` and sequential `index` values until the list length reaches
+        ``MAX_CHANNELS``.
         """
+        with self._channels_lock:
+            self._fill_channels_locked()
+
+    def _fill_channels_locked(self) -> None:
+        """Append disabled channels up to ``MAX_CHANNELS`` while holding ``self._channels_lock``."""
         channels = self.channels
         if channels is None:
             return
 
         # Add extra disabled channels as needed
         index = len(channels)
-        while index < 8:
+        while index < MAX_CHANNELS:
             ch = channel_pb2.Channel()
             ch.role = channel_pb2.Channel.Role.DISABLED
             ch.index = index
@@ -1856,8 +2070,8 @@ class Node:
     def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
         """Handle an incoming device metadata response packet and display the parsed metadata.
 
-        Parses the decoded packet, updates the interface acknowledgment state (ACK/NAK), may retry
-        the metadata request when notified by the routing layer, and logs the device metadata
+        Parses the decoded packet, updates the interface acknowledgment state (ACK/NAK), handles
+        routing-layer ACK/NAK packets, and logs the device metadata
         fields (firmware_version, device_state_version, role, position_flags, hw_model, hasPKC,
         and excluded_modules) when available.
 
@@ -1881,37 +2095,47 @@ class Node:
                 )
                 self.iface._acknowledgment.receivedNak = True
                 self._timeout.expireTime = time.time()  # Do not wait any longer
+                self._signal_metadata_stdout_event()
                 return  # Don't try to parse this routing message
-            logger.debug("Retrying metadata request.")
-            self.getMetadata()
+            logger.debug(
+                "Metadata request routed successfully; waiting for ADMIN_APP payload."
+            )
             return
 
         if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":
             logger.error("Error on response: %s", decoded["routing"]["errorReason"])
             self.iface._acknowledgment.receivedNak = True
+            self._signal_metadata_stdout_event()
             return
 
         self.iface._acknowledgment.receivedAck = True
         c = decoded["admin"]["raw"].get_device_metadata_response
+        metadata_snapshot = mesh_pb2.DeviceMetadata()
+        metadata_snapshot.CopyFrom(c)
+        self.iface.metadata = metadata_snapshot
         self._timeout.reset()  # We made forward progress
         logger.debug("Received metadata %s", stripnl(c))
-        logger.info("\nfirmware_version: %s", c.firmware_version)
-        logger.info("device_state_version: %s", c.device_state_version)
+        self._emit_metadata_line(f"\nfirmware_version: {c.firmware_version}")
+        self._emit_metadata_line(f"device_state_version: {c.device_state_version}")
         if c.role in config_pb2.Config.DeviceConfig.Role.values():
-            logger.info("role: %s", config_pb2.Config.DeviceConfig.Role.Name(c.role))
-        else:
-            logger.info("role: %s", c.role)
-        logger.info("position_flags: %s", self.position_flags_list(c.position_flags))
-        if c.hw_model in mesh_pb2.HardwareModel.values():
-            logger.info("hw_model: %s", mesh_pb2.HardwareModel.Name(c.hw_model))
-        else:
-            logger.info("hw_model: %s", c.hw_model)
-        logger.info("hasPKC: %s", c.hasPKC)
-        if c.excluded_modules > 0:
-            logger.info(
-                "excluded_modules: %s",
-                self.excluded_modules_list(c.excluded_modules),
+            self._emit_metadata_line(
+                f"role: {config_pb2.Config.DeviceConfig.Role.Name(c.role)}"
             )
+        else:
+            self._emit_metadata_line(f"role: {c.role}")
+        self._emit_metadata_line(
+            f"position_flags: {self.position_flags_list(c.position_flags)}"
+        )
+        if c.hw_model in mesh_pb2.HardwareModel.values():
+            self._emit_metadata_line(f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}")
+        else:
+            self._emit_metadata_line(f"hw_model: {c.hw_model}")
+        self._emit_metadata_line(f"hasPKC: {c.hasPKC}")
+        if c.excluded_modules > 0:
+            self._emit_metadata_line(
+                f"excluded_modules: {self.excluded_modules_list(c.excluded_modules)}"
+            )
+        self._signal_metadata_stdout_event()
 
     def onResponseRequestChannel(self, p: dict[str, Any]) -> None:
         """Process a response packet for a previously requested channel and update the Node's channel state.
@@ -1941,23 +2165,27 @@ class Node:
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 return  # Don't try to parse this routing message
             lastTried = 0
-            if len(self.partialChannels) > 0:
-                lastTried = self.partialChannels[-1].index
+            with self._channels_lock:
+                if self.partialChannels:
+                    lastTried = self.partialChannels[-1].index
             logger.debug("Retrying previous channel request.")
             self._request_channel(lastTried)
             return
 
         c = p["decoded"]["admin"]["raw"].get_channel_response
-        self.partialChannels.append(c)
+        channel_response = channel_pb2.Channel()
+        channel_response.CopyFrom(c)
+        with self._channels_lock:
+            self.partialChannels.append(channel_response)
         self._timeout.reset()  # We made forward progress
-        logger.debug(f"Received channel {stripnl(c)}")
-        index = c.index
+        logger.debug("Received channel %s", stripnl(channel_response))
+        index = channel_response.index
 
-        if index >= 8 - 1:
+        if index >= MAX_CHANNELS - 1:
             logger.debug("Finished downloading channels")
-
-            self.channels = self.partialChannels
-            self._fixup_channels()
+            with self._channels_lock:
+                self.channels = list(self.partialChannels)
+                self._fixup_channels_locked()
         else:
             self._request_channel(index + 1)
 
@@ -2124,8 +2352,10 @@ class Node:
             - "hash" (int or None): Computed channel hash when both name and PSK are present, otherwise None.
         """
         result: list[dict[str, Any]] = []
-        if self.channels:
-            for c in self.channels:
+        with self._channels_lock:
+            channels_snapshot = list(self.channels) if self.channels else []
+        if channels_snapshot:
+            for c in channels_snapshot:
                 settings = getattr(c, "settings", None)
                 name = getattr(settings, "name", "")
                 psk = getattr(settings, "psk", b"")
@@ -2159,7 +2389,7 @@ class Node:
         list[dict[str, Any]]
             The list of channel entries described above.
         """
-        return self._get_channels_with_hash()
+        return self.getChannelsWithHash()
 
     def getChannelsWithHash(self) -> list[dict[str, Any]]:
         """Compatibility wrapper that returns channel entries including computed per-channel hashes.

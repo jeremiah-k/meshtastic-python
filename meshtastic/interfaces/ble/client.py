@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import sys
+import time
 import types
 import weakref
 from concurrent.futures import CancelledError as FutureCancelledError
@@ -35,6 +36,7 @@ from meshtastic.interfaces.ble.constants import (
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     SERVICE_CHARACTERISTIC_RETRY_COUNT,
+    SERVICE_CHARACTERISTIC_RETRY_DELAY,
     logger,
 )
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
@@ -188,6 +190,15 @@ class BLEClient:
             A sequence of discovered BLE device objects (backend-specific device representations).
         """
         return self._discover(**kwargs)
+
+    # COMPAT_STABLE_SHIM: historical BLE snake_case name.
+    def find_device(self, **kwargs: Any) -> Any:
+        """Backward-compatible snake_case alias for discover()."""
+        return self.discover(**kwargs)
+
+    def findDevice(self, **kwargs: Any) -> Any:
+        """Promoted camelCase alias for find_device()."""
+        return self.find_device(**kwargs)
 
     def pair(self, **kwargs: Any) -> Any:
         """Pair the BLE client with the remote device.
@@ -449,7 +460,7 @@ class BLEClient:
                 "Unable to populate services before has_characteristic"
             )
 
-        for _ in range(SERVICE_CHARACTERISTIC_RETRY_COUNT):
+        for attempt in range(SERVICE_CHARACTERISTIC_RETRY_COUNT):
             if not _has_get_characteristic(services):
                 return False
             try:
@@ -459,6 +470,8 @@ class BLEClient:
                     "Unable to populate services before has_characteristic after "
                     "BleakError from get_characteristic"
                 )
+                if attempt + 1 < SERVICE_CHARACTERISTIC_RETRY_COUNT:
+                    time.sleep(SERVICE_CHARACTERISTIC_RETRY_DELAY)
         return False
 
     def start_notify(

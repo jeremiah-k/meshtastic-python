@@ -55,6 +55,12 @@ def _clear_all_registries() -> None:
     Acquires the module-wide registry lock to perform a thread-safe clear of:
     per-address lock mapping, connected-address set, connection timestamps,
     owner id and weak-ref mappings, and per-address lock holder counts.
+
+    Warning
+    -------
+    Ensure no active BLE connections are in progress before calling this
+    helper, because it force-clears global ownership and lock state.
+    Intended for tests and full process-level reset paths.
     """
     with _REGISTRY_LOCK:
         _ADDR_LOCKS.clear()
@@ -311,6 +317,8 @@ def _prune_stale_unowned_claim_locked(key: str) -> bool:
         )
         _remove_connected_record_locked(key)
         is_owned = getattr(_REGISTRY_LOCK, "_is_owned", None)
+        # _is_owned() is a CPython RLock implementation detail; guard usage so
+        # non-CPython runtimes simply skip this diagnostic assertion.
         if callable(is_owned):
             if not is_owned():
                 raise RuntimeError(

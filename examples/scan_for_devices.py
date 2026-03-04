@@ -38,7 +38,8 @@ def main() -> None:
         print("No supported devices detected.")
 
     ports = active_ports_on_supported_devices(supported_devices)
-    print(f"ports:{sorted(ports)}")
+    ports_display = ", ".join(sorted(ports)) if ports else "none"
+    print(f"ports: {ports_display}")
 
 
 if __name__ == "__main__":

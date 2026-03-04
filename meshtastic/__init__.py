@@ -46,7 +46,7 @@ unicode scripts they can be different.
 ```
 import meshtastic
 import meshtastic.serial_interface
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 def onReceive(packet, interface): # called when a packet arrives
     print(f"Received: {packet}")
@@ -62,9 +62,9 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 ```
 """
-
 # ruff: noqa: F401
 
+import copy
 import logging
 from importlib import import_module
 from typing import Any, Callable, NamedTuple, TypeGuard
@@ -80,9 +80,7 @@ from meshtastic.util import (
     stripnl,
 )
 
-from . import (
-    util,
-)
+from . import util
 from .protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -167,6 +165,9 @@ callbacks are serialized on the worker thread.
 
 logger = logging.getLogger(__name__)
 
+REDACTED_TEXT = "<redacted>"
+REDACTED_BYTES = b"<redacted>"
+
 
 ResponseCallback = Callable[[dict[str, Any]], Any]
 ProtobufFactory = Callable[[], Any]
@@ -223,7 +224,7 @@ def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
     """Return a node-cache-safe packet copy for ``node['lastReceived']``.
 
     Keeps historical packet structure for compatibility while redacting only
-    admin payload bodies that may carry sensitive session material.
+    ``decoded.admin.raw.session_passkey`` when present.
     """
     sanitized = dict(as_dict)
     decoded = sanitized.get("decoded")
@@ -232,7 +233,58 @@ def _sanitize_last_received(as_dict: dict[str, Any]) -> dict[str, Any]:
     if "admin" not in decoded:
         return sanitized
     decoded_sanitized = dict(decoded)
-    decoded_sanitized["admin"] = "<redacted>"
+    admin_payload = decoded.get("admin")
+    if isinstance(admin_payload, dict):
+        admin_sanitized = dict(admin_payload)
+        raw_admin = admin_payload.get("raw")
+        if isinstance(raw_admin, dict):
+            raw_sanitized_dict = dict(raw_admin)
+            if "session_passkey" in raw_sanitized_dict:
+                raw_sanitized_dict["session_passkey"] = (
+                    REDACTED_BYTES
+                    if isinstance(
+                        raw_sanitized_dict["session_passkey"],
+                        (bytes, bytearray, memoryview),
+                    )
+                    else REDACTED_TEXT
+                )
+            admin_sanitized["raw"] = raw_sanitized_dict
+        elif hasattr(raw_admin, "session_passkey"):
+            raw_sanitized_obj: Any | None
+            try:
+                raw_sanitized_obj = copy.deepcopy(raw_admin)
+            except Exception:  # noqa: BLE001 - preserve packet flow on odd payloads
+                logger.debug(
+                    "deepcopy failed during admin payload redaction; using sentinel payload",
+                    exc_info=True,
+                )
+                raw_sanitized_obj = None
+            if raw_sanitized_obj is None:
+                admin_sanitized["raw"] = {"session_passkey": REDACTED_BYTES}
+            else:
+                try:
+                    raw_sanitized_obj.session_passkey = REDACTED_BYTES
+                except Exception:  # noqa: BLE001 - best effort redaction only
+                    logger.debug(
+                        "session_passkey assignment redaction failed; forcing fallback redaction",
+                        exc_info=True,
+                    )
+                    redaction_applied = False
+                    try:
+                        delattr(raw_sanitized_obj, "session_passkey")
+                        redaction_applied = True
+                    except Exception:  # noqa: BLE001 - final fallback below
+                        redaction_applied = False
+                    admin_sanitized["raw"] = (
+                        raw_sanitized_obj
+                        if redaction_applied
+                        else {"session_passkey": REDACTED_BYTES}
+                    )
+                else:
+                    admin_sanitized["raw"] = raw_sanitized_obj
+        decoded_sanitized["admin"] = admin_sanitized
+    else:
+        decoded_sanitized["admin"] = REDACTED_TEXT
     sanitized["decoded"] = decoded_sanitized
     return sanitized
 
@@ -321,8 +373,9 @@ def _on_position_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         logger.debug("position payload received from=%s", sender)
         p = iface._fixup_position(p)
         logger.debug("position payload normalized from=%s", sender)
-        # update node DB as needed
-        iface._get_or_create_by_num(sender)["position"] = p
+        node = iface._get_or_create_by_num(sender)
+        with iface._node_db_lock:
+            node["position"] = p
 
 
 def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -347,18 +400,18 @@ def _on_node_info_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         return
     sender, decoded = packet_guard
     if "user" in decoded:
+        _receive_info_update(iface, as_dict)
         p = decoded["user"]
         # decode user protobufs and update nodedb, provide decoded version as "position" in the published msg
         # update node DB as needed
+        n = iface._get_or_create_by_num(sender)
         with iface._node_db_lock:
-            n = iface._get_or_create_by_num(sender)
             n["user"] = p
             # We now have a node ID, make sure it is up-to-date in that table
             node_id = p.get("id") if isinstance(p, dict) else None
             nodes_by_id = iface.nodes
             if isinstance(node_id, str) and node_id and isinstance(nodes_by_id, dict):
                 nodes_by_id[node_id] = n
-            _receive_info_update(iface, as_dict)
 
 
 def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -410,12 +463,13 @@ def _on_telemetry_receive(iface: Any, as_dict: dict[str, Any]) -> None:
     if not isinstance(update_obj, dict):
         return
     node = iface._get_or_create_by_num(sender)
-    new_metrics = node.get(to_update, {})
-    if not isinstance(new_metrics, dict):
-        new_metrics = {}
-    new_metrics.update(update_obj)
-    logger.debug("updating %s metrics for %s to %s", to_update, sender, new_metrics)
-    node[to_update] = new_metrics
+    with iface._node_db_lock:
+        new_metrics = node.get(to_update, {})
+        if not isinstance(new_metrics, dict):
+            new_metrics = {}
+        new_metrics.update(update_obj)
+        logger.debug("updating %s metrics for %s to %s", to_update, sender, new_metrics)
+        node[to_update] = new_metrics
 
 
 def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -428,7 +482,7 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
     as_dict : dict[str, Any]
         Parsed packet dictionary; if it contains an integer "from" key, the
         node identified by that value will have these fields set:
-        - lastReceived: packet dictionary copy with admin body redacted
+        - lastReceived: packet dictionary copy with admin session passkey redacted
         - lastHeard: value of `rxTime` from the packet (or None)
         - snr: value of `rxSnr` from the packet (or None)
         - hopLimit: value of `hopLimit` from the packet (or None)
@@ -442,10 +496,12 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
             )
         return
     node = iface._get_or_create_by_num(sender)
-    node["lastReceived"] = _sanitize_last_received(as_dict)
-    node["lastHeard"] = as_dict.get("rxTime")
-    node["snr"] = as_dict.get("rxSnr")
-    node["hopLimit"] = as_dict.get("hopLimit")
+    sanitized_last_received = _sanitize_last_received(as_dict)
+    with iface._node_db_lock:
+        node["lastReceived"] = sanitized_last_received
+        node["lastHeard"] = as_dict.get("rxTime")
+        node["snr"] = as_dict.get("rxSnr")
+        node["hopLimit"] = as_dict.get("hopLimit")
 
 
 def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
@@ -495,10 +551,12 @@ def _on_admin_receive(iface: Any, as_dict: dict[str, Any]) -> None:
         )
         return
 
-    iface._get_or_create_by_num(sender)["adminSessionPassKey"] = session_passkey
+    node = iface._get_or_create_by_num(sender)
+    with iface._node_db_lock:
+        node["adminSessionPassKey"] = session_passkey
 
 
-"""Well known message payloads can register decoders for automatic protobuf parsing"""
+# Well known message payloads can register decoders for automatic protobuf parsing.
 protocols = {
     portnums_pb2.PortNum.TEXT_MESSAGE_APP: KnownProtocol(
         "text", onReceive=_on_text_receive

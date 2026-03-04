@@ -1,16 +1,25 @@
 """Utilities for Apache Arrow serialization."""
 
+from copy import deepcopy
 import logging
 import os
 import tempfile
 import threading
 import types
-import warnings
 
 import pyarrow as pa
 
 CHUNK_SIZE = 1000  # disk writes are batched based on this number of rows
 logger = logging.getLogger(__name__)
+ARROW_EXTENSION = ".arrow"
+FEATHER_EXTENSION = ".feather"
+TEMP_FEATHER_SUFFIX = ".tmp"
+WARNING_REMOVE_STALE_FEATHER_DEST = "Failed to remove stale Feather destination file %s"
+WARNING_REMOVE_EMPTY_ARROW_SOURCE = "Failed to remove empty Arrow source file %s"
+WARNING_REMOVE_TEMP_FEATHER = "Failed to remove temporary Feather file %s"
+WARNING_REMOVE_TEMP_ARROW_SOURCE = "Failed to remove temporary Arrow source file %s"
+DISCARD_EMPTY_FILE_MESSAGE = "Discarding empty file: %s"
+DISCARD_EMPTY_ARROW_MESSAGE = "Discarding empty Arrow file: %s"
 
 
 class ArrowWriterStateError(RuntimeError):
@@ -77,8 +86,6 @@ class ArrowWriter:
         # Re-entrant: _write() can call set_schema() while the same lock is held.
         self._lock = threading.RLock()
         self._closed = False
-        self._warned_set_schema_deprecation = False
-        self._warned_add_row_deprecation = False
 
     def __enter__(self) -> "ArrowWriter":
         """Return self for context-manager usage."""
@@ -180,25 +187,18 @@ class ArrowWriter:
             self.schema = schema
             self.writer = writer
 
+    # COMPAT_STABLE_SHIM: historical snake_case alias.
     def set_schema(self, schema: pa.Schema) -> None:
         """Wrap _set_schema() for backwards compatibility.
 
-        Delegates to ``_set_schema()`` and preserves previous behavior. Use
-        ``setSchema()`` instead.
+        Delegates to ``_set_schema()`` and preserves previous behavior.
+        Prefer ``setSchema()`` for new code.
 
         Parameters
         ----------
         schema : pa.Schema
             Schema to set for the Arrow stream.
         """
-        with self._lock:
-            if not self._warned_set_schema_deprecation:
-                warnings.warn(
-                    "set_schema() is deprecated; use setSchema() instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                self._warned_set_schema_deprecation = True
         self._set_schema(schema)
 
     def setSchema(self, schema: pa.Schema) -> None:
@@ -251,29 +251,22 @@ class ArrowWriter:
                 raise WriterClosedError()
             # Snapshot caller input so later caller-side mutations do not
             # corrupt buffered rows that have not yet been flushed.
-            self.new_rows.append(dict(row_dict))
+            self.new_rows.append(deepcopy(row_dict))
             if len(self.new_rows) >= CHUNK_SIZE:
                 self._write()
 
+    # COMPAT_STABLE_SHIM: historical snake_case alias.
     def add_row(self, row_dict: dict[str, object]) -> None:
         """Wrap _add_row() for backwards compatibility.
 
-        Delegates to ``_add_row()`` and preserves previous behavior. Use
-        ``addRow()`` instead.
+        Delegates to ``_add_row()`` and preserves previous behavior.
+        Prefer ``addRow()`` for new code.
 
         Parameters
         ----------
         row_dict : dict[str, object]
             Row payload to append to the buffered Arrow writer.
         """
-        with self._lock:
-            if not self._warned_add_row_deprecation:
-                warnings.warn(
-                    "add_row() is deprecated; use addRow() instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                self._warned_add_row_deprecation = True
         self._add_row(row_dict)
 
     def addRow(self, row_dict: dict[str, object]) -> None:
@@ -308,9 +301,10 @@ class FeatherWriter(ArrowWriter):
         file_name : str
             Base path for the output file (without extension).
         """
-        super().__init__(file_name + ".arrow")
+        super().__init__(file_name + ARROW_EXTENSION)
         self.base_file_name = file_name
         self._conversion_done = False
+        self._conversion_in_progress = False
 
     @staticmethod
     def _remove_stale_dest_file(dest_name: str) -> None:
@@ -321,7 +315,7 @@ class FeatherWriter(ArrowWriter):
             os.remove(dest_name)
         except OSError:
             logger.warning(
-                "Failed to remove stale Feather destination file %s",
+                WARNING_REMOVE_STALE_FEATHER_DEST,
                 dest_name,
                 exc_info=True,
             )
@@ -335,12 +329,11 @@ class FeatherWriter(ArrowWriter):
             os.remove(src_name)
         except OSError:
             logger.warning(
-                "Failed to remove empty Arrow source file %s",
+                WARNING_REMOVE_EMPTY_ARROW_SOURCE,
                 src_name,
                 exc_info=True,
             )
         self._remove_stale_dest_file(dest_name)
-        self._conversion_done = True
 
     def close(self) -> None:
         """Close the writer and convert the temporary Arrow file to Feather format.
@@ -349,25 +342,28 @@ class FeatherWriter(ArrowWriter):
         removes the temporary file. Empty Arrow files are discarded.
         """
         with self._lock:
-            if self._conversion_done:
+            if self._conversion_done or self._conversion_in_progress:
                 return
-            super().close()
-            src_name = self.base_file_name + ".arrow"
-            dest_name = self.base_file_name + ".feather"
+            self._conversion_in_progress = True
+            src_name = self.base_file_name + ARROW_EXTENSION
+            dest_name = self.base_file_name + FEATHER_EXTENSION
 
+        conversion_succeeded = False
+        try:
+            super().close()
             if not os.path.exists(src_name):
                 self._remove_stale_dest_file(dest_name)
-                self._conversion_done = True
+                conversion_succeeded = True
                 return
             if os.path.getsize(src_name) == 0:
-                self._discard_empty_source(
-                    src_name, dest_name, "Discarding empty file: %s"
-                )
+                self._discard_empty_source(src_name, dest_name, DISCARD_EMPTY_FILE_MESSAGE)
+                conversion_succeeded = True
                 return
 
             logger.info("Compressing log data into %s", dest_name)
 
-            # See https://stackoverflow.com/a/72406099 for more info and performance testing measurements
+            # See https://stackoverflow.com/a/72406099 for more info and
+            # performance testing measurements.
             temp_name: str | None = None
             try:
                 # Reserve a unique temp path in the destination directory
@@ -377,7 +373,7 @@ class FeatherWriter(ArrowWriter):
                     mode="wb",
                     dir=os.path.dirname(dest_name) or ".",
                     prefix=os.path.basename(dest_name) + ".",
-                    suffix=".tmp",
+                    suffix=TEMP_FEATHER_SUFFIX,
                     delete=False,
                 ) as temp_file:
                     temp_name = temp_file.name
@@ -405,14 +401,17 @@ class FeatherWriter(ArrowWriter):
                         os.remove(temp_name)
                     except OSError:
                         logger.warning(
-                            "Failed to remove temporary Feather file %s",
+                            WARNING_REMOVE_TEMP_FEATHER,
                             temp_name,
                             exc_info=True,
                         )
                     temp_name = None
                     self._discard_empty_source(
-                        src_name, dest_name, "Discarding empty Arrow file: %s"
+                        src_name,
+                        dest_name,
+                        DISCARD_EMPTY_ARROW_MESSAGE,
                     )
+                    conversion_succeeded = True
                     return
 
                 os.replace(temp_name, dest_name)
@@ -423,7 +422,7 @@ class FeatherWriter(ArrowWriter):
                         os.remove(temp_name)
                     except OSError:
                         logger.warning(
-                            "Failed to remove temporary Feather file %s",
+                            WARNING_REMOVE_TEMP_FEATHER,
                             temp_name,
                             exc_info=True,
                         )
@@ -432,8 +431,13 @@ class FeatherWriter(ArrowWriter):
                 os.remove(src_name)
             except OSError:
                 logger.warning(
-                    "Failed to remove temporary Arrow source file %s",
+                    WARNING_REMOVE_TEMP_ARROW_SOURCE,
                     src_name,
                     exc_info=True,
                 )
-            self._conversion_done = True
+            conversion_succeeded = True
+        finally:
+            with self._lock:
+                if conversion_succeeded:
+                    self._conversion_done = True
+                self._conversion_in_progress = False

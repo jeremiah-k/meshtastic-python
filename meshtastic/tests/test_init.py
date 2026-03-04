@@ -13,6 +13,7 @@ from meshtastic import (
     _on_admin_receive,
     _on_node_info_receive,
     _on_position_receive,
+    _on_telemetry_receive,
     _on_text_receive,
     _receive_info_update,
     mt_config,
@@ -53,7 +54,7 @@ def test_init_on_position_receive(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test _on_position_receive."""
+    """_on_position_receive should skip node lookup when sender is not numeric."""
     args = SimpleNamespace(camel_case=False)
     monkeypatch.setattr(mt_config, "args", args)
     iface = create_autospec(SerialInterface, instance=True)
@@ -62,6 +63,27 @@ def test_init_on_position_receive(
         _on_position_receive(iface, packet)
     assert re.search(r"in _on_position_receive", caplog.text, re.MULTILINE)
     iface._get_or_create_by_num.assert_not_called()
+
+
+@pytest.mark.unit
+def test_init_on_position_receive_updates_node_position(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Position payloads with a valid sender should update the node's cached position."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"position": {"latitudeI": 123456, "longitudeI": 654321}},
+    }
+
+    _on_position_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "position" in node
+    assert node["position"]["latitudeI"] == 123456
 
 
 @pytest.mark.unit
@@ -95,10 +117,25 @@ def test_init_on_node_info_receive(
 
 
 @pytest.mark.unit
+def test_init_on_node_info_receive_returns_when_sender_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_on_node_info_receive should return early when packet lacks sender metadata."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = create_autospec(SerialInterface, instance=True)
+    packet = {"decoded": {"user": {"id": "bar"}}}
+
+    _on_node_info_receive(iface, packet)
+
+    iface._get_or_create_by_num.assert_not_called()
+
+
+@pytest.mark.unit
 def test_init_on_admin_receive_redacts_last_received(
     iface_with_nodes: MeshInterface,
 ) -> None:
-    """Admin packets should store redacted lastReceived while keeping passkey state."""
+    """Admin packets should preserve payload shape and redact only session passkey."""
     iface = iface_with_nodes
     packet: dict[str, Any] = {
         "from": 4808675309,
@@ -116,9 +153,255 @@ def test_init_on_admin_receive_redacts_last_received(
 
     node = iface._get_or_create_by_num(4808675309)
     assert node["adminSessionPassKey"] == b"abc123"
-    assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    assert isinstance(last_received_admin, dict)
+    assert isinstance(last_received_admin.get("raw"), SimpleNamespace)
+    assert last_received_admin["raw"].session_passkey == b"<redacted>"
     # Input packet should remain unchanged for callback consumers.
     assert packet["decoded"]["admin"]["raw"].session_passkey == b"abc123"
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_redacts_last_received_dict_raw_payload(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin packets with dict raw payload should redact session passkey only."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {
+            "admin": {
+                "raw": {
+                    "session_passkey": b"abc123",
+                    "get_device_metadata_response": {"firmware_version": "2.7.18"},
+                }
+            }
+        },
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    assert isinstance(last_received_admin, dict)
+    assert isinstance(last_received_admin.get("raw"), dict)
+    assert last_received_admin["raw"]["session_passkey"] == b"<redacted>"
+    assert (
+        last_received_admin["raw"]["get_device_metadata_response"]["firmware_version"]
+        == "2.7.18"
+    )
+    # Input packet should remain unchanged for callback consumers.
+    assert packet["decoded"]["admin"]["raw"]["session_passkey"] == b"abc123"
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_uses_sentinel_when_object_redaction_fails(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Failing object redaction should still guarantee a redacted sentinel payload."""
+
+    class _UnredactableRaw:
+        """Raw admin payload stand-in that refuses passkey redaction mutation."""
+
+        def __init__(self) -> None:
+            """Initialize with a non-redacted session passkey value."""
+            self._session_passkey = b"abc123"
+
+        @property
+        def session_passkey(self) -> bytes:
+            """Return the current session passkey bytes."""
+            return self._session_passkey
+
+        @session_passkey.setter
+        def session_passkey(self, _value: bytes) -> None:
+            """Reject writes to simulate an immutable field."""
+            raise RuntimeError("session_passkey is read-only")  # noqa: TRY003 - intentional immutable sentinel
+
+        def __delattr__(self, name: str) -> None:
+            """Reject deletion of the session passkey attribute."""
+            if name == "session_passkey":
+                raise RuntimeError("cannot delete session_passkey")  # noqa: TRY003 - intentional immutable sentinel
+            super().__delattr__(name)
+
+        def __deepcopy__(self, _memo: dict[int, Any]) -> "_UnredactableRaw":
+            """Return self so deepcopy cannot produce a mutable clone."""
+            return self
+
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": _UnredactableRaw()}},
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    assert isinstance(last_received_admin, dict)
+    assert last_received_admin["raw"] == {"session_passkey": b"<redacted>"}
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_uses_delattr_fallback_when_assignment_fails(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin redaction should keep object payloads when delattr fallback succeeds."""
+
+    class _DelattrOnlyRaw:
+        def __init__(self) -> None:
+            self.session_passkey = b"abc123"
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name == "session_passkey" and hasattr(self, "session_passkey"):
+                raise RuntimeError("session_passkey is immutable")  # noqa: TRY003 - intentional test sentinel
+            object.__setattr__(self, name, value)
+
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": _DelattrOnlyRaw()}},
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    last_received_admin = node["lastReceived"]["decoded"]["admin"]
+    redacted_raw = last_received_admin["raw"]
+    assert not hasattr(redacted_raw, "session_passkey")
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_redacts_non_dict_admin_payload(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Non-dict admin payloads should be replaced with the redacted text sentinel."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": "not-a-dict"},
+        "rxTime": 100,
+        "rxSnr": 5.0,
+        "hopLimit": 3,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["lastReceived"]["decoded"]["admin"] == "<redacted>"
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_updates_metrics_dict(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry metrics should merge into the node database under the matching key."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"deviceMetrics": {"batteryLevel": 95}}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert node["deviceMetrics"]["batteryLevel"] == 95
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_ignores_non_dict_metric_payload(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry update should return early when selected metric payload is not a dict."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"deviceMetrics": 123}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "deviceMetrics" not in node
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_replaces_non_dict_existing_metrics(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry update should replace non-dict cached metrics before merging."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    node = iface._get_or_create_by_num(4808675309)
+    node["deviceMetrics"] = "invalid"
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"deviceMetrics": {"voltage": 4.2}}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    metrics = node["deviceMetrics"]
+    assert isinstance(metrics, dict)
+    assert metrics.get("voltage") == 4.2
+
+
+@pytest.mark.unit
+def test_init_on_telemetry_receive_ignores_unknown_metrics_payloads(
+    iface_with_nodes: MeshInterface,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telemetry update should return early when no known metrics object is present."""
+    args = SimpleNamespace(camel_case=False)
+    monkeypatch.setattr(mt_config, "args", args)
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"telemetry": {"mysteryMetrics": {"value": 1}}},
+    }
+
+    _on_telemetry_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "deviceMetrics" not in node
+    assert "environmentMetrics" not in node
+    assert "airQualityMetrics" not in node
+    assert "powerMetrics" not in node
+    assert "localStats" not in node
+
+
+@pytest.mark.unit
+def test_init_on_admin_receive_returns_when_passkey_missing(
+    iface_with_nodes: MeshInterface,
+) -> None:
+    """Admin handler should return without mutating passkey when payload lacks one."""
+    iface = iface_with_nodes
+    packet: dict[str, Any] = {
+        "from": 4808675309,
+        "decoded": {"admin": {"raw": {}}},
+        "rxTime": 100,
+    }
+
+    _on_admin_receive(iface, packet)
+
+    node = iface._get_or_create_by_num(4808675309)
+    assert "adminSessionPassKey" not in node
 
 
 @pytest.mark.unit

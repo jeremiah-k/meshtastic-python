@@ -141,6 +141,7 @@ def test_RemoteHardwareClient_no_gpio_channel() -> None:
     iface = create_autospec(SerialInterface, instance=True)
     iface.localNode = MagicMock()
     iface.localNode.getChannelByName.return_value = None
+    iface.localNode.getChannelCopyByName.return_value = None
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         RemoteHardwareClient(iface)
     assert "No channel named 'gpio'" in str(exc_info.value)
@@ -256,7 +257,7 @@ def test_watchGPIOs_does_not_cache_mask_on_send_failure(
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "nodeid",
-    [None, False, True, -1, "0", "00", "0x0", "0b0", "-1", "-0x1", "   "],
+    [None, False, True, -1, "0", "00", "0x0", "0b0", "-1", "-0x1", "   ", object()],
 )
 def test_send_hardware_no_nodeid(mock_gpio_iface: MagicMock, nodeid: object) -> None:
     """Reject missing or non-positive destination node IDs in _send_hardware()."""

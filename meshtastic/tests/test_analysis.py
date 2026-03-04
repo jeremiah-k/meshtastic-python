@@ -27,10 +27,14 @@ try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
-    from meshtastic.analysis.__main__ import (  # type: ignore[attr-defined]
+    from meshtastic.protobuf import mesh_pb2
+    from meshtastic.analysis.__main__ import (
+        choosePowerColumn,
         choose_power_column,
         create_argparser,
+        getBoardInfo,
         get_board_info,
+        getPmonRaises,
         get_pmon_raises,
         main,
         read_pandas,
@@ -38,7 +42,7 @@ try:
     )
 
     # Import private function for testing
-    _is_loopback_host = analysis_main._is_loopback_host  # type: ignore[attr-defined]
+    _is_loopback_host = analysis_main._is_loopback_host
 except ModuleNotFoundError as exc:
     missing = (exc.name or "").split(".")[0]
     if missing in OPTIONAL_ANALYSIS_DEPS:
@@ -64,8 +68,8 @@ def test_analysis(
 ) -> None:
     """Test analysis processing."""
 
-    cur_dir = os.path.dirname(os.path.abspath(__file__))
-    slog_input_dir = os.path.join(cur_dir, "slog-test-input")
+    cur_dir = Path(__file__).resolve().parent
+    slog_input_dir = str(cur_dir / "slog-test-input")
 
     monkeypatch.setattr(
         sys, "argv", ["fakescriptname", "--no-server", "--slog", slog_input_dir]
@@ -73,7 +77,7 @@ def test_analysis(
     monkeypatch.setattr(logging.getLogger(), "propagate", True)
 
     with caplog.at_level(logging.DEBUG):
-        main()  # type: ignore[no-untyped-call]
+        main()
 
     assert "Exiting without running visualization server" in caplog.text
 
@@ -100,7 +104,7 @@ def test_main_routes_load_errors_through_cli_exit(
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
-        main()  # type: ignore[no-untyped-call]
+        main()
 
     assert "Error loading slog data: bad slog" in cli_exit_capture["message"]
     assert cli_exit_capture["code"] == 1
@@ -127,7 +131,7 @@ def test_main_routes_server_startup_errors_through_cli_exit(
     monkeypatch.setattr(sys, "argv", ["fakescriptname", "--slog", os.devnull])
 
     with pytest.raises(SystemExit):
-        main()  # type: ignore[no-untyped-call]
+        main()
 
     assert "Error starting Dash server on 127.0.0.1:" in cli_exit_capture["message"]
     assert ADDRESS_IN_USE_ERROR in cli_exit_capture["message"]
@@ -426,3 +430,22 @@ def test_choose_power_column_uses_legacy_when_only_legacy_present() -> None:
     """choose_power_column should use legacy column even if all null when it's the only option."""
     frame = pd.DataFrame({"average_mW": [None, None]})
     assert choose_power_column(frame, "average_mW", "average_mA") == "average_mW"
+
+
+@pytest.mark.unit
+def test_analysis_camelcase_aliases_delegate() -> None:
+    """CamelCase analysis helpers should delegate to snake_case implementations."""
+    frame = pd.DataFrame({"average_mA": [1.0]})
+    assert choosePowerColumn(frame, "average_mW", "average_mA") == "average_mA"
+
+    known_board_id = mesh_pb2.HardwareModel.DESCRIPTOR.values[0].number
+    dslog = pd.DataFrame(
+        {
+            "time": [1],
+            "pm_mask": [0],
+            "sw_version": ["2.7.8"],
+            "board_id": [known_board_id],
+        }
+    )
+    assert getPmonRaises(dslog).equals(get_pmon_raises(dslog))
+    assert getBoardInfo(dslog) == get_board_info(dslog)

@@ -43,9 +43,10 @@ BLACKLIST_VIDS: set[int] = {0x1366, 0x0483, 0x1915, 0x0925, 0x04B4}
 0x303a Heltec tracker"""
 WHITELIST_VIDS: set[int] = {0x239A, 0x303A}
 
-# Backward compatibility aliases (deprecated; use UPPER_SNAKE_CASE names).
-blacklistVids = BLACKLIST_VIDS
-whitelistVids = WHITELIST_VIDS
+# COMPAT_STABLE_SHIM: BLACKLIST_VIDS/WHITELIST_VIDS are canonical UPPER_SNAKE_CASE
+# constants; blacklistVids/whitelistVids are legacy compatibility aliases.
+blacklistVids: set[int] = BLACKLIST_VIDS
+whitelistVids: set[int] = WHITELIST_VIDS
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ def fixme(message: str) -> NoReturn:
     raise FixmeError("FIXME: " + message)
 
 
-def our_exit(message: str, return_value: int = 1) -> NoReturn:
+def ourExit(message: str, return_value: int = 1) -> NoReturn:
     """Compatibility helper that prints a message and exits the process.
 
     This function is retained for backward compatibility with existing external
@@ -299,6 +300,12 @@ def our_exit(message: str, return_value: int = 1) -> NoReturn:
     output_stream = sys.stdout if return_value == 0 else sys.stderr
     print(message, file=output_stream)
     sys.exit(return_value)
+
+
+# COMPAT_STABLE_SHIM: historical snake_case alias for ourExit().
+def our_exit(message: str, return_value: int = 1) -> NoReturn:
+    """Compatibility alias for ourExit()."""
+    ourExit(message, return_value)
 
 
 def catchAndIgnore(reason: str, closure: Callable[[], Any]) -> None:
@@ -432,8 +439,9 @@ class Timeout:
 
         Parameters
         ----------
-        expireTimeout : float
-            Seconds from now until expiration. If omitted, the instance's configured expireTimeout is used. (Default value = None)
+        expireTimeout : float | None
+            Seconds from now until expiration. If ``None`` (the default), the
+            instance's configured ``expireTimeout`` is used.
         """
         self.expireTime = time.time() + (
             self.expireTimeout if expireTimeout is None else expireTimeout
@@ -657,7 +665,7 @@ class DeferredExecution:
                 logger.exception("Unexpected error in deferred execution")
 
 
-def remove_keys_from_dict(
+def removeKeysFromDict(
     keys: tuple[Any, ...] | list[Any] | set[Any], adict: dict[str, Any]
 ) -> dict[str, Any]:
     """Remove the given keys from a dictionary and all nested dictionaries.
@@ -681,8 +689,16 @@ def remove_keys_from_dict(
             pass
     for val in adict.values():
         if isinstance(val, dict):
-            remove_keys_from_dict(keys, val)
+            removeKeysFromDict(keys, val)
     return adict
+
+
+# COMPAT_STABLE_SHIM: historical snake_case alias for removeKeysFromDict().
+def remove_keys_from_dict(
+    keys: tuple[Any, ...] | list[Any] | set[Any], adict: dict[str, Any]
+) -> dict[str, Any]:
+    """Compatibility alias for removeKeysFromDict()."""
+    return removeKeysFromDict(keys, adict)
 
 
 def channel_hash(data: bytes) -> int:
@@ -1063,8 +1079,9 @@ def get_devices_with_vendor_id(vid: str) -> set[SupportedDevice]:
     sd: set[SupportedDevice] = set()
     for d in supported_devices:
         if any(
-            isinstance(vendor_id, str) and vendor_id.lower() == normalized_vid
-            for vendor_id, _ in d.usb_ids
+            isinstance(vendor_id, str)
+            and vendor_id.lower().removeprefix("0x") == normalized_vid
+            for vendor_id, _ in d.usb_ids or ()
         ):
             sd.add(d)
             continue
@@ -1089,10 +1106,7 @@ def _discover_unix_ports(bp: str) -> set[str]:
     set[str]
         Matching absolute device paths, or an empty set.
     """
-    discovered_ports: set[str] = set()
-    for path in glob.glob(f"/dev/{bp}*"):
-        discovered_ports.add(path)
-    return discovered_ports
+    return set(glob.glob(f"/dev/{bp}*"))
 
 
 def active_ports_on_supported_devices(
@@ -1132,7 +1146,7 @@ def active_ports_on_supported_devices(
         # for each device in supported devices found
         for d in sds:
             # find the port(s)
-            com_ports = detect_windows_port(d)
+            com_ports = detectWindowsPort(d)
             # print(f'com_ports:{com_ports}')
             # add all ports
             for com_port in com_ports:
@@ -1144,9 +1158,7 @@ def active_ports_on_supported_devices(
     return ports
 
 
-def detect_windows_port(
-    sd: SupportedDevice | None,
-) -> set[str]:
+def detectWindowsPort(sd: SupportedDevice | None) -> set[str]:
     """Detect Windows COM ports associated with a supported USB device.
 
     Searches present PnP devices on Windows for entries containing the device's
@@ -1192,6 +1204,12 @@ def detect_windows_port(
                 for x in p.findall(sp_output):
                     ports.add(f"COM{x}")
     return ports
+
+
+# COMPAT_STABLE_SHIM: historical snake_case alias for detectWindowsPort().
+def detect_windows_port(sd: SupportedDevice | None) -> set[str]:
+    """Compatibility alias for detectWindowsPort()."""
+    return detectWindowsPort(sd)
 
 
 def check_if_newer_version() -> str | None:
@@ -1366,7 +1384,7 @@ def _flags_to_list(flag_type: Any, flags: int) -> list[str]:
             continue
         if flags & flag_type.Value(key):
             ret.append(key)
-            flags = flags - flag_type.Value(key)
+            flags &= ~flag_type.Value(key)
     if flags > 0:
         ret.append(f"UNKNOWN_ADDITIONAL_FLAGS({flags})")
     return ret

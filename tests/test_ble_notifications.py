@@ -13,10 +13,11 @@ from meshtastic.interfaces.ble.notifications import (
 @pytest.mark.unit
 def test_subscribe_raises_domain_error_when_token_space_exhausted(
     monkeypatch: pytest.MonkeyPatch,
+    notification_manager: NotificationManager,
 ) -> None:
     """Token wrap exhaustion should raise SubscriptionTokenExhaustedError."""
-    manager = NotificationManager()
-    monkeypatch.setattr(manager, "_MAX_SUBSCRIPTION_TOKEN", 1)
+    manager = notification_manager
+    monkeypatch.setattr(NotificationManager, "_MAX_SUBSCRIPTION_TOKEN", 1)
     manager._active_subscriptions = {
         0: ("first", lambda _sender, _data: None),
         1: ("second", lambda _sender, _data: None),
@@ -28,24 +29,28 @@ def test_subscribe_raises_domain_error_when_token_space_exhausted(
 
 
 @pytest.mark.unit
-def test_resubscribe_all_stops_after_cleanup_epoch_change() -> None:
+def test_resubscribe_all_stops_after_cleanup_epoch_change(
+    notification_manager: NotificationManager,
+) -> None:
     """Resubscribe loop should abort stale iterations after cleanup invalidates state."""
-    manager = NotificationManager()
+    manager = notification_manager
     manager._subscribe("char-1", lambda _sender, _data: None)
     manager._subscribe("char-2", lambda _sender, _data: None)
 
     class _Client:
+        """Stub BLE client that triggers cleanup on first characteristic."""
+
         def __init__(self) -> None:
             self.calls: list[str] = []
 
         def start_notify(
             self,
             characteristic: str,
-            callback: Any,
+            _callback: Any,
             *,
             timeout: float | None = None,
         ) -> None:
-            _ = callback, timeout
+            _ = timeout
             self.calls.append(characteristic)
             if characteristic == "char-1":
                 manager._cleanup_all()

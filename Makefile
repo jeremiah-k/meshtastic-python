@@ -5,7 +5,8 @@ POETRY_RUN := poetry run
 all: test
 
 clean:
-	rm -rf htmlcov .coverage coverage.xml
+	rm -rf htmlcov .coverage coverage.xml .mypy_cache .pytest_cache dist build *.egg-info
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # only run the fast unit tests
 test:
@@ -26,6 +27,7 @@ ci:
 ci-strict:
 	$(MAKE) ci-base
 	$(POETRY_RUN) mypy meshtastic/ --strict
+
 # only run the smoke tests against the virtual device
 virt:
 	$(POETRY_RUN) pytest -m smokevirt
@@ -44,7 +46,7 @@ docs:
 
 # lint the codebase (same command as CI)
 lint:
-	PYLINTHOME=/tmp/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
+	PYLINTHOME=$${TMPDIR:-/tmp}/pylint-cache $(POETRY_RUN) pylint meshtastic examples/ --ignore-patterns ".*_pb2\\.pyi?$$"
 
 # show the slowest unit tests
 slow:

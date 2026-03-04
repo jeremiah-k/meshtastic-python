@@ -72,9 +72,14 @@ def mock_pubsub(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     The injected module exposes a `pub` attribute (a SimpleNamespace) with
     `subscribe` and `sendMessage` no-op callables and `AUTO_TOPIC` set to None.
 
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to inject the mock module.
+
     Returns
     -------
-    module
+    types.ModuleType
         The injected `pubsub` module.
     """
     pubsub_module: Any = types.ModuleType("pubsub")
@@ -93,6 +98,11 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Provide a synchronous test stub for the publishingThread module and install it into sys.modules.
 
     The stub exposes a queueWork(callback) callable that invokes the provided callback immediately if it is truthy. The mocked module is registered under both "publishingThread" and "meshtastic.publishingThread".
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to inject the mock module.
 
     Returns
     -------
@@ -128,8 +138,14 @@ def mock_tabulate(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
     The fake module exposes a `tabulate(*args, **kwargs)` function that always returns an empty string.
 
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to inject the mock module.
+
     Returns
     -------
+    types.ModuleType
         The fake `tabulate` module inserted into `sys.modules`.
     """
     tabulate_module: Any = types.ModuleType("tabulate")
@@ -237,7 +253,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             Returns
             -------
             bool
-                `True` if the client is connected, `False` otherwise.
+                Always `False` (simulates a disconnected client).
             """
             return False
 
@@ -437,6 +453,7 @@ class DummyClient:
         Returns
         -------
         bool
+            Connection state reported by isConnected().
         """
         return self.isConnected()
 
@@ -482,9 +499,10 @@ def stub_atexit(
 
     Parameters
     ----------
-        pytest.MonkeyPatch
-        Fixture used to apply the attribute patches.
-        Fixtures accepted solely to enforce fixture ordering; not otherwise used.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to apply the atexit monkeypatches.
+    mock_serial, mock_pubsub, mock_tabulate, mock_bleak, mock_bleak_exc, mock_publishing_thread : types.ModuleType
+        Ordering-only fixture dependencies; values are intentionally unused.
     """
     registered = []
     # Consume fixture arguments to document ordering intent and silence Ruff (ARG001).
@@ -618,6 +636,7 @@ def _build_interface(
         Parameters
         ----------
         name : str
+            Thread name (unused; kept for signature compatibility).
 
         Returns
         -------
@@ -635,3 +654,13 @@ def _build_interface(
     iface = BleInterfaceClass(address="dummy", noProto=True)
     iface._connect_stub_calls = connect_calls
     return iface
+
+
+@pytest.fixture
+def build_interface(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_atexit: None,
+) -> Callable[..., "BLEInterface"]:
+    """Return a fixture-backed factory for creating configured BLEInterface instances."""
+    _ = stub_atexit
+    return lambda client, **kwargs: _build_interface(monkeypatch, client, **kwargs)

@@ -3,6 +3,7 @@
 # pylint: disable=R0917,C0302
 
 import collections
+import copy
 import json
 import logging
 import math
@@ -24,7 +25,7 @@ try:
 except ImportError:
     print_color = None
 
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped,unused-ignore]
 from tabulate import tabulate
 
 import meshtastic.node
@@ -78,6 +79,13 @@ VALID_TELEMETRY_TYPES: tuple[TelemetryType, ...] = (
     "device_metrics",
 )
 VALID_TELEMETRY_TYPE_SET: frozenset[str] = frozenset(VALID_TELEMETRY_TYPES)
+UNKNOWN_SNR_QUARTER_DB = -128
+MISSING_NODE_NUM_ERROR_TEMPLATE = "NodeId {destination_id} has no numeric 'num' in DB"
+
+
+def _format_missing_node_num_error(destination_id: int | str) -> str:
+    """Return a consistent error message for nodes missing numeric IDs."""
+    return MISSING_NODE_NUM_ERROR_TEMPLATE.format(destination_id=destination_id)
 
 
 def _timeago(delta_secs: int) -> str:
@@ -404,23 +412,37 @@ class MeshInterface:  # pylint: disable=R0902
         mesh = "\n\nNodes in mesh: "
         nodes: dict[str, dict[str, Any]] = {}
         with self._node_db_lock:
-            nodes_snapshot = list(self.nodes.values()) if self.nodes else []
+            nodes_snapshot = (
+                [copy.deepcopy(node) for node in self.nodes.values()]
+                if self.nodes
+                else []
+            )
         for n in nodes_snapshot:
             # when the TBeam is first booted, it sometimes shows the raw data
             # so, we will just remove any raw keys
             keys_to_remove = ("raw", "decoded", "payload")
             n2 = remove_keys_from_dict(keys_to_remove, n)
 
+            user = n2.get("user")
+            if not isinstance(user, dict):
+                continue
+
             # if we have 'macaddr', re-format it
-            if "macaddr" in n2["user"]:
-                val = n2["user"]["macaddr"]
+            val = user.get("macaddr")
+            if isinstance(val, str):
                 # decode the base64 value
-                addr = convert_mac_addr(val)
-                n2["user"]["macaddr"] = addr
+                try:
+                    user["macaddr"] = convert_mac_addr(val)
+                except (TypeError, ValueError):
+                    logger.debug(
+                        "Skipping malformed macaddr for node %s",
+                        user.get("id"),
+                    )
 
             # use id as dictionary key for correct json format in list of nodes
-            nodeid = n2["user"]["id"]
-            nodes[nodeid] = n2
+            node_id = user.get("id")
+            if node_id is not None:
+                nodes[str(node_id)] = n2
         infos = owner + myinfo + metadata + mesh + json.dumps(nodes, indent=2)
         if file is None:
             file = sys.stdout
@@ -830,7 +852,7 @@ class MeshInterface:  # pylint: disable=R0902
     ) -> mesh_pb2.MeshPacket:
         """Send a high-priority alert text to a node, which may trigger special notifications on clients.
 
-        Parameters.
+        Parameters
         ----------
         text : str
             Alert text to send.
@@ -1167,8 +1189,6 @@ class MeshInterface:  # pylint: disable=R0902
         -----
         Prints formatted route strings to stdout and sets self._acknowledgment.receivedTraceRoute to True.
         """
-        UNK_SNR = -128  # Value representing unknown SNR
-
         routeDiscovery = mesh_pb2.RouteDiscovery()
         routeDiscovery.ParseFromString(p["decoded"]["payload"])
         asDict = google.protobuf.json_format.MessageToDict(routeDiscovery)
@@ -1195,7 +1215,7 @@ class MeshInterface:  # pylint: disable=R0902
             ----------
             snr_value : int | None
                 SNR expressed as an integer number of quarter dB units,
-                or `None`/`UNK_SNR` to indicate an unknown value.
+                or `None`/`UNKNOWN_SNR_QUARTER_DB` to indicate an unknown value.
 
             Returns
             -------
@@ -1204,7 +1224,7 @@ class MeshInterface:  # pylint: disable=R0902
             """
             return (
                 str(snr_value / 4)
-                if snr_value is not None and snr_value != UNK_SNR
+                if snr_value is not None and snr_value != UNKNOWN_SNR_QUARTER_DB
                 else "?"
             )
 
@@ -1684,8 +1704,15 @@ class MeshInterface:  # pylint: disable=R0902
             with self._node_db_lock:
                 node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
-            if node is not None:
-                nodeNum = node["num"]
+                node_found = node is not None
+                node_num = node.get("num") if isinstance(node, dict) else None
+            if node_found:
+                if isinstance(node_num, int):
+                    nodeNum = node_num
+                else:
+                    raise MeshInterface.MeshInterfaceError(
+                        _format_missing_node_num_error(destinationId)
+                    )
             elif has_nodes:
                 raise MeshInterface.MeshInterfaceError(
                     f"NodeId {destinationId} not found in DB"
@@ -1699,8 +1726,9 @@ class MeshInterface:  # pylint: disable=R0902
         if hopLimit is not None:
             meshPacket.hop_limit = hopLimit
         else:
-            loraConfig = self.localNode.localConfig.lora
-            meshPacket.hop_limit = loraConfig.hop_limit
+            with self._node_db_lock:
+                default_hop_limit = self.localNode.localConfig.lora.hop_limit
+            meshPacket.hop_limit = default_hop_limit
 
         if pkiEncrypted:
             meshPacket.pki_encrypted = True
@@ -1823,7 +1851,6 @@ class MeshInterface:  # pylint: disable=R0902
         with self._node_db_lock:
             if self.myInfo is None or self.nodesByNum is None:
                 return None
-            logger.debug("self.nodesByNum:%s", self.nodesByNum)
             return self.nodesByNum.get(self.myInfo.my_node_num)
 
     def getMyUser(self) -> dict[str, Any] | None:
@@ -2206,7 +2233,7 @@ class MeshInterface:  # pylint: disable=R0902
         toRadio : mesh_pb2.ToRadio
             Protobuf describing the action or packet to send to the radio.
         """
-        logger.error(f"Subclass must provide toradio: {toRadio}")
+        logger.error("Subclass must provide toradio: %s", toRadio)
 
     def _handle_config_complete(self) -> None:
         """Finalize initial configuration by applying collected local channels and marking the interface as connected.

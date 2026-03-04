@@ -4,7 +4,7 @@ import logging
 import math
 from collections.abc import Callable
 from threading import TIMEOUT_MAX, Event, RLock
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
@@ -384,14 +384,28 @@ class ReconnectWorker:
         try:
             self._call_policy("reset")
             interface = self.interface
-            override_delay: float | None = None
             while not shutdown_event.is_set():
-                override_delay = None
+                override_delay: float | None = None
                 if self._should_abort_reconnect(context="loop start"):
                     return
                 attempt_num = 0
                 try:
-                    attempt_num = cast(int, self._call_policy("get_attempt_count")) + 1
+                    attempt_count = self._call_policy("get_attempt_count")
+                    if attempt_count is None:
+                        logger.error(
+                            "Reconnect policy get_attempt_count() returned None for address %r; aborting reconnect loop.",
+                            interface.address,
+                        )
+                        return
+                    if isinstance(attempt_count, bool) or not isinstance(
+                        attempt_count, int
+                    ):
+                        logger.error(
+                            "Reconnect policy get_attempt_count() returned non-int value: %r",
+                            attempt_count,
+                        )
+                        return
+                    attempt_num = attempt_count + 1
                     if interface._is_connection_connected:
                         return
                     gate_result = self._handle_connected_elsewhere_gate(

@@ -319,8 +319,9 @@ def mock_serial_interface() -> MagicMock:
         A mock configured to act like a SerialInterface with the above behavior.
     """
     mock_iface = _create_context_manager_mock(SerialInterface)
-    mock_iface.localNode = MagicMock(spec=["getChannelByName"])
+    mock_iface.localNode = MagicMock(spec=["getChannelByName", "getChannelCopyByName"])
     mock_iface.localNode.getChannelByName.return_value = None
+    mock_iface.localNode.getChannelCopyByName.return_value = None
     mock_iface.myInfo = MagicMock(spec=["max_channels"])
     mock_iface.myInfo.max_channels = 8
     return mock_iface
@@ -387,6 +388,8 @@ def ppk2_stub() -> "PPK2PowerSupply":
     ppk_any._is_supply = False
     ppk_any._closed = False
     ppk_any._shutdown_event = threading.Event()
+    # Keep both names initialized: legacy code paths may still touch
+    # measurement_thread while current code uses _measurement_thread.
     ppk_any._measurement_thread = None
     ppk._result_lock = threading.Condition()
     ppk._want_measurement = threading.Condition()
@@ -423,6 +426,7 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
     channel = MagicMock()
     channel.index = channel_index
     iface.localNode.getChannelByName.return_value = channel
+    iface.localNode.getChannelCopyByName.return_value = channel
     return cast(MagicMock, iface)
 
 

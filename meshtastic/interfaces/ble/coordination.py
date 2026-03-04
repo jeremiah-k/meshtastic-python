@@ -14,6 +14,7 @@ _INERT_THREAD_START_ERROR = (
 _EVENT_CREATE_AFTER_CLEANUP_ERROR = (
     "Cannot create event '{name}': coordinator has been cleaned up"
 )
+_LOCK_NOT_OWNED_ERROR = "Expected ThreadCoordinator._lock to be held"
 
 
 class _InertThread:
@@ -178,7 +179,7 @@ class ThreadCoordinator:
                 inert_event.set()
                 return inert_event
             if name in self._events:
-                logger.warning(
+                logger.debug(
                     "Event already exists: %s, returning existing instance", name
                 )
                 return self._events[name]
@@ -289,6 +290,18 @@ class ThreadCoordinator:
         for thread in threads_to_join:
             thread.join(timeout=timeout)
 
+    def _assert_lock_owned(self) -> None:
+        """Best-effort debug assertion that the coordinator lock is currently held.
+
+        Note
+        ----
+        This uses CPython's private ``RLock._is_owned()`` probe when available.
+        On runtimes without that attribute, this check becomes a no-op.
+        """
+        is_owned = getattr(self._lock, "_is_owned", None)
+        if callable(is_owned) and not is_owned():
+            raise RuntimeError(_LOCK_NOT_OWNED_ERROR)
+
     def _set_event_no_lock(self, name: str) -> None:
         """Set the named tracked event without acquiring the coordinator lock.
 
@@ -299,8 +312,10 @@ class ThreadCoordinator:
         Parameters
         ----------
         name : str
-            Name of the event to retrieve.
+            Name of the event to set.
         """
+        if __debug__:
+            self._assert_lock_owned()
         event = self._events.get(name)
         if event is not None:
             event.set()
@@ -317,6 +332,8 @@ class ThreadCoordinator:
         name : str
             The name of the event to clear.
         """
+        if __debug__:
+            self._assert_lock_owned()
         event = self._events.get(name)
         if event is not None:
             event.clear()

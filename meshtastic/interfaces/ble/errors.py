@@ -24,6 +24,7 @@ else:
     DecodeError = _ProtobufDecodeError
 
 
+# Public exports for BLE error handling utilities.
 __all__ = ["BLEErrorHandler", "DecodeError"]
 
 T = TypeVar("T")

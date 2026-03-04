@@ -8,7 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 DISTRIBUTION_NAME_CANDIDATES: tuple[str, ...] = ("mtjk", "meshtastic")
 
 
-def get_active_version() -> str:
+def getActiveVersion() -> str:
     """Retrieve the active installed package version.
 
     The lookup tries each candidate distribution name in
@@ -25,3 +25,15 @@ def get_active_version() -> str:
         except PackageNotFoundError:
             continue
     return "unknown"
+
+
+# COMPAT_STABLE_SHIM: historical snake_case alias.
+def get_active_version() -> str:
+    """Compatibility alias for `getActiveVersion`.
+
+    Returns
+    -------
+    str
+        Active version string resolved by getActiveVersion().
+    """
+    return getActiveVersion()

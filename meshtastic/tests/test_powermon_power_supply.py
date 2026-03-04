@@ -91,18 +91,52 @@ def test_deprecated_current_aliases_warn_once_per_method(
 
 
 @pytest.mark.unit
-def test_sim_power_supply_snake_case_alias_is_stable_shim(
+@pytest.mark.parametrize(
+    ("snake_alias", "canonical"),
+    [
+        ("get_average_current_mA", "getAverageCurrentMA"),
+        ("get_min_current_mA", "getMinCurrentMA"),
+        ("get_max_current_mA", "getMaxCurrentMA"),
+    ],
+)
+def test_sim_power_supply_snake_case_aliases_are_stable_shims(
     monkeypatch: pytest.MonkeyPatch,
+    snake_alias: str,
+    canonical: str,
 ) -> None:
-    """SimPowerSupply snake_case alias should delegate without emitting deprecation warnings."""
+    """SimPowerSupply snake_case aliases should delegate without deprecation warnings."""
     monkeypatch.setattr("meshtastic.powermon.sim.time.time", lambda: 0.0)
     supply = SimPowerSupply()
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        value = supply.get_average_current_mA()
+        value = getattr(supply, snake_alias)()
 
-    assert value == pytest.approx(supply.getAverageCurrentMA())
+    assert value == pytest.approx(getattr(supply, canonical)())
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]
+
+
+@pytest.mark.unit
+def test_sim_power_supply_reset_measurements_snake_case_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """reset_measurements() should delegate to resetMeasurements() without warnings."""
+    supply = SimPowerSupply()
+    called = {"count": 0}
+
+    def _fake_reset() -> None:
+        called["count"] += 1
+
+    monkeypatch.setattr(supply, "resetMeasurements", _fake_reset)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        supply.reset_measurements()
+
+    assert called["count"] == 1
     assert not [
         warning
         for warning in caught

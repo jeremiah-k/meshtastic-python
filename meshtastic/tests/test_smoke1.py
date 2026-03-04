@@ -1,20 +1,21 @@
 """Meshtastic smoke tests with a single device via USB."""
 
-import os
 import platform
 import re
 import time
+from pathlib import Path
 
 # Do not like using hard coded sleeps, but it probably makes
 # sense to pause for the radio at appropriate times
 import pytest
 
 from ..util import findPorts
-from .cli_test_utils import run_cli_with_timeout
+from .cli_test_utils import _quote_shell_path, run_cli_with_timeout
 
 # seconds to pause after running a meshtastic command
 PAUSE_AFTER_COMMAND = 2
 PAUSE_AFTER_REBOOT = 7
+PAUSE_AFTER_REBOOT_COMMAND = 18
 
 
 @pytest.mark.smoke1
@@ -23,7 +24,7 @@ def test_smoke1_reboot() -> None:
     return_value, _ = run_cli_with_timeout("meshtastic --reboot")
     assert return_value == 0
     # pause for the radio to reset (10 seconds for the pause, and a few more seconds to be back up)
-    time.sleep(18)
+    time.sleep(PAUSE_AFTER_REBOOT_COMMAND)
 
 
 @pytest.mark.smoke1
@@ -106,28 +107,38 @@ def test_smoke1_debug() -> None:
 @pytest.mark.smoke1
 def test_smoke1_seriallog_to_file() -> None:
     """Test --seriallog to a file creates a file."""
-    filename = "tmpoutput.txt"
-    if os.path.exists(f"{filename}"):
-        os.remove(f"{filename}")
-    return_value, _ = run_cli_with_timeout(f"meshtastic --info --seriallog {filename}")
-    assert os.path.exists(f"{filename}")
-    assert return_value == 0
-    os.remove(f"{filename}")
+    filepath = Path("tmpoutput.txt")
+    try:
+        if filepath.exists():
+            filepath.unlink()
+        return_value, _ = run_cli_with_timeout(
+            f"meshtastic --info --seriallog {filepath}"
+        )
+        assert filepath.exists()
+        assert return_value == 0
+    finally:
+        if filepath.exists():
+            filepath.unlink()
 
 
 @pytest.mark.smoke1
 def test_smoke1_qr() -> None:
     """Test --qr."""
-    filename = "tmpqr"
-    if os.path.exists(f"{filename}"):
-        os.remove(f"{filename}")
-    return_value, _ = run_cli_with_timeout(f"meshtastic --qr > {filename}")
-    assert os.path.exists(f"{filename}")
-    # not really testing that a valid qr code is created, just that the file size
-    # is reasonably big enough for a qr code
-    assert os.stat(f"{filename}").st_size > 20000
-    assert return_value == 0
-    os.remove(f"{filename}")
+    filename = Path("tmpqr")
+    try:
+        if filename.exists():
+            filename.unlink()
+        return_value, _ = run_cli_with_timeout(
+            f"meshtastic --qr > {_quote_shell_path(filename)}"
+        )
+        assert filename.exists()
+        # not really testing that a valid qr code is created, just that the file size
+        # is reasonably big enough for a qr code
+        assert filename.stat().st_size > 20000
+        assert return_value == 0
+    finally:
+        if filename.exists():
+            filename.unlink()
 
 
 @pytest.mark.smoke1
@@ -600,8 +611,10 @@ def test_smoke1_seturl_invalid_url() -> None:
 @pytest.mark.smoke1
 def test_smoke1_configure() -> None:
     """Test --configure."""
+    config_path = Path(__file__).resolve().parents[2] / "example_config.yaml"
+    assert config_path.exists(), f"Config file not found: {config_path}"
     return_value, out = run_cli_with_timeout(
-        "meshtastic --configure example_config.yaml"
+        f"meshtastic --configure {_quote_shell_path(config_path)}"
     )
     assert re.match(r"Connected to radio", out)
     assert re.search("^Setting device owner to Bob TBeam", out, re.MULTILINE)

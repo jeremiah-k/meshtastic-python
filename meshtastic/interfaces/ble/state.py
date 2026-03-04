@@ -40,43 +40,57 @@ class BLEStateManager:
     for clearer connection management and reduced complexity.
     """
 
-    _VALID_TRANSITIONS: ClassVar[dict[ConnectionState, set[ConnectionState]]] = {
-        ConnectionState.DISCONNECTED: {
+    _VALID_TRANSITIONS: ClassVar[
+        dict[ConnectionState, frozenset[ConnectionState]]
+    ] = {
+        ConnectionState.DISCONNECTED: frozenset(
+            {
             ConnectionState.CONNECTING,
             ConnectionState.ERROR,
             # Note: DISCONNECTING is intentionally NOT allowed from DISCONNECTED.
             # A disconnected interface cannot "begin disconnecting" - it's already disconnected.
             # close() explicitly checks for DISCONNECTED state and skips the transition.
-        },
-        ConnectionState.CONNECTING: {
+            }
+        ),
+        ConnectionState.CONNECTING: frozenset(
+            {
             ConnectionState.CONNECTED,
             ConnectionState.DISCONNECTING,
             ConnectionState.ERROR,
             ConnectionState.DISCONNECTED,
-        },
-        ConnectionState.CONNECTED: {
+            }
+        ),
+        ConnectionState.CONNECTED: frozenset(
+            {
             ConnectionState.DISCONNECTING,
             ConnectionState.RECONNECTING,
             ConnectionState.DISCONNECTED,
             ConnectionState.ERROR,
-        },
-        ConnectionState.DISCONNECTING: {
+            }
+        ),
+        ConnectionState.DISCONNECTING: frozenset(
+            {
             ConnectionState.DISCONNECTED,
             ConnectionState.ERROR,
-        },
-        ConnectionState.RECONNECTING: {
+            }
+        ),
+        ConnectionState.RECONNECTING: frozenset(
+            {
             ConnectionState.CONNECTED,
             ConnectionState.DISCONNECTING,
             ConnectionState.CONNECTING,
             ConnectionState.ERROR,
             ConnectionState.DISCONNECTED,
-        },
-        ConnectionState.ERROR: {
+            }
+        ),
+        ConnectionState.ERROR: frozenset(
+            {
             ConnectionState.DISCONNECTED,
             ConnectionState.DISCONNECTING,
             ConnectionState.CONNECTING,
             ConnectionState.RECONNECTING,
-        },
+            }
+        ),
     }
 
     def __init__(self) -> None:
@@ -207,6 +221,24 @@ class BLEStateManager:
             ConnectionState.CONNECTED,
         )
 
+    def _transition_to_unlocked(self, new_state: ConnectionState) -> bool:
+        """Transition helper that assumes `_state_lock` is already held."""
+        if new_state == self._state:
+            # No-op transition: already in target state, this is valid
+            logger.debug("State transition no-op: already in %s", self._state.value)
+            return True
+        if self._is_valid_transition(self._state, new_state):
+            old_state = self._state
+            self._state = new_state
+            logger.debug("State transition: %s → %s", old_state.value, new_state.value)
+            return True
+        logger.warning(
+            "Invalid state transition: %s → %s",
+            self._state.value,
+            new_state.value,
+        )
+        return False
+
     def _transition_to(self, new_state: ConnectionState) -> bool:
         """Attempt to change the manager's BLE connection state to the given target state.
 
@@ -223,23 +255,7 @@ class BLEStateManager:
             `True` if the state was changed or already equals the target state, `False` if the transition is invalid.
         """
         with self._state_lock:
-            if new_state == self._state:
-                # No-op transition: already in target state, this is valid
-                logger.debug("State transition no-op: already in %s", self._state.value)
-                return True
-            if self._is_valid_transition(self._state, new_state):
-                old_state = self._state
-                self._state = new_state
-                logger.debug(
-                    "State transition: %s → %s", old_state.value, new_state.value
-                )
-                return True
-            logger.warning(
-                "Invalid state transition: %s → %s",
-                self._state.value,
-                new_state.value,
-            )
-            return False
+            return self._transition_to_unlocked(new_state)
 
     def _is_valid_transition(
         self, from_state: ConnectionState, to_state: ConnectionState
@@ -258,7 +274,7 @@ class BLEStateManager:
         bool
             True if the transition from `from_state` to `to_state` is allowed, False otherwise.
         """
-        return to_state in self._VALID_TRANSITIONS.get(from_state, set())
+        return to_state in self._VALID_TRANSITIONS.get(from_state, frozenset())
 
     def _transition_if_in(
         self, expected_states: set[ConnectionState], new_state: ConnectionState
@@ -287,7 +303,7 @@ class BLEStateManager:
                     self._state.value,
                 )
                 return False
-            return self._transition_to(new_state)
+            return self._transition_to_unlocked(new_state)
 
     def _reset_to_disconnected(self) -> bool:
         """Force the connection state to DISCONNECTED for recovery or cleanup.
@@ -302,4 +318,4 @@ class BLEStateManager:
         with self._state_lock:
             # Prefer validated transition semantics; this is a no-op when already
             # disconnected and remains resilient to future transition-map edits.
-            return self._transition_to(ConnectionState.DISCONNECTED)
+            return self._transition_to_unlocked(ConnectionState.DISCONNECTED)

@@ -11,6 +11,7 @@ from ..powermon.stress import (
     DEFAULT_STRESS_STATE_DURATION_S,
     PowerStress,
     PowerStressClient,
+    handle_power_stress_response,
     handlePowerStressResponse,
     onPowerStressResponse,
 )
@@ -47,12 +48,30 @@ def test_on_power_stress_response_alias_sets_flag() -> None:
 
 
 @pytest.mark.unit
+def test_handle_power_stress_response_alias_sets_flag() -> None:
+    """snake_case compatibility alias should preserve callback behavior."""
+    iface = MagicMock()
+    iface.gotResponse = False
+    handle_power_stress_response({"decoded": {}}, iface)
+    assert iface.gotResponse is True
+
+
+@pytest.mark.unit
 def test_power_stress_client_defaults_node_id_from_iface() -> None:
     """PowerStressClient should use local node id when node_id is not provided."""
     iface = MagicMock()
     iface.myInfo.my_node_num = 12345
     client = PowerStressClient(iface)
     assert client.node_id == 12345
+
+
+@pytest.mark.unit
+def test_power_stress_client_raises_when_iface_not_initialized() -> None:
+    """PowerStressClient should fail fast when myInfo.my_node_num is unavailable."""
+    iface = MagicMock()
+    iface.myInfo = None
+    with pytest.raises(ValueError, match=r"myInfo\.my_node_num unavailable"):
+        PowerStressClient(iface)
 
 
 @pytest.mark.unit
@@ -250,5 +269,5 @@ def test_power_stress_run_completes_all_states() -> None:
             powermon_pb2.PowerStressMessage.PRINT_INFO,
             ack_timeout=DEFAULT_STRESS_STATE_DURATION_S,
         )
-    ] + [call(state, 5.0) for state in ps.states]
+    ] + [call(state, DEFAULT_STRESS_STATE_DURATION_S) for state in ps.states]
     ps.client.syncPowerStress.assert_has_calls(expected_calls, any_order=False)

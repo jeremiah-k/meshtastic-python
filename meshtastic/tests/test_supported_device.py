@@ -1,7 +1,5 @@
 """Meshtastic unit tests for supported_device.py."""
 
-from typing import cast
-
 import pytest
 
 from meshtastic.supported_device import (
@@ -336,6 +334,7 @@ def test_supported_device_usb_ids_property_primary_only() -> None:
         usb_product_id_in_hex="ea60",
     )
     assert device.usb_ids == (("10c4", "ea60"),)
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -352,6 +351,7 @@ def test_supported_device_usb_ids_property_with_aliases() -> None:
         ("303a", "1001"),
         ("1a86", "55d4"),
     )
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -359,6 +359,7 @@ def test_supported_device_usb_ids_property_no_ids() -> None:
     """Test usb_ids property with no USB IDs."""
     device = SupportedDevice(name="Test")
     assert not device.usb_ids
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -372,6 +373,7 @@ def test_supported_device_usb_ids_property_deduplicates() -> None:
     )
     # Should deduplicate while preserving order
     assert device.usb_ids == (("303a", "1001"),)
+    assert device.usbIds == device.usb_ids
 
 
 @pytest.mark.unit
@@ -486,7 +488,8 @@ def test_supported_devices_list() -> None:
 @pytest.mark.unit
 def test_supported_devices_no_duplicates() -> None:
     """Test that supported_devices has no duplicate device definitions."""
-    assert len(supported_devices) == len(set(map(repr, supported_devices)))
+    identifiers = [(d.name, d.version, d.for_firmware) for d in supported_devices]
+    assert len(identifiers) == len(set(identifiers))
 
 
 @pytest.mark.unit
@@ -506,7 +509,7 @@ def test_tdeck_and_xiao_s3_shared_alias() -> None:
 
 @pytest.mark.unit
 def test_device_with_whitespace_in_name() -> None:
-    """Test that device names with whitespace are preserved."""
+    """Device display names intentionally preserve surrounding whitespace."""
     device = SupportedDevice(name="  Test Device  ")
     assert device.name == "  Test Device  "
 
@@ -532,14 +535,11 @@ def test_usb_id_aliases_preserve_order() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=cast(
-            tuple[tuple[str, str], ...],
-            (
-                ("1111", "2222"),
-                ("3333", "4444"),
-                ("1111", "2222"),  # Duplicate
-                ("5555", "6666"),
-            ),
+        usb_id_aliases=(
+            ("1111", "2222"),
+            ("3333", "4444"),
+            ("1111", "2222"),  # Duplicate
+            ("5555", "6666"),
         ),
     )
     assert device.usb_id_aliases == (
@@ -556,12 +556,9 @@ def test_usb_ids_property_preserves_order() -> None:
         name="Test",
         usb_vendor_id_in_hex="10c4",
         usb_product_id_in_hex="ea60",
-        usb_id_aliases=cast(
-            tuple[tuple[str, str], ...],
-            (
-                ("3333", "4444"),
-                ("5555", "6666"),
-            ),
+        usb_id_aliases=(
+            ("3333", "4444"),
+            ("5555", "6666"),
         ),
     )
     usb_ids = device.usb_ids
@@ -575,7 +572,9 @@ def test_nrf52_device_class() -> None:
     """Test that nrf52 devices have correct device_class."""
     nrf52_devices = [d for d in supported_devices if d.device_class == "nrf52"]
     assert len(nrf52_devices) > 0
-    assert all(d.device_class == "nrf52" for d in nrf52_devices)
+    nrf52_names = {d.name for d in nrf52_devices}
+    assert "RAK 4631 5005" in nrf52_names
+    assert "RAK 4631 19003" in nrf52_names
 
 
 @pytest.mark.unit

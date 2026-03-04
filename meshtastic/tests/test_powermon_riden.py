@@ -99,6 +99,7 @@ def test_get_average_current_ma_consumes_window_on_nonpositive_elapsed(
     start = time.monotonic()
     pps.prevPowerTime = start + 1.0
     pps.prevWattHour = 10.0
+    pps.v = 3.3
     pps._get_raw_watt_hour = MagicMock(return_value=12.0)  # type: ignore[method-assign]
 
     result = pps.get_average_current_mA()

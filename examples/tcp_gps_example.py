@@ -2,11 +2,14 @@
 Before running, connect your machine to the same WiFi network as the radio.
 """
 
+import logging
 import sys
 
 import meshtastic.tcp_interface
 
 RADIO_HOSTNAME = "meshtastic.local"  # Can also be an IP
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -15,14 +18,11 @@ def main() -> None:
         with meshtastic.tcp_interface.TCPInterface(RADIO_HOSTNAME) as iface:
             my_info = iface.myInfo
             if my_info is None:
-                print(
-                    "myInfo is not available — radio may not yet have joined a mesh.",
-                    file=sys.stderr,
-                )
+                logger.error("myInfo is not available - radio may not yet have joined a mesh.")
                 return
 
-            if my_info.my_node_num < 0:
-                print("Local node has not joined the mesh yet.", file=sys.stderr)
+            if my_info.my_node_num <= 0:
+                logger.error("Local node has not joined the mesh yet.")
                 return
 
             nodes_by_num = (
@@ -30,17 +30,17 @@ def main() -> None:
             )
             node = nodes_by_num.get(my_info.my_node_num)
             if not isinstance(node, dict):
-                print("Local node not found in node database yet.", file=sys.stderr)
+                logger.error("Local node not found in node database yet.")
                 return
 
             position = node.get("position")
             if position is None:
-                print("Node has no position data yet.", file=sys.stderr)
+                logger.error("Node has no position data yet.")
                 return
 
             print(position)
-    except OSError as exc:
-        print(f"Could not connect to {RADIO_HOSTNAME}: {exc}", file=sys.stderr)
+    except OSError:
+        logger.exception("Could not connect to %s", RADIO_HOSTNAME)
         sys.exit(1)
 
 

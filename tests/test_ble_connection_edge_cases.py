@@ -1,11 +1,14 @@
 """Edge case tests for BLE connection management."""
 
+import logging
+from types import SimpleNamespace
 from threading import Event, RLock
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
 try:
+    from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
     from meshtastic.interfaces.ble.connection import (
         AWAIT_TIMEOUT_BUFFER_SECONDS,
         DIRECT_CONNECT_TIMEOUT_SECONDS,
@@ -310,3 +313,558 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
     client_manager._safe_close_client.assert_called_once_with(mock_client)
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> None:
+    """Shutdown during direct-connect failure should abort discovery fallback."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    client_manager._create_client.return_value = direct_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+
+    connect_attempts = 0
+
+    def _connect_side_effect(*_args, **_kwargs) -> None:
+        nonlocal connect_attempts
+        connect_attempts += 1
+        if connect_attempts == 1:
+            interface._closed = True
+            raise TimeoutError("direct connect timed out")
+        raise AssertionError("fallback connect should not run while closing")
+
+    client_manager._connect_client.side_effect = _connect_side_effect
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError, match="Cannot connect while interface is closing"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    assert connect_attempts == 1
+    interface.findDevice.assert_not_called()
+    client_manager._safe_close_client.assert_called_once_with(direct_client)
+    assert state_manager._current_state == ConnectionState.DISCONNECTED
+
+
+@pytest.mark.unit
+def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject() -> None:
+    """_transition_failure_to_disconnected should force reset if transition calls fail."""
+    state_manager = MagicMock()
+    state_manager._current_state = ConnectionState.CONNECTING
+    state_manager._transition_to.return_value = False
+    state_lock = RLock()
+    validator = ConnectionValidator(BLEStateManager(), state_lock, MockBLEError)
+    orchestrator = ConnectionOrchestrator(
+        interface=MagicMock(BLEError=MockBLEError),
+        validator=validator,
+        client_manager=MagicMock(),
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,  # type: ignore[arg-type]
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    orchestrator._transition_failure_to_disconnected("unit-test")
+
+    state_manager._reset_to_disconnected.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_finalize_connection_sets_reconnected_event_and_logs_normalized_address() -> (
+    None
+):
+    """_finalize_connection should call on_connected and set reconnected_event for prior sessions."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    assert state_manager._transition_to(ConnectionState.CONNECTING)
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._ever_connected = True
+    thread_coordinator = MagicMock()
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=MagicMock(),
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=thread_coordinator,
+    )
+    client = MagicMock()
+    client.isConnected.return_value = True
+    on_connected = MagicMock()
+
+    with pytest.MonkeyPatch.context() as patch_ctx:
+        patch_ctx.setattr(
+            "meshtastic.interfaces.ble.connection.sanitize_address",
+            lambda _address: "aa:bb:cc:dd:ee:ff",
+        )
+        orchestrator._finalize_connection(
+            client=client,
+            device_address="AA-BB-CC-DD-EE-FF",
+            register_notifications_func=lambda _client: None,
+            on_connected_func=on_connected,
+        )
+
+    on_connected.assert_called_once_with()
+    thread_coordinator._set_event.assert_called_once_with("reconnected_event")
+
+
+@pytest.mark.unit
+def test_establish_connection_rejects_whitespace_target_address() -> None:
+    """_establish_connection should fail fast for empty/whitespace target addresses."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=MagicMock(),
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError):
+        orchestrator._establish_connection(
+            address="   ",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_rejects_direct_connect_when_interface_already_closed() -> None:
+    """_establish_connection should fail before creating a client when shutdown is in progress."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = True
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError, match="Cannot connect while interface is closing"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager._create_client.assert_not_called()
+    client_manager._connect_client.assert_not_called()
+    interface.findDevice.assert_not_called()
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_returns_after_successful_direct_connect() -> None:
+    """_establish_connection should return direct client when initial connect succeeds."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    client_manager._create_client.return_value = direct_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is direct_client
+    interface.findDevice.assert_not_called()
+    orchestrator._finalize_connection.assert_called_once()
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_explicit_address() -> (
+    None
+):
+    """Explicit-address direct device-not-found should skip discovery scan fallback."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    fallback_client = MagicMock()
+    client_manager._create_client.side_effect = [direct_client, fallback_client]
+    client_manager._connect_client.side_effect = [
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is fallback_client
+    interface.findDevice.assert_not_called()
+    assert client_manager._connect_client.call_count == 2
+    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    assert (
+        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        == expected_timeout
+    )
+    assert (
+        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        == expected_timeout
+    )
+    orchestrator._finalize_connection.assert_called_once_with(
+        fallback_client,
+        "AA:BB:CC:DD:EE:FF",
+        ANY,
+        ANY,
+    )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after_direct_failure() -> (
+    None
+):
+    """Non-address identifiers should still use discovery fallback after direct failures."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager._create_client.side_effect = [direct_client, discovered_client]
+    client_manager._connect_client.side_effect = [
+        BleakDeviceNotFoundError("mesh-node", "not found"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = SimpleNamespace(address="11:22:33:44:55:66")
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="mesh-node",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface.findDevice.assert_called_once_with("mesh-node")
+    assert client_manager._connect_client.call_count == 2
+    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    assert (
+        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        == expected_timeout
+    )
+    # Discovery fallback in this path uses _connect_client(..., timeout=None)
+    # to explicitly disable the direct-connect timeout budget.
+    assert client_manager._connect_client.call_args_list[1].kwargs["timeout"] is None
+    orchestrator._finalize_connection.assert_called_once_with(
+        discovered_client,
+        "11:22:33:44:55:66",
+        ANY,
+        ANY,
+    )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_falls_back_to_scan_when_direct_retry_still_device_not_found() -> (
+    None
+):
+    """Explicit-address retries that keep failing with device-not-found should use discovery fallback."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    retry_client = MagicMock()
+    discovered_client = MagicMock()
+    client_manager._create_client.side_effect = [
+        direct_client,
+        retry_client,
+        discovered_client,
+    ]
+    client_manager._connect_client.side_effect = [
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+    )
+
+    assert result is discovered_client
+    interface.findDevice.assert_called_once_with("AA:BB:CC:DD:EE:FF")
+    assert client_manager._connect_client.call_count == 3
+    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    assert (
+        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        == expected_timeout
+    )
+    assert (
+        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        == expected_timeout
+    )
+    # After two explicit-address failures, the discovery-scan retry path calls
+    # _connect_client(client) without a timeout kwarg to use default behavior.
+    assert "timeout" not in client_manager._connect_client.call_args_list[2].kwargs
+    assert client_manager._safe_close_client.call_count == 2
+    orchestrator._finalize_connection.assert_called_once_with(
+        discovered_client,
+        "AA:BB:CC:DD:EE:FF",
+        ANY,
+        ANY,
+    )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_handles_bleak_dbus_error_during_connect() -> None:
+    """_establish_connection should reset state and re-raise BleakDBusError."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    client_manager._create_client.return_value = direct_client
+    client_manager._connect_client.side_effect = BleakDBusError(
+        "org.bluez.Error.Failed", []
+    )
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(BleakDBusError):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    assert state_manager._current_state == ConnectionState.DISCONNECTED
+    # BleakDBusError is a BleakError: one cleanup happens on direct-connect
+    # failure path, then outer BleakDBusError handling performs final cleanup.
+    assert client_manager._safe_close_client.call_count == 2
+
+
+@pytest.mark.unit
+def test_reconnect_worker_returns_when_should_abort_is_true() -> None:
+    """_attempt_reconnect_loop should exit immediately when _should_abort_reconnect is true."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> int:
+            return 0
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    worker._should_abort_reconnect = MagicMock(return_value=True)  # type: ignore[method-assign]
+    on_exit = MagicMock()
+
+    worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_returns_when_attempt_count_is_none() -> None:
+    """_attempt_reconnect_loop should exit when policy get_attempt_count returns None."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> None:
+            return None
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    interface._is_connection_connected = False
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    on_exit = MagicMock()
+
+    worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_logs_and_returns_when_attempt_count_is_non_int(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_attempt_reconnect_loop should log and exit on non-int attempt counts."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> float:
+            return 1.5
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    interface._is_connection_connected = False
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    on_exit = MagicMock()
+
+    with caplog.at_level(logging.ERROR):
+        worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    assert "returned non-int value" in caplog.text
+    on_exit.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_reconnect_worker_returns_when_interface_already_connected() -> None:
+    """_attempt_reconnect_loop should stop when interface is already connected."""
+
+    class _Policy:
+        @staticmethod
+        def _reset() -> None:
+            pass
+
+        @staticmethod
+        def _get_attempt_count() -> int:
+            return 0
+
+    interface = MagicMock()
+    interface.auto_reconnect = True
+    interface._is_connection_closing = False
+    interface._is_connection_connected = True
+    worker = ReconnectWorker(interface, _Policy())  # type: ignore[arg-type]
+    on_exit = MagicMock()
+
+    worker._attempt_reconnect_loop(Event(), on_exit=on_exit)
+
+    on_exit.assert_called_once_with()

@@ -9,7 +9,7 @@ import logging
 import sys
 import time
 import types
-from typing import IO, Any, Callable
+from typing import IO, Any, BinaryIO, Callable
 
 import serial  # type: ignore[import-untyped]
 
@@ -31,14 +31,33 @@ SERIAL_WRITE_TIMEOUT = 0.5
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
 
+SERIAL_PORT_PATH_EMPTY_ERROR = (
+    "Serial port path cannot be empty; pass None to auto-detect."
+)
+
 
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
 
     def _resolve_dev_path(self) -> str | None:
-        """Return an explicit or auto-detected serial device path."""
+        """Return an explicit or auto-detected serial device path.
+
+        Returns
+        -------
+        str | None
+            Resolved serial port path, or ``None`` when no ports are detected.
+
+        Raises
+        ------
+        MeshInterfaceError
+            If an explicit path is empty/whitespace-only or if multiple ports are
+            detected without an explicit ``--port`` selection.
+        """
         if self.devPath is not None:
-            return self.devPath
+            stripped_dev_path = self.devPath.strip()
+            if not stripped_dev_path:
+                raise self.MeshInterfaceError(SERIAL_PORT_PATH_EMPTY_ERROR)
+            return stripped_dev_path
 
         ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)
         logger.debug("ports: %s", ports)
@@ -92,7 +111,9 @@ class SerialInterface(StreamInterface):
             When multiple serial ports are detected and none was explicitly specified.
         """
         self.noProto = noProto
-        self.stream: serial.Serial | None = None  # Initialize early for safe cleanup
+        self.stream: serial.Serial | BinaryIO | None = (
+            None  # Initialize early for safe cleanup
+        )
 
         self.devPath: str | None = devPath
         resolved_dev_path = self._resolve_dev_path()
@@ -102,6 +123,7 @@ class SerialInterface(StreamInterface):
             )
             # Ensure base classes are initialized so close() is safe.
             # Use noProto=True for fallback since no stream is available.
+            self.noProto = True
             super().__init__(
                 debugOut=debugOut,
                 noProto=True,
@@ -182,11 +204,12 @@ class SerialInterface(StreamInterface):
             that includes only the applicable fields (devPath always; debugOut, noProto, noNodes when present).
         """
         rep = f"SerialInterface(devPath={self.devPath!r}"
-        if hasattr(self, "debugOut") and self.debugOut is not None:
-            rep += f", debugOut={self.debugOut!r}"
+        debug_out = getattr(self, "debugOut", None)
+        if debug_out is not None:
+            rep += f", debugOut={debug_out!r}"
         if self.noProto:
             rep += ", noProto=True"
-        if hasattr(self, "noNodes") and self.noNodes:
+        if getattr(self, "noNodes", False):
             rep += ", noNodes=True"
         rep += ")"
         return rep

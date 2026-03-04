@@ -5,7 +5,7 @@ import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable
 
-from bleak.exc import BleakDBusError, BleakError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from meshtastic.interfaces.ble.client import BLEClient
 from meshtastic.interfaces.ble.constants import (
@@ -21,6 +21,7 @@ from meshtastic.interfaces.ble.constants import (
     BLEConfig,
 )
 from meshtastic.interfaces.ble.coordination import ThreadCoordinator
+from meshtastic.interfaces.ble.discovery import _looks_like_ble_address
 from meshtastic.interfaces.ble.errors import BLEErrorHandler
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from meshtastic.interfaces.ble.utils import sanitize_address
@@ -32,6 +33,14 @@ if TYPE_CHECKING:
     from meshtastic.interfaces.ble.interface import BLEInterface
 
 logger = logging.getLogger("meshtastic.ble")
+_DEVICE_NOT_FOUND_FRAGMENT = "not found"
+
+
+def _is_device_not_found_error(err: Exception) -> bool:
+    """Return True when an exception indicates the target BLE device was not found."""
+    if isinstance(err, BleakDeviceNotFoundError):
+        return True
+    return _DEVICE_NOT_FOUND_FRAGMENT in str(err).casefold()
 
 
 class ConnectionValidator:
@@ -71,11 +80,10 @@ class ConnectionValidator:
         with self.state_lock:
             can_connect = self.state_manager._can_connect
             is_closing = self.state_manager._is_closing
-
-        if not can_connect:
-            if is_closing:
-                raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
-            raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
+            if not can_connect:
+                if is_closing:
+                    raise self.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
+                raise self.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
 
     def _check_existing_client(
         self,
@@ -251,7 +259,8 @@ class ClientManager:
         event : Event | None
             Optional Event that will be set after cleanup completes. (Default value = None)
         """
-        skip_disconnect = bool(getattr(sys, "is_finalizing", lambda: False)())
+        is_finalizing = getattr(sys, "is_finalizing", None)
+        skip_disconnect = bool(is_finalizing()) if callable(is_finalizing) else False
         if (
             not skip_disconnect
             and not getattr(client, "_closed", False)
@@ -418,6 +427,15 @@ class ConnectionOrchestrator:
             )
             self.state_manager._reset_to_disconnected()
 
+    def _raise_if_interface_closing(self) -> None:
+        """Abort connection work when shutdown is already in progress."""
+        with self.state_lock:
+            is_closing = self.state_manager._is_closing
+        raw_closed = getattr(self.interface, "_closed", False)
+        is_closed = raw_closed is True
+        if is_closing or is_closed:
+            raise self.interface.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
+
     def _establish_connection(
         self,
         address: str | None,
@@ -456,16 +474,17 @@ class ConnectionOrchestrator:
             If any other error occurs during the connection process.
         """
         self.validator._validate_connection_request()
+        self._raise_if_interface_closing()
 
         target_address = address if address is not None else current_address
-        # Allow None target_address for discovery mode - find_device() handles this
+        # Allow None target_address for discovery mode - findDevice() handles this
         # Only reject empty/whitespace-only strings that are explicitly provided
         if target_address is not None and not target_address.strip():
             raise self.interface.BLEError(CONNECTION_ERROR_EMPTY_ADDRESS)
 
         normalized_target = sanitize_address(target_address)
         # Note: normalized_target can be None for discovery mode - this is intentional
-        # The discovery fallback in find_device() will scan for any Meshtastic device
+        # The discovery fallback in findDevice() will scan for any Meshtastic device
 
         if target_address:
             logger.info("Attempting to connect to %s", target_address)
@@ -476,10 +495,13 @@ class ConnectionOrchestrator:
             if not self.state_manager._transition_to(ConnectionState.CONNECTING):
                 raise self.interface.BLEError(BLECLIENT_ERROR_ALREADY_CONNECTED)
         client: BLEClient | None = None
+        skip_discovery_scan = False
+        should_attempt_discovery_after_retry = False
         try:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
             if target_address:
+                self._raise_if_interface_closing()
                 client = self.client_manager._create_client(
                     target_address, on_disconnect_func
                 )
@@ -487,6 +509,7 @@ class ConnectionOrchestrator:
                     direct_timeout = min(
                         DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
                     )
+                    self._raise_if_interface_closing()
                     self.client_manager._connect_client(client, timeout=direct_timeout)
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise
@@ -502,10 +525,20 @@ class ConnectionOrchestrator:
                         direct_err,
                         exc_info=True,
                     )
+                    skip_discovery_scan = (
+                        _looks_like_ble_address(target_address)
+                        and _is_device_not_found_error(direct_err)
+                    )
+                    if skip_discovery_scan:
+                        logger.debug(
+                            "Direct connect reported device-not-found for %s; skipping discovery scan and retrying explicit address connect.",
+                            normalized_target,
+                        )
                     if client:
                         self.client_manager._safe_close_client(client)
                     client = None
                 else:
+                    self._raise_if_interface_closing()
                     self._finalize_connection(
                         client,
                         target_address,
@@ -514,13 +547,54 @@ class ConnectionOrchestrator:
                     )
                     return client
 
-            device = self.interface.findDevice(address or current_address)
+            fallback_timeout: float | None = None
+            if skip_discovery_scan and target_address is not None:
+                resolved_address = target_address
+                fallback_timeout = min(
+                    DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
+                )
+            else:
+                self._raise_if_interface_closing()
+                device = self.interface.findDevice(target_address)
+                resolved_address = device.address
+
+            self._raise_if_interface_closing()
             client = self.client_manager._create_client(
-                device.address, on_disconnect_func
+                resolved_address, on_disconnect_func
             )
-            self.client_manager._connect_client(client)
+            try:
+                self.client_manager._connect_client(client, timeout=fallback_timeout)
+            except (
+                BleakError,
+                BLEClient.BLEError,
+                OSError,
+                TimeoutError,
+            ) as retry_err:
+                should_attempt_discovery_after_retry = (
+                    skip_discovery_scan
+                    and target_address is not None
+                    and _is_device_not_found_error(retry_err)
+                )
+                if not should_attempt_discovery_after_retry:
+                    raise
+                logger.debug(
+                    "Direct retry also reported device-not-found for %s; attempting discovery scan fallback.",
+                    normalized_target,
+                )
+                self.client_manager._safe_close_client(client)
+                client = None
+                self._raise_if_interface_closing()
+                device = self.interface.findDevice(target_address)
+                self._raise_if_interface_closing()
+                resolved_address = device.address
+                client = self.client_manager._create_client(
+                    resolved_address, on_disconnect_func
+                )
+                self.client_manager._connect_client(client)
+
+            self._raise_if_interface_closing()
             self._finalize_connection(
-                client, device.address, register_notifications_func, on_connected_func
+                client, resolved_address, register_notifications_func, on_connected_func
             )
             return client
         except BleakDBusError:
@@ -529,6 +603,8 @@ class ConnectionOrchestrator:
             self._transition_failure_to_disconnected("BleakDBusError during connect")
             raise
         except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
+            # Transition first so concurrent callers immediately observe the
+            # interrupted state before teardown work begins.
             self._transition_failure_to_disconnected(
                 "connect interrupted by SystemExit/KeyboardInterrupt"
             )

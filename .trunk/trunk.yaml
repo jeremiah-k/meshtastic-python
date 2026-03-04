@@ -51,7 +51,6 @@ lint:
           disable_upstream: true
           success_codes: [0, 1]
           batch: true
-          cache_results: false
           stdin: false
     - name: pylint-poetry
       description: Run pylint via Poetry with the project's CI arguments.
@@ -65,13 +64,12 @@ lint:
         - name: lint
           output: pylint
           run: poetry -C ${workspace} run pylint meshtastic examples/ --exit-zero --output ${tmpfile} --output-format json
-          target: meshtastic
+          target: [meshtastic, examples]
           read_output_from: tmp_file
           run_from: ${root_or_parent_with_any_config}
           disable_upstream: true
           success_codes: [0]
           batch: true
-          cache_results: false
           stdin: false
   enabled:
     - actionlint@1.7.10
