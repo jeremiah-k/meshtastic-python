@@ -8,13 +8,13 @@ set -e
 
 POETRYDIR="$(poetry env info --path 2>/dev/null || true)"
 
-if [[ -z ${POETRYDIR} ]]; then
+if [[ -z ${POETRYDIR-} ]]; then
 	poetry install
 	POETRYDIR="$(poetry env info --path)"
 fi
 
 # protoc looks for mypy plugin in the python path
-if [[ -z ${POETRYDIR} || ! -f "${POETRYDIR}/bin/activate" ]]; then
+if [[ -z ${POETRYDIR-} || ! -f "${POETRYDIR}/bin/activate" ]]; then
 	echo "Unable to resolve Poetry virtualenv activate script at ${POETRYDIR}/bin/activate" >&2
 	exit 1
 fi
@@ -36,7 +36,7 @@ cp ./protobufs/meshtastic/*.proto "${INDIR}"
 cp ./protobufs/nanopb.proto "${INDIR}"
 
 # OS-X sed is apparently a little different and expects an arg for -i
-if [[ ${OSTYPE} == darwin* ]]; then
+if [[ ${OSTYPE-} == darwin* ]]; then
 	SEDCMD=(sed -i '' -E)
 else
 	SEDCMD=(sed -i -E)
@@ -53,7 +53,8 @@ fi
 ./nanopb-0.4.8/generator-bin/protoc -I="${TMPDIR}/in" --python_out "${OUTDIR}" "--mypy_out=${PYIDIR}" "${INDIR}"/*.proto
 
 # Change "from meshtastic.protobuf import" to "from . import"
-"${SEDCMD[@]}" 's/^from meshtastic.protobuf import/from . import/' "${OUTDIR}"/meshtastic/protobuf/*pb2*.py[i]
+"${SEDCMD[@]}" 's/^from meshtastic.protobuf import/from . import/' "${OUTDIR}"/meshtastic/protobuf/*pb2*.py
+"${SEDCMD[@]}" 's/^from meshtastic.protobuf import/from . import/' "${OUTDIR}"/meshtastic/protobuf/*pb2*.pyi
 
 # Create a __init__.py in the out directory
 touch "${OUTDIR}/meshtastic/protobuf/__init__.py"
