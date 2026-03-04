@@ -19,17 +19,17 @@ import threading
 
 from pytap2 import TapDevice
 
-# A list of chatty UDP services we should never accidentally
+# A set of chatty UDP services we should never accidentally
 # forward to our slow network.
 UDP_BLACKLIST: set[int] = {
     1900,  # SSDP
     5353,  # multicast DNS
 }
 
-# A list of TCP services to block.
+# A set of TCP services to block.
 TCP_BLACKLIST: set[int] = set()
 
-# A list of protocols we ignore.
+# A set of protocols we ignore.
 PROTOCOL_BLACKLIST: set[int] = {
     0x02,  # IGMP
     0x80,  # Service-Specific Connection-Oriented Protocol in a Multilink and Connectionless Environment
@@ -99,7 +99,13 @@ def _internet_checksum(payload: bytes) -> int:
 
 
 def _readtest(tap: TapDevice) -> None:
-    """Read packets from a TapDevice and log/filter protocol details."""
+    """Read packets from a TapDevice and log/filter protocol details.
+
+    Parameters
+    ----------
+    tap : TapDevice
+        The TUN/TAP device to read packets from.
+    """
     while True:
         p = bytes(tap.read())
         if len(p) < 20:

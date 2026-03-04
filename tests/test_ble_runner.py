@@ -16,6 +16,8 @@ from meshtastic.interfaces.ble.runner import (
     get_zombie_runner_count,
 )
 
+pytestmark = pytest.mark.unit
+
 
 def _fake_submit_completed_none(
     coro: Any, _loop: asyncio.AbstractEventLoop
@@ -168,7 +170,7 @@ class TestBLECoroutineRunner:
         runner = BLECoroutineRunner()
         observed_exc_info: list[object] = []
 
-        class _LoopStub:
+        class _ExceptionHandlerLoopStub:
             def __init__(self) -> None:
                 self.seen_contexts: list[dict[str, Any]] = []
 
@@ -183,7 +185,7 @@ class TestBLECoroutineRunner:
         monkeypatch.setattr(
             "meshtastic.interfaces.ble.runner.logger.error", _capture_error
         )
-        loop = _LoopStub()
+        loop = _ExceptionHandlerLoopStub()
 
         runner._handle_loop_exception(
             cast(Any, loop), {"message": "test error", "exception": None}

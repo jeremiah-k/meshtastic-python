@@ -57,9 +57,9 @@ def test_mesh_interface_import_handles_missing_print_color(
         level: int = 0,
     ) -> Any:
         if name == "print_color":
-            raise ImportError(
+            raise ImportError(  # noqa: TRY003 - intentional test sentinel
                 "simulated missing print_color"
-            ) from None  # noqa: TRY003 - intentional test sentinel
+            ) from None
         return real_import(name, globals_dict, locals_dict, from_list, level)
 
     monkeypatch.setattr(builtins, "__import__", _import_with_print_color_failure)
@@ -872,14 +872,17 @@ def test_getRingtone() -> None:
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
 def test_generatePacketId() -> None:
-    """Test _generate_packet_id() when no currentPacketId (not connected)."""
+    """Test packet-id generation helpers when no currentPacketId (not connected)."""
     with MeshInterface(noProto=True) as iface:
         # not sure when this condition would ever happen... but we can simulate it
         iface.currentPacketId = None  # type: ignore[assignment]
         assert iface.currentPacketId is None
         with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo:
             iface._generate_packet_id()
+        with pytest.raises(MeshInterface.MeshInterfaceError) as excinfo_alias:
+            iface._generatePacketId()
     assert "Not connected yet, can not generate packet" in str(excinfo.value)
+    assert "Not connected yet, can not generate packet" in str(excinfo_alias.value)
 
 
 @pytest.mark.unit
@@ -1093,6 +1096,7 @@ def test_timeago() -> None:
     assert _timeago(-999) == "now"
 
 
+@pytest.mark.unit
 @given(seconds=st.integers())
 def test_timeago_fuzz(seconds: int) -> None:
     """Fuzz _timeago to ensure it works with any integer."""
@@ -1775,7 +1779,7 @@ def test_send_telemetry_supported_and_fallback_paths(
         monkeypatch.setattr(
             iface,
             "sendData",
-            lambda payload, *args, **kwargs: telemetry_calls.append((payload, kwargs)),
+            lambda payload, *_args, **kwargs: telemetry_calls.append((payload, kwargs)),
         )
         wait_for_telemetry = MagicMock()
         monkeypatch.setattr(iface, "waitForTelemetry", wait_for_telemetry)
@@ -2383,9 +2387,9 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
             on_receive_calls.append(1)
 
         def _raising_callback(_packet: dict[str, Any]) -> None:
-            raise RuntimeError("handler boom")
+            raise RuntimeError("handler boom")  # noqa: TRY003 - intentional test sentinel
 
-        def onAckNak(_packet: dict[str, Any]) -> None:
+        def _on_ack_nak(_packet: dict[str, Any]) -> None:
             on_ack_calls.append(1)
 
         def _ack_permitted_callback(_packet: dict[str, Any]) -> None:
@@ -2423,7 +2427,7 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
         p2.decoded.payload = routing.SerializeToString()
         p2.decoded.request_id = 78
         iface.responseHandlers[78] = ResponseHandler(
-            callback=onAckNak, ackPermitted=False
+            callback=_on_ack_nak, ackPermitted=False
         )
         iface._handle_packet_from_radio(p2, hack=True)
 

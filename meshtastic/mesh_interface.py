@@ -1985,6 +1985,11 @@ class MeshInterface:  # pylint: disable=R0902
             self.currentPacketId = next_packet_id | random_part  # combine
             return self.currentPacketId
 
+    # COMPAT_STABLE_SHIM: historical private camelCase helper used by external integrations.
+    def _generatePacketId(self) -> int:
+        """Backward-compatible alias for `_generate_packet_id`."""
+        return self._generate_packet_id()
+
     def _disconnected(self) -> None:
         """Mark the interface as disconnected and publish meshtastic.connection.lost once per connection.
 

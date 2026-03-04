@@ -23,6 +23,8 @@ from meshtastic.interfaces.ble.gating import (
     _release_addr_lock,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class _ConnectedOwner:
     """Owner stub that reports an active connection."""

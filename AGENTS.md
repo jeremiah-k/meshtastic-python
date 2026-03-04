@@ -105,7 +105,7 @@ Current `COMPAT_DEPRECATE` methods:
 - util: `dotdict` (class alias to `DotDict`, warn-once)
 - Slog: `root_dir`, `PowerLogger.store_current_reading` (warn-once)
 - Powermon: `PowerMeter.getAverageCurrentmA`, `PowerMeter.getMinCurrentmA`, `PowerMeter.getMaxCurrentmA`
-- BLE runner: `_run_coroutine_threadsafe(timeout=...)` alias for `startup_timeout=...` (warn-once)
+- BLE runner: `BLECoroutineRunner.run_coroutine_threadsafe(timeout=...)` alias for `startup_timeout=...` (warn-once, old internal alias: `_run_coroutine_threadsafe`)
 
 ## Powermon API Refactoring Decisions
 
