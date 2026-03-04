@@ -717,7 +717,8 @@ class LogSet:
                     continue
             else:
                 raise FileExistsError(
-                    "Unable to create unique slog run directory after retries"
+                    f"Unable to create unique slog run directory under '{app_dir}' "
+                    f"after {LOG_DIR_COLLISION_MAX_RETRIES} attempts"
                 )
             dir_name = str(app_time_dir)
 

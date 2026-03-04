@@ -1693,8 +1693,8 @@ class MeshInterface:  # pylint: disable=R0902
             with self._node_db_lock:
                 node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
-            if node is not None:
                 node_num = node.get("num") if isinstance(node, dict) else None
+            if node is not None:
                 if isinstance(node_num, int):
                     nodeNum = node_num
                 else:

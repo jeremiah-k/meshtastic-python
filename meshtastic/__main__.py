@@ -1982,6 +1982,11 @@ def _parse_host_port(host_str: str, default_port: int) -> tuple[str, int]:
             )
         else:
             tcp_hostname = host_str[1:bracket_end]
+            if not tcp_hostname:
+                _cli_exit(
+                    f"Error: missing hostname in --host '{host_str}'.",
+                    1,
+                )
             remainder = host_str[bracket_end + 1 :]
             if remainder:
                 if not remainder.startswith(":"):

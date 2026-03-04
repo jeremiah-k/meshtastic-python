@@ -91,7 +91,13 @@ class RidenPowerSupply(PowerSupply):
 
     # COMPAT_STABLE_SHIM: snake_case alias retained for scripting/tooling callers.
     def get_average_current_mA(self) -> float:  # pylint: disable=invalid-name
-        """Compatibility alias for getAverageCurrentMA()."""
+        """Compatibility alias for `getAverageCurrentMA`.
+
+        Returns
+        -------
+        float
+            Average current in milliamperes.
+        """
         return self.getAverageCurrentMA()
 
     def _get_raw_watt_hour(self) -> float:

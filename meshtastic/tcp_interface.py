@@ -374,7 +374,7 @@ class TCPInterface(StreamInterface):
                     raise OSError("TCP write returned no bytes")
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except OSError as ex:
+        except (OSError, ValueError) as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -383,6 +383,8 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
+            if isinstance(ex, ValueError):
+                raise OSError(str(ex)) from ex
             raise
 
     def _compute_reconnect_delay(self) -> float:

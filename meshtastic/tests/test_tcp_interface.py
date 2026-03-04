@@ -186,6 +186,29 @@ def test_TCPInterface_write_reraises_socket_errors() -> None:
 
 
 @pytest.mark.unit
+def test_TCPInterface_write_normalizes_select_value_error_to_oserror() -> None:
+    """_write_bytes should normalize select ValueError into OSError after cleanup."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+
+            with (
+                patch(
+                    "meshtastic.tcp_interface.select.select",
+                    side_effect=ValueError("bad file descriptor"),
+                ),
+                pytest.raises(OSError, match="bad file descriptor"),
+            ):
+                iface._write_bytes(b"abc")
+
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_write_times_out_when_socket_not_writable() -> None:
     """_write_bytes should timeout when the socket never becomes writable."""
     with patch("socket.socket"):

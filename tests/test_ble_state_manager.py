@@ -590,15 +590,16 @@ def test_lock_contention_performance() -> None:
 
     manager = BLEStateManager()
     results = []
+    results_lock = threading.Lock()
 
-    def worker(worker_id):
+    def worker(worker_id: int) -> None:
         """Run a fixed sequence of BLE state transitions while measuring this worker's operations and elapsed time.
 
         Executes 200 iterations where the outer-scope `manager` is asked to transition to CONNECTING, CONNECTED, and DISCONNECTED in sequence; each successful transition increments an operation count. After completion, appends a result dict to the outer-scope `results` list with keys "worker_id", "operations", and "time" (elapsed seconds).
 
         Parameters
         ----------
-        worker_id : Any
+        worker_id : int
             Identifier used in the appended result to distinguish this worker.
         """
         start_time = time.perf_counter()
@@ -617,13 +618,14 @@ def test_lock_contention_performance() -> None:
             time.sleep(0.001)
 
         end_time = time.perf_counter()
-        results.append(
-            {
-                "worker_id": worker_id,
-                "operations": operations,
-                "time": end_time - start_time,
-            }
-        )
+        with results_lock:
+            results.append(
+                {
+                    "worker_id": worker_id,
+                    "operations": operations,
+                    "time": end_time - start_time,
+                }
+            )
 
     # Create multiple contending threads
     threads = []

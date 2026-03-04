@@ -1,5 +1,6 @@
 """Tests for package-version resolution and fork-aware update checks."""
 
+import warnings
 from importlib.metadata import PackageNotFoundError
 
 import pytest
@@ -37,7 +38,14 @@ def test_get_active_version_prefers_mtjk(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "2.7.8"
-    assert version_module.getActiveVersion() == "2.7.8"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert version_module.getActiveVersion() == "2.7.8"
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]
 
 
 @pytest.mark.unit
@@ -68,7 +76,14 @@ def test_get_active_version_returns_unknown_when_not_installed(
 
     monkeypatch.setattr(version_module, "version", _fake_version)
     assert version_module.get_active_version() == "unknown"
-    assert version_module.getActiveVersion() == "unknown"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert version_module.getActiveVersion() == "unknown"
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+    ]
 
 
 @pytest.mark.unit

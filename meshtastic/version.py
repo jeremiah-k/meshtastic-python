@@ -29,5 +29,11 @@ def getActiveVersion() -> str:
 
 # COMPAT_STABLE_SHIM: historical snake_case alias.
 def get_active_version() -> str:
-    """Compatibility alias for getActiveVersion()."""
+    """Compatibility alias for `getActiveVersion`.
+
+    Returns
+    -------
+    str
+        Active version string resolved by getActiveVersion().
+    """
     return getActiveVersion()
