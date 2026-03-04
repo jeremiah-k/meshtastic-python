@@ -1862,6 +1862,8 @@ def test_register_notifications_retries_fromnum_notify_acquired_once(
 
     assert client.fromnum_start_attempts == 2
     assert client.stop_notify_calls == [FROMNUM_UUID]
+    with iface._state_lock:
+        assert iface._fromnum_notify_enabled is True
 
     iface.close()
 
@@ -1892,6 +1894,75 @@ def test_register_notifications_re_raises_non_notify_acquired_dbus_error(
         iface._register_notifications(cast(BLEClient, client))
 
     assert client.stop_notify_calls == []
+
+    iface.close()
+
+
+def test_register_notifications_falls_back_to_polling_after_repeated_notify_acquired(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated FROMNUM notify-acquired errors should not fail connect; polling fallback is enabled."""
+
+    class MockClientPersistentNotifyAcquired(DummyClient):
+        """Mock client that always returns Notify acquired for FROMNUM start_notify."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.fromnum_start_attempts = 0
+
+        def has_characteristic(self, uuid: str) -> bool:
+            return uuid == FROMNUM_UUID
+
+        def start_notify(self, *args: Any, **kwargs: Any) -> None:
+            _ = kwargs
+            if args and args[0] == FROMNUM_UUID:
+                self.fromnum_start_attempts += 1
+                raise BleakDBusError(
+                    "org.bluez.Error.Failed",
+                    ["Notify acquired"],
+                )
+
+    client = MockClientPersistentNotifyAcquired()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    iface._register_notifications(cast(BLEClient, client))
+
+    expected_attempts = ble_mod.BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
+    assert client.fromnum_start_attempts == expected_attempts
+    assert len(client.stop_notify_calls) == expected_attempts
+    assert all(call == FROMNUM_UUID for call in client.stop_notify_calls)
+    with iface._state_lock:
+        assert iface._fromnum_notify_enabled is False
+
+    iface.close()
+
+
+def test_read_from_radio_with_retries_polling_mode_does_single_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polling fallback mode should perform a single read attempt on empty payloads."""
+
+    class EmptyReadClient(DummyClient):
+        """Mock client that records read count and always returns empty payloads."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.read_count = 0
+
+        def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
+            self.read_count += 1
+            return b""
+
+    client = EmptyReadClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    result = iface._read_from_radio_with_retries(
+        cast(BLEClient, client),
+        retry_on_empty=False,
+    )
+
+    assert result is None
+    assert client.read_count == 1
 
     iface.close()
 

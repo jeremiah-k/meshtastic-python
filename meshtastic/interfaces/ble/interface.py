@@ -262,6 +262,10 @@ class BLEInterface(MeshInterface):
             "reconnected_event"
         )  # Signals when reconnection occurred
         self._shutdown_event = self.thread_coordinator._create_event("shutdown_event")
+        # Whether FROMNUM notifications were successfully registered for the
+        # active connection. When false, receive loop falls back to periodic
+        # FROMRADIO polling.
+        self._fromnum_notify_enabled = False
         self._malformed_notification_count = 0  # Tracks corrupted packets for threshold
         self._malformed_notification_lock = threading.Lock()
         self._ever_connected = (
@@ -815,7 +819,9 @@ class BLEInterface(MeshInterface):
         """Register BLE characteristic notification handlers on the given BLE client.
 
         Registers optional legacy and modern log notification handlers (failures to start these are logged and ignored)
-        and registers the critical FROMNUM notification handler for incoming packets (failures to start this are propagated).
+        and registers the critical FROMNUM notification handler for incoming packets. FROMNUM registration failures are
+        propagated unless BlueZ reports an acquired-notify conflict, in which case this method falls back to periodic
+        FROMRADIO polling for compatibility.
         All handlers are wrapped to route exceptions to the interface's error handler.
 
         Parameters
@@ -976,36 +982,52 @@ class BLEInterface(MeshInterface):
         from_num_handler = _get_or_create_handler(
             FROMNUM_UUID, lambda: _safe_from_num_handler
         )
-        try:
-            client.start_notify(
-                FROMNUM_UUID,
-                from_num_handler,
-                timeout=NOTIFICATION_START_TIMEOUT,
-            )
-        except BleakDBusError as e:
-            if not _is_notify_acquired_error(e):
-                raise
-            logger.debug(
-                "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify",
-                FROMNUM_UUID,
-            )
-            with contextlib.suppress(
-                BleakError,
-                BleakDBusError,
-                RuntimeError,
-                BLEClient.BLEError,
-                self.BLEError,
-            ):
-                client.stop_notify(
+        with self._state_lock:
+            self._fromnum_notify_enabled = False
+
+        max_attempts = BLEConfig.SERVICE_CHARACTERISTIC_RETRY_COUNT + 1
+        for attempt in range(max_attempts):
+            try:
+                client.start_notify(
                     FROMNUM_UUID,
+                    from_num_handler,
                     timeout=NOTIFICATION_START_TIMEOUT,
                 )
-            _sleep(BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY)
-            client.start_notify(
-                FROMNUM_UUID,
-                from_num_handler,
-                timeout=NOTIFICATION_START_TIMEOUT,
-            )
+            except BleakDBusError as e:
+                if not _is_notify_acquired_error(e):
+                    raise
+                logger.debug(
+                    "FROMNUM notify already acquired for %s; retrying after best-effort stop_notify (attempt %d/%d)",
+                    FROMNUM_UUID,
+                    attempt + 1,
+                    max_attempts,
+                )
+                with contextlib.suppress(
+                    BleakError,
+                    BleakDBusError,
+                    RuntimeError,
+                    BLEClient.BLEError,
+                    self.BLEError,
+                ):
+                    client.stop_notify(
+                        FROMNUM_UUID,
+                        timeout=NOTIFICATION_START_TIMEOUT,
+                    )
+                if attempt + 1 < max_attempts:
+                    _sleep(
+                        BLEConfig.SERVICE_CHARACTERISTIC_RETRY_DELAY * (attempt + 1)
+                    )
+                    continue
+                logger.warning(
+                    "Unable to start FROMNUM notifications for %s after %d attempts due to BlueZ 'Notify acquired'; falling back to polling reads.",
+                    FROMNUM_UUID,
+                    max_attempts,
+                )
+                return
+            else:
+                with self._state_lock:
+                    self._fromnum_notify_enabled = True
+                return
 
     def _log_radio_handler(self, _: Any, b: bytes | bytearray) -> None:
         """Handle a protobuf LogRecord notification and forward a formatted log line to the instance log handler.
@@ -1647,16 +1669,22 @@ class BLEInterface(MeshInterface):
         try:
             while self._should_run_receive_loop():
                 # Wait for data to read, but also check periodically for reconnection
-                if not coordinator._wait_for_event(
+                event_signaled = coordinator._wait_for_event(
                     "read_trigger", timeout=wait_timeout
-                ):
+                )
+                poll_without_notify = False
+                if not event_signaled:
                     # Timeout occurred, check if we were reconnected during this time
                     if self._ever_connected and coordinator._check_and_clear_event(
                         "reconnected_event"
                     ):
                         logger.debug("Detected reconnection, resuming normal operation")
-                    continue
-                coordinator._clear_event("read_trigger")
+                    with self._state_lock:
+                        poll_without_notify = not self._fromnum_notify_enabled
+                    if not poll_without_notify:
+                        continue
+                else:
+                    coordinator._clear_event("read_trigger")
 
                 while self._should_run_receive_loop():
                     # Use unified state lock
@@ -1693,7 +1721,10 @@ class BLEInterface(MeshInterface):
                             )
                         break
                     try:
-                        payload = self._read_from_radio_with_retries(client)
+                        payload = self._read_from_radio_with_retries(
+                            client,
+                            retry_on_empty=not poll_without_notify,
+                        )
                         if not payload:
                             break  # Too many empty reads; exit to recheck state
                         logger.debug("FROMRADIO read: %s", payload.hex())
@@ -1815,7 +1846,12 @@ class BLEInterface(MeshInterface):
         if self._should_run_receive_loop():
             self._start_receive_thread(name="BLEReceiveRecovery", reset_recovery=False)
 
-    def _read_from_radio_with_retries(self, client: BLEClient) -> bytes | None:
+    def _read_from_radio_with_retries(
+        self,
+        client: BLEClient,
+        *,
+        retry_on_empty: bool = True,
+    ) -> bytes | None:
         """Read a non-empty payload from the FROMRADIO characteristic, retrying on repeated empty reads.
 
         Attempts repeated reads with backoff according to the empty-read policy; if a non-empty payload is read the suppressed-empty-read counter is reset. If all attempts return empty, a throttled warning is emitted.
@@ -1824,20 +1860,25 @@ class BLEInterface(MeshInterface):
         ----------
         client : BLEClient
             The connected BLE client to read from.
+        retry_on_empty : bool
+            Whether to retry and back off on empty reads. When False, performs
+            a single non-blocking poll read. (Default value = True)
 
         Returns
         -------
         bytes | None
             The payload bytes when a non-empty read occurs, or `None` if no non-empty payload was obtained after retries.
         """
-        for attempt in range(BLEConfig.EMPTY_READ_MAX_RETRIES + 1):
+        max_retries = BLEConfig.EMPTY_READ_MAX_RETRIES if retry_on_empty else 0
+        for attempt in range(max_retries + 1):
             payload = client.read_gatt_char(FROMRADIO_UUID, timeout=GATT_IO_TIMEOUT)
             if payload:
                 self._suppressed_empty_read_warnings = 0
                 return payload
-            if attempt < BLEConfig.EMPTY_READ_MAX_RETRIES:
+            if attempt < max_retries:
                 _sleep(self._empty_read_policy._get_delay(attempt))
-        self._log_empty_read_warning()
+        if retry_on_empty:
+            self._log_empty_read_warning()
         return None
 
     def _handle_transient_read_error(self, error: BleakError) -> None:

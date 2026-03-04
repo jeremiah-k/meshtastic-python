@@ -576,6 +576,15 @@ def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_ex
     assert result is fallback_client
     interface.findDevice.assert_not_called()
     assert client_manager._connect_client.call_count == 2
+    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    assert (
+        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        == expected_timeout
+    )
+    assert (
+        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        == expected_timeout
+    )
     orchestrator._finalize_connection.assert_called_once_with(
         fallback_client,
         "AA:BB:CC:DD:EE:FF",
@@ -628,6 +637,12 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
     assert result is discovered_client
     interface.findDevice.assert_called_once_with("mesh-node")
     assert client_manager._connect_client.call_count == 2
+    expected_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    assert (
+        client_manager._connect_client.call_args_list[0].kwargs["timeout"]
+        == expected_timeout
+    )
+    assert client_manager._connect_client.call_args_list[1].kwargs["timeout"] is None
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
         "11:22:33:44:55:66",
