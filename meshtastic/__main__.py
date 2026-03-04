@@ -1678,7 +1678,10 @@ def subscribe() -> None:
 
 def _is_repeated_field(field_desc: Any) -> bool:
     """Return True if the protobuf field is repeated.
-    Protobuf 6.31.0 and later use an is_repeated property, while older versions compare against the label field.
+
+    Newer protobuf runtimes expose a boolean ``is_repeated`` property, while
+    older generated descriptors require comparing ``label`` to
+    ``LABEL_REPEATED``.
     """
     is_repeated = getattr(field_desc, "is_repeated", None)
     if isinstance(is_repeated, bool):

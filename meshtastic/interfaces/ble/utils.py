@@ -118,31 +118,3 @@ def resolve_ble_module() -> ModuleType | None:
                 raise
             continue
     return None
-
-
-# COMPAT_STABLE_SHIM: historical camelCase alias.
-def sanitizeAddress(address: str | None) -> str | None:
-    """Compatibility alias for sanitize_address()."""
-    return sanitize_address(address)
-
-
-# COMPAT_STABLE_SHIM: historical camelCase alias.
-async def withTimeout(
-    awaitable: Awaitable[T],
-    timeout: float | None,
-    label: str,
-    timeout_error_factory: Callable[[str, float], Exception] | None = None,
-) -> T:
-    """Compatibility alias for with_timeout()."""
-    return await with_timeout(
-        awaitable,
-        timeout,
-        label,
-        timeout_error_factory=timeout_error_factory,
-    )
-
-
-# COMPAT_STABLE_SHIM: historical camelCase alias.
-def resolveBleModule() -> ModuleType | None:
-    """Compatibility alias for resolve_ble_module()."""
-    return resolve_ble_module()

@@ -988,14 +988,15 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     admin_secondary.settings.name = "admin"
     disabled = Channel(index=2, role=Channel.Role.DISABLED)
     anode.channels = [primary, admin_secondary, disabled]
-    anode.writeChannel = MagicMock()  # type: ignore[method-assign]
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
     anode.deleteChannel(1)
 
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
-    assert anode.writeChannel.call_count == CHANNEL_LIMIT - 1
-    assert all(call.kwargs["adminIndex"] == 0 for call in anode.writeChannel.call_args_list)
+    assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
+    assert all(call.kwargs["adminIndex"] == 0 for call in anode._send_admin.call_args_list)
 
 
 @pytest.mark.unit
@@ -1372,20 +1373,26 @@ def test_deleteChannel_missing_or_out_of_range_validations(
 
 
 @pytest.mark.unit
-def test_deleteChannel_rechecks_channel_presence_before_mutation(
+def test_deleteChannel_rewrite_uses_snapshot_when_channels_change_after_lock_release(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """DeleteChannel should fail if channels become unavailable before mutation."""
-    anode = Node(autospec_local_node_iface(MeshInterface), "!12345678", noProto=True)
+    """DeleteChannel should complete rewrites from a captured snapshot even if channels change later."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
     anode.channels = [Channel(index=0, role=Channel.Role.SECONDARY)]
     anode._channels_lock = _DropChannelsOnEnterCountLock(  # type: ignore[assignment]
         anode, trigger_enter=2
     )
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    anode._send_admin = MagicMock()  # type: ignore[method-assign]
 
-    with pytest.raises(
-        MeshInterface.MeshInterfaceError, match="Error: No channels have been read"
-    ):
-        anode.deleteChannel(0)
+    anode.deleteChannel(0)
+
+    # The lock stub drops channels on the second lock acquisition (during admin
+    # index lookup), but rewrite sends still complete from the captured snapshot.
+    assert anode.channels is None
+    assert anode._send_admin.call_count == CHANNEL_LIMIT
 
 
 @pytest.mark.unit

@@ -624,16 +624,23 @@ class Node:
             # will need to be recomputed as writes progress.
             channels.pop(channelIndex)
             self._fixup_channels_locked()
+            channels_to_rewrite: list[tuple[int, channel_pb2.Channel]] = []
+            for index in range(channelIndex, MAX_CHANNELS):
+                channel_snapshot = channel_pb2.Channel()
+                channel_snapshot.CopyFrom(channels[index])
+                channels_to_rewrite.append((index, channel_snapshot))
+            is_local_node = self.iface.localNode == self
 
-        is_local_node = self.iface.localNode == self
-        index = channelIndex
-        while index < MAX_CHANNELS:
+        for index, channel_snapshot in channels_to_rewrite:
             if is_local_node:
                 admin_index_for_write = self._get_admin_channel_index()
             else:
                 admin_index_for_write = self.iface.localNode._get_admin_channel_index()
-            self.writeChannel(index, adminIndex=admin_index_for_write)
-            index += 1
+            self.ensureSessionKey()
+            p = admin_pb2.AdminMessage()
+            p.set_channel.CopyFrom(channel_snapshot)
+            self._send_admin(p, adminIndex=admin_index_for_write)
+            logger.debug(f"Wrote channel {index}")
 
     def getChannelByName(self, name: str) -> channel_pb2.Channel | None:
         """Find a channel whose settings.name exactly matches the provided name.

@@ -99,6 +99,11 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
     The stub exposes a queueWork(callback) callable that invokes the provided callback immediately if it is truthy. The mocked module is registered under both "publishingThread" and "meshtastic.publishingThread".
 
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to inject the mock module.
+
     Returns
     -------
         The mocked publishingThread module inserted into sys.modules.

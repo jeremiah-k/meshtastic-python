@@ -121,6 +121,7 @@ class SerialInterface(StreamInterface):
             )
             # Ensure base classes are initialized so close() is safe.
             # Use noProto=True for fallback since no stream is available.
+            self.noProto = True
             super().__init__(
                 debugOut=debugOut,
                 noProto=True,

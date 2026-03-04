@@ -606,20 +606,40 @@ def test_main_info_with_seriallog_output_txt(
     iface = MagicMock(autospec=SerialInterface)
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
+    debug_out_stream: list[Any] = [None]
+
+    def _serial_interface_factory(*_args: Any, **kwargs: Any) -> SerialInterface:
+        """Capture debugOut argument and return mocked interface."""
+        debug_out = kwargs.get("debugOut")
+        debug_out_stream[0] = (
+            debug_out
+            if hasattr(debug_out, "write") and hasattr(debug_out, "flush")
+            else None
+        )
+        return iface
 
     def mock_showInfo() -> None:
         """Print a recognizable marker to stdout used by tests to simulate an interface's showInfo().
 
         This test helper prints the string "inside mocked showInfo" so tests can detect that the mocked showInfo was invoked.
         """
+        stream = debug_out_stream[0]
+        if stream is not None:
+            stream.write("inside mocked showInfo\n")
+            stream.flush()
         print("inside mocked showInfo")
 
     iface.showInfo.side_effect = mock_showInfo
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=iface) as mo:
+    with patch(
+        "meshtastic.serial_interface.SerialInterface",
+        side_effect=_serial_interface_factory,
+    ) as mo:
         main()
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)
         assert re.search(r"inside mocked showInfo", out, re.MULTILINE)
+        assert output_file.exists()
+        assert "inside mocked showInfo" in output_file.read_text(encoding="utf-8")
         assert err == ""
         mo.assert_called()
 

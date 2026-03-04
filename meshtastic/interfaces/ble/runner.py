@@ -372,7 +372,7 @@ class BLECoroutineRunner:
                     if self._loop is loop:
                         self._loop = None
                     self._thread = None
-                    # Unregister atexit handler if we cleared both references
+                    # Unregister atexit handler if the loop reference was cleared.
                     if self._loop is None:
                         self._unregister_atexit_handler_locked()
 

@@ -140,7 +140,9 @@ class ReconnectPolicy:
         -------
         float
             Delay in seconds — exponential-backoff value with symmetric jitter
-            applied, clamped to at least 0.001 and not exceeding the policy's max_delay.
+            applied, clamped to ``[effective_lower, max_delay]`` where
+            ``effective_lower = min(MIN_DELAY_FLOOR, max_delay)``. Overflow in
+            exponential backoff falls back to ``max_delay``.
         """
         if attempt is None:
             attempt = self._attempt_count

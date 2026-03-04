@@ -329,9 +329,10 @@ def test_write_bytes_times_out_when_no_progress_deadline_expires() -> None:
     stream.is_open = True
     iface.stream = stream
     try:
+        monotonic_calls = iter([0.0, 9999.0])
         with patch(
             "meshtastic.stream_interface.time.monotonic",
-            side_effect=[0.0, 9999.0],
+            side_effect=lambda: next(monotonic_calls, 9999.0),
         ):
             with pytest.raises(
                 StreamInterface.StreamClosedError,

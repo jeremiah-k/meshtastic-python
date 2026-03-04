@@ -361,9 +361,12 @@ class TestBLEInterfaceStateIntegration:
         assert manager._can_connect  # ERROR state allows reconnection
 
     def test_client_management_with_states(self):
-        """Verify client lifecycle behavior across state transitions.
+        """Verify state transitions through the connection lifecycle.
 
-        Asserts that transitioning from CONNECTING to CONNECTED marks the manager as connected, that transitioning to DISCONNECTED clears the client and sets the state to DISCONNECTED, and that performing a no-op transition to the current DISCONNECTED state is considered valid.
+        Asserts that transitioning from CONNECTING to CONNECTED marks the
+        manager as connected, that transitioning to DISCONNECTED resets the
+        state, and that a no-op transition to the current DISCONNECTED state
+        is considered valid.
         """
         manager = BLEStateManager()
 

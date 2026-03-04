@@ -10,9 +10,7 @@ pytest.importorskip("bleak")
 import meshtastic.interfaces.ble.utils as ble_utils
 from meshtastic.interfaces.ble.utils import (
     resolve_ble_module,
-    resolveBleModule,
     with_timeout,
-    withTimeout,
 )
 
 
@@ -43,31 +41,19 @@ def test_resolve_ble_module_reraises_unrelated_import_error(
 
 
 @pytest.mark.unit
-def test_sanitizeAddress_alias_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
-    """sanitizeAddress should delegate to sanitize_address."""
-    monkeypatch.setattr(
-        ble_utils,
-        "sanitize_address",
-        lambda address: "aa:bb:cc:dd:ee:ff" if address else None,
-    )
-
-    assert ble_utils.sanitizeAddress("AA-BB-CC-DD-EE-FF") == "aa:bb:cc:dd:ee:ff"
-
-
-@pytest.mark.unit
-def test_withTimeout_alias_delegates() -> None:
-    """withTimeout should delegate to with_timeout and return the awaited value."""
+def test_with_timeout_returns_result() -> None:
+    """with_timeout should return the awaited value."""
 
     async def _done() -> str:
         return "ok"
 
-    assert asyncio.run(withTimeout(_done(), timeout=1.0, label="alias")) == "ok"
+    assert asyncio.run(with_timeout(_done(), timeout=1.0, label="alias")) == "ok"
 
 
 @pytest.mark.unit
-def test_resolveBleModule_alias_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
-    """resolveBleModule should delegate to resolve_ble_module."""
+def test_resolve_ble_module_returns_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """resolve_ble_module should return the value from importlib.import_module."""
     sentinel = ModuleType("sentinel_ble_module")
-    monkeypatch.setattr(ble_utils, "resolve_ble_module", lambda: sentinel)
+    monkeypatch.setattr(ble_utils.importlib, "import_module", lambda _name: sentinel)
 
-    assert resolveBleModule() is sentinel
+    assert resolve_ble_module() is sentinel

@@ -136,15 +136,17 @@ def test_TCPInterface_accepts_none_connect_timeout() -> None:
 
 
 @pytest.mark.unit
-def test_TCPInterface_write_uses_sendall() -> None:
-    """Test that _write_bytes uses sendall to avoid partial writes."""
+def test_TCPInterface_write_uses_partial_send_loop() -> None:
+    """_write_bytes should loop on send() until the full payload is transmitted."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         try:
             mock_socket = MagicMock()
+            mock_socket.send.side_effect = [1, 2]
             iface.socket = mock_socket
-            iface._write_bytes(b"abc")
-            mock_socket.sendall.assert_called_once_with(b"abc")
+            with patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])):
+                iface._write_bytes(b"abc")
+            assert mock_socket.send.call_count == 2
         finally:
             iface.close()
 
@@ -169,12 +171,33 @@ def test_TCPInterface_write_reraises_socket_errors() -> None:
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
         try:
             mock_socket = MagicMock()
-            mock_socket.sendall.side_effect = OSError("boom")
+            mock_socket.send.side_effect = OSError("boom")
             iface.socket = mock_socket
 
-            with pytest.raises(OSError, match="boom"):
+            with (
+                patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])),
+                pytest.raises(OSError, match="boom"),
+            ):
                 iface._write_bytes(b"abc")
 
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
+def test_TCPInterface_write_times_out_when_socket_not_writable() -> None:
+    """_write_bytes should timeout when the socket never becomes writable."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            iface.socket = mock_socket
+            with (
+                patch("meshtastic.tcp_interface.select.select", return_value=([], [], [])),
+                pytest.raises(TimeoutError, match="timed out waiting for socket readiness"),
+            ):
+                iface._write_bytes(b"abc")
             assert iface.socket is None
         finally:
             iface.close()

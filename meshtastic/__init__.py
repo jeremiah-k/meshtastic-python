@@ -46,7 +46,7 @@ unicode scripts they can be different.
 ```
 import meshtastic
 import meshtastic.serial_interface
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 def onReceive(packet, interface): # called when a packet arrives
     print(f"Received: {packet}")
@@ -70,7 +70,7 @@ from importlib import import_module
 from typing import Any, Callable, NamedTuple, TypeGuard
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub
+from pubsub import pub  # type: ignore[import-untyped]
 
 from meshtastic.node import Node
 from meshtastic.util import (

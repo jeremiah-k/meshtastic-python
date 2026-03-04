@@ -115,6 +115,8 @@ class TestBLECoroutineRunner:
 
         # Force stop the loop to kill the thread
         runner._stop()
+        if thread1 is not None:
+            thread1.join(timeout=1.0)
         assert thread1 is not None
         assert thread1.is_alive() is False
 
@@ -387,7 +389,7 @@ class TestBLECoroutineRunner:
             assert future not in runner._pending_futures
 
     def test_zombie_runner_count(self):
-        """Verify zombie runner count is tracked."""
+        """Runner shutdown without stop-timeout should not increment zombie count."""
         # Initial count should be 0
         initial_count = get_zombie_runner_count()
 
@@ -413,8 +415,9 @@ class TestBLECoroutineRunner:
         # (zombie count only increments when stop() times out)
         current_count = get_zombie_runner_count()
 
-        # Count should be >= initial (may have incremented if thread didn't exit)
-        assert current_count >= initial_count
+        # This path does not use the stop-timeout logic, so it should not
+        # increment the zombie counter.
+        assert current_count == initial_count
 
     def test_zombie_runner_increments_when_stop_times_out(self):
         """stop() timeout path should increment zombie runner count."""

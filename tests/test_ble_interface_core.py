@@ -1142,7 +1142,6 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
     class _Loop:
         @staticmethod
         def create_task(_task: Any) -> None:
-            _task.close()
             raise RuntimeError("cannot schedule task")
 
     monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", lambda: _Loop())
@@ -1152,7 +1151,7 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
     monkeypatch.setattr(
         discovery_mod.asyncio,
         "wait_for",
-        lambda awaitable, timeout=None, **_kwargs: awaitable,
+        lambda awaitable, _timeout=None, **_kwargs: awaitable,
     )
     monkeypatch.setattr(
         discovery_mod.inspect,
@@ -1160,6 +1159,7 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
         lambda value: isinstance(value, _AwaitableClose),
     )
 
+    assert awaitable.closed is False
     _close_discovery_client_best_effort(_Client())
 
     assert awaitable.closed is True

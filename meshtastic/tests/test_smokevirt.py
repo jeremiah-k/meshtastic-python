@@ -773,6 +773,7 @@ def test_smokevirt_set_wifi_settings() -> None:
 
 
 @pytest.mark.smokevirt
+@pytest.mark.smoke1_destructive
 def test_smokevirt_factory_reset() -> None:
     """Test factory reset.
 
