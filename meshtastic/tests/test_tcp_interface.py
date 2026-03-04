@@ -3,7 +3,7 @@
 import re
 import threading
 from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -146,7 +146,7 @@ def test_TCPInterface_write_uses_partial_send_loop() -> None:
             iface.socket = mock_socket
             with patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])):
                 iface._write_bytes(b"abc")
-            assert mock_socket.send.call_count == 2
+            assert mock_socket.send.call_args_list == [call(b"abc"), call(b"bc")]
         finally:
             iface.close()
 

@@ -345,12 +345,12 @@ class FeatherWriter(ArrowWriter):
             if self._conversion_done or self._conversion_in_progress:
                 return
             self._conversion_in_progress = True
-            super().close()
             src_name = self.base_file_name + ARROW_EXTENSION
             dest_name = self.base_file_name + FEATHER_EXTENSION
 
         conversion_succeeded = False
         try:
+            super().close()
             if not os.path.exists(src_name):
                 self._remove_stale_dest_file(dest_name)
                 conversion_succeeded = True

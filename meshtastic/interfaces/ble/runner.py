@@ -459,6 +459,8 @@ class BLECoroutineRunner:
         if timeout is not None and startup_timeout is not None:
             raise ValueError(BLECLIENT_ERROR_TIMEOUT_PARAM_CONFLICT)
         if timeout is not None and startup_timeout is None:
+            # COMPAT_DEPRECATE: `timeout` remains as a deprecated alias for
+            # `startup_timeout` during the migration window.
             with self._instance_lock:
                 should_warn_timeout_alias = not self._warned_timeout_alias
                 if should_warn_timeout_alias:

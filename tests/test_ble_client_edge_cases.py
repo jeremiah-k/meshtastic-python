@@ -92,7 +92,7 @@ def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) 
     with pytest.raises(
         BLEClient.BLEError, match="Cannot start notify: BLE client not initialized"
     ):
-        ble_client.start_notify("uuid", lambda *args: None)
+        ble_client.start_notify("uuid", lambda *_args: None)
 
     with pytest.raises(BLEClient.BLEError, match="Cannot stop notify: BLE client not initialized"):
         ble_client.stopNotify("uuid")

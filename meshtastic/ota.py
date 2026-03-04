@@ -99,9 +99,7 @@ class ESP32WiFiOTA:
             Callback invoked with ``(bytes_sent, total_bytes)`` during transfer.
             When not provided, progress is printed to stdout.
         """
-        with open(self._filename, "rb") as f:
-            data = f.read()
-        size = len(data)
+        size = os.path.getsize(self._filename)
 
         logger.info(
             "Starting OTA update with %s (%d bytes, hash %s)",
@@ -134,18 +132,21 @@ class ESP32WiFiOTA:
 
             # Stream firmware
             sent_bytes = 0
-            while sent_bytes < size:
-                chunk = data[sent_bytes : sent_bytes + OTA_CHUNK_SIZE_BYTES]
-                self._socket.sendall(chunk)
-                sent_bytes += len(chunk)
+            with open(self._filename, "rb") as f:
+                while True:
+                    chunk = f.read(OTA_CHUNK_SIZE_BYTES)
+                    if not chunk:
+                        break
+                    self._socket.sendall(chunk)
+                    sent_bytes += len(chunk)
 
-                if progress_callback:
-                    progress_callback(sent_bytes, size)
-                else:
-                    print(
-                        f"[{sent_bytes / size * 100:5.1f}%] Sent {sent_bytes} of {size} bytes...",
-                        end="\r",
-                    )
+                    if progress_callback:
+                        progress_callback(sent_bytes, size)
+                    else:
+                        print(
+                            f"[{sent_bytes / size * 100:5.1f}%] Sent {sent_bytes} of {size} bytes...",
+                            end="\r",
+                        )
 
             if not progress_callback:
                 print()

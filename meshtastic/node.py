@@ -624,6 +624,9 @@ class Node:
         self._send_admin(p, adminIndex=adminIndex)
         logger.debug(f"Wrote channel {channelIndex}")
 
+    # COMPAT_STABLE_SHIM: historical channel lookup helpers return live Channel
+    # objects for mutate-then-write workflows (get*() -> edit -> writeChannel()).
+    # Switching these accessors to defensive copies would be a behavioral break.
     def getChannelByChannelIndex(self, channelIndex: int) -> channel_pb2.Channel | None:
         """Retrieve the channel at the given zero-based index from this node's channels.
 
@@ -1680,15 +1683,10 @@ class Node:
             self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
             self.iface.waitForAckNak()
             if sys.stdout is not sys.__stdout__:
-                saw_metadata_response = metadata_stdout_event.wait(
-                    METADATA_STDOUT_COMPAT_WAIT_SECONDS
-                )
-                if not saw_metadata_response:
-                    self._emit_cached_metadata_for_stdout()
-                else:
-                    # Ensure redirected-stdout parsers receive a deterministic metadata line
-                    # even if callback printing raced with redirect teardown.
-                    self._emit_cached_metadata_for_stdout()
+                metadata_stdout_event.wait(METADATA_STDOUT_COMPAT_WAIT_SECONDS)
+                # Ensure redirected-stdout parsers receive a deterministic metadata line
+                # even if callback printing raced with redirect teardown.
+                self._emit_cached_metadata_for_stdout()
         finally:
             with self._metadata_stdout_event_lock:
                 if self._metadata_stdout_event is metadata_stdout_event:

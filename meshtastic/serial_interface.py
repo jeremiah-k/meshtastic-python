@@ -31,6 +31,10 @@ SERIAL_WRITE_TIMEOUT = 0.5
 SERIAL_SETTLING_DELAY = 0.1
 """Delay for serial port operations to settle (seconds)."""
 
+SERIAL_PORT_PATH_EMPTY_ERROR = (
+    "Serial port path cannot be empty; pass None to auto-detect."
+)
+
 
 class SerialInterface(StreamInterface):
     """Interface class for meshtastic devices over a serial link."""
@@ -52,9 +56,7 @@ class SerialInterface(StreamInterface):
         if self.devPath is not None:
             stripped_dev_path = self.devPath.strip()
             if not stripped_dev_path:
-                raise self.MeshInterfaceError(
-                    "Serial port path cannot be empty; pass None to auto-detect."
-                )
+                raise self.MeshInterfaceError(SERIAL_PORT_PATH_EMPTY_ERROR)
             return stripped_dev_path
 
         ports: list[str] = meshtastic.util.findPorts(eliminate_duplicates=True)

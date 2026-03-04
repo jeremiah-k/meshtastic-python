@@ -6,6 +6,7 @@ import pyarrow as pa
 import pytest
 from pyarrow import feather
 
+import meshtastic.slog.arrow as arrow_module
 from meshtastic.slog.arrow import FeatherWriter
 
 
@@ -48,3 +49,27 @@ def test_feather_writer_close_discards_empty_stream_outputs(tmp_path: Path) -> N
     dest_path = tmp_path / "empty-log.feather"
     assert not src_path.exists()
     assert not dest_path.exists()
+
+
+@pytest.mark.unit
+def test_feather_writer_close_resets_in_progress_on_super_close_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should clear in-progress state when ArrowWriter.close() fails."""
+
+    def _raise_close_error(_self: arrow_module.ArrowWriter) -> None:
+        raise RuntimeError("close failure")
+
+    monkeypatch.setattr(arrow_module.ArrowWriter, "close", _raise_close_error)
+    writer = FeatherWriter(str(tmp_path / "close-failure"))
+
+    with pytest.raises(RuntimeError, match="close failure"):
+        writer.close()
+
+    assert writer._conversion_done is False
+    assert writer._conversion_in_progress is False
+
+    # A second close() should attempt conversion again rather than returning early.
+    with pytest.raises(RuntimeError, match="close failure"):
+        writer.close()

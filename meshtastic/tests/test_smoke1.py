@@ -1,6 +1,5 @@
 """Meshtastic smoke tests with a single device via USB."""
 
-import os
 import platform
 import re
 import time
@@ -125,16 +124,21 @@ def test_smoke1_seriallog_to_file() -> None:
 @pytest.mark.smoke1
 def test_smoke1_qr() -> None:
     """Test --qr."""
-    filename = "tmpqr"
-    if os.path.exists(filename):
-        os.remove(filename)
-    return_value, _ = run_cli_with_timeout(f"meshtastic --qr > {filename}")
-    assert os.path.exists(filename)
-    # not really testing that a valid qr code is created, just that the file size
-    # is reasonably big enough for a qr code
-    assert os.stat(filename).st_size > 20000
-    assert return_value == 0
-    os.remove(filename)
+    filename = Path("tmpqr")
+    try:
+        if filename.exists():
+            filename.unlink()
+        return_value, _ = run_cli_with_timeout(
+            f"meshtastic --qr > {_quote_shell_path(filename)}"
+        )
+        assert filename.exists()
+        # not really testing that a valid qr code is created, just that the file size
+        # is reasonably big enough for a qr code
+        assert filename.stat().st_size > 20000
+        assert return_value == 0
+    finally:
+        if filename.exists():
+            filename.unlink()
 
 
 @pytest.mark.smoke1

@@ -524,7 +524,7 @@ class ConnectionOrchestrator:
                     return client
 
             self._raise_if_interface_closing()
-            device = self.interface.findDevice(address or current_address)
+            device = self.interface.findDevice(target_address)
             self._raise_if_interface_closing()
             client = self.client_manager._create_client(
                 device.address, on_disconnect_func

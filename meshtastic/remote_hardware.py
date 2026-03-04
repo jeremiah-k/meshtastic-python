@@ -352,8 +352,12 @@ class RemoteHardwareClient:
             raise mesh_interface_error(MISSING_DEST_NODE_ID_ERROR)
         if isinstance(nodeid, str):
             return nodeid.strip()
-        # bool inputs are rejected above; non-string valid values are ints.
-        return cast(int, nodeid)
+        if isinstance(nodeid, int):
+            return nodeid
+        mesh_interface_error = _get_mesh_interface_error()
+        raise mesh_interface_error(
+            f"{MISSING_DEST_NODE_ID_ERROR} (got {type(nodeid).__name__}: {nodeid!r})"
+        )
 
     def _send_hardware(
         self,

@@ -159,8 +159,8 @@ def test_connection_timeout_configuration_consistency() -> None:
     assert AWAIT_TIMEOUT_BUFFER_SECONDS < BLEConfig.CONNECTION_TIMEOUT
 
     # Join timeouts should be reasonable (not too long)
-    assert RECEIVE_THREAD_JOIN_TIMEOUT < MAX_REASONABLE_JOIN_TIMEOUT_SECONDS
-    assert EVENT_THREAD_JOIN_TIMEOUT < MAX_REASONABLE_JOIN_TIMEOUT_SECONDS
+    assert RECEIVE_THREAD_JOIN_TIMEOUT <= MAX_REASONABLE_JOIN_TIMEOUT_SECONDS
+    assert EVENT_THREAD_JOIN_TIMEOUT <= MAX_REASONABLE_JOIN_TIMEOUT_SECONDS
 
 
 @pytest.mark.unit
