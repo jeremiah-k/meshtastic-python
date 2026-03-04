@@ -191,6 +191,38 @@ class Node:
         if metadata_stdout_event is not None:
             metadata_stdout_event.set()
 
+    def _emit_cached_metadata_for_stdout(self) -> bool:
+        """Emit metadata lines from ``self.iface.metadata`` for stdout parser compatibility."""
+        metadata = getattr(self.iface, "metadata", None)
+        firmware_version = getattr(metadata, "firmware_version", "")
+        if not isinstance(firmware_version, str) or not firmware_version:
+            return False
+
+        self._emit_metadata_line(f"\nfirmware_version: {firmware_version}")
+        self._emit_metadata_line(
+            f"device_state_version: {getattr(metadata, 'device_state_version', 0)}"
+        )
+        role = getattr(metadata, "role", 0)
+        if role in config_pb2.Config.DeviceConfig.Role.values():
+            self._emit_metadata_line(f"role: {config_pb2.Config.DeviceConfig.Role.Name(role)}")
+        else:
+            self._emit_metadata_line(f"role: {role}")
+        self._emit_metadata_line(
+            f"position_flags: {self.position_flags_list(getattr(metadata, 'position_flags', 0))}"
+        )
+        hw_model = getattr(metadata, "hw_model", 0)
+        if hw_model in mesh_pb2.HardwareModel.values():
+            self._emit_metadata_line(f"hw_model: {mesh_pb2.HardwareModel.Name(hw_model)}")
+        else:
+            self._emit_metadata_line(f"hw_model: {hw_model}")
+        self._emit_metadata_line(f"hasPKC: {getattr(metadata, 'hasPKC', False)}")
+        excluded_modules = getattr(metadata, "excluded_modules", 0)
+        if excluded_modules > 0:
+            self._emit_metadata_line(
+                f"excluded_modules: {self.excluded_modules_list(excluded_modules)}"
+            )
+        return True
+
     def moduleAvailable(self, excluded_bit: int) -> bool:
         """Determine whether a specific module bit is allowed by the interface metadata.
 
@@ -1616,7 +1648,11 @@ class Node:
             self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
             self.iface.waitForAckNak()
             if sys.stdout is not sys.__stdout__:
-                metadata_stdout_event.wait(METADATA_STDOUT_COMPAT_WAIT_SECONDS)
+                saw_metadata_response = metadata_stdout_event.wait(
+                    METADATA_STDOUT_COMPAT_WAIT_SECONDS
+                )
+                if not saw_metadata_response:
+                    self._emit_cached_metadata_for_stdout()
         finally:
             with self._metadata_stdout_event_lock:
                 if self._metadata_stdout_event is metadata_stdout_event:

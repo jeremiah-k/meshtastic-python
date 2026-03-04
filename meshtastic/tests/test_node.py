@@ -14,6 +14,7 @@ import pytest
 from pytest import CaptureFixture, LogCaptureFixture
 
 from ..mesh_interface import MeshInterface
+from .. import node as node_module
 from ..node import MAX_CHANNELS, Node
 from ..protobuf import (
     admin_pb2,
@@ -1656,6 +1657,43 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
         )
         timer.daemon = True
         timer.start()
+
+    anode._send_admin = _fake_send_admin  # type: ignore[assignment]
+    anode.getMetadata()
+
+    out, _err = capsys.readouterr()
+    assert "firmware_version: 2.7.18" in out
+
+
+@pytest.mark.unit
+def test_getMetadata_emits_cached_metadata_when_callback_never_arrives(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+    capsys: CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """getMetadata should emit cached interface metadata for redirected stdout parsers."""
+    iface = autospec_local_node_iface(MeshInterface)
+    iface._acknowledgment = Acknowledgment()
+    iface.waitForAckNak = MagicMock()
+    iface.metadata = mesh_pb2.DeviceMetadata(
+        firmware_version="2.7.18",
+        device_state_version=24,
+        role=config_pb2.Config.DeviceConfig.Role.CLIENT_MUTE,
+        position_flags=0,
+        hw_model=mesh_pb2.HardwareModel.PORTDUINO,
+        hasPKC=True,
+    )
+    anode = Node(iface, "!12345678", noProto=True)
+
+    monkeypatch.setattr(node_module, "METADATA_STDOUT_COMPAT_WAIT_SECONDS", 0.01)
+
+    def _fake_send_admin(
+        _msg: admin_pb2.AdminMessage,
+        wantResponse: bool = False,
+        onResponse: Callable[[dict[str, Any]], Any] | None = None,
+        adminIndex: int = 0,
+    ) -> None:
+        _ = (wantResponse, onResponse, adminIndex)
 
     anode._send_admin = _fake_send_admin  # type: ignore[assignment]
     anode.getMetadata()
