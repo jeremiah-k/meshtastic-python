@@ -428,7 +428,7 @@ class DummyClient:
         """Backward-compatible snake_case alias for stopNotify."""
         return self.stopNotify(*args, **kwargs)
 
-    def read_gatt_char(self, *_args, **_kwargs) -> bytes:
+    def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
         """Provide a fixed empty-bytes response for any GATT characteristic read.
 
         Returns
@@ -458,7 +458,7 @@ class DummyClient:
         """
         return self.isConnected()
 
-    def disconnect(self, *_args, **_kwargs):
+    def disconnect(self, *_args: Any, **_kwargs: Any) -> None:
         """Record a disconnect invocation and optionally raise a configured exception.
 
         Increments the instance's `disconnect_calls` counter. If `disconnect_exception` is set, that exception is raised instead of returning normally.
@@ -472,14 +472,14 @@ class DummyClient:
         if self.disconnect_exception:
             raise self.disconnect_exception
 
-    def close(self):
+    def close(self) -> None:
         """Record that the client was closed.
 
         Increments the internal `close_calls` counter so tests can assert how many times `close()` was invoked.
         """
         self.close_calls += 1
 
-    def _get_services(self):
+    def _get_services(self) -> SimpleNamespace:
         """Stub for _get_services."""
         return self.services
 

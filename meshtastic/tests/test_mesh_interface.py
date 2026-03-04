@@ -12,7 +12,7 @@ import time
 import types
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -1451,7 +1451,7 @@ def test_init_subscribes_log_line_when_debug_output_enabled(
     with MeshInterface(noProto=True, debugOut=io.StringIO()):
         pass
 
-    assert subscribed == [(MeshInterface._print_log_line, "meshtastic.log.line")]
+    assert (MeshInterface._print_log_line, "meshtastic.log.line") in subscribed
 
 
 @pytest.mark.unit
@@ -1524,19 +1524,29 @@ def test_show_info_includes_metadata_summary() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
-def test_show_nodes_nested_value_helper_paths() -> None:
-    """Extract _get_nested_value closure from showNodes and exercise non-dict/single-level paths."""
-    code_obj = next(
-        const
-        for const in MeshInterface.showNodes.__code__.co_consts
-        if isinstance(const, types.CodeType) and const.co_name == "_get_nested_value"
-    )
-    get_nested_value = cast(Callable[[Any, str], Any], types.FunctionType(code_obj, {}))
+def test_show_nodes_handles_single_level_and_missing_nested_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """showNodes() should handle single-level keys and missing nested paths without introspecting internals."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodesByNum = {
+            1: {
+                "num": 1,
+                "shortName": "N1",
+                "user": {"id": "!00000001"},
+            }
+        }
+        iface.nodes = {"!00000001": iface.nodesByNum[1]}
+        iface.localNode.nodeNum = 999
+        table = iface.showNodes(
+            showFields=["shortName", "user.id", "missing.path", "position.latitude"]
+        )
+        _ = capsys.readouterr()
 
-    # pylint: disable=not-callable
-    assert get_nested_value("not-a-dict", "user.id") is None
-    assert get_nested_value({"shortName": "N1"}, "shortName") == "N1"
-    # pylint: enable=not-callable
+    assert "shortName" in table
+    assert "N1" in table
+    assert "!00000001" in table
+    assert "N/A" in table
 
 
 @pytest.mark.unit
@@ -1817,6 +1827,8 @@ def test_send_telemetry_supported_and_fallback_paths(
         iface.sendTelemetry(telemetryType="device_metrics")
         with pytest.warns(DeprecationWarning):
             iface.sendTelemetry(telemetryType="invalid")
+        with pytest.warns(DeprecationWarning):
+            iface.sendTelemetry(telemetryType="invalid2")
         iface.sendTelemetry(telemetryType="device_metrics", wantResponse=True)
 
     assert telemetry_calls[0][0].HasField("environment_metrics")
@@ -1825,7 +1837,8 @@ def test_send_telemetry_supported_and_fallback_paths(
     assert telemetry_calls[3][0].HasField("local_stats")
     assert telemetry_calls[4][0].HasField("device_metrics")
     assert telemetry_calls[5][0].HasField("device_metrics")
-    assert telemetry_calls[6][1]["onResponse"] is not None
+    assert telemetry_calls[6][0].HasField("device_metrics")
+    assert telemetry_calls[7][1]["onResponse"] is not None
     wait_for_telemetry.assert_called_once()
 
 

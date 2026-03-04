@@ -8,7 +8,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _main() -> None:
-    """Print discovered serial ports for local debugging."""
+    """Log discovered serial ports for local debugging."""
     LOGGER.info("Discovered ports: %s", findPorts())
 
 

@@ -1,3 +1,5 @@
+#!/bin/bash
+
 rm dist/*
 set -e
 

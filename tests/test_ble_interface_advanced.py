@@ -595,7 +595,8 @@ def test_rapid_connect_disconnect_stress_test(
 
         Patches BLEInterface.connect so the interface receives a StressTestClient.
         The interface is created with an explicit address to exercise reconnect
-        scheduling against a concrete target address. Yields a tuple
+        scheduling against a concrete target address; discovery is intentionally
+        bypassed in this helper and BLEInterface.scan is not patched. Yields a tuple
         `(iface, client)`. On generator exit the interface is closed and all
         patches are undone.
 
