@@ -1446,6 +1446,37 @@ def test_close_skips_disconnect_when_interpreter_finalizing(monkeypatch):
     assert client.close_calls == 0
 
 
+def test_close_closes_discovery_manager_before_receive_thread_join(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() should stop discovery before attempting receive-thread joins."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+    discovery_closed = threading.Event()
+
+    class _DiscoveryManager:
+        def close(self) -> None:
+            discovery_closed.set()
+
+    iface._discovery_manager = _DiscoveryManager()  # type: ignore[assignment]
+    iface._receiveThread = threading.Thread(target=lambda: None, name="BLEReceiveTest")
+
+    def _assert_join_after_discovery_close(
+        _thread: threading.Thread, timeout: float | None = None
+    ) -> None:
+        _ = (_thread, timeout)
+        assert discovery_closed.is_set()
+
+    monkeypatch.setattr(
+        iface.thread_coordinator,
+        "_join_thread",
+        _assert_join_after_discovery_close,
+    )
+
+    iface.close()
+    assert discovery_closed.is_set()
+
+
 def test_close_clears_ble_threads(monkeypatch):
     """Closing the interface should leave no BLE* threads running."""
     # threading already imported at top

@@ -1,6 +1,7 @@
 """Edge case tests for BLE connection management."""
 
 import logging
+from types import SimpleNamespace
 from threading import Event, RLock
 from unittest.mock import MagicMock
 
@@ -311,6 +312,59 @@ def test_connection_orchestrator_interrupt_resets_state_and_closes_client() -> N
 
     assert state_manager._current_state == ConnectionState.DISCONNECTED
     client_manager._safe_close_client.assert_called_once_with(mock_client)
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> None:
+    """Shutdown during direct-connect failure should abort discovery fallback."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    client_manager._create_client.return_value = direct_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+
+    connect_attempts = 0
+
+    def _connect_side_effect(*_args, **_kwargs) -> None:
+        nonlocal connect_attempts
+        connect_attempts += 1
+        if connect_attempts == 1:
+            interface._closed = True
+            raise TimeoutError("direct connect timed out")
+        raise AssertionError("fallback connect should not run while closing")
+
+    client_manager._connect_client.side_effect = _connect_side_effect
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError, match="Cannot connect while interface is closing"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    assert connect_attempts == 1
+    interface.findDevice.assert_not_called()
+    client_manager._safe_close_client.assert_called_once_with(direct_client)
+    assert state_manager._current_state == ConnectionState.DISCONNECTED
 
 
 @pytest.mark.unit

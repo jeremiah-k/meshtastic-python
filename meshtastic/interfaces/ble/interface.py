@@ -1958,6 +1958,15 @@ class BLEInterface(MeshInterface):
             if self._shutdown_event is not None:
                 self._shutdown_event.set()
 
+            discovery_manager = self._discovery_manager
+            self._discovery_manager = None
+            if discovery_manager is not None:
+                # Close discovery early so in-flight scan/connect waits can be canceled
+                # promptly during process shutdown.
+                self.error_handler._safe_cleanup(
+                    discovery_manager.close, "discovery manager close"
+                )
+
             self._set_receive_wanted(False)  # Tell the thread we want it to stop
             self.thread_coordinator._wake_waiting_threads(
                 "read_trigger", "reconnected_event"
@@ -2015,12 +2024,6 @@ class BLEInterface(MeshInterface):
             if notify:
                 self._disconnected()  # send the disconnected indicator up to clients
                 self._wait_for_disconnect_notifications()
-
-            if self._discovery_manager is not None:
-                self.error_handler._safe_cleanup(
-                    self._discovery_manager.close, "discovery manager close"
-                )
-                self._discovery_manager = None
 
             # Clean up thread coordinator
             self.thread_coordinator._cleanup()

@@ -418,6 +418,14 @@ class ConnectionOrchestrator:
             )
             self.state_manager._reset_to_disconnected()
 
+    def _raise_if_interface_closing(self) -> None:
+        """Abort connection work when shutdown is already in progress."""
+        with self.state_lock:
+            is_closing = self.state_manager._is_closing
+        is_closed = bool(getattr(self.interface, "_closed", False))
+        if is_closing or is_closed:
+            raise self.interface.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
+
     def _establish_connection(
         self,
         address: str | None,
@@ -506,6 +514,7 @@ class ConnectionOrchestrator:
                         self.client_manager._safe_close_client(client)
                     client = None
                 else:
+                    self._raise_if_interface_closing()
                     self._finalize_connection(
                         client,
                         target_address,
@@ -514,11 +523,14 @@ class ConnectionOrchestrator:
                     )
                     return client
 
+            self._raise_if_interface_closing()
             device = self.interface.findDevice(address or current_address)
+            self._raise_if_interface_closing()
             client = self.client_manager._create_client(
                 device.address, on_disconnect_func
             )
             self.client_manager._connect_client(client)
+            self._raise_if_interface_closing()
             self._finalize_connection(
                 client, device.address, register_notifications_func, on_connected_func
             )
