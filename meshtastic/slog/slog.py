@@ -31,11 +31,14 @@ _warned_deprecations_lock: threading.Lock = threading.Lock()
 LOG_DIR_COLLISION_MAX_RETRIES = 100
 
 # PyArrow typing stubs vary across versions (generic vs non-generic DataType).
-# Use Any for type-check-time compatibility across both variants.
+# Keep the runtime alias stable while using a broad static alias for mypy
+# compatibility across both stub families.
 if TYPE_CHECKING:
-    ArrowDataType: TypeAlias = Any
+    ArrowDataType = pa.DataType
+    ArrowDataTypeLike: TypeAlias = Any
 else:
     ArrowDataType = pa.DataType
+    ArrowDataTypeLike = pa.DataType
 
 
 def _root_dir_impl() -> str:
@@ -84,11 +87,11 @@ class LogDef:
 
     code: str  # i.e. PM or B or whatever... see meshtastic slog documentation
     fields: list[
-        tuple[str, ArrowDataType]
+        tuple[str, ArrowDataTypeLike]
     ]  # A list of field names and their arrow types
     format: parse.Parser  # A format string that can be used to parse the arguments
 
-    def __init__(self, code: str, fields: list[tuple[str, ArrowDataType]]) -> None:
+    def __init__(self, code: str, fields: list[tuple[str, ArrowDataTypeLike]]) -> None:
         """Create a LogDef for the given code and fields and compile a parser for those fields.
 
         Parameters
@@ -466,7 +469,7 @@ class StructuredLogger:
 
         # Setup the arrow writer (and its schema)
         self.writer = FeatherWriter(os.path.join(dir_path, "slog"))
-        all_fields: list[tuple[str, ArrowDataType]] = [
+        all_fields: list[tuple[str, ArrowDataTypeLike]] = [
             field for logdef in log_defs.values() for field in logdef.fields
         ]
 
