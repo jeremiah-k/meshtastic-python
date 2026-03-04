@@ -2,13 +2,19 @@
 
 import logging
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from meshtastic.interfaces.ble import gating
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from meshtastic.interfaces.ble.notifications import NotificationManager
+
+# tests/tuntest.py is an interactive manual utility and not part of pytest runs.
+collect_ignore = ["tuntest.py"]
 
 
 @pytest.fixture
@@ -32,7 +38,7 @@ def ble_client() -> Iterator[Any]:
 
 
 @pytest.fixture
-def notification_manager() -> Any:
+def notification_manager() -> "NotificationManager":
     """Create a NotificationManager test instance."""
     from meshtastic.interfaces.ble.notifications import NotificationManager
 

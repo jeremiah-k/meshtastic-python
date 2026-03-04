@@ -141,6 +141,7 @@ def test_RemoteHardwareClient_no_gpio_channel() -> None:
     iface = create_autospec(SerialInterface, instance=True)
     iface.localNode = MagicMock()
     iface.localNode.getChannelByName.return_value = None
+    iface.localNode.getChannelCopyByName.return_value = None
     with pytest.raises(MeshInterface.MeshInterfaceError) as exc_info:
         RemoteHardwareClient(iface)
     assert "No channel named 'gpio'" in str(exc_info.value)

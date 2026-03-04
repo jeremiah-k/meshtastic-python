@@ -508,6 +508,12 @@ def test_getChannelByChannelIndex(
     assert anode.getChannelByChannelIndex(-1) is None
     assert anode.getChannelByChannelIndex(9) is None
 
+    copied_primary = anode.getChannelCopyByChannelIndex(0)
+    assert copied_primary is not None
+    assert copied_primary is not channel1
+    copied_primary.role = Channel.Role.DISABLED
+    assert channel1.role == Channel.Role.PRIMARY
+
 
 @pytest.mark.unit
 def test_writeConfig_with_no_radioConfig(
@@ -1048,9 +1054,23 @@ def test_channel_lookup_helpers_cover_name_disabled_and_admin_index(
     assert disabled_channel is disabled
     assert disabled_channel.index == disabled.index
 
+    named_channel_copy = anode.getChannelCopyByName("main")
+    assert named_channel_copy is not None
+    assert named_channel_copy is not primary
+    assert named_channel_copy.index == primary.index
+
+    disabled_channel_copy = anode.getDisabledChannelCopy()
+    assert disabled_channel_copy is not None
+    assert disabled_channel_copy is not disabled
+    assert disabled_channel_copy.index == disabled.index
+
     named_channel.role = Channel.Role.DISABLED
     assert primary.role == Channel.Role.DISABLED
     disabled_channel.role = Channel.Role.PRIMARY
+    assert disabled.role == Channel.Role.PRIMARY
+    named_channel_copy.role = Channel.Role.PRIMARY
+    assert primary.role == Channel.Role.DISABLED
+    disabled_channel_copy.role = Channel.Role.DISABLED
     assert disabled.role == Channel.Role.PRIMARY
     assert anode._get_admin_channel_index() == 1
     assert anode.getAdminChannelIndex() == 1
@@ -1543,10 +1563,10 @@ def test_fixup_channels_locked_returns_immediately_when_channels_none(
 
 
 @pytest.mark.unit
-def test_onRequestGetMetadata_handles_routing_error_and_retry(
+def test_onRequestGetMetadata_handles_routing_error_and_ack_only(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:
-    """OnRequestGetMetadata should NAK on routing error and retry when routing says NONE."""
+    """OnRequestGetMetadata should NAK on routing error and avoid recursive retries."""
     iface = autospec_local_node_iface(MeshInterface)
     iface._acknowledgment = Acknowledgment()
     anode = Node(iface, "!12345678", noProto=True)
@@ -1561,7 +1581,7 @@ def test_onRequestGetMetadata_handles_routing_error_and_retry(
     anode.onRequestGetMetadata(
         {"decoded": {"portnum": "ROUTING_APP", "routing": {"errorReason": "NONE"}}}
     )
-    anode.getMetadata.assert_called_once()
+    anode.getMetadata.assert_not_called()
 
 
 @pytest.mark.unit
@@ -1703,6 +1723,7 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
     iface._acknowledgment = Acknowledgment()
     iface.waitForAckNak = MagicMock()
     anode = Node(iface, "!12345678", noProto=True)
+    anode._emit_cached_metadata_for_stdout = MagicMock(return_value=True)  # type: ignore[method-assign]
 
     def _fake_send_admin(
         _msg: admin_pb2.AdminMessage,
@@ -1740,6 +1761,7 @@ def test_getMetadata_waits_for_redirected_stdout_callback_output(
 
     out, _err = capsys.readouterr()
     assert "firmware_version: 2.7.18" in out
+    anode._emit_cached_metadata_for_stdout.assert_not_called()
 
 
 @pytest.mark.unit

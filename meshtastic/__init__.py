@@ -62,6 +62,7 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 ```
 """
+# ruff: noqa: F401
 
 import copy
 import logging
@@ -69,7 +70,7 @@ from importlib import import_module
 from typing import Any, Callable, NamedTuple, TypeGuard
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 from meshtastic.node import Node
 from meshtastic.util import (
@@ -79,9 +80,7 @@ from meshtastic.util import (
     stripnl,
 )
 
-from . import (
-    util,
-)
+from . import util
 from .protobuf import (
     admin_pb2,
     apponly_pb2,
@@ -497,8 +496,9 @@ def _receive_info_update(iface: Any, as_dict: dict[str, Any]) -> None:
             )
         return
     node = iface._get_or_create_by_num(sender)
+    sanitized_last_received = _sanitize_last_received(as_dict)
     with iface._node_db_lock:
-        node["lastReceived"] = _sanitize_last_received(as_dict)
+        node["lastReceived"] = sanitized_last_received
         node["lastHeard"] = as_dict.get("rxTime")
         node["snr"] = as_dict.get("rxSnr")
         node["hopLimit"] = as_dict.get("hopLimit")

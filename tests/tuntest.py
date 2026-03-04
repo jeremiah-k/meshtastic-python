@@ -35,6 +35,7 @@ PROTOCOL_BLACKLIST: set[int] = {
     0x80,  # Service-Specific Connection-Oriented Protocol in a Multilink and Connectionless Environment
 }
 
+
 def _ipstr(barray: bytes | bytearray) -> str:
     """Render IPv4 bytes as dotted-decimal text.
 
@@ -66,6 +67,12 @@ def _readnet_u16(p: bytes | bytearray | memoryview, offset: int) -> int:
     int
         Parsed unsigned 16-bit value.
     """
+    if not isinstance(offset, int):
+        raise ValueError(f"offset must be int, got {type(offset).__name__}")
+    if offset < 0 or offset + 1 >= len(p):
+        raise ValueError(
+            f"Cannot read u16 at offset {offset}: packet length is {len(p)}"
+        )
     return p[offset] * 256 + p[offset + 1]
 
 
@@ -144,7 +151,10 @@ def _readtest(tap: TapDevice) -> None:
                 ip_header[10] = (ip_checksum >> 8) & 0xFF
                 ip_header[11] = ip_checksum & 0xFF
                 pingback = bytes(ip_header) + bytes(icmp_reply)
-                tap.write(pingback)
+                try:
+                    tap.write(pingback)
+                except OSError as ex:
+                    logging.debug("Ignoring transient TUN write error: %s", ex)
                 ignore = True  # Don't forward the original request.
             else:
                 logging.debug("Ignoring ICMP type %d (not echo request)", icmp_type)

@@ -23,7 +23,7 @@ def _run_meshtastic(
 ) -> subprocess.CompletedProcess[str]:
     """Run a meshtastic CLI command with a timeout and fail cleanly on timeout."""
     try:
-        return subprocess.run(
+        return subprocess.run(  # noqa: S603
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

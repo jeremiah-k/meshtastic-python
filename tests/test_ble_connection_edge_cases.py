@@ -462,6 +462,40 @@ def test_establish_connection_rejects_whitespace_target_address() -> None:
 
 
 @pytest.mark.unit
+def test_connection_orchestrator_rejects_direct_connect_when_interface_already_closed() -> None:
+    """_establish_connection should fail before creating a client when shutdown is in progress."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = True
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(MockBLEError, match="Cannot connect while interface is closing"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+        )
+
+    client_manager._create_client.assert_not_called()
+    client_manager._connect_client.assert_not_called()
+    interface.findDevice.assert_not_called()
+
+
+@pytest.mark.unit
 def test_connection_orchestrator_returns_after_successful_direct_connect() -> None:
     """_establish_connection should return direct client when initial connect succeeds."""
     state_manager = BLEStateManager()

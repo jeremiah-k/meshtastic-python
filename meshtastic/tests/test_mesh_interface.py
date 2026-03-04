@@ -136,6 +136,20 @@ def test_showInfo_skips_nodes_without_user_dict() -> None:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_showInfo_tolerates_malformed_macaddr() -> None:
+    """ShowInfo should not fail when a node user entry contains malformed macaddr."""
+    with MeshInterface(noProto=True) as iface:
+        iface.nodes = {
+            "!good": {"num": 2, "user": {"id": "!good", "macaddr": "not-base64!!!"}},
+        }
+        output = io.StringIO()
+        summary = iface.showInfo(file=output)
+
+    assert '"!good"' in summary
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_getMyUser(iface_with_nodes: MeshInterface) -> None:
     """Test getMyUser()."""
     iface = iface_with_nodes

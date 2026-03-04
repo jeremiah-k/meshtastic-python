@@ -431,7 +431,13 @@ class MeshInterface:  # pylint: disable=R0902
             val = user.get("macaddr")
             if isinstance(val, str):
                 # decode the base64 value
-                user["macaddr"] = convert_mac_addr(val)
+                try:
+                    user["macaddr"] = convert_mac_addr(val)
+                except (TypeError, ValueError):
+                    logger.debug(
+                        "Skipping malformed macaddr for node %s",
+                        user.get("id"),
+                    )
 
             # use id as dictionary key for correct json format in list of nodes
             node_id = user.get("id")
@@ -1698,8 +1704,9 @@ class MeshInterface:  # pylint: disable=R0902
             with self._node_db_lock:
                 node = self.nodes.get(destinationId) if self.nodes else None
                 has_nodes = self.nodes is not None
+                node_found = node is not None
                 node_num = node.get("num") if isinstance(node, dict) else None
-            if node is not None:
+            if node_found:
                 if isinstance(node_num, int):
                     nodeNum = node_num
                 else:

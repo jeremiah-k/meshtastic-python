@@ -297,7 +297,10 @@ class RemoteHardwareClient:
             If the local node has no channel named "gpio".
         """
         self.iface = iface
-        ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
+        if hasattr(type(iface.localNode), "getChannelCopyByName"):
+            ch = iface.localNode.getChannelCopyByName(GPIO_CHANNEL_NAME)
+        else:
+            ch = iface.localNode.getChannelByName(GPIO_CHANNEL_NAME)
         if ch is None:
             mesh_interface_error = _get_mesh_interface_error()
             raise mesh_interface_error(NO_GPIO_CHANNEL_ERROR)

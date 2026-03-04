@@ -30,6 +30,7 @@ class TCPInterface(StreamInterface):
     )
     SOCKET_NOT_CONNECTED_ERROR = "TCP socket is closed or not connected"
     WRITE_TIMEOUT_ERROR = "TCP write timed out waiting for socket readiness"
+    WRITE_NO_PROGRESS_ERROR = "TCP write returned no bytes"
     CONNECT_SHUTTING_DOWN_ERROR = "Cannot connect to {}: interface is shutting down"
     RECONNECT_DISABLED_AFTER_FATAL_ERROR = (
         "Cannot connect to {}: reconnect disabled after fatal disconnect"
@@ -371,7 +372,7 @@ class TCPInterface(StreamInterface):
                     raise TimeoutError(self.WRITE_TIMEOUT_ERROR)
                 sent = sock.send(payload[total_sent:])
                 if sent <= 0:
-                    raise OSError("TCP write returned no bytes")
+                    raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
         except (OSError, ValueError) as ex:

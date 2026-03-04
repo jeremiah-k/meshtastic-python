@@ -422,7 +422,8 @@ class ConnectionOrchestrator:
         """Abort connection work when shutdown is already in progress."""
         with self.state_lock:
             is_closing = self.state_manager._is_closing
-        is_closed = bool(getattr(self.interface, "_closed", False))
+        raw_closed = getattr(self.interface, "_closed", False)
+        is_closed = raw_closed is True
         if is_closing or is_closed:
             raise self.interface.BLEError(BLECLIENT_ERROR_CANNOT_CONNECT_WHILE_CLOSING)
 
@@ -464,6 +465,7 @@ class ConnectionOrchestrator:
             If any other error occurs during the connection process.
         """
         self.validator._validate_connection_request()
+        self._raise_if_interface_closing()
 
         target_address = address if address is not None else current_address
         # Allow None target_address for discovery mode - findDevice() handles this
@@ -488,6 +490,7 @@ class ConnectionOrchestrator:
             # Only attempt direct connect if we have a target address
             # Discovery mode (target_address=None) skips directly to find_device
             if target_address:
+                self._raise_if_interface_closing()
                 client = self.client_manager._create_client(
                     target_address, on_disconnect_func
                 )
@@ -495,6 +498,7 @@ class ConnectionOrchestrator:
                     direct_timeout = min(
                         DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
                     )
+                    self._raise_if_interface_closing()
                     self.client_manager._connect_client(client, timeout=direct_timeout)
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
                     raise

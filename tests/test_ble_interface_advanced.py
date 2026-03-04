@@ -67,6 +67,16 @@ def _make_fake_future(exception_to_raise: Exception) -> Any:
     return _FakeFuture()
 
 
+def _bind_coro_to_future(fake_future: Any) -> Callable[[Any], Any]:
+    """Build a fake _async_run callback that records the coroutine on fake_future."""
+
+    def _fake_async_run(coro: Any) -> Any:
+        fake_future.coro = coro
+        return fake_future
+
+    return _fake_async_run
+
+
 def test_log_notification_registration_missing_characteristics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -817,24 +827,7 @@ def test_ble_client_async_timeout_maps_to_ble_error(
 
     client = ble_mod.BLEClient()  # address=None keeps underlying bleak client unset
     fake_future = _make_fake_future(FutureTimeoutError())
-
-    def _fake_async_run(coro):
-        """Attach a coroutine to the shared test future and return that future.
-
-        Parameters
-        ----------
-        coro : coroutine
-            Coroutine to attach to the shared fake future.
-
-        Returns
-        -------
-        fake_future
-            The shared test future with its `coro` attribute set to `coro`.
-        """
-        fake_future.coro = coro
-        return fake_future
-
-    monkeypatch.setattr(client, "_async_run", _fake_async_run)
+    monkeypatch.setattr(client, "_async_run", _bind_coro_to_future(fake_future))
 
     async def _test_coro():
         """Run a no-op coroutine used for tests."""
@@ -859,28 +852,7 @@ def test_ble_client_async_runtime_error_maps_to_ble_error(
     """BLEClient._async_await should surface RuntimeError as a non-timeout BLE error."""
     client = ble_mod.BLEClient()
     fake_future = _make_fake_future(RuntimeError("loop is closed"))
-
-    def _fake_async_run(coro):
-        """Attach a coroutine to the shared test future and return that future.
-
-        Parameters
-        ----------
-        coro : coroutine
-            Coroutine to attach to the fake future.
-
-        Returns
-        -------
-        fake_future : object
-            The shared test future with its `coro` attribute set to the provided coroutine.
-        """
-        fake_future.coro = coro
-        return fake_future
-
-    monkeypatch.setattr(
-        client,
-        "_async_run",
-        _fake_async_run,
-    )
+    monkeypatch.setattr(client, "_async_run", _bind_coro_to_future(fake_future))
 
     async def _test_coro():
         """Run a no-op coroutine used for tests."""

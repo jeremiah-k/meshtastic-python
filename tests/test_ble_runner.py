@@ -284,6 +284,40 @@ class TestBLECoroutineRunner:
                 runner._loop = original_loop
                 runner._warned_timeout_alias = original_warned_timeout_alias
 
+    def test_run_coroutine_threadsafe_timeout_alias_warns_once(self, monkeypatch):
+        """Legacy timeout alias should emit at most one warning per runner instance."""
+        runner = BLECoroutineRunner()
+        monkeypatch.setattr(
+            runner,
+            "_ensure_running",
+            _noop_ensure_running,
+        )
+
+        with runner._instance_lock:
+            original_loop = runner._loop
+            original_warned_timeout_alias = runner._warned_timeout_alias
+            runner._warned_timeout_alias = False
+            runner._loop = cast(Any, _LoopStub())
+
+        monkeypatch.setattr(
+            asyncio, "run_coroutine_threadsafe", _fake_submit_completed_none
+        )
+
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", DeprecationWarning)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), timeout=0.25)
+                runner._run_coroutine_threadsafe(_noop(), startup_timeout=0.25)
+            deprecations = [
+                w for w in caught if issubclass(w.category, DeprecationWarning)
+            ]
+            assert len(deprecations) == 1
+        finally:
+            with runner._instance_lock:
+                runner._loop = original_loop
+                runner._warned_timeout_alias = original_warned_timeout_alias
+
     def test_run_coroutine_threadsafe_startup_timeout_has_no_deprecation_warning(
         self, monkeypatch
     ):

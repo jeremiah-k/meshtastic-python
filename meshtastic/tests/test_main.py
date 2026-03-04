@@ -1219,6 +1219,7 @@ def test_main_sendtext_with_invalid_channel(
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     iface.localNode.getChannelByChannelIndex.return_value = None
+    iface.localNode.getChannelCopyByChannelIndex.return_value = None
 
     with caplog.at_level(logging.DEBUG):
         with patch(
@@ -1247,6 +1248,7 @@ def test_main_sendtext_with_invalid_channel_nine(
     iface.__enter__ = MagicMock(return_value=iface)
     iface.__exit__ = MagicMock(return_value=None)
     iface.localNode.getChannelByChannelIndex.return_value = None
+    iface.localNode.getChannelCopyByChannelIndex.return_value = None
 
     with caplog.at_level(logging.DEBUG):
         with patch(
@@ -1283,6 +1285,9 @@ def test_main_sendtext_with_dest(
     with SerialInterface(noProto=True, connectNow=False) as serial_interface:
         mocked_channel = MagicMock(autospec=Channel)
         serial_interface.localNode.getChannelByChannelIndex = MagicMock(  # type: ignore[method-assign]
+            return_value=mocked_channel
+        )
+        serial_interface.localNode.getChannelCopyByChannelIndex = MagicMock(  # type: ignore[method-assign]
             return_value=mocked_channel
         )
 

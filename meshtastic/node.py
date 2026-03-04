@@ -653,6 +653,18 @@ class Node:
                 return channels[channelIndex]
             return None
 
+    def getChannelCopyByChannelIndex(
+        self, channelIndex: int
+    ) -> channel_pb2.Channel | None:
+        """Retrieve a defensive copy of the channel at the given zero-based index."""
+        with self._channels_lock:
+            channels = self.channels
+            if channels and 0 <= channelIndex < len(channels):
+                copied = channel_pb2.Channel()
+                copied.CopyFrom(channels[channelIndex])
+                return copied
+            return None
+
     def deleteChannel(self, channelIndex: int) -> None:
         """Delete the channel at the given zero-based index and rewrite subsequent channels to normalize device channel state.
 
@@ -738,6 +750,16 @@ class Node:
                     return c
             return None
 
+    def getChannelCopyByName(self, name: str) -> channel_pb2.Channel | None:
+        """Find a channel by name and return a defensive copy for read-only use."""
+        with self._channels_lock:
+            for channel in self.channels or []:
+                if channel.settings and channel.settings.name == name:
+                    copied = channel_pb2.Channel()
+                    copied.CopyFrom(channel)
+                    return copied
+            return None
+
     def getDisabledChannel(self) -> channel_pb2.Channel | None:
         """Find the first channel whose role is DISABLED.
 
@@ -760,6 +782,19 @@ class Node:
                 if c.role == channel_pb2.Channel.Role.DISABLED:
                     # Compatibility: return the live object, not a defensive copy.
                     return c
+            return None
+
+    def getDisabledChannelCopy(self) -> channel_pb2.Channel | None:
+        """Find the first disabled channel and return a defensive copy for read-only use."""
+        with self._channels_lock:
+            channels = self.channels
+            if channels is None:
+                return None
+            for channel in channels:
+                if channel.role == channel_pb2.Channel.Role.DISABLED:
+                    copied = channel_pb2.Channel()
+                    copied.CopyFrom(channel)
+                    return copied
             return None
 
     def getAdminChannelIndex(self) -> int:
@@ -1683,10 +1718,13 @@ class Node:
             self._send_admin(p, wantResponse=True, onResponse=self.onRequestGetMetadata)
             self.iface.waitForAckNak()
             if sys.stdout is not sys.__stdout__:
-                metadata_stdout_event.wait(METADATA_STDOUT_COMPAT_WAIT_SECONDS)
+                callback_completed = metadata_stdout_event.wait(
+                    METADATA_STDOUT_COMPAT_WAIT_SECONDS
+                )
                 # Ensure redirected-stdout parsers receive a deterministic metadata line
-                # even if callback printing raced with redirect teardown.
-                self._emit_cached_metadata_for_stdout()
+                # only when callback output may have been missed.
+                if not callback_completed:
+                    self._emit_cached_metadata_for_stdout()
         finally:
             with self._metadata_stdout_event_lock:
                 if self._metadata_stdout_event is metadata_stdout_event:
@@ -2027,8 +2065,8 @@ class Node:
     def onRequestGetMetadata(self, p: dict[str, Any]) -> None:
         """Handle an incoming device metadata response packet and display the parsed metadata.
 
-        Parses the decoded packet, updates the interface acknowledgment state (ACK/NAK), may retry
-        the metadata request when notified by the routing layer, and logs the device metadata
+        Parses the decoded packet, updates the interface acknowledgment state (ACK/NAK), handles
+        routing-layer ACK/NAK packets, and logs the device metadata
         fields (firmware_version, device_state_version, role, position_flags, hw_model, hasPKC,
         and excluded_modules) when available.
 
@@ -2054,8 +2092,9 @@ class Node:
                 self._timeout.expireTime = time.time()  # Do not wait any longer
                 self._signal_metadata_stdout_event()
                 return  # Don't try to parse this routing message
-            logger.debug("Retrying metadata request.")
-            self.getMetadata()
+            logger.debug(
+                "Metadata request routed successfully; waiting for ADMIN_APP payload."
+            )
             return
 
         if "routing" in decoded and decoded["routing"]["errorReason"] != "NONE":

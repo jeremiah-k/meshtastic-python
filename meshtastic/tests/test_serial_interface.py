@@ -134,6 +134,9 @@ def test_resolve_dev_path_returns_explicit_non_empty_path() -> None:
 
     assert iface._resolve_dev_path() == "/dev/ttyUSB0"
 
+    iface.devPath = "  /dev/ttyUSB0  "
+    assert iface._resolve_dev_path() == "/dev/ttyUSB0"
+
 
 @pytest.mark.unit
 def test_serial_interface_repr_includes_optional_fields() -> None:

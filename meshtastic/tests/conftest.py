@@ -319,8 +319,9 @@ def mock_serial_interface() -> MagicMock:
         A mock configured to act like a SerialInterface with the above behavior.
     """
     mock_iface = _create_context_manager_mock(SerialInterface)
-    mock_iface.localNode = MagicMock(spec=["getChannelByName"])
+    mock_iface.localNode = MagicMock(spec=["getChannelByName", "getChannelCopyByName"])
     mock_iface.localNode.getChannelByName.return_value = None
+    mock_iface.localNode.getChannelCopyByName.return_value = None
     mock_iface.myInfo = MagicMock(spec=["max_channels"])
     mock_iface.myInfo.max_channels = 8
     return mock_iface
@@ -425,6 +426,7 @@ def _mock_iface_with_gpio_channel(channel_index: int = 0) -> MagicMock:
     channel = MagicMock()
     channel.index = channel_index
     iface.localNode.getChannelByName.return_value = channel
+    iface.localNode.getChannelCopyByName.return_value = channel
     return cast(MagicMock, iface)
 
 

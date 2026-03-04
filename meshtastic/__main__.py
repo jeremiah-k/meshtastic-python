@@ -262,7 +262,10 @@ def checkChannel(interface: MeshInterface, channelIndex: int) -> bool:
     bool
         `True` if the channel exists and its role is not DISABLED, `False` otherwise.
     """
-    ch = interface.localNode.getChannelByChannelIndex(channelIndex)
+    if hasattr(type(interface.localNode), "getChannelCopyByChannelIndex"):
+        ch = interface.localNode.getChannelCopyByChannelIndex(channelIndex)
+    else:
+        ch = interface.localNode.getChannelByChannelIndex(channelIndex)
     logger.debug("ch:%s", ch)
     return bool(ch and ch.role != channel_pb2.Channel.Role.DISABLED)
 
