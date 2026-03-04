@@ -276,9 +276,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     class _StubBLEDevice:
         """Minimal BLEDevice test double."""
 
-        def __init__(
-            self, address: str | None = None, name: str | None = None
-        ) -> None:
+        def __init__(self, address: str | None = None, name: str | None = None) -> None:
             """Create a minimal BLE device representation with an optional address and name.
 
             Parameters

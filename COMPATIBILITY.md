@@ -125,26 +125,26 @@ Semantic deprecation:
 
 ### Node and Tunnel
 
-| Module              | Compatibility symbol                                   | Canonical symbol                        |
-| ------------------- | ------------------------------------------------------ | --------------------------------------- |
-| `meshtastic.mesh_interface` | `_generatePacketId()`                         | `_generate_packet_id()`                 |
-| `meshtastic.node`   | `position_flags_list()`                                | `positionFlagsList()`                   |
-| `meshtastic.node`   | `excluded_modules_list()`                              | `excludedModulesList()`                 |
-| `meshtastic.node`   | `module_available()`                                   | `moduleAvailable()`                     |
-| `meshtastic.node`   | `get_ringtone()`                                       | `getRingtone()`                         |
-| `meshtastic.node`   | `set_ringtone()`                                       | `setRingtone()`                         |
-| `meshtastic.node`   | `get_canned_message()`                                 | `getCannedMessage()`                    |
-| `meshtastic.node`   | `set_canned_message()`                                 | `setCannedMessage()`                    |
-| `meshtastic.node`   | `get_channels_with_hash()`                             | `getChannelsWithHash()`                 |
-| `meshtastic.node`   | `startOTA(ota_mode=..., ota_hash=..., hash=...)`       | `startOTA(mode=..., ota_file_hash=...)` |
-| `meshtastic.node`   | live-channel semantics of `getChannelByChannelIndex()` | historical mutate-then-write behavior   |
-| `meshtastic.tunnel` | `udpBlacklist`                                         | `UDP_BLACKLIST`                         |
-| `meshtastic.tunnel` | `tcpBlacklist`                                         | `TCP_BLACKLIST`                         |
-| `meshtastic.tunnel` | `protocolBlacklist`                                    | `PROTOCOL_BLACKLIST`                    |
-| `meshtastic.tunnel` | `_shouldFilterPacket()`                                | `_should_filter_packet()`               |
-| `meshtastic.tunnel` | `_ipToNodeId()`                                        | `_ip_to_node_id()`                      |
-| `meshtastic.tunnel` | `_nodeNumToIp()`                                       | `_node_num_to_ip()`                     |
-| `meshtastic.tunnel` | `sendPacket()`                                         | `_send_packet()`                        |
+| Module                      | Compatibility symbol                                   | Canonical symbol                        |
+| --------------------------- | ------------------------------------------------------ | --------------------------------------- |
+| `meshtastic.mesh_interface` | `_generatePacketId()`                                  | `_generate_packet_id()`                 |
+| `meshtastic.node`           | `position_flags_list()`                                | `positionFlagsList()`                   |
+| `meshtastic.node`           | `excluded_modules_list()`                              | `excludedModulesList()`                 |
+| `meshtastic.node`           | `module_available()`                                   | `moduleAvailable()`                     |
+| `meshtastic.node`           | `get_ringtone()`                                       | `getRingtone()`                         |
+| `meshtastic.node`           | `set_ringtone()`                                       | `setRingtone()`                         |
+| `meshtastic.node`           | `get_canned_message()`                                 | `getCannedMessage()`                    |
+| `meshtastic.node`           | `set_canned_message()`                                 | `setCannedMessage()`                    |
+| `meshtastic.node`           | `get_channels_with_hash()`                             | `getChannelsWithHash()`                 |
+| `meshtastic.node`           | `startOTA(ota_mode=..., ota_hash=..., hash=...)`       | `startOTA(mode=..., ota_file_hash=...)` |
+| `meshtastic.node`           | live-channel semantics of `getChannelByChannelIndex()` | historical mutate-then-write behavior   |
+| `meshtastic.tunnel`         | `udpBlacklist`                                         | `UDP_BLACKLIST`                         |
+| `meshtastic.tunnel`         | `tcpBlacklist`                                         | `TCP_BLACKLIST`                         |
+| `meshtastic.tunnel`         | `protocolBlacklist`                                    | `PROTOCOL_BLACKLIST`                    |
+| `meshtastic.tunnel`         | `_shouldFilterPacket()`                                | `_should_filter_packet()`               |
+| `meshtastic.tunnel`         | `_ipToNodeId()`                                        | `_ip_to_node_id()`                      |
+| `meshtastic.tunnel`         | `_nodeNumToIp()`                                       | `_node_num_to_ip()`                     |
+| `meshtastic.tunnel`         | `sendPacket()`                                         | `_send_packet()`                        |
 
 ### BLE and Related Exports
 

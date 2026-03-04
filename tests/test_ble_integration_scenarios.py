@@ -244,7 +244,7 @@ def test_ble_config_can_be_modified_at_runtime() -> None:
         # Module-level alias won't change (it's an import-time snapshot).
         from meshtastic.interfaces.ble import constants
 
-        module_alias_snapshot = getattr(constants, "CONNECTION_TIMEOUT")
+        module_alias_snapshot = constants.CONNECTION_TIMEOUT
         assert module_alias_snapshot == original_timeout
     finally:
         # Restore

@@ -2387,9 +2387,11 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
             on_receive_calls.append(1)
 
         def _raising_callback(_packet: dict[str, Any]) -> None:
-            raise RuntimeError("handler boom")  # noqa: TRY003 - intentional test sentinel
+            raise RuntimeError(
+                "handler boom"
+            )  # noqa: TRY003 - intentional test sentinel
 
-        def _on_ack_nak(_packet: dict[str, Any]) -> None:
+        def onAckNak(_packet: dict[str, Any]) -> None:  # noqa: N802
             on_ack_calls.append(1)
 
         def _ack_permitted_callback(_packet: dict[str, Any]) -> None:
@@ -2427,7 +2429,7 @@ def test_handle_packet_from_radio_toid_warning_and_response_handler_paths(
         p2.decoded.payload = routing.SerializeToString()
         p2.decoded.request_id = 78
         iface.responseHandlers[78] = ResponseHandler(
-            callback=_on_ack_nak, ackPermitted=False
+            callback=onAckNak, ackPermitted=False
         )
         iface._handle_packet_from_radio(p2, hack=True)
 
