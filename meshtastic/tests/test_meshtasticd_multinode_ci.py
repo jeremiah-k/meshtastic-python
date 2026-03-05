@@ -159,9 +159,7 @@ def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, st
         Mapping from channel index to expected channel name after configure.
     """
 
-    def _cli_ok(
-        *args: str, timeout: int | float = CLI_DEFAULT_TIMEOUT_SECONDS
-    ) -> str:
+    def _cli_ok(*args: str, timeout: int | float = CLI_DEFAULT_TIMEOUT_SECONDS) -> str:
         return _run_host_cli_ok(
             host,
             *args,

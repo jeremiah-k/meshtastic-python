@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 def _positive_float_from_env(name: str, default: float) -> float:
     """Read a positive float from the environment with a safe fallback."""
     raw_value = os.environ.get(name)
-    if raw_value in (None, ""):
+    if raw_value is None or raw_value == "":
         return default
     try:
         parsed = float(raw_value)

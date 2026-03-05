@@ -40,7 +40,7 @@ cleanup() {
 		1 | true | yes | on)
 			print_logs=true
 			;;
-			*) ;;
+		*) ;;
 		esac
 	fi
 	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then

@@ -63,7 +63,7 @@ cleanup() {
 				log_file="${MESHTASTICD_LOG_DIR}/${container}.log"
 				docker logs "${container}" >"${log_file}" 2>&1 || true
 			fi
-			if [[ -f "${LOGS_PRINTED_MARKER}" ]]; then
+			if [[ -f ${LOGS_PRINTED_MARKER} ]]; then
 				already_printed=true
 			fi
 			if [[ ${print_logs} == true && ${already_printed} == false ]]; then
