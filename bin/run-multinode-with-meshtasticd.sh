@@ -72,6 +72,11 @@ if [[ ${OS_NAME} != "Linux" ]]; then
 	exit 1
 fi
 
+if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3))); then
+	echo "bash 4.3+ is required (wait -n support)." >&2
+	exit 1
+fi
+
 require_regex "${MESHTASTICD_CONTAINER_A}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER_A"
 require_regex "${MESHTASTICD_CONTAINER_B}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER_B"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
@@ -166,45 +171,41 @@ wait_for_ready() {
 wait_for_parallel_failfast() {
 	local pid_a=$1
 	local pid_b=$2
-	local done_pid=""
-	local done_status=0
-	local other_pid=""
+	local first_status=0
+	local status_a=127
+	local status_b=127
 
-	while :; do
-		if ! kill -0 "${pid_a}" 2>/dev/null; then
-			done_pid="${pid_a}"
-			if wait "${pid_a}"; then
-				done_status=0
-			else
-				done_status=$?
-			fi
-			break
-		fi
-		if ! kill -0 "${pid_b}" 2>/dev/null; then
-			done_pid="${pid_b}"
-			if wait "${pid_b}"; then
-				done_status=0
-			else
-				done_status=$?
-			fi
-			break
-		fi
-		sleep 0.5
-	done
-
-	if [[ ${done_pid} == "${pid_a}" ]]; then
-		other_pid="${pid_b}"
+	if wait -n; then
+		first_status=0
 	else
-		other_pid="${pid_a}"
+		first_status=$?
 	fi
 
-	if ((done_status != 0)); then
-		kill "${other_pid}" 2>/dev/null || true
-		wait "${other_pid}" 2>/dev/null || true
-		return "${done_status}"
+	if ((first_status != 0)); then
+		kill "${pid_a}" "${pid_b}" 2>/dev/null || true
 	fi
 
-	wait "${other_pid}"
+	if wait "${pid_a}" 2>/dev/null; then
+		status_a=0
+	else
+		status_a=$?
+	fi
+	if wait "${pid_b}" 2>/dev/null; then
+		status_b=0
+	else
+		status_b=$?
+	fi
+
+	if ((first_status != 0)); then
+		return "${first_status}"
+	fi
+	if ((status_a != 0 && status_a != 127)); then
+		return "${status_a}"
+	fi
+	if ((status_b != 0 && status_b != 127)); then
+		return "${status_b}"
+	fi
+	return 0
 }
 
 wait_for_ready "${MESHTASTICD_HOST_A}" "${MESHTASTICD_CONTAINER_A}" "${READY_LOG_A}" &
