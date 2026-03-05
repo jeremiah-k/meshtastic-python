@@ -14,6 +14,9 @@ MESHTASTICD_HWID_B="${MESHTASTICD_HWID_B:-22}"
 MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-180}"
 READY_LOG_A="${READY_LOG_A-}"
 READY_LOG_B="${READY_LOG_B-}"
+MESHTASTICD_LOG_DIR="${MESHTASTICD_LOG_DIR-}"
+MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
+MESHTASTICD_LOG_TAIL_LINES="${MESHTASTICD_LOG_TAIL_LINES:-400}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_multinode_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR:-int}"
@@ -21,6 +24,7 @@ EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 READY_LOG_A_IS_TEMP=false
 READY_LOG_B_IS_TEMP=false
+LOGS_PRINTED=false
 
 # Keep this helper local in each runner script so each entrypoint stays standalone.
 # Usage: require_regex "<value>" "<regex>" "<env-name>"
@@ -36,11 +40,31 @@ require_regex() {
 
 cleanup() {
 	local exit_code=$?
+	local print_logs=false
+	if ((exit_code != 0)); then
+		print_logs=true
+	else
+		case "${MESHTASTICD_LOG_ON_SUCCESS,,}" in
+		1 | true | yes | on)
+			print_logs=true
+			;;
+		*) ;;
+		esac
+	fi
 	for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
 		if docker ps -a --format '{{.Names}}' | grep -Fxq "${container}"; then
-			if ((exit_code != 0)); then
-				echo "===== meshtasticd logs (${container}) ====="
-				docker logs "${container}" || true
+			local log_file=""
+			if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+				log_file="${MESHTASTICD_LOG_DIR}/${container}.log"
+				docker logs "${container}" >"${log_file}" 2>&1 || true
+			fi
+			if [[ ${print_logs} == true && ${LOGS_PRINTED} == false ]]; then
+				echo "===== meshtasticd logs (${container}, tail ${MESHTASTICD_LOG_TAIL_LINES}) ====="
+				if [[ -n ${log_file} && -f ${log_file} ]]; then
+					tail -n "${MESHTASTICD_LOG_TAIL_LINES}" "${log_file}" || true
+				else
+					docker logs "${container}" 2>&1 | tail -n "${MESHTASTICD_LOG_TAIL_LINES}" || true
+				fi
 			fi
 			docker rm -f "${container}" >/dev/null || true
 		fi
@@ -87,6 +111,7 @@ require_regex "${MESHTASTICD_PORT_B}" '^[0-9]+$' "MESHTASTICD_PORT_B"
 require_regex "${MESHTASTICD_HWID_A}" '^[0-9]+$' "MESHTASTICD_HWID_A"
 require_regex "${MESHTASTICD_HWID_B}" '^[0-9]+$' "MESHTASTICD_HWID_B"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
+require_regex "${MESHTASTICD_LOG_TAIL_LINES}" '^[0-9]+$' "MESHTASTICD_LOG_TAIL_LINES"
 MESHTASTICD_PORT_A_DEC=$((10#${MESHTASTICD_PORT_A}))
 MESHTASTICD_PORT_B_DEC=$((10#${MESHTASTICD_PORT_B}))
 MESHTASTICD_READY_TIMEOUT_SECONDS_DEC=$((10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
@@ -114,9 +139,20 @@ if [[ ${READY_LOG_B} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_B path." >&2
 	exit 1
 fi
+if [[ -n ${MESHTASTICD_LOG_DIR} ]] && [[ ${MESHTASTICD_LOG_DIR} == *$'\n'* ]]; then
+	echo "Invalid MESHTASTICD_LOG_DIR path." >&2
+	exit 1
+fi
 if ((MESHTASTICD_READY_TIMEOUT_SECONDS_DEC <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
+fi
+if ((10#${MESHTASTICD_LOG_TAIL_LINES} <= 0)); then
+	echo "MESHTASTICD_LOG_TAIL_LINES must be greater than zero." >&2
+	exit 1
+fi
+if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+	mkdir -p "${MESHTASTICD_LOG_DIR}"
 fi
 
 : >"${READY_LOG_A}"
@@ -154,6 +190,7 @@ wait_for_ready() {
 	until poetry run meshtastic --timeout 5 --host "${host}" --info >"${ready_log_file}" 2>&1; do
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
 			echo "${container} exited before becoming ready." >&2
+			LOGS_PRINTED=true
 			docker logs "${container}" >&2 || true
 			return 1
 		fi
@@ -161,6 +198,7 @@ wait_for_ready() {
 			echo "${container} did not become ready within ${MESHTASTICD_READY_TIMEOUT_SECONDS}s." >&2
 			echo "===== readiness output (${host}) =====" >&2
 			cat "${ready_log_file}" >&2 || true
+			LOGS_PRINTED=true
 			docker logs "${container}" >&2 || true
 			return 1
 		fi
@@ -227,6 +265,7 @@ wait_for_log_pattern() {
 		fi
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
 			echo "${container} exited while waiting for log pattern '${pattern}'." >&2
+			LOGS_PRINTED=true
 			docker logs "${container}" >&2 || true
 			return 1
 		fi
@@ -234,6 +273,7 @@ wait_for_log_pattern() {
 	done
 
 	echo "${container} did not emit expected log pattern '${pattern}' within ${timeout_seconds}s." >&2
+	LOGS_PRINTED=true
 	docker logs "${container}" >&2 || true
 	return 1
 }

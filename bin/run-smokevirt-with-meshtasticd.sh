@@ -6,6 +6,9 @@ MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:latest}"
 MESHTASTICD_CONTAINER="${MESHTASTICD_CONTAINER:-meshtasticd-smokevirt}"
 MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-120}"
 READY_LOG_FILE="${READY_LOG_FILE-}"
+MESHTASTICD_LOG_DIR="${MESHTASTICD_LOG_DIR-}"
+MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
+MESHTASTICD_LOG_TAIL_LINES="${MESHTASTICD_LOG_TAIL_LINES:-400}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
@@ -28,11 +31,31 @@ require_regex() {
 
 cleanup() {
 	local exit_code=$?
-	if ((exit_code != 0)) && [[ ${LOGS_PRINTED} == false ]] && docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
-		echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}) ====="
-		docker logs "${MESHTASTICD_CONTAINER}" || true
+	local print_logs=false
+	if ((exit_code != 0)); then
+		print_logs=true
+	else
+		case "${MESHTASTICD_LOG_ON_SUCCESS,,}" in
+		1 | true | yes | on)
+			print_logs=true
+			;;
+		*) ;;
+		esac
 	fi
 	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
+		local log_file=""
+		if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+			log_file="${MESHTASTICD_LOG_DIR}/${MESHTASTICD_CONTAINER}.log"
+			docker logs "${MESHTASTICD_CONTAINER}" >"${log_file}" 2>&1 || true
+		fi
+		if [[ ${print_logs} == true && ${LOGS_PRINTED} == false ]]; then
+			echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}, tail ${MESHTASTICD_LOG_TAIL_LINES}) ====="
+			if [[ -n ${log_file} && -f ${log_file} ]]; then
+				tail -n "${MESHTASTICD_LOG_TAIL_LINES}" "${log_file}" || true
+			else
+				docker logs "${MESHTASTICD_CONTAINER}" 2>&1 | tail -n "${MESHTASTICD_LOG_TAIL_LINES}" || true
+			fi
+		fi
 		docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null || true
 	fi
 	if [[ ${READY_LOG_FILE_IS_TEMP} == true ]]; then
@@ -56,6 +79,7 @@ fi
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
+require_regex "${MESHTASTICD_LOG_TAIL_LINES}" '^[0-9]+$' "MESHTASTICD_LOG_TAIL_LINES"
 if [[ -z ${READY_LOG_FILE} ]]; then
 	READY_LOG_FILE="$(mktemp /tmp/meshtasticd-smokevirt-ready.XXXXXX.log)"
 	READY_LOG_FILE_IS_TEMP=true
@@ -64,9 +88,20 @@ if [[ ${READY_LOG_FILE} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_FILE path." >&2
 	exit 1
 fi
+if [[ -n ${MESHTASTICD_LOG_DIR} ]] && [[ ${MESHTASTICD_LOG_DIR} == *$'\n'* ]]; then
+	echo "Invalid MESHTASTICD_LOG_DIR path." >&2
+	exit 1
+fi
 if ((10#${MESHTASTICD_READY_TIMEOUT_SECONDS} <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
+fi
+if ((10#${MESHTASTICD_LOG_TAIL_LINES} <= 0)); then
+	echo "MESHTASTICD_LOG_TAIL_LINES must be greater than zero." >&2
+	exit 1
+fi
+if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+	mkdir -p "${MESHTASTICD_LOG_DIR}"
 fi
 
 : >"${READY_LOG_FILE}"
