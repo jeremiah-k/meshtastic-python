@@ -22,6 +22,8 @@ lint:
         - meshtastic/**/*_pb2.pyi
         # Ignore external protobufs submodule content in this repo's lint scope.
         - protobufs/**
+        # Keep project license text untouched by automated lint/format tools.
+        - LICENSE.md
     - linters: [mypy-poetry]
       paths:
         # Keep Trunk's mypy scope aligned with CI (meshtastic/ only).
@@ -63,8 +65,8 @@ lint:
       commands:
         - name: lint
           output: pylint
-          run: poetry -C ${workspace} run pylint meshtastic examples/ --exit-zero --output ${tmpfile} --output-format json
-          target: [meshtastic, examples]
+          run: poetry -C ${workspace} run pylint meshtastic examples/ --exit-zero --ignore-patterns='.*_pb2.py,.*_pb2.pyi' --ignore-paths='^meshtastic/tests/|^meshtastic/protobuf/.*_pb2\\.pyi?$' --output ${tmpfile} --output-format json
+          target: meshtastic
           read_output_from: tmp_file
           run_from: ${root_or_parent_with_any_config}
           disable_upstream: true

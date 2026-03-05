@@ -1,14 +1,15 @@
 """Edge case tests for BLE connection management."""
 
 import logging
-from types import SimpleNamespace
 from threading import Event, RLock
+from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock
 
 import pytest
 
 try:
     from bleak.exc import BleakDBusError, BleakDeviceNotFoundError
+
     from meshtastic.interfaces.ble.connection import (
         AWAIT_TIMEOUT_BUFFER_SECONDS,
         DIRECT_CONNECT_TIMEOUT_SECONDS,
@@ -369,7 +370,9 @@ def test_connection_orchestrator_aborts_fallback_when_interface_closing() -> Non
 
 
 @pytest.mark.unit
-def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject() -> None:
+def test_transition_failure_to_disconnected_forces_reset_when_transitions_reject() -> (
+    None
+):
     """_transition_failure_to_disconnected should force reset if transition calls fail."""
     state_manager = MagicMock()
     state_manager._current_state = ConnectionState.CONNECTING
@@ -462,7 +465,9 @@ def test_establish_connection_rejects_whitespace_target_address() -> None:
 
 
 @pytest.mark.unit
-def test_connection_orchestrator_rejects_direct_connect_when_interface_already_closed() -> None:
+def test_connection_orchestrator_rejects_direct_connect_when_interface_already_closed() -> (
+    None
+):
     """_establish_connection should fail before creating a client when shutdown is in progress."""
     state_manager = BLEStateManager()
     state_lock = RLock()

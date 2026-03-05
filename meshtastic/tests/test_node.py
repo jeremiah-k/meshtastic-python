@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pytest import CaptureFixture, LogCaptureFixture
 
-from ..mesh_interface import MeshInterface
 from .. import node as node_module
+from ..mesh_interface import MeshInterface
 from ..node import MAX_CHANNELS, Node
 from ..protobuf import (
     admin_pb2,
@@ -1028,7 +1028,9 @@ def test_deleteChannel_rewrites_following_channels_and_updates_admin_index(
     assert anode.channels is not None
     assert len(anode.channels) == CHANNEL_LIMIT
     assert anode._send_admin.call_count == CHANNEL_LIMIT - 1
-    assert all(call.kwargs["adminIndex"] == 0 for call in anode._send_admin.call_args_list)
+    assert all(
+        call.kwargs["adminIndex"] == 0 for call in anode._send_admin.call_args_list
+    )
 
 
 @pytest.mark.unit
@@ -1669,7 +1671,9 @@ def test_onRequestGetMetadata_emits_stdout_when_redirected(
     resp.hw_model = mesh_pb2.HardwareModel.PORTDUINO
     resp.hasPKC = True
 
-    anode.onRequestGetMetadata({"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}})
+    anode.onRequestGetMetadata(
+        {"decoded": {"portnum": "ADMIN_APP", "admin": {"raw": raw}}}
+    )
 
     out, _err = capsys.readouterr()
     assert "firmware_version: 2.7.18" in out
@@ -1806,7 +1810,7 @@ def test_on_response_request_settings_warns_for_unrecognized_payload_shape(
     mock_serial_interface: MagicMock,
     caplog: LogCaptureFixture,
 ) -> None:
-    """onResponseRequestSettings should warn and return for unsupported response payloads."""
+    """OnResponseRequestSettings should warn and return for unsupported response payloads."""
     anode = Node(mock_serial_interface, "!12345678", noProto=True)
     anode.iface._acknowledgment = Acknowledgment()
 

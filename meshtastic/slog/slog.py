@@ -366,7 +366,8 @@ class PowerLogger:
         """Use `storeCurrentReading()` instead."""
         deprecation_warning_lock = getattr(self, "_deprecation_warning_lock", None)
         if deprecation_warning_lock is None:
-            deprecation_warning_lock = threading.Lock()
+            # Fall back to a shared lock for unusually-constructed test doubles.
+            deprecation_warning_lock = _warned_deprecations_lock
             self._deprecation_warning_lock = deprecation_warning_lock
         with deprecation_warning_lock:
             if not self._warned_store_current_reading_deprecation:

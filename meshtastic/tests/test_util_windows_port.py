@@ -18,7 +18,7 @@ def test_detectWindowsPort_parses_com_port_from_powershell_output(
     _mock_subprocess: MagicMock,
     _mock_system: MagicMock,
 ) -> None:
-    """detectWindowsPort should parse COM ports from PowerShell output on Windows."""
+    """DetectWindowsPort should parse COM ports from PowerShell output on Windows."""
     device = SupportedDevice(
         name="x",
         for_firmware="heltec-v3",

@@ -1,8 +1,10 @@
 """Tests for BLE gating utilities."""
 
 import gc
+
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 from meshtastic.interfaces.ble.constants import BLEConfig
 from meshtastic.interfaces.ble.gating import (
@@ -20,6 +22,8 @@ from meshtastic.interfaces.ble.gating import (
     _mark_disconnected,
     _release_addr_lock,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class _ConnectedOwner:
@@ -49,9 +53,7 @@ class TestAddrKey:
         """Test that None/empty/whitespace inputs all normalize to None."""
         assert _addr_key(input_val) is None
 
-    @given(
-        st.from_regex(r"[0-9a-fA-F]{2}([:_\- ][0-9a-fA-F]{2}){5}", fullmatch=True)
-    )
+    @given(st.from_regex(r"[0-9a-fA-F]{2}([:_\- ][0-9a-fA-F]{2}){5}", fullmatch=True))
     def test_valid_address_formats_normalize_to_lower_hex(self, addr: str) -> None:
         """Any valid MAC-like address should normalize to 12 lowercase hex chars."""
         normalized = _addr_key(addr)

@@ -46,7 +46,7 @@ unicode scripts they can be different.
 ```
 import meshtastic
 import meshtastic.serial_interface
-from pubsub import pub  # type: ignore[import-untyped]
+from pubsub import pub
 
 def onReceive(packet, interface): # called when a packet arrives
     print(f"Received: {packet}")
@@ -62,15 +62,15 @@ interface = meshtastic.serial_interface.SerialInterface()
 
 ```
 """
+
 # ruff: noqa: F401
 
 import copy
 import logging
 from importlib import import_module
-from typing import Any, Callable, NamedTuple, TypeGuard
+from typing import Any, Callable, NamedTuple, TypeGuard, cast
 
 from google.protobuf.json_format import MessageToJson
-from pubsub import pub
 
 from meshtastic.node import Node
 from meshtastic.util import (
@@ -96,6 +96,8 @@ from .protobuf import (
     telemetry_pb2,
 )
 
+pub = cast(Any, import_module("pubsub.pub"))
+
 # Keep this module aligned with historical master behavior by intentionally not
 # defining __all__. Public names remain available as module attributes.
 
@@ -103,7 +105,7 @@ from .protobuf import (
 def __getattr__(name: str) -> Any:
     """Provide lazy access to legacy module attributes.
 
-    When the attribute "serial" is requested, import the internal serial_interface
+    When the attribute "serial" is requested, import the third-party pyserial
     module, cache it on the module globals as "serial", and return it. For any
     other attribute, raise AttributeError.
 
@@ -116,17 +118,18 @@ def __getattr__(name: str) -> Any:
     -------
     Any
         The resolved module object for the requested legacy attribute
-        (e.g., the internal serial_interface for "serial").
+        (e.g., the third-party pyserial module for "serial").
 
     Raises
     ------
     AttributeError
         If the requested attribute is not provided by this lazy loader.
     """
+    # COMPAT_STABLE_SHIM: preserve historical `meshtastic.serial` module access.
     if name == "serial":
-        # Keep historical `meshtastic.serial` access, but map it to our
-        # internal serial interface module (not the third-party pyserial module).
-        serial_module = import_module(".serial_interface", __name__)
+        # Keep historical `meshtastic.serial` access to the third-party
+        # pyserial module as exposed on master.
+        serial_module = import_module("serial")
         # Cache in module namespace so subsequent accesses bypass __getattr__
         globals()["serial"] = serial_module
         return serial_module

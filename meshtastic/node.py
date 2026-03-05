@@ -1626,7 +1626,8 @@ class Node:
         if self != self.iface.localNode:
             self._raise_interface_error("startOTA only possible on local node")
 
-        # COMPAT_STABLE_SHIM: support legacy `hash=` keyword used by older callers.
+        # COMPAT_STABLE_SHIM: support legacy keyword aliases used by older callers:
+        # `ota_mode` -> `mode`, and `ota_hash`/`hash` -> `ota_file_hash`.
         legacy_hash = kwargs.pop("hash", None)
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
@@ -2127,7 +2128,9 @@ class Node:
             f"position_flags: {self.position_flags_list(c.position_flags)}"
         )
         if c.hw_model in mesh_pb2.HardwareModel.values():
-            self._emit_metadata_line(f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}")
+            self._emit_metadata_line(
+                f"hw_model: {mesh_pb2.HardwareModel.Name(c.hw_model)}"
+            )
         else:
             self._emit_metadata_line(f"hw_model: {c.hw_model}")
         self._emit_metadata_line(f"hasPKC: {c.hasPKC}")

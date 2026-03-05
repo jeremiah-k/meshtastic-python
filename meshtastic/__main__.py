@@ -107,6 +107,7 @@ POWER_ON_BOOT_DELAY_SECONDS = 5.0
 MAIN_LOOP_IDLE_SLEEP_SECONDS = 1000
 
 
+# COMPAT_STABLE_SHIM: accept historical config field spellings.
 # Backward-compatible aliases for renamed config fields.
 _PREFERENCE_FIELD_ALIASES: dict[str, str] = {
     "display.use_12_hour": "display.use_12h_clock",

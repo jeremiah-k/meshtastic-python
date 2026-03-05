@@ -19,8 +19,8 @@ import yaml
 import meshtastic.__main__ as main_module
 from meshtastic import mt_config
 from meshtastic.__main__ import (
-    _normalize_pref_name,
     _create_power_meter,
+    _normalize_pref_name,
     _parse_host_port,
     _prefix_base64_key,
     _set_missing_flags_false,
@@ -4536,7 +4536,7 @@ def test_create_power_meter_sleeps_after_power_on_when_not_waiting(
     monkeypatch.setattr(main_module, "SimPowerSupply", lambda: fake_meter)
     monkeypatch.setattr(mt_config, "args", args)
     sleep_mock = MagicMock()
-    monkeypatch.setattr(main_module.time, "sleep", sleep_mock)
+    monkeypatch.setattr(main_module.time, "sleep", sleep_mock)  # type: ignore[attr-defined]
 
     _create_power_meter()
 

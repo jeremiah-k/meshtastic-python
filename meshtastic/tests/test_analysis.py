@@ -27,19 +27,19 @@ try:
     # Depends upon matplotlib & other packages in poetry's analysis group, not installed by default
     from meshtastic import powermon_pb2
     from meshtastic.analysis import __main__ as analysis_main
-    from meshtastic.protobuf import mesh_pb2
     from meshtastic.analysis.__main__ import (
-        choosePowerColumn,
         choose_power_column,
+        choosePowerColumn,
         create_argparser,
-        getBoardInfo,
         get_board_info,
-        getPmonRaises,
         get_pmon_raises,
+        getBoardInfo,
+        getPmonRaises,
         main,
         read_pandas,
         to_pmon_names,
     )
+    from meshtastic.protobuf import mesh_pb2
 
     # Import private function for testing
     _is_loopback_host = analysis_main._is_loopback_host

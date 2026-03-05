@@ -4,7 +4,11 @@ import asyncio
 import warnings
 from unittest.mock import MagicMock
 
+import pytest
+
 from meshtastic.interfaces.ble import BLEClient, BLEInterface
+
+pytestmark = pytest.mark.unit
 
 
 def test_ble_interface_naming_compatibility() -> None:

@@ -144,7 +144,10 @@ def test_TCPInterface_write_uses_partial_send_loop() -> None:
             mock_socket = MagicMock()
             mock_socket.send.side_effect = [1, 2]
             iface.socket = mock_socket
-            with patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])):
+            with patch(
+                "meshtastic.tcp_interface.select.select",
+                return_value=([], [mock_socket], []),
+            ):
                 iface._write_bytes(b"abc")
             assert mock_socket.send.call_args_list == [call(b"abc"), call(b"bc")]
         finally:
@@ -175,7 +178,10 @@ def test_TCPInterface_write_reraises_socket_errors() -> None:
             iface.socket = mock_socket
 
             with (
-                patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])),
+                patch(
+                    "meshtastic.tcp_interface.select.select",
+                    return_value=([], [mock_socket], []),
+                ),
                 pytest.raises(OSError, match="boom"),
             ):
                 iface._write_bytes(b"abc")
@@ -217,8 +223,12 @@ def test_TCPInterface_write_times_out_when_socket_not_writable() -> None:
             mock_socket = MagicMock()
             iface.socket = mock_socket
             with (
-                patch("meshtastic.tcp_interface.select.select", return_value=([], [], [])),
-                pytest.raises(TimeoutError, match="timed out waiting for socket readiness"),
+                patch(
+                    "meshtastic.tcp_interface.select.select", return_value=([], [], [])
+                ),
+                pytest.raises(
+                    TimeoutError, match="timed out waiting for socket readiness"
+                ),
             ):
                 iface._write_bytes(b"abc")
             assert iface.socket is None
@@ -318,7 +328,10 @@ def test_TCPInterface_connect_socket_waits_for_inflight_reconnect_then_connects(
                         iface._reconnect_attempt_in_progress = False
 
             with (
-                patch("meshtastic.tcp_interface.time.sleep", side_effect=_finish_reconnect_slice) as sleep_mock,
+                patch(
+                    "meshtastic.tcp_interface.time.sleep",
+                    side_effect=_finish_reconnect_slice,
+                ) as sleep_mock,
                 patch.object(iface, "myConnect") as my_connect_mock,
             ):
                 iface._connect_socket_if_needed()
@@ -507,7 +520,9 @@ def test_TCPInterface_write_times_out_before_select_when_deadline_elapsed() -> N
                     "meshtastic.tcp_interface.time.monotonic",
                     side_effect=[0.0, 9999.0],
                 ),
-                pytest.raises(TimeoutError, match="timed out waiting for socket readiness"),
+                pytest.raises(
+                    TimeoutError, match="timed out waiting for socket readiness"
+                ),
             ):
                 iface._write_bytes(b"abc")
         finally:
@@ -525,7 +540,10 @@ def test_TCPInterface_write_raises_when_send_returns_zero_bytes() -> None:
             iface.socket = mock_socket
 
             with (
-                patch("meshtastic.tcp_interface.select.select", return_value=([], [mock_socket], [])),
+                patch(
+                    "meshtastic.tcp_interface.select.select",
+                    return_value=([], [mock_socket], []),
+                ),
                 pytest.raises(OSError, match="TCP write returned no bytes"),
             ):
                 iface._write_bytes(b"abc")

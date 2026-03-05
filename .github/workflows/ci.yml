@@ -110,6 +110,40 @@ jobs:
       - *install_local_step
       - name: Check types with mypy
         run: poetry run mypy meshtastic/
+  compatibility:
+    name: Compatibility Inventory (py3.13)
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
+      - name: Validate compatibility markers inventory
+        run: |
+          if command -v rg >/dev/null 2>&1; then
+            rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic
+          else
+            grep -R -nE "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic
+          fi
+      - name: Run compatibility alias checks
+        run: |
+          poetry run pytest \
+            tests/test_ble_naming_compatibility.py \
+            tests/test_ble_runner.py::TestBLECoroutineRunner::test_run_coroutine_threadsafe_timeout_alias_warns_deprecated \
+            tests/test_ble_runner.py::TestBLECoroutineRunner::test_run_coroutine_threadsafe_timeout_alias_warns_once \
+            meshtastic/tests/test_init.py::test_init_serial_alias_points_to_pyserial_module \
+            meshtastic/tests/test_mt_config.py \
+            meshtastic/tests/test_util.py::test_dotdict_deprecated_warns \
+            meshtastic/tests/test_powermon_power_supply.py::test_deprecated_current_aliases_warn_once_per_method \
+            meshtastic/tests/test_slog_power_logger.py::test_root_dir_legacy_alias_warns_once \
+            meshtastic/tests/test_slog_power_logger.py::test_store_current_reading_warns_once_when_voltage_unavailable \
+            meshtastic/tests/test_mesh_interface.py::test_sendPacket_alias_with_destination_as_int \
+            meshtastic/tests/test_mesh_interface.py::test_sendPacket_alias_with_no_destination \
+            meshtastic/tests/test_mesh_interface.py::test_send_telemetry_supported_and_fallback_paths
   # Fast install sanity check across Python versions.
   # Full tests run in the tests job above.
   # Lint/type checks run in dedicated jobs for earlier independent failures.

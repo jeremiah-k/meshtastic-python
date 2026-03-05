@@ -45,6 +45,8 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 # Import common fixtures
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
+pytestmark = pytest.mark.unit
+
 if TYPE_CHECKING:
 
     class _PubProtocol(Protocol):
@@ -646,7 +648,10 @@ def test_concurrent_connect_and_disconnect_do_not_deadlock(
         iface.close()
 
 
-def test_connect_finalizes_gates_after_address_lock_scope(monkeypatch, clear_registry):
+def test_connect_finalizes_gates_after_address_lock_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    clear_registry: None,
+) -> None:
     """connect() should finalize address gates only after per-address lock scope exits."""
     _ = clear_registry
     import meshtastic.interfaces.ble.interface as ble_iface_mod
@@ -1161,7 +1166,9 @@ def test_close_discovery_client_best_effort_closes_coroutine_when_task_creation_
         return awaitable
 
     monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
-    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(
+        discovery_mod, "_await_close_result", _await_close_result_passthrough
+    )
     monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
     monkeypatch.setattr(
         discovery_mod.inspect,
@@ -1194,7 +1201,9 @@ def test_finalize_discovery_close_task_discards_task_and_logs_exception(
 
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
         assert task not in discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS
-    assert "Async close/disconnect failed for discarded discovery client." in caplog.text
+    assert (
+        "Async close/disconnect failed for discarded discovery client." in caplog.text
+    )
 
 
 def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
@@ -1247,7 +1256,9 @@ def test_close_discovery_client_best_effort_tracks_pending_task_on_running_loop(
         return awaitable
 
     monkeypatch.setattr(discovery_mod.asyncio, "get_running_loop", _get_running_loop)
-    monkeypatch.setattr(discovery_mod, "_await_close_result", _await_close_result_passthrough)
+    monkeypatch.setattr(
+        discovery_mod, "_await_close_result", _await_close_result_passthrough
+    )
     monkeypatch.setattr(discovery_mod.asyncio, "wait_for", _wait_for_passthrough)
 
     _close_discovery_client_best_effort(_Client())
@@ -1347,7 +1358,7 @@ def test_ble_interface_sanitize_address_wrapper_delegates(
     assert iface._sanitize_address("AA-BB-CC-DD-EE-FF") == "normalized"
 
 
-def test_discovery_manager_destructor_does_not_close_client():
+def test_discovery_manager_destructor_does_not_close_client() -> None:
     """DiscoveryManager.__del__ should avoid active client close I/O during GC."""
 
     class StubDiscoveryClient:
@@ -1358,14 +1369,14 @@ def test_discovery_manager_destructor_does_not_close_client():
         close()
         """
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize the test stub and reset its close-call counter.
 
             Sets the `close_calls` attribute to 0; tests increment this counter when the stub's `close()` is invoked to verify that discovery clients are not closed unexpectedly.
             """
             self.close_calls = 0
 
-        def close(self):
+        def close(self) -> None:
             """Record that the client's close method was invoked by incrementing an internal call counter.
 
             This method exists for tests to track how many times close() was called on the object by incrementing the `close_calls` attribute.

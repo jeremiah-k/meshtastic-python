@@ -451,7 +451,9 @@ def test_log_set_init_raises_collision_error_after_retry_exhaustion(
     mkdir_mock = MagicMock(side_effect=FileExistsError("collision"))
     monkeypatch.setattr("meshtastic.slog.slog.Path.mkdir", mkdir_mock)
 
-    with pytest.raises(slog_module.SlogDirectoryCollisionError, match="after 3 attempts"):
+    with pytest.raises(
+        slog_module.SlogDirectoryCollisionError, match="after 3 attempts"
+    ):
         LogSet(MagicMock(), dir_name=None)
 
     assert mkdir_mock.call_count == 3

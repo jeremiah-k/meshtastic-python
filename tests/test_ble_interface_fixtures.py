@@ -106,6 +106,7 @@ def mock_publishing_thread(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
     Returns
     -------
+    types.ModuleType
         The mocked publishingThread module inserted into sys.modules.
     """
     publishing_thread_module: Any = types.ModuleType("publishingThread")
@@ -186,7 +187,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         is_connected()
         """
 
-        def __init__(self, address=None, **_kwargs):
+        def __init__(self, address: str | None = None, **_kwargs: Any) -> None:
             """Initialize a minimal test BLE client with an associated address and a lightweight services shim.
 
             Parameters
@@ -203,7 +204,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             self.address = address
             self.services = SimpleNamespace(get_characteristic=lambda _specifier: None)
 
-        async def connect(self, **_kwargs):
+        async def connect(self, **_kwargs: Any) -> None:
             """Stub connect used in tests that ignores any keyword arguments.
 
             This no-op implementation accepts arbitrary keyword arguments and performs no action.
@@ -220,18 +221,18 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return None
 
-        async def disconnect(self, **_kwargs):
+        async def disconnect(self, **_kwargs: Any) -> None:
             """No-op disconnect that ignores any provided keyword arguments."""
             return None
 
-        async def start_notify(self, *_args, **_kwargs):
+        async def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
             """Compatibility shim for the bleak start_notify API.
 
             Accepts and ignores positional and keyword arguments typically passed to `start_notify` (char_specifier, callback, *args, **kwargs) and performs no action.
             """
             return None
 
-        async def read_gatt_char(self, *_args, **_kwargs):
+        async def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
             """Provide an empty value for any GATT characteristic read.
 
             Returns
@@ -241,11 +242,11 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return b""
 
-        async def write_gatt_char(self, *_args, **_kwargs):
+        async def write_gatt_char(self, *_args: Any, **_kwargs: Any) -> None:
             """Accept any positional and keyword arguments and perform no action."""
             return None
 
-        def is_connected(self):
+        def is_connected(self) -> bool:
             """Report whether the client is connected.
 
             This dummy implementation always reports the client as disconnected.
@@ -257,7 +258,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """
             return False
 
-    async def _stub_discover(**_kwargs):
+    async def _stub_discover(**_kwargs: Any) -> list[Any]:
         """Simulate BLE device discovery for tests when no devices are present.
 
         Parameters
@@ -275,7 +276,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     class _StubBLEDevice:
         """Minimal BLEDevice test double."""
 
-        def __init__(self, address=None, name=None):
+        def __init__(self, address: str | None = None, name: str | None = None) -> None:
             """Create a minimal BLE device representation with an optional address and name.
 
             Parameters
@@ -291,11 +292,11 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     class _StubBleakScanner:
         """Minimal BleakScanner test double."""
 
-        def __init__(self):
+        def __init__(self) -> None:
             """Initialize a BleakScanner stub that reports no BLE devices."""
 
         @staticmethod
-        async def discover(**_kwargs):
+        async def discover(**_kwargs: Any) -> list[Any]:
             """Simulate BLE device discovery.
 
             Returns
@@ -407,14 +408,14 @@ class DummyClient:
         """
         return False
 
-    def start_notify(self, *_args, **_kwargs):
+    def start_notify(self, *_args: Any, **_kwargs: Any) -> None:
         """Simulate subscribing to a BLE characteristic notification for tests.
 
         Accepts any arguments and performs no action.
         """
         return None
 
-    def stopNotify(self, *args, **_kwargs):
+    def stopNotify(self, *args: Any, **_kwargs: Any) -> None:
         """Simulate unsubscribing from BLE notifications during tests.
 
         When a positional characteristic argument is provided, appends the first positional argument to the instance's stop_notify_calls list for later inspection.
@@ -423,11 +424,11 @@ class DummyClient:
             self.stop_notify_calls.append(args[0])
         return None
 
-    def stop_notify(self, *args, **kwargs):
+    def stop_notify(self, *args: Any, **kwargs: Any) -> None:
         """Backward-compatible snake_case alias for stopNotify."""
         return self.stopNotify(*args, **kwargs)
 
-    def read_gatt_char(self, *_args, **_kwargs) -> bytes:
+    def read_gatt_char(self, *_args: Any, **_kwargs: Any) -> bytes:
         """Provide a fixed empty-bytes response for any GATT characteristic read.
 
         Returns
@@ -457,7 +458,7 @@ class DummyClient:
         """
         return self.isConnected()
 
-    def disconnect(self, *_args, **_kwargs):
+    def disconnect(self, *_args: Any, **_kwargs: Any) -> None:
         """Record a disconnect invocation and optionally raise a configured exception.
 
         Increments the instance's `disconnect_calls` counter. If `disconnect_exception` is set, that exception is raised instead of returning normally.
@@ -471,14 +472,14 @@ class DummyClient:
         if self.disconnect_exception:
             raise self.disconnect_exception
 
-    def close(self):
+    def close(self) -> None:
         """Record that the client was closed.
 
         Increments the internal `close_calls` counter so tests can assert how many times `close()` was invoked.
         """
         self.close_calls += 1
 
-    def _get_services(self):
+    def _get_services(self) -> SimpleNamespace:
         """Stub for _get_services."""
         return self.services
 

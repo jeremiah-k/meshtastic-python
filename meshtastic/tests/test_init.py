@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import create_autospec
 
 import pytest
+import serial as pyserial  # type: ignore[import-untyped]
 
 import meshtastic
 from meshtastic import (
@@ -17,7 +18,6 @@ from meshtastic import (
     _on_text_receive,
     _receive_info_update,
     mt_config,
-    serial_interface,
 )
 
 from ..mesh_interface import MeshInterface
@@ -25,12 +25,12 @@ from ..serial_interface import SerialInterface
 
 
 @pytest.mark.unit
-def test_init_serial_alias_points_to_internal_module(
+def test_init_serial_alias_points_to_pyserial_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify meshtastic.serial resolves to the internal serial_interface module."""
+    """Verify meshtastic.serial resolves to the third-party pyserial module."""
     monkeypatch.delattr(meshtastic, "serial", raising=False)
-    assert meshtastic.serial is serial_interface
+    assert meshtastic.serial is pyserial
 
 
 @pytest.mark.unit
@@ -218,12 +218,12 @@ def test_init_on_admin_receive_uses_sentinel_when_object_redaction_fails(
         @session_passkey.setter
         def session_passkey(self, _value: bytes) -> None:
             """Reject writes to simulate an immutable field."""
-            raise RuntimeError("session_passkey is read-only")  # noqa: TRY003 - intentional immutable sentinel
+            raise RuntimeError("session_passkey is read-only")
 
         def __delattr__(self, name: str) -> None:
             """Reject deletion of the session passkey attribute."""
             if name == "session_passkey":
-                raise RuntimeError("cannot delete session_passkey")  # noqa: TRY003 - intentional immutable sentinel
+                raise RuntimeError("cannot delete session_passkey")
             super().__delattr__(name)
 
         def __deepcopy__(self, _memo: dict[int, Any]) -> "_UnredactableRaw":
@@ -259,7 +259,7 @@ def test_init_on_admin_receive_uses_delattr_fallback_when_assignment_fails(
 
         def __setattr__(self, name: str, value: Any) -> None:
             if name == "session_passkey" and hasattr(self, "session_passkey"):
-                raise RuntimeError("session_passkey is immutable")  # noqa: TRY003 - intentional test sentinel
+                raise RuntimeError("session_passkey is immutable")
             object.__setattr__(self, name, value)
 
     iface = iface_with_nodes
@@ -445,9 +445,9 @@ def test_init_getattr_caches_serial_on_first_access(
 
     # First access should trigger lazy load.
     serial = meshtastic.serial
-    assert serial is serial_interface
+    assert serial is pyserial
 
     # Second access should use cached value.
     serial2 = meshtastic.serial
     assert serial2 is serial
-    assert serial2 is serial_interface
+    assert serial2 is pyserial

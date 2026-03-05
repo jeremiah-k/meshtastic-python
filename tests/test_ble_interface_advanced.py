@@ -29,6 +29,8 @@ from meshtastic.protobuf import mesh_pb2
 # Import common fixtures
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
+pytestmark = pytest.mark.unit
+
 
 def _get_connect_stub_calls(iface: BLEInterface) -> list[str | None]:
     """Retrieve the test-only list of addresses recorded for BLEInterface.connect calls.
@@ -449,8 +451,10 @@ def test_send_to_radio_specific_exceptions(
     iface3.close()
 
 
-@pytest.mark.slow
-def test_rapid_connect_disconnect_stress_test(caplog):
+@pytest.mark.unitslow
+def test_rapid_connect_disconnect_stress_test(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test rapid connect/disconnect cycles to validate thread-safety and reconnect logic."""
     # logging, threading, and time already imported at top
     # MagicMock, patch already imported at top
@@ -589,7 +593,13 @@ def test_rapid_connect_disconnect_stress_test(caplog):
     ):
         """Create and yield a BLEInterface configured for stress testing with auto-reconnect enabled.
 
-        Patches BLEInterface.scan and BLEInterface.connect so the interface discovers a mocked device and receives a StressTestClient. Yields a tuple (iface, client). On generator exit the interface is closed and all patches are undone.
+        Patches BLEInterface.connect so the interface receives a StressTestClient.
+        The interface is created with an explicit address to exercise reconnect
+        scheduling against a concrete target address. Discovery is bypassed in
+        this helper because connect is patched; BLEInterface.scan is intentionally
+        left unpatched. Yields a tuple
+        `(iface, client)`. On generator exit the interface is closed and all
+        patches are undone.
 
         Yields
         ------
@@ -602,11 +612,6 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         connect_calls: list[str | None] = []
 
         stack = ExitStack()
-
-        # Mock the scan method to return our test device
-        stack.enter_context(
-            patch.object(BLEInterface, "scan", return_value=[mock_device])
-        )
 
         def _patched_connect(
             self: BLEInterface,
@@ -639,7 +644,7 @@ def test_rapid_connect_disconnect_stress_test(caplog):
         iface = None
         try:
             iface = BLEInterface(
-                address=None,  # Required positional argument
+                address=mock_device.address,
                 noProto=True,
                 auto_reconnect=True,
             )

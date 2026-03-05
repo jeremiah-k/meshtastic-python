@@ -20,6 +20,8 @@ from hypothesis import strategies as st
 
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
+pytestmark = pytest.mark.unit
+
 
 @contextmanager
 def _suppress_ble_debug_logs() -> Generator[None, None, None]:
