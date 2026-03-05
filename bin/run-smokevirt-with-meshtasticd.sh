@@ -26,7 +26,7 @@ require_regex() {
 
 cleanup() {
 	local exit_code=$?
-	if [[ ${LOGS_PRINTED} == false ]] && docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
+	if ((exit_code != 0)) && [[ ${LOGS_PRINTED} == false ]] && docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}) ====="
 		docker logs "${MESHTASTICD_CONTAINER}" || true
 	fi
@@ -43,6 +43,11 @@ trap cleanup EXIT
 
 if ! command -v docker >/dev/null 2>&1; then
 	echo "docker is required to run smokevirt against meshtasticd." >&2
+	exit 1
+fi
+
+if ! command -v poetry >/dev/null 2>&1; then
+	echo "poetry is required to run smokevirt against meshtasticd." >&2
 	exit 1
 fi
 

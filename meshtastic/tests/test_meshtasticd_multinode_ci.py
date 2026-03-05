@@ -1,4 +1,8 @@
-"""Dual-daemon meshtasticd integration checks for CI."""
+"""Dual-daemon meshtasticd integration checks for CI.
+
+This module validates admin operations and configuration reuse across two
+meshtasticd simulator instances.
+"""
 
 import os
 import re
@@ -45,7 +49,15 @@ INFO_CHANNEL_LINE_RE = re.compile(
 def _wait_for_host_ready(
     host: str, timeout_seconds: float = HOST_READY_TIMEOUT_SECONDS
 ) -> None:
-    """Wait until host responds successfully to --info."""
+    """Wait until a host responds successfully to ``--info``.
+
+    Parameters
+    ----------
+    host : str
+        Host passed to the CLI ``--host`` argument.
+    timeout_seconds : float, optional
+        Maximum number of seconds to wait for readiness.
+    """
     deadline = time.monotonic() + timeout_seconds
     last_returncode: int | None = None
     last_output = ""
@@ -68,7 +80,18 @@ def _wait_for_host_ready(
 
 
 def _extract_channel_names(info_output: str) -> dict[int, str]:
-    """Extract index->name mapping from the --info channels table."""
+    """Extract channel index/name pairs from ``--info`` output.
+
+    Parameters
+    ----------
+    info_output : str
+        CLI ``--info`` output that includes the channels table.
+
+    Returns
+    -------
+    dict[int, str]
+        Mapping from channel index to configured channel name.
+    """
     channels: dict[int, str] = {}
     for match in INFO_CHANNEL_LINE_RE.finditer(info_output):
         channels[int(match.group("idx"))] = match.group("name")
@@ -76,7 +99,18 @@ def _extract_channel_names(info_output: str) -> dict[int, str]:
 
 
 def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, str]]:
-    """Extract (index, name) identities from exported channel config."""
+    """Extract channel identity tuples from exported channel config.
+
+    Parameters
+    ----------
+    channels : list[Any]
+        ``channels`` list loaded from exported YAML config.
+
+    Returns
+    -------
+    set[tuple[int, str]]
+        Set of ``(index, name)`` tuples for each exported channel.
+    """
     identities: set[tuple[int, str]] = set()
     for channel in channels:
         assert isinstance(channel, dict)
@@ -104,7 +138,18 @@ def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, 
 
 
 def _configure_channel_blueprint(host: str) -> dict[int, str]:
-    """Configure 8 channels with deterministic names/settings on one daemon."""
+    """Configure deterministic channel settings on one daemon.
+
+    Parameters
+    ----------
+    host : str
+        Host passed to the CLI ``--host`` argument.
+
+    Returns
+    -------
+    dict[int, str]
+        Mapping from channel index to expected channel name after configure.
+    """
     _run_host_cli_ok(host, "--set", "lora.region", LORA_REGION)
     _run_host_cli_ok(host, "--set", "lora.channel_num", LORA_CHANNEL_NUM)
     _run_host_cli_ok(host, "--ch-set", "name", PRIMARY_CHANNEL_NAME, "--ch-index", "0")
@@ -196,7 +241,13 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
 
 
 def _assert_admin_commands(host: str) -> None:
-    """Admin and sendtext operations should succeed on one daemon instance."""
+    """Assert basic admin-related CLI operations succeed on one host.
+
+    Parameters
+    ----------
+    host : str
+        Host passed to the CLI ``--host`` argument.
+    """
     metadata_output = _run_host_cli_ok(host, "--device-metadata")
     assert "firmware_version:" in metadata_output
     get_output = _run_host_cli_ok(host, "--get", "lora.region")
@@ -208,7 +259,13 @@ def _assert_admin_commands(host: str) -> None:
 def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     tmp_path: Path,
 ) -> None:
-    """Exercise admin commands, then export/restore config across two simulators."""
+    """Exercise admin commands, then export/restore config across two simulators.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory used for exported YAML files.
+    """
     _wait_for_host_ready(HOST_A)
     _wait_for_host_ready(HOST_B)
 

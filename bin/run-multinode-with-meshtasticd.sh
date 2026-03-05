@@ -36,8 +36,10 @@ cleanup() {
 	local exit_code=$?
 	for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
 		if docker ps -a --format '{{.Names}}' | grep -Fxq "${container}"; then
-			echo "===== meshtasticd logs (${container}) ====="
-			docker logs "${container}" || true
+			if ((exit_code != 0)); then
+				echo "===== meshtasticd logs (${container}) ====="
+				docker logs "${container}" || true
+			fi
 			docker rm -f "${container}" >/dev/null || true
 		fi
 	done
@@ -54,6 +56,11 @@ trap cleanup EXIT
 
 if ! command -v docker >/dev/null 2>&1; then
 	echo "docker is required to run multinode meshtasticd integration checks." >&2
+	exit 1
+fi
+
+if ! command -v poetry >/dev/null 2>&1; then
+	echo "poetry is required to run multinode meshtasticd integration checks." >&2
 	exit 1
 fi
 
@@ -157,26 +164,42 @@ wait_for_ready() {
 wait_for_parallel_failfast() {
 	local pid_a=$1
 	local pid_b=$2
-	local first_done_pid=""
-	local first_status=0
+	local done_pid=""
+	local done_status=0
 	local other_pid=""
 
-	if wait -n -p first_done_pid "${pid_a}" "${pid_b}"; then
-		first_status=0
-	else
-		first_status=$?
-	fi
+	while :; do
+		if ! kill -0 "${pid_a}" 2>/dev/null; then
+			done_pid="${pid_a}"
+			if wait "${pid_a}"; then
+				done_status=0
+			else
+				done_status=$?
+			fi
+			break
+		fi
+		if ! kill -0 "${pid_b}" 2>/dev/null; then
+			done_pid="${pid_b}"
+			if wait "${pid_b}"; then
+				done_status=0
+			else
+				done_status=$?
+			fi
+			break
+		fi
+		sleep 0.2
+	done
 
-	if [[ ${first_done_pid} == "${pid_a}" ]]; then
+	if [[ ${done_pid} == "${pid_a}" ]]; then
 		other_pid="${pid_b}"
 	else
 		other_pid="${pid_a}"
 	fi
 
-	if ((first_status != 0)); then
+	if ((done_status != 0)); then
 		kill "${other_pid}" 2>/dev/null || true
 		wait "${other_pid}" 2>/dev/null || true
-		return "${first_status}"
+		return "${done_status}"
 	fi
 
 	wait "${other_pid}"

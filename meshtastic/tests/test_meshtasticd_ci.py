@@ -1,14 +1,39 @@
 """Stable meshtasticd integration checks for CI."""
 
 import re
+import time
 from pathlib import Path
 
 import pytest
 import yaml
 
-from .cli_test_utils import _run_host_cli_ok
+from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = pytest.mark.int
+
+HOST_READY_TIMEOUT_SECONDS = 45.0
+HOST_READY_POLL_TIMEOUT_SECONDS = 10
+
+
+def _wait_for_host_ready(host: str, meshtastic_bin: str) -> None:
+    """Wait for a host to return a successful ``--info`` response."""
+    deadline = time.monotonic() + HOST_READY_TIMEOUT_SECONDS
+    last_output = ""
+    while time.monotonic() < deadline:
+        returncode, output = _run_host_cli(
+            host,
+            "--info",
+            timeout=HOST_READY_POLL_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
+        )
+        if returncode == 0 and output.startswith("Connected to radio"):
+            return
+        last_output = output
+        time.sleep(1)
+    pytest.fail(
+        f"{host} did not become ready in {HOST_READY_TIMEOUT_SECONDS}s."
+        f"\nLast output:\n{last_output}"
+    )
 
 
 def test_meshtasticd_info_has_core_sections(meshtastic_bin: str) -> None:
@@ -62,6 +87,7 @@ def test_meshtasticd_export_and_configure_roundtrip(
         )
         assert "Writing modified configuration to device" in configure_output
 
+        _wait_for_host_ready("localhost", meshtastic_bin)
         info_output = _run_host_cli_ok(
             "localhost",
             "--info",
@@ -77,6 +103,7 @@ def test_meshtasticd_export_and_configure_roundtrip(
             meshtastic_bin=meshtastic_bin,
         )
         assert "Writing modified configuration to device" in restore_output
+        _wait_for_host_ready("localhost", meshtastic_bin)
 
 
 def test_meshtasticd_get_and_sendtext_paths(meshtastic_bin: str) -> None:
