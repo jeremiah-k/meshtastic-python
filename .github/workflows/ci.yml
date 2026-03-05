@@ -160,6 +160,26 @@ jobs:
       - *install_local_step
       - name: Run meshtasticd integration tests against simulator
         run: ./bin/run-smokevirt-with-meshtasticd.sh
+  meshtasticd-multinode-integration:
+    name: meshtasticd Multinode Integration (py3.13)
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+      MESHTASTICD_IMAGE: meshtastic/meshtasticd:latest
+      MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
+      MESHTASTICD_HOST_A: localhost:4403
+      MESHTASTICD_HOST_B: localhost:4404
+      MESHTASTICD_HWID_A: "11"
+      MESHTASTICD_HWID_B: "22"
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
+      - name: Run dual-daemon meshtasticd integration tests
+        run: ./bin/run-multinode-with-meshtasticd.sh
   # Fast install sanity check across Python versions.
   # Full tests run in the tests job above.
   # Lint/type checks run in dedicated jobs for earlier independent failures.

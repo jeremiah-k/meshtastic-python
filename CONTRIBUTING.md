@@ -117,6 +117,17 @@ To run the `meshtasticd` simulator integration lane locally (same flow as CI):
 This requires Docker and runs stable daemon-focused integration tests in
 `meshtastic/tests/test_meshtasticd_ci.py` against a simulated localhost daemon.
 
+To run the dual-daemon integration lane locally (channel blueprint/export reuse
+and admin checks across two simulator instances):
+
+```bash
+./bin/run-multinode-with-meshtasticd.sh
+```
+
+This uses Linux host networking, starts two `meshtasticd` simulators on
+`localhost:4403` and `localhost:4404`, and runs
+`meshtastic/tests/test_meshtasticd_multinode_ci.py`.
+
 To run the full legacy smokevirt suite manually:
 
 ```bash

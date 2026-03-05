@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:latest}"
+MESHTASTICD_CONTAINER_A="${MESHTASTICD_CONTAINER_A:-meshtasticd-multinode-a}"
+MESHTASTICD_CONTAINER_B="${MESHTASTICD_CONTAINER_B:-meshtasticd-multinode-b}"
+MESHTASTICD_HOST_A="${MESHTASTICD_HOST_A:-localhost:4403}"
+MESHTASTICD_HOST_B="${MESHTASTICD_HOST_B:-localhost:4404}"
+MESHTASTICD_PORT_A="${MESHTASTICD_PORT_A:-4403}"
+MESHTASTICD_PORT_B="${MESHTASTICD_PORT_B:-4404}"
+MESHTASTICD_HWID_A="${MESHTASTICD_HWID_A:-11}"
+MESHTASTICD_HWID_B="${MESHTASTICD_HWID_B:-22}"
+MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-180}"
+READY_LOG_A="${READY_LOG_A:-/tmp/meshtasticd-multinode-a-ready.log}"
+READY_LOG_B="${READY_LOG_B:-/tmp/meshtasticd-multinode-b-ready.log}"
+SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
+MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_multinode_ci.py}"
+MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR:-int}"
+EXTRA_PYTEST_ARGS=()
+PYTEST_TARGETS=()
+
+cleanup() {
+	local exit_code=$?
+	for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
+		if docker ps -a --format '{{.Names}}' | grep -Fxq "${container}"; then
+			echo "===== meshtasticd logs (${container}) ====="
+			docker logs "${container}" || true
+			docker rm -f "${container}" >/dev/null || true
+		fi
+	done
+	exit "${exit_code}"
+}
+
+trap cleanup EXIT
+
+if ! command -v docker >/dev/null 2>&1; then
+	echo "docker is required to run multinode meshtasticd integration checks." >&2
+	exit 1
+fi
+
+OS_NAME="$(uname -s)"
+if [[ ${OS_NAME} != "Linux" ]]; then
+	echo "multinode meshtasticd runner currently requires Linux host networking." >&2
+	exit 1
+fi
+
+rm -f "${READY_LOG_A}" "${READY_LOG_B}"
+docker rm -f "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}" >/dev/null 2>&1 || true
+
+if ! docker pull "${MESHTASTICD_IMAGE}"; then
+	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" ]]; then
+		echo "Failed to pull ${MESHTASTICD_IMAGE}, retrying with meshtastic/meshtasticd:beta"
+		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
+		docker pull "${MESHTASTICD_IMAGE}"
+	else
+		echo "Failed to pull ${MESHTASTICD_IMAGE}" >&2
+		exit 1
+	fi
+fi
+
+docker run -d \
+	--name "${MESHTASTICD_CONTAINER_A}" \
+	--network host \
+	"${MESHTASTICD_IMAGE}" \
+	sh -lc "meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p ${MESHTASTICD_PORT_A} -h ${MESHTASTICD_HWID_A}" >/dev/null
+docker run -d \
+	--name "${MESHTASTICD_CONTAINER_B}" \
+	--network host \
+	"${MESHTASTICD_IMAGE}" \
+	sh -lc "meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p ${MESHTASTICD_PORT_B} -h ${MESHTASTICD_HWID_B}" >/dev/null
+
+wait_for_ready() {
+	local host=$1
+	local container=$2
+	local ready_log_file=$3
+	local deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS))
+
+	until poetry run meshtastic --timeout 5 --host "${host}" --info >"${ready_log_file}" 2>&1; do
+		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
+			echo "${container} exited before becoming ready." >&2
+			docker logs "${container}" >&2 || true
+			return 1
+		fi
+		if ((SECONDS >= deadline)); then
+			echo "${container} did not become ready within ${MESHTASTICD_READY_TIMEOUT_SECONDS}s." >&2
+			echo "===== readiness output (${host}) =====" >&2
+			cat "${ready_log_file}" >&2 || true
+			docker logs "${container}" >&2 || true
+			return 1
+		fi
+		sleep 2
+	done
+}
+
+wait_for_ready "${MESHTASTICD_HOST_A}" "${MESHTASTICD_CONTAINER_A}" "${READY_LOG_A}"
+wait_for_ready "${MESHTASTICD_HOST_B}" "${MESHTASTICD_CONTAINER_B}" "${READY_LOG_B}"
+
+wait_for_log_pattern() {
+	local container=$1
+	local pattern=$2
+	local timeout_seconds=${3:-30}
+	local deadline=$((SECONDS + timeout_seconds))
+
+	while ((SECONDS < deadline)); do
+		if docker logs "${container}" 2>&1 | grep -Fq "${pattern}"; then
+			return 0
+		fi
+		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
+			echo "${container} exited while waiting for log pattern '${pattern}'." >&2
+			docker logs "${container}" >&2 || true
+			return 1
+		fi
+		sleep 1
+	done
+
+	echo "${container} did not emit expected log pattern '${pattern}' within ${timeout_seconds}s." >&2
+	docker logs "${container}" >&2 || true
+	return 1
+}
+
+for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
+	wait_for_log_pattern "${container}" "Start multicast thread" 30
+done
+
+if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
+	read -r -a EXTRA_PYTEST_ARGS <<<"${SMOKEVIRT_PYTEST_ARGS}"
+fi
+
+read -r -a PYTEST_TARGETS <<<"${MESHTASTICD_PYTEST_TARGETS}"
+if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
+	echo "MESHTASTICD_PYTEST_TARGETS must not be empty." >&2
+	exit 1
+fi
+
+PYTEST_CMD=(poetry run pytest -m "${MESHTASTICD_PYTEST_MARK_EXPR}")
+PYTEST_CMD+=("${PYTEST_TARGETS[@]}")
+PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
+MESHTASTICD_HOST_A="${MESHTASTICD_HOST_A}" MESHTASTICD_HOST_B="${MESHTASTICD_HOST_B}" "${PYTEST_CMD[@]}"
