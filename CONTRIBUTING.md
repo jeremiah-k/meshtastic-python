@@ -117,8 +117,8 @@ To run the `meshtasticd` simulator integration lane locally (same flow as CI):
 This requires Docker and runs stable daemon-focused integration tests in
 `meshtastic/tests/test_meshtasticd_ci.py` against a simulated localhost daemon.
 
-To run the dual-daemon integration lane locally (channel blueprint/export reuse
-and admin checks across two simulator instances):
+To run the dual-daemon integration lane locally (Linux only; channel
+blueprint/export reuse and admin checks across two simulator instances):
 
 ```bash
 ./bin/run-multinode-with-meshtasticd.sh
@@ -148,10 +148,10 @@ poetry run mypy meshtastic/ --strict
 - `bin/run-ci-local.sh` is the canonical local runner and reads `LOCAL_PYTHON_VERSION` (default defined in that script).
 - on Linux: `./bin/run-ci-local.sh`
 - on Windows (Git Bash/WSL, POSIX shell syntax):
-  - linux checks (linux docker): `LOCAL_PYTHON_VERSION=3.13 ./bin/run-ci-local.sh`
+  - Linux checks (Linux Docker): `LOCAL_PYTHON_VERSION=3.13 ./bin/run-ci-local.sh`
   - Windows checks (Windows host): `act -P windows-latest=-self-hosted --matrix "python-version:${LOCAL_PYTHON_VERSION:-3.13}"`
 - on Windows (PowerShell):
-  - linux checks (linux docker): `$env:LOCAL_PYTHON_VERSION = "3.13"; ./bin/run-ci-local.sh`
+  - Linux checks (Linux Docker): `$env:LOCAL_PYTHON_VERSION = "3.13"; ./bin/run-ci-local.sh`
   - Windows checks (Windows host): `$env:LOCAL_PYTHON_VERSION = "3.13"; act -P windows-latest=-self-hosted --matrix "python-version:$env:LOCAL_PYTHON_VERSION"`
 
 The `-P ...=-self-hosted` mapping is optional. It tells `act` to run that job on

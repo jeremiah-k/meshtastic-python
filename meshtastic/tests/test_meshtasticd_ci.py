@@ -53,15 +53,15 @@ def test_meshtasticd_export_and_configure_roundtrip(
         yaml.safe_dump(mutated_data, sort_keys=False), encoding="utf-8"
     )
 
-    configure_output = _run_host_cli_ok(
-        "localhost",
-        "--configure",
-        str(mutated_path),
-        meshtastic_bin=meshtastic_bin,
-    )
-    assert "Writing modified configuration to device" in configure_output
-
     try:
+        configure_output = _run_host_cli_ok(
+            "localhost",
+            "--configure",
+            str(mutated_path),
+            meshtastic_bin=meshtastic_bin,
+        )
+        assert "Writing modified configuration to device" in configure_output
+
         info_output = _run_host_cli_ok(
             "localhost",
             "--info",

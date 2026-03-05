@@ -65,6 +65,17 @@ require_regex "${MESHTASTICD_PORT_B}" '^[0-9]+$' "MESHTASTICD_PORT_B"
 require_regex "${MESHTASTICD_HWID_A}" '^[0-9]+$' "MESHTASTICD_HWID_A"
 require_regex "${MESHTASTICD_HWID_B}" '^[0-9]+$' "MESHTASTICD_HWID_B"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
+MESHTASTICD_PORT_A_DEC=$((10#${MESHTASTICD_PORT_A}))
+MESHTASTICD_PORT_B_DEC=$((10#${MESHTASTICD_PORT_B}))
+MESHTASTICD_READY_TIMEOUT_SECONDS_DEC=$((10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
+if ((MESHTASTICD_PORT_A_DEC < 1 || MESHTASTICD_PORT_A_DEC > 65535)); then
+	echo "MESHTASTICD_PORT_A must be between 1 and 65535." >&2
+	exit 1
+fi
+if ((MESHTASTICD_PORT_B_DEC < 1 || MESHTASTICD_PORT_B_DEC > 65535)); then
+	echo "MESHTASTICD_PORT_B must be between 1 and 65535." >&2
+	exit 1
+fi
 if [[ -z ${READY_LOG_A} || ${READY_LOG_A} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_A path." >&2
 	exit 1
@@ -73,7 +84,7 @@ if [[ -z ${READY_LOG_B} || ${READY_LOG_B} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_B path." >&2
 	exit 1
 fi
-if ((MESHTASTICD_READY_TIMEOUT_SECONDS <= 0)); then
+if ((MESHTASTICD_READY_TIMEOUT_SECONDS_DEC <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
 fi
@@ -96,18 +107,18 @@ docker run -d \
 	--name "${MESHTASTICD_CONTAINER_A}" \
 	--network host \
 	"${MESHTASTICD_IMAGE}" \
-	meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p "${MESHTASTICD_PORT_A}" -h "${MESHTASTICD_HWID_A}" >/dev/null
+	meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p "${MESHTASTICD_PORT_A_DEC}" -h "${MESHTASTICD_HWID_A}" >/dev/null
 docker run -d \
 	--name "${MESHTASTICD_CONTAINER_B}" \
 	--network host \
 	"${MESHTASTICD_IMAGE}" \
-	meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p "${MESHTASTICD_PORT_B}" -h "${MESHTASTICD_HWID_B}" >/dev/null
+	meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p "${MESHTASTICD_PORT_B_DEC}" -h "${MESHTASTICD_HWID_B}" >/dev/null
 
 wait_for_ready() {
 	local host=$1
 	local container=$2
 	local ready_log_file=$3
-	local deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS))
+	local deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS_DEC))
 
 	until poetry run meshtastic --timeout 5 --host "${host}" --info >"${ready_log_file}" 2>&1; do
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
@@ -166,6 +177,7 @@ for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
 done
 
 if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
+	# Intentionally whitespace-split; keep args as simple tokens.
 	read -r -a EXTRA_PYTEST_ARGS <<<"${SMOKEVIRT_PYTEST_ARGS}"
 fi
 
@@ -177,5 +189,7 @@ fi
 
 PYTEST_CMD=(poetry run pytest -m "${MESHTASTICD_PYTEST_MARK_EXPR}")
 PYTEST_CMD+=("${PYTEST_TARGETS[@]}")
-PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
+if [[ ${#EXTRA_PYTEST_ARGS[@]} -gt 0 ]]; then
+	PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
+fi
 MESHTASTICD_HOST_A="${MESHTASTICD_HOST_A}" MESHTASTICD_HOST_B="${MESHTASTICD_HOST_B}" "${PYTEST_CMD[@]}"

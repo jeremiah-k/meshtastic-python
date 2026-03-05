@@ -4,6 +4,7 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -26,24 +27,43 @@ SECONDARY_CHANNEL_NAMES = [
 ]
 CONFIGURED_OWNER = "CI Multinode"
 CONFIGURED_OWNER_SHORT = "CIM"
+LORA_REGION = "US"
+LORA_CHANNEL_NUM = "20"
+POSITION_PRECISION_DISABLED = "0"
+POSITION_PRECISION_DEFAULT = "13"
+HOST_READY_TIMEOUT_SECONDS = 60.0
+HOST_READY_POLL_CLI_TIMEOUT_SECONDS = 10
+HOST_CONFIGURE_TIMEOUT_SECONDS = 45
+HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS = 90.0
+MIN_CHANNEL_URL_LENGTH = 120
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
 )
 
 
-def _wait_for_host_ready(host: str, timeout_seconds: float = 60.0) -> None:
+def _wait_for_host_ready(
+    host: str, timeout_seconds: float = HOST_READY_TIMEOUT_SECONDS
+) -> None:
     """Wait until host responds successfully to --info."""
     deadline = time.monotonic() + timeout_seconds
+    last_returncode: int | None = None
     last_output = ""
     while time.monotonic() < deadline:
-        returncode, output = _run_host_cli(host, "--info", timeout=10)
+        returncode, output = _run_host_cli(
+            host,
+            "--info",
+            timeout=HOST_READY_POLL_CLI_TIMEOUT_SECONDS,
+        )
         if returncode == 0 and "Connected to radio" in output:
             return
+        last_returncode = returncode
         last_output = output
         time.sleep(1)
     pytest.fail(
-        f"{host} did not become ready in {timeout_seconds}s.\nLast output:\n{last_output}"
+        f"{host} did not become ready in {timeout_seconds}s."
+        f"\nLast return code: {last_returncode}"
+        f"\nLast output:\n{last_output}"
     )
 
 
@@ -55,16 +75,44 @@ def _extract_channel_names(info_output: str) -> dict[int, str]:
     return channels
 
 
+def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, str]]:
+    """Extract (index, name) identities from exported channel config."""
+    identities: set[tuple[int, str]] = set()
+    for channel in channels:
+        assert isinstance(channel, dict)
+        index_value = channel.get("index")
+        if isinstance(index_value, int):
+            index = index_value
+        else:
+            assert isinstance(index_value, str)
+            assert index_value.isdigit()
+            index = int(index_value)
+
+        name = ""
+        settings = channel.get("settings")
+        if isinstance(settings, dict):
+            settings_name = settings.get("name")
+            if isinstance(settings_name, str):
+                name = settings_name
+        if not name:
+            direct_name = channel.get("name")
+            assert isinstance(direct_name, str)
+            name = direct_name
+
+        identities.add((index, name))
+    return identities
+
+
 def _configure_channel_blueprint(host: str) -> dict[int, str]:
     """Configure 8 channels with deterministic names/settings on one daemon."""
-    _run_host_cli_ok(host, "--set", "lora.region", "US")
-    _run_host_cli_ok(host, "--set", "lora.channel_num", "20")
+    _run_host_cli_ok(host, "--set", "lora.region", LORA_REGION)
+    _run_host_cli_ok(host, "--set", "lora.channel_num", LORA_CHANNEL_NUM)
     _run_host_cli_ok(host, "--ch-set", "name", PRIMARY_CHANNEL_NAME, "--ch-index", "0")
     _run_host_cli_ok(
         host,
         "--ch-set",
         "module_settings.position_precision",
-        "0",
+        POSITION_PRECISION_DISABLED,
         "--ch-index",
         "0",
     )
@@ -76,7 +124,7 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
         host,
         "--ch-set",
         "module_settings.position_precision",
-        "13",
+        POSITION_PRECISION_DEFAULT,
         "--ch-index",
         "1",
     )
@@ -90,7 +138,7 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
             host,
             "--ch-set",
             "module_settings.position_precision",
-            "0",
+            POSITION_PRECISION_DISABLED,
             "--ch-index",
             str(index),
         )
@@ -138,7 +186,11 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
     region_output = _run_host_cli_ok(host, "--get", "lora.region")
     assert re.search(r"^lora\.region:\s+(US|1)$", region_output, re.MULTILINE)
     channel_num_output = _run_host_cli_ok(host, "--get", "lora.channel_num")
-    assert re.search(r"^lora\.channel_num:\s+20$", channel_num_output, re.MULTILINE)
+    assert re.search(
+        rf"^lora\.channel_num:\s+{re.escape(LORA_CHANNEL_NUM)}$",
+        channel_num_output,
+        re.MULTILINE,
+    )
 
     return expected_channel_names
 
@@ -183,10 +235,15 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     )
 
     configure_output = _run_host_cli_ok(
-        HOST_B, "--configure", str(export_path), timeout=45
+        HOST_B,
+        "--configure",
+        str(export_path),
+        timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
     )
     assert "Writing modified configuration to device" in configure_output
-    _wait_for_host_ready(HOST_B, timeout_seconds=90.0)
+    _wait_for_host_ready(
+        HOST_B, timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS
+    )
 
     info_output_b = _run_host_cli_ok(HOST_B, "--info")
     assert re.search(
@@ -195,7 +252,11 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     region_output_b = _run_host_cli_ok(HOST_B, "--get", "lora.region")
     assert re.search(r"^lora\.region:\s+(US|1)$", region_output_b, re.MULTILINE)
     channel_num_output_b = _run_host_cli_ok(HOST_B, "--get", "lora.channel_num")
-    assert re.search(r"^lora\.channel_num:\s+20$", channel_num_output_b, re.MULTILINE)
+    assert re.search(
+        rf"^lora\.channel_num:\s+{re.escape(LORA_CHANNEL_NUM)}$",
+        channel_num_output_b,
+        re.MULTILINE,
+    )
 
     export_path_b = tmp_path / "meshtasticd-multinode-export-b.yaml"
     _run_host_cli_ok(HOST_B, "--export-config", str(export_path_b))
@@ -204,4 +265,19 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     channel_url_b = exported_data_b.get("channel_url")
     assert isinstance(channel_url_b, str)
     assert channel_url_b.startswith("https://meshtastic.org/e/#")
-    assert len(channel_url_b) >= 120
+    assert len(channel_url_b) >= MIN_CHANNEL_URL_LENGTH
+
+    channels_a = exported_data.get("channels")
+    channels_b = exported_data_b.get("channels")
+    if channels_a is None or channels_b is None:
+        assert channels_a is None
+        assert channels_b is None
+    else:
+        assert isinstance(channels_a, list)
+        assert isinstance(channels_b, list)
+        assert len(channels_a) == len(channels_b)
+        identities_a = _extract_exported_channel_identities(channels_a)
+        identities_b = _extract_exported_channel_identities(channels_b)
+        assert len(identities_a) == len(channels_a)
+        assert len(identities_b) == len(channels_b)
+        assert identities_a == identities_b

@@ -11,6 +11,7 @@ MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
+LOGS_PRINTED=false
 
 require_regex() {
 	local value=$1
@@ -24,9 +25,11 @@ require_regex() {
 
 cleanup() {
 	local exit_code=$?
-	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
+	if [[ ${LOGS_PRINTED} == false ]] && docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}) ====="
 		docker logs "${MESHTASTICD_CONTAINER}" || true
+	fi
+	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null || true
 	fi
 	exit "${exit_code}"
@@ -46,7 +49,7 @@ if [[ -z ${READY_LOG_FILE} || ${READY_LOG_FILE} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_FILE path." >&2
 	exit 1
 fi
-if ((MESHTASTICD_READY_TIMEOUT_SECONDS <= 0)); then
+if ((10#${MESHTASTICD_READY_TIMEOUT_SECONDS} <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
 fi
@@ -71,7 +74,7 @@ docker run -d \
 	"${MESHTASTICD_IMAGE}" \
 	meshtasticd -s --fsdir=/var/lib/meshtasticd >/dev/null
 
-deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS))
+deadline=$((SECONDS + 10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
 until poetry run meshtastic --timeout 5 --host localhost --info >"${READY_LOG_FILE}" 2>&1; do
 	if ! docker ps --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		echo "${MESHTASTICD_CONTAINER} exited before becoming ready." >&2
@@ -79,6 +82,7 @@ until poetry run meshtastic --timeout 5 --host localhost --info >"${READY_LOG_FI
 			echo "===== meshtastic readiness output =====" >&2
 			cat "${READY_LOG_FILE}" >&2
 		fi
+		LOGS_PRINTED=true
 		docker logs "${MESHTASTICD_CONTAINER}" >&2 || true
 		exit 1
 	fi
@@ -88,6 +92,7 @@ until poetry run meshtastic --timeout 5 --host localhost --info >"${READY_LOG_FI
 			echo "===== meshtastic readiness output =====" >&2
 			cat "${READY_LOG_FILE}" >&2
 		fi
+		LOGS_PRINTED=true
 		docker logs "${MESHTASTICD_CONTAINER}" >&2 || true
 		exit 1
 	fi
@@ -95,6 +100,7 @@ until poetry run meshtastic --timeout 5 --host localhost --info >"${READY_LOG_FI
 done
 
 if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
+	# Intentionally whitespace-split; keep args as simple tokens.
 	read -r -a EXTRA_PYTEST_ARGS <<<"${SMOKEVIRT_PYTEST_ARGS}"
 fi
 
@@ -121,5 +127,7 @@ if [[ -n ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
 	PYTEST_CMD+=(-m "${MESHTASTICD_PYTEST_MARK_EXPR}")
 fi
 PYTEST_CMD+=("${PYTEST_TARGETS[@]}")
-PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
+if [[ ${#EXTRA_PYTEST_ARGS[@]} -gt 0 ]]; then
+	PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
+fi
 "${PYTEST_CMD[@]}"
