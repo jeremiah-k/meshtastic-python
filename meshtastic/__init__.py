@@ -105,7 +105,7 @@ pub = cast(Any, import_module("pubsub.pub"))
 def __getattr__(name: str) -> Any:
     """Provide lazy access to legacy module attributes.
 
-    When the attribute "serial" is requested, import the internal serial_interface
+    When the attribute "serial" is requested, import the third-party pyserial
     module, cache it on the module globals as "serial", and return it. For any
     other attribute, raise AttributeError.
 
@@ -118,7 +118,7 @@ def __getattr__(name: str) -> Any:
     -------
     Any
         The resolved module object for the requested legacy attribute
-        (e.g., the internal serial_interface for "serial").
+        (e.g., the third-party pyserial module for "serial").
 
     Raises
     ------
@@ -127,9 +127,9 @@ def __getattr__(name: str) -> Any:
     """
     # COMPAT_STABLE_SHIM: preserve historical `meshtastic.serial` module access.
     if name == "serial":
-        # Keep historical `meshtastic.serial` access, but map it to our
-        # internal serial interface module (not the third-party pyserial module).
-        serial_module = import_module(".serial_interface", __name__)
+        # Keep historical `meshtastic.serial` access to the third-party
+        # pyserial module as exposed on master.
+        serial_module = import_module("serial")
         # Cache in module namespace so subsequent accesses bypass __getattr__
         globals()["serial"] = serial_module
         return serial_module

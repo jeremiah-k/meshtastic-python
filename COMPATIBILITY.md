@@ -93,15 +93,15 @@ Semantic deprecation:
 
 ### Core Package and CLI
 
-| Module                | Compatibility symbol                    | Canonical symbol                     |
-| --------------------- | --------------------------------------- | ------------------------------------ |
-| `meshtastic.__init__` | `meshtastic.serial` (lazy module alias) | `meshtastic.serial_interface` module |
-| `meshtastic.__main__` | `support_info()`                        | `supportInfo()`                      |
-| `meshtastic.__main__` | `export_config`                         | `exportConfig`                       |
-| `meshtastic.__main__` | `create_power_meter`                    | `_create_power_meter`                |
-| `meshtastic.__main__` | `_PREFERENCE_FIELD_ALIASES` legacy keys | canonical protobuf preference names  |
-| `meshtastic.version`  | `get_active_version()`                  | `getActiveVersion()`                 |
-| `meshtastic.test`     | `subscribe()`                           | `subscribeToNodeUpdates()`           |
+| Module                | Compatibility symbol                    | Canonical symbol                       |
+| --------------------- | --------------------------------------- | -------------------------------------- |
+| `meshtastic.__init__` | `meshtastic.serial` (lazy module alias) | third-party `serial` (pyserial) module |
+| `meshtastic.__main__` | `support_info()`                        | `supportInfo()`                        |
+| `meshtastic.__main__` | `export_config`                         | `exportConfig`                         |
+| `meshtastic.__main__` | `create_power_meter`                    | `_create_power_meter`                  |
+| `meshtastic.__main__` | `_PREFERENCE_FIELD_ALIASES` legacy keys | canonical protobuf preference names    |
+| `meshtastic.version`  | `get_active_version()`                  | `getActiveVersion()`                   |
+| `meshtastic.test`     | `subscribe()`                           | `subscribeToNodeUpdates()`             |
 
 `_PREFERENCE_FIELD_ALIASES` currently normalizes:
 
