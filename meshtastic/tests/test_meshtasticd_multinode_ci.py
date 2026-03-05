@@ -187,7 +187,7 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
     assert re.search(r"^lora\.region:\s+(US|1)$", region_output, re.MULTILINE)
     channel_num_output = _run_host_cli_ok(host, "--get", "lora.channel_num")
     assert re.search(
-        rf"^lora\.channel_num:\s+{re.escape(LORA_CHANNEL_NUM)}$",
+        rf"^lora\.channel_num:\s+{LORA_CHANNEL_NUM}$",
         channel_num_output,
         re.MULTILINE,
     )
@@ -254,7 +254,7 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     assert re.search(r"^lora\.region:\s+(US|1)$", region_output_b, re.MULTILINE)
     channel_num_output_b = _run_host_cli_ok(HOST_B, "--get", "lora.channel_num")
     assert re.search(
-        rf"^lora\.channel_num:\s+{re.escape(LORA_CHANNEL_NUM)}$",
+        rf"^lora\.channel_num:\s+{LORA_CHANNEL_NUM}$",
         channel_num_output_b,
         re.MULTILINE,
     )

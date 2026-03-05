@@ -65,7 +65,7 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER_A}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER_A"
 require_regex "${MESHTASTICD_CONTAINER_B}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER_B"
-require_regex "${MESHTASTICD_IMAGE}" '^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?$' "MESHTASTICD_IMAGE"
+require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
 require_regex "${MESHTASTICD_HOST_A}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST_A"
 require_regex "${MESHTASTICD_HOST_B}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST_B"
 require_regex "${MESHTASTICD_PORT_A}" '^[0-9]+$' "MESHTASTICD_PORT_A"
@@ -111,7 +111,7 @@ docker rm -f "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}" >/dev/nul
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then
 	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" || ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd" ]]; then
-		echo "Failed to pull ${MESHTASTICD_IMAGE}, retrying with meshtastic/meshtasticd:beta"
+		echo "WARNING: Failed to pull ${MESHTASTICD_IMAGE}, falling back to meshtastic/meshtasticd:beta" >&2
 		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
 		docker pull "${MESHTASTICD_IMAGE}"
 	else
@@ -160,8 +160,23 @@ wait_for_ready "${MESHTASTICD_HOST_B}" "${MESHTASTICD_CONTAINER_B}" "${READY_LOG
 pid_ready_b=$!
 
 ready_status=0
-wait "${pid_ready_a}" || ready_status=$?
-wait "${pid_ready_b}" || ready_status=$?
+ready_first_done_pid=0
+if ! wait -n -p ready_first_done_pid "${pid_ready_a}" "${pid_ready_b}"; then
+	ready_status=$?
+	ready_other_pid="${pid_ready_a}"
+	if [[ ${ready_first_done_pid} == "${pid_ready_a}" ]]; then
+		ready_other_pid="${pid_ready_b}"
+	fi
+	kill "${ready_other_pid}" 2>/dev/null || true
+	wait "${ready_other_pid}" 2>/dev/null || true
+fi
+if ((ready_status == 0)); then
+	if [[ ${ready_first_done_pid} == "${pid_ready_a}" ]]; then
+		wait "${pid_ready_b}" || ready_status=$?
+	else
+		wait "${pid_ready_a}" || ready_status=$?
+	fi
+fi
 if ((ready_status != 0)); then
 	exit "${ready_status}"
 fi
@@ -195,8 +210,23 @@ wait_for_log_pattern "${MESHTASTICD_CONTAINER_B}" "Start multicast thread" 30 &
 pid_log_b=$!
 
 log_status=0
-wait "${pid_log_a}" || log_status=$?
-wait "${pid_log_b}" || log_status=$?
+log_first_done_pid=0
+if ! wait -n -p log_first_done_pid "${pid_log_a}" "${pid_log_b}"; then
+	log_status=$?
+	log_other_pid="${pid_log_a}"
+	if [[ ${log_first_done_pid} == "${pid_log_a}" ]]; then
+		log_other_pid="${pid_log_b}"
+	fi
+	kill "${log_other_pid}" 2>/dev/null || true
+	wait "${log_other_pid}" 2>/dev/null || true
+fi
+if ((log_status == 0)); then
+	if [[ ${log_first_done_pid} == "${pid_log_a}" ]]; then
+		wait "${pid_log_b}" || log_status=$?
+	else
+		wait "${pid_log_a}" || log_status=$?
+	fi
+fi
 if ((log_status != 0)); then
 	exit "${log_status}"
 fi
