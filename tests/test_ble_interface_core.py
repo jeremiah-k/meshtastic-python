@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from queue import Queue
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -124,16 +124,21 @@ class _FakeDiscoveryClient:
         """
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> Literal[False]:
         """Exit the context and indicate that any exception should propagate.
 
         Parameters
         ----------
-        exc_type : Any
+        exc_type : type[BaseException] | None
             Exception type if an exception was raised inside the context, otherwise None.
-        exc : Any
+        exc : BaseException | None
             Exception instance if raised, otherwise None.
-        tb : Any
+        tb : TracebackType | None
             Traceback object if an exception was raised, otherwise None.
 
         Returns
@@ -869,7 +874,7 @@ def test_connect_finalizes_gates_after_address_lock_scope(
             self,
             exc_type: type[BaseException] | None,
             exc: BaseException | None,
-            tb: Any,
+            tb: TracebackType | None,
         ) -> Literal[False]:
             _ = (exc_type, exc, tb)
             nonlocal address_lock_held

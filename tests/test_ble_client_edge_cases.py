@@ -366,3 +366,25 @@ def test_bleclient_unpair_delegates_to_backend(
 
     ble_client.unpair()
     assert backend_calls == [True]
+
+
+@pytest.mark.unit
+def test_bleclient_pair_delegates_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """pair() should invoke backend pair through _async_await and return None."""
+    backend_calls: list[dict[str, object]] = []
+
+    class _Backend:
+        async def pair(self, **kwargs: object) -> None:
+            backend_calls.append(kwargs)
+            return None
+
+    ble_client.bleak_client = cast(Any, _Backend())
+    monkeypatch.setattr(
+        ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable)
+    )
+
+    ble_client.pair(confirm=True)
+    assert backend_calls == [{"confirm": True}]
