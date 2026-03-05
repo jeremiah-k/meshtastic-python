@@ -403,7 +403,9 @@ def test_close_suppresses_disconnect_send_failures(
         ):
             iface.close()
 
-    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+    assert (
+        "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+    )
 
 
 @pytest.mark.unit

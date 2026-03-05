@@ -351,7 +351,9 @@ def test_bleclient_unpair_delegates_to_backend(
             return "ok"
 
     ble_client.bleak_client = _Backend()
-    monkeypatch.setattr(ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable))
+    monkeypatch.setattr(
+        ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable)
+    )
 
     assert ble_client.unpair() == "ok"
     assert backend_calls == [True]

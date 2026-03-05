@@ -14,24 +14,24 @@ triage against firmware changes.
 
 ## Stable Lane (`smoke1` without `smoke1_destructive`)
 
-| Check | Expected behavior |
-| --- | --- |
-| `--info` | Connects successfully and prints Owner/My info/Channels sections. |
-| invalid `--get` / `--set` / `--ch-set` | Returns success with field error text and `Choices are...` hint. |
-| `--test` with one USB device | Fails cleanly with two-device requirement message (`rc=1`). |
-| `--debug`, `--seriallog`, `--qr`, `--nodes`, `--sendtext`, `--port` | Command succeeds without disconnect/close exceptions. |
-| Mutating command exit cleanliness | Successful mutating command must not emit `Bad file descriptor`/abort-on-close errors. |
+| Check                                                               | Expected behavior                                                                      |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `--info`                                                            | Connects successfully and prints Owner/My info/Channels sections.                      |
+| invalid `--get` / `--set` / `--ch-set`                              | Returns success with field error text and `Choices are...` hint.                       |
+| `--test` with one USB device                                        | Fails cleanly with two-device requirement message (`rc=1`).                            |
+| `--debug`, `--seriallog`, `--qr`, `--nodes`, `--sendtext`, `--port` | Command succeeds without disconnect/close exceptions.                                  |
+| Mutating command exit cleanliness                                   | Successful mutating command must not emit `Bad file descriptor`/abort-on-close errors. |
 
 ## Destructive Lane (`smoke1_destructive`)
 
-| Check | Expected behavior |
-| --- | --- |
-| `--reboot`, `--factory-reset` | Command succeeds and node reconnects after restart window. |
-| `--pos-fields` | Uses modern symbolic fields (for example `ALTITUDE`, `ALTITUDE_MSL`, `DOP`). |
-| `--ch-set modem_config ...` | Reports unsupported channel field gracefully (`Choices are...`). |
-| Channel CRUD/toggle flows | Add/delete/enable/disable operations succeed across non-primary channels. |
-| `--seturl` invalid URL | Fails with `There were no settings.` (`rc=1`). |
-| `--configure example_config.yaml` | Applies canonical snake_case keys and writes modified config successfully. |
+| Check                             | Expected behavior                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| `--reboot`, `--factory-reset`     | Command succeeds and node reconnects after restart window.                   |
+| `--pos-fields`                    | Uses modern symbolic fields (for example `ALTITUDE`, `ALTITUDE_MSL`, `DOP`). |
+| `--ch-set modem_config ...`       | Reports unsupported channel field gracefully (`Choices are...`).             |
+| Channel CRUD/toggle flows         | Add/delete/enable/disable operations succeed across non-primary channels.    |
+| `--seturl` invalid URL            | Fails with `There were no settings.` (`rc=1`).                               |
+| `--configure example_config.yaml` | Applies canonical snake_case keys and writes modified config successfully.   |
 
 ## Known Compatibility Notes
 
