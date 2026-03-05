@@ -401,6 +401,10 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     )
     exported_data_b = yaml.safe_load(export_path_b.read_text(encoding="utf-8"))
     assert isinstance(exported_data_b, dict)
+    owner_short_b = exported_data_b.get(
+        "owner_short", exported_data_b.get("ownerShort")
+    )
+    assert owner_short_b == CONFIGURED_OWNER_SHORT
     channel_url_b = exported_data_b.get("channel_url")
     assert isinstance(channel_url_b, str)
     assert channel_url_b.startswith("https://meshtastic.org/e/#")
