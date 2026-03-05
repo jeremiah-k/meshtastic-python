@@ -46,7 +46,7 @@ recommended patterns for code that embeds `meshtastic-python`.
 
 - **Optional pairing and Linux trust helper.** `BLEInterface` can request pairing
   during connect (`pair_on_connect=True` or `connect(pair=True)`), and also
-  exposes an explicit Linux trust helper (`trust()`) that calls
+  exposes an explicit Linux trust helper (`trust(address)`) that calls
   `bluetoothctl trust <addr>`.
 
 ---

@@ -175,7 +175,9 @@ def test_smoke1_seriallog_to_file() -> None:
     try:
         if filepath.exists():
             filepath.unlink()
-        return_value, _ = _run(f"meshtastic --info --seriallog {filepath}")
+        return_value, _ = _run(
+            f"meshtastic --info --seriallog {_quote_shell_path(filepath)}"
+        )
         assert filepath.exists()
         assert return_value == 0
     finally:
@@ -224,7 +226,7 @@ def test_smoke1_port() -> None:
     ports = findPorts(eliminate_duplicates=True)
     assert len(ports) == 1
     port = ports[0]
-    return_value, out = _run(f"meshtastic --port {port} --info")
+    return_value, out = _run(f"meshtastic --port {_quote_shell_path(port)} --info")
     _assert_connected(out)
     assert re.search(r"^Owner", out, re.MULTILINE)
     assert return_value == 0

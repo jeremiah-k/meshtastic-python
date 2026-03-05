@@ -184,13 +184,11 @@ class ClientManager:
         'BLEClient'
             A BLEClient instance bound to device_address with the disconnect callback configured.
         """
-        if pair_on_connect:
-            return BLEClient(
-                device_address,
-                disconnected_callback=disconnect_callback,
-                pair=True,
-            )
-        return BLEClient(device_address, disconnected_callback=disconnect_callback)
+        return BLEClient(
+            device_address,
+            disconnected_callback=disconnect_callback,
+            pair=pair_on_connect,
+        )
 
     def _connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
         """Connect the provided BLEClient and ensure its GATT services are populated.

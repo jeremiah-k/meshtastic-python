@@ -38,7 +38,7 @@ config:
     wait_bluetooth_secs: 60
     ls_secs: 300
     min_wake_secs: 10
-    sds_secs: 4294967295
+    sds_secs: 4294967295 # UINT32_MAX disables super deep sleep
 
 module_config:
   telemetry:

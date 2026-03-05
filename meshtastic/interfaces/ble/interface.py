@@ -1303,6 +1303,22 @@ class BLEInterface(MeshInterface):
         This helper is used by `pair()`, `unpair()`, and `trust()` to
         resolve explicit addresses, device-name identifiers, or discovery mode
         (None) into a concrete address.
+
+        Parameters
+        ----------
+        address : str | None
+            Target address, device name, or None to resolve from the active
+            connection when possible.
+
+        Returns
+        -------
+        str
+            Resolved BLE address.
+
+        Raises
+        ------
+        BLEInterface.BLEError
+            If discovery cannot resolve the target to a concrete BLE address.
         """
         requested_identifier = address if address is not None else self.address
         if address is None:

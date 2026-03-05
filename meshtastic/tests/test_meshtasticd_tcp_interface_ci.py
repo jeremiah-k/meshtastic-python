@@ -8,11 +8,10 @@ import pytest
 
 from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
-pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
-
 MESHTASTICD_HOST_ENV_VAR = "MESHTASTICD_HOST"
 HOST = os.environ.get(MESHTASTICD_HOST_ENV_VAR, "localhost:4401")
 CONNECT_TIMEOUT_SECONDS = 5.0
+WAIT_CONNECTED_TIMEOUT_SECONDS = 10.0
 RECONNECT_RECOVERY_TIMEOUT_SECONDS = 25.0
 RECONNECT_RETRY_INTERVAL_SECONDS = 0.5
 
@@ -42,6 +41,7 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
     return host_name, port
 
 
+@pytest.mark.unit
 def test_parse_host_and_port_rejects_non_numeric_port() -> None:
     """_parse_host_and_port should reject non-numeric port values."""
     with pytest.raises(
@@ -51,6 +51,7 @@ def test_parse_host_and_port_rejects_non_numeric_port() -> None:
         _parse_host_and_port("localhost:not-a-port")
 
 
+@pytest.mark.unit
 def test_parse_host_and_port_rejects_out_of_range_port() -> None:
     """_parse_host_and_port should reject out-of-range port values."""
     with pytest.raises(
@@ -60,6 +61,8 @@ def test_parse_host_and_port_rejects_out_of_range_port() -> None:
         _parse_host_and_port("localhost:70000")
 
 
+@pytest.mark.int
+@pytest.mark.smokevirt
 def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
     """TCPInterface should connect to meshtasticd and send a text packet."""
     host_name, port = _parse_host_and_port(HOST)
@@ -70,13 +73,15 @@ def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
         connectTimeout=CONNECT_TIMEOUT_SECONDS,
     ) as raw_iface:
         iface = cast(TCPInterface, raw_iface)
-        assert iface.isConnected.wait(timeout=10.0)
+        assert iface.isConnected.wait(timeout=WAIT_CONNECTED_TIMEOUT_SECONDS)
         assert iface.myInfo is not None
         assert iface.myInfo.my_node_num > 0
         packet = iface.sendText("meshtasticd tcp integration hello")
         assert packet is not None
 
 
+@pytest.mark.int
+@pytest.mark.smokevirt
 def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
     """TCPInterface should recover after a forced local socket close."""
     host_name, port = _parse_host_and_port(HOST)
@@ -87,7 +92,7 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
         connectTimeout=CONNECT_TIMEOUT_SECONDS,
     ) as raw_iface:
         iface = cast(TCPInterface, raw_iface)
-        assert iface.isConnected.wait(timeout=10.0)
+        assert iface.isConnected.wait(timeout=WAIT_CONNECTED_TIMEOUT_SECONDS)
         original_socket = iface.socket
         assert original_socket is not None
 
