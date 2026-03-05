@@ -2,6 +2,7 @@
 
 import os
 import time
+from typing import cast
 
 import pytest
 
@@ -31,7 +32,8 @@ def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:
         hostname=host_name,
         portNumber=port,
         connectTimeout=CONNECT_TIMEOUT_SECONDS,
-    ) as iface:
+    ) as raw_iface:
+        iface = cast(TCPInterface, raw_iface)
         assert iface.isConnected.wait(timeout=10.0)
         assert iface.myInfo is not None
         assert iface.myInfo.my_node_num > 0
@@ -47,7 +49,8 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
         hostname=host_name,
         portNumber=port,
         connectTimeout=CONNECT_TIMEOUT_SECONDS,
-    ) as iface:
+    ) as raw_iface:
+        iface = cast(TCPInterface, raw_iface)
         assert iface.isConnected.wait(timeout=10.0)
         original_socket = iface.socket
         assert original_socket is not None
@@ -74,5 +77,5 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
             f"host={HOST}\n"
             f"last_error={last_error!r}\n"
             f"socket_present={iface.socket is not None}\n"
-            f"fatal_disconnect={iface._fatal_disconnect}"  # pylint: disable=protected-access
+            f"fatal_disconnect={getattr(iface, '_fatal_disconnect', None)}"
         )

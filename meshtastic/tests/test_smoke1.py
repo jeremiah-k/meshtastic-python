@@ -10,6 +10,7 @@ import platform
 import re
 import time
 import uuid
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -75,11 +76,9 @@ def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def restore_smoke1_module_config() -> None:
+def restore_smoke1_module_config() -> Generator[None, None, None]:
     """Export baseline config before smoke1 and restore it after module completion."""
-    backup_path = Path(
-        f"/tmp/meshtastic-smoke1-module-backup-{int(time.time())}.yaml"
-    )
+    backup_path = Path(f"/tmp/meshtastic-smoke1-module-backup-{int(time.time())}.yaml")
     export_cmd = f"meshtastic --export-config {_quote_shell_path(backup_path)}"
     return_value, out = _run(export_cmd, timeout=180)
     if return_value != 0:
@@ -272,7 +271,9 @@ def test_smoke1_pos_fields_supported_values() -> None:
 @pytest.mark.smoke1_destructive
 def test_smoke1_set_location_info() -> None:
     """`--setlat/--setlon/--setalt` should update fixed position values."""
-    return_value, out = _run("meshtastic --setlat 32.7767 --setlon -96.7970 --setalt 1337")
+    return_value, out = _run(
+        "meshtastic --setlat 32.7767 --setlon -96.7970 --setalt 1337"
+    )
     _assert_connected(out)
     assert "Fixing altitude" in out
     assert "Fixing latitude" in out
@@ -625,7 +626,9 @@ def test_smoke1_set_wifi_settings() -> None:
     assert return_value == 0
     time.sleep(PAUSE_AFTER_COMMAND)
 
-    return_value, out = _run("meshtastic --get network.wifi_ssid --get network.wifi_psk")
+    return_value, out = _run(
+        "meshtastic --get network.wifi_ssid --get network.wifi_psk"
+    )
     assert re.search(r"network\.wifi_ssid:\s+some_ssid", out, re.MULTILINE)
     assert re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
     assert return_value == 0
