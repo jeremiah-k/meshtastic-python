@@ -164,6 +164,8 @@ class ClientManager:
         self,
         device_address: str,
         disconnect_callback: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool = False,
     ) -> BLEClient:
         """Create a BLEClient bound to the given device address and register a disconnect callback.
 
@@ -173,12 +175,21 @@ class ClientManager:
             Target BLE device address to bind the client to.
         disconnect_callback : 'Callable'
             Callable invoked when the client disconnects.
+        pair_on_connect : bool
+            If True, initialize the underlying Bleak client with pairing enabled so
+            connect attempts request pairing as part of connection setup. (Default value = False)
 
         Returns
         -------
         'BLEClient'
             A BLEClient instance bound to device_address with the disconnect callback configured.
         """
+        if pair_on_connect:
+            return BLEClient(
+                device_address,
+                disconnected_callback=disconnect_callback,
+                pair=True,
+            )
         return BLEClient(device_address, disconnected_callback=disconnect_callback)
 
     def _connect_client(self, client: BLEClient, timeout: float | None = None) -> None:
@@ -443,6 +454,8 @@ class ConnectionOrchestrator:
         register_notifications_func: Callable[[BLEClient], None],
         on_connected_func: Callable[[], None],
         on_disconnect_func: Callable[["BleakRootClient"], None],
+        *,
+        pair_on_connect: bool = False,
     ) -> BLEClient:
         """Establish a BLE connection to a device, attempting a direct connect when an explicit address is provided and falling back to discovery when needed, then finalize notification registration and lifecycle callbacks.
 
@@ -458,6 +471,9 @@ class ConnectionOrchestrator:
             Callback invoked after the connection has been finalized and state updated to CONNECTED.
         on_disconnect_func : Callable
             Callback passed to the `BLEClient` to be invoked when the client disconnects.
+        pair_on_connect : bool
+            If True, initialize per-attempt BLE clients with pairing enabled so
+            connection attempts request pairing while connecting. (Default value = False)
 
         Returns
         -------
@@ -503,7 +519,9 @@ class ConnectionOrchestrator:
             if target_address:
                 self._raise_if_interface_closing()
                 client = self.client_manager._create_client(
-                    target_address, on_disconnect_func
+                    target_address,
+                    on_disconnect_func,
+                    pair_on_connect=pair_on_connect,
                 )
                 try:
                     direct_timeout = min(
@@ -559,7 +577,9 @@ class ConnectionOrchestrator:
 
             self._raise_if_interface_closing()
             client = self.client_manager._create_client(
-                resolved_address, on_disconnect_func
+                resolved_address,
+                on_disconnect_func,
+                pair_on_connect=pair_on_connect,
             )
             try:
                 self.client_manager._connect_client(client, timeout=fallback_timeout)
@@ -587,7 +607,9 @@ class ConnectionOrchestrator:
                 self._raise_if_interface_closing()
                 resolved_address = device.address
                 client = self.client_manager._create_client(
-                    resolved_address, on_disconnect_func
+                    resolved_address,
+                    on_disconnect_func,
+                    pair_on_connect=pair_on_connect,
                 )
                 self.client_manager._connect_client(client)
 

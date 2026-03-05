@@ -98,6 +98,11 @@ def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) 
         ble_client.pair()
 
     with pytest.raises(
+        BLEClient.BLEError, match="Cannot unpair: BLE client not initialized"
+    ):
+        ble_client.unpair()
+
+    with pytest.raises(
         BLEClient.BLEError, match="Cannot get services: BLE client not initialized"
     ):
         ble_client._get_services()
@@ -317,3 +322,36 @@ def test_bleclient_has_characteristic_returns_false_when_services_lookup_fails(
     )
 
     assert ble_client.has_characteristic("0000") is False
+
+
+@pytest.mark.unit
+def test_bleclient_unpair_raises_when_backend_does_not_support_unpair(
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should fail with a clear message when backend lacks unpair support."""
+    ble_client.bleak_client = type("_NoUnpairClient", (), {})()
+    with pytest.raises(
+        BLEClient.BLEError,
+        match="Cannot unpair: BLE backend does not support unpair on this platform",
+    ):
+        ble_client.unpair()
+
+
+@pytest.mark.unit
+def test_bleclient_unpair_delegates_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    ble_client: BLEClient,
+) -> None:
+    """unpair() should invoke backend unpair through _async_await."""
+    backend_calls: list[bool] = []
+
+    class _Backend:
+        async def unpair(self) -> str:
+            backend_calls.append(True)
+            return "ok"
+
+    ble_client.bleak_client = _Backend()
+    monkeypatch.setattr(ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable))
+
+    assert ble_client.unpair() == "ok"
+    assert backend_calls == [True]

@@ -26,6 +26,8 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED,
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
     BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED,
     BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
@@ -222,6 +224,27 @@ class BLEClient:
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
         return self._async_await(bleak_client.pair(**kwargs))
+
+    def unpair(self) -> Any:
+        """Unpair the BLE client from the remote device when supported by the backend.
+
+        Returns
+        -------
+        Any
+            The backend unpairing result (often `None`).
+
+        Raises
+        ------
+        BLEError
+            If the BLE client is not initialized or if the backend does not expose `unpair`.
+        """
+        bleak_client = self.bleak_client
+        if bleak_client is None:
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED)
+        unpair_fn = getattr(bleak_client, "unpair", None)
+        if not callable(unpair_fn):
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED)
+        return self._async_await(unpair_fn())
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
         """Connect to the remote BLE device.

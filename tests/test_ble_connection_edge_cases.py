@@ -539,6 +539,44 @@ def test_connection_orchestrator_returns_after_successful_direct_connect() -> No
 
 
 @pytest.mark.unit
+def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -> None:
+    """_establish_connection should pass pair_on_connect through client creation."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    client_manager._create_client.return_value = direct_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+        pair_on_connect=True,
+    )
+
+    client_manager._create_client.assert_called_once()
+    assert client_manager._create_client.call_args.kwargs["pair_on_connect"] is True
+
+
+@pytest.mark.unit
 def test_connection_orchestrator_skips_scan_after_direct_device_not_found_for_explicit_address() -> (
     None
 ):

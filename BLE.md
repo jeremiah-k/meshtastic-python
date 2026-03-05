@@ -44,6 +44,11 @@ recommended patterns for code that embeds `meshtastic-python`.
   `BLECoroutineRunner`: N clients share 1 background thread, which lowers
   resource usage and simplifies teardown.
 
+- **Optional pairing and Linux trust hooks.** `BLEInterface` can request pairing
+  during connect (`pair_on_connect=True` or `connect(pair=True)`) and can run a
+  best-effort Linux trust step (`trust_on_connect=True` or `connect(trust=True)`)
+  via `bluetoothctl trust <addr>`.
+
 ---
 
 ## Locking rules
@@ -200,6 +205,46 @@ iface = BLEInterface(address="AA:BB:CC:DD:EE:FF", auto_reconnect=False)
 Do not layer both simultaneously — duplicate reconnect loops produce
 `suppressed duplicate connect` log entries and can interfere with the built-in
 recovery logic.
+
+### Pairing and trust workflows
+
+Pairing PIN/passkey entry remains OS-agent driven (for example BlueZ agent /
+desktop prompt / platform dialog). Meshtastic can request pairing and trust but
+does not replace OS pairing UX.
+
+```python
+from meshtastic.ble_interface import BLEInterface
+
+# Request pairing during every connect attempt.
+iface = BLEInterface(
+    address="AA:BB:CC:DD:EE:FF",
+    pair_on_connect=True,
+)
+
+# One-shot overrides on manual connect():
+iface.connect(pair=True)   # request pairing for this call
+iface.connect(trust=True)  # Linux: run bluetoothctl trust after successful connect
+```
+
+Programmatic helpers:
+
+```python
+# Pair against active client or a temporary resolved client.
+iface.pair()
+
+# Backend unpair (Linux/Windows backends where supported by Bleak).
+iface.unpair()
+
+# Linux-only trust helper (calls bluetoothctl trust <address>).
+iface.trust("AA:BB:CC:DD:EE:FF")
+```
+
+Platform notes:
+
+- `pair()` delegates to Bleak backend support.
+- `unpair()` depends on backend/platform support (typically Linux/Windows).
+- `trust()` is Linux-only and requires `bluetoothctl` in `PATH`.
+- On macOS, trust/unpair are managed by the OS; no Bleak trust API is exposed.
 
 CLI opt-in:
 

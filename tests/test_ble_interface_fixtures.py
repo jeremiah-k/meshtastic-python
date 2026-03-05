@@ -246,6 +246,14 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """Accept any positional and keyword arguments and perform no action."""
             return None
 
+        async def pair(self, **_kwargs: Any) -> None:
+            """No-op pairing hook for compatibility with BLEClient.pair()."""
+            return None
+
+        async def unpair(self, **_kwargs: Any) -> None:
+            """No-op unpair hook for compatibility with BLEClient.unpair()."""
+            return None
+
         def is_connected(self) -> bool:
             """Report whether the client is connected.
 
@@ -386,6 +394,8 @@ class DummyClient:
         """
         self.disconnect_calls = 0
         self.close_calls = 0
+        self.pair_calls = 0
+        self.unpair_calls = 0
         self.stop_notify_calls: list[Any] = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
@@ -471,6 +481,14 @@ class DummyClient:
         self.disconnect_calls += 1
         if self.disconnect_exception:
             raise self.disconnect_exception
+
+    def pair(self, **_kwargs: Any) -> None:
+        """Record a pair invocation."""
+        self.pair_calls += 1
+
+    def unpair(self) -> None:
+        """Record an unpair invocation."""
+        self.unpair_calls += 1
 
     def close(self) -> None:
         """Record that the client was closed.

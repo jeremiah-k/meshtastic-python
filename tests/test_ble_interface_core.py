@@ -411,7 +411,220 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
     """
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     assert iface.auto_reconnect is False
+    assert iface.pair_on_connect is False
+    assert iface.trust_on_connect is False
     iface.close()
+
+
+def test_ble_interface_pair_prefers_active_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pair() should delegate to the active matching client when connected."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    result = iface.pair(confirm=True)
+
+    assert result is None
+    assert client.pair_calls == 1
+    iface.close()
+
+
+def test_ble_interface_unpair_prefers_active_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """unpair() should delegate to the active matching client when connected."""
+    client = DummyClient()
+    iface = _build_interface(monkeypatch, client, start_receive_thread=False)
+
+    result = iface.unpair()
+
+    assert result is None
+    assert client.unpair_calls == 1
+    iface.close()
+
+
+def test_ble_interface_pair_uses_temporary_client_when_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pair() should create and clean up a temporary BLEClient when no active client matches."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    temp_client = SimpleNamespace(
+        pair=lambda **_kwargs: "paired",
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+    cleanup_calls: list[Any] = []
+
+    def _temp_client_factory(_address: str, **_kwargs: Any) -> Any:
+        return temp_client
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        _temp_client_factory,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: cleanup_calls.append(client),
+    )
+
+    assert iface.pair("mesh-node") == "paired"
+    assert cleanup_calls == [temp_client]
+    iface.close()
+
+
+def test_ble_interface_trust_runs_bluetoothctl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should invoke bluetoothctl trust with a canonicalized address."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("aa bb cc dd ee ff", "Meshtastic"),
+    )
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: "/usr/bin/bluetoothctl",
+    )
+
+    run_calls: list[tuple[Any, float]] = []
+
+    def _fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        timeout: float,
+    ) -> Any:
+        _ = (capture_output, text, check)
+        run_calls.append((args, timeout))
+        return SimpleNamespace(returncode=0, stdout="succeeded", stderr="")
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        _fake_run,
+    )
+
+    iface.trust("mesh-node", timeout=7.0)
+
+    assert run_calls == [(["/usr/bin/bluetoothctl", "trust", "AA:BB:CC:DD:EE:FF"], 7.0)]
+    iface.close()
+
+
+def test_ble_interface_trust_rejects_non_linux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should reject non-Linux hosts with a clear BLEError."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "darwin")
+    with pytest.raises(BLEInterface.BLEError, match="only supported on Linux"):
+        iface.trust("AA:BB:CC:DD:EE:FF")
+    iface.close()
+
+
+def test_ble_interface_connect_uses_pair_override_for_orchestrator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect(pair=...) should forward the effective pairing flag to connection orchestration."""
+    iface = object.__new__(BLEInterface)
+    iface._state_manager = BLEStateManager()
+    iface._state_lock = threading.RLock()
+    iface._connect_lock = threading.RLock()
+    iface._disconnect_lock = threading.Lock()
+    iface._closed = False
+    iface.address = None
+    iface.client = None
+    iface._disconnect_notified = False
+    iface._last_connection_request = None
+    iface.pair_on_connect = False
+    iface.trust_on_connect = False
+    iface._connection_alias_key = None
+    iface._ever_connected = False
+    iface._read_retry_count = 0
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
+    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
+    monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+
+    captured_pair_flags: list[bool] = []
+
+    def _establish_stub(
+        address: str | None,
+        normalized_request: str | None,
+        address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (address, normalized_request, address_key)
+        captured_pair_flags.append(pair_on_connect)
+        return DummyClient(), None, None
+
+    monkeypatch.setattr(iface, "_establish_and_update_client", _establish_stub)
+
+    iface.connect(pair=True)
+    iface.connect(pair=False)
+    iface.pair_on_connect = True
+    iface.connect()
+
+    assert captured_pair_flags == [True, False, True]
+
+
+def test_ble_interface_connect_trust_override_invokes_trust(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect(trust=True) should invoke trust() on the connected address."""
+    iface = object.__new__(BLEInterface)
+    iface._state_manager = BLEStateManager()
+    iface._state_lock = threading.RLock()
+    iface._connect_lock = threading.RLock()
+    iface._disconnect_lock = threading.Lock()
+    iface._closed = False
+    iface.address = None
+    iface.client = None
+    iface._disconnect_notified = False
+    iface._last_connection_request = None
+    iface.pair_on_connect = False
+    iface.trust_on_connect = False
+    iface._connection_alias_key = None
+    iface._ever_connected = False
+    iface._read_retry_count = 0
+
+    connected_client = DummyClient()
+    connected_client.address = "AA:BB:CC:DD:EE:FF"
+    connected_client.bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
+    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
+    monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        lambda *_args, **_kwargs: (connected_client, None, None),
+    )
+
+    trusted_addresses: list[str] = []
+    monkeypatch.setattr(iface, "trust", lambda address: trusted_addresses.append(address))
+
+    iface.connect(trust=True)
+
+    assert trusted_addresses == ["AA:BB:CC:DD:EE:FF"]
 
 
 def test_handle_disconnect_ignores_stale_callbacks(
@@ -737,7 +950,7 @@ def test_connect_finalizes_gates_after_address_lock_scope(
     monkeypatch.setattr(
         iface,
         "_establish_and_update_client",
-        lambda _address, _normalized_request, _address_key: (
+        lambda _address, _normalized_request, _address_key, **_kwargs: (
             connected_client,
             "device-key",
             None,
