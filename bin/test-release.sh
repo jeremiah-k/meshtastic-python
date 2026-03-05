@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ -d dist ]]; then
-	rm -f dist/*
+	find dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 fi
 
 bin/regen-docs.sh

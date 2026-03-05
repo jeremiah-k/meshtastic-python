@@ -3,7 +3,7 @@
 ## Scope
 
 This document is the high-level tracker for the follow-up dependency refresh
-workstream described in [REFACTOR_PROGRAM.md](/home/jeremiah/dev/meshtastic/python/REFACTOR_PROGRAM.md#L380).
+workstream described in [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md#L380).
 
 Goals:
 
@@ -187,3 +187,13 @@ Result:
 - Consequence:
   - keep `pandas` and `pandas-stubs` on 2.x-compatible constraints,
   - do not force Python-marker split that changes effective support policy.
+
+### 2026-03-05 - Review-follow-up maintenance polish
+
+- Replaced local absolute link in this tracker with repo-relative link.
+- Declared `plotly` explicitly in `pyproject.toml` analysis optional dependencies
+  and added it to the `analysis` extra, removing transitive-only reliance.
+- Extracted duplicated GitHub Actions meshtasticd log-summary logic into
+  `bin/summarize-meshtasticd-logs.sh` and switched both CI jobs to call it.
+- Hardened `bin/test-release.sh` `dist` cleanup to remove nested and hidden
+  artifacts under `dist/`.

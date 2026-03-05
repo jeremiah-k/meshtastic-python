@@ -175,27 +175,11 @@ jobs:
       - name: Summarize meshtasticd integration logs
         if: always()
         run: |
-          {
-            echo "### meshtasticd Integration Summary"
-            echo ""
-            echo "- Runner script: \`./bin/run-smokevirt-with-meshtasticd.sh\`"
-            if [[ -d "${MESHTASTICD_LOG_DIR}" ]]; then
-              shopt -s nullglob
-              log_files=("${MESHTASTICD_LOG_DIR}"/*.log)
-              if (( ${#log_files[@]} == 0 )); then
-                echo "- Log files: none"
-              else
-                echo "- Log files:"
-                for log_file in "${log_files[@]}"; do
-                  line_count="$(wc -l <"${log_file}" || echo 0)"
-                  packetish_count="$(grep -E -c 'PACKET FROM PHONE|handleReceived|Forwarding to phone|FromRadio=STATE_SEND_PACKETS' "${log_file}" || true)"
-                  echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}"
-                done
-              fi
-            else
-              echo "- Log directory not found: \`${MESHTASTICD_LOG_DIR}\`"
-            fi
-          } >>"${GITHUB_STEP_SUMMARY}"
+          ./bin/summarize-meshtasticd-logs.sh \
+            "meshtasticd Integration Summary" \
+            "./bin/run-smokevirt-with-meshtasticd.sh" \
+            "${MESHTASTICD_LOG_DIR}" \
+            single >>"${GITHUB_STEP_SUMMARY}"
       - name: Upload meshtasticd integration logs
         if: always()
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
@@ -231,28 +215,11 @@ jobs:
       - name: Summarize meshtasticd multinode logs
         if: always()
         run: |
-          {
-            echo "### meshtasticd Multinode Summary"
-            echo ""
-            echo "- Runner script: \`./bin/run-multinode-with-meshtasticd.sh\`"
-            if [[ -d "${MESHTASTICD_LOG_DIR}" ]]; then
-              shopt -s nullglob
-              log_files=("${MESHTASTICD_LOG_DIR}"/*.log)
-              if (( ${#log_files[@]} == 0 )); then
-                echo "- Log files: none"
-              else
-                echo "- Log files:"
-                for log_file in "${log_files[@]}"; do
-                  line_count="$(wc -l <"${log_file}" || echo 0)"
-                  packetish_count="$(grep -E -c 'PACKET FROM PHONE|handleReceived|Forwarding to phone|FromRadio=STATE_SEND_PACKETS' "${log_file}" || true)"
-                  multicast_count="$(grep -F -c 'Start multicast thread' "${log_file}" || true)"
-                  echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}, multicast=${multicast_count}"
-                done
-              fi
-            else
-              echo "- Log directory not found: \`${MESHTASTICD_LOG_DIR}\`"
-            fi
-          } >>"${GITHUB_STEP_SUMMARY}"
+          ./bin/summarize-meshtasticd-logs.sh \
+            "meshtasticd Multinode Summary" \
+            "./bin/run-multinode-with-meshtasticd.sh" \
+            "${MESHTASTICD_LOG_DIR}" \
+            multinode >>"${GITHUB_STEP_SUMMARY}"
       - name: Upload meshtasticd multinode logs
         if: always()
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3

@@ -2954,8 +2954,8 @@ files = [
 [package.dependencies]
 numpy = [
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
-    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -3592,8 +3592,8 @@ astroid = ">=4.0.2,<=4.1.dev0"
 colorama = {version = ">=0.4.5", markers = "sys_platform == \"win32\""}
 dill = [
     {version = ">=0.2", markers = "python_version < \"3.11\""},
-    {version = ">=0.3.6", markers = "python_version >= \"3.11\""},
     {version = ">=0.3.7", markers = "python_version >= \"3.12\""},
+    {version = ">=0.3.6", markers = "python_version == \"3.11\""},
 ]
 isort = ">=5,<5.13 || >5.13,<9"
 mccabe = ">=0.6,<0.8"
@@ -4668,7 +4668,7 @@ files = [
     {file = "typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"},
     {file = "typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466"},
 ]
-markers = {main = "python_version < \"3.12\" or platform_system == \"Windows\" or extra == \"analysis\""}
+markers = {main = "platform_system == \"Windows\" or extra == \"analysis\" or python_version < \"3.12\""}
 
 [[package]]
 name = "tzdata"
@@ -5144,11 +5144,11 @@ test = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more_it
 type = ["pytest-mypy"]
 
 [extras]
-analysis = ["dash", "dash-bootstrap-components", "pandas", "pandas-stubs"]
+analysis = ["dash", "dash-bootstrap-components", "pandas", "pandas-stubs", "plotly"]
 cli = ["argcomplete", "dotmap", "print-color", "pyqrcode", "wcwidth"]
 tunnel = ["pytap2"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10,<3.15"
-content-hash = "776b80d52f364b231c05d454bb13db651faf006e3ef3378a50482611b1c3b6c1"
+content-hash = "f3219b9579b2df32d3aaf254aa98f8b4f159def281b3c4bb38c1cc2208ff8571"
