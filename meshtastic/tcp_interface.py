@@ -375,7 +375,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except (OSError, ValueError) as ex:
+        except (OSError, ValueError, TypeError) as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -384,7 +384,7 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
-            if isinstance(ex, ValueError):
+            if isinstance(ex, (ValueError, TypeError)):
                 raise OSError(str(ex)) from ex
             raise
 
@@ -587,7 +587,7 @@ class TCPInterface(StreamInterface):
         if sock is not None:
             try:
                 data = sock.recv(length)
-            except (OSError, ValueError) as ex:
+            except (OSError, ValueError, TypeError) as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
             # empty byte indicates a disconnected socket,

@@ -10,7 +10,8 @@ from meshtastic.tcp_interface import DEFAULT_TCP_PORT, TCPInterface
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
-HOST = os.environ.get("MESHTASTICD_HOST", "localhost:4401")
+MESHTASTICD_HOST_ENV_VAR = "MESHTASTICD_HOST"
+HOST = os.environ.get(MESHTASTICD_HOST_ENV_VAR, "localhost:4401")
 CONNECT_TIMEOUT_SECONDS = 5.0
 RECONNECT_RECOVERY_TIMEOUT_SECONDS = 25.0
 RECONNECT_RETRY_INTERVAL_SECONDS = 0.5
@@ -20,8 +21,43 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
     """Parse ``HOST[:PORT]`` into a hostname and TCP port."""
     if ":" not in host:
         return host, DEFAULT_TCP_PORT
+
     host_name, raw_port = host.rsplit(":", 1)
-    return host_name, int(raw_port)
+    if not host_name:
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: host component is empty."
+        )
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: invalid TCP port "
+            f"{raw_port!r}. Expected HOST[:PORT] with numeric PORT."
+        ) from exc
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: port must be in range "
+            "1..65535."
+        )
+    return host_name, port
+
+
+def test_parse_host_and_port_rejects_non_numeric_port() -> None:
+    """_parse_host_and_port should reject non-numeric port values."""
+    with pytest.raises(
+        ValueError,
+        match=rf"Invalid {MESHTASTICD_HOST_ENV_VAR}=.*numeric PORT",
+    ):
+        _parse_host_and_port("localhost:not-a-port")
+
+
+def test_parse_host_and_port_rejects_out_of_range_port() -> None:
+    """_parse_host_and_port should reject out-of-range port values."""
+    with pytest.raises(
+        ValueError,
+        match=rf"Invalid {MESHTASTICD_HOST_ENV_VAR}=.*1\.\.65535",
+    ):
+        _parse_host_and_port("localhost:70000")
 
 
 def test_tcp_interface_meshtasticd_connect_and_sendtext() -> None:

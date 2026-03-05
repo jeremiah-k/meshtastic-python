@@ -125,6 +125,16 @@ ERROR_ADDRESS_RESOLUTION_FAILED = "Address resolution failed, cannot create devi
 ERROR_INTERFACE_CLOSING = "Cannot connect while interface is closing"
 ERROR_CONNECTION_SUPPRESSED = "Connection suppressed: recently connected elsewhere"
 ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
+ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
+    "Cannot trust device: {address!r} did not resolve to a BLE address."
+)
+ERROR_TRUST_INVALID_TIMEOUT = "Trust timeout must be a positive number of seconds."
+ERROR_TRUST_LINUX_ONLY = "trust() is only supported on Linux hosts via bluetoothctl."
+ERROR_TRUST_BLUETOOTHCTL_MISSING = "Cannot trust device: bluetoothctl was not found."
+ERROR_TRUST_COMMAND_TIMEOUT = (
+    "bluetoothctl trust timed out after {timeout:.1f}s for {address}"
+)
+ERROR_TRUST_COMMAND_FAILED = "bluetoothctl trust failed for {address}: {detail}"
 CONNECTION_ERROR_EMPTY_ADDRESS = "Cannot connect: empty address provided"
 CONNECTION_ERROR_INVALIDATED_BY_CONCURRENT_DISCONNECT = (
     "Connection invalidated by concurrent disconnect"

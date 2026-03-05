@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Literal,
     Protocol,
     cast,
 )
@@ -123,7 +124,7 @@ class _FakeDiscoveryClient:
         """
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
         """Exit the context and indicate that any exception should propagate.
 
         Parameters
@@ -422,9 +423,7 @@ def test_ble_interface_pair_prefers_active_client(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
-    result = iface.pair(confirm=True)
-
-    assert result is None
+    iface.pair(confirm=True)
     assert client.pair_calls == 1
     iface.close()
 
@@ -436,9 +435,7 @@ def test_ble_interface_unpair_prefers_active_client(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
-    result = iface.unpair()
-
-    assert result is None
+    iface.unpair()
     assert client.unpair_calls == 1
     iface.close()
 
@@ -458,7 +455,7 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     )
 
     temp_client = SimpleNamespace(
-        pair=lambda **_kwargs: True,
+        pair=lambda **_kwargs: None,
         bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
     )
     cleanup_calls: list[Any] = []
@@ -476,7 +473,7 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         lambda client: cleanup_calls.append(client),
     )
 
-    assert iface.pair("mesh-node") is True
+    iface.pair("mesh-node")
     assert cleanup_calls == [temp_client]
     iface.close()
 
@@ -873,7 +870,7 @@ def test_connect_finalizes_gates_after_address_lock_scope(
             exc_type: type[BaseException] | None,
             exc: BaseException | None,
             tb: Any,
-        ) -> bool:
+        ) -> Literal[False]:
             _ = (exc_type, exc, tb)
             nonlocal address_lock_held
             address_lock_held = False
@@ -1363,7 +1360,7 @@ def test_finalize_discovery_close_task_discards_task_and_logs_exception(
 
     task = _Task()
     with discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS_LOCK:
-        discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.add(task)
+        discovery_mod._PENDING_DISCOVERY_CLOSE_TASKS.add(cast(Any, task))
 
     with caplog.at_level(logging.DEBUG):
         discovery_mod._finalize_discovery_close_task(task)  # type: ignore[arg-type]
@@ -1565,8 +1562,8 @@ def test_discovery_manager_destructor_does_not_close_client() -> None:
 def test_discovery_manager_destructor_tolerates_unusable_lock() -> None:
     """DiscoveryManager.__del__ should fall back when _client_lock is not lock-like."""
     manager = object.__new__(DiscoveryManager)
-    manager._client_lock = object()  # type: ignore[attr-defined]
-    manager._client = object()  # type: ignore[attr-defined]
+    manager._client_lock = cast(Any, object())  # type: ignore[attr-defined]
+    manager._client = cast(Any, object())  # type: ignore[attr-defined]
 
     manager.__del__()
 

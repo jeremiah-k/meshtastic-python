@@ -66,6 +66,12 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_NO_PERIPHERALS_FOUND,
     ERROR_READING_BLE,
     ERROR_TIMEOUT,
+    ERROR_TRUST_ADDRESS_NOT_RESOLVED,
+    ERROR_TRUST_BLUETOOTHCTL_MISSING,
+    ERROR_TRUST_COMMAND_FAILED,
+    ERROR_TRUST_COMMAND_TIMEOUT,
+    ERROR_TRUST_INVALID_TIMEOUT,
+    ERROR_TRUST_LINUX_ONLY,
     ERROR_WRITING_BLE,
     FROMNUM_UUID,
     FROMRADIO_UUID,
@@ -110,16 +116,6 @@ from meshtastic.protobuf import mesh_pb2
 T = TypeVar("T")
 _NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
 _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS = 10.0
-ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
-    "Cannot trust device: {address!r} did not resolve to a BLE address."
-)
-ERROR_TRUST_INVALID_TIMEOUT = "Trust timeout must be a positive number of seconds."
-ERROR_TRUST_LINUX_ONLY = "trust() is only supported on Linux hosts via bluetoothctl."
-ERROR_TRUST_BLUETOOTHCTL_MISSING = "Cannot trust device: bluetoothctl was not found."
-ERROR_TRUST_COMMAND_TIMEOUT = (
-    "bluetoothctl trust timed out after {timeout:.1f}s for {address}"
-)
-ERROR_TRUST_COMMAND_FAILED = "bluetoothctl trust failed for {address}: {detail}"
 
 
 class BLEInterface(MeshInterface):
@@ -1375,7 +1371,7 @@ class BLEInterface(MeshInterface):
         finally:
             self._client_manager._safe_close_client(temporary_client)
 
-    def pair(self, address: str | None = None, **kwargs: object) -> bool | None:
+    def pair(self, address: str | None = None, **kwargs: object) -> None:
         """Pair with a BLE device either through the active client or a temporary client.
 
         Parameters
@@ -1388,14 +1384,13 @@ class BLEInterface(MeshInterface):
 
         Returns
         -------
-        bool | None
-            Pairing result returned by the BLE backend.
+        None
+            Pairing is performed for side effects and does not return a value.
         """
-        return self._execute_management_command(
-            address, lambda client: client.pair(**kwargs)
-        )
+        self._execute_management_command(address, lambda client: client.pair(**kwargs))
+        return None
 
-    def unpair(self, address: str | None = None) -> bool | None:
+    def unpair(self, address: str | None = None) -> None:
         """Unpair from a BLE device through the active or a temporary client.
 
         Parameters
@@ -1406,10 +1401,11 @@ class BLEInterface(MeshInterface):
 
         Returns
         -------
-        bool | None
-            Unpairing result returned by the BLE backend.
+        None
+            Unpairing is performed for side effects and does not return a value.
         """
-        return self._execute_management_command(address, lambda client: client.unpair())
+        self._execute_management_command(address, lambda client: client.unpair())
+        return None
 
     def trust(
         self,
