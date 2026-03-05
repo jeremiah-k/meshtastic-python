@@ -1,7 +1,9 @@
 #!/bin/bash
 
 set -e
-rm -f dist/* 2>/dev/null || true
+if [[ -d dist ]]; then
+	rm -f dist/*
+fi
 
 poetry build
 poetry run pytest
