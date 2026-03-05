@@ -7,18 +7,24 @@ if [[ $# -lt 3 ]]; then
 	exit 1
 fi
 
-TITLE=$1
-RUNNER_SCRIPT=$2
-LOG_DIR=$3
-MODE=${4:-single}
+TITLE="$1"
+RUNNER_SCRIPT="$2"
+LOG_DIR="$3"
+MODE="${4:-single}"
+
+if [[ ${MODE} != "single" && ${MODE} != "multinode" ]]; then
+	echo "Invalid mode: ${MODE}. Expected 'single' or 'multinode'." >&2
+	exit 1
+fi
 
 echo "### ${TITLE}"
 echo ""
 echo "- Runner script: \`${RUNNER_SCRIPT}\`"
 
-if [[ -d ${LOG_DIR} ]]; then
+if [[ -d "${LOG_DIR}" ]]; then
 	shopt -s nullglob
 	log_files=("${LOG_DIR}"/*.log)
+	shopt -u nullglob
 	if ((${#log_files[@]} == 0)); then
 		echo "- Log files: none"
 		exit 0

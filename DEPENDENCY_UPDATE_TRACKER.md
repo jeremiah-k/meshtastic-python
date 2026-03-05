@@ -197,3 +197,14 @@ Result:
   `bin/summarize-meshtasticd-logs.sh` and switched both CI jobs to call it.
 - Hardened `bin/test-release.sh` `dist` cleanup to remove nested and hidden
   artifacts under `dist/`.
+
+### 2026-03-05 - Dash 4 migration-risk note
+
+- Recorded explicit migration caveat for the `dash 2.x -> 4.x` major jump:
+  optional analysis UI behavior can still require downstream manual validation
+  even when dependency resolution and test/lint/type gates pass.
+- Confirmed this phase covers:
+  - lock/install resolution with `dash 4.0.0`,
+    `dash-bootstrap-components 2.0.4`, `plotly 6.6.0`,
+  - targeted analysis tests (`meshtastic/tests/test_analysis.py`),
+  - strict type checks.

@@ -175,7 +175,7 @@ jobs:
       - name: Summarize meshtasticd integration logs
         if: always()
         run: |
-          ./bin/summarize-meshtasticd-logs.sh \
+          bash ./bin/summarize-meshtasticd-logs.sh \
             "meshtasticd Integration Summary" \
             "./bin/run-smokevirt-with-meshtasticd.sh" \
             "${MESHTASTICD_LOG_DIR}" \
@@ -215,7 +215,7 @@ jobs:
       - name: Summarize meshtasticd multinode logs
         if: always()
         run: |
-          ./bin/summarize-meshtasticd-logs.sh \
+          bash ./bin/summarize-meshtasticd-logs.sh \
             "meshtasticd Multinode Summary" \
             "./bin/run-multinode-with-meshtasticd.sh" \
             "${MESHTASTICD_LOG_DIR}" \
