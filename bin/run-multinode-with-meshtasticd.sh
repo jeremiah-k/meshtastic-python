@@ -154,32 +154,40 @@ wait_for_ready() {
 	done
 }
 
+wait_for_parallel_failfast() {
+	local pid_a=$1
+	local pid_b=$2
+	local first_done_pid=""
+	local first_status=0
+	local other_pid=""
+
+	if wait -n -p first_done_pid "${pid_a}" "${pid_b}"; then
+		first_status=0
+	else
+		first_status=$?
+	fi
+
+	if [[ ${first_done_pid} == "${pid_a}" ]]; then
+		other_pid="${pid_b}"
+	else
+		other_pid="${pid_a}"
+	fi
+
+	if ((first_status != 0)); then
+		kill "${other_pid}" 2>/dev/null || true
+		wait "${other_pid}" 2>/dev/null || true
+		return "${first_status}"
+	fi
+
+	wait "${other_pid}"
+}
+
 wait_for_ready "${MESHTASTICD_HOST_A}" "${MESHTASTICD_CONTAINER_A}" "${READY_LOG_A}" &
 pid_ready_a=$!
 wait_for_ready "${MESHTASTICD_HOST_B}" "${MESHTASTICD_CONTAINER_B}" "${READY_LOG_B}" &
 pid_ready_b=$!
 
-ready_status=0
-ready_first_done_pid=0
-if ! wait -n -p ready_first_done_pid "${pid_ready_a}" "${pid_ready_b}"; then
-	ready_status=$?
-	ready_other_pid="${pid_ready_a}"
-	if [[ ${ready_first_done_pid} == "${pid_ready_a}" ]]; then
-		ready_other_pid="${pid_ready_b}"
-	fi
-	kill "${ready_other_pid}" 2>/dev/null || true
-	wait "${ready_other_pid}" 2>/dev/null || true
-fi
-if ((ready_status == 0)); then
-	if [[ ${ready_first_done_pid} == "${pid_ready_a}" ]]; then
-		wait "${pid_ready_b}" || ready_status=$?
-	else
-		wait "${pid_ready_a}" || ready_status=$?
-	fi
-fi
-if ((ready_status != 0)); then
-	exit "${ready_status}"
-fi
+wait_for_parallel_failfast "${pid_ready_a}" "${pid_ready_b}"
 
 wait_for_log_pattern() {
 	local container=$1
@@ -209,27 +217,7 @@ pid_log_a=$!
 wait_for_log_pattern "${MESHTASTICD_CONTAINER_B}" "Start multicast thread" 30 &
 pid_log_b=$!
 
-log_status=0
-log_first_done_pid=0
-if ! wait -n -p log_first_done_pid "${pid_log_a}" "${pid_log_b}"; then
-	log_status=$?
-	log_other_pid="${pid_log_a}"
-	if [[ ${log_first_done_pid} == "${pid_log_a}" ]]; then
-		log_other_pid="${pid_log_b}"
-	fi
-	kill "${log_other_pid}" 2>/dev/null || true
-	wait "${log_other_pid}" 2>/dev/null || true
-fi
-if ((log_status == 0)); then
-	if [[ ${log_first_done_pid} == "${pid_log_a}" ]]; then
-		wait "${pid_log_b}" || log_status=$?
-	else
-		wait "${pid_log_a}" || log_status=$?
-	fi
-fi
-if ((log_status != 0)); then
-	exit "${log_status}"
-fi
+wait_for_parallel_failfast "${pid_log_a}" "${pid_log_b}"
 
 if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
 	# Intentionally whitespace-split; keep args as simple tokens.

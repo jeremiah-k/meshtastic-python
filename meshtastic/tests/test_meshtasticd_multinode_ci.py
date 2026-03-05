@@ -11,7 +11,7 @@ import yaml
 
 from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
-pytestmark = pytest.mark.int
+pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
 HOST_A = os.environ.get("MESHTASTICD_HOST_A", "localhost:4403")
 HOST_B = os.environ.get("MESHTASTICD_HOST_B", "localhost:4404")
@@ -215,7 +215,7 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     for host in (HOST_A, HOST_B):
         _assert_admin_commands(host)
 
-    _configure_channel_blueprint(HOST_A)
+    expected_channel_names = _configure_channel_blueprint(HOST_A)
 
     export_path = tmp_path / "meshtasticd-multinode-export.yaml"
     _run_host_cli_ok(HOST_A, "--export-config", str(export_path))
@@ -268,15 +268,23 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     assert channel_url_b.startswith("https://meshtastic.org/e/#")
     assert len(channel_url_b) >= MIN_CHANNEL_URL_LENGTH
 
+    channel_name_map_b = _extract_channel_names(info_output_b)
     channels_a = exported_data.get("channels")
     channels_b = exported_data_b.get("channels")
     if channels_a is None or channels_b is None:
         assert channels_a is None
         assert channels_b is None
-        configured_names = {LONGFAST_SECONDARY_NAME, *SECONDARY_CHANNEL_NAMES}
-        channel_names_b = set(_extract_channel_names(info_output_b).values())
-        channel_names_b.discard("")
-        assert channel_names_b & configured_names
+        non_default_expected_names = {
+            name
+            for index, name in expected_channel_names.items()
+            if index >= 2 and name
+        }
+        channel_names_b = {name for name in channel_name_map_b.values() if name}
+        assert channel_names_b & non_default_expected_names
+        for index in (0, 1):
+            observed_name = channel_name_map_b.get(index, "")
+            if observed_name:
+                assert observed_name == expected_channel_names[index]
     else:
         assert isinstance(channels_a, list)
         assert isinstance(channels_b, list)
