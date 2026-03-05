@@ -1086,28 +1086,33 @@ def test_main_set_with_invalid(mocked_findports, mocked_serial, mocked_open, moc
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_snake_case(mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys):
-    """Test --configure with valid file"""
+    """Test --configure applies channel URL without opening a config transaction."""
     sys.argv = ["", "--configure", "example_config.yaml"]
     mt_config.args = sys.argv
 
     serialInterface = SerialInterface(noProto=True)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
+    anode.beginSettingsTransaction = MagicMock()
+    anode.commitSettingsTransaction = MagicMock()
+    anode.setURL = MagicMock()
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=serialInterface) as mo:
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=serialInterface) as mo,
+        patch(
+            "meshtastic.__main__.yaml.safe_load",
+            return_value={"channel_url": "https://meshtastic.org/e/#CgsSAQE="},
+        ),
+    ):
         main()
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        # should these come back? maybe a flag?
-        #assert re.search(r"Setting device owner", out, re.MULTILINE)
-        #assert re.search(r"Setting device owner short", out, re.MULTILINE)
-        #assert re.search(r"Setting channel url", out, re.MULTILINE)
-        #assert re.search(r"Fixing altitude", out, re.MULTILINE)
-        #assert re.search(r"Fixing latitude", out, re.MULTILINE)
-        #assert re.search(r"Fixing longitude", out, re.MULTILINE)
-        #assert re.search(r"Set location_share to LocEnabled", out, re.MULTILINE)
+        assert re.search(r"Setting channel url to", out, re.MULTILINE)
         assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
         assert err == ""
+        anode.setURL.assert_called_once_with("https://meshtastic.org/e/#CgsSAQE=")
+        anode.beginSettingsTransaction.assert_not_called()
+        anode.commitSettingsTransaction.assert_not_called()
         mo.assert_called()
 
 
@@ -1118,27 +1123,27 @@ def test_main_configure_with_snake_case(mocked_findports, mocked_serial, mocked_
 @patch("serial.Serial")
 @patch("meshtastic.util.findPorts", return_value=["/dev/ttyUSBfake"])
 def test_main_configure_with_camel_case_keys(mocked_findports, mocked_serial, mocked_open, mocked_hupcl, capsys):
-    """Test --configure with valid file"""
+    """Test --configure opens and commits a transaction when config is present."""
     sys.argv = ["", "--configure", "exampleConfig.yaml"]
     mt_config.args = sys.argv
 
     serialInterface = SerialInterface(noProto=True)
     anode = Node(serialInterface, 1234567890, noProto=True)
     serialInterface.localNode = anode
+    anode.beginSettingsTransaction = MagicMock()
+    anode.commitSettingsTransaction = MagicMock()
 
-    with patch("meshtastic.serial_interface.SerialInterface", return_value=serialInterface) as mo:
+    with (
+        patch("meshtastic.serial_interface.SerialInterface", return_value=serialInterface) as mo,
+        patch("meshtastic.__main__.yaml.safe_load", return_value={"config": {}}),
+    ):
         main()
         out, err = capsys.readouterr()
         assert re.search(r"Connected to radio", out, re.MULTILINE)
-        # should these come back? maybe a flag?
-        #assert re.search(r"Setting device owner", out, re.MULTILINE)
-        #assert re.search(r"Setting device owner short", out, re.MULTILINE)
-        #assert re.search(r"Setting channel url", out, re.MULTILINE)
-        #assert re.search(r"Fixing altitude", out, re.MULTILINE)
-        #assert re.search(r"Fixing latitude", out, re.MULTILINE)
-        #assert re.search(r"Fixing longitude", out, re.MULTILINE)
         assert re.search(r"Writing modified configuration to device", out, re.MULTILINE)
         assert err == ""
+        anode.beginSettingsTransaction.assert_called_once()
+        anode.commitSettingsTransaction.assert_called_once()
         mo.assert_called()
 
 

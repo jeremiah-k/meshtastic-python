@@ -710,8 +710,13 @@ def onConnected(interface):
             with open(args.configure[0], encoding="utf8") as file:
                 configuration = yaml.safe_load(file)
                 closeNow = True
-
-                interface.getNode(args.dest, False, **getNode_kwargs).beginSettingsTransaction()
+                uses_config_transaction = (
+                    "config" in configuration or "module_config" in configuration
+                )
+                if uses_config_transaction:
+                    interface.getNode(
+                        args.dest, False, **getNode_kwargs
+                    ).beginSettingsTransaction()
 
                 if "owner" in configuration:
                     # Validate owner name before setting
@@ -814,7 +819,10 @@ def onConnected(interface):
                         )
                         time.sleep(0.5)
 
-                interface.getNode(args.dest, False, **getNode_kwargs).commitSettingsTransaction()
+                if uses_config_transaction:
+                    interface.getNode(
+                        args.dest, False, **getNode_kwargs
+                    ).commitSettingsTransaction()
                 print("Writing modified configuration to device")
 
         if args.export_config:
