@@ -1,4 +1,4 @@
-.PHONY: all clean test ci ci-strict ci-base lint docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd smoke1 slow install examples protobufs protobufs-update FORCE
+.PHONY: all clean test ci ci-strict ci-base lint docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd smoke1 smoke1-destructive slow install examples protobufs protobufs-update FORCE
 
 POETRY_RUN := poetry run
 
@@ -46,9 +46,13 @@ virt-smokevirt-meshtasticd:
 virt-multinode-meshtasticd:
 	./bin/run-multinode-with-meshtasticd.sh
 
-# run the smoke1 test (after doing a factory reset and unplugging/replugging in device)
+# run stable non-destructive smoke1 hardware checks
 smoke1:
-	$(POETRY_RUN) pytest -m smoke1 -s -vv
+	$(POETRY_RUN) pytest -m "smoke1 and not smoke1_destructive" -s -vv
+
+# run destructive smoke1 hardware checks (reboot/reset/config mutation)
+smoke1-destructive:
+	$(POETRY_RUN) pytest -m smoke1_destructive -s -vv
 
 # local install
 install:
