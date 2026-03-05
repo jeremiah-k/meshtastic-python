@@ -47,7 +47,9 @@ INFO_CHANNEL_LINE_RE = re.compile(
 
 
 def _wait_for_host_ready(
-    host: str, timeout_seconds: float = HOST_READY_TIMEOUT_SECONDS
+    host: str,
+    meshtastic_bin: str,
+    timeout_seconds: float = HOST_READY_TIMEOUT_SECONDS,
 ) -> None:
     """Wait until a host responds successfully to ``--info``.
 
@@ -55,6 +57,8 @@ def _wait_for_host_ready(
     ----------
     host : str
         Host passed to the CLI ``--host`` argument.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
     timeout_seconds : float, optional
         Maximum number of seconds to wait for readiness.
     """
@@ -66,6 +70,7 @@ def _wait_for_host_ready(
             host,
             "--info",
             timeout=HOST_READY_POLL_CLI_TIMEOUT_SECONDS,
+            meshtastic_bin=meshtastic_bin,
         )
         if returncode == 0 and "Connected to radio" in output:
             return
@@ -137,24 +142,34 @@ def _extract_exported_channel_identities(channels: list[Any]) -> set[tuple[int, 
     return identities
 
 
-def _configure_channel_blueprint(host: str) -> dict[int, str]:
+def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, str]:
     """Configure deterministic channel settings on one daemon.
 
     Parameters
     ----------
     host : str
         Host passed to the CLI ``--host`` argument.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
 
     Returns
     -------
     dict[int, str]
         Mapping from channel index to expected channel name after configure.
     """
-    _run_host_cli_ok(host, "--set", "lora.region", LORA_REGION)
-    _run_host_cli_ok(host, "--set", "lora.channel_num", LORA_CHANNEL_NUM)
-    _run_host_cli_ok(host, "--ch-set", "name", PRIMARY_CHANNEL_NAME, "--ch-index", "0")
-    _run_host_cli_ok(
-        host,
+
+    def _cli_ok(*args: str, timeout: int | float = 30) -> str:
+        return _run_host_cli_ok(
+            host,
+            *args,
+            timeout=timeout,
+            meshtastic_bin=meshtastic_bin,
+        )
+
+    _cli_ok("--set", "lora.region", LORA_REGION)
+    _cli_ok("--set", "lora.channel_num", LORA_CHANNEL_NUM)
+    _cli_ok("--ch-set", "name", PRIMARY_CHANNEL_NAME, "--ch-index", "0")
+    _cli_ok(
         "--ch-set",
         "module_settings.position_precision",
         POSITION_PRECISION_DISABLED,
@@ -163,24 +178,22 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
     )
 
     expected_channel_names = {0: PRIMARY_CHANNEL_NAME, 1: LONGFAST_SECONDARY_NAME}
-    _run_host_cli_ok(host, "--ch-add", LONGFAST_SECONDARY_NAME)
-    _run_host_cli_ok(host, "--ch-set", "psk", "none", "--ch-index", "1")
-    _run_host_cli_ok(
-        host,
+    _cli_ok("--ch-add", LONGFAST_SECONDARY_NAME)
+    _cli_ok("--ch-set", "psk", "none", "--ch-index", "1")
+    _cli_ok(
         "--ch-set",
         "module_settings.position_precision",
         POSITION_PRECISION_DEFAULT,
         "--ch-index",
         "1",
     )
-    _run_host_cli_ok(host, "--ch-set", "uplink_enabled", "true", "--ch-index", "1")
-    _run_host_cli_ok(host, "--ch-set", "downlink_enabled", "false", "--ch-index", "1")
+    _cli_ok("--ch-set", "uplink_enabled", "true", "--ch-index", "1")
+    _cli_ok("--ch-set", "downlink_enabled", "false", "--ch-index", "1")
 
     for index, channel_name in enumerate(SECONDARY_CHANNEL_NAMES, start=2):
-        _run_host_cli_ok(host, "--ch-add", channel_name)
-        _run_host_cli_ok(host, "--ch-set", "psk", "random", "--ch-index", str(index))
-        _run_host_cli_ok(
-            host,
+        _cli_ok("--ch-add", channel_name)
+        _cli_ok("--ch-set", "psk", "random", "--ch-index", str(index))
+        _cli_ok(
             "--ch-set",
             "module_settings.position_precision",
             POSITION_PRECISION_DISABLED,
@@ -190,16 +203,14 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
         expected_channel_names[index] = channel_name
         uplink_enabled = "true" if index % 2 == 0 else "false"
         downlink_enabled = "false" if index % 2 == 0 else "true"
-        _run_host_cli_ok(
-            host,
+        _cli_ok(
             "--ch-set",
             "uplink_enabled",
             uplink_enabled,
             "--ch-index",
             str(index),
         )
-        _run_host_cli_ok(
-            host,
+        _cli_ok(
             "--ch-set",
             "downlink_enabled",
             downlink_enabled,
@@ -207,7 +218,7 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
             str(index),
         )
 
-    info_output = _run_host_cli_ok(host, "--info")
+    info_output = _cli_ok("--info")
     assert "Primary channel URL:" in info_output
     assert "Complete URL (includes all channels):" in info_output
     assert _extract_channel_names(info_output) == expected_channel_names
@@ -228,9 +239,9 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
             re.MULTILINE,
         )
 
-    region_output = _run_host_cli_ok(host, "--get", "lora.region")
+    region_output = _cli_ok("--get", "lora.region")
     assert re.search(r"^lora\.region:\s+(US|1)$", region_output, re.MULTILINE)
-    channel_num_output = _run_host_cli_ok(host, "--get", "lora.channel_num")
+    channel_num_output = _cli_ok("--get", "lora.channel_num")
     assert re.search(
         rf"^lora\.channel_num:\s+{LORA_CHANNEL_NUM}$",
         channel_num_output,
@@ -240,24 +251,41 @@ def _configure_channel_blueprint(host: str) -> dict[int, str]:
     return expected_channel_names
 
 
-def _assert_admin_commands(host: str) -> None:
+def _assert_admin_commands(host: str, meshtastic_bin: str) -> None:
     """Assert basic admin-related CLI operations succeed on one host.
 
     Parameters
     ----------
     host : str
         Host passed to the CLI ``--host`` argument.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
     """
-    metadata_output = _run_host_cli_ok(host, "--device-metadata")
+    metadata_output = _run_host_cli_ok(
+        host,
+        "--device-metadata",
+        meshtastic_bin=meshtastic_bin,
+    )
     assert "firmware_version:" in metadata_output
-    get_output = _run_host_cli_ok(host, "--get", "lora.region")
+    get_output = _run_host_cli_ok(
+        host,
+        "--get",
+        "lora.region",
+        meshtastic_bin=meshtastic_bin,
+    )
     assert re.search(r"^lora\.region:\s+", get_output, re.MULTILINE)
-    send_text_output = _run_host_cli_ok(host, "--sendtext", f"ci-admin-check-{host}")
+    send_text_output = _run_host_cli_ok(
+        host,
+        "--sendtext",
+        f"ci-admin-check-{host}",
+        meshtastic_bin=meshtastic_bin,
+    )
     assert "Sending text message" in send_text_output
 
 
 def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     tmp_path: Path,
+    meshtastic_bin: str,
 ) -> None:
     """Exercise admin commands, then export/restore config across two simulators.
 
@@ -265,17 +293,24 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     ----------
     tmp_path : Path
         Temporary directory used for exported YAML files.
+    meshtastic_bin : str
+        Path or name of the meshtastic CLI binary under test.
     """
-    _wait_for_host_ready(HOST_A)
-    _wait_for_host_ready(HOST_B)
+    _wait_for_host_ready(HOST_A, meshtastic_bin)
+    _wait_for_host_ready(HOST_B, meshtastic_bin)
 
     for host in (HOST_A, HOST_B):
-        _assert_admin_commands(host)
+        _assert_admin_commands(host, meshtastic_bin)
 
-    expected_channel_names = _configure_channel_blueprint(HOST_A)
+    expected_channel_names = _configure_channel_blueprint(HOST_A, meshtastic_bin)
 
     export_path = tmp_path / "meshtasticd-multinode-export.yaml"
-    _run_host_cli_ok(HOST_A, "--export-config", str(export_path))
+    _run_host_cli_ok(
+        HOST_A,
+        "--export-config",
+        str(export_path),
+        meshtastic_bin=meshtastic_bin,
+    )
     assert export_path.exists()
     assert export_path.stat().st_size > 0
 
@@ -297,19 +332,32 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
         "--configure",
         str(export_path),
         timeout=HOST_CONFIGURE_TIMEOUT_SECONDS,
+        meshtastic_bin=meshtastic_bin,
     )
     assert "Writing modified configuration to device" in configure_output
     _wait_for_host_ready(
-        HOST_B, timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS
+        HOST_B,
+        meshtastic_bin,
+        timeout_seconds=HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS,
     )
 
-    info_output_b = _run_host_cli_ok(HOST_B, "--info")
+    info_output_b = _run_host_cli_ok(HOST_B, "--info", meshtastic_bin=meshtastic_bin)
     assert re.search(
         rf"^Owner:\s+{re.escape(CONFIGURED_OWNER)}\b", info_output_b, re.MULTILINE
     )
-    region_output_b = _run_host_cli_ok(HOST_B, "--get", "lora.region")
+    region_output_b = _run_host_cli_ok(
+        HOST_B,
+        "--get",
+        "lora.region",
+        meshtastic_bin=meshtastic_bin,
+    )
     assert re.search(r"^lora\.region:\s+(US|1)$", region_output_b, re.MULTILINE)
-    channel_num_output_b = _run_host_cli_ok(HOST_B, "--get", "lora.channel_num")
+    channel_num_output_b = _run_host_cli_ok(
+        HOST_B,
+        "--get",
+        "lora.channel_num",
+        meshtastic_bin=meshtastic_bin,
+    )
     assert re.search(
         rf"^lora\.channel_num:\s+{LORA_CHANNEL_NUM}$",
         channel_num_output_b,
@@ -317,7 +365,12 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     )
 
     export_path_b = tmp_path / "meshtasticd-multinode-export-b.yaml"
-    _run_host_cli_ok(HOST_B, "--export-config", str(export_path_b))
+    _run_host_cli_ok(
+        HOST_B,
+        "--export-config",
+        str(export_path_b),
+        meshtastic_bin=meshtastic_bin,
+    )
     exported_data_b = yaml.safe_load(export_path_b.read_text(encoding="utf-8"))
     assert isinstance(exported_data_b, dict)
     channel_url_b = exported_data_b.get("channel_url")
@@ -331,13 +384,11 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     if channels_a is None or channels_b is None:
         assert channels_a is None
         assert channels_b is None
-        non_default_expected_names = {
-            name
-            for index, name in expected_channel_names.items()
-            if index >= 2 and name
-        }
-        channel_names_b = {name for name in channel_name_map_b.values() if name}
-        assert channel_names_b & non_default_expected_names
+        expected_names = {name for name in expected_channel_names.values() if name}
+        observed_names = {name for name in channel_name_map_b.values() if name}
+        assert observed_names <= expected_names
+        observed_secondary_names = observed_names & set(SECONDARY_CHANNEL_NAMES)
+        assert len(observed_secondary_names) >= 3
         for index in (0, 1):
             observed_name = channel_name_map_b.get(index, "")
             if observed_name:

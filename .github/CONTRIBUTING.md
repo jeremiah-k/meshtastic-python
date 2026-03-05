@@ -1,4 +1,4 @@
-## Contributing Guide
+# Contributing Guide
 
-The canonical contributing guide lives at repository root:
+The canonical contributing guide lives at the repository root:
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).

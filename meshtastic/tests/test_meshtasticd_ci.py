@@ -10,7 +10,7 @@ import yaml
 
 from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
-pytestmark = pytest.mark.int
+pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
 HOST = os.environ.get("MESHTASTICD_HOST", "localhost")
 HOST_READY_TIMEOUT_SECONDS = 45.0
