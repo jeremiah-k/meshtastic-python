@@ -392,6 +392,22 @@ def test_close_waits_for_inflight_heartbeat_send(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("reset_mt_config")
+def test_close_suppresses_disconnect_send_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """close() should continue cleanup if sending disconnect fails."""
+    with MeshInterface(noProto=True) as iface:
+        with (
+            patch.object(iface, "_send_disconnect", side_effect=OSError("bad fd")),
+            caplog.at_level(logging.DEBUG),
+        ):
+            iface.close()
+
+    assert "Failed to send disconnect during close(); continuing shutdown." in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("reset_mt_config")
 def test_connected_noop_when_closing() -> None:
     """_connected() should not set connection state while shutdown is in progress."""
     with MeshInterface(noProto=True) as iface:
