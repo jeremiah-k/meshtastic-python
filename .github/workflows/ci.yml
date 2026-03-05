@@ -110,6 +110,13 @@ jobs:
       - *install_local_step
       - name: Check types with mypy
         run: poetry run mypy meshtastic/
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - *checkout_step
+      - name: Lint shell scripts
+        run: shellcheck bin/*.sh
   compatibility:
     name: Compatibility Inventory (py3.13)
     runs-on: ubuntu-latest
@@ -144,6 +151,115 @@ jobs:
             meshtastic/tests/test_mesh_interface.py::test_sendPacket_alias_with_destination_as_int \
             meshtastic/tests/test_mesh_interface.py::test_sendPacket_alias_with_no_destination \
             meshtastic/tests/test_mesh_interface.py::test_send_telemetry_supported_and_fallback_paths
+  meshtasticd-integration:
+    name: meshtasticd Integration (py3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHON_VERSION: "3.13"
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+      MESHTASTICD_IMAGE: meshtastic/meshtasticd:latest
+      MESHTASTICD_HOST: localhost:4401
+      MESHTASTICD_PORT: "4401"
+      MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
+      MESHTASTICD_LOG_ON_SUCCESS: "true"
+      MESHTASTICD_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/single
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
+      - name: Run meshtasticd integration tests against simulator
+        run: ./bin/run-smokevirt-with-meshtasticd.sh
+      - name: Summarize meshtasticd integration logs
+        if: always()
+        run: |
+          {
+            echo "### meshtasticd Integration Summary"
+            echo ""
+            echo "- Runner script: \`./bin/run-smokevirt-with-meshtasticd.sh\`"
+            if [[ -d "${MESHTASTICD_LOG_DIR}" ]]; then
+              shopt -s nullglob
+              log_files=("${MESHTASTICD_LOG_DIR}"/*.log)
+              if (( ${#log_files[@]} == 0 )); then
+                echo "- Log files: none"
+              else
+                echo "- Log files:"
+                for log_file in "${log_files[@]}"; do
+                  line_count="$(wc -l <"${log_file}" || echo 0)"
+                  packetish_count="$(grep -E -c 'PACKET FROM PHONE|handleReceived|Forwarding to phone|FromRadio=STATE_SEND_PACKETS' "${log_file}" || true)"
+                  echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}"
+                done
+              fi
+            else
+              echo "- Log directory not found: \`${MESHTASTICD_LOG_DIR}\`"
+            fi
+          } >>"${GITHUB_STEP_SUMMARY}"
+      - name: Upload meshtasticd integration logs
+        if: always()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: meshtasticd-integration-logs
+          path: ${{ env.MESHTASTICD_LOG_DIR }}
+          if-no-files-found: warn
+  meshtasticd-multinode-integration:
+    name: meshtasticd Multinode Integration (py3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHON_VERSION: "3.13"
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+      MESHTASTICD_IMAGE: meshtastic/meshtasticd:latest
+      MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
+      MESHTASTICD_HOST_A: localhost:4401
+      MESHTASTICD_HOST_B: localhost:4402
+      MESHTASTICD_PORT_A: "4401"
+      MESHTASTICD_PORT_B: "4402"
+      MESHTASTICD_HWID_A: "11"
+      MESHTASTICD_HWID_B: "22"
+      MESHTASTICD_LOG_ON_SUCCESS: "true"
+      MESHTASTICD_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/multinode
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
+      - name: Run dual-daemon meshtasticd integration tests
+        run: ./bin/run-multinode-with-meshtasticd.sh
+      - name: Summarize meshtasticd multinode logs
+        if: always()
+        run: |
+          {
+            echo "### meshtasticd Multinode Summary"
+            echo ""
+            echo "- Runner script: \`./bin/run-multinode-with-meshtasticd.sh\`"
+            if [[ -d "${MESHTASTICD_LOG_DIR}" ]]; then
+              shopt -s nullglob
+              log_files=("${MESHTASTICD_LOG_DIR}"/*.log)
+              if (( ${#log_files[@]} == 0 )); then
+                echo "- Log files: none"
+              else
+                echo "- Log files:"
+                for log_file in "${log_files[@]}"; do
+                  line_count="$(wc -l <"${log_file}" || echo 0)"
+                  packetish_count="$(grep -E -c 'PACKET FROM PHONE|handleReceived|Forwarding to phone|FromRadio=STATE_SEND_PACKETS' "${log_file}" || true)"
+                  multicast_count="$(grep -F -c 'Start multicast thread' "${log_file}" || true)"
+                  echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}, multicast=${multicast_count}"
+                done
+              fi
+            else
+              echo "- Log directory not found: \`${MESHTASTICD_LOG_DIR}\`"
+            fi
+          } >>"${GITHUB_STEP_SUMMARY}"
+      - name: Upload meshtasticd multinode logs
+        if: always()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: meshtasticd-multinode-logs
+          path: ${{ env.MESHTASTICD_LOG_DIR }}
+          if-no-files-found: warn
   # Fast install sanity check across Python versions.
   # Full tests run in the tests job above.
   # Lint/type checks run in dedicated jobs for earlier independent failures.

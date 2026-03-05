@@ -1,4 +1,6 @@
-set -e
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 # You may consider running: "pytest -m smoke1" instead of this test.
 
@@ -11,7 +13,13 @@ poetry run mypy meshtastic/
 echo "Running (crude) prerelease tests to verify sanity"
 
 # Use the python environment created by poetry
-source $(poetry env info --path)/bin/activate
+POETRY_ENV_PATH="$(poetry env info --path 2>/dev/null || true)"
+if [[ -z ${POETRY_ENV_PATH} || ! -f "${POETRY_ENV_PATH}/bin/activate" ]]; then
+	echo "Error: Poetry environment not found. Run 'poetry install' first." >&2
+	exit 1
+fi
+# shellcheck disable=SC1091  # path is resolved dynamically from poetry
+source "${POETRY_ENV_PATH}/bin/activate"
 
 echo running hello
 python3 tests/hello_world.py

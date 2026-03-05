@@ -1,4 +1,4 @@
-.PHONY: all clean test ci ci-strict ci-base lint docs cov open-coverage virt smoke1 slow install examples protobufs protobufs-update FORCE
+.PHONY: all clean test ci ci-strict ci-base lint docs cov open-coverage virt virt-meshtasticd virt-smokevirt-meshtasticd virt-multinode-meshtasticd smoke1 slow install examples protobufs protobufs-update FORCE
 
 POETRY_RUN := poetry run
 
@@ -31,6 +31,20 @@ ci-strict:
 # only run the smoke tests against the virtual device
 virt:
 	$(POETRY_RUN) pytest -m smokevirt
+
+# run meshtasticd simulator integration tests (defaults to meshtastic/tests/test_meshtasticd_ci.py unless MESHTASTICD_PYTEST_TARGETS is set)
+virt-meshtasticd:
+	./bin/run-smokevirt-with-meshtasticd.sh
+
+# run the full legacy smokevirt suite against meshtasticd simulator container
+virt-smokevirt-meshtasticd:
+	MESHTASTICD_PYTEST_TARGETS="meshtastic/tests/test_smokevirt.py" \
+	MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive" \
+	./bin/run-smokevirt-with-meshtasticd.sh
+
+# run dual-daemon meshtasticd integration tests against host-network simulators
+virt-multinode-meshtasticd:
+	./bin/run-multinode-with-meshtasticd.sh
 
 # run the smoke1 test (after doing a factory reset and unplugging/replugging in device)
 smoke1:

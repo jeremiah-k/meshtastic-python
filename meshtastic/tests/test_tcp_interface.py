@@ -312,7 +312,9 @@ def test_TCPInterface_connect_fails_fast_after_fatal_disconnect() -> None:
 
 
 @pytest.mark.unit
-def test_TCPInterface_connect_socket_waits_for_inflight_reconnect_then_connects() -> None:
+def test_TCPInterface_connect_socket_waits_for_inflight_reconnect_then_connects() -> (
+    None
+):
     """_connect_socket_if_needed should poll while reconnect is in-flight and then connect."""
     with patch("socket.socket"):
         iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)

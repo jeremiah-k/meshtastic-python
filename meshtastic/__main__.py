@@ -1080,10 +1080,6 @@ def onConnected(interface: MeshInterface) -> None:
                 configuration = yaml.safe_load(file)
                 closeNow = True
 
-                interface.getNode(
-                    args.dest, False, **getNode_kwargs
-                ).beginSettingsTransaction()
-
                 if "owner" in configuration:
                     # Validate owner name before setting
                     owner_name = str(configuration["owner"]).strip()
@@ -1180,6 +1176,13 @@ def onConnected(interface: MeshInterface) -> None:
                     interface.localNode.setFixedPosition(lat, lon, alt)
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
+                settings_transaction_started = False
+                if "config" in configuration or "module_config" in configuration:
+                    interface.getNode(
+                        args.dest, False, **getNode_kwargs
+                    ).beginSettingsTransaction()
+                    settings_transaction_started = True
+
                 if "config" in configuration:
                     localConfig = interface.getNode(
                         args.dest, **getNode_kwargs
@@ -1252,9 +1255,10 @@ def onConnected(interface: MeshInterface) -> None:
                         )
                     time.sleep(CONFIG_APPLY_DELAY_SECONDS)
 
-                interface.getNode(
-                    args.dest, False, **getNode_kwargs
-                ).commitSettingsTransaction()
+                if settings_transaction_started:
+                    interface.getNode(
+                        args.dest, False, **getNode_kwargs
+                    ).commitSettingsTransaction()
                 print("Writing modified configuration to device")
 
         if args.export_config:
