@@ -1,5 +1,6 @@
 """Stable meshtasticd integration checks for CI."""
 
+import os
 import re
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = pytest.mark.int
 
+HOST = os.environ.get("MESHTASTICD_HOST", "localhost")
 HOST_READY_TIMEOUT_SECONDS = 45.0
 HOST_READY_POLL_TIMEOUT_SECONDS = 10
 
@@ -38,7 +40,7 @@ def _wait_for_host_ready(host: str, meshtastic_bin: str) -> None:
 
 def test_meshtasticd_info_has_core_sections(meshtastic_bin: str) -> None:
     """`--info` should connect and return the key high-level sections."""
-    output = _run_host_cli_ok("localhost", "--info", meshtastic_bin=meshtastic_bin)
+    output = _run_host_cli_ok(HOST, "--info", meshtastic_bin=meshtastic_bin)
     assert output.startswith("Connected to radio")
     assert re.search(r"^Owner:", output, re.MULTILINE)
     assert re.search(r"^My info:", output, re.MULTILINE)
@@ -47,7 +49,7 @@ def test_meshtasticd_info_has_core_sections(meshtastic_bin: str) -> None:
 
 def test_meshtasticd_nodes_lists_local_node(meshtastic_bin: str) -> None:
     """`--nodes` should include at least one Meshtastic node id."""
-    output = _run_host_cli_ok("localhost", "--nodes", meshtastic_bin=meshtastic_bin)
+    output = _run_host_cli_ok(HOST, "--nodes", meshtastic_bin=meshtastic_bin)
     assert output.startswith("Connected to radio")
     assert re.search(r"![0-9a-fA-F]{8}", output)
 
@@ -60,7 +62,7 @@ def test_meshtasticd_export_and_configure_roundtrip(
     mutated_path = tmp_path / "meshtasticd-ci-mutated.yaml"
 
     export_output = _run_host_cli_ok(
-        "localhost",
+        HOST,
         "--export-config",
         str(export_path),
         meshtastic_bin=meshtastic_bin,
@@ -80,16 +82,16 @@ def test_meshtasticd_export_and_configure_roundtrip(
 
     try:
         configure_output = _run_host_cli_ok(
-            "localhost",
+            HOST,
             "--configure",
             str(mutated_path),
             meshtastic_bin=meshtastic_bin,
         )
         assert "Writing modified configuration to device" in configure_output
 
-        _wait_for_host_ready("localhost", meshtastic_bin)
+        _wait_for_host_ready(HOST, meshtastic_bin)
         info_output = _run_host_cli_ok(
-            "localhost",
+            HOST,
             "--info",
             meshtastic_bin=meshtastic_bin,
         )
@@ -97,19 +99,19 @@ def test_meshtasticd_export_and_configure_roundtrip(
         assert re.search(r"^Owner: Meshtastic CI\b", info_output, re.MULTILINE)
     finally:
         restore_output = _run_host_cli_ok(
-            "localhost",
+            HOST,
             "--configure",
             str(export_path),
             meshtastic_bin=meshtastic_bin,
         )
         assert "Writing modified configuration to device" in restore_output
-        _wait_for_host_ready("localhost", meshtastic_bin)
+        _wait_for_host_ready(HOST, meshtastic_bin)
 
 
 def test_meshtasticd_get_and_sendtext_paths(meshtastic_bin: str) -> None:
     """Read-only `--get` and broadcast `--sendtext` should succeed."""
     get_output = _run_host_cli_ok(
-        "localhost",
+        HOST,
         "--get",
         "lora.region",
         meshtastic_bin=meshtastic_bin,
@@ -117,7 +119,7 @@ def test_meshtasticd_get_and_sendtext_paths(meshtastic_bin: str) -> None:
     assert re.search(r"^lora\.region:", get_output, re.MULTILINE)
 
     send_output = _run_host_cli_ok(
-        "localhost",
+        HOST,
         "--sendtext",
         "hello",
         meshtastic_bin=meshtastic_bin,

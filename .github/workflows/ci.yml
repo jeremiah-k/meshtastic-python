@@ -110,6 +110,17 @@ jobs:
       - *install_local_step
       - name: Check types with mypy
         run: poetry run mypy meshtastic/
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - *checkout_step
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - name: Lint shell scripts
+        run: shellcheck bin/*.sh
   compatibility:
     name: Compatibility Inventory (py3.13)
     runs-on: ubuntu-latest

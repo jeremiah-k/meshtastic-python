@@ -22,6 +22,8 @@ PYTEST_TARGETS=()
 READY_LOG_A_IS_TEMP=false
 READY_LOG_B_IS_TEMP=false
 
+# Keep this helper local in each runner script so each entrypoint stays standalone.
+# Usage: require_regex "<value>" "<regex>" "<env-name>"
 require_regex() {
 	local value=$1
 	local pattern=$2
@@ -187,7 +189,7 @@ wait_for_parallel_failfast() {
 			fi
 			break
 		fi
-		sleep 0.2
+		sleep 0.5
 	done
 
 	if [[ ${done_pid} == "${pid_a}" ]]; then

@@ -14,6 +14,8 @@ PYTEST_TARGETS=()
 LOGS_PRINTED=false
 READY_LOG_FILE_IS_TEMP=false
 
+# Keep this helper local in each runner script so each entrypoint stays standalone.
+# Usage: require_regex "<value>" "<regex>" "<env-name>"
 require_regex() {
 	local value=$1
 	local pattern=$2
