@@ -5,13 +5,14 @@ set -euo pipefail
 MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:latest}"
 MESHTASTICD_CONTAINER="${MESHTASTICD_CONTAINER:-meshtasticd-smokevirt}"
 MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-120}"
-READY_LOG_FILE="${READY_LOG_FILE:-/tmp/meshtasticd-smokevirt-ready.log}"
+READY_LOG_FILE="${READY_LOG_FILE-}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 LOGS_PRINTED=false
+READY_LOG_FILE_IS_TEMP=false
 
 require_regex() {
 	local value=$1
@@ -32,6 +33,9 @@ cleanup() {
 	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null || true
 	fi
+	if [[ ${READY_LOG_FILE_IS_TEMP} == true ]]; then
+		rm -f "${READY_LOG_FILE}" || true
+	fi
 	exit "${exit_code}"
 }
 
@@ -45,7 +49,11 @@ fi
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?$' "MESHTASTICD_IMAGE"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
-if [[ -z ${READY_LOG_FILE} || ${READY_LOG_FILE} == *$'\n'* ]]; then
+if [[ -z ${READY_LOG_FILE} ]]; then
+	READY_LOG_FILE="$(mktemp /tmp/meshtasticd-smokevirt-ready.XXXXXX.log)"
+	READY_LOG_FILE_IS_TEMP=true
+fi
+if [[ ${READY_LOG_FILE} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_FILE path." >&2
 	exit 1
 fi
@@ -54,7 +62,7 @@ if ((10#${MESHTASTICD_READY_TIMEOUT_SECONDS} <= 0)); then
 	exit 1
 fi
 
-rm -f "${READY_LOG_FILE}"
+: >"${READY_LOG_FILE}"
 docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null 2>&1 || true
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then

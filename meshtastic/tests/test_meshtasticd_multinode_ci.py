@@ -227,6 +227,7 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     source_channel_url = exported_data.get("channel_url")
     assert isinstance(source_channel_url, str)
     assert source_channel_url.startswith("https://meshtastic.org/e/#")
+    assert len(source_channel_url) >= MIN_CHANNEL_URL_LENGTH
     exported_data["owner"] = CONFIGURED_OWNER
     exported_data["owner_short"] = CONFIGURED_OWNER_SHORT
     export_path.write_text(
@@ -272,6 +273,10 @@ def test_meshtasticd_multinode_channel_blueprint_export_and_reuse(
     if channels_a is None or channels_b is None:
         assert channels_a is None
         assert channels_b is None
+        configured_names = {LONGFAST_SECONDARY_NAME, *SECONDARY_CHANNEL_NAMES}
+        channel_names_b = set(_extract_channel_names(info_output_b).values())
+        channel_names_b.discard("")
+        assert channel_names_b & configured_names
     else:
         assert isinstance(channels_a, list)
         assert isinstance(channels_b, list)

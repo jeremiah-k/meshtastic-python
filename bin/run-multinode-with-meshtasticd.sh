@@ -12,13 +12,15 @@ MESHTASTICD_PORT_B="${MESHTASTICD_PORT_B:-4404}"
 MESHTASTICD_HWID_A="${MESHTASTICD_HWID_A:-11}"
 MESHTASTICD_HWID_B="${MESHTASTICD_HWID_B:-22}"
 MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-180}"
-READY_LOG_A="${READY_LOG_A:-/tmp/meshtasticd-multinode-a-ready.log}"
-READY_LOG_B="${READY_LOG_B:-/tmp/meshtasticd-multinode-b-ready.log}"
+READY_LOG_A="${READY_LOG_A-}"
+READY_LOG_B="${READY_LOG_B-}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_multinode_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR:-int}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
+READY_LOG_A_IS_TEMP=false
+READY_LOG_B_IS_TEMP=false
 
 require_regex() {
 	local value=$1
@@ -39,6 +41,12 @@ cleanup() {
 			docker rm -f "${container}" >/dev/null || true
 		fi
 	done
+	if [[ ${READY_LOG_A_IS_TEMP} == true ]]; then
+		rm -f "${READY_LOG_A}" || true
+	fi
+	if [[ ${READY_LOG_B_IS_TEMP} == true ]]; then
+		rm -f "${READY_LOG_B}" || true
+	fi
 	exit "${exit_code}"
 }
 
@@ -76,11 +84,19 @@ if ((MESHTASTICD_PORT_B_DEC < 1 || MESHTASTICD_PORT_B_DEC > 65535)); then
 	echo "MESHTASTICD_PORT_B must be between 1 and 65535." >&2
 	exit 1
 fi
-if [[ -z ${READY_LOG_A} || ${READY_LOG_A} == *$'\n'* ]]; then
+if [[ -z ${READY_LOG_A} ]]; then
+	READY_LOG_A="$(mktemp /tmp/meshtasticd-multinode-a-ready.XXXXXX.log)"
+	READY_LOG_A_IS_TEMP=true
+fi
+if [[ -z ${READY_LOG_B} ]]; then
+	READY_LOG_B="$(mktemp /tmp/meshtasticd-multinode-b-ready.XXXXXX.log)"
+	READY_LOG_B_IS_TEMP=true
+fi
+if [[ ${READY_LOG_A} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_A path." >&2
 	exit 1
 fi
-if [[ -z ${READY_LOG_B} || ${READY_LOG_B} == *$'\n'* ]]; then
+if [[ ${READY_LOG_B} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_B path." >&2
 	exit 1
 fi
@@ -89,7 +105,8 @@ if ((MESHTASTICD_READY_TIMEOUT_SECONDS_DEC <= 0)); then
 	exit 1
 fi
 
-rm -f "${READY_LOG_A}" "${READY_LOG_B}"
+: >"${READY_LOG_A}"
+: >"${READY_LOG_B}"
 docker rm -f "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}" >/dev/null 2>&1 || true
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then
@@ -172,9 +189,17 @@ wait_for_log_pattern() {
 	return 1
 }
 
-for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
-	wait_for_log_pattern "${container}" "Start multicast thread" 30
-done
+wait_for_log_pattern "${MESHTASTICD_CONTAINER_A}" "Start multicast thread" 30 &
+pid_log_a=$!
+wait_for_log_pattern "${MESHTASTICD_CONTAINER_B}" "Start multicast thread" 30 &
+pid_log_b=$!
+
+log_status=0
+wait "${pid_log_a}" || log_status=$?
+wait "${pid_log_b}" || log_status=$?
+if ((log_status != 0)); then
+	exit "${log_status}"
+fi
 
 if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
 	# Intentionally whitespace-split; keep args as simple tokens.
