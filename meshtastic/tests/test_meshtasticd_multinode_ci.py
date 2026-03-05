@@ -17,6 +17,21 @@ from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
+
+def _positive_float_from_env(name: str, default: float) -> float:
+    """Read a positive float from the environment with a safe fallback."""
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+    try:
+        parsed = float(raw_value)
+    except ValueError:
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
 HOST_A = os.environ.get("MESHTASTICD_HOST_A", "localhost:4401")
 HOST_B = os.environ.get("MESHTASTICD_HOST_B", "localhost:4402")
 PRIMARY_CHANNEL_NAME = "CIPrimary"
@@ -35,11 +50,23 @@ LORA_REGION = "US"
 LORA_CHANNEL_NUM = "20"
 POSITION_PRECISION_DISABLED = "0"
 POSITION_PRECISION_DEFAULT = "13"
-HOST_READY_TIMEOUT_SECONDS = 60.0
-HOST_READY_POLL_CLI_TIMEOUT_SECONDS = 10
-HOST_CONFIGURE_TIMEOUT_SECONDS = 45
-HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS = 90.0
-CLI_DEFAULT_TIMEOUT_SECONDS = 30
+HOST_READY_TIMEOUT_SECONDS = _positive_float_from_env("MESH_HOST_READY_TIMEOUT", 60.0)
+HOST_READY_POLL_CLI_TIMEOUT_SECONDS = _positive_float_from_env(
+    "MESH_HOST_READY_POLL_TIMEOUT",
+    10.0,
+)
+HOST_CONFIGURE_TIMEOUT_SECONDS = _positive_float_from_env(
+    "MESH_HOST_CONFIGURE_TIMEOUT",
+    45.0,
+)
+HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS = _positive_float_from_env(
+    "MESH_HOST_READY_AFTER_CONFIGURE_TIMEOUT",
+    90.0,
+)
+CLI_DEFAULT_TIMEOUT_SECONDS = _positive_float_from_env(
+    "MESH_CLI_DEFAULT_TIMEOUT",
+    30.0,
+)
 MIN_CHANNEL_URL_LENGTH = 120
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',

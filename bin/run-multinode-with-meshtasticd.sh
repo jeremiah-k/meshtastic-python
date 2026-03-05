@@ -203,7 +203,7 @@ wait_for_ready() {
 	local ready_log_file=$3
 	local deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS_DEC))
 
-	until poetry run meshtastic --timeout 5 --host "${host}" --info >"${ready_log_file}" 2>&1; do
+	until poetry run meshtastic --timeout 5 --host "${host}" --info >>"${ready_log_file}" 2>&1; do
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
 			echo "${container} exited before becoming ready." >&2
 			mark_logs_printed

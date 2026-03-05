@@ -132,7 +132,7 @@ docker run -d \
 	meshtasticd -s --fsdir=/var/lib/meshtasticd >/dev/null
 
 deadline=$((SECONDS + 10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
-until poetry run meshtastic --timeout 5 --host "${MESHTASTICD_HOST}" --info >"${READY_LOG_FILE}" 2>&1; do
+until poetry run meshtastic --timeout 5 --host "${MESHTASTICD_HOST}" --info >>"${READY_LOG_FILE}" 2>&1; do
 	if ! docker ps --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		echo "${MESHTASTICD_CONTAINER} exited before becoming ready." >&2
 		if [[ -f ${READY_LOG_FILE} ]]; then
