@@ -55,7 +55,7 @@ rm -f "${READY_LOG_FILE}"
 docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null 2>&1 || true
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then
-	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" ]]; then
+	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" || ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd" ]]; then
 		echo "Failed to pull ${MESHTASTICD_IMAGE}, retrying with meshtastic/meshtasticd:beta"
 		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
 		docker pull "${MESHTASTICD_IMAGE}"
@@ -105,11 +105,15 @@ if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
 	exit 1
 fi
 
-if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} == *"test_smokevirt.py"* ]]; then
-	MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
-fi
-if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} == *"test_meshtasticd_ci.py"* ]]; then
-	MESHTASTICD_PYTEST_MARK_EXPR="int"
+if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
+	if [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_meshtasticd_ci\.py ]]; then
+		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
+		exit 1
+	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]]; then
+		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
+	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_meshtasticd_ci\.py ]]; then
+		MESHTASTICD_PYTEST_MARK_EXPR="int"
+	fi
 fi
 
 PYTEST_CMD=(poetry run pytest)

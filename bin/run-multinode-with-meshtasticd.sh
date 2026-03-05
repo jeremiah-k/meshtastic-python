@@ -82,7 +82,7 @@ rm -f "${READY_LOG_A}" "${READY_LOG_B}"
 docker rm -f "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}" >/dev/null 2>&1 || true
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then
-	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" ]]; then
+	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" || ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd" ]]; then
 		echo "Failed to pull ${MESHTASTICD_IMAGE}, retrying with meshtastic/meshtasticd:beta"
 		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
 		docker pull "${MESHTASTICD_IMAGE}"
@@ -126,8 +126,17 @@ wait_for_ready() {
 	done
 }
 
-wait_for_ready "${MESHTASTICD_HOST_A}" "${MESHTASTICD_CONTAINER_A}" "${READY_LOG_A}"
-wait_for_ready "${MESHTASTICD_HOST_B}" "${MESHTASTICD_CONTAINER_B}" "${READY_LOG_B}"
+wait_for_ready "${MESHTASTICD_HOST_A}" "${MESHTASTICD_CONTAINER_A}" "${READY_LOG_A}" &
+pid_ready_a=$!
+wait_for_ready "${MESHTASTICD_HOST_B}" "${MESHTASTICD_CONTAINER_B}" "${READY_LOG_B}" &
+pid_ready_b=$!
+
+ready_status=0
+wait "${pid_ready_a}" || ready_status=$?
+wait "${pid_ready_b}" || ready_status=$?
+if ((ready_status != 0)); then
+	exit "${ready_status}"
+fi
 
 wait_for_log_pattern() {
 	local container=$1
