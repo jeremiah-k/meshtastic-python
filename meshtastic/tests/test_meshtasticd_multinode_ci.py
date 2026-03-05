@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from .cli_test_utils import run_cli_argv_with_timeout
+from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = pytest.mark.int
 
@@ -30,24 +30,6 @@ INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
     re.MULTILINE,
 )
-
-
-def _run_host_cli(host: str, *args: str, timeout: int | float = 30) -> tuple[int, str]:
-    """Run a meshtastic CLI command against a host and return (code, output)."""
-    result = run_cli_argv_with_timeout(
-        ["meshtastic", "--host", host, *args],
-        timeout=timeout,
-    )
-    return result.returncode, (result.stdout or "") + (result.stderr or "")
-
-
-def _run_host_cli_ok(host: str, *args: str, timeout: int | float = 30) -> str:
-    """Run a host CLI command and assert success with useful context."""
-    returncode, output = _run_host_cli(host, *args, timeout=timeout)
-    assert (
-        returncode == 0
-    ), f"Command failed on {host}: meshtastic --host {host} {' '.join(args)}\n{output}"
-    return output
 
 
 def _wait_for_host_ready(host: str, timeout_seconds: float = 60.0) -> None:

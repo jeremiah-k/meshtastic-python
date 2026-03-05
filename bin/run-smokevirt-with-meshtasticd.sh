@@ -12,6 +12,16 @@ MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 
+require_regex() {
+	local value=$1
+	local pattern=$2
+	local name=$3
+	if [[ ! ${value} =~ ${pattern} ]]; then
+		echo "Invalid ${name}: ${value}" >&2
+		exit 1
+	fi
+}
+
 cleanup() {
 	local exit_code=$?
 	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
@@ -26,6 +36,18 @@ trap cleanup EXIT
 
 if ! command -v docker >/dev/null 2>&1; then
 	echo "docker is required to run smokevirt against meshtasticd." >&2
+	exit 1
+fi
+
+require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
+require_regex "${MESHTASTICD_IMAGE}" '^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?$' "MESHTASTICD_IMAGE"
+require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
+if [[ -z ${READY_LOG_FILE} || ${READY_LOG_FILE} == *$'\n'* ]]; then
+	echo "Invalid READY_LOG_FILE path." >&2
+	exit 1
+fi
+if ((MESHTASTICD_READY_TIMEOUT_SECONDS <= 0)); then
+	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
 fi
 
@@ -47,16 +69,26 @@ docker run -d \
 	--name "${MESHTASTICD_CONTAINER}" \
 	-p 4403:4403 \
 	"${MESHTASTICD_IMAGE}" \
-	sh -lc 'meshtasticd -s --fsdir=/var/lib/meshtasticd' >/dev/null
+	meshtasticd -s --fsdir=/var/lib/meshtasticd >/dev/null
 
 deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS))
-until poetry run meshtastic --host localhost --info >"${READY_LOG_FILE}" 2>&1; do
+until poetry run meshtastic --timeout 5 --host localhost --info >"${READY_LOG_FILE}" 2>&1; do
+	if ! docker ps --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
+		echo "${MESHTASTICD_CONTAINER} exited before becoming ready." >&2
+		if [[ -f ${READY_LOG_FILE} ]]; then
+			echo "===== meshtastic readiness output =====" >&2
+			cat "${READY_LOG_FILE}" >&2
+		fi
+		docker logs "${MESHTASTICD_CONTAINER}" >&2 || true
+		exit 1
+	fi
 	if ((SECONDS >= deadline)); then
 		echo "meshtasticd did not become ready within ${MESHTASTICD_READY_TIMEOUT_SECONDS}s." >&2
 		if [[ -f ${READY_LOG_FILE} ]]; then
 			echo "===== meshtastic readiness output =====" >&2
 			cat "${READY_LOG_FILE}" >&2
 		fi
+		docker logs "${MESHTASTICD_CONTAINER}" >&2 || true
 		exit 1
 	fi
 	sleep 2

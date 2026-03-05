@@ -149,3 +149,36 @@ def run_cli_argv_with_timeout(
 ) -> subprocess.CompletedProcess[str]:
     """Compatibility alias for runCliArgvWithTimeout()."""
     return runCliArgvWithTimeout(cmd, timeout=timeout)
+
+
+def _run_host_cli(
+    host: str,
+    *args: str,
+    timeout: int | float = 30,
+    meshtastic_bin: str = "meshtastic",
+) -> tuple[int, str]:
+    """Run a meshtastic CLI command against a host and return (code, output)."""
+    result = run_cli_argv_with_timeout(
+        [meshtastic_bin, "--host", host, *args],
+        timeout=timeout,
+    )
+    return result.returncode, (result.stdout or "") + (result.stderr or "")
+
+
+def _run_host_cli_ok(
+    host: str,
+    *args: str,
+    timeout: int | float = 30,
+    meshtastic_bin: str = "meshtastic",
+) -> str:
+    """Run a host CLI command and assert success with useful context."""
+    returncode, output = _run_host_cli(
+        host,
+        *args,
+        timeout=timeout,
+        meshtastic_bin=meshtastic_bin,
+    )
+    assert (
+        returncode == 0
+    ), f"Command failed on {host}: {meshtastic_bin} --host {host} {' '.join(args)}\n{output}"
+    return output

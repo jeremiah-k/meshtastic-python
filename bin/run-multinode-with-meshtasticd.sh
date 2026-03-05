@@ -20,6 +20,16 @@ MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR:-int}"
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 
+require_regex() {
+	local value=$1
+	local pattern=$2
+	local name=$3
+	if [[ ! ${value} =~ ${pattern} ]]; then
+		echo "Invalid ${name}: ${value}" >&2
+		exit 1
+	fi
+}
+
 cleanup() {
 	local exit_code=$?
 	for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
@@ -45,6 +55,29 @@ if [[ ${OS_NAME} != "Linux" ]]; then
 	exit 1
 fi
 
+require_regex "${MESHTASTICD_CONTAINER_A}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER_A"
+require_regex "${MESHTASTICD_CONTAINER_B}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER_B"
+require_regex "${MESHTASTICD_IMAGE}" '^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?$' "MESHTASTICD_IMAGE"
+require_regex "${MESHTASTICD_HOST_A}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST_A"
+require_regex "${MESHTASTICD_HOST_B}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST_B"
+require_regex "${MESHTASTICD_PORT_A}" '^[0-9]+$' "MESHTASTICD_PORT_A"
+require_regex "${MESHTASTICD_PORT_B}" '^[0-9]+$' "MESHTASTICD_PORT_B"
+require_regex "${MESHTASTICD_HWID_A}" '^[0-9]+$' "MESHTASTICD_HWID_A"
+require_regex "${MESHTASTICD_HWID_B}" '^[0-9]+$' "MESHTASTICD_HWID_B"
+require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
+if [[ -z ${READY_LOG_A} || ${READY_LOG_A} == *$'\n'* ]]; then
+	echo "Invalid READY_LOG_A path." >&2
+	exit 1
+fi
+if [[ -z ${READY_LOG_B} || ${READY_LOG_B} == *$'\n'* ]]; then
+	echo "Invalid READY_LOG_B path." >&2
+	exit 1
+fi
+if ((MESHTASTICD_READY_TIMEOUT_SECONDS <= 0)); then
+	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
+	exit 1
+fi
+
 rm -f "${READY_LOG_A}" "${READY_LOG_B}"
 docker rm -f "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}" >/dev/null 2>&1 || true
 
@@ -63,12 +96,12 @@ docker run -d \
 	--name "${MESHTASTICD_CONTAINER_A}" \
 	--network host \
 	"${MESHTASTICD_IMAGE}" \
-	sh -lc "meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p ${MESHTASTICD_PORT_A} -h ${MESHTASTICD_HWID_A}" >/dev/null
+	meshtasticd -s --fsdir=/var/lib/meshtasticd-a -p "${MESHTASTICD_PORT_A}" -h "${MESHTASTICD_HWID_A}" >/dev/null
 docker run -d \
 	--name "${MESHTASTICD_CONTAINER_B}" \
 	--network host \
 	"${MESHTASTICD_IMAGE}" \
-	sh -lc "meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p ${MESHTASTICD_PORT_B} -h ${MESHTASTICD_HWID_B}" >/dev/null
+	meshtasticd -s --fsdir=/var/lib/meshtasticd-b -p "${MESHTASTICD_PORT_B}" -h "${MESHTASTICD_HWID_B}" >/dev/null
 
 wait_for_ready() {
 	local host=$1
