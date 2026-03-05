@@ -110,6 +110,16 @@ from meshtastic.protobuf import mesh_pb2
 T = TypeVar("T")
 _NOTIFY_ACQUIRED_FRAGMENT = "notify acquired"
 _BLUETOOTHCTL_TRUST_TIMEOUT_SECONDS = 10.0
+ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
+    "Cannot trust device: {address!r} did not resolve to a BLE address."
+)
+ERROR_TRUST_INVALID_TIMEOUT = "Trust timeout must be a positive number of seconds."
+ERROR_TRUST_LINUX_ONLY = "trust() is only supported on Linux hosts via bluetoothctl."
+ERROR_TRUST_BLUETOOTHCTL_MISSING = "Cannot trust device: bluetoothctl was not found."
+ERROR_TRUST_COMMAND_TIMEOUT = (
+    "bluetoothctl trust timed out after {timeout:.1f}s for {address}"
+)
+ERROR_TRUST_COMMAND_FAILED = "bluetoothctl trust failed for {address}: {detail}"
 
 
 class BLEInterface(MeshInterface):
@@ -1320,12 +1330,52 @@ class BLEInterface(MeshInterface):
         sanitized = sanitize_address(address)
         if sanitized is None or len(sanitized) != 12:
             raise self.BLEError(
-                f"Cannot trust device: {address!r} did not resolve to a BLE address."
+                ERROR_TRUST_ADDRESS_NOT_RESOLVED.format(address=address)
             )
         octets = [sanitized[index : index + 2].upper() for index in range(0, 12, 2)]
         return ":".join(octets)
 
-    def pair(self, address: str | None = None, **kwargs: Any) -> Any:
+    def _execute_management_command(
+        self,
+        address: str | None,
+        command: Callable[[BLEClient], T],
+    ) -> T:
+        """Run a BLE management command using an active, existing, or temporary client.
+
+        Parameters
+        ----------
+        address : str | None
+            Target address or identifier. If None, prefer the currently connected
+            client for this interface when available.
+        command : Callable[[BLEClient], T]
+            Command to execute against the selected BLE client.
+
+        Returns
+        -------
+        T
+            Command return value.
+        """
+        if address is None:
+            with self._state_lock:
+                current_client = self.client
+            if current_client is not None and current_client.isConnected():
+                return command(current_client)
+
+        normalized_request = sanitize_address(
+            address if address is not None else self.address
+        )
+        existing_client = self._get_existing_client_if_valid(normalized_request)
+        if existing_client is not None:
+            return command(existing_client)
+
+        target_address = self._resolve_target_address_for_management(address)
+        temporary_client = BLEClient(target_address, log_if_no_address=False)
+        try:
+            return command(temporary_client)
+        finally:
+            self._client_manager._safe_close_client(temporary_client)
+
+    def pair(self, address: str | None = None, **kwargs: object) -> bool | None:
         """Pair with a BLE device either through the active client or a temporary client.
 
         Parameters
@@ -1333,34 +1383,19 @@ class BLEInterface(MeshInterface):
         address : str | None
             Target device address or identifier. If None, use the active connection
             target when available, otherwise resolve via discovery.
-        **kwargs : Any
+        **kwargs : object
             Backend-specific pairing options forwarded to `BLEClient.pair()`.
 
         Returns
         -------
-        Any
-            Pairing result returned by the BLE backend (often `None`).
+        bool | None
+            Pairing result returned by the BLE backend.
         """
-        if address is None:
-            with self._state_lock:
-                current_client = self.client
-            if current_client is not None and current_client.isConnected():
-                return current_client.pair(**kwargs)
-
-        normalized_request = sanitize_address(
-            address if address is not None else self.address
+        return self._execute_management_command(
+            address, lambda client: client.pair(**kwargs)
         )
-        existing_client = self._get_existing_client_if_valid(normalized_request)
-        if existing_client is not None:
-            return existing_client.pair(**kwargs)
-        target_address = self._resolve_target_address_for_management(address)
-        temporary_client = BLEClient(target_address, log_if_no_address=False)
-        try:
-            return temporary_client.pair(**kwargs)
-        finally:
-            self._client_manager._safe_close_client(temporary_client)
 
-    def unpair(self, address: str | None = None) -> Any:
+    def unpair(self, address: str | None = None) -> bool | None:
         """Unpair from a BLE device through the active or a temporary client.
 
         Parameters
@@ -1371,27 +1406,10 @@ class BLEInterface(MeshInterface):
 
         Returns
         -------
-        Any
-            Unpairing result returned by the BLE backend (often `None`).
+        bool | None
+            Unpairing result returned by the BLE backend.
         """
-        if address is None:
-            with self._state_lock:
-                current_client = self.client
-            if current_client is not None and current_client.isConnected():
-                return current_client.unpair()
-
-        normalized_request = sanitize_address(
-            address if address is not None else self.address
-        )
-        existing_client = self._get_existing_client_if_valid(normalized_request)
-        if existing_client is not None:
-            return existing_client.unpair()
-        target_address = self._resolve_target_address_for_management(address)
-        temporary_client = BLEClient(target_address, log_if_no_address=False)
-        try:
-            return temporary_client.unpair()
-        finally:
-            self._client_manager._safe_close_client(temporary_client)
+        return self._execute_management_command(address, lambda client: client.unpair())
 
     def trust(
         self,
@@ -1407,14 +1425,12 @@ class BLEInterface(MeshInterface):
         - Pairing PIN/passkey handling remains OS-agent managed.
         """
         if timeout <= 0:
-            raise self.BLEError("Trust timeout must be a positive number of seconds.")
+            raise self.BLEError(ERROR_TRUST_INVALID_TIMEOUT)
         if not sys.platform.startswith("linux"):
-            raise self.BLEError(
-                "trust() is only supported on Linux hosts via bluetoothctl."
-            )
+            raise self.BLEError(ERROR_TRUST_LINUX_ONLY)
         bluetoothctl_path = shutil.which("bluetoothctl")
         if bluetoothctl_path is None:
-            raise self.BLEError("Cannot trust device: bluetoothctl was not found.")
+            raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
 
         target_address = self._resolve_target_address_for_management(address)
         canonical_address = self._format_bluetoothctl_address(target_address)
@@ -1428,7 +1444,9 @@ class BLEInterface(MeshInterface):
             )
         except subprocess.TimeoutExpired as exc:
             raise self.BLEError(
-                f"bluetoothctl trust timed out after {timeout:.1f}s for {canonical_address}"
+                ERROR_TRUST_COMMAND_TIMEOUT.format(
+                    timeout=timeout, address=canonical_address
+                )
             ) from exc
         output = " ".join(
             item.strip() for item in (result.stdout, result.stderr) if item
@@ -1436,7 +1454,9 @@ class BLEInterface(MeshInterface):
         if result.returncode != 0:
             detail = output or f"exit code {result.returncode}"
             raise self.BLEError(
-                f"bluetoothctl trust failed for {canonical_address}: {detail}"
+                ERROR_TRUST_COMMAND_FAILED.format(
+                    address=canonical_address, detail=detail
+                )
             )
         logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 

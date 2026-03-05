@@ -2,7 +2,7 @@
 
 import asyncio
 import threading
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -16,6 +16,15 @@ try:
     from meshtastic.interfaces.ble.constants import (
         BLECLIENT_ERROR_ASYNC_TIMEOUT,
         BLECLIENT_ERROR_CANCELLED,
+        BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+        BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
+        BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
         BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
     )
 except ImportError:
@@ -73,42 +82,42 @@ def test_bleclient_error_class_exists() -> None:
 def test_bleclient_operations_require_initialized_client(ble_client: BLEClient) -> None:
     """BLEClient operations should raise BLEError when bleak_client is not initialized."""
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot connect: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_CONNECT_NOT_INITIALIZED
     ):
         ble_client.connect()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot disconnect: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_DISCONNECT_NOT_INITIALIZED
     ):
         ble_client.disconnect()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot read: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED
     ):
         ble_client.read_gatt_char("uuid")
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot write: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED
     ):
         ble_client.write_gatt_char("uuid", b"data")
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot pair: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED
     ):
         ble_client.pair()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot unpair: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED
     ):
         ble_client.unpair()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot get services: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED
     ):
         ble_client._get_services()
 
     with pytest.raises(
-        BLEClient.BLEError, match="Cannot start notify: BLE client not initialized"
+        BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED
     ):
         ble_client.start_notify("uuid", lambda *_args: None)
 
@@ -313,7 +322,7 @@ def test_bleclient_has_characteristic_returns_false_when_services_lookup_fails(
             """Simulate a services property that fails at access time."""
             raise BleakError("services unavailable")
 
-    ble_client.bleak_client = _BleakClientWithBrokenServices()
+    ble_client.bleak_client = cast(Any, _BleakClientWithBrokenServices())
     monkeypatch.setattr(ble_client, "_get_services", lambda: None)
     monkeypatch.setattr(
         ble_client.error_handler,
@@ -332,7 +341,7 @@ def test_bleclient_unpair_raises_when_backend_does_not_support_unpair(
     ble_client.bleak_client = type("_NoUnpairClient", (), {})()
     with pytest.raises(
         BLEClient.BLEError,
-        match="Cannot unpair: BLE backend does not support unpair on this platform",
+        match=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
     ):
         ble_client.unpair()
 
@@ -346,14 +355,14 @@ def test_bleclient_unpair_delegates_to_backend(
     backend_calls: list[bool] = []
 
     class _Backend:
-        async def unpair(self) -> str:
+        async def unpair(self) -> bool:
             backend_calls.append(True)
-            return "ok"
+            return True
 
-    ble_client.bleak_client = _Backend()
+    ble_client.bleak_client = cast(Any, _Backend())
     monkeypatch.setattr(
         ble_client, "_async_await", lambda awaitable: asyncio.run(awaitable)
     )
 
-    assert ble_client.unpair() == "ok"
+    assert ble_client.unpair() is True
     assert backend_calls == [True]

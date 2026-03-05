@@ -458,12 +458,12 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
     )
 
     temp_client = SimpleNamespace(
-        pair=lambda **_kwargs: "paired",
+        pair=lambda **_kwargs: True,
         bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
     )
     cleanup_calls: list[Any] = []
 
-    def _temp_client_factory(_address: str, **_kwargs: Any) -> Any:
+    def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
         return temp_client
 
     monkeypatch.setattr(
@@ -476,7 +476,7 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         lambda client: cleanup_calls.append(client),
     )
 
-    assert iface.pair("mesh-node") == "paired"
+    assert iface.pair("mesh-node") is True
     assert cleanup_calls == [temp_client]
     iface.close()
 
@@ -500,7 +500,7 @@ def test_ble_interface_trust_runs_bluetoothctl(
         lambda _name: "/usr/bin/bluetoothctl",
     )
 
-    run_calls: list[tuple[Any, float]] = []
+    run_calls: list[tuple[list[str], float]] = []
 
     def _fake_run(
         args: list[str],
@@ -509,7 +509,7 @@ def test_ble_interface_trust_runs_bluetoothctl(
         text: bool,
         check: bool,
         timeout: float,
-    ) -> Any:
+    ) -> SimpleNamespace:
         _ = (capture_output, text, check)
         run_calls.append((args, timeout))
         return SimpleNamespace(returncode=0, stdout="succeeded", stderr="")

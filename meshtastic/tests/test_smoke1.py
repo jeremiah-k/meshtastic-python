@@ -6,11 +6,13 @@ This module intentionally splits coverage into two lanes:
   opt-in and may temporarily leave hardware in a modified state.
 """
 
+import contextlib
 import platform
 import re
+import tempfile
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -76,22 +78,31 @@ def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def restore_smoke1_module_config() -> Generator[None, None, None]:
+def restore_smoke1_module_config() -> Iterator[None]:
     """Export baseline config before smoke1 and restore it after module completion."""
-    backup_path = Path(f"/tmp/meshtastic-smoke1-module-backup-{int(time.time())}.yaml")
-    export_cmd = f"meshtastic --export-config {_quote_shell_path(backup_path)}"
-    return_value, out = _run(export_cmd, timeout=180)
-    if return_value != 0:
-        pytest.skip(f"Unable to export baseline smoke1 config:\n{out}")
+    with tempfile.NamedTemporaryFile(
+        prefix="meshtastic-smoke1-module-backup-",
+        suffix=".yaml",
+        delete=False,
+    ) as temp_file:
+        backup_path = Path(temp_file.name)
+    try:
+        export_cmd = f"meshtastic --export-config {_quote_shell_path(backup_path)}"
+        return_value, out = _run(export_cmd, timeout=180)
+        if return_value != 0:
+            pytest.skip(f"Unable to export baseline smoke1 config:\n{out}")
 
-    yield
+        yield
 
-    restore_code, restore_output = _restore_config_with_retries(backup_path)
-    assert restore_code == 0, (
-        "Failed to restore smoke1 baseline configuration:\n"
-        f"{restore_output}\n"
-        f"backup={backup_path}"
-    )
+        restore_code, restore_output = _restore_config_with_retries(backup_path)
+        assert restore_code == 0, (
+            "Failed to restore smoke1 baseline configuration:\n"
+            f"{restore_output}\n"
+            f"backup={backup_path}"
+        )
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            backup_path.unlink()
 
 
 @pytest.mark.smoke1
@@ -210,7 +221,7 @@ def test_smoke1_send_hello() -> None:
 @pytest.mark.smoke1
 def test_smoke1_port() -> None:
     """`--port <detected-port> --info` should connect to the same radio."""
-    ports = findPorts(True)
+    ports = findPorts(eliminate_duplicates=True)
     assert len(ports) == 1
     port = ports[0]
     return_value, out = _run(f"meshtastic --port {port} --info")
@@ -429,7 +440,8 @@ def test_smoke1_ch_enable_and_disable() -> None:
     assert info_return == 0
     assert channel_name in info_out
 
-    _run(f"meshtastic --ch-del --ch-index {idx}")
+    cleanup_return_value, cleanup_out = _run(f"meshtastic --ch-del --ch-index {idx}")
+    assert cleanup_return_value == 0, cleanup_out
 
 
 @pytest.mark.smoke1_destructive
@@ -515,7 +527,10 @@ def test_smoke1_ensure_ch_del_second_of_three_channels() -> None:
 
     idx_b_now = _find_channel_index_by_name(out_info, name_b)
     assert idx_b_now is not None
-    _run(f"meshtastic --ch-del --ch-index {idx_b_now}")
+    cleanup_return_value, cleanup_out = _run(
+        f"meshtastic --ch-del --ch-index {idx_b_now}"
+    )
+    assert cleanup_return_value == 0, cleanup_out
 
 
 @pytest.mark.smoke1_destructive
@@ -549,7 +564,10 @@ def test_smoke1_ensure_ch_del_third_of_three_channels() -> None:
 
     idx_a_now = _find_channel_index_by_name(out_info, name_a)
     assert idx_a_now is not None
-    _run(f"meshtastic --ch-del --ch-index {idx_a_now}")
+    cleanup_return_value, cleanup_out = _run(
+        f"meshtastic --ch-del --ch-index {idx_a_now}"
+    )
+    assert cleanup_return_value == 0, cleanup_out
 
 
 @pytest.mark.smoke1_destructive

@@ -202,18 +202,18 @@ class BLEClient:
         """Promoted camelCase alias for find_device()."""
         return self.find_device(**kwargs)
 
-    def pair(self, **kwargs: Any) -> Any:
+    def pair(self, **kwargs: object) -> bool | None:
         """Pair the BLE client with the remote device.
 
         Parameters
         ----------
-        **kwargs : Any
+        **kwargs : object
             Backend-specific pairing options forwarded to the underlying BLE client.
 
         Returns
         -------
-        Any
-            The backend pairing result (often `None`).
+        bool | None
+            The backend pairing result.
 
         Raises
         ------
@@ -223,15 +223,15 @@ class BLEClient:
         bleak_client = self.bleak_client
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
-        return self._async_await(bleak_client.pair(**kwargs))
+        return cast(bool | None, self._async_await(bleak_client.pair(**kwargs)))
 
-    def unpair(self) -> Any:
+    def unpair(self) -> bool | None:
         """Unpair the BLE client from the remote device when supported by the backend.
 
         Returns
         -------
-        Any
-            The backend unpairing result (often `None`).
+        bool | None
+            The backend unpairing result.
 
         Raises
         ------
@@ -244,7 +244,7 @@ class BLEClient:
         unpair_fn = getattr(bleak_client, "unpair", None)
         if not callable(unpair_fn):
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED)
-        return self._async_await(unpair_fn())
+        return cast(bool | None, self._async_await(unpair_fn()))
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
         """Connect to the remote BLE device.

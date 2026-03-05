@@ -352,20 +352,10 @@ def test_factoryReset_config_reset_uses_int_field_and_local_no_callback(
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
     captured: dict[str, object] = {}
     sent_packet = mesh_pb2.MeshPacket()
-
-    def _fake_send_admin(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
-    ) -> mesh_pb2.MeshPacket:
-        captured["msg"] = msg
-        captured["wantResponse"] = wantResponse
-        captured["onResponse"] = onResponse
-        captured["adminIndex"] = adminIndex
-        return sent_packet
-
-    anode._send_admin = _fake_send_admin  # type: ignore[assignment]
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured,
+        return_packet=sent_packet,
+    )
 
     result = anode.factoryReset(full=False)
 
@@ -387,20 +377,10 @@ def test_factoryReset_full_device_uses_int_field_and_remote_ack_callback(
     anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
     captured: dict[str, object] = {}
     sent_packet = mesh_pb2.MeshPacket()
-
-    def _fake_send_admin(
-        msg: admin_pb2.AdminMessage,
-        wantResponse: bool = False,
-        onResponse: Callable[[dict[str, Any]], Any] | None = None,
-        adminIndex: int = 0,
-    ) -> mesh_pb2.MeshPacket:
-        captured["msg"] = msg
-        captured["wantResponse"] = wantResponse
-        captured["onResponse"] = onResponse
-        captured["adminIndex"] = adminIndex
-        return sent_packet
-
-    anode._send_admin = _fake_send_admin  # type: ignore[assignment]
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured,
+        return_packet=sent_packet,
+    )
 
     result = anode.factoryReset(full=True)
 
