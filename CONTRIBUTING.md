@@ -108,6 +108,23 @@ poetry run pylint meshtastic examples/ --ignore-patterns ".*_pb2\.pyi?$"
 poetry run mypy meshtastic/
 ```
 
+To run the `meshtasticd` simulator integration lane locally (same flow as CI):
+
+```bash
+./bin/run-smokevirt-with-meshtasticd.sh
+```
+
+This requires Docker and runs stable daemon-focused integration tests in
+`meshtastic/tests/test_meshtasticd_ci.py` against a simulated localhost daemon.
+
+To run the full legacy smokevirt suite manually:
+
+```bash
+MESHTASTICD_PYTEST_TARGETS="meshtastic/tests/test_smokevirt.py" \
+MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive" \
+./bin/run-smokevirt-with-meshtasticd.sh
+```
+
 For stricter type checking (optional, not required by CI):
 
 ```bash

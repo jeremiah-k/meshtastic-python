@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:latest}"
+MESHTASTICD_CONTAINER="${MESHTASTICD_CONTAINER:-meshtasticd-smokevirt}"
+MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-120}"
+READY_LOG_FILE="${READY_LOG_FILE:-/tmp/meshtasticd-smokevirt-ready.log}"
+SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
+MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
+MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
+EXTRA_PYTEST_ARGS=()
+PYTEST_TARGETS=()
+
+cleanup() {
+	local exit_code=$?
+	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
+		echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}) ====="
+		docker logs "${MESHTASTICD_CONTAINER}" || true
+		docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null || true
+	fi
+	exit "${exit_code}"
+}
+
+trap cleanup EXIT
+
+if ! command -v docker >/dev/null 2>&1; then
+	echo "docker is required to run smokevirt against meshtasticd." >&2
+	exit 1
+fi
+
+rm -f "${READY_LOG_FILE}"
+docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null 2>&1 || true
+
+if ! docker pull "${MESHTASTICD_IMAGE}"; then
+	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" ]]; then
+		echo "Failed to pull ${MESHTASTICD_IMAGE}, retrying with meshtastic/meshtasticd:beta"
+		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
+		docker pull "${MESHTASTICD_IMAGE}"
+	else
+		echo "Failed to pull ${MESHTASTICD_IMAGE}" >&2
+		exit 1
+	fi
+fi
+
+docker run -d \
+	--name "${MESHTASTICD_CONTAINER}" \
+	-p 4403:4403 \
+	"${MESHTASTICD_IMAGE}" \
+	sh -lc 'meshtasticd -s --fsdir=/var/lib/meshtasticd' >/dev/null
+
+deadline=$((SECONDS + MESHTASTICD_READY_TIMEOUT_SECONDS))
+until poetry run meshtastic --host localhost --info >"${READY_LOG_FILE}" 2>&1; do
+	if ((SECONDS >= deadline)); then
+		echo "meshtasticd did not become ready within ${MESHTASTICD_READY_TIMEOUT_SECONDS}s." >&2
+		if [[ -f ${READY_LOG_FILE} ]]; then
+			echo "===== meshtastic readiness output =====" >&2
+			cat "${READY_LOG_FILE}" >&2
+		fi
+		exit 1
+	fi
+	sleep 2
+done
+
+if [[ -n ${SMOKEVIRT_PYTEST_ARGS} ]]; then
+	read -r -a EXTRA_PYTEST_ARGS <<<"${SMOKEVIRT_PYTEST_ARGS}"
+fi
+
+read -r -a PYTEST_TARGETS <<<"${MESHTASTICD_PYTEST_TARGETS}"
+
+if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
+	echo "MESHTASTICD_PYTEST_TARGETS must not be empty." >&2
+	exit 1
+fi
+
+if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} == *"test_smokevirt.py"* ]]; then
+	MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
+fi
+if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} == *"test_meshtasticd_ci.py"* ]]; then
+	MESHTASTICD_PYTEST_MARK_EXPR="int"
+fi
+
+PYTEST_CMD=(poetry run pytest)
+if [[ -n ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
+	PYTEST_CMD+=(-m "${MESHTASTICD_PYTEST_MARK_EXPR}")
+fi
+PYTEST_CMD+=("${PYTEST_TARGETS[@]}")
+PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
+"${PYTEST_CMD[@]}"

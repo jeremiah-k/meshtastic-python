@@ -144,6 +144,22 @@ jobs:
             meshtastic/tests/test_mesh_interface.py::test_sendPacket_alias_with_destination_as_int \
             meshtastic/tests/test_mesh_interface.py::test_sendPacket_alias_with_no_destination \
             meshtastic/tests/test_mesh_interface.py::test_send_telemetry_supported_and_fallback_paths
+  meshtasticd-integration:
+    name: meshtasticd Integration (py3.13)
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
+      MESHTASTICD_IMAGE: meshtastic/meshtasticd:latest
+      MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
+    steps:
+      - *checkout_step
+      - *setup_python_step
+      - *cache_poetry_step
+      - *install_dependencies_step
+      - *install_local_step
+      - name: Run meshtasticd integration tests against simulator
+        run: ./bin/run-smokevirt-with-meshtasticd.sh
   # Fast install sanity check across Python versions.
   # Full tests run in the tests job above.
   # Lint/type checks run in dedicated jobs for earlier independent failures.
