@@ -125,7 +125,7 @@ blueprint/export reuse and admin checks across two simulator instances):
 ```
 
 This uses Linux host networking, starts two `meshtasticd` simulators on
-`localhost:4403` and `localhost:4404`, and runs
+`localhost:4401` and `localhost:4402`, and runs
 `meshtastic/tests/test_meshtasticd_multinode_ci.py`. Linux is required because
 the script depends on host-networking behavior that is not portable to
 macOS/Windows.

@@ -159,9 +159,10 @@ jobs:
       PYTHON_VERSION: "3.13"
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
       MESHTASTICD_IMAGE: meshtastic/meshtasticd:latest
+      MESHTASTICD_HOST: localhost:4401
+      MESHTASTICD_PORT: "4401"
       MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
       MESHTASTICD_LOG_ON_SUCCESS: "true"
-      MESHTASTICD_LOG_TAIL_LINES: "500"
       MESHTASTICD_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/single
     steps:
       - *checkout_step
@@ -211,12 +212,13 @@ jobs:
       POETRY_INSTALL_ARGS: --all-extras --with dev,powermon
       MESHTASTICD_IMAGE: meshtastic/meshtasticd:latest
       MESHTASTICD_READY_TIMEOUT_SECONDS: "180"
-      MESHTASTICD_HOST_A: localhost:4403
-      MESHTASTICD_HOST_B: localhost:4404
+      MESHTASTICD_HOST_A: localhost:4401
+      MESHTASTICD_HOST_B: localhost:4402
+      MESHTASTICD_PORT_A: "4401"
+      MESHTASTICD_PORT_B: "4402"
       MESHTASTICD_HWID_A: "11"
       MESHTASTICD_HWID_B: "22"
       MESHTASTICD_LOG_ON_SUCCESS: "true"
-      MESHTASTICD_LOG_TAIL_LINES: "500"
       MESHTASTICD_LOG_DIR: ${{ github.workspace }}/.meshtasticd-logs/multinode
     steps:
       - *checkout_step

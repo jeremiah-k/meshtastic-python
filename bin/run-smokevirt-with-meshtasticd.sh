@@ -4,11 +4,12 @@ set -euo pipefail
 
 MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:latest}"
 MESHTASTICD_CONTAINER="${MESHTASTICD_CONTAINER:-meshtasticd-smokevirt}"
+MESHTASTICD_HOST="${MESHTASTICD_HOST:-localhost:4401}"
+MESHTASTICD_PORT="${MESHTASTICD_PORT:-4401}"
 MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-120}"
 READY_LOG_FILE="${READY_LOG_FILE-}"
 MESHTASTICD_LOG_DIR="${MESHTASTICD_LOG_DIR-}"
 MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
-MESHTASTICD_LOG_TAIL_LINES="${MESHTASTICD_LOG_TAIL_LINES:-400}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
@@ -39,7 +40,7 @@ cleanup() {
 		1 | true | yes | on)
 			print_logs=true
 			;;
-		*) ;;
+			*) ;;
 		esac
 	fi
 	if docker ps -a --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
@@ -49,11 +50,11 @@ cleanup() {
 			docker logs "${MESHTASTICD_CONTAINER}" >"${log_file}" 2>&1 || true
 		fi
 		if [[ ${print_logs} == true && ${LOGS_PRINTED} == false ]]; then
-			echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}, tail ${MESHTASTICD_LOG_TAIL_LINES}) ====="
+			echo "===== meshtasticd logs (${MESHTASTICD_CONTAINER}, full) ====="
 			if [[ -n ${log_file} && -f ${log_file} ]]; then
-				tail -n "${MESHTASTICD_LOG_TAIL_LINES}" "${log_file}" || true
+				cat "${log_file}" || true
 			else
-				docker logs "${MESHTASTICD_CONTAINER}" 2>&1 | tail -n "${MESHTASTICD_LOG_TAIL_LINES}" || true
+				docker logs "${MESHTASTICD_CONTAINER}" || true
 			fi
 		fi
 		docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null || true
@@ -78,11 +79,17 @@ fi
 
 require_regex "${MESHTASTICD_CONTAINER}" '^[A-Za-z0-9][A-Za-z0-9_.-]*$' "MESHTASTICD_CONTAINER"
 require_regex "${MESHTASTICD_IMAGE}" '^[^[:space:]]+$' "MESHTASTICD_IMAGE"
+require_regex "${MESHTASTICD_HOST}" '^[A-Za-z0-9._:-]+$' "MESHTASTICD_HOST"
+require_regex "${MESHTASTICD_PORT}" '^[0-9]+$' "MESHTASTICD_PORT"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
-require_regex "${MESHTASTICD_LOG_TAIL_LINES}" '^[0-9]+$' "MESHTASTICD_LOG_TAIL_LINES"
+MESHTASTICD_PORT_DEC=$((10#${MESHTASTICD_PORT}))
 if [[ -z ${READY_LOG_FILE} ]]; then
-	READY_LOG_FILE="$(mktemp /tmp/meshtasticd-smokevirt-ready.XXXXXX.log)"
-	READY_LOG_FILE_IS_TEMP=true
+	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+		READY_LOG_FILE="${MESHTASTICD_LOG_DIR}/meshtasticd-smokevirt-ready.log"
+	else
+		READY_LOG_FILE="$(mktemp /tmp/meshtasticd-smokevirt-ready.XXXXXX.log)"
+		READY_LOG_FILE_IS_TEMP=true
+	fi
 fi
 if [[ ${READY_LOG_FILE} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_FILE path." >&2
@@ -96,8 +103,8 @@ if ((10#${MESHTASTICD_READY_TIMEOUT_SECONDS} <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
 fi
-if ((10#${MESHTASTICD_LOG_TAIL_LINES} <= 0)); then
-	echo "MESHTASTICD_LOG_TAIL_LINES must be greater than zero." >&2
+if ((MESHTASTICD_PORT_DEC < 1 || MESHTASTICD_PORT_DEC > 65535)); then
+	echo "MESHTASTICD_PORT must be between 1 and 65535." >&2
 	exit 1
 fi
 if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
@@ -109,7 +116,7 @@ docker rm -f "${MESHTASTICD_CONTAINER}" >/dev/null 2>&1 || true
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then
 	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" || ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd" ]]; then
-		echo "WARNING: Failed to pull ${MESHTASTICD_IMAGE}, falling back to meshtastic/meshtasticd:beta" >&2
+		echo "##[warning]Failed to pull ${MESHTASTICD_IMAGE}, falling back to meshtastic/meshtasticd:beta" >&2
 		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
 		docker pull "${MESHTASTICD_IMAGE}"
 	else
@@ -120,12 +127,12 @@ fi
 
 docker run -d \
 	--name "${MESHTASTICD_CONTAINER}" \
-	-p 4403:4403 \
+	-p "${MESHTASTICD_PORT_DEC}":4403 \
 	"${MESHTASTICD_IMAGE}" \
 	meshtasticd -s --fsdir=/var/lib/meshtasticd >/dev/null
 
 deadline=$((SECONDS + 10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
-until poetry run meshtastic --timeout 5 --host localhost --info >"${READY_LOG_FILE}" 2>&1; do
+until poetry run meshtastic --timeout 5 --host "${MESHTASTICD_HOST}" --info >"${READY_LOG_FILE}" 2>&1; do
 	if ! docker ps --format '{{.Names}}' | grep -Fxq "${MESHTASTICD_CONTAINER}"; then
 		echo "${MESHTASTICD_CONTAINER} exited before becoming ready." >&2
 		if [[ -f ${READY_LOG_FILE} ]]; then
@@ -180,4 +187,4 @@ PYTEST_CMD+=("${PYTEST_TARGETS[@]}")
 if [[ ${#EXTRA_PYTEST_ARGS[@]} -gt 0 ]]; then
 	PYTEST_CMD+=("${EXTRA_PYTEST_ARGS[@]}")
 fi
-"${PYTEST_CMD[@]}"
+MESHTASTICD_HOST="${MESHTASTICD_HOST}" MESH_HOST_READY_TIMEOUT="${MESH_HOST_READY_TIMEOUT:-${MESHTASTICD_READY_TIMEOUT_SECONDS}}" "${PYTEST_CMD[@]}"

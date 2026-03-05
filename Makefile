@@ -32,7 +32,7 @@ ci-strict:
 virt:
 	$(POETRY_RUN) pytest -m smokevirt
 
-# run smokevirt tests against a meshtasticd simulator container
+# run meshtasticd simulator integration tests (defaults to meshtastic/tests/test_meshtasticd_ci.py unless MESHTASTICD_PYTEST_TARGETS is set)
 virt-meshtasticd:
 	./bin/run-smokevirt-with-meshtasticd.sh
 

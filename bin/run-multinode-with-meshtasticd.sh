@@ -5,10 +5,10 @@ set -euo pipefail
 MESHTASTICD_IMAGE="${MESHTASTICD_IMAGE:-meshtastic/meshtasticd:latest}"
 MESHTASTICD_CONTAINER_A="${MESHTASTICD_CONTAINER_A:-meshtasticd-multinode-a}"
 MESHTASTICD_CONTAINER_B="${MESHTASTICD_CONTAINER_B:-meshtasticd-multinode-b}"
-MESHTASTICD_HOST_A="${MESHTASTICD_HOST_A:-localhost:4403}"
-MESHTASTICD_HOST_B="${MESHTASTICD_HOST_B:-localhost:4404}"
-MESHTASTICD_PORT_A="${MESHTASTICD_PORT_A:-4403}"
-MESHTASTICD_PORT_B="${MESHTASTICD_PORT_B:-4404}"
+MESHTASTICD_HOST_A="${MESHTASTICD_HOST_A:-localhost:4401}"
+MESHTASTICD_HOST_B="${MESHTASTICD_HOST_B:-localhost:4402}"
+MESHTASTICD_PORT_A="${MESHTASTICD_PORT_A:-4401}"
+MESHTASTICD_PORT_B="${MESHTASTICD_PORT_B:-4402}"
 MESHTASTICD_HWID_A="${MESHTASTICD_HWID_A:-11}"
 MESHTASTICD_HWID_B="${MESHTASTICD_HWID_B:-22}"
 MESHTASTICD_READY_TIMEOUT_SECONDS="${MESHTASTICD_READY_TIMEOUT_SECONDS:-180}"
@@ -16,7 +16,6 @@ READY_LOG_A="${READY_LOG_A-}"
 READY_LOG_B="${READY_LOG_B-}"
 MESHTASTICD_LOG_DIR="${MESHTASTICD_LOG_DIR-}"
 MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
-MESHTASTICD_LOG_TAIL_LINES="${MESHTASTICD_LOG_TAIL_LINES:-400}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_multinode_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR:-int}"
@@ -24,7 +23,8 @@ EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 READY_LOG_A_IS_TEMP=false
 READY_LOG_B_IS_TEMP=false
-LOGS_PRINTED=false
+LOGS_PRINTED_MARKER="$(mktemp /tmp/meshtasticd-multinode-logs-printed.XXXXXX)"
+rm -f "${LOGS_PRINTED_MARKER}"
 
 # Keep this helper local in each runner script so each entrypoint stays standalone.
 # Usage: require_regex "<value>" "<regex>" "<env-name>"
@@ -36,6 +36,10 @@ require_regex() {
 		echo "Invalid ${name}: ${value}" >&2
 		exit 1
 	fi
+}
+
+mark_logs_printed() {
+	: >"${LOGS_PRINTED_MARKER}"
 }
 
 cleanup() {
@@ -54,16 +58,20 @@ cleanup() {
 	for container in "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}"; do
 		if docker ps -a --format '{{.Names}}' | grep -Fxq "${container}"; then
 			local log_file=""
+			local already_printed=false
 			if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
 				log_file="${MESHTASTICD_LOG_DIR}/${container}.log"
 				docker logs "${container}" >"${log_file}" 2>&1 || true
 			fi
-			if [[ ${print_logs} == true && ${LOGS_PRINTED} == false ]]; then
-				echo "===== meshtasticd logs (${container}, tail ${MESHTASTICD_LOG_TAIL_LINES}) ====="
+			if [[ -f "${LOGS_PRINTED_MARKER}" ]]; then
+				already_printed=true
+			fi
+			if [[ ${print_logs} == true && ${already_printed} == false ]]; then
+				echo "===== meshtasticd logs (${container}, full) ====="
 				if [[ -n ${log_file} && -f ${log_file} ]]; then
-					tail -n "${MESHTASTICD_LOG_TAIL_LINES}" "${log_file}" || true
+					cat "${log_file}" || true
 				else
-					docker logs "${container}" 2>&1 | tail -n "${MESHTASTICD_LOG_TAIL_LINES}" || true
+					docker logs "${container}" || true
 				fi
 			fi
 			docker rm -f "${container}" >/dev/null || true
@@ -75,6 +83,7 @@ cleanup() {
 	if [[ ${READY_LOG_B_IS_TEMP} == true ]]; then
 		rm -f "${READY_LOG_B}" || true
 	fi
+	rm -f "${LOGS_PRINTED_MARKER}" || true
 	exit "${exit_code}"
 }
 
@@ -111,7 +120,6 @@ require_regex "${MESHTASTICD_PORT_B}" '^[0-9]+$' "MESHTASTICD_PORT_B"
 require_regex "${MESHTASTICD_HWID_A}" '^[0-9]+$' "MESHTASTICD_HWID_A"
 require_regex "${MESHTASTICD_HWID_B}" '^[0-9]+$' "MESHTASTICD_HWID_B"
 require_regex "${MESHTASTICD_READY_TIMEOUT_SECONDS}" '^[0-9]+$' "MESHTASTICD_READY_TIMEOUT_SECONDS"
-require_regex "${MESHTASTICD_LOG_TAIL_LINES}" '^[0-9]+$' "MESHTASTICD_LOG_TAIL_LINES"
 MESHTASTICD_PORT_A_DEC=$((10#${MESHTASTICD_PORT_A}))
 MESHTASTICD_PORT_B_DEC=$((10#${MESHTASTICD_PORT_B}))
 MESHTASTICD_READY_TIMEOUT_SECONDS_DEC=$((10#${MESHTASTICD_READY_TIMEOUT_SECONDS}))
@@ -123,13 +131,25 @@ if ((MESHTASTICD_PORT_B_DEC < 1 || MESHTASTICD_PORT_B_DEC > 65535)); then
 	echo "MESHTASTICD_PORT_B must be between 1 and 65535." >&2
 	exit 1
 fi
+if ((MESHTASTICD_PORT_A_DEC == MESHTASTICD_PORT_B_DEC)); then
+	echo "MESHTASTICD_PORT_A and MESHTASTICD_PORT_B must not be the same." >&2
+	exit 1
+fi
 if [[ -z ${READY_LOG_A} ]]; then
-	READY_LOG_A="$(mktemp /tmp/meshtasticd-multinode-a-ready.XXXXXX.log)"
-	READY_LOG_A_IS_TEMP=true
+	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+		READY_LOG_A="${MESHTASTICD_LOG_DIR}/meshtasticd-multinode-a-ready.log"
+	else
+		READY_LOG_A="$(mktemp /tmp/meshtasticd-multinode-a-ready.XXXXXX.log)"
+		READY_LOG_A_IS_TEMP=true
+	fi
 fi
 if [[ -z ${READY_LOG_B} ]]; then
-	READY_LOG_B="$(mktemp /tmp/meshtasticd-multinode-b-ready.XXXXXX.log)"
-	READY_LOG_B_IS_TEMP=true
+	if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
+		READY_LOG_B="${MESHTASTICD_LOG_DIR}/meshtasticd-multinode-b-ready.log"
+	else
+		READY_LOG_B="$(mktemp /tmp/meshtasticd-multinode-b-ready.XXXXXX.log)"
+		READY_LOG_B_IS_TEMP=true
+	fi
 fi
 if [[ ${READY_LOG_A} == *$'\n'* ]]; then
 	echo "Invalid READY_LOG_A path." >&2
@@ -147,10 +167,6 @@ if ((MESHTASTICD_READY_TIMEOUT_SECONDS_DEC <= 0)); then
 	echo "MESHTASTICD_READY_TIMEOUT_SECONDS must be greater than zero." >&2
 	exit 1
 fi
-if ((10#${MESHTASTICD_LOG_TAIL_LINES} <= 0)); then
-	echo "MESHTASTICD_LOG_TAIL_LINES must be greater than zero." >&2
-	exit 1
-fi
 if [[ -n ${MESHTASTICD_LOG_DIR} ]]; then
 	mkdir -p "${MESHTASTICD_LOG_DIR}"
 fi
@@ -161,7 +177,7 @@ docker rm -f "${MESHTASTICD_CONTAINER_A}" "${MESHTASTICD_CONTAINER_B}" >/dev/nul
 
 if ! docker pull "${MESHTASTICD_IMAGE}"; then
 	if [[ ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd:latest" || ${MESHTASTICD_IMAGE} == "meshtastic/meshtasticd" ]]; then
-		echo "WARNING: Failed to pull ${MESHTASTICD_IMAGE}, falling back to meshtastic/meshtasticd:beta" >&2
+		echo "##[warning]Failed to pull ${MESHTASTICD_IMAGE}, falling back to meshtastic/meshtasticd:beta" >&2
 		MESHTASTICD_IMAGE="meshtastic/meshtasticd:beta"
 		docker pull "${MESHTASTICD_IMAGE}"
 	else
@@ -190,7 +206,7 @@ wait_for_ready() {
 	until poetry run meshtastic --timeout 5 --host "${host}" --info >"${ready_log_file}" 2>&1; do
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
 			echo "${container} exited before becoming ready." >&2
-			LOGS_PRINTED=true
+			mark_logs_printed
 			docker logs "${container}" >&2 || true
 			return 1
 		fi
@@ -198,7 +214,7 @@ wait_for_ready() {
 			echo "${container} did not become ready within ${MESHTASTICD_READY_TIMEOUT_SECONDS}s." >&2
 			echo "===== readiness output (${host}) =====" >&2
 			cat "${ready_log_file}" >&2 || true
-			LOGS_PRINTED=true
+			mark_logs_printed
 			docker logs "${container}" >&2 || true
 			return 1
 		fi
@@ -207,6 +223,8 @@ wait_for_ready() {
 }
 
 wait_for_parallel_failfast() {
+	# wait -n reaps any background job. This function assumes only pid_a and pid_b
+	# are active for this script section.
 	local pid_a=$1
 	local pid_b=$2
 	local first_status=0
@@ -265,7 +283,7 @@ wait_for_log_pattern() {
 		fi
 		if ! docker ps --format '{{.Names}}' | grep -Fxq "${container}"; then
 			echo "${container} exited while waiting for log pattern '${pattern}'." >&2
-			LOGS_PRINTED=true
+			mark_logs_printed
 			docker logs "${container}" >&2 || true
 			return 1
 		fi
@@ -273,7 +291,7 @@ wait_for_log_pattern() {
 	done
 
 	echo "${container} did not emit expected log pattern '${pattern}' within ${timeout_seconds}s." >&2
-	LOGS_PRINTED=true
+	mark_logs_printed
 	docker logs "${container}" >&2 || true
 	return 1
 }

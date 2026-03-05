@@ -17,8 +17,8 @@ from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
-HOST_A = os.environ.get("MESHTASTICD_HOST_A", "localhost:4403")
-HOST_B = os.environ.get("MESHTASTICD_HOST_B", "localhost:4404")
+HOST_A = os.environ.get("MESHTASTICD_HOST_A", "localhost:4401")
+HOST_B = os.environ.get("MESHTASTICD_HOST_B", "localhost:4402")
 PRIMARY_CHANNEL_NAME = "CIPrimary"
 LONGFAST_SECONDARY_NAME = "LongFast"
 SECONDARY_CHANNEL_NAMES = [
@@ -39,6 +39,7 @@ HOST_READY_TIMEOUT_SECONDS = 60.0
 HOST_READY_POLL_CLI_TIMEOUT_SECONDS = 10
 HOST_CONFIGURE_TIMEOUT_SECONDS = 45
 HOST_READY_AFTER_CONFIGURE_TIMEOUT_SECONDS = 90.0
+CLI_DEFAULT_TIMEOUT_SECONDS = 30
 MIN_CHANNEL_URL_LENGTH = 120
 INFO_CHANNEL_LINE_RE = re.compile(
     r'^\s*Index (?P<idx>\d+): (?P<role>PRIMARY|SECONDARY).*"name": "(?P<name>[^"]*)"',
@@ -158,7 +159,9 @@ def _configure_channel_blueprint(host: str, meshtastic_bin: str) -> dict[int, st
         Mapping from channel index to expected channel name after configure.
     """
 
-    def _cli_ok(*args: str, timeout: int | float = 30) -> str:
+    def _cli_ok(
+        *args: str, timeout: int | float = CLI_DEFAULT_TIMEOUT_SECONDS
+    ) -> str:
         return _run_host_cli_ok(
             host,
             *args,

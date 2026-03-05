@@ -12,9 +12,26 @@ from .cli_test_utils import _run_host_cli, _run_host_cli_ok
 
 pytestmark = [pytest.mark.int, pytest.mark.smokevirt]
 
-HOST = os.environ.get("MESHTASTICD_HOST", "localhost")
-HOST_READY_TIMEOUT_SECONDS = 45.0
-HOST_READY_POLL_TIMEOUT_SECONDS = 10
+
+def _positive_float_from_env(name: str, default: float) -> float:
+    """Read a positive float from the environment with a safe fallback."""
+    raw_value = os.environ.get(name)
+    if raw_value in (None, ""):
+        return default
+    try:
+        parsed = float(raw_value)
+    except ValueError:
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
+HOST = os.environ.get("MESHTASTICD_HOST", "localhost:4401")
+HOST_READY_TIMEOUT_SECONDS = _positive_float_from_env("MESH_HOST_READY_TIMEOUT", 45.0)
+HOST_READY_POLL_TIMEOUT_SECONDS = _positive_float_from_env(
+    "MESH_HOST_READY_POLL_TIMEOUT", 10.0
+)
 
 
 def _wait_for_host_ready(host: str, meshtastic_bin: str) -> None:
