@@ -157,7 +157,6 @@ class BLEInterface(MeshInterface):
         *,
         auto_reconnect: bool = False,
         pair_on_connect: bool = False,
-        trust_on_connect: bool = False,
     ) -> None:
         """Initialize the BLEInterface, configure background threads, and attempt an initial connection to a Meshtastic BLE device.
 
@@ -172,10 +171,6 @@ class BLEInterface(MeshInterface):
         pair_on_connect : bool
             If True, request BLE pairing as part of each connect attempt. This maps
             to Bleak's `BleakClient(..., pair=True)` behavior. (Default value = False)
-        trust_on_connect : bool
-            If True, perform a best-effort Linux `bluetoothctl trust <addr>` after
-            successful connects. Non-Linux platforms ignore this request with a warning.
-            (Default value = False)
         noProto : bool
             If True, skip protobuf protocol initialization. (Default value = False)
         debugOut : IO[str] | Callable[[str], Any] | None
@@ -231,7 +226,6 @@ class BLEInterface(MeshInterface):
         self._last_connection_request: str | None = sanitize_address(address)
         self.auto_reconnect = auto_reconnect
         self.pair_on_connect = pair_on_connect
-        self.trust_on_connect = trust_on_connect
         self._disconnect_notified = False  # Prevents duplicate disconnect events
         self._last_disconnect_source: str = (
             ""  # Set by _handle_disconnect on each disconnect
@@ -347,8 +341,8 @@ class BLEInterface(MeshInterface):
         """Compact textual representation of the BLEInterface showing its address and any active non-default flags.
 
         Includes the `address`, `debugOut` when set, and the boolean flags
-        `noProto`, `noNodes`, `auto_reconnect`, `pair_on_connect`, and
-        `trust_on_connect` only when they differ from their defaults.
+        `noProto`, `noNodes`, `auto_reconnect`, and `pair_on_connect` only when
+        they differ from their defaults.
 
         Returns
         -------
@@ -366,8 +360,6 @@ class BLEInterface(MeshInterface):
             parts.append("auto_reconnect=True")
         if self.pair_on_connect:
             parts.append("pair_on_connect=True")
-        if self.trust_on_connect:
-            parts.append("trust_on_connect=True")
         return f"BLEInterface({', '.join(parts)})"
 
     def _set_receive_wanted(self, want_receive: bool) -> None:
@@ -1740,7 +1732,6 @@ class BLEInterface(MeshInterface):
         address: str | None = None,
         *,
         pair: bool | None = None,
-        trust: bool | None = None,
     ) -> BLEClient:
         """Connect to a Meshtastic device over BLE by explicit address or by performing device discovery.
 
@@ -1753,10 +1744,6 @@ class BLEInterface(MeshInterface):
         pair : bool | None
             If True, request pairing during connect attempts for this call. If None,
             uses `self.pair_on_connect`. (Default value = None)
-        trust : bool | None
-            If True, perform a best-effort Linux `bluetoothctl trust` step after a
-            successful connection for this call. If None, uses
-            `self.trust_on_connect`. (Default value = None)
 
         Returns
         -------
@@ -1774,7 +1761,6 @@ class BLEInterface(MeshInterface):
         requested_identifier = address if address is not None else self.address
         normalized_request = sanitize_address(requested_identifier)
         pair_on_connect = self.pair_on_connect if pair is None else pair
-        trust_on_connect = self.trust_on_connect if trust is None else trust
 
         # Only use address registry for explicit addresses, not discovery mode (None)
         address_registry_key = (
@@ -1828,17 +1814,6 @@ class BLEInterface(MeshInterface):
         self._finalize_connection_gates(
             connected_client, connected_device_key, connection_alias_key
         )
-        if trust_on_connect:
-            connected_address = self._extract_client_address(connected_client)
-            if connected_address:
-                try:
-                    self.trust(connected_address)
-                except self.BLEError as trust_err:
-                    logger.warning(
-                        "Connected to %s but trust step failed: %s",
-                        connected_address,
-                        trust_err,
-                    )
         return connected_client
 
     def _handle_read_loop_disconnect(

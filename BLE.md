@@ -44,10 +44,10 @@ recommended patterns for code that embeds `meshtastic-python`.
   `BLECoroutineRunner`: N clients share 1 background thread, which lowers
   resource usage and simplifies teardown.
 
-- **Optional pairing and Linux trust hooks.** `BLEInterface` can request pairing
-  during connect (`pair_on_connect=True` or `connect(pair=True)`) and can run a
-  best-effort Linux trust step (`trust_on_connect=True` or `connect(trust=True)`)
-  via `bluetoothctl trust <addr>`.
+- **Optional pairing and Linux trust helper.** `BLEInterface` can request pairing
+  during connect (`pair_on_connect=True` or `connect(pair=True)`), and also
+  exposes an explicit Linux trust helper (`trust()`) that calls
+  `bluetoothctl trust <addr>`.
 
 ---
 
@@ -223,7 +223,8 @@ iface = BLEInterface(
 
 # One-shot overrides on manual connect():
 iface.connect(pair=True)   # request pairing for this call
-iface.connect(trust=True)  # Linux: run bluetoothctl trust after successful connect
+# Trust remains explicit and Linux-only:
+iface.trust("AA:BB:CC:DD:EE:FF")
 ```
 
 Programmatic helpers:

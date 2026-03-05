@@ -412,7 +412,6 @@ def test_ble_interface_defaults_auto_reconnect_disabled(
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     assert iface.auto_reconnect is False
     assert iface.pair_on_connect is False
-    assert iface.trust_on_connect is False
     iface.close()
 
 
@@ -552,7 +551,6 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     iface._disconnect_notified = False
     iface._last_connection_request = None
     iface.pair_on_connect = False
-    iface.trust_on_connect = False
     iface._connection_alias_key = None
     iface._ever_connected = False
     iface._read_retry_count = 0
@@ -583,48 +581,6 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     iface.connect()
 
     assert captured_pair_flags == [True, False, True]
-
-
-def test_ble_interface_connect_trust_override_invokes_trust(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """connect(trust=True) should invoke trust() on the connected address."""
-    iface = object.__new__(BLEInterface)
-    iface._state_manager = BLEStateManager()
-    iface._state_lock = threading.RLock()
-    iface._connect_lock = threading.RLock()
-    iface._disconnect_lock = threading.Lock()
-    iface._closed = False
-    iface.address = None
-    iface.client = None
-    iface._disconnect_notified = False
-    iface._last_connection_request = None
-    iface.pair_on_connect = False
-    iface.trust_on_connect = False
-    iface._connection_alias_key = None
-    iface._ever_connected = False
-    iface._read_retry_count = 0
-
-    connected_client = DummyClient()
-    connected_client.address = "AA:BB:CC:DD:EE:FF"
-    connected_client.bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
-
-    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
-    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
-    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
-    monkeypatch.setattr(iface, "_finalize_connection_gates", lambda *_args: None)
-    monkeypatch.setattr(
-        iface,
-        "_establish_and_update_client",
-        lambda *_args, **_kwargs: (connected_client, None, None),
-    )
-
-    trusted_addresses: list[str] = []
-    monkeypatch.setattr(iface, "trust", lambda address: trusted_addresses.append(address))
-
-    iface.connect(trust=True)
-
-    assert trusted_addresses == ["AA:BB:CC:DD:EE:FF"]
 
 
 def test_handle_disconnect_ignores_stale_callbacks(
