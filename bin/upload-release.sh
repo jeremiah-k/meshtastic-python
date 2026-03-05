@@ -1,7 +1,7 @@
 #!/bin/bash
 
-rm dist/*
 set -e
+rm -f dist/* 2>/dev/null || true
 
 poetry build
 poetry run pytest

@@ -138,7 +138,8 @@ policy = RetryPolicy._empty_read()  # or ._transient_error() / ._auto_reconnect(
 
 delay = policy._get_delay(attempt)       # float, jittered exponential backoff
 should_go = policy._should_retry(count)  # bool, respects max_retries
-delay, ok = policy.next_attempt()        # combined: compute delay + advance counter
+delay, ok = policy.next_attempt()        # canonical: compute delay + advance counter
+attempt_count = policy.get_attempt_count()  # int, current retry attempt number
 ```
 
 Compatibility note: the core library does not currently expose camelCase policy
@@ -170,7 +171,7 @@ Contributor rule for naming updates:
 ### One interface per device address
 
 ```python
-from meshtastic.interfaces.ble import BLEInterface
+from meshtastic.ble_interface import BLEInterface
 from pubsub import pub
 import time
 
@@ -230,7 +231,7 @@ seconds will continue to be suppressed.
 ## Minimal pubsub example
 
 ```python
-from meshtastic.interfaces.ble import BLEInterface
+from meshtastic.ble_interface import BLEInterface
 from pubsub import pub
 import time
 

@@ -224,4 +224,7 @@ When adding/changing compatibility behavior:
 3. Add/adjust tests for callability and warning behavior.
 4. Run compatibility inventory grep and verify changes:
    - `rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic`
-5. Run full project checks as documented in `CONTRIBUTING.md`.
+5. Keep `.github/workflows/ci.yml` compatibility validation green:
+   - inventory marker check (`rg -n "COMPAT_STABLE_SHIM|COMPAT_DEPRECATE" meshtastic`)
+   - compatibility-focused pytest targets for alias callability and warning behavior
+6. Run full project checks as documented in `CONTRIBUTING.md`.
