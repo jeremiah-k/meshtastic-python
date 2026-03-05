@@ -115,7 +115,9 @@ To run the `meshtasticd` simulator integration lane locally (same flow as CI):
 ```
 
 This requires Docker and runs stable daemon-focused integration tests in
-`meshtastic/tests/test_meshtasticd_ci.py` against a simulated localhost daemon.
+`meshtastic/tests/test_meshtasticd_ci.py` and
+`meshtastic/tests/test_meshtasticd_tcp_interface_ci.py` against a simulated
+localhost daemon.
 
 To run the dual-daemon integration lane locally (Linux only; channel
 blueprint/export reuse and admin checks across two simulator instances):

@@ -587,7 +587,7 @@ class TCPInterface(StreamInterface):
         if sock is not None:
             try:
                 data = sock.recv(length)
-            except OSError as ex:
+            except (OSError, ValueError) as ex:
                 logger.debug("Socket read error, treating as dead socket: %s", ex)
                 data = b""
             # empty byte indicates a disconnected socket,

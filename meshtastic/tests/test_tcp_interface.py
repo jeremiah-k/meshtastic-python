@@ -265,6 +265,26 @@ def test_TCPInterface_read_empty_does_not_reconnect_when_closing() -> None:
 
 
 @pytest.mark.unit
+def test_TCPInterface_read_value_error_triggers_reconnect_cleanup() -> None:
+    """_read_bytes should treat recv ValueError as a dead socket and attempt reconnect."""
+    with patch("socket.socket"):
+        iface = TCPInterface(hostname="localhost", noProto=True, connectNow=False)
+        try:
+            mock_socket = MagicMock()
+            mock_socket.recv.side_effect = ValueError("bad file descriptor")
+            iface.socket = mock_socket
+
+            with patch.object(iface, "_attempt_reconnect") as reconnect_mock:
+                data = iface._read_bytes(1)
+
+            assert data == b""
+            reconnect_mock.assert_called_once_with()
+            assert iface.socket is None
+        finally:
+            iface.close()
+
+
+@pytest.mark.unit
 def test_TCPInterface_connect_fails_fast_when_shutting_down() -> None:
     """connect() should fail fast when shutdown/fatal flags block a new connect."""
     with patch("socket.socket"):
