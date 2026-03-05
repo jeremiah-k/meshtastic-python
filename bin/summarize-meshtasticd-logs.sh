@@ -40,11 +40,11 @@ if [[ -d "${LOG_DIR}" ]]; then
 			' "${log_file}"
 		)"
 		read -r line_count packetish_count multicast_count <<<"${awk_counts}"
+		summary="  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}"
 		if [[ ${MODE} == "multinode" ]]; then
-			echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}, multicast=${multicast_count}"
-		else
-			echo "  - \`$(basename "${log_file}")\`: ${line_count} lines, packet-ish lines=${packetish_count}"
+			summary+=", multicast=${multicast_count}"
 		fi
+		echo "${summary}"
 	done
 else
 	echo "- Log directory not found: \`${LOG_DIR}\`"

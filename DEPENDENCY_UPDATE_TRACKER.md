@@ -3,7 +3,7 @@
 ## Scope
 
 This document is the high-level tracker for the follow-up dependency refresh
-workstream described in [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md#L380).
+workstream described in [REFACTOR_PROGRAM.md](REFACTOR_PROGRAM.md#15-planned-follow-up-dependency-refresh-and-security-updates).
 
 Goals:
 
