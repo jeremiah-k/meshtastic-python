@@ -522,8 +522,13 @@ class ConnectionOrchestrator:
                     pair_on_connect=pair_on_connect,
                 )
                 try:
-                    direct_timeout = min(
-                        DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
+                    direct_timeout = (
+                        BLEConfig.CONNECTION_TIMEOUT
+                        if pair_on_connect
+                        else min(
+                            DIRECT_CONNECT_TIMEOUT_SECONDS,
+                            BLEConfig.CONNECTION_TIMEOUT,
+                        )
                     )
                     self._raise_if_interface_closing()
                     self.client_manager._connect_client(client, timeout=direct_timeout)
@@ -565,8 +570,13 @@ class ConnectionOrchestrator:
             fallback_timeout: float | None = None
             if skip_discovery_scan and target_address is not None:
                 resolved_address = target_address
-                fallback_timeout = min(
-                    DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT
+                fallback_timeout = (
+                    BLEConfig.CONNECTION_TIMEOUT
+                    if pair_on_connect
+                    else min(
+                        DIRECT_CONNECT_TIMEOUT_SECONDS,
+                        BLEConfig.CONNECTION_TIMEOUT,
+                    )
                 )
             else:
                 self._raise_if_interface_closing()

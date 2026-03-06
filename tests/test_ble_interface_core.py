@@ -544,7 +544,7 @@ def test_ble_interface_trust_prefers_stderr_in_failure_details(
     )
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.subprocess.run",
-        lambda *args, **kwargs: SimpleNamespace(
+        lambda *_args, **_kwargs: SimpleNamespace(
             returncode=1,
             stdout="generic output",
             stderr="specific failure",

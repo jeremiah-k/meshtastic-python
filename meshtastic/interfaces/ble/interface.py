@@ -1404,8 +1404,10 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         address : str | None
-            Target device address or identifier. If None, use the active connection
-            target when available, otherwise resolve via discovery.
+            Target device address or identifier. If None, use the active
+            connection target when available; otherwise fall back to the
+            interface's bound target. Raises if no active or bound target is
+            available.
         **kwargs : object
             Backend-specific pairing options forwarded to `BLEClient.pair()`.
 
@@ -1423,8 +1425,10 @@ class BLEInterface(MeshInterface):
         Parameters
         ----------
         address : str | None
-            Target device address or identifier. If None, use the active connection
-            target when available, otherwise resolve via discovery.
+            Target device address or identifier. If None, use the active
+            connection target when available; otherwise fall back to the
+            interface's bound target. Raises if no active or bound target is
+            available.
 
         Returns
         -------

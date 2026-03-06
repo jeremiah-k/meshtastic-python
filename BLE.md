@@ -221,10 +221,14 @@ iface = BLEInterface(
     pair_on_connect=True,
 )
 
-# One-shot overrides on manual connect():
-iface.connect(pair=True)   # request pairing for this call
 # Trust remains explicit and Linux-only:
 iface.trust("AA:BB:CC:DD:EE:FF")
+
+# One-shot override on a later manual connect():
+iface_manual = BLEInterface(address="AA:BB:CC:DD:EE:FF", noProto=True)
+iface_manual.close()
+iface_manual.connect(pair=True)   # request pairing for this call
+iface_manual.trust("AA:BB:CC:DD:EE:FF")
 ```
 
 Programmatic helpers:
@@ -244,7 +248,7 @@ Platform notes:
 
 - `pair()` delegates to Bleak backend support.
 - `unpair()` depends on backend/platform support (typically Linux/Windows).
-- `trust()` is Linux-only and requires `bluetoothctl` in `PATH`.
+- `trust(address)` is Linux-only and requires `bluetoothctl` in `PATH`.
 - On macOS, trust/unpair are managed by the OS; no Bleak trust API is exposed.
 
 CLI opt-in:

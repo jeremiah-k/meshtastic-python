@@ -574,6 +574,62 @@ def test_connection_orchestrator_forwards_pair_on_connect_to_client_creation() -
 
     client_manager._create_client.assert_called_once()
     assert client_manager._create_client.call_args.kwargs["pair_on_connect"] is True
+    client_manager._connect_client.assert_called_once_with(
+        direct_client,
+        timeout=BLEConfig.CONNECTION_TIMEOUT,
+    )
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry() -> (
+    None
+):
+    """Direct-connect retry paths should preserve pair_on_connect and full timeout."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    fallback_client = MagicMock()
+    client_manager._create_client.side_effect = [direct_client, fallback_client]
+    client_manager._connect_client.side_effect = [
+        BleakDeviceNotFoundError("AA:BB:CC:DD:EE:FF", "not found"),
+        None,
+    ]
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+        pair_on_connect=True,
+    )
+
+    assert result is fallback_client
+    assert client_manager._create_client.call_count == 2
+    assert [
+        call.kwargs["pair_on_connect"]
+        for call in client_manager._create_client.call_args_list
+    ] == [True, True]
+    assert [
+        call.kwargs["timeout"] for call in client_manager._connect_client.call_args_list
+    ] == [BLEConfig.CONNECTION_TIMEOUT, BLEConfig.CONNECTION_TIMEOUT]
 
 
 @pytest.mark.unit

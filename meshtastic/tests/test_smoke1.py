@@ -9,6 +9,7 @@ This module intentionally splits coverage into two lanes:
 import contextlib
 import platform
 import re
+import shlex
 import tempfile
 import time
 import uuid
@@ -18,7 +19,11 @@ from pathlib import Path
 import pytest
 
 from ..util import findPorts
-from .cli_test_utils import _quote_shell_path, run_cli_with_timeout
+from .cli_test_utils import (
+    _quote_shell_path,
+    run_cli_argv_with_timeout,
+    run_cli_with_timeout,
+)
 
 PAUSE_AFTER_COMMAND = 2
 PAUSE_AFTER_REBOOT = 7
@@ -28,8 +33,24 @@ RESTORE_RETRY_DELAY_SECONDS = 10
 DEFAULT_URL_FRAGMENT = "CgUYAyIBAQ"
 
 
-def _run(command: str, timeout: int | float = 120) -> tuple[int, str]:
-    """Run a smoke command and return `(return_code, output)`."""
+def _run(command: str | list[str], timeout: int | float = 120) -> tuple[int, str]:
+    """Run a smoke command and return `(return_code, output)`.
+
+    String commands are tokenized with `shlex.split()` and executed argv-style
+    to avoid shell interpretation of values like URL fragments. Use
+    `_run_shell()` only for tests that intentionally require shell features.
+    """
+    argv = (
+        shlex.split(command, posix=platform.system() != "Windows")
+        if isinstance(command, str)
+        else command
+    )
+    result = run_cli_argv_with_timeout(argv, timeout=timeout)
+    return result.returncode, (result.stdout or "") + (result.stderr or "")
+
+
+def _run_shell(command: str, timeout: int | float = 120) -> tuple[int, str]:
+    """Run a shell command for tests that require shell syntax like redirection."""
     return run_cli_with_timeout(command, timeout=timeout)
 
 
@@ -192,7 +213,7 @@ def test_smoke1_qr() -> None:
     try:
         if filename.exists():
             filename.unlink()
-        return_value, _ = _run(f"meshtastic --qr > {_quote_shell_path(filename)}")
+        return_value, _ = _run_shell(f"meshtastic --qr > {_quote_shell_path(filename)}")
         assert filename.exists()
         assert filename.stat().st_size > 20000
         assert return_value == 0
