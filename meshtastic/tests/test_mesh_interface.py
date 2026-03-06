@@ -404,19 +404,19 @@ def test_close_suppresses_disconnect_send_failures(
     disconnect_error: BaseException,
 ) -> None:
     """close() should continue cleanup if sending disconnect fails."""
-    closed_state = False
     with MeshInterface(noProto=True) as iface:
+        iface.debugOut = io.StringIO()
         with (
             patch.object(iface, "_send_disconnect", side_effect=disconnect_error),
             caplog.at_level(logging.DEBUG),
         ):
             iface.close()
-        closed_state = iface._closing
+        assert iface._closing is True
+        assert iface.debugOut is None
 
     assert (
         "Failed to send disconnect during close(); continuing shutdown." in caplog.text
     )
-    assert closed_state is True
 
 
 @pytest.mark.unit

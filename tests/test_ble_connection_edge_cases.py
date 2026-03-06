@@ -752,15 +752,57 @@ def test_connection_orchestrator_preserves_pair_on_connect_across_scan_fallback(
         BLEConfig.CONNECTION_TIMEOUT,
         BLEConfig.CONNECTION_TIMEOUT,
     ]
-    assert [
-        client_manager._connect_client.call_args_list[0].kwargs["timeout"],
-        client_manager._connect_client.call_args_list[1].kwargs["timeout"],
-        client_manager._connect_client.call_args_list[2].kwargs["timeout"],
-    ] == [
+
+
+@pytest.mark.unit
+def test_connection_orchestrator_uses_shorter_timeout_for_non_pairing_fallback() -> (
+    None
+):
+    """Discovery fallback should use the computed non-pairing timeout consistently."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    fallback_client = MagicMock()
+    client_manager._create_client.return_value = fallback_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+    interface.findDevice.return_value = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address=None,
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+        pair_on_connect=False,
+    )
+
+    assert result is fallback_client
+    expected_timeout = min(
+        DIRECT_CONNECT_TIMEOUT_SECONDS,
         BLEConfig.CONNECTION_TIMEOUT,
-        BLEConfig.CONNECTION_TIMEOUT,
-        BLEConfig.CONNECTION_TIMEOUT,
-    ]
+    )
+    assert client_manager._create_client.call_args.kwargs["connect_timeout"] == (
+        expected_timeout
+    )
+    client_manager._connect_client.assert_called_once_with(
+        fallback_client,
+        timeout=expected_timeout,
+    )
 
 
 @pytest.mark.unit
@@ -872,9 +914,10 @@ def test_connection_orchestrator_uses_discovery_for_non_address_identifier_after
         client_manager._connect_client.call_args_list[0].kwargs["timeout"]
         == expected_timeout
     )
-    # Discovery fallback in this path uses _connect_client(..., timeout=None)
-    # to explicitly disable the direct-connect timeout budget.
-    assert client_manager._connect_client.call_args_list[1].kwargs["timeout"] is None
+    assert (
+        client_manager._connect_client.call_args_list[1].kwargs["timeout"]
+        == expected_timeout
+    )
     orchestrator._finalize_connection.assert_called_once_with(
         discovered_client,
         "11:22:33:44:55:66",

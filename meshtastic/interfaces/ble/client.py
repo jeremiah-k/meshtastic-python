@@ -36,6 +36,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
     BLECLIENT_ERROR_FAILED_TO_SCHEDULE,
     BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
+    BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     SERVICE_CHARACTERISTIC_RETRY_COUNT,
@@ -203,11 +204,20 @@ class BLEClient:
         """Promoted camelCase alias for find_device()."""
         return self.find_device(**kwargs)
 
-    def pair(self, **kwargs: object) -> None:
+    def pair(
+        self,
+        *,
+        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **kwargs: object,
+    ) -> None:
         """Pair the BLE client with the remote device.
 
         Parameters
         ----------
+        await_timeout : float | None
+            Maximum seconds to wait for the pairing coroutine to complete;
+            `None` means wait indefinitely. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
         **kwargs : object
             Backend-specific pairing options forwarded to the underlying BLE client.
 
@@ -225,13 +235,22 @@ class BLEClient:
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
         try:
-            self._async_await(bleak_client.pair(**kwargs))
+            self._async_await(bleak_client.pair(**kwargs), timeout=await_timeout)
         except NotImplementedError as exc:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED) from exc
         return None
 
-    def unpair(self) -> None:
+    def unpair(
+        self, *, await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
+    ) -> None:
         """Unpair the BLE client from the remote device when supported by the backend.
+
+        Parameters
+        ----------
+        await_timeout : float | None
+            Maximum seconds to wait for the unpair coroutine to complete;
+            `None` means wait indefinitely. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
 
         Returns
         -------
@@ -250,7 +269,7 @@ class BLEClient:
         if not callable(unpair_fn):
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED)
         try:
-            self._async_await(unpair_fn())
+            self._async_await(unpair_fn(), timeout=await_timeout)
         except NotImplementedError as exc:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED) from exc
         return None

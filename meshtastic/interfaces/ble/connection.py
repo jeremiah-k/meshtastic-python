@@ -600,18 +600,19 @@ class ConnectionOrchestrator:
                 resolved_address = device.address
 
             self._raise_if_interface_closing()
+            connect_timeout = (
+                fallback_timeout
+                if fallback_timeout is not None
+                else self._get_connect_timeout(pair_on_connect)
+            )
             client = self.client_manager._create_client(
                 resolved_address,
                 on_disconnect_func,
                 pair_on_connect=pair_on_connect,
-                connect_timeout=(
-                    fallback_timeout
-                    if fallback_timeout is not None
-                    else self._get_connect_timeout(pair_on_connect)
-                ),
+                connect_timeout=connect_timeout,
             )
             try:
-                self.client_manager._connect_client(client, timeout=fallback_timeout)
+                self.client_manager._connect_client(client, timeout=connect_timeout)
             except (
                 BleakError,
                 BLEClient.BLEError,

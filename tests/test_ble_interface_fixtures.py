@@ -394,6 +394,8 @@ class DummyClient:
             Number of times unpair() has been invoked.
         pair_kwargs : list[dict[str, object]]
             Keyword arguments captured for each pair() invocation.
+        unpair_await_timeouts : list[float | None]
+            Timeout arguments captured for each unpair() invocation.
         address : str
             Client address identifier, set to "dummy".
         disconnect_exception : Exception | None
@@ -408,6 +410,7 @@ class DummyClient:
         self.pair_calls = 0
         self.unpair_calls = 0
         self.pair_kwargs: list[dict[str, object]] = []
+        self.unpair_await_timeouts: list[float | None] = []
         self.stop_notify_calls: list[Any] = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
@@ -499,9 +502,10 @@ class DummyClient:
         self.pair_calls += 1
         self.pair_kwargs.append(dict(_kwargs))
 
-    def unpair(self) -> None:
+    def unpair(self, *, await_timeout: float | None = None) -> None:
         """Record an unpair invocation."""
         self.unpair_calls += 1
+        self.unpair_await_timeouts.append(await_timeout)
 
     def close(self) -> None:
         """Record that the client was closed.

@@ -75,14 +75,30 @@ def _extract_added_channel_index(output: str) -> int | None:
 
 def _find_channel_index_by_name(info_output: str, channel_name: str) -> int | None:
     """Find the first channel index whose serialized channel name matches."""
-    pattern = re.compile(
-        rf'^\s*Index\s+(\d+):\s+\w+.*"name":\s+"{re.escape(channel_name)}"',
-        re.MULTILINE,
+    section_pattern = re.compile(
+        r"(?ms)^\s*Index\s+(\d+):\s+\w+.*?(?=^\s*Index\s+\d+:|\Z)"
     )
-    match = pattern.search(info_output)
-    if match is None:
-        return None
-    return int(match.group(1))
+    for match in section_pattern.finditer(info_output):
+        if re.search(rf'"name":\s+"{re.escape(channel_name)}"', match.group(0)):
+            return int(match.group(1))
+    return None
+
+
+@pytest.mark.unit
+def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
+    """Channel lookup should work when channel JSON spans multiple lines."""
+    info_output = """
+    Index 0: PRIMARY
+      {
+        "name": "alpha"
+      }
+    Index 2: SECONDARY
+      {
+        "role": "SECONDARY",
+        "name": "demo"
+      }
+    """
+    assert _find_channel_index_by_name(info_output, "demo") == 2
 
 
 def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:

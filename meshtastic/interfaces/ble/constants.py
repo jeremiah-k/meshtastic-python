@@ -165,6 +165,7 @@ BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED = "Cannot pair: BLE client not initi
 BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED = (
     "Cannot pair: BLE backend does not support pairing on this platform"
 )
+BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT = BLEConfig.CONNECTION_TIMEOUT
 BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED = (
     "Cannot unpair: BLE client not initialized"
 )

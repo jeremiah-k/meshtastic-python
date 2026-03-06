@@ -55,6 +55,7 @@ from meshtastic.interfaces.ble.connection import (
     ConnectionValidator,
 )
 from meshtastic.interfaces.ble.constants import (
+    BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_ADDRESS_RESOLUTION_FAILED,
     ERROR_CONNECTION_FAILED,
@@ -1361,6 +1362,28 @@ class BLEInterface(MeshInterface):
         octets = [sanitized[index : index + 2].upper() for index in range(0, 12, 2)]
         return ":".join(octets)
 
+    @staticmethod
+    def _management_target_gate(target_address: str) -> contextlib.ExitStack:
+        """Return a context manager that serializes temporary management work by address."""
+        stack = contextlib.ExitStack()
+        target_key = _addr_key(target_address)
+        if target_key is not None:
+            addr_lock = stack.enter_context(_addr_lock_context(target_key))
+            stack.enter_context(addr_lock)
+        return stack
+
+    def _get_management_client_if_available(
+        self, address: str | None
+    ) -> BLEClient | None:
+        """Return an active or reusable client for a management operation, if one exists."""
+        requested_identifier = address if address is not None else self.address
+        with self._state_lock:
+            current_client = self.client if address is None else None
+        if current_client is not None and current_client.isConnected():
+            return current_client
+        normalized_request = sanitize_address(requested_identifier)
+        return self._get_existing_client_if_valid(normalized_request)
+
     def _execute_management_command(
         self,
         address: str | None,
@@ -1381,36 +1404,37 @@ class BLEInterface(MeshInterface):
         T
             Command return value.
         """
-        # Serialize management operations with connect()/reconnect on this
-        # interface so pairing/unpairing cannot race client establishment or
-        # replacement after the initial precondition check.
         with self._connect_lock, self._management_lock:
             if address is not None and not address.strip():
                 raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
             self._validate_management_preconditions()
 
-            with self._state_lock:
-                current_client = self.client if address is None else None
-                requested_identifier = address if address is not None else self.address
-
-            if current_client is not None and current_client.isConnected():
-                return command(current_client)
-
-            normalized_request = sanitize_address(requested_identifier)
-            existing_client = self._get_existing_client_if_valid(normalized_request)
+            existing_client = self._get_management_client_if_available(address)
             if existing_client is not None:
                 return command(existing_client)
 
             target_address = self._resolve_target_address_for_management(address)
-            self._validate_management_preconditions()
-            temporary_client = BLEClient(target_address, log_if_no_address=False)
-            try:
-                return command(temporary_client)
-            finally:
-                self._client_manager._safe_close_client(temporary_client)
+        with self._management_target_gate(target_address):
+            with self._connect_lock, self._management_lock:
+                self._validate_management_preconditions()
+                existing_client = self._get_management_client_if_available(address)
+                if existing_client is not None:
+                    return command(existing_client)
 
-    def pair(self, address: str | None = None, **kwargs: object) -> None:
+                temporary_client = BLEClient(target_address, log_if_no_address=False)
+                try:
+                    return command(temporary_client)
+                finally:
+                    self._client_manager._safe_close_client(temporary_client)
+
+    def pair(
+        self,
+        address: str | None = None,
+        *,
+        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **kwargs: object,
+    ) -> None:
         """Pair with a BLE device either through the active client or a temporary client.
 
         Parameters
@@ -1420,6 +1444,10 @@ class BLEInterface(MeshInterface):
             connection target when available; otherwise fall back to the
             interface's bound target. Raises if no active or bound target is
             available.
+        await_timeout : float | None
+            Maximum seconds to wait for the pairing coroutine to complete;
+            `None` means wait indefinitely. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
         **kwargs : object
             Backend-specific pairing options forwarded to `BLEClient.pair()`.
 
@@ -1428,10 +1456,18 @@ class BLEInterface(MeshInterface):
         None
             Pairing is performed for side effects and does not return a value.
         """
-        self._execute_management_command(address, lambda client: client.pair(**kwargs))
+        self._execute_management_command(
+            address,
+            lambda client: client.pair(await_timeout=await_timeout, **kwargs),
+        )
         return None
 
-    def unpair(self, address: str | None = None) -> None:
+    def unpair(
+        self,
+        address: str | None = None,
+        *,
+        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+    ) -> None:
         """Unpair from a BLE device through the active or a temporary client.
 
         Parameters
@@ -1441,13 +1477,20 @@ class BLEInterface(MeshInterface):
             connection target when available; otherwise fall back to the
             interface's bound target. Raises if no active or bound target is
             available.
+        await_timeout : float | None
+            Maximum seconds to wait for the unpair coroutine to complete;
+            `None` means wait indefinitely. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
 
         Returns
         -------
         None
             Unpairing is performed for side effects and does not return a value.
         """
-        self._execute_management_command(address, lambda client: client.unpair())
+        self._execute_management_command(
+            address,
+            lambda client: client.unpair(await_timeout=await_timeout),
+        )
         return None
 
     def trust(
@@ -1476,34 +1519,40 @@ class BLEInterface(MeshInterface):
                 raise self.BLEError(ERROR_TRUST_BLUETOOTHCTL_MISSING)
 
             target_address = self._resolve_target_address_for_management(address)
-            canonical_address = self._format_bluetoothctl_address(target_address)
-            self._validate_management_preconditions()
-            try:
-                result = subprocess.run(  # noqa: S603
-                    [bluetoothctl_path, "trust", canonical_address],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=timeout,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise self.BLEError(
-                    ERROR_TRUST_COMMAND_TIMEOUT.format(
-                        timeout=timeout, address=canonical_address
+        with self._management_target_gate(target_address):
+            with self._connect_lock, self._management_lock:
+                self._validate_management_preconditions()
+                canonical_address = self._format_bluetoothctl_address(target_address)
+                try:
+                    result = subprocess.run(  # noqa: S603
+                        [bluetoothctl_path, "trust", canonical_address],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=timeout,
                     )
-                ) from exc
-            if result.returncode != 0:
-                stderr_output = result.stderr.strip() if result.stderr else ""
-                stdout_output = result.stdout.strip() if result.stdout else ""
-                detail = (
-                    stderr_output or stdout_output or f"exit code {result.returncode}"
-                )
-                raise self.BLEError(
-                    ERROR_TRUST_COMMAND_FAILED.format(
-                        address=canonical_address, detail=detail
+                except subprocess.TimeoutExpired as exc:
+                    raise self.BLEError(
+                        ERROR_TRUST_COMMAND_TIMEOUT.format(
+                            timeout=timeout, address=canonical_address
+                        )
+                    ) from exc
+                if result.returncode != 0:
+                    stderr_output = result.stderr.strip() if result.stderr else ""
+                    stdout_output = result.stdout.strip() if result.stdout else ""
+                    detail = (
+                        stderr_output
+                        or stdout_output
+                        or f"exit code {result.returncode}"
                     )
+                    raise self.BLEError(
+                        ERROR_TRUST_COMMAND_FAILED.format(
+                            address=canonical_address, detail=detail
+                        )
+                    )
+                logger.info(
+                    "Trusted BLE device via bluetoothctl: %s", canonical_address
                 )
-            logger.info("Trusted BLE device via bluetoothctl: %s", canonical_address)
 
     def _sanitize_address(self, address: str | None) -> str | None:
         """Provide a backward-compatible wrapper that returns a sanitized BLE address or None.
@@ -1725,16 +1774,28 @@ class BLEInterface(MeshInterface):
             getattr(client, "bleak_client", None), "address", None
         ) or getattr(client, "address", None)
         previous_client = None
+        abort_connect = False
         with self._state_lock:
-            previous_client = self.client
-            self.address = device_address
-            self.client = client
-            self._disconnect_notified = False
-            normalized_device_address = sanitize_address(device_address or "")
-            if normalized_request is not None:
-                self._last_connection_request = normalized_request
+            if self._closed or self._state_manager._is_closing:
+                abort_connect = True
             else:
-                self._last_connection_request = normalized_device_address
+                previous_client = self.client
+                self.address = device_address
+                self.client = client
+                self._disconnect_notified = False
+                normalized_device_address = sanitize_address(device_address or "")
+                if normalized_request is not None:
+                    self._last_connection_request = normalized_request
+                else:
+                    self._last_connection_request = normalized_device_address
+
+        if abort_connect:
+            logger.debug(
+                "Discarding late BLE connection result during shutdown: %s",
+                sanitize_address(device_address or "") or "unknown",
+            )
+            self._client_manager._safe_close_client(client)
+            raise self.BLEError(ERROR_INTERFACE_CLOSING)
 
         if previous_client and previous_client is not client:
             self._client_manager._update_client_reference(client, previous_client)

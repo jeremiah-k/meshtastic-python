@@ -50,6 +50,7 @@ from meshtastic.interfaces.ble.discovery import (
     _looks_like_ble_address,
     _parse_scan_response,
 )
+from meshtastic.interfaces.ble.gating import _addr_lock_context
 from meshtastic.interfaces.ble.reconnection import ReconnectScheduler, ReconnectWorker
 from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 
@@ -57,6 +58,27 @@ from meshtastic.interfaces.ble.state import BLEStateManager, ConnectionState
 from tests.test_ble_interface_fixtures import DummyClient, _build_interface
 
 pytestmark = pytest.mark.unit
+
+
+def _pin_trust_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    run: Callable[..., object] | None = None,
+) -> None:
+    """Pin trust() host dependencies so guard-path tests stay hermetic."""
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: "/usr/bin/bluetoothctl",
+    )
+    if run is None:
+
+        def _unexpected_run(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("subprocess.run should not be reached")
+
+        run = _unexpected_run
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.subprocess.run", run)
+
 
 if TYPE_CHECKING:
 
@@ -492,9 +514,9 @@ def test_ble_interface_pair_prefers_active_client(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
-    iface.pair(confirm=True)
+    iface.pair(confirm=True, await_timeout=12.5)
     assert client.pair_calls == 1
-    assert client.pair_kwargs == [{"confirm": True}]
+    assert client.pair_kwargs == [{"confirm": True, "await_timeout": 12.5}]
     iface.close()
 
 
@@ -505,8 +527,9 @@ def test_ble_interface_unpair_prefers_active_client(
     client = DummyClient()
     iface = _build_interface(monkeypatch, client, start_receive_thread=False)
 
-    iface.unpair()
+    iface.unpair(await_timeout=8.0)
     assert client.unpair_calls == 1
+    assert client.unpair_await_timeouts == [8.0]
     iface.close()
 
 
@@ -529,10 +552,10 @@ def test_ble_interface_pair_uses_existing_client_when_request_matches(
         lambda _request: cast(BLEClient, existing_client),
     )
 
-    iface.pair("mesh-node", confirm=True)
+    iface.pair("mesh-node", confirm=True, await_timeout=7.0)
 
     assert existing_client.pair_calls == 1
-    assert existing_client.pair_kwargs == [{"confirm": True}]
+    assert existing_client.pair_kwargs == [{"confirm": True, "await_timeout": 7.0}]
     iface.close()
 
 
@@ -574,8 +597,8 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         lambda client: cleanup_calls.append(client),
     )
 
-    iface.pair("mesh-node", confirm=True)
-    assert pair_calls == [{"confirm": True}]
+    iface.pair("mesh-node", confirm=True, await_timeout=7.0)
+    assert pair_calls == [{"confirm": True, "await_timeout": 7.0}]
     assert cleanup_calls == [temp_client]
     iface.close()
 
@@ -632,11 +655,7 @@ def test_ble_interface_management_requires_target_when_disconnected(
 
     monkeypatch.setattr(iface, "findDevice", _unexpected_find_device)
     if method_name == "trust":
-        monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.interface.shutil.which",
-            lambda _name: "/usr/bin/bluetoothctl",
-        )
+        _pin_trust_environment(monkeypatch)
 
     with pytest.raises(BLEInterface.BLEError, match="explicit address"):
         getattr(iface, method_name)()
@@ -658,11 +677,7 @@ def test_ble_interface_management_rejects_connecting_state(
         assert iface._state_manager._transition_to(ConnectionState.CONNECTING) is True
 
     if method_name == "trust":
-        monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
-        monkeypatch.setattr(
-            "meshtastic.interfaces.ble.interface.shutil.which",
-            lambda _name: "/usr/bin/bluetoothctl",
-        )
+        _pin_trust_environment(monkeypatch)
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_CONNECTING):
         getattr(iface, method_name)("AA:BB:CC:DD:EE:FF")
@@ -857,6 +872,7 @@ def test_ble_interface_trust_rejects_non_positive_timeout(
 ) -> None:
     """trust() should fail fast on non-positive timeouts."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    _pin_trust_environment(monkeypatch)
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_TRUST_INVALID_TIMEOUT):
         iface.trust("AA:BB:CC:DD:EE:FF", timeout=0)
@@ -1038,7 +1054,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
 
     def _run_pair() -> None:
         pair_thread_started.set()
-        iface.pair("mesh-node", confirm=True)
+        iface.pair("mesh-node", confirm=True, await_timeout=7.0)
 
     monkeypatch.setattr(
         "meshtastic.interfaces.ble.interface.BLEClient",
@@ -1059,7 +1075,68 @@ def test_ble_interface_pair_waits_for_connect_lock(
         assert pair_finished.is_set() is False
 
     pair_thread.join(timeout=2.0)
-    assert pair_calls == [{"confirm": True}]
+    assert pair_calls == [{"confirm": True, "await_timeout": 7.0}]
+    assert close_calls == [temp_client]
+    assert pair_finished.is_set() is True
+    iface.close()
+
+
+def test_ble_interface_pair_waits_for_address_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pair() should serialize temporary management work with the address gate."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+
+    pair_calls: list[dict[str, object]] = []
+    close_calls: list[object] = []
+    pair_finished = threading.Event()
+    pair_thread_started = threading.Event()
+
+    def _pair(**kwargs: object) -> None:
+        pair_calls.append(dict(kwargs))
+        pair_finished.set()
+
+    temp_client = SimpleNamespace(
+        pair=_pair,
+        bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
+    )
+
+    def _temp_client_factory(_address: str, **_kwargs: object) -> SimpleNamespace:
+        return temp_client
+
+    def _run_pair() -> None:
+        pair_thread_started.set()
+        iface.pair("mesh-node", confirm=True, await_timeout=7.0)
+
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.BLEClient",
+        _temp_client_factory,
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: close_calls.append(client),
+    )
+
+    with _addr_lock_context("AA:BB:CC:DD:EE:FF") as addr_lock:
+        with addr_lock:
+            pair_thread = threading.Thread(target=_run_pair, daemon=True)
+            pair_thread.start()
+            assert pair_thread_started.wait(timeout=1.0)
+            time.sleep(0.1)
+            assert pair_calls == []
+            assert pair_finished.is_set() is False
+
+    pair_thread.join(timeout=2.0)
+    assert pair_calls == [{"confirm": True, "await_timeout": 7.0}]
     assert close_calls == [temp_client]
     assert pair_finished.is_set() is True
     iface.close()
@@ -1130,6 +1207,44 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     iface.connect()
 
     assert captured_pair_flags == [True, False, True]
+
+
+def test_ble_interface_establish_and_update_client_discards_late_connection_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Late connect results should be closed instead of being published during shutdown."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    connected_client = DummyClient()
+    connected_client.address = "AA:BB:CC:DD:EE:FF"
+    connected_client.bleak_client = SimpleNamespace(address="AA:BB:CC:DD:EE:FF")
+    cleanup_calls: list[object] = []
+
+    monkeypatch.setattr(
+        iface._connection_orchestrator,
+        "_establish_connection",
+        lambda *_args, **_kwargs: cast(BLEClient, connected_client),
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: cleanup_calls.append(client),
+    )
+
+    with iface._connect_lock:
+        with iface._state_lock:
+            iface._closed = True
+        with pytest.raises(BLEInterface.BLEError, match="closing"):
+            iface._establish_and_update_client(
+                "AA:BB:CC:DD:EE:FF",
+                "aabbccddeeff",
+                "aabbccddeeff",
+                pair_on_connect=False,
+            )
+
+    assert cleanup_calls == [connected_client]
+    with iface._state_lock:
+        assert iface.client is not connected_client
+    iface.close()
 
 
 def test_handle_disconnect_ignores_stale_callbacks(
