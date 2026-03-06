@@ -129,6 +129,7 @@ ERROR_MANAGEMENT_ADDRESS_EMPTY = "Management operations require a non-empty addr
 ERROR_MANAGEMENT_ADDRESS_REQUIRED = (
     "Management operations require an explicit address when no device is connected."
 )
+ERROR_MANAGEMENT_TARGET_CHANGED = "Management target changed while the operation was pending; retry with an explicit address."
 ERROR_MANAGEMENT_CONNECTING = (
     "Management operations are unavailable while a connection is in progress."
 )
@@ -151,6 +152,9 @@ CONNECTION_ERROR_CLIENT_DISCONNECTED_DURING_FINALIZATION = (
 )
 CONNECTION_ERROR_STATE_TRANSITION_INVALIDATED = (
     "Connection invalidated during state transition to connected"
+)
+CONNECTION_ERROR_LOST_OWNERSHIP = (
+    "Connection invalidated: interface lost ownership of connected client"
 )
 UNREACHABLE_ADDRESSED_DEVICES_MSG = (
     "Unreachable: all addressed_devices length cases are handled"

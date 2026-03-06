@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from meshtastic.interfaces.ble.constants import BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
+
 if TYPE_CHECKING:  # pragma: no cover - import only for typing
     from meshtastic.interfaces.ble.interface import BLEInterface
 
@@ -503,7 +505,7 @@ class DummyClient:
     def pair(
         self,
         *,
-        await_timeout: float | None = None,
+        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
         **_kwargs: object,
     ) -> None:
         """Record a pair invocation."""
@@ -511,7 +513,11 @@ class DummyClient:
         self.pair_await_timeouts.append(await_timeout)
         self.pair_kwargs.append(dict(_kwargs))
 
-    def unpair(self, *, await_timeout: float | None = None) -> None:
+    def unpair(
+        self,
+        *,
+        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+    ) -> None:
         """Record an unpair invocation."""
         self.unpair_calls += 1
         self.unpair_await_timeouts.append(await_timeout)

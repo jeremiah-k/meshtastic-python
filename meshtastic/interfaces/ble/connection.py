@@ -1,6 +1,7 @@
 """BLE connection management and validation."""
 
 import logging
+import math
 import sys
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Callable
@@ -382,8 +383,17 @@ class ConnectionOrchestrator:
         -------
         float
             Effective timeout for BLE client construction and connection.
+
+        Raises
+        ------
+        ValueError
+            If `connect_timeout` is non-finite or not strictly positive.
         """
         if connect_timeout is not None:
+            if not math.isfinite(connect_timeout) or connect_timeout <= 0:
+                raise ValueError(
+                    "connect_timeout must be a finite positive number of seconds."
+                )
             return connect_timeout
         return cls._get_connect_timeout(pair_on_connect=pair_on_connect)
 

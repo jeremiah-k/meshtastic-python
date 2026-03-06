@@ -727,6 +727,49 @@ def test_connection_orchestrator_uses_explicit_connect_timeout_override() -> Non
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [0.0, -1.0, float("nan"), float("inf"), float("-inf")],
+)
+def test_connection_orchestrator_rejects_invalid_connect_timeout_override(
+    invalid_timeout: float,
+) -> None:
+    """Explicit connect_timeout overrides should be finite positive values."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+
+    with pytest.raises(ValueError, match="connect_timeout"):
+        orchestrator._establish_connection(
+            address="AA:BB:CC:DD:EE:FF",
+            current_address=None,
+            register_notifications_func=lambda _client: None,
+            on_connected_func=lambda: None,
+            on_disconnect_func=lambda _client: None,
+            pair_on_connect=False,
+            connect_timeout=invalid_timeout,
+        )
+
+    client_manager._create_client.assert_not_called()
+    client_manager._connect_client.assert_not_called()
+
+
+@pytest.mark.unit
 def test_connection_orchestrator_preserves_pair_on_connect_across_direct_retry() -> (
     None
 ):

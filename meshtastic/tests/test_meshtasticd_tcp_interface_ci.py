@@ -2,6 +2,7 @@
 
 import ipaddress
 import os
+import socket
 import time
 from typing import cast
 from urllib.parse import ParseResult, urlparse
@@ -221,6 +222,10 @@ def test_tcp_interface_meshtasticd_recovers_after_socket_drop() -> None:
         assert original_socket is not None
 
         # Force a local transport break to exercise the reader-thread reconnect path.
+        try:
+            original_socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         original_socket.close()
 
         recovered = False

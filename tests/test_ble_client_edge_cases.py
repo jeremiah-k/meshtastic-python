@@ -2,7 +2,7 @@
 
 import asyncio
 import threading
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import pytest
@@ -35,6 +35,22 @@ except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
 
 TRANSIENT_SERVICES_LOOKUP_FAILURE = "transient services lookup failure"
+
+
+def _make_run_awaitable(
+    captured_timeout: list[float | None] | None = None,
+) -> Callable[[Awaitable[object], float | None], object]:
+    """Create a simple `_async_await` stand-in that runs the awaitable locally."""
+
+    def _run_awaitable(
+        awaitable: Awaitable[object],
+        timeout: float | None = None,
+    ) -> object:
+        if captured_timeout is not None:
+            captured_timeout.append(timeout)
+        return asyncio.run(awaitable)
+
+    return _run_awaitable
 
 
 @pytest.mark.unit
@@ -366,18 +382,10 @@ def test_bleclient_unpair_delegates_to_backend(
             return None
 
     ble_client.bleak_client = cast(Any, _Backend())
-
-    def _run_awaitable(
-        awaitable: Awaitable[object],
-        timeout: float | None = None,
-    ) -> object:
-        captured_timeout.append(timeout)
-        return asyncio.run(awaitable)
-
     monkeypatch.setattr(
         ble_client,
         "_async_await",
-        _run_awaitable,
+        _make_run_awaitable(captured_timeout),
     )
 
     ble_client.unpair(await_timeout=12.5)
@@ -397,14 +405,7 @@ def test_bleclient_unpair_translates_not_implemented_error(
             raise NotImplementedError
 
     ble_client.bleak_client = cast(Any, _Backend())
-
-    def _run_awaitable(
-        awaitable: Awaitable[object], timeout: float | None = None
-    ) -> object:
-        _ = timeout
-        return asyncio.run(awaitable)
-
-    monkeypatch.setattr(ble_client, "_async_await", _run_awaitable)
+    monkeypatch.setattr(ble_client, "_async_await", _make_run_awaitable())
 
     with pytest.raises(
         BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED
@@ -429,18 +430,10 @@ def test_bleclient_pair_delegates_to_backend(
             return None
 
     ble_client.bleak_client = cast(Any, _Backend())
-
-    def _run_awaitable(
-        awaitable: Awaitable[object],
-        timeout: float | None = None,
-    ) -> object:
-        captured_timeout.append(timeout)
-        return asyncio.run(awaitable)
-
     monkeypatch.setattr(
         ble_client,
         "_async_await",
-        _run_awaitable,
+        _make_run_awaitable(captured_timeout),
     )
 
     ble_client.pair(confirm=True, await_timeout=9.0)
@@ -461,18 +454,10 @@ def test_bleclient_pair_uses_bounded_default_await_timeout(
             return None
 
     ble_client.bleak_client = cast(Any, _Backend())
-
-    def _run_awaitable(
-        awaitable: Awaitable[object],
-        timeout: float | None = None,
-    ) -> object:
-        captured_timeout.append(timeout)
-        return asyncio.run(awaitable)
-
     monkeypatch.setattr(
         ble_client,
         "_async_await",
-        _run_awaitable,
+        _make_run_awaitable(captured_timeout),
     )
 
     ble_client.pair()
@@ -491,14 +476,7 @@ def test_bleclient_pair_translates_not_implemented_error(
             raise NotImplementedError
 
     ble_client.bleak_client = cast(Any, _Backend())
-
-    def _run_awaitable(
-        awaitable: Awaitable[object], timeout: float | None = None
-    ) -> object:
-        _ = timeout
-        return asyncio.run(awaitable)
-
-    monkeypatch.setattr(ble_client, "_async_await", _run_awaitable)
+    monkeypatch.setattr(ble_client, "_async_await", _make_run_awaitable())
 
     with pytest.raises(
         BLEClient.BLEError, match=BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED

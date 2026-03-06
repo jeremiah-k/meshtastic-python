@@ -56,6 +56,7 @@ from meshtastic.interfaces.ble.connection import (
 )
 from meshtastic.interfaces.ble.constants import (
     BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+    CONNECTION_ERROR_LOST_OWNERSHIP,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_ADDRESS_RESOLUTION_FAILED,
     ERROR_CONNECTION_FAILED,
@@ -65,6 +66,7 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_MANAGEMENT_ADDRESS_EMPTY,
     ERROR_MANAGEMENT_ADDRESS_REQUIRED,
     ERROR_MANAGEMENT_CONNECTING,
+    ERROR_MANAGEMENT_TARGET_CHANGED,
     ERROR_MULTIPLE_DEVICES,
     ERROR_MULTIPLE_DEVICES_DISCOVERY,
     ERROR_NO_CLIENT_ESTABLISHED,
@@ -1440,6 +1442,46 @@ class BLEInterface(MeshInterface):
                 return current_client
         return self._get_existing_client_if_valid(normalized_target)
 
+    def _get_current_implicit_management_address_locked(self) -> str | None:
+        """Return the current implicit management target while holding `_state_lock`."""
+        current_client = self.client
+        current_address = self.address
+        if current_client is not None and current_client.isConnected():
+            client_address = self._extract_client_address(current_client)
+            if client_address is not None:
+                return client_address
+        if current_address and _looks_like_ble_address(current_address):
+            return current_address
+        return None
+
+    def _revalidate_implicit_management_target(
+        self, expected_target_address: str
+    ) -> None:
+        """Abort when an implicit management target changed while waiting on the gate.
+
+        Parameters
+        ----------
+        expected_target_address : str
+            Concrete BLE address selected before entering the per-target
+            management gate.
+
+        Raises
+        ------
+        BLEInterface.BLEError
+            If the interface's current implicit management target has changed to
+            a different concrete BLE address.
+        """
+        with self._state_lock:
+            current_target_address = (
+                self._get_current_implicit_management_address_locked()
+            )
+        if current_target_address is None:
+            return
+        if sanitize_address(current_target_address) != sanitize_address(
+            expected_target_address
+        ):
+            raise self.BLEError(ERROR_MANAGEMENT_TARGET_CHANGED)
+
     def _execute_management_command(
         self,
         address: str | None,
@@ -1474,6 +1516,11 @@ class BLEInterface(MeshInterface):
             with self._connect_lock:
                 with self._management_lock:
                     self._validate_management_preconditions()
+                    if address is None:
+                        # The implicit target may have changed while we waited
+                        # for the per-address gate. Abort rather than acting on
+                        # a stale temporary target.
+                        self._revalidate_implicit_management_target(target_address)
                     existing_client = self._get_management_client_for_target(
                         target_address,
                         prefer_current_client=address is None,
@@ -1590,6 +1637,10 @@ class BLEInterface(MeshInterface):
         with self._management_target_gate(target_address):
             with self._connect_lock, self._management_lock:
                 self._validate_management_preconditions()
+                if address is None:
+                    # Keep implicit trust() aligned with the interface's
+                    # current target after the gate handoff.
+                    self._revalidate_implicit_management_target(target_address)
             # Hold the process-wide address gate during bluetoothctl execution so
             # target-scoped trust operations stay serialized without blocking the
             # interface locks for the full subprocess duration.
@@ -1884,6 +1935,23 @@ class BLEInterface(MeshInterface):
 
         return client, connected_device_key, connection_alias_key
 
+    def _get_connected_client_status_locked(
+        self, client: BLEClient
+    ) -> tuple[bool, bool]:
+        """Return owned/closing status for a connected client while holding `_state_lock`."""
+        is_closing = self._state_manager._is_closing or self._closed
+        is_owned = (
+            not self._closed
+            and self.client is client
+            and self._state_manager._is_connected
+        )
+        return is_owned, is_closing
+
+    def _get_connected_client_status(self, client: BLEClient) -> tuple[bool, bool]:
+        """Return whether this interface owns `client` and whether shutdown began."""
+        with self._state_lock:
+            return self._get_connected_client_status_locked(client)
+
     def _finalize_connection_gates(
         self,
         connected_client: BLEClient,
@@ -1903,7 +1971,7 @@ class BLEInterface(MeshInterface):
         connection_alias_key : str | None
             Optional alias key used when claiming connection gates, or `None` if not used.
         """
-        still_active = self._is_owned_connected_client(connected_client)
+        still_active, is_closing = self._get_connected_client_status(connected_client)
 
         if still_active:
             self._mark_address_keys_connected(
@@ -1911,13 +1979,22 @@ class BLEInterface(MeshInterface):
             )
             needs_cleanup = False
             with self._state_lock:
-                if self._is_owned_connected_client(connected_client):
+                still_active, is_closing = self._get_connected_client_status_locked(
+                    connected_client
+                )
+                if still_active:
                     self._connection_alias_key = connection_alias_key
                 else:
-                    logger.debug(
-                        "Interface closed during connect(), cleaning up gate claim for %s",
-                        getattr(connected_client, "address", "unknown"),
-                    )
+                    if is_closing:
+                        logger.debug(
+                            "Interface closed during connect(), cleaning up gate claim for %s",
+                            getattr(connected_client, "address", "unknown"),
+                        )
+                    else:
+                        logger.debug(
+                            "Interface lost ownership during connect(), cleaning up gate claim for %s",
+                            getattr(connected_client, "address", "unknown"),
+                        )
                     self._connection_alias_key = None
                     needs_cleanup = True
             if needs_cleanup:
@@ -1925,10 +2002,16 @@ class BLEInterface(MeshInterface):
                     connected_device_key, connection_alias_key
                 )
         else:
-            logger.debug(
-                "Skipping connect gate marking for stale client result (%s).",
-                getattr(connected_client, "address", "unknown"),
-            )
+            if is_closing:
+                logger.debug(
+                    "Skipping connect gate marking during shutdown for stale client result (%s).",
+                    getattr(connected_client, "address", "unknown"),
+                )
+            else:
+                logger.debug(
+                    "Skipping connect gate marking for client result that lost ownership (%s).",
+                    getattr(connected_client, "address", "unknown"),
+                )
 
     def _is_owned_connected_client(self, client: BLEClient) -> bool:
         """Return whether this interface still owns the provided connected client.
@@ -1944,12 +2027,8 @@ class BLEInterface(MeshInterface):
             `True` when the interface is not closed, still references `client`,
             and the state machine reports CONNECTED.
         """
-        with self._state_lock:
-            return (
-                not self._closed
-                and self.client is client
-                and self._state_manager._is_connected
-            )
+        is_owned, _ = self._get_connected_client_status(client)
+        return is_owned
 
     # ---------------------------------------------------------------------
     # Main connection method
@@ -1986,7 +2065,9 @@ class BLEInterface(MeshInterface):
         Raises
         ------
         BLEInterface.BLEError
-            If the interface is closing, if connection is suppressed due to a recent connect elsewhere, or if the connection attempt fails.
+            If the interface is closing, if connection ownership is lost before
+            the result can be returned, if connection is suppressed due to a
+            recent connect elsewhere, or if the connection attempt fails.
         """
         # Fail fast if interface is closing before acquiring any locks
         self._validate_connection_preconditions()
@@ -2048,8 +2129,11 @@ class BLEInterface(MeshInterface):
         self._finalize_connection_gates(
             connected_client, connected_device_key, connection_alias_key
         )
-        if not self._is_owned_connected_client(connected_client):
-            raise self.BLEError(ERROR_INTERFACE_CLOSING)
+        still_owned, is_closing = self._get_connected_client_status(connected_client)
+        if not still_owned:
+            if is_closing:
+                raise self.BLEError(ERROR_INTERFACE_CLOSING)
+            raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)
         return connected_client
 
     def _handle_read_loop_disconnect(
