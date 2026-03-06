@@ -1,6 +1,7 @@
 """Additional edge case tests for BLE client functionality."""
 
 import asyncio
+import re
 import threading
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
@@ -30,6 +31,7 @@ try:
         BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
         BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
         BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
     )
 except ImportError:
     pytest.skip("BLE dependencies not available", allow_module_level=True)
@@ -491,3 +493,35 @@ def test_bleclient_pair_translates_not_implemented_error(
         ble_client.pair(confirm=True)
 
     assert isinstance(exc_info.value.__cause__, NotImplementedError)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method_name", ["pair", "unpair"])
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [None, 0.0, -1.0, float("nan"), float("inf"), float("-inf"), True],
+)
+def test_bleclient_management_rejects_invalid_await_timeout(
+    ble_client: BLEClient,
+    method_name: str,
+    invalid_timeout: object,
+) -> None:
+    """pair()/unpair() should require a finite positive await timeout."""
+
+    class _Backend:
+        async def pair(self, **_kwargs: object) -> None:
+            return None
+
+        async def unpair(self) -> None:
+            return None
+
+    ble_client.bleak_client = cast(Any, _Backend())
+
+    with pytest.raises(
+        BLEClient.BLEError,
+        match=re.escape(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID),
+    ):
+        if method_name == "pair":
+            ble_client.pair(confirm=True, await_timeout=cast(Any, invalid_timeout))
+        else:
+            ble_client.unpair(await_timeout=cast(Any, invalid_timeout))

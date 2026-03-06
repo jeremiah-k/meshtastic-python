@@ -122,6 +122,70 @@ def test_find_channel_index_by_name_handles_multiline_channel_blocks() -> None:
     assert _find_channel_index_by_name(info_output, "nonexistent") is None
 
 
+@pytest.mark.unit
+def test_wait_for_mutation_to_settle_honors_settle_window_and_predicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation settling should wait the settle window and retry until predicate matches."""
+    sleep_calls: list[float] = []
+    ready_outputs = [
+        (0, "Connected to radio\nOwner: stale"),
+        (0, "Connected to radio\nOwner: ready"),
+    ]
+
+    def _record_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    def _next_ready_output(**_kwargs: object) -> tuple[int, str]:
+        return ready_outputs.pop(0)
+
+    monkeypatch.setattr("meshtastic.tests.test_smoke1.time.sleep", _record_sleep)
+    monkeypatch.setattr(
+        "meshtastic.tests.test_smoke1._wait_for_info_ready",
+        _next_ready_output,
+    )
+
+    settled = _wait_for_mutation_to_settle(
+        settle_timeout=3.0,
+        predicate=lambda output: "Owner: ready" in output,
+    )
+
+    assert settled == "Connected to radio\nOwner: ready"
+    assert sleep_calls[0] == 3.0
+
+
+@pytest.mark.unit
+def test_wait_for_disconnect_then_ready_requires_failed_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reboot/factory-reset helper should require a failed probe before recovery."""
+    probe_results = [
+        (0, "Connected to radio\nstill up"),
+        (1, "serial disconnected"),
+    ]
+    sleep_calls: list[float] = []
+
+    def _next_probe(*_args: object, **_kwargs: object) -> tuple[int, str]:
+        return probe_results.pop(0)
+
+    def _ready_output() -> tuple[int, str]:
+        return 0, "Connected to radio\nrecovered"
+
+    def _record_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("meshtastic.tests.test_smoke1._run", _next_probe)
+    monkeypatch.setattr(
+        "meshtastic.tests.test_smoke1._wait_for_info_ready", _ready_output
+    )
+    monkeypatch.setattr("meshtastic.tests.test_smoke1.time.sleep", _record_sleep)
+
+    recovered = _wait_for_disconnect_then_ready("reboot")
+
+    assert recovered == "Connected to radio\nrecovered"
+    assert sleep_calls == [INFO_READY_POLL_INTERVAL_SECONDS]
+
+
 def _restore_config_with_retries(config_path: Path) -> tuple[int, str]:
     """Attempt to restore a saved config with retries to handle reboot windows."""
     output = ""
@@ -164,15 +228,58 @@ def _wait_for_info_ready(
 
 
 def _wait_for_mutation_to_settle(
-    *, settle_timeout: int | float = PAUSE_AFTER_COMMAND
+    *,
+    settle_timeout: int | float = PAUSE_AFTER_COMMAND,
+    predicate: Callable[[str], bool] | None = None,
 ) -> str:
-    """Wait for a post-mutation settle window before probing `--info`."""
+    """Wait for a post-mutation settle window and optional readback predicate."""
     if settle_timeout > 0:
         time.sleep(settle_timeout)
-    ready_code, ready_output = _wait_for_info_ready(timeout=INFO_READY_TIMEOUT_SECONDS)
-    assert ready_code == 0, ready_output
-    _assert_connected(ready_output)
-    return ready_output
+    deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
+    last_output = ""
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        ready_code, ready_output = _wait_for_info_ready(
+            timeout=remaining,
+            poll_interval=INFO_READY_POLL_INTERVAL_SECONDS,
+        )
+        assert ready_code == 0, ready_output
+        _assert_connected(ready_output)
+        last_output = ready_output
+        if predicate is None or predicate(ready_output):
+            return ready_output
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
+    raise AssertionError(
+        f"Device never reached the expected post-mutation state:\n{last_output}"
+    )
+
+
+def _wait_for_disconnect_then_ready(action_name: str) -> str:
+    """Require a real disconnect/reconnect cycle before returning recovered info."""
+    deadline = time.monotonic() + INFO_READY_TIMEOUT_SECONDS
+    last_output = ""
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        probe_timeout = min(1.0, remaining)
+        code, output = _run("meshtastic", "--info", timeout=probe_timeout)
+        if code != 0:
+            info_code, info_out = _wait_for_info_ready()
+            assert info_code == 0, info_out
+            _assert_connected(info_out)
+            return info_out
+        last_output = output
+        time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
+    raise AssertionError(
+        f"Device never disappeared during {action_name}.\n"
+        f"last_successful_probe={last_output}"
+    )
 
 
 @pytest.fixture
@@ -379,9 +486,7 @@ def test_smoke1_reboot() -> None:
     """`--reboot` should return success and the node should come back."""
     return_value, _ = _run("meshtastic", "--reboot")
     assert return_value == 0
-    info_code, info_out = _wait_for_info_ready()
-    _assert_connected(info_out)
-    assert info_code == 0
+    _wait_for_disconnect_then_ready("reboot")
 
 
 @_destructive_test
@@ -397,7 +502,11 @@ def test_smoke1_pos_fields_supported_values() -> None:
     _assert_connected(out)
     assert re.search(r"^Setting position fields to", out, re.MULTILINE)
     assert return_value == 0
-    _wait_for_mutation_to_settle()
+    _wait_for_mutation_to_settle(
+        predicate=lambda output: all(
+            field in output for field in ("ALTITUDE", "ALTITUDE_MSL", "DOP")
+        )
+    )
 
     return_value, out = _run("meshtastic", "--pos-fields")
     _assert_connected(out)
@@ -425,7 +534,11 @@ def test_smoke1_set_location_info() -> None:
     assert "Fixing longitude" in out
     assert "Setting device position" in out
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: all(
+            marker in output for marker in ("1337", "32.7767", "-96.797")
+        )
+    )
     assert "1337" in info_out
     assert "32.7767" in info_out
     assert "-96.797" in info_out
@@ -438,7 +551,10 @@ def test_smoke1_set_owner() -> None:
     _assert_connected(out)
     assert re.search(r"^Setting device owner to Bob", out, re.MULTILINE)
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(r"^Owner: Bob\b", output, re.MULTILINE)
+        is not None
+    )
     assert re.search(r"^Owner: Bob\b", info_out, re.MULTILINE)
 
 
@@ -471,10 +587,11 @@ def test_smoke1_ch_values(preset_cmd: str, expected_preset: str) -> None:
     assert "Writing modified channels to device" in out
     assert return_value == 0
 
-    info_code, info_out = _wait_for_info_ready()
-    _assert_connected(info_out)
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(expected_preset, output, re.MULTILINE)
+        is not None
+    )
     assert re.search(expected_preset, info_out, re.MULTILINE)
-    assert info_code == 0
 
 
 @_destructive_test
@@ -491,7 +608,9 @@ def test_smoke1_ch_set_name() -> None:
     _assert_connected(out)
     assert re.search(r"^Set name to MyChannel", out, re.MULTILINE)
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: "MyChannel" in output
+    )
     assert "MyChannel" in info_out
 
 
@@ -514,13 +633,12 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert "Set uplink_enabled to false" in out
     assert return_value == 0
 
-    info_code, info_out = _wait_for_info_ready(
-        timeout=PAUSE_AFTER_COMMAND + INFO_READY_TIMEOUT_SECONDS
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: not re.search(r"uplinkEnabled", output, re.MULTILINE)
+        and not re.search(r"downlinkEnabled", output, re.MULTILINE)
     )
-    _assert_connected(info_out)
     assert not re.search(r"uplinkEnabled", info_out, re.MULTILINE)
     assert not re.search(r"downlinkEnabled", info_out, re.MULTILINE)
-    assert info_code == 0
 
     return_value, out = _run(
         "meshtastic",
@@ -538,13 +656,13 @@ def test_smoke1_ch_set_downlink_and_uplink() -> None:
     assert "Set uplink_enabled to true" in out
     assert return_value == 0
 
-    info_code, info_out = _wait_for_info_ready(
-        timeout=PAUSE_AFTER_COMMAND + INFO_READY_TIMEOUT_SECONDS
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(r"uplinkEnabled", output, re.MULTILINE)
+        is not None
+        and re.search(r"downlinkEnabled", output, re.MULTILINE) is not None
     )
-    _assert_connected(info_out)
     assert re.search(r"uplinkEnabled", info_out, re.MULTILINE)
     assert re.search(r"downlinkEnabled", info_out, re.MULTILINE)
-    assert info_code == 0
 
 
 @_destructive_test
@@ -555,7 +673,9 @@ def test_smoke1_ch_add_and_ch_del() -> None:
     _assert_connected(out)
     assert "Writing modified channels to device" in out
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: channel_name in output
+    )
 
     idx = _extract_added_channel_index(out)
     assert channel_name in info_out
@@ -566,7 +686,10 @@ def test_smoke1_ch_add_and_ch_del() -> None:
     return_value, out = _run("meshtastic", "--ch-del", "--ch-index", str(idx))
     assert "Deleting channel" in out
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle(settle_timeout=PAUSE_AFTER_REBOOT)
+    info_out = _wait_for_mutation_to_settle(
+        settle_timeout=PAUSE_AFTER_REBOOT,
+        predicate=lambda output: channel_name not in output,
+    )
     assert channel_name not in info_out
 
 
@@ -578,19 +701,28 @@ def test_smoke1_ch_enable_and_disable() -> None:
     assert return_value == 0
     idx = _extract_added_channel_index(out)
 
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: channel_name in output
+    )
     if idx is None:
         idx = _find_channel_index_by_name(info_out, channel_name)
     assert idx is not None
 
     return_value, out = _run("meshtastic", "--ch-disable", "--ch-index", str(idx))
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(
+            rf"^\s*Index\s+{idx}:\s+DISABLED", output, re.MULTILINE
+        )
+        is not None
+    )
     assert re.search(rf"^\s*Index\s+{idx}:\s+DISABLED", info_out, re.MULTILINE)
 
     return_value, out = _run("meshtastic", "--ch-enable", "--ch-index", str(idx))
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: channel_name in output
+    )
     assert channel_name in info_out
 
     cleanup_return_value, cleanup_out = _run(
@@ -610,18 +742,27 @@ def test_smoke1_ch_del_a_disabled_non_primary_channel() -> None:
     assert return_value == 0
     idx = _extract_added_channel_index(out)
 
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: channel_name in output
+    )
     if idx is None:
         idx = _find_channel_index_by_name(info_out, channel_name)
     assert idx is not None
 
     return_value, _ = _run("meshtastic", "--ch-disable", "--ch-index", str(idx))
     assert return_value == 0
-    _wait_for_mutation_to_settle()
+    _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(
+            rf"^\s*Index\s+{idx}:\s+DISABLED", output, re.MULTILINE
+        )
+        is not None
+    )
 
     return_value, _ = _run("meshtastic", "--ch-del", "--ch-index", str(idx))
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: channel_name not in output
+    )
     assert channel_name not in info_out
 
 
@@ -658,7 +799,7 @@ def test_smoke1_ensure_ch_del_second_of_three_channels() -> None:
     assert rc_a == 0
     idx_a = _extract_added_channel_index(out_a)
 
-    _wait_for_mutation_to_settle()
+    _wait_for_mutation_to_settle(predicate=lambda output: name_a in output)
     rc_b, out_b = _run("meshtastic", "--ch-add", name_b)
     assert rc_b == 0
     idx_b = _extract_added_channel_index(out_b)
@@ -672,7 +813,7 @@ def test_smoke1_ensure_ch_del_second_of_three_channels() -> None:
 
     rc_del, _ = _run("meshtastic", "--ch-del", "--ch-index", str(idx_a))
     assert rc_del == 0
-    out_info = _wait_for_mutation_to_settle()
+    out_info = _wait_for_mutation_to_settle(predicate=lambda output: name_b in output)
     assert name_b in out_info
 
     idx_b_now = _find_channel_index_by_name(out_info, name_b)
@@ -695,7 +836,7 @@ def test_smoke1_ensure_ch_del_third_of_three_channels() -> None:
     assert rc_a == 0
     idx_a = _extract_added_channel_index(out_a)
 
-    _wait_for_mutation_to_settle()
+    _wait_for_mutation_to_settle(predicate=lambda output: name_a in output)
     rc_b, out_b = _run("meshtastic", "--ch-add", name_b)
     assert rc_b == 0
     idx_b = _extract_added_channel_index(out_b)
@@ -709,7 +850,7 @@ def test_smoke1_ensure_ch_del_third_of_three_channels() -> None:
 
     rc_del, _ = _run("meshtastic", "--ch-del", "--ch-index", str(idx_b))
     assert rc_del == 0
-    out_info = _wait_for_mutation_to_settle()
+    out_info = _wait_for_mutation_to_settle(predicate=lambda output: name_a in output)
     assert name_a in out_info
 
     idx_a_now = _find_channel_index_by_name(out_info, name_a)
@@ -735,14 +876,18 @@ def test_smoke1_seturl_default() -> None:
         "0",
     )
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: DEFAULT_URL_FRAGMENT not in output
+    )
     assert DEFAULT_URL_FRAGMENT not in info_out
 
     url = "https://www.meshtastic.org/d/#CgUYAyIBAQ"
     return_value, out = _run("meshtastic", "--seturl", url)
     _assert_connected(out)
     assert return_value == 0
-    info_out = _wait_for_mutation_to_settle()
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: DEFAULT_URL_FRAGMENT in output
+    )
     assert DEFAULT_URL_FRAGMENT in info_out
 
 
@@ -770,7 +915,22 @@ def test_smoke1_configure() -> None:
     assert "Set power.wait_bluetooth_secs to 60" in out
     assert "Writing modified configuration to device" in out
     assert return_value == 0
-    _wait_for_mutation_to_settle(settle_timeout=PAUSE_AFTER_REBOOT)
+    _wait_for_mutation_to_settle(
+        settle_timeout=PAUSE_AFTER_REBOOT,
+        predicate=lambda output: re.search(r"^Owner: Bob TBeam\b", output, re.MULTILINE)
+        is not None,
+    )
+    verify_code, verify_out = _run(
+        "meshtastic",
+        "--get",
+        "power.wait_bluetooth_secs",
+        "--get",
+        "lora.region",
+    )
+    _assert_connected(verify_out)
+    assert re.search(r"power\.wait_bluetooth_secs:\s+60", verify_out, re.MULTILINE)
+    assert re.search(r"lora\.region:\s+US", verify_out, re.MULTILINE)
+    assert verify_code == 0
 
 
 @_destructive_test
@@ -779,10 +939,11 @@ def test_smoke1_set_ham() -> None:
     return_value, out = _run("meshtastic", "--set-ham", "KI1234")
     assert "Setting Ham ID" in out
     assert return_value == 0
-    return_value, out = _wait_for_info_ready()
-    _assert_connected(out)
+    out = _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(r"Owner: KI1234", output, re.MULTILINE)
+        is not None
+    )
     assert re.search(r"Owner: KI1234", out, re.MULTILINE)
-    assert return_value == 0
 
 
 @_destructive_test
@@ -818,10 +979,21 @@ def test_smoke1_set_wifi_settings() -> None:
 @_destructive_test
 def test_smoke1_factory_reset() -> None:
     """`--factory-reset` should execute successfully and reboot the node."""
+    owner_marker = f"Reset{uuid.uuid4().hex[:6]}"
+    return_value, out = _run("meshtastic", "--set-owner", owner_marker)
+    _assert_connected(out)
+    assert return_value == 0
+    info_out = _wait_for_mutation_to_settle(
+        predicate=lambda output: re.search(
+            rf"^Owner: {re.escape(owner_marker)}\b", output, re.MULTILINE
+        )
+        is not None
+    )
+    assert re.search(rf"^Owner: {re.escape(owner_marker)}\b", info_out, re.MULTILINE)
+
     return_value, out = _run("meshtastic", "--factory-reset")
     _assert_connected(out)
     assert "Aborting due to" not in out
     assert return_value == 0
-    info_code, info_out = _wait_for_info_ready()
-    _assert_connected(info_out)
-    assert info_code == 0
+    info_out = _wait_for_disconnect_then_ready("factory-reset")
+    assert owner_marker not in info_out

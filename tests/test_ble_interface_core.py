@@ -1054,6 +1054,14 @@ def test_ble_interface_trust_rejects_non_linux(
     """trust() should reject non-Linux hosts with a clear BLEError."""
     iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
     monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "darwin")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: pytest.fail("shutil.which should not be reached"),
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess.run should not be reached"),
+    )
     with pytest.raises(BLEInterface.BLEError, match="only supported on Linux"):
         iface.trust("AA:BB:CC:DD:EE:FF")
     iface.close()
@@ -1370,6 +1378,7 @@ def test_ble_interface_pair_waits_for_connect_lock(
         allow_temp_client_creation.set()
 
     pair_thread.join(timeout=2.0)
+    assert not pair_thread.is_alive()
     assert temp_client_created.is_set() is True
     assert pair_kwargs == [{"confirm": True}]
     assert pair_await_timeouts == [7.0]
@@ -1472,6 +1481,7 @@ def test_ble_interface_pair_waits_for_address_gate(
         allow_temp_client_creation.set()
 
     pair_thread.join(timeout=2.0)
+    assert not pair_thread.is_alive()
     assert temp_client_created.is_set() is True
     assert pair_kwargs == [{"confirm": True}]
     assert pair_await_timeouts == [7.0]
@@ -2095,7 +2105,7 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
     assert closed_clients == [connected_client]
     assert connected_callbacks == []
     assert iface.client is not connected_client
-    assert iface.address != target_address
+    assert iface.address == target_address
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):

@@ -2010,6 +2010,7 @@ class BLEInterface(MeshInterface):
             not self._closed
             and self.client is client
             and self._state_manager._is_connected
+            and client.isConnected()
         )
         return is_owned, is_closing
 
@@ -2028,13 +2029,16 @@ class BLEInterface(MeshInterface):
             callers because ownership was lost or shutdown began.
         """
         should_reset_state = False
+        is_closing = False
         with self._state_lock:
             if self.client is client:
+                is_closing = self._state_manager._is_closing or self._closed
                 self.client = None
-                self.address = None
                 self._last_connection_request = None
-                self._connection_alias_key = None
-                should_reset_state = not self._state_manager._is_closing
+                if not is_closing:
+                    self.address = None
+                    self._connection_alias_key = None
+                    should_reset_state = True
 
         self._client_manager._safe_close_client(client)
 

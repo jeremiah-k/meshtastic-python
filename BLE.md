@@ -241,6 +241,7 @@ iface_manual = BLEInterface(
 # Later, after the link drops and you want to reconnect with pairing:
 iface_manual.connect(pair=True)   # request pairing for this call
 iface_manual.trust("AA:BB:CC:DD:EE:FF")
+iface_manual.close()
 ```
 
 Programmatic helpers:

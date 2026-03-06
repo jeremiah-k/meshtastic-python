@@ -2030,7 +2030,7 @@ def test_main_configure_applies_power_snake_case_keys(
                         "ls_secs": 222,
                         "wait_bluetooth_secs": 77,
                         "min_wake_secs": 11,
-                        "sds_secs": 555,
+                        "sds_secs": 4294967295,
                     }
                 }
             }
@@ -2046,7 +2046,7 @@ def test_main_configure_applies_power_snake_case_keys(
     assert target_local.power.ls_secs == 222
     assert target_local.power.wait_bluetooth_secs == 77
     assert target_local.power.min_wake_secs == 11
-    assert target_local.power.sds_secs == 555
+    assert target_local.power.sds_secs == 4294967295
     target_node.writeConfig.assert_called_once_with("power")
     target_node.commitSettingsTransaction.assert_called_once_with()
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import math
 import sys
 import time
 import types
@@ -39,6 +40,7 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
     BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
+    ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID,
     ERROR_TIMEOUT,
     SERVICE_CHARACTERISTIC_RETRY_COUNT,
     SERVICE_CHARACTERISTIC_RETRY_DELAY,
@@ -239,9 +241,18 @@ class BLEClient:
         Raises
         ------
         BLEError
-            If the Bleak client is not initialized or the backend does not
-            support the requested operation.
+            If `await_timeout` is not a finite positive number, if the Bleak
+            client is not initialized, or if the backend does not support the
+            requested operation.
         """
+        if (
+            await_timeout is None
+            or isinstance(await_timeout, bool)
+            or not isinstance(await_timeout, (int, float))
+            or not math.isfinite(await_timeout)
+            or await_timeout <= 0
+        ):
+            raise self.BLEError(ERROR_MANAGEMENT_AWAIT_TIMEOUT_INVALID)
         if self.bleak_client is None:
             raise self.BLEError(not_initialized_error)
         if operation is None:
@@ -263,8 +274,8 @@ class BLEClient:
         Parameters
         ----------
         await_timeout : float | None
-            Maximum seconds to wait for the pairing coroutine to complete;
-            `None` means wait indefinitely. Defaults to
+            Maximum seconds to wait for the pairing coroutine to complete.
+            Must be a finite positive timeout. Defaults to
             `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
         **kwargs : object
             Backend-specific pairing options forwarded to the underlying BLE client.
@@ -297,8 +308,8 @@ class BLEClient:
         Parameters
         ----------
         await_timeout : float | None
-            Maximum seconds to wait for the unpair coroutine to complete;
-            `None` means wait indefinitely. Defaults to
+            Maximum seconds to wait for the unpair coroutine to complete.
+            Must be a finite positive timeout. Defaults to
             `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
 
         Returns
