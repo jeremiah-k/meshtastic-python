@@ -1378,20 +1378,22 @@ class BLEInterface(MeshInterface):
         if address is not None and not address.strip():
             raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
-        if address is None:
-            with self._state_lock:
-                current_client = self.client
-            if current_client is not None and current_client.isConnected():
-                return command(current_client)
+        self._validate_connection_preconditions()
 
-        normalized_request = sanitize_address(
-            address if address is not None else self.address
-        )
+        with self._state_lock:
+            current_client = self.client if address is None else None
+            requested_identifier = address if address is not None else self.address
+
+        if current_client is not None and current_client.isConnected():
+            return command(current_client)
+
+        normalized_request = sanitize_address(requested_identifier)
         existing_client = self._get_existing_client_if_valid(normalized_request)
         if existing_client is not None:
             return command(existing_client)
 
         target_address = self._resolve_target_address_for_management(address)
+        self._validate_connection_preconditions()
         temporary_client = BLEClient(target_address, log_if_no_address=False)
         try:
             return command(temporary_client)

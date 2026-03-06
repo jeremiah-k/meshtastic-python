@@ -331,6 +331,13 @@ class ConnectionOrchestrator:
         self.state_lock = state_lock
         self.thread_coordinator = thread_coordinator
 
+    @staticmethod
+    def _get_connect_timeout(pair_on_connect: bool) -> float:
+        """Return the appropriate connect timeout for the requested pairing mode."""
+        if pair_on_connect:
+            return BLEConfig.CONNECTION_TIMEOUT
+        return min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+
     def _finalize_connection(
         self,
         client: BLEClient,
@@ -522,14 +529,7 @@ class ConnectionOrchestrator:
                     pair_on_connect=pair_on_connect,
                 )
                 try:
-                    direct_timeout = (
-                        BLEConfig.CONNECTION_TIMEOUT
-                        if pair_on_connect
-                        else min(
-                            DIRECT_CONNECT_TIMEOUT_SECONDS,
-                            BLEConfig.CONNECTION_TIMEOUT,
-                        )
-                    )
+                    direct_timeout = self._get_connect_timeout(pair_on_connect)
                     self._raise_if_interface_closing()
                     self.client_manager._connect_client(client, timeout=direct_timeout)
                 except (SystemExit, KeyboardInterrupt):  # pylint: disable=W0706
@@ -570,14 +570,7 @@ class ConnectionOrchestrator:
             fallback_timeout: float | None = None
             if skip_discovery_scan and target_address is not None:
                 resolved_address = target_address
-                fallback_timeout = (
-                    BLEConfig.CONNECTION_TIMEOUT
-                    if pair_on_connect
-                    else min(
-                        DIRECT_CONNECT_TIMEOUT_SECONDS,
-                        BLEConfig.CONNECTION_TIMEOUT,
-                    )
-                )
+                fallback_timeout = self._get_connect_timeout(pair_on_connect)
             else:
                 self._raise_if_interface_closing()
                 device = self.interface.findDevice(target_address)
