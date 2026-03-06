@@ -129,6 +129,26 @@ def _create_ble_device(address: str, name: str) -> BLEDevice:
     return BLEDevice(address=address, name=name, details={})
 
 
+def _build_minimal_connect_test_interface() -> BLEInterface:
+    """Create a minimally initialized BLEInterface for connect() unit tests."""
+    iface = object.__new__(BLEInterface)
+    iface._state_manager = BLEStateManager()
+    iface._state_lock = threading.RLock()
+    iface._connect_lock = threading.RLock()
+    iface._disconnect_lock = threading.Lock()
+    iface._closed = False
+    iface.address = None
+    iface.client = None
+    iface._disconnect_notified = False
+    iface._last_connection_request = None
+    iface.pair_on_connect = False
+    iface._connection_alias_key = None
+    iface._ever_connected = False
+    iface._read_retry_count = 0
+    iface._client_manager = SimpleNamespace(_safe_close_client=lambda _client: None)
+    return iface
+
+
 class _FakeDiscoveryClient:
     """Context-manager BLE client stub used by discovery tests."""
 
@@ -1472,20 +1492,7 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """connect() should forward pair and timeout overrides to connection orchestration."""
-    iface = object.__new__(BLEInterface)
-    iface._state_manager = BLEStateManager()
-    iface._state_lock = threading.RLock()
-    iface._connect_lock = threading.RLock()
-    iface._disconnect_lock = threading.Lock()
-    iface._closed = False
-    iface.address = None
-    iface.client = None
-    iface._disconnect_notified = False
-    iface._last_connection_request = None
-    iface.pair_on_connect = False
-    iface._connection_alias_key = None
-    iface._ever_connected = False
-    iface._read_retry_count = 0
+    iface = _build_minimal_connect_test_interface()
 
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
     monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
@@ -1931,25 +1938,13 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     """connect() should not return a client that lost ownership after finalization."""
     target_address = "AA:BB:CC:DD:EE:03"
     replacement_address = "AA:BB:CC:DD:EE:04"
-    iface = object.__new__(BLEInterface)
-    iface._state_manager = BLEStateManager()
-    iface._state_lock = threading.RLock()
-    iface._connect_lock = threading.RLock()
-    iface._disconnect_lock = threading.Lock()
-    iface._closed = False
-    iface.address = None
-    iface.client = None
-    iface._disconnect_notified = False
-    iface._last_connection_request = None
-    iface.pair_on_connect = False
-    iface._connection_alias_key = None
-    iface._ever_connected = False
-    iface._read_retry_count = 0
+    iface = _build_minimal_connect_test_interface()
     connected_callbacks: list[bool] = []
     connected_client = DummyClient()
     connected_client.address = target_address
     connected_client.bleak_client = SimpleNamespace(address=target_address)
     finalized_clients: list[BLEClient] = []
+    closed_clients: list[BLEClient] = []
 
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
@@ -1958,6 +1953,12 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
     )
 
     def _establish_stub(
@@ -2006,7 +2007,10 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
         iface.connect(target_address)
 
     assert finalized_clients == [connected_client]
+    assert closed_clients == [connected_client]
     assert connected_callbacks == []
+    assert iface.client is not connected_client
+    assert iface.address != target_address
 
 
 def test_connect_raises_when_shutdown_wins_after_gate_finalization(
@@ -2014,25 +2018,13 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
 ) -> None:
     """connect() should surface shutdown when close() wins after gate finalization."""
     target_address = "AA:BB:CC:DD:EE:05"
-    iface = object.__new__(BLEInterface)
-    iface._state_manager = BLEStateManager()
-    iface._state_lock = threading.RLock()
-    iface._connect_lock = threading.RLock()
-    iface._disconnect_lock = threading.Lock()
-    iface._closed = False
-    iface.address = None
-    iface.client = None
-    iface._disconnect_notified = False
-    iface._last_connection_request = None
-    iface.pair_on_connect = False
-    iface._connection_alias_key = None
-    iface._ever_connected = False
-    iface._read_retry_count = 0
+    iface = _build_minimal_connect_test_interface()
     connected_callbacks: list[bool] = []
     connected_client = DummyClient()
     connected_client.address = target_address
     connected_client.bleak_client = SimpleNamespace(address=target_address)
     finalized_clients: list[BLEClient] = []
+    closed_clients: list[BLEClient] = []
 
     monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
     monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
@@ -2041,6 +2033,12 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
     )
     monkeypatch.setattr(
         iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
     )
 
     def _establish_stub(
@@ -2082,7 +2080,10 @@ def test_connect_raises_when_shutdown_wins_after_gate_finalization(
         iface.connect(target_address)
 
     assert finalized_clients == [connected_client]
+    assert closed_clients == [connected_client]
     assert connected_callbacks == []
+    assert iface.client is not connected_client
+    assert iface.address != target_address
 
 
 def test_transient_read_retry_uses_zero_based_delay(monkeypatch):

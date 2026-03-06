@@ -2018,6 +2018,30 @@ class BLEInterface(MeshInterface):
         with self._state_lock:
             return self._get_connected_client_status_locked(client)
 
+    def _discard_invalidated_connected_client(self, client: BLEClient) -> None:
+        """Best-effort cleanup for a connected client invalidated before return.
+
+        Parameters
+        ----------
+        client : BLEClient
+            Connected client result that should no longer be published to
+            callers because ownership was lost or shutdown began.
+        """
+        should_reset_state = False
+        with self._state_lock:
+            if self.client is client:
+                self.client = None
+                self.address = None
+                self._last_connection_request = None
+                self._connection_alias_key = None
+                should_reset_state = not self._state_manager._is_closing
+
+        self._client_manager._safe_close_client(client)
+
+        if should_reset_state:
+            with self._state_lock:
+                self._state_manager._reset_to_disconnected()
+
     def _finalize_connection_gates(
         self,
         connected_client: BLEClient,
@@ -2197,6 +2221,7 @@ class BLEInterface(MeshInterface):
         )
         still_owned, is_closing = self._get_connected_client_status(connected_client)
         if not still_owned:
+            self._discard_invalidated_connected_client(connected_client)
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)
             raise self.BLEError(CONNECTION_ERROR_LOST_OWNERSHIP)

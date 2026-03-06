@@ -727,6 +727,54 @@ def test_connection_orchestrator_uses_explicit_connect_timeout_override() -> Non
 
 
 @pytest.mark.unit
+def test_connection_orchestrator_allows_none_connect_timeout() -> None:
+    """Omitted connect_timeout should use the pairing-aware default timeout."""
+    state_manager = BLEStateManager()
+    state_lock = RLock()
+    validator = ConnectionValidator(state_manager, state_lock, MockBLEError)
+    client_manager = MagicMock()
+    direct_client = MagicMock()
+    client_manager._create_client.return_value = direct_client
+
+    interface = MagicMock()
+    interface.BLEError = MockBLEError
+    interface._closed = False
+
+    orchestrator = ConnectionOrchestrator(
+        interface=interface,
+        validator=validator,
+        client_manager=client_manager,
+        discovery_manager=MagicMock(),
+        state_manager=state_manager,
+        state_lock=state_lock,
+        thread_coordinator=MagicMock(),
+    )
+    orchestrator._finalize_connection = MagicMock()  # type: ignore[method-assign]
+
+    result = orchestrator._establish_connection(
+        address="AA:BB:CC:DD:EE:FF",
+        current_address=None,
+        register_notifications_func=lambda _client: None,
+        on_connected_func=lambda: None,
+        on_disconnect_func=lambda _client: None,
+        pair_on_connect=False,
+        connect_timeout=None,
+    )
+
+    assert result is direct_client
+    direct_timeout = min(DIRECT_CONNECT_TIMEOUT_SECONDS, BLEConfig.CONNECTION_TIMEOUT)
+    client_manager._create_client.assert_called_once()
+    assert (
+        client_manager._create_client.call_args.kwargs["connect_timeout"]
+        == direct_timeout
+    )
+    client_manager._connect_client.assert_called_once_with(
+        direct_client,
+        timeout=direct_timeout,
+    )
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "invalid_timeout",
     [0.0, -1.0, float("nan"), float("inf"), float("-inf"), True, "23.5"],

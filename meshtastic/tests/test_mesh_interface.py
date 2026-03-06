@@ -404,7 +404,8 @@ def test_close_suppresses_disconnect_send_failures(
     disconnect_error: BaseException,
 ) -> None:
     """close() should continue cleanup if sending disconnect fails."""
-    with MeshInterface(noProto=True) as iface:
+    iface = MeshInterface(noProto=True)
+    try:
         iface.debugOut = io.StringIO()
         with (
             patch.object(iface, "_send_disconnect", side_effect=disconnect_error),
@@ -413,6 +414,9 @@ def test_close_suppresses_disconnect_send_failures(
             iface.close()
         assert iface._closing is True
         assert iface.debugOut is None
+    finally:
+        if not getattr(iface, "_closing", False):
+            iface.close()
 
     assert (
         "Failed to send disconnect during close(); continuing shutdown." in caplog.text
