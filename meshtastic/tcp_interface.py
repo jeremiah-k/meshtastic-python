@@ -359,8 +359,10 @@ class TCPInterface(StreamInterface):
         sock = self.socket
         if sock is None:
             raise ConnectionError(self.SOCKET_NOT_CONNECTED_ERROR)
+        # Validate payload shape before entering socket-recovery handling so
+        # caller contract errors do not reset an otherwise healthy socket.
+        payload = memoryview(b)
         try:
-            payload = memoryview(b)
             total_sent = 0
             write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
             while total_sent < len(payload):
@@ -375,7 +377,7 @@ class TCPInterface(StreamInterface):
                     raise OSError(self.WRITE_NO_PROGRESS_ERROR)
                 total_sent += sent
                 write_deadline = time.monotonic() + WRITE_PROGRESS_TIMEOUT_SECONDS
-        except (OSError, ValueError) as ex:
+        except (OSError, ValueError, TypeError) as ex:
             logger.warning(
                 "TCP write failed (%d bytes), resetting socket: %s", len(b), ex
             )
@@ -384,7 +386,7 @@ class TCPInterface(StreamInterface):
                     "Reconnect deferred to reader/reconnect path for %s",
                     self.hostname,
                 )
-            if isinstance(ex, ValueError):
+            if isinstance(ex, (ValueError, TypeError)):
                 raise OSError(str(ex)) from ex
             raise
 

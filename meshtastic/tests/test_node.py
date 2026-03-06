@@ -342,6 +342,61 @@ def test_shutdown(caplog: LogCaptureFixture) -> None:
 
 
 @pytest.mark.unit
+def test_factoryReset_config_reset_uses_int_field_and_local_no_callback(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """factoryReset(full=False) should set config reset flag as int and skip callback for local node."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    iface.localNode = anode
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    captured: dict[str, object] = {}
+    sent_packet = mesh_pb2.MeshPacket()
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured,
+        return_packet=sent_packet,
+    )
+
+    result = anode.factoryReset(full=False)
+
+    assert result is sent_packet
+    anode.ensureSessionKey.assert_called_once_with()
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.factory_reset_config == 1
+    assert sent_msg.factory_reset_device == 0
+    assert captured["wantResponse"] is False
+    assert captured["onResponse"] is None
+
+
+@pytest.mark.unit
+def test_factoryReset_full_device_uses_int_field_and_remote_ack_callback(
+    autospec_local_node_iface: Callable[[type[Any]], MagicMock],
+) -> None:
+    """factoryReset(full=True) should set device reset flag as int and use onAckNak for remote nodes."""
+    iface = autospec_local_node_iface(MeshInterface)
+    anode = Node(iface, "!12345678", noProto=True)
+    anode.ensureSessionKey = MagicMock()  # type: ignore[method-assign]
+    captured: dict[str, object] = {}
+    sent_packet = mesh_pb2.MeshPacket()
+    anode._send_admin = _make_fake_send_admin(  # type: ignore[method-assign,assignment]
+        captured=captured,
+        return_packet=sent_packet,
+    )
+
+    result = anode.factoryReset(full=True)
+
+    assert result is sent_packet
+    anode.ensureSessionKey.assert_called_once_with()
+    sent_msg = cast(admin_pb2.AdminMessage, captured["msg"])
+    assert sent_msg.factory_reset_device == 1
+    assert sent_msg.factory_reset_config == 0
+    assert captured["wantResponse"] is False
+    response_handler = cast(Callable[[dict[str, Any]], Any], captured["onResponse"])
+    assert getattr(response_handler, "__self__", None) is anode
+    assert getattr(response_handler, "__func__", None) is Node.onAckNak
+
+
+@pytest.mark.unit
 def test_setURL_raises_when_channels_not_loaded(
     autospec_local_node_iface: Callable[[type[Any]], MagicMock],
 ) -> None:

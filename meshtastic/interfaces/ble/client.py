@@ -26,13 +26,17 @@ from meshtastic.interfaces.ble.constants import (
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_DISCOVERED,
     BLECLIENT_ERROR_CANNOT_GET_SERVICES_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED,
     BLECLIENT_ERROR_CANNOT_READ_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_SCHEDULE_CLOSED,
     BLECLIENT_ERROR_CANNOT_START_NOTIFY_NOT_INITIALIZED,
     BLECLIENT_ERROR_CANNOT_STOP_NOTIFY_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
+    BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,
     BLECLIENT_ERROR_CANNOT_WRITE_NOT_INITIALIZED,
     BLECLIENT_ERROR_FAILED_TO_SCHEDULE,
     BLECLIENT_ERROR_RUNNER_THREAD_WAIT,
+    BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     DISCONNECT_TIMEOUT_SECONDS,
     ERROR_TIMEOUT,
     SERVICE_CHARACTERISTIC_RETRY_COUNT,
@@ -200,18 +204,27 @@ class BLEClient:
         """Promoted camelCase alias for find_device()."""
         return self.find_device(**kwargs)
 
-    def pair(self, **kwargs: Any) -> Any:
+    def pair(
+        self,
+        *,
+        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        **kwargs: object,
+    ) -> None:
         """Pair the BLE client with the remote device.
 
         Parameters
         ----------
-        **kwargs : Any
+        await_timeout : float | None
+            Maximum seconds to wait for the pairing coroutine to complete;
+            `None` means wait indefinitely. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
+        **kwargs : object
             Backend-specific pairing options forwarded to the underlying BLE client.
 
         Returns
         -------
-        Any
-            The backend pairing result (often `None`).
+        None
+            Pairing is performed for side effects and does not return a value.
 
         Raises
         ------
@@ -221,7 +234,45 @@ class BLEClient:
         bleak_client = self.bleak_client
         if bleak_client is None:
             raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_NOT_INITIALIZED)
-        return self._async_await(bleak_client.pair(**kwargs))
+        try:
+            self._async_await(bleak_client.pair(**kwargs), timeout=await_timeout)
+        except NotImplementedError as exc:
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_PAIR_UNSUPPORTED) from exc
+        return None
+
+    def unpair(
+        self, *, await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
+    ) -> None:
+        """Unpair the BLE client from the remote device when supported by the backend.
+
+        Parameters
+        ----------
+        await_timeout : float | None
+            Maximum seconds to wait for the unpair coroutine to complete;
+            `None` means wait indefinitely. Defaults to
+            `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
+
+        Returns
+        -------
+        None
+            Unpairing is performed for side effects and does not return a value.
+
+        Raises
+        ------
+        BLEError
+            If the BLE client is not initialized or if the backend does not expose `unpair`.
+        """
+        bleak_client = self.bleak_client
+        if bleak_client is None:
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED)
+        unpair_fn = getattr(bleak_client, "unpair", None)
+        if not callable(unpair_fn):
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED)
+        try:
+            self._async_await(unpair_fn(), timeout=await_timeout)
+        except NotImplementedError as exc:
+            raise self.BLEError(BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED) from exc
+        return None
 
     def connect(self, *, await_timeout: float | None = None, **kwargs: Any) -> Any:
         """Connect to the remote BLE device.

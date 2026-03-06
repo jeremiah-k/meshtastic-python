@@ -29,6 +29,7 @@ WRITE_PROGRESS_TIMEOUT_SECONDS = 10.0  # Guard against indefinitely stalled writ
 STREAM_IO_EXCEPTIONS = (
     OSError,
     ValueError,
+    TypeError,
     serial.SerialException,
     serial.SerialTimeoutException,
 )

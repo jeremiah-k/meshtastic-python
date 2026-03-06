@@ -1963,7 +1963,12 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
                         "use12HClock": True,
                         "screenOnSecs": 66,
                     },
-                    "power": {"lsSecs": 222},
+                    "power": {
+                        "lsSecs": 222,
+                        "waitBluetoothSecs": 77,
+                        "minWakeSecs": 11,
+                        "sdsSecs": 555,
+                    },
                     "security": {
                         "privateKey": f"base64:{base64.b64encode(private_key).decode()}",
                         "public_key": "0x" + public_key.hex(),
@@ -1995,6 +2000,9 @@ def test_main_configure_applies_mixed_case_and_security_encodings(
     assert target_local.display.use_12h_clock is True
     assert target_local.display.screen_on_secs == 66
     assert target_local.power.ls_secs == 222
+    assert target_local.power.wait_bluetooth_secs == 77
+    assert target_local.power.min_wake_secs == 11
+    assert target_local.power.sds_secs == 555
     assert target_local.security.private_key == private_key
     assert target_local.security.public_key == public_key
     assert list(target_local.security.admin_key) == [admin_key_1, admin_key_2]
