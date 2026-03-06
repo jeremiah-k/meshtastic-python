@@ -430,6 +430,7 @@ def test_ble_interface_pair_prefers_active_client(
 
     iface.pair(confirm=True)
     assert client.pair_calls == 1
+    assert client.pair_kwargs == [{"confirm": True}]
     iface.close()
 
 
@@ -459,8 +460,13 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
     )
 
+    pair_calls: list[dict[str, object]] = []
+
+    def _pair(**kwargs: object) -> None:
+        pair_calls.append(dict(kwargs))
+
     temp_client = SimpleNamespace(
-        pair=lambda **_kwargs: None,
+        pair=_pair,
         bleak_client=SimpleNamespace(address="AA:BB:CC:DD:EE:FF"),
     )
     cleanup_calls: list[Any] = []
@@ -478,8 +484,76 @@ def test_ble_interface_pair_uses_temporary_client_when_disconnected(
         lambda client: cleanup_calls.append(client),
     )
 
-    iface.pair("mesh-node")
+    iface.pair("mesh-node", confirm=True)
+    assert pair_calls == [{"confirm": True}]
     assert cleanup_calls == [temp_client]
+    iface.close()
+
+
+@pytest.mark.parametrize("method_name", ["pair", "unpair", "trust"])
+def test_ble_interface_management_requires_target_when_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+) -> None:
+    """Management operations should not discover an arbitrary device when disconnected."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface.address = None
+        iface._state_manager._reset_to_disconnected()
+
+    find_device_called = False
+
+    def _unexpected_find_device(_address: str | None) -> BLEDevice:
+        nonlocal find_device_called
+        find_device_called = True
+        return _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic")
+
+    monkeypatch.setattr(iface, "findDevice", _unexpected_find_device)
+    if method_name == "trust":
+        monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
+        monkeypatch.setattr(
+            "meshtastic.interfaces.ble.interface.shutil.which",
+            lambda _name: "/usr/bin/bluetoothctl",
+        )
+
+    with pytest.raises(BLEInterface.BLEError, match="explicit address"):
+        getattr(iface, method_name)()
+
+    assert find_device_called is False
+    iface.close()
+
+
+def test_ble_interface_trust_prefers_stderr_in_failure_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """trust() should surface stderr first when bluetoothctl fails."""
+    iface = _build_interface(monkeypatch, DummyClient(), start_receive_thread=False)
+    with iface._state_lock:
+        iface.client = None
+        iface._state_manager._reset_to_disconnected()
+    monkeypatch.setattr(
+        iface,
+        "findDevice",
+        lambda _address: _create_ble_device("AA:BB:CC:DD:EE:FF", "Meshtastic"),
+    )
+    monkeypatch.setattr("meshtastic.interfaces.ble.interface.sys.platform", "linux")
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.shutil.which",
+        lambda _name: "/usr/bin/bluetoothctl",
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="generic output",
+            stderr="specific failure",
+        ),
+    )
+
+    with pytest.raises(BLEInterface.BLEError, match="specific failure"):
+        iface.trust("mesh-node")
+
     iface.close()
 
 

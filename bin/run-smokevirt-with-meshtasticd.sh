@@ -13,6 +13,7 @@ MESHTASTICD_LOG_ON_SUCCESS="${MESHTASTICD_LOG_ON_SUCCESS:-false}"
 SMOKEVIRT_PYTEST_ARGS="${SMOKEVIRT_PYTEST_ARGS-}"
 MESHTASTICD_PYTEST_TARGETS="${MESHTASTICD_PYTEST_TARGETS:-meshtastic/tests/test_meshtasticd_ci.py meshtastic/tests/test_meshtasticd_tcp_interface_ci.py}"
 MESHTASTICD_PYTEST_MARK_EXPR="${MESHTASTICD_PYTEST_MARK_EXPR-}"
+MESHTASTICD_CI_TARGET_REGEX='test_meshtasticd(_tcp_interface)?_ci\.py'
 EXTRA_PYTEST_ARGS=()
 PYTEST_TARGETS=()
 LOGS_PRINTED=false
@@ -169,12 +170,12 @@ if [[ ${#PYTEST_TARGETS[@]} -eq 0 ]]; then
 fi
 
 if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
-	if [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_meshtasticd_ci\.py ]]; then
+	if [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]] && [[ ${MESHTASTICD_PYTEST_TARGETS} =~ ${MESHTASTICD_CI_TARGET_REGEX} ]]; then
 		echo "MESHTASTICD_PYTEST_TARGETS includes both smokevirt and meshtasticd-ci targets; set MESHTASTICD_PYTEST_MARK_EXPR explicitly." >&2
 		exit 1
 	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
-	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_meshtasticd_ci\.py ]]; then
+	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ ${MESHTASTICD_CI_TARGET_REGEX} ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="int"
 	fi
 fi

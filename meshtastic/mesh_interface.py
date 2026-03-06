@@ -268,7 +268,7 @@ class MeshInterface:  # pylint: disable=R0902
                         heartbeat_idle_condition.wait()
             try:
                 self._send_disconnect()
-            except Exception:
+            except OSError:
                 logger.debug(
                     "Failed to send disconnect during close(); continuing shutdown.",
                     exc_info=True,

@@ -125,6 +125,10 @@ ERROR_ADDRESS_RESOLUTION_FAILED = "Address resolution failed, cannot create devi
 ERROR_INTERFACE_CLOSING = "Cannot connect while interface is closing"
 ERROR_CONNECTION_SUPPRESSED = "Connection suppressed: recently connected elsewhere"
 ERROR_NO_CLIENT_ESTABLISHED = "Connection failed: no BLE client established"
+ERROR_MANAGEMENT_ADDRESS_EMPTY = "Management operations require a non-empty address."
+ERROR_MANAGEMENT_ADDRESS_REQUIRED = (
+    "Management operations require an explicit address when no device is connected."
+)
 ERROR_TRUST_ADDRESS_NOT_RESOLVED = (
     "Cannot trust device: {address!r} did not resolve to a BLE address."
 )

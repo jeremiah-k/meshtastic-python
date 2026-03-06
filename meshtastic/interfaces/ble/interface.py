@@ -60,6 +60,8 @@ from meshtastic.interfaces.ble.constants import (
     ERROR_CONNECTION_SUPPRESSED,
     ERROR_DISCOVERY_MANAGER_UNAVAILABLE,
     ERROR_INTERFACE_CLOSING,
+    ERROR_MANAGEMENT_ADDRESS_EMPTY,
+    ERROR_MANAGEMENT_ADDRESS_REQUIRED,
     ERROR_MULTIPLE_DEVICES,
     ERROR_MULTIPLE_DEVICES_DISCOVERY,
     ERROR_NO_CLIENT_ESTABLISHED,
@@ -1301,8 +1303,9 @@ class BLEInterface(MeshInterface):
         """Resolve a management target to a concrete BLE address.
 
         This helper is used by `pair()`, `unpair()`, and `trust()` to
-        resolve explicit addresses, device-name identifiers, or discovery mode
-        (None) into a concrete address.
+        resolve explicit addresses or device-name identifiers into a concrete
+        address. When no active device is connected, management operations
+        require an explicit target and will not discover an arbitrary device.
 
         Parameters
         ----------
@@ -1318,9 +1321,12 @@ class BLEInterface(MeshInterface):
         Raises
         ------
         BLEInterface.BLEError
-            If discovery cannot resolve the target to a concrete BLE address.
+            If no active/explicit management target is available or if the
+            explicit target cannot be resolved to a concrete BLE address.
         """
         requested_identifier = address if address is not None else self.address
+        if requested_identifier is not None and not requested_identifier.strip():
+            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
         if address is None:
             with self._state_lock:
                 current_client = self.client
@@ -1328,11 +1334,15 @@ class BLEInterface(MeshInterface):
                 current_address = self._extract_client_address(current_client)
                 if current_address:
                     return current_address
+            if requested_identifier is None:
+                raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
         normalized_request = sanitize_address(requested_identifier)
         existing_client = self._get_existing_client_if_valid(normalized_request)
         existing_client_address = self._extract_client_address(existing_client)
         if existing_client_address:
             return existing_client_address
+        if requested_identifier is None:
+            raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_REQUIRED)
         if requested_identifier and _looks_like_ble_address(requested_identifier):
             return requested_identifier
         return self.findDevice(requested_identifier).address
@@ -1460,11 +1470,10 @@ class BLEInterface(MeshInterface):
                     timeout=timeout, address=canonical_address
                 )
             ) from exc
-        output = " ".join(
-            item.strip() for item in (result.stdout, result.stderr) if item
-        ).strip()
         if result.returncode != 0:
-            detail = output or f"exit code {result.returncode}"
+            stderr_output = result.stderr.strip() if result.stderr else ""
+            stdout_output = result.stdout.strip() if result.stdout else ""
+            detail = stderr_output or stdout_output or f"exit code {result.returncode}"
             raise self.BLEError(
                 ERROR_TRUST_COMMAND_FAILED.format(
                     address=canonical_address, detail=detail

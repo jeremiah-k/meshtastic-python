@@ -43,12 +43,18 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
             ) from exc
         return host, DEFAULT_TCP_PORT
 
+    raw_port = _extract_port_component(host)
+    if raw_port == "":
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: invalid TCP port "
+            "''. Expected HOST[:PORT] with numeric PORT."
+        )
+
     try:
         parsed = urlparse(f"//{host}")
         host_name = parsed.hostname
         port = parsed.port
     except ValueError as exc:
-        raw_port = _extract_port_component(host)
         if raw_port is not None and not raw_port.isdigit():
             raise ValueError(
                 f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: invalid TCP port "
@@ -62,7 +68,15 @@ def _parse_host_and_port(host: str) -> tuple[str, int]:
         raise ValueError(
             f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: host component is empty."
         )
-    return host_name, port if port is not None else DEFAULT_TCP_PORT
+    if raw_port == "0" or port == 0:
+        raise ValueError(
+            f"Invalid {MESHTASTICD_HOST_ENV_VAR}={host!r}: port must be in range "
+            "1..65535."
+        )
+    if raw_port is None:
+        return host_name, DEFAULT_TCP_PORT
+    assert port is not None
+    return host_name, port
 
 
 @pytest.mark.unit
@@ -86,6 +100,25 @@ def test_parse_host_and_port_rejects_out_of_range_port() -> None:
 
 
 @pytest.mark.unit
+def test_parse_host_and_port_rejects_empty_port() -> None:
+    """_parse_host_and_port should reject explicitly empty port values."""
+    with pytest.raises(
+        ValueError,
+        match=rf"Invalid {MESHTASTICD_HOST_ENV_VAR}=.*numeric PORT",
+    ):
+        _parse_host_and_port("localhost:")
+
+
+@pytest.mark.unit
+def test_parse_host_and_port_rejects_zero_port() -> None:
+    """_parse_host_and_port should reject port zero."""
+    with pytest.raises(
+        ValueError,
+        match=rf"Invalid {MESHTASTICD_HOST_ENV_VAR}=.*1\.\.65535",
+    ):
+        _parse_host_and_port("localhost:0")
+
+
 def test_parse_host_and_port_accepts_bracketed_ipv6_with_port() -> None:
     """_parse_host_and_port should accept bracketed IPv6 addresses with ports."""
     assert _parse_host_and_port("[::1]:4401") == ("::1", 4401)

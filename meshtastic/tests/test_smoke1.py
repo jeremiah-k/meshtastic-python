@@ -25,7 +25,7 @@ PAUSE_AFTER_REBOOT = 7
 PAUSE_AFTER_REBOOT_COMMAND = 18
 RESTORE_ATTEMPTS = 8
 RESTORE_RETRY_DELAY_SECONDS = 10
-DEFAULT_URL_TOKEN = "CgUYAyIBAQ"
+DEFAULT_URL_FRAGMENT = "CgUYAyIBAQ"
 
 
 def _run(command: str, timeout: int | float = 120) -> tuple[int, str]:
@@ -581,7 +581,7 @@ def test_smoke1_seturl_default() -> None:
 
     return_value, out = _run("meshtastic --info")
     assert return_value == 0
-    assert DEFAULT_URL_TOKEN not in out
+    assert DEFAULT_URL_FRAGMENT not in out
 
     url = "https://www.meshtastic.org/d/#CgUYAyIBAQ"
     return_value, out = _run(f"meshtastic --seturl {url}")
@@ -591,7 +591,7 @@ def test_smoke1_seturl_default() -> None:
 
     return_value, out = _run("meshtastic --info")
     assert return_value == 0
-    assert DEFAULT_URL_TOKEN in out
+    assert DEFAULT_URL_FRAGMENT in out
 
 
 @pytest.mark.smoke1_destructive
@@ -603,6 +603,7 @@ def test_smoke1_seturl_invalid_url() -> None:
     assert return_value == 1
 
 
+@pytest.mark.examples
 @pytest.mark.smoke1_destructive
 def test_smoke1_configure() -> None:
     """`--configure example_config.yaml` should apply canonical snake_case config."""

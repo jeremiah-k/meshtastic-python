@@ -1,7 +1,5 @@
 """Post-run analysis tools for meshtastic."""
 
-# mypy: disable-error-code=import-untyped
-
 import argparse
 import ipaddress
 import logging
@@ -10,11 +8,11 @@ import re
 from collections.abc import Iterable
 from typing import Any, NoReturn, cast
 
-import dash_bootstrap_components as dbc
+import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import plotly.express as px  # type: ignore[import-untyped]
+import plotly.graph_objects as go  # type: ignore[import-untyped]
 import pyarrow as pa
 from dash import Dash, dcc, html
 from pyarrow import feather

@@ -388,6 +388,10 @@ class DummyClient:
             Number of times pair() has been invoked.
         unpair_calls : int
             Number of times unpair() has been invoked.
+        pair_kwargs : list[dict[str, object]]
+            Keyword arguments captured for each pair() invocation.
+        unpair_kwargs : list[dict[str, object]]
+            Keyword arguments captured for each unpair() invocation.
         address : str
             Client address identifier, set to "dummy".
         disconnect_exception : Exception | None
@@ -401,6 +405,8 @@ class DummyClient:
         self.close_calls = 0
         self.pair_calls = 0
         self.unpair_calls = 0
+        self.pair_kwargs: list[dict[str, object]] = []
+        self.unpair_kwargs: list[dict[str, object]] = []
         self.stop_notify_calls: list[Any] = []
         self.address = "dummy"
         self.disconnect_exception = disconnect_exception
@@ -490,10 +496,12 @@ class DummyClient:
     def pair(self, **_kwargs: object) -> None:
         """Record a pair invocation."""
         self.pair_calls += 1
+        self.pair_kwargs.append(dict(_kwargs))
 
     def unpair(self, **_kwargs: object) -> None:
         """Record an unpair invocation."""
         self.unpair_calls += 1
+        self.unpair_kwargs.append(dict(_kwargs))
 
     def close(self) -> None:
         """Record that the client was closed.
