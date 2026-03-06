@@ -1357,13 +1357,12 @@ class BLEInterface(MeshInterface):
             return requested_identifier
         return self.findDevice(requested_identifier).address
 
-    def _format_bluetoothctl_address(self, address: str) -> str:
+    @classmethod
+    def _format_bluetoothctl_address(cls, address: str) -> str:
         """Canonicalize a BLE address for bluetoothctl commands."""
         sanitized = sanitize_address(address)
         if sanitized is None or len(sanitized) != 12:
-            raise self.BLEError(
-                ERROR_TRUST_ADDRESS_NOT_RESOLVED.format(address=address)
-            )
+            raise cls.BLEError(ERROR_TRUST_ADDRESS_NOT_RESOLVED.format(address=address))
         octets = [sanitized[index : index + 2].upper() for index in range(0, 12, 2)]
         return ":".join(octets)
 
@@ -1508,6 +1507,9 @@ class BLEInterface(MeshInterface):
         if address is not None and not address.strip():
             raise self.BLEError(ERROR_MANAGEMENT_ADDRESS_EMPTY)
 
+        # Snapshot preconditions/current client under interface locks, then
+        # release them before waiting on the per-address gate so the documented
+        # lock order stays consistent: address gate first, then interface locks.
         with self._connect_lock, self._management_lock:
             self._validate_management_preconditions()
             existing_client = self._get_management_client_if_available(address)
@@ -1543,12 +1545,12 @@ class BLEInterface(MeshInterface):
                     if temporary_client is not None:
                         self._client_manager._safe_close_client(temporary_client)
 
-    def _validate_management_await_timeout(self, await_timeout: float | None) -> float:
+    def _validate_management_await_timeout(self, await_timeout: object) -> float:
         """Validate and return a bounded await timeout for management operations.
 
         Parameters
         ----------
-        await_timeout : float | None
+        await_timeout : object
             Timeout value to validate; must be a finite positive real number.
 
         Returns
@@ -1604,7 +1606,7 @@ class BLEInterface(MeshInterface):
         self,
         address: str | None = None,
         *,
-        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
         **kwargs: object,
     ) -> None:
         """Pair with a BLE device either through the active client or a temporary client.
@@ -1616,7 +1618,7 @@ class BLEInterface(MeshInterface):
             connection target when available; otherwise fall back to the
             interface's bound target. Raises if no active or bound target is
             available.
-        await_timeout : float | None
+        await_timeout : float
             Maximum seconds to wait for the pairing coroutine to complete.
             `BLEInterface` requires a finite positive timeout here so shutdown
             cannot block indefinitely behind a management operation. Defaults
@@ -1640,7 +1642,7 @@ class BLEInterface(MeshInterface):
         self,
         address: str | None = None,
         *,
-        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     ) -> None:
         """Unpair from a BLE device through the active or a temporary client.
 
@@ -1651,7 +1653,7 @@ class BLEInterface(MeshInterface):
             connection target when available; otherwise fall back to the
             interface's bound target. Raises if no active or bound target is
             available.
-        await_timeout : float | None
+        await_timeout : float
             Maximum seconds to wait for the unpair coroutine to complete.
             `BLEInterface` requires a finite positive timeout here so shutdown
             cannot block indefinitely behind a management operation. Defaults
@@ -1945,18 +1947,21 @@ class BLEInterface(MeshInterface):
         -----
         Must be called while holding _connect_lock.
         """
-        client = self._connection_orchestrator._establish_connection(
-            address,
-            self.address,
-            self._register_notifications,
-            # Defer _connected() publication until this interface has committed
-            # ownership of the new client and the post-connect stale/closing
-            # checks have passed.
-            lambda: None,
-            self._on_ble_disconnect,
-            pair_on_connect=pair_on_connect,
-            connect_timeout=connect_timeout,
-        )
+        try:
+            client = self._connection_orchestrator._establish_connection(
+                address,
+                self.address,
+                self._register_notifications,
+                # Defer _connected() publication until this interface has committed
+                # ownership of the new client and the post-connect stale/closing
+                # checks have passed.
+                lambda: None,
+                self._on_ble_disconnect,
+                pair_on_connect=pair_on_connect,
+                connect_timeout=connect_timeout,
+            )
+        except ValueError as exc:
+            raise self.BLEError(str(exc)) from exc
 
         device_address = getattr(
             getattr(client, "bleak_client", None), "address", None
@@ -2018,6 +2023,13 @@ class BLEInterface(MeshInterface):
         """Return whether this interface owns `client` and whether shutdown began."""
         with self._state_lock:
             return self._get_connected_client_status_locked(client)
+
+    def _has_lost_gate_ownership(self, *keys: str | None) -> bool:
+        """Return whether any connected address key is now owned elsewhere."""
+        return any(
+            key is not None and _is_currently_connected_elsewhere(key, owner=self)
+            for key in keys
+        )
 
     def _discard_invalidated_connected_client(self, client: BLEClient) -> None:
         """Best-effort cleanup for a connected client invalidated before return.
@@ -2224,7 +2236,11 @@ class BLEInterface(MeshInterface):
             connected_client, connected_device_key, connection_alias_key
         )
         still_owned, is_closing = self._get_connected_client_status(connected_client)
-        if not still_owned:
+        lost_gate_ownership = self._has_lost_gate_ownership(
+            connected_device_key,
+            connection_alias_key,
+        )
+        if not still_owned or lost_gate_ownership:
             self._discard_invalidated_connected_client(connected_client)
             if is_closing:
                 raise self.BLEError(ERROR_INTERFACE_CLOSING)

@@ -782,6 +782,10 @@ def test_ble_interface_trust_rejects_blank_explicit_target_before_environment_ch
         "meshtastic.interfaces.ble.interface.shutil.which",
         lambda _name: None,
     )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess.run should not be reached"),
+    )
 
     with pytest.raises(BLEInterface.BLEError, match=ERROR_MANAGEMENT_ADDRESS_EMPTY):
         iface.trust("   ")
@@ -1558,6 +1562,28 @@ def test_ble_interface_connect_uses_pair_override_for_orchestrator(
     assert connected_callbacks == [True, True, True]
 
 
+def test_connect_wraps_invalid_connect_timeout_as_ble_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should wrap invalid timeout overrides as BLEError."""
+    iface = _build_minimal_connect_test_interface()
+    iface._connection_orchestrator = SimpleNamespace(
+        _establish_connection=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("connect_timeout must be a finite positive number of seconds.")
+        )
+    )
+
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(iface, "_get_existing_client_if_valid", lambda _req: None)
+    monkeypatch.setattr(iface, "_raise_if_duplicate_connect", lambda _key: None)
+
+    with pytest.raises(
+        BLEInterface.BLEError,
+        match="connect_timeout must be a finite positive number of seconds.",
+    ):
+        iface.connect("AA:BB:CC:DD:EE:10", connect_timeout=cast(Any, 0.0))
+
+
 def test_ble_interface_establish_and_update_client_discards_late_connection_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2033,6 +2059,81 @@ def test_connect_raises_when_client_becomes_stale_after_gate_finalization(
     assert connected_callbacks == []
     assert iface.client is not connected_client
     assert iface.address != target_address
+
+
+def test_connect_raises_when_registry_ownership_is_lost_after_gate_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """connect() should fail if process-wide address ownership moves elsewhere."""
+    target_address = "AA:BB:CC:DD:EE:0A"
+    iface = _build_minimal_connect_test_interface()
+    connected_callbacks: list[bool] = []
+    connected_client = DummyClient()
+    connected_client.address = target_address
+    connected_client.bleak_client = SimpleNamespace(address=target_address)
+    finalized_clients: list[BLEClient] = []
+    closed_clients: list[BLEClient] = []
+
+    monkeypatch.setattr(iface, "_connected", lambda: connected_callbacks.append(True))
+    monkeypatch.setattr(iface, "_validate_connection_preconditions", lambda: None)
+    monkeypatch.setattr(
+        iface, "_raise_if_duplicate_connect", lambda _connection_key: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface, "_get_existing_client_if_valid", lambda _request: None, raising=True
+    )
+    monkeypatch.setattr(
+        iface._client_manager,
+        "_safe_close_client",
+        lambda client: closed_clients.append(client),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "meshtastic.interfaces.ble.interface._is_currently_connected_elsewhere",
+        lambda key, owner=None: key == "device-key" and owner is iface,
+    )
+
+    def _establish_stub(
+        _address: str | None,
+        _normalized_request: str | None,
+        _address_key: str | None,
+        *,
+        pair_on_connect: bool = False,
+        connect_timeout: float | None = None,
+    ) -> tuple[DummyClient, str | None, str | None]:
+        _ = (pair_on_connect, connect_timeout)
+        with iface._state_lock:
+            iface.client = connected_client
+            iface.address = target_address
+            iface._state_manager._reset_to_disconnected()
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTING)
+            assert iface._state_manager._transition_to(ConnectionState.CONNECTED)
+        return connected_client, "device-key", None
+
+    def _finalize_stub(
+        _self: BLEInterface,
+        _client: BLEClient,
+        _device_key: str | None,
+        _alias_key: str | None,
+    ) -> None:
+        finalized_clients.append(_client)
+
+    monkeypatch.setattr(
+        iface,
+        "_establish_and_update_client",
+        _establish_stub,
+        raising=True,
+    )
+    monkeypatch.setattr(BLEInterface, "_finalize_connection_gates", _finalize_stub)
+
+    with pytest.raises(BLEInterface.BLEError, match=CONNECTION_ERROR_LOST_OWNERSHIP):
+        iface.connect(target_address)
+
+    assert finalized_clients == [connected_client]
+    assert closed_clients == [connected_client]
+    assert connected_callbacks == []
+    assert iface.client is None
+    assert iface.address is None
 
 
 def test_connect_raises_when_shutdown_wins_after_gate_finalization(

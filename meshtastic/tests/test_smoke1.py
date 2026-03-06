@@ -275,6 +275,9 @@ def _wait_for_disconnect_then_ready(action_name: str) -> str:
             _assert_connected(info_out)
             return info_out
         last_output = output
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         time.sleep(min(INFO_READY_POLL_INTERVAL_SECONDS, remaining))
     raise AssertionError(
         f"Device never disappeared during {action_name}.\n"
@@ -325,6 +328,7 @@ def restore_smoke1_module_config() -> Iterator[None]:
         _assert_connected(ready_output)
         restore_succeeded = True
     finally:
+        # Keep the exported backup only when restore failed after a successful export.
         if not export_succeeded or restore_succeeded:
             with contextlib.suppress(FileNotFoundError):
                 backup_path.unlink()
@@ -972,6 +976,7 @@ def test_smoke1_set_wifi_settings() -> None:
         "network.wifi_psk",
     )
     assert re.search(r"network\.wifi_ssid:\s+some_ssid", out, re.MULTILINE)
+    # PSK is intentionally masked on readback for security.
     assert re.search(r"network\.wifi_psk:\s+sekrit", out, re.MULTILINE)
     assert return_value == 0
 

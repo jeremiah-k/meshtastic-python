@@ -254,7 +254,7 @@ def mock_bleak(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             """No-op pairing hook for compatibility with BLEClient.pair()."""
             return None
 
-        async def unpair(self) -> None:
+        async def unpair(self, **_kwargs: object) -> None:
             """No-op unpair hook for compatibility with BLEClient.unpair()."""
             return None
 
@@ -507,7 +507,7 @@ class DummyClient:
     def pair(
         self,
         *,
-        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
         **_kwargs: object,
     ) -> None:
         """Record a pair invocation."""
@@ -518,7 +518,7 @@ class DummyClient:
     def unpair(
         self,
         *,
-        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
     ) -> None:
         """Record an unpair invocation."""
         self.unpair_calls += 1

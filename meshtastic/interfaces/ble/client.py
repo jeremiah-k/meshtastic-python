@@ -213,7 +213,7 @@ class BLEClient:
         self,
         operation: Callable[[], Coroutine[Any, Any, object]] | None,
         *,
-        await_timeout: float | None,
+        await_timeout: float,
         not_initialized_error: str,
         unsupported_error: str,
     ) -> None:
@@ -224,7 +224,7 @@ class BLEClient:
         operation : Callable[[], Coroutine[Any, Any, object]] | None
             Zero-argument callable that creates the backend coroutine to await.
             When `None`, the backend is treated as unsupported.
-        await_timeout : float | None
+        await_timeout : float
             Maximum seconds to wait for the backend coroutine to complete.
         not_initialized_error : str
             Error message to raise when the underlying Bleak client has not
@@ -266,14 +266,14 @@ class BLEClient:
     def pair(
         self,
         *,
-        await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
+        await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT,
         **kwargs: object,
     ) -> None:
         """Pair the BLE client with the remote device.
 
         Parameters
         ----------
-        await_timeout : float | None
+        await_timeout : float
             Maximum seconds to wait for the pairing coroutine to complete.
             Must be a finite positive timeout. Defaults to
             `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
@@ -301,13 +301,13 @@ class BLEClient:
         return None
 
     def unpair(
-        self, *, await_timeout: float | None = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
+        self, *, await_timeout: float = BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT
     ) -> None:
         """Unpair the BLE client from the remote device when supported by the backend.
 
         Parameters
         ----------
-        await_timeout : float | None
+        await_timeout : float
             Maximum seconds to wait for the unpair coroutine to complete.
             Must be a finite positive timeout. Defaults to
             `BLECLIENT_MANAGEMENT_AWAIT_TIMEOUT`.
@@ -322,9 +322,13 @@ class BLEClient:
         BLEError
             If the BLE client is not initialized or if the backend does not expose `unpair`.
         """
-        unpair_fn = getattr(self.bleak_client, "unpair", None)
+        bleak_client = self.bleak_client
         self._run_management_call(
-            cast(Callable[[], Coroutine[Any, Any, object]] | None, unpair_fn),
+            (
+                None
+                if bleak_client is None or getattr(bleak_client, "unpair", None) is None
+                else lambda: bleak_client.unpair()
+            ),
             await_timeout=await_timeout,
             not_initialized_error=BLECLIENT_ERROR_CANNOT_UNPAIR_NOT_INITIALIZED,
             unsupported_error=BLECLIENT_ERROR_CANNOT_UNPAIR_UNSUPPORTED,

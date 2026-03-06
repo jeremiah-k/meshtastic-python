@@ -214,8 +214,10 @@ recovery logic.
 ### Pairing and trust workflows
 
 Pairing PIN/passkey entry remains OS-agent driven (for example BlueZ agent /
-desktop prompt / platform dialog). Meshtastic can request pairing and trust but
-does not replace OS pairing UX.
+desktop prompt / platform dialog). Meshtastic can request pairing during
+connect, either persistently with `pair_on_connect=True` or for one specific
+manual reconnect with `connect(pair=True)`, but it does not replace OS pairing
+UX.
 
 ```python
 from meshtastic.ble_interface import BLEInterface
@@ -226,7 +228,7 @@ iface = BLEInterface(
     pair_on_connect=True,
 )
 
-# Trust remains explicit and Linux-only:
+# One-time trust setup remains explicit and Linux-only:
 iface.trust("AA:BB:CC:DD:EE:FF")
 iface.close()
 ```
@@ -237,7 +239,8 @@ iface_manual = BLEInterface(
     address="AA:BB:CC:DD:EE:FF",
     auto_reconnect=False,
 )
-# Constructor connects immediately (without pairing).
+# Constructor connects immediately; auto_reconnect=False only disables later
+# automatic reconnect attempts.
 # Later, after the link drops and you want to reconnect with pairing:
 iface_manual.connect(pair=True)   # request pairing for this call
 iface_manual.trust("AA:BB:CC:DD:EE:FF")
@@ -247,7 +250,8 @@ iface_manual.close()
 Programmatic helpers:
 
 ```python
-# Pair against active client or a temporary resolved client.
+# Pair against the currently connected device, or use a temporary client when
+# disconnected but a concrete target can be resolved.
 iface.pair()
 
 # Backend unpair (Linux/Windows backends where supported by Bleak).

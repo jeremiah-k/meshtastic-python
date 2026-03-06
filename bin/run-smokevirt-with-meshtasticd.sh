@@ -176,6 +176,7 @@ if [[ -z ${MESHTASTICD_PYTEST_MARK_EXPR} ]]; then
 		exit 1
 	elif [[ ${MESHTASTICD_PYTEST_TARGETS} =~ test_smokevirt\.py ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="smokevirt and not smoke1_destructive"
+	# Exact match only: auto-apply "int" for the unmodified default target set.
 	elif [[ ${MESHTASTICD_PYTEST_TARGETS} == "${MESHTASTICD_DEFAULT_PYTEST_TARGETS}" ]]; then
 		MESHTASTICD_PYTEST_MARK_EXPR="int"
 	fi

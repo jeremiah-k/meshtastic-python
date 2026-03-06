@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("meshtastic.ble")
 _DEVICE_NOT_FOUND_FRAGMENT = "not found"
+_CONNECT_TIMEOUT_INVALID_MSG = (
+    "connect_timeout must be a finite positive number of seconds."
+)
 
 
 def _is_device_not_found_error(err: Exception) -> bool:
@@ -395,13 +398,9 @@ class ConnectionOrchestrator:
             if isinstance(connect_timeout, bool) or not isinstance(
                 connect_timeout, numbers.Real
             ):
-                raise ValueError(
-                    "connect_timeout must be a finite positive number of seconds."
-                )
+                raise ValueError(_CONNECT_TIMEOUT_INVALID_MSG)
             if not math.isfinite(connect_timeout) or connect_timeout <= 0:
-                raise ValueError(
-                    "connect_timeout must be a finite positive number of seconds."
-                )
+                raise ValueError(_CONNECT_TIMEOUT_INVALID_MSG)
             return float(connect_timeout)
         return cls._get_connect_timeout(pair_on_connect=pair_on_connect)
 

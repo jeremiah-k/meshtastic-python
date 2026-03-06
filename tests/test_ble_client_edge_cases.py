@@ -507,12 +507,15 @@ def test_bleclient_management_rejects_invalid_await_timeout(
     invalid_timeout: object,
 ) -> None:
     """pair()/unpair() should require a finite positive await timeout."""
+    backend_calls = {"pair": 0, "unpair": 0}
 
     class _Backend:
         async def pair(self, **_kwargs: object) -> None:
+            backend_calls["pair"] += 1
             return None
 
         async def unpair(self) -> None:
+            backend_calls["unpair"] += 1
             return None
 
     ble_client.bleak_client = cast(Any, _Backend())
@@ -525,3 +528,5 @@ def test_bleclient_management_rejects_invalid_await_timeout(
             ble_client.pair(confirm=True, await_timeout=cast(Any, invalid_timeout))
         else:
             ble_client.unpair(await_timeout=cast(Any, invalid_timeout))
+
+    assert backend_calls == {"pair": 0, "unpair": 0}
